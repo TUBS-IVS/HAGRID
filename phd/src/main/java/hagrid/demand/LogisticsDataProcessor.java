@@ -10,7 +10,6 @@ import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.network.NetworkUtils;
-
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 
@@ -19,6 +18,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 
+/**
+ * The LogisticsDataProcessor class is responsible for reading logistics data
+ * from various files and storing it in the MATSim scenario.
+ */
 @Singleton
 public class LogisticsDataProcessor implements Runnable {
 
@@ -30,6 +33,10 @@ public class LogisticsDataProcessor implements Runnable {
     @Inject
     private HagridConfigGroup hagridConfig;
 
+    /**
+     * Runs the logistics data processing, reading data from specified files
+     * and storing it in the scenario.
+     */
     @Override
     public void run() {
         try {
@@ -61,6 +68,14 @@ public class LogisticsDataProcessor implements Runnable {
         }
     }
 
+    /**
+     * Reads logistics data from a file and returns it as a map of Hub objects.
+     *
+     * @param filename The path to the file.
+     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
+     * @return A map of Hub objects.
+     * @throws Exception If an error occurs while reading the file.
+     */
     private Map<Id<Hub>, Hub> readDataFromFile(String filename, DataType dataType) throws Exception {
         Map<Id<Hub>, Hub> hubList = new HashMap<>();
         LOGGER.info("Reading data from file: {}", filename);
@@ -82,6 +97,14 @@ public class LogisticsDataProcessor implements Runnable {
         return hubList;
     }
 
+    /**
+     * Parses a line of data and returns a Hub object.
+     *
+     * @param dataSplit The line of data split into fields.
+     * @param dataType The type of data being parsed (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
+     * @param source The source file name.
+     * @return A Hub object.
+     */
     private Hub parseHubData(String[] dataSplit, DataType dataType, String source) {
         String company;
         Double x, y;
@@ -92,6 +115,7 @@ public class LogisticsDataProcessor implements Runnable {
 
         switch (dataType) {
             case HUB:
+                // Parsing hub data
                 company = dataSplit[2].toLowerCase();
                 if (hagridConfig.isWhiteLabel()) {
                     company = "wl";
@@ -124,6 +148,7 @@ public class LogisticsDataProcessor implements Runnable {
                 break;
 
             case SHIPPING_POINT:
+                // Parsing shipping point data
                 id = Id.create(dataSplit[0], Hub.class);
                 x = Double.valueOf(dataSplit[1]);
                 y = Double.valueOf(dataSplit[2]);
@@ -138,6 +163,7 @@ public class LogisticsDataProcessor implements Runnable {
                 break;
 
             case PARCEL_LOCKER:
+                // Parsing parcel locker data
                 id = Id.create(dataSplit[7], Hub.class);
                 x = Double.valueOf(dataSplit[9]);
                 y = Double.valueOf(dataSplit[8]);
@@ -161,6 +187,12 @@ public class LogisticsDataProcessor implements Runnable {
         return hub;
     }
 
+    /**
+     * Returns the delimiter used in the file based on the data type.
+     *
+     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
+     * @return The delimiter as a string.
+     */
     private String getDelimiter(DataType dataType) {
         switch (dataType) {
             case HUB:
@@ -173,6 +205,9 @@ public class LogisticsDataProcessor implements Runnable {
         }
     }
 
+    /**
+     * Enum representing the types of data that can be processed.
+     */
     private enum DataType {
         HUB,
         SHIPPING_POINT,
