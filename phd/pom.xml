@@ -17,7 +17,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <matsim.version>2025.0-2024w21</matsim.version>
-    <geotools.version>24.2</geotools.version>
+    <geotools.version>31.1</geotools.version>
     <jsprit.version>1.8</jsprit.version>
 
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -96,6 +96,11 @@
     <dependency>
       <groupId>org.geotools</groupId>
       <artifactId>gt-shapefile</artifactId>
+      <version>${geotools.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.geotools</groupId>
+      <artifactId>gt-api</artifactId>
       <version>${geotools.version}</version>
     </dependency>
     <dependency>
@@ -209,6 +214,16 @@
       <artifactId>jakarta.el</artifactId>
       <version>4.0.2</version>
     </dependency>
+    <dependency>
+      <groupId>com.google.inject</groupId>
+      <artifactId>guice</artifactId>
+      <version>5.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>31.0.1-jre</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -267,6 +282,12 @@
           </executions>
           <configuration>
             <mainClass>hagrid.App</mainClass>
+            <arguments>
+              <argument>-Xmx4096m</argument>
+              <argument>-Xms4096m</argument>
+              <argument>--add-opens</argument>
+              <argument>java.base/java.lang=ALL-UNNAMED</argument>
+            </arguments>
           </configuration>
         </plugin>
       </plugins>

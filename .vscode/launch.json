@@ -6,6 +6,7 @@
             "name": "Launch App",
             "request": "launch",
             "mainClass": "hagrid.App",
+            "vmArgs": "-Xmx4096m -Xms4096m --add-opens java.base/java.lang=ALL-UNNAMED",
             "projectName": "phd"
         }
     ]

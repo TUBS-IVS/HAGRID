@@ -6,10 +6,18 @@
         </Console>
     </Appenders>
     <Loggers>
+        <!-- Root logger configuration -->
         <Root level="info">
             <AppenderRef ref="Console"/>
         </Root>
+        
+        <!-- Hagrid logger configuration -->
         <Logger name="hagrid" level="info" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+
+        <!-- Suppress MGC logger warnings -->
+        <Logger name="org.matsim.core.utils.geometry.geotools.MGC" level="error" additivity="false">
             <AppenderRef ref="Console"/>
         </Logger>
     </Loggers>

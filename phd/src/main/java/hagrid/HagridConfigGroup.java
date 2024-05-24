@@ -12,14 +12,28 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     public static final String GROUPNAME = "hagrid";
 
+    // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "x:/projekte/03_abgeschlossen/USEfUL XT/02_Bearbeitung/01_Modell/23032022_Hannover_kalibriertes_Basismodell/Basismodell_10/multimodalNetwork.xml";
-
+    private String networkXmlPath = "phd/input/reduced_network.xml.gz";   
+    
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
     private String freightDemandPath = "vm-hochrechnung_matsim-punkte_epsg25832_mit_plz.shp";
 
+    static final String HUB_DATA_PATH = "hubDataPath";
+    private static final String HUB_DATA_PATH_DESC = "Path to the hub data file.";
+    private String hubDataPath = "phd/input/hubs/KEP-hubs_v3.csv";
+
+    static final String SHIPPING_POINT_DATA_PATH = "shippingPointDataPath";
+    private static final String SHIPPING_POINT_DATA_PATH_DESC = "Path to the shipping point data file.";
+    private String shippingPointDataPath = "phd/input/hubs/standorte_von_paket.net/";
+
+    static final String PARCEL_LOCKER_DATA_PATH = "parcelLockerDataPath";
+    private static final String PARCEL_LOCKER_DATA_PATH_DESC = "Path to the parcel locker data file.";
+    private String parcelLockerDataPath = "phd/input/hubs/standorte_von_dhl.de.csv";
+
+    // Providers
     static final String SHP_PROVIDERS = "shpProviders";
     private static final String SHP_PROVIDERS_DESC = "List of shapefile providers.";
     private List<String> shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
@@ -29,6 +43,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String LOCATION_PROVIDERS_DESC = "List of location providers.";
     private List<String> locationProviders = List.of("dhl", "dpd", "gls", "hermes", "ups");
 
+    // Link and speed configurations
     static final String MIN_LINK_LENGTH = "minLinkLength";
     private static final String MIN_LINK_LENGTH_DESC = "Minimum link length.";
     @Positive
@@ -44,7 +59,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     @Positive
     private double freeSpeedThreshold = 17.0;
 
-
+    // Vehicle capacities
     @Positive
     private int cepVehCap = 230;
     private static final String CEP_VEH_CAP_DESC = "Capacity of CEP vehicles.";
@@ -53,6 +68,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private int supplyVehCap = 2000;
     private static final String SUPPLY_VEH_CAP_DESC = "Capacity of supply vehicles.";
 
+    // Other configurations
     @Positive
     private int demandBorder = 1000;
     private static final String DEMAND_BORDER_DESC = "Demand border threshold.";
@@ -89,6 +105,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private double maxDriverTime = 600.0;
     private static final String MAX_DRIVER_TIME_DESC = "Maximum driver operation time in minutes.";
 
+    // Concept enumeration
     public enum Concept {
         BASELINE, WHITE_LABEL, UCC, COLLECTION_POINTS
     }
@@ -97,10 +114,12 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String CONCEPT_DESC = "Concept being simulated (baseline, white-label, ucc, collection points).";
     private Concept concept = Concept.BASELINE;
 
+    // Algorithm file path
     static final String ALGORITHM_FILE = "algorithmFile";
     private static final String ALGORITHM_FILE_DESC = "Path to the vehicle routing algorithm file.";
     private String algorithmFile = "./res/freight/jsprit_algorithm.xml";
 
+    // Delivery rates
     private int deliveryRateDhl = 96;
     private int deliveryRateGls = 93;
     private int deliveryRateHermes = 93;
@@ -160,6 +179,36 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     @StringSetter(FREIGHT_DEMAND_PATH)
     public void setFreightDemandPath(String freightDemandPath) {
         this.freightDemandPath = freightDemandPath;
+    }
+
+    @StringGetter(HUB_DATA_PATH)
+    public String getHubDataPath() {
+        return hubDataPath;
+    }
+
+    @StringSetter(HUB_DATA_PATH)
+    public void setHubDataPath(String hubDataPath) {
+        this.hubDataPath = hubDataPath;
+    }
+
+    @StringGetter(SHIPPING_POINT_DATA_PATH)
+    public String getShippingPointDataPath() {
+        return shippingPointDataPath;
+    }
+
+    @StringSetter(SHIPPING_POINT_DATA_PATH)
+    public void setShippingPointDataPath(String shippingPointDataPath) {
+        this.shippingPointDataPath = shippingPointDataPath;
+    }
+
+    @StringGetter(PARCEL_LOCKER_DATA_PATH)
+    public String getParcelLockerDataPath() {
+        return parcelLockerDataPath;
+    }
+
+    @StringSetter(PARCEL_LOCKER_DATA_PATH)
+    public void setParcelLockerDataPath(String parcelLockerDataPath) {
+        this.parcelLockerDataPath = parcelLockerDataPath;
     }
 
     @StringGetter(SHP_PROVIDERS)
@@ -314,11 +363,38 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         this.freeSpeedThreshold = freeSpeedThreshold;
     }
 
+    @StringGetter("hubLimitDHL")
+    public int getHubLimitDHL() {
+        return hubLimitDHL;
+    }
+
+    @StringSetter("hubLimitDHL")
+    public void setHubLimitDHL(int hubLimitDHL) {
+        this.hubLimitDHL = hubLimitDHL;
+    }
+
+    @StringGetter("hubLimitPost")
+    public int getHubLimitPost() {
+        return hubLimitPost;
+    }
+
+    @StringSetter("hubLimitPost")
+    public void setHubLimitPost(int hubLimitPost) {
+        this.hubLimitPost = hubLimitPost;
+    }
+
+    public boolean isWhiteLabel() {
+        return this.concept == Concept.WHITE_LABEL;
+    }
+
     @Override
     public Map<String, String> getComments() {
         Map<String, String> map = super.getComments();
         map.put(NETWORK_XML_PATH, NETWORK_XML_PATH_DESC);
         map.put(FREIGHT_DEMAND_PATH, FREIGHT_DEMAND_PATH_DESC);
+        map.put(HUB_DATA_PATH, HUB_DATA_PATH_DESC);
+        map.put(SHIPPING_POINT_DATA_PATH, SHIPPING_POINT_DATA_PATH_DESC);
+        map.put(PARCEL_LOCKER_DATA_PATH, PARCEL_LOCKER_DATA_PATH_DESC);
         map.put(SHP_PROVIDERS, SHP_PROVIDERS_DESC);
         map.put(LOCATION_PROVIDERS, LOCATION_PROVIDERS_DESC);
         map.put(CONCEPT, CONCEPT_DESC);

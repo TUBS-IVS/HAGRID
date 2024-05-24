@@ -1,0 +1,471 @@
+"zipCode","city","district","street","houseNo","keyWord","locationType","locationName","lat","lon","primaryKeyDeliverySystem"
+30159,"'Hannover'","'Mitte'","Am Klagesmarkt","10-11","'Postfiliale'","'RETAIL_OUTLET'","Kappadokien",52.3807496,9.7280209,4109878
+30159,"'Hannover'","'Mitte'","Lange Laube","22","'DHL Paketshop'","'PAKETSHOP'","Copy Print Center Ashouri",52.376776,9.7285372,4098837
+30159,"'Hannover'","'Mitte'","Lange Laube","5-7","'DHL Paketshop'","'PAKETSHOP'","Änderungsschneiderei Recho",52.3761474,9.7301696,4289999
+30159,"'Hannover'","'Mitte'","Goseriede","15","'DHL Paketshop'","'PAKETSHOP'","Spätkauf Hannover",52.3780798,9.7312997,4287367
+30159,"'Hannover'","'Mitte'","Goseriede","16","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter Brüderstr.",52.378716,9.732661,30159101
+30159,"'Hannover'","'Mitte'","Nikolaistr.","21","'DHL Paketshop'","'PAKETSHOP'","Kiosk Hussen",52.3818375,9.7328877,4292299
+30159,"'Hannover'","'Mitte'","Georgstr.","3","'DHL Paketshop'","'PAKETSHOP'","Kiosk Khalil",52.3762157,9.7331027,4289122
+30159,"'Hannover'","'Mitte'","Knochenhauerstr.","10","'DHL Paketshop'","'PAKETSHOP'","trendi-go",52.3739376,9.7334228,4101818
+30159,"'Hannover'","'Mitte'","Osterstr.","1","'DHL Paketshop'","'PAKETSHOP'","MiBra-Shop",52.3735285,9.7349497,4140194
+30159,"'Hannover'","'Mitte'","Kanalstr.","10","'Postfiliale'","'RETAIL_OUTLET'","Handyshop",52.3760135,9.7350559,4288334
+30159,"'Hannover'","'Mitte'","Georgstr.","26","'DHL Paketshop'","'PAKETSHOP'","City Kiosk am Kröpke",52.3744343,9.7381316,4133931
+30159,"'Hannover'","'Mitte'","Osterstr.","39","'Postfiliale'","'RETAIL_OUTLET'","K & P Mobile",52.3708676,9.7388172,4131260
+30159,"'Hannover'","'Mitte'","Ernst-August-Platz","2","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.3769745,9.7395125,4066996
+30159,"'Hannover'","'Mitte'","Ernst-August-Platz","2","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3771298,9.7395303,4129575
+30159,"'Hannover'","'Mitte'","Osterstr.","42","'DHL Packstation'","'PACKSTATION_PS_DE'","OrangeBike",52.370587,9.73977,30159112
+30159,"'Hannover'","'Mitte'","Thielenplatz","5","'Postfiliale'","'RETAIL_OUTLET'","Kiosk am Thielenplatz",52.374516,9.7437006,4134399
+30161,"'Hannover'","'<undefined>'","Celler Str.","18","'DHL Paketshop'","'PAKETSHOP'","HR-Hotel",52.3812987,9.737171,4287307
+30161,"'Hannover'","'List'","Isernhagener Str.","18","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.388312,9.7378419,4132835
+30161,"'Hannover'","'Mitte'","Hamburger Allee","19a","'Postfiliale'","'RETAIL_OUTLET'","Tabac&Co",52.3794716,9.7402589,4118074
+30161,"'Hannover'","'Oststadt'","Lister Meile","31","'DHL Paketshop'","'PAKETSHOP'","Lotto Sarik",52.382768,9.7452678,4137634
+30161,"'Hannover'","'Oststadt'","Sedanstr.","43","'DHL Paketshop'","'PAKETSHOP'","Änderungsschneiderei Aytekin",52.3824171,9.7467834,4139479
+30161,"'Hannover'","'List'","Bürgerstr.","2-3","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.387477,9.748076,30161200
+30161,"'Hannover'","'List'","Edenstr.","34","'DHL Paketshop'","'PAKETSHOP'","Schuh- und Schlüsseldienst",52.3883018,9.7482191,4081600
+30161,"'Hannover'","'List'","Bürgerstr.","14","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.3871979,9.7483689,4128395
+30161,"'Hannover'","'List'","Bödekerstr.","83","'Postfiliale'","'RETAIL_OUTLET'",,52.3881395,9.750519,4132553
+30161,"'Hannover'","'Oststadt'","Bödekerstr.","25","'DHL Paketshop'","'PAKETSHOP'","Kiosk Hussein",52.3825559,9.7531109,4135236
+30163,"'Hannover'","'Vahrenwald'","Dragonerstr.","25","'DHL Paketshop'","'PAKETSHOP'","E.xpress Parcel Services GmbH",52.3946796,9.7366057,4291475
+30163,"'Hannover'","'Vahrenwald'","Dragonerstr.","39","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.394762,9.739568,30163202
+30163,"'Hannover'","'Vahrenwald'","Hirtenweg","26","'DHL Paketshop'","'PAKETSHOP'","Wäscherei am Hirtenweg",52.4023597,9.7397121,4129279
+30163,"'Hannover'","'Vahrenwald'","Isernhagener Str.","103-107","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3978513,9.7399549,4126837
+30163,"'Hannover'","'List'","Husarenstr.","22","'DHL Paketshop'","'PAKETSHOP'","Lotto Hussein Khder",52.3929865,9.7409335,4138666
+30163,"'Hannover'","'List'","Voßstr.","55","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3912925,9.7445021,4135501
+30163,"'Hannover'","'List'","Rühmkorffstr.","20","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3905909,9.7531004,4124643
+30163,"'Hannover'","'List'","Wittekamp","22","'DHL Paketshop'","'PAKETSHOP'","Kiosk Ebrahimi-Dezfuli",52.3947199,9.7549591,4096120
+30165,"'Hannover'","'Hainholz'","Schulenburger Landstr.","139a","'DHL Paketshop'","'PAKETSHOP'","Autohaus Többen GmbH",52.4125093,9.7048103,4099036
+30165,"'Hannover'","'Hainholz'","Sokelantstr.","16","'DHL Paketshop'","'PAKETSHOP'","DSC Hannover GmbH",52.4065034,9.708184,4139519
+30165,"'Hannover'","'Hainholz'","Krepenstr.","5","'Postfiliale'","'RETAIL_OUTLET'","Kaufland",52.4086196,9.7113665,4097621
+30165,"'Hannover'","'Hainholz'","Schulenburger Landstr.","19","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.397686,9.7155731,4137903
+30165,"'Hannover'","'Vahrenwald'","Hüttenstr.","23","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.394133,9.722649,30165213
+30165,"'Hannover'","'Vahrenwald'","Guts-Muths-Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.3947613,9.7287143,4139465
+30165,"'Hannover'","'Vahrenwald'","Melanchthonstr.","50","'DHL Paketshop'","'PAKETSHOP'","Vollgut Getränke Fachmarkt Waldhoff GmbH",52.3978716,9.7321972,4111300
+30165,"'Hannover'","'Vahrenwald'","Melanchthonstr.","57","'DHL Paketshop'","'PAKETSHOP'","REWE Ronny Bork OHG",52.3989985,9.7329842,4134831
+30165,"'Hannover'","'Vahrenwald'","Melanchthonstr.","57","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE",52.399473,9.733071,30165148
+30165,"'Hannover'","'Vahrenwald'","Philipsbornstr.","2","'DHL Paketshop'","'PAKETSHOP'","REWE Christophe Daguerre oHG",52.3879908,9.7334802,4140859
+30165,"'Hannover'","'Vahrenwald'","Vahrenwalder Str.","55","'DHL Paketshop'","'PAKETSHOP'","Sunnys Hair & More",52.390234,9.7342907,4289120
+30165,"'Hannover'","'Vahrenwald'","Vahrenwalder Str.","86","'Postfiliale'","'RETAIL_OUTLET'","Stempel-Blitz & Copy-Druck",52.3927169,9.7352948,4095116
+30165,"'Hannover'","'Vahrenwald'","Vahrenwalder Str.","138","'DHL Packstation'","'PACKSTATION_PS_DE'","Esso-Tankstelle",52.397605,9.736316,30165128
+30167,"'Hannover'","'Nordstadt'","Callinstr.","23","'DHL Packstation'","'PACKSTATION_PS_DE'","Universität Schneiderberg zw. Fußgängerbrücke und Mensa",52.386665,9.71472,30167121
+30167,"'Hannover'","'Nordstadt'","Engelbosteler Damm","93","'DHL Paketshop'","'PAKETSHOP'","Nordstadt Kiosk",52.3905948,9.7209089,4116662
+30167,"'Hannover'","'Nordstadt'","Im Moore","20","'DHL Paketshop'","'PAKETSHOP'","Kiosk Tran",52.3845191,9.7209692,4120544
+30167,"'Hannover'","'Nordstadt'","Engelbosteler Damm","75","'DHL Paketshop'","'PAKETSHOP'","An- und Verkauf Limarsat",52.3893991,9.721705,4117416
+30167,"'Hannover'","'Nordstadt'","Bodestr.","2-6","'DHL Packstation'","'PACKSTATION_PS_DE'","Parkhaus",52.391912,9.722131,30167149
+30167,"'Hannover'","'Nordstadt'","Engelbosteler Damm","47","'Postfiliale'","'RETAIL_OUTLET'","FOTO-GENZ GmbH",52.3866527,9.7235855,4018787
+30167,"'Hannover'","'Nordstadt'","Tulpenstr.","1","'DHL Paketshop'","'PAKETSHOP'","Call Shop Qasim",52.3850525,9.7242956,4138637
+30167,"'Hannover'","'Nordstadt'","Sandstr.","4","'DHL Paketshop'","'PAKETSHOP'","Habenicht GmbH & Co. KG",52.3873262,9.7259058,4099963
+30167,"'Hannover'","'Nordstadt'","Weidendamm","2","'Paketbox'","'PAKETBOX'",,52.3841068,9.7314938,823
+30167,"'Hannover'","'Nordstadt'","Weidendamm","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Vor DP AG Filiale",52.384179,9.731843,30167139
+30169,"'Hannover'","'Calenberger Neustadt'","Gerberstr.","14","'DHL Paketshop'","'PAKETSHOP'","AR Kiosk",52.3760132,9.7214788,4134687
+30169,"'Hannover'","'Calenberger Neustadt'","Humboldtstr.","23","'DHL Paketshop'","'PAKETSHOP'","Taalo Backshop",52.3707266,9.7229939,4114327
+30169,"'Hannover'","'Calenberger Neustadt'","Goetheplatz","11","'Postfiliale'","'RETAIL_OUTLET'","Goethepost",52.3727107,9.7242452,4137879
+30169,"'Hannover'","'Calenberger Neustadt'","Calenberger Str.","49","'DHL Paketshop'","'PAKETSHOP'","Kiosk Khalaf",52.3698805,9.7247667,4124970
+30169,"'Hannover'","'Mitte'","Goethestr.","15","'Postfiliale'","'RETAIL_OUTLET'","Toto Lotto Kiosk",52.3746986,9.7304021,4134161
+30169,"'Hannover'","'<undefined>'","Hildesheimer Str.","27-29","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3650597,9.7470683,4134327
+30169,"'Hannover'","'Südstadt'","Hildesheimer Str.","52","'Postfiliale'","'RETAIL_OUTLET'","Hannoverstore 24 GmbH",52.3631072,9.7480432,4122783
+30171,"'Hannover'","'Südstadt'","Marienstr.","14","'DHL Paketshop'","'PAKETSHOP'","Raucher Himmel UG",52.3689319,9.7459852,4140653
+30171,"'Hannover'","'Südstadt'","Lutherstr.","43","'Postfiliale'","'RETAIL_OUTLET'",,52.3668056,9.7521862,4140165
+30171,"'Hannover'","'Südstadt'","Marienstr.","66","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.3696778,9.7524476,4110291
+30171,"'Hannover'","'Südstadt'","Krausenstr.","44","'DHL Paketshop'","'PAKETSHOP'","Krausenkiosk",52.3630691,9.7524972,4095019
+30171,"'Hannover'","'Südstadt'","Schlägerstr.","42-44","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.3621226,9.7535825,4012985
+30171,"'Hannover'","'Südstadt'","Schlägerstr.","42-44","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.362123,9.753583,30171122
+30171,"'Hannover'","'Südstadt'","Marienstr.","81","'DHL Paketshop'","'PAKETSHOP'","Kiosk Kliukeviciene",52.370208,9.7551031,4098815
+30171,"'Hannover'","'Südstadt'","Große Barlinge","67","'DHL Paketshop'","'PAKETSHOP'","Die Reinigung",52.3641919,9.7562067,4134429
+30171,"'Hannover'","'Südstadt'","Marienstr.","109","'DHL Paketshop'","'PAKETSHOP'","Ainx Phone",52.3705124,9.7594024,4129500
+30171,"'Hannover'","'Südstadt'","Spielhagenstr.","23a","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.363841,9.762098,30171129
+30171,"'Hannover'","'Südstadt'","Spielhagenstr.","20","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.363057,9.763466,30171217
+30173,"'Hannover'","'Südstadt'","Geibelstr.","55","'DHL Paketshop'","'PAKETSHOP'","Kiosk Abdi",52.3592345,9.751449,4112519
+30173,"'Hannover'","'Südstadt'","Geibelstr.","41","'DHL Paketshop'","'PAKETSHOP'","MBA GmbH",52.3599014,9.7540272,4126340
+30173,"'Hannover'","'Südstadt'","Altenbekener Damm","61","'DHL Paketshop'","'PAKETSHOP'","Kiosk Simsek",52.3555665,9.7557326,4097671
+30173,"'Hannover'","'Südstadt'","Stüvestr.","7","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3597521,9.757233,4134328
+30173,"'Hannover'","'Südstadt'","Heinrich-Heine-Str.","22","'Postfiliale'","'RETAIL_OUTLET'","Das Lädchen",52.356783,9.757689,4095153
+30173,"'Hannover'","'Südstadt'","Stresemannallee","2","'DHL Paketshop'","'PAKETSHOP'","so so & so Kioskbetriebe",52.3586169,9.7612964,4139380
+30173,"'Hannover'","'Südstadt'","Jordanstr.","18a","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Rohmeyer UG",52.3608646,9.762509,4141201
+30173,"'Hannover'","'Südstadt'","An der Weide","15","'DHL Paketshop'","'PAKETSHOP'","Wucherpfennig GmbH E-Center",52.3619942,9.7652517,4131505
+30173,"'Hannover'","'Bult'","Lindemannallee","21","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.359024,9.771459,30173207
+30173,"'Hannover'","'Bult'","Bischofsholer Damm","85","'DHL Packstation'","'PACKSTATION_PS_DE'","Studentenwohnheim Gebäuderückseite",52.364436,9.774388,30173102
+30175,"'Hannover'","'Mitte'","Volgersweg","51","'Postfiliale'","'RETAIL_OUTLET'",,52.3790591,9.7501902,4129113
+30175,"'Hannover'","'Zoo'","Ellernstr.","37","'Postfiliale'","'RETAIL_OUTLET'","GP-Markt Zoo",52.3743245,9.7575906,4116035
+30175,"'Hannover'","'Zoo'","Seelhorststr.","50","'DHL Paketshop'","'PAKETSHOP'","Kiosk Sabri Rashid",52.377839,9.7610595,4130385
+30175,"'Hannover'","'Zoo'","Adenauerallee","18","'Paketbox'","'PAKETBOX'",,52.3790732,9.7676593,822
+30177,"'Hannover'","'List'","Mengendamm","3","'DHL Packstation'","'PACKSTATION_PS_DE'","Combi Markt",52.396946,9.757437,30177143
+30177,"'Hannover'","'List'","Mengendamm","3","'DHL Paketshop'","'PAKETSHOP'","Combi Verbrauchermarkt",52.3964082,9.7579582,4123714
+30177,"'Hannover'","'List'","Podbielskistr.","103","'Postfiliale'","'RETAIL_OUTLET'","Vollgut Dimis Getränkeshop",52.3959725,9.764232,4137416
+30177,"'Hannover'","'List'","Am Listholze","54","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.400068,9.765086,30177215
+30177,"'Hannover'","'List'","Pelikanstr.","2","'DHL Paketshop'","'PAKETSHOP'","Kiosk List",52.3978034,9.7714666,4115477
+30177,"'Hannover'","'List'","Raabestr.","16","'DHL Paketshop'","'PAKETSHOP'","Kiosk Zeitschriften Vazirian",52.4000687,9.7740016,4096124
+30177,"'Hannover'","'List'","Podbielskistr.","186","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.39869,9.776491,30177156
+30177,"'Hannover'","'List'","Hauffstr.","5","'DHL Paketshop'","'PAKETSHOP'","Kiosk Mukul",52.4005562,9.7780669,4118423
+30179,"'Hannover'","'Vahrenheide'","Sahlkamp","7","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","Star Tankstelle",52.412688,9.737352,30179163
+30179,"'Hannover'","'Vahrenheide'","Sahlkamp","33","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.411353,9.747958,30179123
+30179,"'Hannover'","'Vahrenheide'","Vahrenheider Markt","23","'Postfiliale'","'RETAIL_OUTLET'","Quelle-Tiefpreismarkt",52.4117066,9.7505901,4066904
+30179,"'Hannover'","'Vahrenheide'","Zwickauer Str.","22","'DHL Paketshop'","'PAKETSHOP'","Kiosk MKS",52.4175469,9.7604079,4091242
+30179,"'Hannover'","'Sahlkamp'","Holzwiesen","86","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.417635,9.7652333,4129075
+30179,"'Hannover'","'Sahlkamp'","Wittenberger Str.","140","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE",52.418152,9.766063,30179145
+30179,"'Hannover'","'Sahlkamp'","Tempelhofweg","4a","'DHL Paketshop'","'PAKETSHOP'","MiBra-Shop",52.418886,9.7661083,4129651
+30179,"'Hannover'","'Sahlkamp'","Bahnstrift","28","'DHL Paketshop'","'PAKETSHOP'","Kiosk - Zeitschriften",52.4200185,9.7720639,4095595
+30419,"'Hannover'","'Stöcken'","Jädekamp","30","'DHL Packstation'","'PACKSTATION_PS_DE'","Continental Tor 2",52.416932,9.642509,30419150
+30419,"'Hannover'","'Stöcken'","Stelinger Str.","14","'DHL Paketshop'","'PAKETSHOP'","Kiosk Cölükoglu",52.4313397,9.6453895,4126978
+30419,"'Hannover'","'Stöcken'","Alte Stöckener Str.","95","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.414473,9.65142,30419216
+30419,"'Hannover'","'Stöcken'","Alte Stöckener Str.","58","'DHL Paketshop'","'PAKETSHOP'","LEO Tankstelle",52.4130586,9.6529981,4099964
+30419,"'Hannover'","'Stöcken'","Mecklenheidestr.","74","'DHL Packstation'","'PACKSTATION_PS_DE'","Volkswagen AG Tor 1",52.416489,9.656913,30419159
+30419,"'Hannover'","'Stöcken'","Moosbergstr.","1b","'Postfiliale'","'RETAIL_OUTLET'",,52.4102562,9.6639899,4129557
+30419,"'Hannover'","'Leinhausen'","Stöckener Str.","57","'DHL Paketshop'","'PAKETSHOP'","Sara's Cafe Bar",52.3997532,9.6696123,4133198
+30419,"'Hannover'","'Leinhausen'","Kasseler Str.","17c","'DHL Paketshop'","'PAKETSHOP'","Das kleine Lädchen",52.3982007,9.6742901,4134056
+30419,"'Hannover'","'Herrenhausen'","Am Winkelberge","44256","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.395631,9.676201,30419109
+30419,"'Hannover'","'Ledeburg'","Borglingstr.","3","'Postfiliale'","'RETAIL_OUTLET'","Toto-Lotto",52.4124627,9.6772999,4127892
+30419,"'Hannover'","'Herrenhausen'","Haltenhoffstr.","243","'Postfiliale'","'RETAIL_OUTLET'","Post Leinhausen",52.3957621,9.678783,4291080
+30419,"'Hannover'","'Ledeburg'","Köhnsenstr.","18","'DHL Paketshop'","'PAKETSHOP'","Wucherpfennig GmbH",52.4157484,9.6809287,4131503
+30419,"'Hannover'","'Herrenhausen'","Herrenhäuser Str.","79","'DHL Paketshop'","'PAKETSHOP'","Kiosk Serhad",52.3934764,9.6834067,4132766
+30419,"'Hannover'","'Herrenhausen'","Herrenhäuser Markt","9","'Postfiliale'","'RETAIL_OUTLET'","Köschk Tabak & Presse Shop",52.3938413,9.6841928,4132068
+30419,"'Hannover'","'Ledeburg'","Mecklenheidestr.","21","'Postfiliale'","'RETAIL_OUTLET'",,52.4183933,9.6909256,4122354
+30419,"'Hannover'","'Burg'","Am Fuhrenkampe","14","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.409651,9.692656,30419158
+30419,"'Hannover'","'Herrenhausen'","Schaumburgstr.","20a","'DHL Paketshop'","'PAKETSHOP'","Kiosk Basil Suleiman",52.3961319,9.6926988,4132161
+30419,"'Hannover'","'Herrenhausen'","Mandelslohstr.","1","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.393683,9.693514,30419151
+30419,"'Hannover'","'Herrenhausen'","Mandelslohstr.","1","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3934421,9.6937367,4132841
+30419,"'Hannover'","'Ledeburg'","Kurländer Weg","7","'DHL Paketshop'","'PAKETSHOP'","REWE Klaus-Dieter Scholz OHG",52.4186566,9.694359,4127029
+30419,"'Hannover'","'Vinnhorst'","Schulenburger Landstr.","262b","'DHL Paketshop'","'PAKETSHOP'","MiBra-Shop",52.4200625,9.6944184,4119451
+30419,"'Hannover'","'Vinnhorst'","Friedenauer Str.","29","'DHL Paketshop'","'PAKETSHOP'","Änderungsschneiderei Shirin",52.4133628,9.7094793,4099829
+30419,"'Hannover'","'Vinnhorst'","Friedenauer Str.","2","'DHL Paketshop'","'PAKETSHOP'","Kiosk Abbas",52.4143796,9.7121421,4291924
+30449,"'Hannover'","'Linden-Mitte'","Bardowicker Str.","10","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.368257,9.704128,30449210
+30449,"'Hannover'","'Linden-Mitte'","Nieschlagstr.","1","'DHL Paketshop'","'PAKETSHOP'","Kiosk",52.36734,9.7082368,4100243
+30449,"'Hannover'","'Linden-Süd'","Bornumer Str.","1","'DHL Paketshop'","'PAKETSHOP'","Havel Kiosk",52.3609129,9.7136386,4291514
+30449,"'Hannover'","'Linden-Mitte'","Niemeyerstr.","1","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Finanzcenter",52.3663178,9.7137527,4139467
+30449,"'Hannover'","'Linden-Süd'","Göttinger Str.","30","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3581832,9.7155975,4126902
+30449,"'Hannover'","'Linden-Mitte'","Hohe Str.","11","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.366199,9.717209,30449144
+30449,"'Hannover'","'Linden-Süd'","Deisterstr.","27","'DHL Paketshop'","'PAKETSHOP'","Systempartner Computervertriebs GmbH & Co. KG",52.365518,9.7191111,4122861
+30449,"'Hannover'","'Linden-Mitte'","Falkenstr.","2","'DHL Paketshop'","'PAKETSHOP'","Kartenvorverkauf Salge",52.3675252,9.7192986,4288724
+30449,"'Hannover'","'Linden-Süd'","Ricklinger Str.","128","'DHL Paketshop'","'PAKETSHOP'","Kiosk",52.3580192,9.7198373,4095658
+30451,"'Hannover'","'Linden-Nord'","Windheimstr.","4","'DHL Packstation'","'PACKSTATION_PS_DE'","links vom Freizeitheim Linden",52.374756,9.700174,30451119
+30451,"'Hannover'","'Linden-Nord'","Limmerstr.","72","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Akbaba - Shop in Shop",52.3744698,9.7047881,4066448
+30451,"'Hannover'","'Linden-Nord'","Kötnerholzweg","8","'DHL Paketshop'","'PAKETSHOP'","Kiosk Die Ecke",52.3713984,9.7063783,4291763
+30451,"'Hannover'","'Linden-Nord'","Limmerstr.","43","'DHL Paketshop'","'PAKETSHOP'","Buchhandlung Baumgart",52.3731888,9.7080946,4113555
+30451,"'Hannover'","'Linden-Nord'","Pfarrlandplatz","1","'DHL Paketshop'","'PAKETSHOP'","Adrian Fruth & Marco Winkler GbR",52.3751006,9.7082026,4126928
+30451,"'Hannover'","'Linden-Nord'","Fössestr.","14","'DHL Paketshop'","'PAKETSHOP'","FD Fössedruck",52.370892,9.7108458,4129908
+30451,"'Hannover'","'Linden-Nord'","Limmerstr.","14","'DHL Paketshop'","'PAKETSHOP'","Harmsen Zigarre & Whisky",52.3723051,9.7111483,4120518
+30453,"'Hannover'","'Ahlem'","Gartenstr.","30","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.377353,9.660223,30453206
+30453,"'Hannover'","'Ahlem'","Heisterbergallee","99","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.3767031,9.6603138,4117268
+30453,"'Hannover'","'Ahlem'","Richard-Lattorf-Str.","51","'DHL Paketshop'","'PAKETSHOP'","Restore Hannover",52.3782664,9.6640471,4115504
+30453,"'Hannover'","'Ahlem'","Ernst-Cammann-Str.","6","'DHL Paketshop'","'PAKETSHOP'","Kiosk Kaur",52.3826194,9.6672227,4116557
+30453,"'Hannover'","'Ahlem'","Am Bahndamm","17","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.3851963,9.6706592,4109824
+30453,"'Hannover'","'Limmer'","Wunstorfer Str.","86","'DHL Paketshop'","'PAKETSHOP'","Frische Ecke",52.3796639,9.6850146,4109788
+30453,"'Hannover'","'Limmer'","Harenberger Str.","45","'DHL Paketshop'","'PAKETSHOP'","Millenium Kiosk",52.3771385,9.6850444,4135681
+30453,"'Hannover'","'Limmer'","Kirchhöfnerstr.","8","'DHL Paketshop'","'PAKETSHOP'","Kiosk Ünal",52.3772819,9.6890443,4131944
+30453,"'Hannover'","'Bornum'","Bornumer Str.","141","'Postfiliale'","'RETAIL_OUTLET'","Jonas KG - Im Kaufland Hannover Bornum",52.3521542,9.6928235,4122294
+30453,"'Hannover'","'Bornum'","Bornumer Str.","141","'DHL Packstation'","'PACKSTATION_PS_DE'","Kaufland",52.352107,9.693434,30453225
+30453,"'Hannover'","'Limmer'","Wunstorfer Str.","22","'Postfiliale'","'RETAIL_OUTLET'","Stichweh Textilpfege GmbH",52.3763833,9.69356,4136618
+30453,"'Hannover'","'Limmer'","Franz-Nause-Str.","1-3","'DHL Paketshop'","'PAKETSHOP'","Kiosk 12",52.375167,9.694551,4287466
+30453,"'Hannover'","'Limmer'","Franz-Nause-Str.","1-3","'DHL Packstation'","'PACKSTATION_PS_DE'","Einkaufszentrum",52.374911,9.694716,30453130
+30453,"'Hannover'","'Linden-Mitte'","Davenstedter Str.","80","'Postfiliale'","'RETAIL_OUTLET'","Pressecentrum Ritter im Real Markt",52.3662225,9.6986995,4088673
+30453,"'Hannover'","'Linden-Süd'","Bornumer Str.","66a","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.359967,9.707322,30453205
+30453,"'Hannover'","'Ricklingen'","Mercedesstr.","1","'DHL Paketshop'","'PAKETSHOP'","ConBox GmbH",52.3472918,9.7092696,4123855
+30453,"'Hannover'","'Bornum'","Mercedesstr.","5","'Paketbox'","'PAKETBOX'",,52.3491046,9.7097018,826
+30455,"'Hannover'","'Badenstedt'","Lenther Chaussee","7","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","PENNY Markt",52.35685,9.656569,30455161
+30455,"'Hannover'","'Davenstedt'","Davenstedter Str.","234-240","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.364867,9.668398,30455134
+30455,"'Hannover'","'Badenstedt'","Badenstedter Str.","225","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Demirezen",52.3547585,9.670453,4133242
+30455,"'Hannover'","'Davenstedt'","Woermannstr.","12","'DHL Packstation'","'PACKSTATION_PS_DE'","Feuerwehrhaus",52.357301,9.671177,30455120
+30455,"'Hannover'","'Badenstedt'","Badenstedter Str.","204","'DHL Paketshop'","'PAKETSHOP'","Toto Lotto Badenstedt",52.355844,9.6717684,4106917
+30455,"'Hannover'","'Davenstedt'","Wegsfeld","42","'DHL Paketshop'","'PAKETSHOP'","Tabak - Lotto-Toto",52.3634385,9.6734945,4093842
+30455,"'Hannover'","'Badenstedt'","Badenstedter Str.","130","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.359594,9.6785756,4132837
+30455,"'Hannover'","'Badenstedt'","Badenstedter Str.","130","'DHL Packstation'","'PACKSTATION_PS_DE'","Badenstedter Carré",52.359805,9.678714,30455141
+30457,"'Hannover'","'Wettbergen'","Hauptstr.","16","'DHL Paketshop'","'PAKETSHOP'","Express Änderung Schneiderei SA",52.3271988,9.684893,4129606
+30457,"'Hannover'","'Mühlenberg'","Leuschnerstr.","40","'DHL Paketshop'","'PAKETSHOP'","Kiosk Klejmann",52.3432824,9.6867901,4100533
+30457,"'Hannover'","'Wettbergen'","An der Kirche","8","'DHL Paketshop'","'PAKETSHOP'","Contail GmbH",52.328895,9.691143,4127513
+30457,"'Hannover'","'Mühlenberg'","Mühlenbergzentrum","12","'Postfiliale'","'RETAIL_OUTLET'","Base/Vodafone",52.3405849,9.6922639,4114203
+30457,"'Hannover'","'Mühlenberg'","Stauffenbergplatz","1","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.342253,9.692752,30457117
+30457,"'Hannover'","'Mühlenberg'","Tresckowstr.","43","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.337613,9.693621,30457203
+30457,"'Hannover'","'Wettbergen'","Auf dem Sohlorte","1","'Postfiliale'","'RETAIL_OUTLET'","Rewe/Lebensmittel",52.3287241,9.7049587,4126036
+30459,"'Hannover'","'Oberricklingen'","Wallensteinstr.","119","'DHL Paketshop'","'PAKETSHOP'","VIKOLAtours Maurer & Ostrov GbR",52.3410431,9.7015692,4131912
+30459,"'Hannover'","'Oberricklingen'","Springer Str.","29","'DHL Paketshop'","'PAKETSHOP'","Der kleine Laden",52.3444046,9.7043616,4117704
+30459,"'Hannover'","'Oberricklingen'","Pyrmonter Str.","19","'DHL Paketshop'","'PAKETSHOP'","Die Wunderschere",52.3432764,9.7091634,4097927
+30459,"'Hannover'","'Oberricklingen'","Wallensteinstr.","15","'DHL Paketshop'","'PAKETSHOP'","Bäckerei Krause e.K.",52.3419028,9.7146113,4123059
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","199","'DHL Paketshop'","'PAKETSHOP'","Evim Market",52.3366939,9.7172451,4290638
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","107","'Paketbox'","'PAKETBOX'",,52.3434051,9.7172865,836
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","107","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.343405,9.717287,30459133
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","119","'DHL Paketshop'","'PAKETSHOP'","Kiosk Ates",52.3422669,9.7173521,4119099
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","83","'DHL Paketshop'","'PAKETSHOP'","Wucherpfennig GmbH",52.3454672,9.7174731,4131502
+30459,"'Hannover'","'Oberricklingen'","Göttinger Chaussee","83","'Paketbox'","'PAKETBOX'",,52.3454667,9.7174732,1137
+30459,"'Hannover'","'Ricklingen'","Ricklinger Stadtweg","99","'DHL Paketshop'","'PAKETSHOP'","Kiosk Nafkosch",52.3517962,9.7222402,4130142
+30459,"'Hannover'","'Ricklingen'","Ricklinger Stadtweg","36","'DHL Paketshop'","'PAKETSHOP'","all in one game & handy shop",52.3462483,9.7245245,4124968
+30459,"'Hannover'","'Ricklingen'","Ricklinger Stadtweg","10","'DHL Paketshop'","'PAKETSHOP'","First Class Kiosk Turan",52.3446143,9.724982,4112698
+30519,"'Hannover'","'Döhren'","Landwehrstr.","89","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Tunay",52.3363766,9.7614056,4133188
+30519,"'Hannover'","'Waldhausen'","Hildesheimer Str.","205","'DHL Paketshop'","'PAKETSHOP'","FRElektronik",52.3455088,9.762432,4126496
+30519,"'Hannover'","'Döhren'","Fiedelerstr.","12","'DHL Paketshop'","'PAKETSHOP'","Kiosk Simsek",52.3415607,9.7637847,4122208
+30519,"'Hannover'","'<undefined>'","Borgentrickstr.","8-10","'DHL Paketshop'","'PAKETSHOP'","Wucherpfennig GmbH",52.3385846,9.766547,4131524
+30519,"'Hannover'","'Döhren'","Hildesheimer Str.","268","'DHL Paketshop'","'PAKETSHOP'","Schreibwaren Kaya",52.3376846,9.7686321,4084883
+30519,"'Hannover'","'Döhren'","Peiner Str.","1","'DHL Paketshop'","'PAKETSHOP'","Stichweh Textilreinigung",52.338262,9.7689934,4120216
+30519,"'Hannover'","'Döhren'","An der Wollebahn","3","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","PENNY Markt",52.335481,9.772757,30519162
+30519,"'Hannover'","'Waldheim'","Liebrechtstr.","63","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.3505422,9.7733304,4128612
+30519,"'Hannover'","'Döhren'","An der Wollebahn","4","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.335121,9.773476,30519157
+30519,"'Hannover'","'Döhren'","An der Wollebahn","4","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3353433,9.7736697,4124842
+30519,"'Hannover'","'Wülfel'","Hildesheimer Str.","340","'Postfiliale'","'RETAIL_OUTLET'","ITALY FLAIR E-SMOKERS",52.3308933,9.7745587,4127928
+30519,"'Hannover'","'Döhren'","Holthusenstr.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Telekomgebäude",52.338366,9.776239,30519103
+30519,"'Hannover'","'Seelhorst'","Eupener Str.","1","'Postfiliale'","'RETAIL_OUTLET'","Shop 68",52.3430307,9.7801132,4130121
+30519,"'Hannover'","'Wülfel'","Hildesheimer Str.","401","'DHL Packstation'","'PACKSTATION_PS_DE'","Aldi Markt",52.327397,9.782606,30519218
+30519,"'Hannover'","'Wülfel'","Hildesheimer Str.","413","'DHL Packstation'","'PACKSTATION_PS_DE'","EDEKA Markt",52.324687,9.783593,30519208
+30519,"'Hannover'","'Mittelfeld'","Karlsruher Str.","2","'DHL Paketshop'","'PAKETSHOP'","REWE Dimitrij Herhold OHG",52.3303928,9.7876167,4111752
+30519,"'Hannover'","'Mittelfeld'","Karlsruher Str.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.330826,9.788443,30519147
+30519,"'Hannover'","'Mittelfeld'","Am Mittelfelde","81","'DHL Paketshop'","'PAKETSHOP'","Schlüsseldienst & Kiosk Bayat Poor",52.3320297,9.7916713,4291439
+30519,"'Hannover'","'Mittelfeld'","Karlsruher Str.","37","'DHL Paketshop'","'PAKETSHOP'","JET Tankstelle",52.3270955,9.7925277,4118460
+30519,"'Hannover'","'Mittelfeld'","Am Mittelfelde","117","'Postfiliale'","'RETAIL_OUTLET'","CENTIK",52.3342283,9.7981703,4141166
+30539,"'Hannover'","'Bemerode'","Expo Plaza","11","'Postfiliale'","'RETAIL_OUTLET'","Berufsbildungswerk Annastift",52.3212118,9.8184716,4085379
+30539,"'Hannover'","'Bemerode'","Bemeroder Str.","93","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.346239,9.819948,30539116
+30539,"'Hannover'","'Bemerode'","Bemeroder Str.","93","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3462587,9.8205154,4124843
+30539,"'Hannover'","'Bemerode'","Hinter dem Dorfe","3","'DHL Paketshop'","'PAKETSHOP'","Vollgut Getränkemarkt",52.3415299,9.8266304,4111291
+30539,"'Hannover'","'Bemerode'","Brabeckstr.","155","'Paketbox'","'PAKETBOX'",,52.3439573,9.8271878,1111
+30539,"'Hannover'","'Bemerode'","Bemeroder Rathausplatz","1","'DHL Packstation'","'PACKSTATION_PS_DE'","Postfiliale (Außenbereich rechts)",52.346213,9.827714,30539118
+30539,"'Hannover'","'Bemerode'","Bemeroder Rathausplatz","9","'DHL Paketshop'","'PAKETSHOP'","Schwarz Drogeriemarkt",52.3470147,9.8281825,4133796
+30539,"'Hannover'","'Bemerode'","Wülferoder Str.","51","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren",52.3385492,9.8328073,4103810
+30539,"'Hannover'","'Bemerode'","Wülferoder Str.","51","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.339068,9.832903,30539214
+30559,"'Hannover'","'Kirchrode'","Tiergartenstr.","34","'DHL Packstation'","'PACKSTATION_PS_DE'","gegenüber Wohnstift Birkenhof",52.363492,9.815281,30559110
+30559,"'Hannover'","'Kirchrode'","Großer Hillen","4","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.3611528,9.8267106,4108811
+30559,"'Hannover'","'Anderten'","Lehrter Str.","32","'DHL Paketshop'","'PAKETSHOP'","Lebensmittel Schengo",52.3592772,9.8512214,4132726
+30559,"'Hannover'","'Anderten'","Ohefeldweg","15","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.356894,9.853154,30559132
+30559,"'Hannover'","'Anderten'","Ohefeldweg","9","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3574629,9.8544273,4135701
+30559,"'Hannover'","'Anderten'","Gollstr.","20","'Postfiliale'","'RETAIL_OUTLET'","Husak KG",52.3610551,9.8588984,4035829
+30559,"'Hannover'","'Anderten'","Anderter Str.","128","'DHL Paketshop'","'PAKETSHOP'","Getränke-Quelle Hannover",52.3715257,9.8620441,4101265
+30559,"'Hannover'","'Anderten'","Kleiner Holzhägen","2","'Paketbox'","'PAKETBOX'",,52.3568579,9.8719895,827
+30625,"'Hannover'","'Kleefeld'","Kirchröder Str.","2","'Postfiliale'","'RETAIL_OUTLET'",,52.372266,9.7845621,4130650
+30625,"'Hannover'","'Kleefeld'","Berckhusenstr.","14","'DHL Paketshop'","'PAKETSHOP'","Kiosk Brimami",52.3741977,9.7913039,4139649
+30625,"'Hannover'","'Kleefeld'","Wallmodenstr.","10","'DHL Packstation'","'PACKSTATION_PS_DE'","Deutsche Post Gebäude",52.372415,9.79182,30625108
+30625,"'Hannover'","'Kleefeld'","Pertzstr.","3","'Postfiliale'","'RETAIL_OUTLET'","PC-Nothilfe Sadraei",52.3765945,9.7953672,4136297
+30625,"'Hannover'","'Heideviertel'","Heidering","23","'DHL Packstation'","'PACKSTATION_PS_DE'","Postgebäude",52.382116,9.811939,30625107
+30625,"'Hannover'","'Heideviertel'","Misburger Str.","90","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Drews",52.3800798,9.8132378,4075457
+30627,"'Hannover'","'Groß Buchholz'","Roderbruchmarkt","7-9","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.3890225,9.8114346,116017
+30627,"'Hannover'","'Groß Buchholz'","Heisenbergstr.","14","'DHL Paketshop'","'PAKETSHOP'","Wucherpfennig GmbH",52.3878871,9.813117,4131506
+30627,"'Hannover'","'Groß Buchholz'","Winkelriede","8","'DHL Paketshop'","'PAKETSHOP'","Xals Barber Shop",52.3882275,9.8141772,4289162
+30627,"'Hannover'","'Misburg-Nord'","Louise-Schroeder-Str.","39","'DHL Paketshop'","'PAKETSHOP'","Kiosk Luise",52.3877286,9.8296852,4099080
+30627,"'Hannover'","'Misburg-Nord'","Hannoversche Str.","92","'Postfiliale'","'RETAIL_OUTLET'","Postagentur Misburg",52.3866933,9.8339941,4016522
+30629,"'Hannover'","'Misburg-Nord'","Götzstr.","2","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Amsterdam",52.3972757,9.832174,4129835
+30629,"'Hannover'","'Misburg-Nord'","Buchholzer Str.","40","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.393956,9.84489,30629104
+30629,"'Hannover'","'Misburg-Nord'","Buchholzer Str.","10","'Postfiliale'","'RETAIL_OUTLET'","Orthopädie-Schuhtechnik",52.391297,9.8515369,4289259
+30629,"'Hannover'","'Misburg-Nord'","Waldstr.","1","'DHL Paketshop'","'PAKETSHOP'","Kleeblatt",52.3907926,9.8537449,4125973
+30629,"'Hannover'","'Misburg-Nord'","Anderter Str.","72","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.381393,9.861457,30629127
+30655,"'Hannover'","'Groß Buchholz'","Podbielskistr.","292","'DHL Paketshop'","'PAKETSHOP'","Kiosk Podbi",52.4025542,9.7906028,4097889
+30655,"'Hannover'","'Groß Buchholz'","Läuferweg","20","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter",52.402905,9.79861,30655106
+30655,"'Hannover'","'Groß Buchholz'","Läuferweg","20","'DHL Packstation'","'PACKSTATION_PS_DE'","Postgebäude Betriebshof",52.403252,9.7994,30655140
+30655,"'Hannover'","'<undefined>'","Sven-Hedin-Str.","7","'DHL Packstation'","'PACKSTATION_PS_DE'","Postfiliale",52.401711,9.823224,30655105
+30655,"'Hannover'","'Groß Buchholz'","Sven-Hedin-Str.","2","'DHL Paketshop'","'PAKETSHOP'","Xals Barber Shop",52.4011195,9.8234428,4289158
+30657,"'Hannover'","'Sahlkamp'","Sahlkampmarkt","17","'Postfiliale'","'RETAIL_OUTLET'","REISEBÜRO FLAMINGO TRAVEL",52.4148856,9.778498,4046969
+30657,"'Hannover'","'Bothfeld'","Sündernstr.","22","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.41277,9.792295,30657135
+30657,"'Hannover'","'Bothfeld'","Burgwedeler Str.","29","'DHL Paketshop'","'PAKETSHOP'","Vollgut Getränke Fachmart Waldhoff GmbH Höxter-Kassel-Erfurt",52.4320067,9.8012247,4111255
+30657,"'Hannover'","'Isernhagen-Süd'","Prüßentrift","77","'DHL Packstation'","'PACKSTATION_PS_DE'","HEM Tankstelle",52.432842,9.802224,30657201
+30657,"'Hannover'","'Isernhagen-Süd'","Prüßentrift","83","'Postfiliale'","'RETAIL_OUTLET'","PAPER MOON",52.435224,9.8028716,4012222
+30659,"'Hannover'","'Bothfeld'","Kurze-Kamp-Str.","1a","'Postfiliale'","'RETAIL_OUTLET'","Skriptum",52.4201319,9.7990547,4125902
+30659,"'Hannover'","'Bothfeld'","Sutelstr.","2","'DHL Paketshop'","'PAKETSHOP'","Kiosk Cicek",52.4069344,9.8003,4130450
+30659,"'Hannover'","'Bothfeld'","Adolf-Emmelmann-Str.","7","'DHL Paketshop'","'PAKETSHOP'","Stichweg Textilreinigung GmbH",52.409044,9.8018235,4139523
+30659,"'Hannover'","'Bothfeld'","Gernsstr.","19","'DHL Paketshop'","'PAKETSHOP'","Bäckerei Die Drei",52.4169469,9.8039842,4097318
+30659,"'Hannover'","'Lahe'","Kirchhorster Str.","24","'DHL Paketshop'","'PAKETSHOP'","Aral Tankstelle",52.4145227,9.8260362,4096925
+30823,"'Garbsen'","'<undefined>'","Beethovenstr.","24","'DHL Paketshop'","'PAKETSHOP'","Kiosk Sengül",52.4212557,9.5856466,4124895
+30823,"'Garbsen'","'Altgarbsen'","Berenbosteler Str.","92","'Postfiliale'","'RETAIL_OUTLET'","Jantzon Tankstellen GmbH",52.4172837,9.5877539,4138189
+30823,"'Garbsen'","'Altgarbsen'","Berenbosteler Str.","76","'DHL Paketshop'","'PAKETSHOP'","Rakhshandeh/Damfastore Garbsen",52.4226677,9.5914123,4137648
+30823,"'Garbsen'","'Auf der Horst'","Auf der Horst","66-70","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.421687,9.594605,30823204
+30823,"'Garbsen'","'Garbsen-Mitte'","Havelser Str.","1","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.4259444,9.5963806,50868
+30823,"'Garbsen'","'Altgarbsen'","Sandstr.","38","'DHL Paketshop'","'PAKETSHOP'","TRIKOM Vertriebs GmbH",52.4171225,9.596949,4110955
+30823,"'Garbsen'","'Auf der Horst'","Planetenring","25-27","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.4181347,9.5973347,4114025
+30823,"'Garbsen'","'Garbsen-Mitte'","Havelser Str.","10","'Postfiliale'","'RETAIL_OUTLET'","WOLSDORFF",52.425676,9.5979449,4076906
+30823,"'Garbsen'","'<undefined>'","Antareshof","3","'DHL Packstation'","'PACKSTATION_PS_DE'","Postfiliale (Hof)",52.419231,9.601261,30823114
+30823,"'Garbsen'","'Auf der Horst'","Marshof","13","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Lotto",52.4180386,9.6027217,4114523
+30823,"'Garbsen'","'Havelse'","Hannoversche Str.","88","'DHL Paketshop'","'PAKETSHOP'","Combi Verbrauchermarkt",52.4083006,9.6038456,4119397
+30823,"'Garbsen'","'Havelse'","Hannoversche Str.","48-50","'Postfiliale'","'RETAIL_OUTLET'","Stein Euronics electronic shop",52.405366,9.6107375,115917
+30826,"'Garbsen'","'Frielingen'","Mühlenweg","30","'Postfiliale'","'RETAIL_OUTLET'",,52.469324,9.5243659,4024809
+30826,"'Garbsen'","'Horst'","Andreaestr.","56","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.4411764,9.5444129,4127944
+30826,"'Garbsen'","'Horst'","Steinwartskamp","1","'DHL Paketshop'","'PAKETSHOP'","Combi Verbrauchermarkt",52.4402764,9.5536616,4119398
+30826,"'Garbsen'","'Osterwald O. E.'","Hauptstr.","223","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren und Postagentur Osterwald",52.4587495,9.5777201,4066025
+30827,"'Garbsen'","'Berenbostel'","Kästnerstr.","2","'Postfiliale'","'RETAIL_OUTLET'","Gold An- und Verkauf",52.4439772,9.6083094,4133334
+30827,"'Garbsen'","'Berenbostel'","Siemensstr.","1","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.44352,9.609556,30827228
+30827,"'Garbsen'","'Berenbostel'","Siemensstr.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.443199,9.610789,30827138
+30827,"'Garbsen'","'Berenbostel'","Rote Reihe","1","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.4366024,9.6118593,4116108
+30827,"'Garbsen'","'Berenbostel'","Bremer Str.","3","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.42628,9.621739,30827146
+30827,"'Garbsen'","'Stelingen'","Engelbosteler Str.","6","'Postfiliale'","'RETAIL_OUTLET'","Kleinschreibwaren",52.4491561,9.624383,4067071
+30851,"'Langenhagen'","'Alt-Langenhagen'","Hans-Böckler-Str.","60-66","'DHL Paketshop'","'PAKETSHOP'","WOLSDORFF",52.4300735,9.7162107,4116176
+30851,"'Langenhagen'","'Langenhagen'","Hans-Böckler-Str.","60-66","'DHL Packstation'","'PACKSTATION_PS_DE'","famila Markt",52.429397,9.716274,30851212
+30851,"'Langenhagen'","'Alt-Langenhagen'","Hans-Böckler-Str.","56","'Postfiliale'","'RETAIL_OUTLET'","Kiebitzmarkt Langenhagen",52.4305897,9.717547,4089363
+30851,"'Langenhagen'","'Langenhagen'","Liebigstr.","7a","'DHL Paketshop'","'PAKETSHOP'","Kiosk Murad Elias",52.4258292,9.7255217,4138093
+30851,"'Langenhagen'","'Alt-Langenhagen'","Godshorner Str.","9","'DHL Paketshop'","'PAKETSHOP'","Kiosk Aksakal",52.4384782,9.7315125,4120686
+30851,"'Langenhagen'","'Langenhagen'","Söseweg","5","'DHL Paketshop'","'PAKETSHOP'","Kiosk Späti",52.4375341,9.737769,4291354
+30851,"'Langenhagen'","'Alt-Langenhagen'","Kurt-Schumacher-Allee","44","'DHL Paketshop'","'PAKETSHOP'","Kiosk Lührs",52.4360394,9.7478274,4119000
+30853,"'Langenhagen'","'Langenhagen'","Walsroder Str.","78","'DHL Paketshop'","'PAKETSHOP'","Ranzenmaxx",52.4410629,9.7358098,4292525
+30853,"'Langenhagen'","'Langenhagen'","Walsroder Str.","113b","'DHL Paketshop'","'PAKETSHOP'","Dampfpalast",52.4419004,9.7367792,4290639
+30853,"'Langenhagen'","'Alt-Langenhagen'","Walsroder Str.","102","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.444045,9.737245,30853131
+30853,"'Langenhagen'","'Alt-Langenhagen'","Marktplatz","5","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","PENNY Markt Nebeneingang Schützenstr.",52.438625,9.738924,30853166
+30853,"'Langenhagen'","'Alt-Langenhagen'","Konrad-Adenauer-Str.","10","'Paketbox'","'PAKETBOX'",,52.4399227,9.7392477,685
+30853,"'Langenhagen'","'Alt-Langenhagen'","Konrad-Adenauer-Str.","10","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.440496,9.739529,30853137
+30853,"'Langenhagen'","'Alt-Langenhagen'","Konrad-Adenauer-Str.","10","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter Eingang Postfachanlage",52.439773,9.739548,30853113
+30853,"'Langenhagen'","'Alt-Langenhagen'","Walsroder Str.","127","'DHL Paketshop'","'PAKETSHOP'","Kiosk Ibrahim",52.4473388,9.7400198,4129961
+30853,"'Langenhagen'","'Alt-Langenhagen'","Walsroder Str.","123","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","REWE Markt",52.446573,9.740582,30853165
+30853,"'Langenhagen'","'Langenhagen'","Walsroder Str.","148","'DHL Paketshop'","'PAKETSHOP'","Kiosk Demiray",52.4489281,9.7409753,4139558
+30853,"'Langenhagen'","'Langenhagen'","Ostpassage","11","'Postfiliale'","'RETAIL_OUTLET'",,52.4389216,9.7417396,4135750
+30853,"'Langenhagen'","'Alt-Langenhagen'","Am Pferdemarkt","9","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.452984,9.742416,30853136
+30855,"'Langenhagen'","'Engelbostel'","Heidestr.","53","'DHL Paketshop'","'PAKETSHOP'","Landhandel Puhl",52.4520338,9.6618849,4108056
+30855,"'Langenhagen'","'Engelbostel'","Heidestr.","4","'Postfiliale'","'RETAIL_OUTLET'","Zeitschriften / Lotto-Toto",52.4472297,9.6669207,4129943
+30855,"'Langenhagen'","'Godshorn'","Desbrocksriede","2","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.431941,9.679528,30855221
+30855,"'Langenhagen'","'<undefined>'","Alt-Godshorn","69a","'Postfiliale'","'RETAIL_OUTLET'",,52.4386159,9.7079437,4123889
+30855,"'Langenhagen'","'Kaltenweide'","Kaltenweider Platz","7","'Postfiliale'","'RETAIL_OUTLET'","Milchzahn & mehr",52.4798797,9.7351503,4087833
+30855,"'Langenhagen'","'Krähenwinkel'","Eichstr.","15","'Postfiliale'","'RETAIL_OUTLET'","Lotto/ Toto",52.4604563,9.7432754,4093736
+30880,"'Laatzen'","'Alt-Laatzen'","Hildesheimer Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Q 1",52.3218471,9.7836143,4134159
+30880,"'Laatzen'","'Alt-Laatzen'","Hildesheimer Str.","68","'DHL Paketshop'","'PAKETSHOP'","Kiosk Haidar",52.3148855,9.7916245,4289119
+30880,"'Laatzen'","'Alt-Laatzen'","Karlsruher Str.","8","'DHL Packstation'","'PACKSTATION_PS_DE'","Kaufland",52.31884,9.793394,30880219
+30880,"'Laatzen'","'Alt-Laatzen'","Karlsruher Str.","8","'Postfiliale'","'RETAIL_OUTLET'","Tabakshop/Lotto",52.3199981,9.7955125,4123537
+30880,"'Laatzen'","'Grasdorf'","Am Kamp","11","'DHL Packstation'","'PACKSTATION_PS_DE'","Nahkauf",52.301591,9.804733,30880211
+30880,"'Laatzen'","'Grasdorf'","Ahornstr.","9","'Postfiliale'","'RETAIL_OUTLET'","Hannovertextil",52.3029413,9.806909,4128422
+30880,"'Laatzen'","'Laatzen-Mitte'","Robert-Koch-Str.","1","'DHL Paketshop'","'PAKETSHOP'","Expert Handels GmbH",52.3065448,9.8119137,4125964
+30880,"'Laatzen'","'Laatzen-Mitte'","Robert-Koch-Str.","3","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.307004,9.8126615,8917
+30880,"'Laatzen'","'Laatzen-Mitte'","Robert-Koch-Str.","3","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter",52.306874,9.813001,30880115
+30880,"'Laatzen'","'Laatzen-Mitte'","Schubertweg","3","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.300705,9.817711,30880142
+30880,"'Laatzen'","'Rethen'","Hildesheimer Str.","350","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI-Markt",52.285055,9.820936,30880209
+30880,"'Laatzen'","'Rethen'","Zur Sehlwiese","1","'Postfiliale'","'RETAIL_OUTLET'","LOTTO u. POSTAGENTUR RETHEN",52.2847183,9.8217821,4012120
+30880,"'Laatzen'","'Laatzen-Mitte'","Lange Weihe","67a","'Postfiliale'","'RETAIL_OUTLET'","Kiosk 67 A",52.3053087,9.8221046,4290911
+30880,"'Laatzen'","'Gleidingen'","Oesselser Str.","16","'Postfiliale'","'RETAIL_OUTLET'","Lotto/ Toto",52.273731,9.8440043,4138781
+30880,"'Laatzen'","'Ingeln-Oesselse'","Rotdornallee","6","'Postfiliale'","'RETAIL_OUTLET'",,52.2817228,9.8818402,4065322
+30890,"'Barsinghausen'","'Bantorf'","An der Windmühle","6","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.331211,9.421452,30890153
+30890,"'Barsinghausen'","'Hohenbostel'","Heerstr.","10","'Postfiliale'","'RETAIL_OUTLET'","Bäckerei H. Höner",52.3202597,9.4328426,4134276
+30890,"'Barsinghausen'","'Barsinghausen'","Kaltenbornstr.","26","'DHL Paketshop'","'PAKETSHOP'","Kim's Spielzeugwelt",52.3044033,9.4540478,4134555
+30890,"'Barsinghausen'","'Barsinghausen'","Marktstr.","24","'Postfiliale'","'RETAIL_OUTLET'","Easy Smoke & More",52.3025047,9.4619072,4130675
+30890,"'Barsinghausen'","'Barsinghausen'","Poststr.","3","'Paketbox'","'PAKETBOX'",,52.3044879,9.4652145,206
+30890,"'Barsinghausen'","'Barsinghausen'","Poststr.","3","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter",52.304488,9.465215,30890124
+30890,"'Barsinghausen'","'Barsinghausen'","Ladestr.","1","'Postfiliale'","'RETAIL_OUTLET'","Kaufland",52.3044789,9.4691588,4117736
+30890,"'Barsinghausen'","'Barsinghausen'","Egestorfer Str.","22","'DHL Packstation'","'PACKSTATION_PS_DE'","ESSO Tankstelle",52.298053,9.474952,30890103
+30890,"'Barsinghausen'","'Kirchdorf'","Egestorfer Str.","98","'Postfiliale'","'RETAIL_OUTLET'","Kleine Post",52.2912277,9.4876122,4131527
+30890,"'Barsinghausen'","'Barsinghausen'","Reihekamp","12","'DHL Paketshop'","'PAKETSHOP'","REWE Thorsten Krause oHG",52.3034353,9.4883245,4124958
+30890,"'Barsinghausen'","'Egestorf'","Egestorfer Warte","1","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.290068,9.509332,30890104
+30890,"'Barsinghausen'","'Egestorf'","Wennigser Str.","23","'Postfiliale'","'RETAIL_OUTLET'",,52.2884984,9.5146909,4121680
+30900,"'Wedemark'","'<undefined>'","Königsberger Str.","14a","'Postfiliale'","'RETAIL_OUTLET'",,52.4996661,9.6300515,4025049
+30900,"'Wedemark'","'Brelingen'","Marktstr.","1","'Postfiliale'","'RETAIL_OUTLET'",,52.5547729,9.6810883,4065285
+30900,"'Wedemark'","'Elze'","Walsroder Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Hannelore Seewald-Riechelmann",52.5796359,9.7285277,4071129
+30900,"'Wedemark'","'Mellendorf'","Wedemarkstr.","50","'Postfiliale'","'RETAIL_OUTLET'","Postpartneragentur",52.5466861,9.7361954,4066646
+30900,"'Wedemark'","'Mellendorf'","Wedemarkstr.","85","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.546697,9.744079,30900222
+30900,"'Wedemark'","'Mellendorf'","Wedemarkstr.","96","'DHL Packstation'","'PACKSTATION_PS_DE'","famila center",52.54758,9.74607,30900125
+30900,"'Wedemark'","'Mellendorf'","Wedemarkstr.","96","'Postfiliale'","'RETAIL_OUTLET'","Famila",52.548471,9.7465111,4081911
+30900,"'Wedemark'","'Bissendorf'","Scherenbosteler Str.","14","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.524949,9.752748,30900223
+30900,"'Wedemark'","'Bissendorf'","Mellendorfer Str.","1A","'Postfiliale'","'RETAIL_OUTLET'","Martina Masur",52.5248753,9.7546039,4074748
+30916,"'Isernhagen'","'Isernhagen H.B.'","Burgwedeler Str.","139b","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.4755643,9.7965515,4119290
+30916,"'Isernhagen'","'Isernhagen N.B.'","Am Ortfelde","67","'Postfiliale'","'RETAIL_OUTLET'",,52.45617,9.801375,4136369
+30916,"'Isernhagen'","'Altwarmbüchen'","Opelstr.","3","'Postfiliale'","'RETAIL_OUTLET'","WOLSDORFF",52.4239492,9.8360802,4073368
+30916,"'Isernhagen'","'Altwarmbüchen'","Opelstr.","10","'Postfiliale'","'RETAIL_OUTLET'","Staples",52.4243512,9.8362095,4102354
+30916,"'Isernhagen'","'Altwarmbüchen'","Krendelstr.","4","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.42506,9.842377,30916226
+30916,"'Isernhagen'","'Isernhagen F.B.'","Hauptstr.","99","'DHL Paketshop'","'PAKETSHOP'","Kiosk am Isernhagenhof",52.4721203,9.8482926,4125088
+30916,"'Isernhagen'","'<undefined>'","Bothfelder Str.","24-26","'Postfiliale'","'RETAIL_OUTLET'","SchreibWahn",52.4316136,9.8500967,4113252
+30916,"'Isernhagen'","'Isernhagen F.B.'","Lohner Weg","1","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.474111,9.856137,30916152
+30916,"'Isernhagen'","'Kirchhorst'","Tischlerstr.","5","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Kipolo",52.4401033,9.8799112,4134172
+30916,"'Isernhagen'","'Neuwarmbüchen'","Kurze Str.","3","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Neuwarmbüchen",52.4649781,9.8902309,4084615
+30916,"'Isernhagen'","'Kirchhorst'","Steller Str.","10","'DHL Paketshop'","'PAKETSHOP'","Freie Tankstelle Kirchhorst",52.4430937,9.8945324,4086246
+30926,"'Seelze'","'Gümmer'","Westfalenstr.","2","'Postfiliale'","'RETAIL_OUTLET'",,52.4088215,9.5294253,4102845
+30926,"'Seelze'","'Lohnde'","Hohe Str.","12","'Postfiliale'","'RETAIL_OUTLET'",,52.4041333,9.5602014,4020062
+30926,"'Seelze'","'Seelze'","Am Kreuzweg","6","'Postfiliale'","'RETAIL_OUTLET'","Heitmüller e.K.",52.3961523,9.5899957,4079959
+30926,"'Seelze'","'Seelze'","Brüggefeld","1","'DHL Paketshop'","'PAKETSHOP'","REWE Torben Dunker",52.3984215,9.5927752,4137483
+30926,"'Seelze'","'Seelze'","Hannoversche Str.","74","'DHL Paketshop'","'PAKETSHOP'","Tankstelle Burhan",52.3920207,9.6098948,4129264
+30926,"'Seelze'","'Seelze'","Hannoversche Str.","81","'DHL Packstation'","'PACKSTATION_PS_DE'","Star Tankstelle",52.393036,9.613831,30926154
+30926,"'Seelze'","'Seelze'","Hannoversche Str.","77","'DHL Packstation'","'PACKSTATION_PS_DE'","E-Center",52.392251,9.615221,30926126
+30926,"'Seelze'","'Letter'","Kastanienplatz","6","'Postfiliale'","'RETAIL_OUTLET'","M&Z Schreibwaren-Lottoannahme",52.3972052,9.6377703,4124566
+30938,"'Burgwedel'","'Fuhrberg'","Mellendorfer Str.","28","'Postfiliale'","'RETAIL_OUTLET'","M1 Tankstelle",52.5642993,9.8377026,4133678
+30938,"'Burgwedel'","'Großburgwedel'","In der Meineworth","25","'DHL Packstation'","'PACKSTATION_PS_DE'","Aldi Markt",52.491414,9.844211,30938102
+30938,"'Burgwedel'","'Großburgwedel'","Von-dem-Bussche-Str.","18","'DHL Paketshop'","'PAKETSHOP'","Ihr persönliches Kaufhaus",52.4950102,9.8596515,4102013
+30938,"'Burgwedel'","'Großburgwedel'","Burgdorfer Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Geschenkartikel",52.4900209,9.8602056,4127425
+30938,"'Burgwedel'","'Thönse'","Lange Reihe","36","'DHL Paketshop'","'PAKETSHOP'","barisch telekommunikation",52.4945354,9.9057918,4106919
+30938,"'Burgwedel'","'Wettmar'","Herrenhäuser Str.","3","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Unter den Eichen",52.5140856,9.9192709,4132489
+30938,"'Burgwedel'","'Engensen'","Thönser Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Firma Krull GbR",52.4984293,9.9404089,4088849
+30952,"'Ronnenberg'","'Weetzen'","Hauptstr.","17","'Postfiliale'","'RETAIL_OUTLET'","EDEKA nah und gut Bäckerei Ingo Bolte",52.2937392,9.6381211,4119112
+30952,"'Ronnenberg'","'Ronnenberg'","Über den Beeken","10","'Postfiliale'","'RETAIL_OUTLET'",,52.3189158,9.6571695,4136533
+30952,"'Ronnenberg'","'Empelde'","Berliner Str.","23","'DHL Paketshop'","'PAKETSHOP'","REWE Markt GmbH",52.3407812,9.6684693,4126838
+30952,"'Ronnenberg'","'Empelde'","Chemnitzer Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Pinar Tepe",52.3444894,9.668984,4071029
+30952,"'Ronnenberg'","'Ihme-Roloven'","Hannoversche Str.","59","'DHL Paketshop'","'PAKETSHOP'","Bäckerei Krause e.K.",52.2991739,9.6715155,4123014
+30966,"'Hemmingen'","'Hiddestorf'","Hauptstr.","40","'DHL Paketshop'","'PAKETSHOP'","Landbäckerei Bazdaras",52.2809577,9.7099829,4099173
+30966,"'Hemmingen'","'Devese'","Alfred-Bentz-Str.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.3146,9.720725,30966220
+30966,"'Hemmingen'","'Devese'","Alfred-Bentz-Str.","1","'Postfiliale'","'RETAIL_OUTLET'","Tabakwaren Niemeyer im Real Markt",52.3158863,9.7226816,4109988
+30966,"'Hemmingen'","'Hemmingen-Westerfeld'","Rathausplatz","8","'Postfiliale'","'RETAIL_OUTLET'",,52.325974,9.7264512,4122782
+30966,"'Hemmingen'","'Arnum'","Göttinger Str.","77","'Postfiliale'","'RETAIL_OUTLET'","Tabakstore",52.3018802,9.7405158,4119383
+30974,"'Wennigsen (Deister)'","'Wennigsen'","Hauptstr.","12","'Postfiliale'","'RETAIL_OUTLET'","Frischmarkt Gustav Nolting",52.2725114,9.568688,4071197
+30974,"'Wennigsen (Deister)'","'Wennigsen'","Degerser Str.","30","'DHL Paketshop'","'PAKETSHOP'","REWE Marco Startari OHG",52.2814398,9.575414,4129286
+30974,"'Wennigsen (Deister)'","'Wennigsen'","Degerser Str.","30","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.281421,9.57545,30974229
+30974,"'Wennigsen (Deister)'","'Bredenbeck'","An der Beeke","5","'Postfiliale'","'RETAIL_OUTLET'","Hofladen",52.254165,9.6165166,4019630
+30982,"'Pattensen'","'Pattensen'","Dammstr.","2","'DHL Paketshop'","'PAKETSHOP'","Die Bücherecke",52.2640678,9.7602062,4127382
+30982,"'Pattensen'","'Pattensen'","Auf der Burg","6","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Ayalti",52.2631651,9.764273,4127083
+30982,"'Pattensen'","'Pattensen'","Johann-Koch-Str.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Carlenberg Center",52.265601,9.770009,30982101
+30982,"'Pattensen'","'Pattensen'","Johann-Koch-Str.","2","'DHL Paketshop'","'PAKETSHOP'","Valora Retail Services GmbH",52.2648124,9.7704673,4100752
+30982,"'Pattensen'","'Schulenburg'","Hauptstr.","34A","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.1954645,9.7796874,4086942
+30982,"'Pattensen'","'Pattensen'","Ludwig-Erhard-Str.","39","'Paketbox'","'PAKETBOX'",,52.2592069,9.7809825,825
+30989,"'Gehrden'","'Gehrden'","Everloher Str.","1","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.3201,9.59335,30989224
+30989,"'Gehrden'","'Gehrden'","Nordstr.","2","'Postfiliale'","'RETAIL_OUTLET'","REWE Georg Szedlak oHG",52.3163736,9.5990064,4127923
+30989,"'Gehrden'","'Gehrden'","Steinweg","4","'DHL Paketshop'","'PAKETSHOP'","Büro & Co.",52.3147028,9.599049,4132104
+30989,"'Gehrden'","'Gehrden'","Schulstr.","20","'DHL Paketshop'","'PAKETSHOP'","EDEKA Frische Center",52.3097499,9.6094264,4128210
+30989,"'Gehrden'","'Gehrden'","Everloher Str.",1,"'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.3201,9.59335,30989224
+31275,"'Lehrte'","'Ahlten'","Zum Großen Freien","40","'Postfiliale'","'RETAIL_OUTLET'","Kiosk Franz",52.368592,9.9083172,4138838
+31275,"'Lehrte'","'Ahlten'","Zum Großen Freien","22","'DHL Paketshop'","'PAKETSHOP'","Kullick & Enderling GbR",52.3664828,9.9094651,4138562
+31275,"'Lehrte'","'Ahlten'","Hannoversche Str.","41","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","Penny Markt",52.359314,9.913352,31275172
+31275,"'Lehrte'","'Lehrte'","Westring","5","'Postfiliale'","'RETAIL_OUTLET'","Edeka Hohlfeldt",52.3684917,9.9605373,4128591
+31275,"'Lehrte'","'Lehrte'","Südring","6","'DHL Packstation'","'PACKSTATION_PS_DE'",,52.365446,9.965383,31275132
+31275,"'Lehrte'","'Lehrte'","Poststr.","12","'Paketbox'","'PAKETBOX'",,52.3779733,9.9739739,229
+31275,"'Lehrte'","'Lehrte'","Poststr.","12","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter",52.377929,9.974391,31275113
+31275,"'Lehrte'","'Lehrte'","Am Rathaus","2","'DHL Paketshop'","'PAKETSHOP'","Autoschilder Lehrte",52.3728666,9.9755347,4135180
+31275,"'Lehrte'","'Immensen'","Bauernstr.","25","'Postfiliale'","'RETAIL_OUTLET'","Dorfladen Immensen",52.3943033,10.0624223,4287979
+31275,"'Lehrte'","'Arpke'","Schwüblingser Str.","5","'Postfiliale'","'RETAIL_OUTLET'","EDEKA",52.3881,10.1006545,4287452
+31275,"'Lehrte'","'Hämelerwald'","Niedersachsenstr.","13","'Postfiliale'","'RETAIL_OUTLET'","Geschenkartikel Sigrid Littau",52.3561001,10.115268,4019932
+31275,"'Lehrte'","'Hämelerwald'","Hermesstr.","3","'DHL Packstation'","'PACKSTATION_PS_DE'","Aldi Markt",52.357981,10.118526,31275155
+31275,"'Lehrte'","'Hämelerwald'","Fortunastr.","1","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","REWE Markt",52.358878,10.118988,31275165
+31275,"'Lehrte'","'<undefined>'","Lessingstr.","17a","'Postfiliale'","'RETAIL_OUTLET'",,52.3697438,10.1244385,4114842
+31303,"'Burgdorf'","'Burgdorf'","Weserstr.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Edeka Markt",52.459289,9.989995,31303201
+31303,"'Burgdorf'","'Burgdorf'","Braunschweiger Str.","2","'DHL Paketshop'","'PAKETSHOP'","Bleich-Schreiben u. Schenken",52.4451828,10.0088471,4067637
+31303,"'Burgdorf'","'Burgdorf'","Marktstr.","28","'Postfiliale'","'RETAIL_OUTLET'","Schüler & Asnet GmbH",52.447428,10.0122387,4062349
+31303,"'Burgdorf'","'Burgdorf'","Uetzer Str.","14-15","'DHL Packstation'","'PACKSTATION_PS_DE'","EDEKA Markt",52.444005,10.015,31303114
+31303,"'Burgdorf'","'Ramlingen-Ehlershausen'","Ramlinger Str.","43","'Postfiliale'","'RETAIL_OUTLET'","Voltmer's Schreib-Post",52.5180335,10.0152098,4125892
+31303,"'Burgdorf'","'Burgdorf'","Uetzer Str.","17","'DHL Paketshop'","'PAKETSHOP'","bft-Tankstelle Coknez",52.4443191,10.0163986,4114135
+31303,"'Burgdorf'","'Burgdorf'","Ostlandring","2","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.445217,10.024574,31303149
+31303,"'Burgdorf'","'Ramlingen-Ehlershausen'","Alte Bundesstr.","5","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","Penny Markt",52.523374,10.030141,31303173
+31311,"'Uetze'","'Hänigsen'","Weißdornallee","1","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","PENNY Markt",52.481272,10.087739,31311174
+31311,"'Uetze'","'Hänigsen'","Henighuser Str.","2","'Postfiliale'","'RETAIL_OUTLET'","schüler & asnet GmbH",52.4830318,10.0938781,4289843
+31311,"'Uetze'","'Dollbergen'","Wilhelm-Busch-Str.","7","'Postfiliale'","'RETAIL_OUTLET'",,52.4071856,10.1805916,4074566
+31311,"'Uetze'","'Uetze'","Schapers Kamp","5","'DHL Paketshop'","'PAKETSHOP'","Famila Warenhaus Hannover",52.4660431,10.1896366,4072809
+31311,"'Uetze'","'Uetze'","Schapers Kamp","5","'DHL Packstation'","'PACKSTATION_PS_DE'","famila center",52.465558,10.190757,31311115
+31311,"'Uetze'","'Uetze'","Burgdorfer Str.","29","'DHL Paketshop'","'PAKETSHOP'","ARAL Station Gentzsch",52.4640731,10.1954844,4121583
+31311,"'Uetze'","'Uetze'","Burgdorfer Str.","23","'DHL Packstation'","'PACKSTATION_PS_DE'","Aldi Markt",52.463448,10.197694,31311209
+31311,"'Uetze'","'Uetze'","Nordmannstr.","1","'Postfiliale'","'RETAIL_OUTLET'","schüler & asnet",52.4639365,10.2031894,4051249
+31311,"'Uetze'","'Uetze'","Praklastr.","2","'DHL Paketshop'","'PAKETSHOP'","Gas-u. Wasserinstallation Schmidt",52.4704958,10.2167482,4110052
+31319,"'Sehnde'","'Ilten'","Hindenburgstr.","26","'Postfiliale'","'RETAIL_OUTLET'","Lotto",52.3474975,9.9337632,4114115
+31319,"'Sehnde'","'Ilten'","Wahre Dorffstr.","1","'DHL Paketshop'","'PAKETSHOP'","Dorff-Laden",52.333679,9.9454407,4100158
+31319,"'Sehnde'","'Sehnde'","Nordstr.","20","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.31358,9.962481,31319137
+31319,"'Sehnde'","'Sehnde'","Peiner Str.","17","'Postfiliale'","'RETAIL_OUTLET'","3 X P",52.3158606,9.9653069,4122306
+31319,"'Sehnde'","'Sehnde'","Peiner Str.","37b","'DHL Paketshop'","'PAKETSHOP'","Toto-Lotto Tabakwaren Rampf (REWE Markt)",52.3153034,9.9703645,4086967
+31515,"'Wunstorf'","'Steinhude'","Großenheidorner Str.","2","'Postfiliale'","'RETAIL_OUTLET'","Postagentur Steinhude",52.4540482,9.3599106,4291321
+31515,"'Wunstorf'","'Steinhude'","Fuhrenweg","22","'Postfiliale'","'RETAIL_OUTLET'","Der Kiosk",52.4576363,9.3679779,4289692
+31515,"'Wunstorf'","'Bokeloh'","Alte Dorfstr.","26","'Postfiliale'","'RETAIL_OUTLET'","Malergeschäft",52.4146176,9.3787282,4132488
+31515,"'Wunstorf'","'Wunstorf'","Hagenburger Str.","20","'Postfiliale'","'RETAIL_OUTLET'","Marktkauf",52.4307242,9.4189201,4109351
+31515,"'Wunstorf'","'Wunstorf'","Hagenburger Str.","20","'DHL Packstation'","'PACKSTATION_PS_DE'","Marktkauf",52.430746,9.419221,31515135
+31515,"'Wunstorf'","'Wunstorf'","Speckenstr.","7","'DHL Paketshop'","'PAKETSHOP'","Thies Media",52.4263781,9.4262149,4099280
+31515,"'Wunstorf'","'Wunstorf'","Südstr.","24","'Postfiliale'","'RETAIL_OUTLET'","Dr. Mobile",52.4244399,9.4300633,4131342
+31515,"'Wunstorf'","'Wunstorf'","Kolenfelder Str.","4a","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","Star Tankstelle",52.421155,9.4346,31515162
+31515,"'Wunstorf'","'Wunstorf'","Kolenfelder Str.","67","'Postfiliale'","'RETAIL_OUTLET'","TAS Tankstelle",52.4168911,9.4483019,4112284
+31515,"'Wunstorf'","'Wunstorf'","Industriestr.","3","'DHL Paketshop'","'PAKETSHOP'","REWE Thorsten Krause oHG",52.4198449,9.451048,4124868
+31515,"'Wunstorf'","'Wunstorf'","Industriestr.","8","'DHL Packstation'","'PACKSTATION_PS_DE'","Lidl Markt",52.418249,9.451413,31515143
+31515,"'Wunstorf'","'Kolenfeld'","Mühlenweg","8","'Postfiliale'","'RETAIL_OUTLET'","Lotto / EDEKA-Markt",52.3902257,9.4551314,4097026
+31515,"'Wunstorf'","'Luthe'","Nienburger Str.","36","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.429744,9.464244,31515203
+31515,"'Wunstorf'","'Luthe'","Adolf-Oesterheld-Str.","18","'Postfiliale'","'RETAIL_OUTLET'","Nahkauf",52.4243721,9.4674182,4113603
+31515,"'Wunstorf'","'Luthe'","Adolf-Oesterheld-Str.","18","'DHL Packstation'","'PACKSTATION_PS_DE'","REWE Markt",52.424357,9.46746,31515123
+31535,"'Neustadt am Rübenberge'","'Mardorf'","Mardorfer Str.","17","'Postfiliale'","'RETAIL_OUTLET'","Markant Nah & Frisch",52.4898509,9.2921932,4087111
+31535,"'Neustadt am Rübenberge'","'Hagen'","Hagener Str.","20","'Postfiliale'","'RETAIL_OUTLET'","Frischmarkt Nah und Gut",52.5760375,9.4314723,4107553
+31535,"'Neustadt am Rübenberge'","'Poggenhagen'","Akazienallee","8","'DHL Paketshop'","'PAKETSHOP'","Seniorenbedarf Poggenhagen",52.4770217,9.4432588,4132165
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Im Heidland","27","'DHL Paketshop'","'PAKETSHOP'","Frankie's Store",52.5000502,9.443303,4087264
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Landwehr","68","'Postfiliale'","'RETAIL_OUTLET'","EDEKA Lustfeld",52.5048235,9.4437731,4131950
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Königsberger Str.","59","'Postfiliale'","'RETAIL_OUTLET'","Edeka Hanekamp",52.5115416,9.4488438,4140902
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Erika-Najork-Str.","2","'DHL Packstation'","'PACKSTATION_PS_DE'","ALDI Markt",52.51286,9.45241,31535136
+31535,"'Neustadt am Rübenberge'","'<undefined>'","Siemensstr.","2-4","'Postfiliale'","'RETAIL_OUTLET'","REWE Dietrichs",52.4999307,9.4557207,4122876
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Wunstorfer Str.","64","'DHL Paketshop'","'PAKETSHOP'","Q1 Tankstelle",52.4951009,9.4561537,4134262
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Rundeel","1a","'DHL Paketshop'","'PAKETSHOP'","bücher - basteln - papeterie",52.505265,9.4576809,4087050
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Am Walle","2","'DHL Paketshop'","'PAKETSHOP'","Jibi Verbrauchermarkt",52.5065536,9.4602197,4127933
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Am Walle","5","'Postbank Filiale'","'POSTBANK_FINANCE_CENTER'","Postbank Filiale",52.506846,9.4616899,23117
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Am Walle","5","'DHL Packstation'","'PACKSTATION_PS_DE'","Postbank Finanzcenter",52.506846,9.46169,31535118
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Rudolf-Diesel-Ring","30","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","famila Markt",52.511576,9.477628,31535175
+31535,"'Neustadt am Rübenberge'","'Neustadt'","Rudolf-Diesel-Ring","30","'Postfiliale'","'RETAIL_OUTLET'","Famila-Handelsmarkt Hamburg GmbH & Co. KG",52.5107162,9.4783994,4047649
+31535,"'Neustadt am Rübenberge'","'Bordenau'","Steinweg","55","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","NP Markt",52.464588,9.482408,31535169
+31535,"'Neustadt am Rübenberge'","'Bordenau'","Bordenauer Str.","33","'Postfiliale'","'RETAIL_OUTLET'","Kiosk",52.4624738,9.483045,4289271
+31535,"'Neustadt am Rübenberge'","'Mandelsloh'","Amedorfer Str.","25","'DHL Paketshop'","'PAKETSHOP'","Combi Verbrauchermarkt",52.5983814,9.5634079,4123709
+31535,"'Neustadt am Rübenberge'","'Helstorf'","Abbenser Str.","10","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","ALDI Markt",52.582304,9.587387,31535171
+31832,"'Springe'","'Springe'","Fünfhausenstr.","21","'DHL Packstation'","'PACKSTATION_PS_DE'","Postfiliale",52.211874,9.55333,31832130
+31832,"'Springe'","'Springe'","Friedrichstr.","2","'DHL Paketshop'","'PAKETSHOP'","Kiosk im Preis Paradies",52.2118272,9.5539923,4137749
+31832,"'Springe'","'Springe'","Zum Niederntor","14","'Postfiliale'","'RETAIL_OUTLET'","Schreibwaren Kusche",52.2095081,9.5567005,4127157
+31832,"'Springe'","'Springe'","Osttangente","10","'DHL Paketshop'","'PAKETSHOP'","Expert Handels GmbH",52.2127523,9.5681225,4125961
+31832,"'Springe'","'<undefined>'","Steinhauerstr.","36","'Postfiliale'","'RETAIL_OUTLET'",,52.2170195,9.6282532,4287236
+31832,"'Springe'","'Bennigsen'","An der Zuckerfabrik","10","'DHL Packstation'","'PACKSTATION_PS_LIGHT'","Penny Markt",52.239185,9.663876,31832176
+31832,"'Springe'","'Bennigsen'","Osterland","1","'Postfiliale'","'RETAIL_OUTLET'","Dieter Neek   Haushalts-Fundgrube",52.2399373,9.6639729,109219
+31832,"'Springe'","'Eldagsen'","Am Pfingstanger","13","'Postfiliale'","'RETAIL_OUTLET'","REWE",52.171683,9.6729627,4128007
+31832,"'Springe'","'Gestorf'","Neustadtstr.","39","'DHL Paketshop'","'PAKETSHOP'","Comet Markt",52.2145865,9.7064538,4067679
