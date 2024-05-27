@@ -55,7 +55,7 @@ public class LogisticsDataProcessor implements Runnable {
             Map<Id<Hub>, Hub> shippingPointList = new HashMap<>();
             for (String provider : hagridConfig.getLocationProviders()) {
                 shippingPointList.putAll(readDataFromFile(hagridConfig.getShippingPointDataPath() + provider + "_paketnet_list.csv", DataType.SHIPPING_POINT));
-            }
+            }            
 
             // Store data in scenario
             scenario.addScenarioElement("hubList", hubList);
