@@ -5,8 +5,10 @@ import org.apache.logging.log4j.Logger;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 
+import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
 import hagrid.demand.NetworkProcessor;
+import hagrid.demand.ParcelGenerator;
 
 public class App {
     private static final Logger LOGGER = LogManager.getLogger(App.class);
@@ -14,51 +16,75 @@ public class App {
     public static void main(String[] args) {
         LOGGER.info("Starting application...");
 
-        // Create Injector with HagridModule
+        // Create the Guice injector with the HagridModule configuration
         Injector injector = Guice.createInjector(new HagridModule("phd/input/config.xml"));
 
-        // Initialize components with injected dependencies
+        // Execute processing steps in a structured manner
+        runNetworkProcessing(injector);            // Step 1: Process the network data
+        runLogisticsDataProcessing(injector);      // Step 2: Process the logistics data
+        runDemandProcessing(injector);             // Step 3: Process the freight demand data
+        runParcelGeneration(injector);             // Step 4: Generate parcels based on the processed demand data
+
+        LOGGER.info("Application finished.");
+    }
+
+    /**
+     * Runs the network processing step, initializing and executing the NetworkProcessor.
+     * This step processes the network data required for further analysis.
+     * 
+     * @param injector the Guice injector used for dependency injection.
+     */
+    private static void runNetworkProcessing(Injector injector) {
         LOGGER.info("Initializing NetworkProcessor...");
         NetworkProcessor networkProcessor = injector.getInstance(NetworkProcessor.class);
 
-        // Parallelize NetworkProcessor
         LOGGER.info("Starting network processing...");
         networkProcessor.run();
-
         LOGGER.info("Network processing completed. Subnetworks created.");
+    }
 
-        // Initialize LogisticsDataProcessor with injected dependencies
+    /**
+     * Runs the logistics data processing step, initializing and executing the LogisticsDataProcessor.
+     * This step processes logistics-related data such as hubs and shipping points.
+     * 
+     * @param injector the Guice injector used for dependency injection.
+     */
+    private static void runLogisticsDataProcessing(Injector injector) {
         LOGGER.info("Initializing LogisticsDataProcessor...");
         LogisticsDataProcessor logisticsDataProcessor = injector.getInstance(LogisticsDataProcessor.class);
 
-        // Start LogisticsDataProcessor
         LOGGER.info("Starting logistics data processing...");
         logisticsDataProcessor.run();
         LOGGER.info("Logistics data processing completed.");
+    }
 
-        // DemandProcessor demandProcessor = new
-        // DemandProcessor(hagridConfig.getFreightDemandPath(),
-        // hagridConfig.getConcept().equalsIgnoreCase("white_label"));
-        // CarrierManager carrierManager = new
-        // CarrierManager(demandProcessor.getCarrierDemand(), hagridConfig);
-        // RoutingManager routingManager = new
-        // RoutingManager(carrierManager.getCarriers(),
-        // hagridConfig.getAlgorithmFile());
-        // ResultWriter resultWriter = new ResultWriter(carrierManager.getCarriers(),
-        // hagridConfig.getOutputDirectory());
+    /**
+     * Runs the demand processing step, initializing and executing the DemandProcessor.
+     * This step processes the freight demand data to split and sort the parcel input data. 
+     * 
+     * @param injector the Guice injector used for dependency injection.
+     */
+    private static void runDemandProcessing(Injector injector) {
+        LOGGER.info("Initializing DemandProcessor...");
+        DemandProcessor demandProcessor = injector.getInstance(DemandProcessor.class);
 
-        // Parallelize NetworkProcessor and DemandProcessor
-        LOGGER.info("Starting demand processing...");
+        LOGGER.info("Starting demand data processing...");
+        demandProcessor.run();
+        LOGGER.info("Demand data processing completed.");
+    }
 
-        // Sequential tasks
-        // LOGGER.info("Initializing carriers...");
-        // carrierManager.initializeCarriers(subNetwork); // Pass subNetwork to
-        // CarrierManager if needed
-        // LOGGER.info("Routing carriers...");
-        // routingManager.routeCarriers();
-        // LOGGER.info("Writing results...");
-        // resultWriter.writeResults();
+    /**
+     * Runs the parcel generation step based on sorted demand, initializing and executing the ParcelGenerator.
+     * This step converts the processed demand data into parcel objects for further routing and delivery simulation in MATSim.
+     * 
+     * @param injector the Guice injector used for dependency injection.
+     */
+    private static void runParcelGeneration(Injector injector) {
+        LOGGER.info("Initializing ParcelGenerator...");
+        ParcelGenerator parcelGenerator = injector.getInstance(ParcelGenerator.class);
 
-        LOGGER.info("Application finished.");
+        LOGGER.info("Starting parcel generation based on sorted Demand...");
+        parcelGenerator.run();
+        LOGGER.info("Parcel generation completed.");
     }
 }

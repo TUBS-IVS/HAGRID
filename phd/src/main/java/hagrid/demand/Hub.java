@@ -7,7 +7,6 @@ import org.matsim.utils.objectattributes.attributable.Attributable;
 import org.matsim.utils.objectattributes.attributable.Attributes;
 import org.matsim.utils.objectattributes.attributable.AttributesImpl;
 
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -27,14 +26,12 @@ public class Hub implements Attributable {
     private String address;
     // Type of the hub
     private String type;
-
     // Coordinates of the hub
     private final Coord coord;
     // Attributes of the hub for additional information
     private final Attributes attributes = new AttributesImpl();
     // Supply demand by provider for white-label logistics
     private final Map<String, Integer> wlSupplyDemandByProvider = new HashMap<>();
-
     // Link associated with the hub
     private Id<Link> link;
     // Total assigned supply demand
@@ -46,9 +43,10 @@ public class Hub implements Attributable {
 
     /**
      * Constructor to initialize a Hub with an ID, company, and coordinates.
-     * @param id The ID of the hub.
+     *
+     * @param id      The ID of the hub.
      * @param company The company associated with the hub.
-     * @param coord The coordinates of the hub.
+     * @param coord   The coordinates of the hub.
      */
     public Hub(Id<Hub> id, String company, Coord coord) {
         this.id = id;
@@ -58,6 +56,7 @@ public class Hub implements Attributable {
 
     /**
      * Copy constructor to create a Hub from an existing Hub.
+     *
      * @param hub The hub to copy.
      */
     public Hub(Hub hub) {
@@ -152,16 +151,6 @@ public class Hub implements Attributable {
         this.type = type;
     }
 
-    // Getter for the X coordinate of the hub
-    public int getX() {
-        return (int) coord.getX();
-    }
-
-    // Getter for the Y coordinate of the hub
-    public int getY() {
-        return (int) coord.getY();
-    }
-
     // Getter for the link associated with the hub
     public Id<Link> getLink() {
         return link;
@@ -189,7 +178,7 @@ public class Hub implements Attributable {
         return this.hasCapacity && (this.assignedSupplyDemand + numberOfParcels) < this.capacityLimit;
     }
 
-
+    // Setter for the capacity limit of the hub
     public void setCapacityLimit(int capacityLimit) {
         this.capacityLimit = Math.max(capacityLimit, 0);
     }

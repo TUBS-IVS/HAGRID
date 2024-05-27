@@ -15,11 +15,11 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "phd/input/reduced_network.xml.gz";   
-    
+    private String networkXmlPath = "phd/input/reduced_network.xml.gz";
+
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
-    private String freightDemandPath = "vm-hochrechnung_matsim-punkte_epsg25832_mit_plz.shp";
+    private String freightDemandPath = "T:/bienzeisler/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/vm-hochrechnung_matsim-punkte_epsg25832_mit_plz_v4_b2b.shp";
 
     static final String HUB_DATA_PATH = "hubDataPath";
     private static final String HUB_DATA_PATH_DESC = "Path to the hub data file.";
@@ -70,7 +70,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Other configurations
     @Positive
-    private int demandBorder = 1000;
+    private int demandBorder = 600;
     private static final String DEMAND_BORDER_DESC = "Demand border threshold.";
 
     @Positive
@@ -332,7 +332,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         this.deliveryRateWl = rate;
     }
 
-    // Getters and setters for new fields
     @StringGetter(MIN_LINK_LENGTH)
     public double getMinLinkLength() {
         return minLinkLength;
@@ -381,6 +380,96 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     @StringSetter("hubLimitPost")
     public void setHubLimitPost(int hubLimitPost) {
         this.hubLimitPost = hubLimitPost;
+    }
+
+    @StringGetter("cepVehCap")
+    public int getCepVehCap() {
+        return cepVehCap;
+    }
+
+    @StringSetter("cepVehCap")
+    public void setCepVehCap(int cepVehCap) {
+        this.cepVehCap = cepVehCap;
+    }
+
+    @StringGetter("supplyVehCap")
+    public int getSupplyVehCap() {
+        return supplyVehCap;
+    }
+
+    @StringSetter("supplyVehCap")
+    public void setSupplyVehCap(int supplyVehCap) {
+        this.supplyVehCap = supplyVehCap;
+    }
+
+    @StringGetter("demandBorder")
+    public int getDemandBorder() {
+        return demandBorder;
+    }
+
+    @StringSetter("demandBorder")
+    public void setDemandBorder(int demandBorder) {
+        this.demandBorder = demandBorder;
+    }
+
+    @StringGetter("maxRouteDuration")
+    public int getMaxRouteDuration() {
+        return maxRouteDuration;
+    }
+
+    @StringSetter("maxRouteDuration")
+    public void setMaxRouteDuration(int maxRouteDuration) {
+        this.maxRouteDuration = maxRouteDuration;
+    }
+
+    @StringGetter("durationPerParcel")
+    public int getDurationPerParcel() {
+        return durationPerParcel;
+    }
+
+    @StringSetter("durationPerParcel")
+    public void setDurationPerParcel(int durationPerParcel) {
+        this.durationPerParcel = durationPerParcel;
+    }
+
+    @StringGetter("maxDurationPerStop")
+    public int getMaxDurationPerStop() {
+        return maxDurationPerStop;
+    }
+
+    @StringSetter("maxDurationPerStop")
+    public void setMaxDurationPerStop(int maxDurationPerStop) {
+        this.maxDurationPerStop = maxDurationPerStop;
+    }
+
+    @StringGetter("packstationDemand")
+    public int getPackstationDemand() {
+        return packstationDemand;
+    }
+
+    @StringSetter("packstationDemand")
+    public void setPackstationDemand(int packstationDemand) {
+        this.packstationDemand = packstationDemand;
+    }
+
+    @StringGetter("packstationTime")
+    public int getPackstationTime() {
+        return packstationTime;
+    }
+
+    @StringSetter("packstationTime")
+    public void setPackstationTime(int packstationTime) {
+        this.packstationTime = packstationTime;
+    }
+
+    @StringGetter("maxDriverTime")
+    public double getMaxDriverTime() {
+        return maxDriverTime;
+    }
+
+    @StringSetter("maxDriverTime")
+    public void setMaxDriverTime(double maxDriverTime) {
+        this.maxDriverTime = maxDriverTime;
     }
 
     public boolean isWhiteLabel() {
