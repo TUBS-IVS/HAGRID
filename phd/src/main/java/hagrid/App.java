@@ -5,10 +5,10 @@ import org.apache.logging.log4j.Logger;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 
+import hagrid.demand.DeliveryGenerator;
 import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
 import hagrid.demand.NetworkProcessor;
-import hagrid.demand.ParcelGenerator;
 
 public class App {
     private static final Logger LOGGER = LogManager.getLogger(App.class);
@@ -81,10 +81,10 @@ public class App {
      */
     private static void runParcelGeneration(Injector injector) {
         LOGGER.info("Initializing ParcelGenerator...");
-        ParcelGenerator parcelGenerator = injector.getInstance(ParcelGenerator.class);
-
+        DeliveryGenerator deliveryGenerator = injector.getInstance(DeliveryGenerator.class);
+        
         LOGGER.info("Starting parcel generation based on sorted Demand...");
-        parcelGenerator.run();
+        deliveryGenerator.run();
         LOGGER.info("Parcel generation completed.");
     }
 }
