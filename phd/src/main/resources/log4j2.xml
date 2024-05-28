@@ -1,24 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Configuration status="WARN">
+<Configuration status="INFO">
     <Appenders>
+        <!-- Console appender configuration -->
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n"/>
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n" />
         </Console>
+
+        <!-- RollingFile appender configuration -->
+        <RollingFile name="RollingFile" fileName="phd/output/hagrid.log"
+            filePattern="phd/output/logs/hagrid-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+            <Policies>
+                <TimeBasedTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="250 MB" />
+            </Policies>
+            <DefaultRolloverStrategy max="20" />
+        </RollingFile>
     </Appenders>
+
     <Loggers>
         <!-- Root logger configuration -->
         <Root level="info">
-            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
         </Root>
-        
+
         <!-- Hagrid logger configuration -->
         <Logger name="hagrid" level="info" additivity="false">
-            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
         </Logger>
 
         <!-- Suppress MGC logger warnings -->
         <Logger name="org.matsim.core.utils.geometry.geotools.MGC" level="error" additivity="false">
-            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Console" />
         </Logger>
     </Loggers>
 </Configuration>
