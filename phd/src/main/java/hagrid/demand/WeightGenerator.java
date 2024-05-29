@@ -92,15 +92,17 @@ public class WeightGenerator {
 
     /**
      * Generates a weight for a parcel based on the specified distributions and parameters.
+     * It automatically selects the appropriate parameters for B2B or regular parcels.
      *
-     * @param weightClasses    The weight classes and their probabilities.
-     * @param weightRanges     The weight ranges for each class.
-     * @param alphaParams      The alpha parameters for the beta distribution.
-     * @param betaParams       The beta parameters for the beta distribution.
-     * @return                 The generated weight for the parcel.
+     * @param isB2B Whether the parcel is B2B.
+     * @return The generated weight for the parcel.
      */
-    public static double generateWeight(Map<String, Double> weightClasses, Map<String, double[]> weightRanges,
-                                        Map<String, Double> alphaParams, Map<String, Double> betaParams) {
+    public static double generateWeight(boolean isB2B) {
+        Map<String, Double> weightClasses = isB2B ? defaultB2BWeightClasses : defaultWeightClasses;
+        Map<String, double[]> weightRanges = isB2B ? defaultB2BWeightRanges : defaultWeightRanges;
+        Map<String, Double> alphaParams = isB2B ? defaultAlphaParamsB2B : defaultAlphaParamsRegular;
+        Map<String, Double> betaParams = isB2B ? defaultBetaParamsB2B : defaultBetaParamsRegular;
+
         double randVal = RANDOM.nextDouble();
         double cumulativeProbability = 0.0;
         for (Map.Entry<String, Double> entry : weightClasses.entrySet()) {
@@ -121,9 +123,9 @@ public class WeightGenerator {
     /**
      * Samples from a beta distribution using the specified alpha and beta parameters.
      *
-     * @param alpha  The alpha parameter of the beta distribution.
-     * @param beta   The beta parameter of the beta distribution.
-     * @return       A sample from the beta distribution.
+     * @param alpha The alpha parameter of the beta distribution.
+     * @param beta  The beta parameter of the beta distribution.
+     * @return A sample from the beta distribution.
      */
     private static double betaDistributionSample(double alpha, double beta) {
         double sample1 = gammaDistributionSample(alpha, 1.0);
@@ -134,9 +136,9 @@ public class WeightGenerator {
     /**
      * Samples from a gamma distribution using the specified shape and scale parameters.
      *
-     * @param shape  The shape parameter of the gamma distribution.
-     * @param scale  The scale parameter of the gamma distribution.
-     * @return       A sample from the gamma distribution.
+     * @param shape The shape parameter of the gamma distribution.
+     * @param scale The scale parameter of the gamma distribution.
+     * @return A sample from the gamma distribution.
      */
     private static double gammaDistributionSample(double shape, double scale) {
         if (shape < 1) {
@@ -159,39 +161,5 @@ public class WeightGenerator {
                 return d * v * scale;
             }
         }
-    }
-
-    // Getter methods for accessing the default parameters
-
-    public static Map<String, Double> getDefaultWeightClasses() {
-        return defaultWeightClasses;
-    }
-
-    public static Map<String, double[]> getDefaultWeightRanges() {
-        return defaultWeightRanges;
-    }
-
-    public static Map<String, Double> getDefaultB2BWeightClasses() {
-        return defaultB2BWeightClasses;
-    }
-
-    public static Map<String, double[]> getDefaultB2BWeightRanges() {
-        return defaultB2BWeightRanges;
-    }
-
-    public static Map<String, Double> getDefaultAlphaParamsRegular() {
-        return defaultAlphaParamsRegular;
-    }
-
-    public static Map<String, Double> getDefaultBetaParamsRegular() {
-        return defaultBetaParamsRegular;
-    }
-
-    public static Map<String, Double> getDefaultAlphaParamsB2B() {
-        return defaultAlphaParamsB2B;
-    }
-
-    public static Map<String, Double> getDefaultBetaParamsB2B() {
-        return defaultBetaParamsB2B;
     }
 }

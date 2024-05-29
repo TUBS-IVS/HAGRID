@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 
+import hagrid.demand.CarrierGenerator;
 import hagrid.demand.DeliveryGenerator;
 import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
@@ -23,7 +24,8 @@ public class App {
         runNetworkProcessing(injector);            // Step 1: Process the network data
         runLogisticsDataProcessing(injector);      // Step 2: Process the logistics data
         runDemandProcessing(injector);             // Step 3: Process the freight demand data
-        runParcelGeneration(injector);             // Step 4: Generate parcels based on the processed demand data
+        runDeliveryGeneration(injector);             // Step 4: Generate parcels based on the processed demand data
+        runCarrierGeneration(injector);            // Step 5: Generate carriers based on the processed demand data
 
         LOGGER.info("Application finished.");
     }
@@ -79,12 +81,27 @@ public class App {
      * 
      * @param injector the Guice injector used for dependency injection.
      */
-    private static void runParcelGeneration(Injector injector) {
-        LOGGER.info("Initializing ParcelGenerator...");
+    private static void runDeliveryGeneration(Injector injector) {
+        LOGGER.info("Initializing DeliveryGenerator...");
         DeliveryGenerator deliveryGenerator = injector.getInstance(DeliveryGenerator.class);
         
-        LOGGER.info("Starting parcel generation based on sorted Demand...");
+        LOGGER.info("Starting delivery generation based on sorted Demand...");
         deliveryGenerator.run();
-        LOGGER.info("Parcel generation completed.");
+        LOGGER.info("Delivery and parcel generation completed.");
+    }
+
+        /**
+     * Runs the carrier generation step based on sorted demand, initializing and executing the CarrierGenerator.
+     * This step converts the processed demand data into carrier objects for further routing and delivery simulation in MATSim.
+     * 
+     * @param injector the Guice injector used for dependency injection.
+     */
+    private static void runCarrierGeneration(Injector injector) {
+        LOGGER.info("Initializing CarrierGenerator...");
+        CarrierGenerator carrierGenerator = injector.getInstance(CarrierGenerator.class);
+
+        LOGGER.info("Starting carrier generation based on sorted demand...");
+        carrierGenerator.run();
+        LOGGER.info("Carrier generation completed.");
     }
 }

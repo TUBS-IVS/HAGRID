@@ -10,6 +10,9 @@ import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.network.NetworkUtils;
+import org.matsim.freight.carriers.CarrierVehicleTypeReader;
+import org.matsim.freight.carriers.CarrierVehicleTypes;
+
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 
@@ -26,6 +29,8 @@ import java.util.Scanner;
 public class LogisticsDataProcessor implements Runnable {
 
     private static final Logger LOGGER = LogManager.getLogger(LogisticsDataProcessor.class);
+
+    private static final String CARRIER_VEHICLE_TYPES = "carrierVehicleTypes";
 
     @Inject
     private Scenario scenario;
@@ -48,19 +53,27 @@ public class LogisticsDataProcessor implements Runnable {
 
             // Read parcel locker data from file
             LOGGER.info("Reading parcel locker data from file: {}", hagridConfig.getParcelLockerDataPath());
-            Map<Id<Hub>, Hub> parcelLockerList = readDataFromFile(hagridConfig.getParcelLockerDataPath(), DataType.PARCEL_LOCKER);
+            Map<Id<Hub>, Hub> parcelLockerList = readDataFromFile(hagridConfig.getParcelLockerDataPath(),
+                    DataType.PARCEL_LOCKER);
 
             // Read shipping point data from files in the folder
             LOGGER.info("Reading shipping point data from folder: {}", hagridConfig.getShippingPointDataPath());
             Map<Id<Hub>, Hub> shippingPointList = new HashMap<>();
             for (String provider : hagridConfig.getLocationProviders()) {
-                shippingPointList.putAll(readDataFromFile(hagridConfig.getShippingPointDataPath() + provider + "_paketnet_list.csv", DataType.SHIPPING_POINT));
-            }            
+                shippingPointList.putAll(
+                        readDataFromFile(hagridConfig.getShippingPointDataPath() + provider + "_paketnet_list.csv",
+                                DataType.SHIPPING_POINT));
+            }
 
             // Store data in scenario
             scenario.addScenarioElement("hubList", hubList);
             scenario.addScenarioElement("parcelLockerList", parcelLockerList);
             scenario.addScenarioElement("shippingPointList", shippingPointList);
+
+            LOGGER.info("Loading carrier vehicle types...");
+            CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
+            new CarrierVehicleTypeReader(vehicleTypes).readFile(hagridConfig.getVehicleTypePath());
+            scenario.addScenarioElement(CARRIER_VEHICLE_TYPES, vehicleTypes);
 
             LOGGER.info("Logistics data processing completed.");
         } catch (Exception e) {
@@ -72,7 +85,8 @@ public class LogisticsDataProcessor implements Runnable {
      * Reads logistics data from a file and returns it as a map of Hub objects.
      *
      * @param filename The path to the file.
-     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
+     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or
+     *                 PARCEL_LOCKER).
      * @return A map of Hub objects.
      * @throws Exception If an error occurs while reading the file.
      */
@@ -89,7 +103,9 @@ public class LogisticsDataProcessor implements Runnable {
                 String[] dataSplit = data.split(getDelimiter(dataType));
 
                 Hub hub = parseHubData(dataSplit, dataType, filename);
-                hubList.put(hub.getId(), hub);
+                if (hub != null) {
+                    hubList.put(hub.getId(), hub);
+                }
             }
         }
 
@@ -101,8 +117,9 @@ public class LogisticsDataProcessor implements Runnable {
      * Parses a line of data and returns a Hub object.
      *
      * @param dataSplit The line of data split into fields.
-     * @param dataType The type of data being parsed (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
-     * @param source The source file name.
+     * @param dataType  The type of data being parsed (HUB, SHIPPING_POINT, or
+     *                  PARCEL_LOCKER).
+     * @param source    The source file name.
      * @return A Hub object.
      */
     private Hub parseHubData(String[] dataSplit, DataType dataType, String source) {
@@ -111,7 +128,7 @@ public class LogisticsDataProcessor implements Runnable {
         Coord hubCoord;
         Id<Hub> id;
         Id<Link> linkId;
-        Hub hub;
+        Hub hub = null; // Initialize to null to handle cases where no hub is created
 
         switch (dataType) {
             case HUB:
@@ -127,10 +144,9 @@ public class LogisticsDataProcessor implements Runnable {
                 x = Double.valueOf(dataSplit[0]);
                 y = Double.valueOf(dataSplit[1]);
 
-                hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));
-                Network subNetwork = (Network) scenario.getScenarioElement("parcelServiceNetwork");
+                hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));               
 
-                linkId = NetworkUtils.getNearestLinkExactly(subNetwork, hubCoord).getId();
+                linkId = NetworkUtils.getNearestLinkExactly(scenario.getNetwork(), hubCoord).getId();
                 hub = new Hub(id, company, hubCoord);
                 hub.setType(dataSplit[4]);
                 hub.setLink(linkId);
@@ -162,22 +178,24 @@ public class LogisticsDataProcessor implements Runnable {
                 hub.setLink(linkId);
                 break;
 
-            case PARCEL_LOCKER:
+                case PARCEL_LOCKER:
                 // Parsing parcel locker data
-                id = Id.create(dataSplit[7], Hub.class);
-                x = Double.valueOf(dataSplit[9]);
-                y = Double.valueOf(dataSplit[8]);
-                company = "dhl";
-
-                hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));
-                linkId = NetworkUtils.getNearestLinkExactly(scenario.getNetwork(), hubCoord).getId();
-                hub = new Hub(id, company, hubCoord);
-                hub.setLink(linkId);
-                hub.setAddress(dataSplit[3] + dataSplit[4]);
-                hub.setType(dataSplit[6]);
-                hub.getAttributes().putAttribute("plz", Integer.valueOf(dataSplit[0]));
-                hub.getAttributes().putAttribute("city", dataSplit[1]);
-                hub.getAttributes().putAttribute("district", dataSplit[2]);
+                if (dataSplit[6].contains("PACKSTATION")) {
+                    id = Id.create(dataSplit[7], Hub.class);
+                    x = Double.valueOf(dataSplit[9]);
+                    y = Double.valueOf(dataSplit[8]);
+                    company = "dhl";
+    
+                    hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));
+                    linkId = NetworkUtils.getNearestLinkExactly(scenario.getNetwork(), hubCoord).getId();
+                    hub = new Hub(id, company, hubCoord);
+                    hub.setLink(linkId);
+                    hub.setAddress(dataSplit[3] + dataSplit[4]);
+                    hub.setType(dataSplit[6]);
+                    hub.getAttributes().putAttribute("plz", Integer.valueOf(dataSplit[0]));
+                    hub.getAttributes().putAttribute("city", dataSplit[1]);
+                    hub.getAttributes().putAttribute("district", dataSplit[2]);
+                }
                 break;
 
             default:
@@ -190,7 +208,8 @@ public class LogisticsDataProcessor implements Runnable {
     /**
      * Returns the delimiter used in the file based on the data type.
      *
-     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or PARCEL_LOCKER).
+     * @param dataType The type of data being read (HUB, SHIPPING_POINT, or
+     *                 PARCEL_LOCKER).
      * @return The delimiter as a string.
      */
     private String getDelimiter(DataType dataType) {
