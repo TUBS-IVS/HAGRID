@@ -21,6 +21,10 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
     private String freightDemandPath = "T:/bienzeisler/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/vm-hochrechnung_matsim-punkte_epsg25832_mit_plz_v4_b2b.shp";
 
+    static final String FREIGHT_VEHICLE_TYPES_PATH = "freightVehicleTypePath";
+    private static final String FREIGHT_VEHICLE_TYPES_PATH_DESC = "Path to the freight vehicle type xml.";
+    private String freightVehicleTypePath = "phd/input/HAGRID_vehicleTypes.xml";
+
     static final String HUB_DATA_PATH = "hubDataPath";
     private static final String HUB_DATA_PATH_DESC = "Path to the hub data file.";
     private String hubDataPath = "phd/input/hubs/KEP-hubs_v3.csv";
@@ -177,9 +181,21 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     }
 
     @StringSetter(FREIGHT_DEMAND_PATH)
+    public void setVehicleTypePath(String freightVehicleTypePath) {
+        this.freightVehicleTypePath = freightVehicleTypePath;
+    }
+
+    
+    @StringGetter(FREIGHT_VEHICLE_TYPES_PATH)
+    public String getVehicleTypePath() {
+        return freightVehicleTypePath;
+    }
+
+    @StringSetter(FREIGHT_VEHICLE_TYPES_PATH)
     public void setFreightDemandPath(String freightDemandPath) {
         this.freightDemandPath = freightDemandPath;
     }
+
 
     @StringGetter(HUB_DATA_PATH)
     public String getHubDataPath() {
@@ -481,6 +497,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         Map<String, String> map = super.getComments();
         map.put(NETWORK_XML_PATH, NETWORK_XML_PATH_DESC);
         map.put(FREIGHT_DEMAND_PATH, FREIGHT_DEMAND_PATH_DESC);
+        map.put(FREIGHT_VEHICLE_TYPES_PATH, FREIGHT_VEHICLE_TYPES_PATH_DESC);
         map.put(HUB_DATA_PATH, HUB_DATA_PATH_DESC);
         map.put(SHIPPING_POINT_DATA_PATH, SHIPPING_POINT_DATA_PATH_DESC);
         map.put(PARCEL_LOCKER_DATA_PATH, PARCEL_LOCKER_DATA_PATH_DESC);
