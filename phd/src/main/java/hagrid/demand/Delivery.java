@@ -20,8 +20,9 @@ public class Delivery {
     private String provider;
     private int amount;
     private String parcelType;
-    private String postalCode; // Optional postal code as a string
-    private ArrayList<Double> individualWeights; // List to store individual weights of parcels
+    private String postalCode;
+    private ArrayList<Double> individualWeights;
+    private DeliveryMode deliveryMode;
 
     // Private constructor to enforce the use of the Builder pattern
     private Delivery(Builder builder) {
@@ -32,6 +33,7 @@ public class Delivery {
         this.parcelType = builder.parcelType;
         this.individualWeights = builder.individualWeights;
         this.postalCode = builder.postalCode;
+        this.deliveryMode = builder.deliveryMode;
         this.supplyDistribution = new HashMap<>();
     }
 
@@ -95,6 +97,7 @@ public class Delivery {
      * Gets the type of the delivery.
      *
      * @return the type of the delivery.
+     * @throws IllegalArgumentException if the type is not b2b, b2c, or c2c.
      */
     public String getParcelType() {
         return parcelType;
@@ -104,8 +107,12 @@ public class Delivery {
      * Sets the type of the delivery.
      *
      * @param parcelType the type to set.
+     * @throws IllegalArgumentException if the type is not b2b, b2c, or c2c.
      */
     public void setParcelType(String parcelType) {
+        if (!parcelType.equals("b2b") && !parcelType.equals("b2c") && !parcelType.equals("c2c")) {
+            throw new IllegalArgumentException("Parcel type must be either 'b2b', 'b2c', or 'c2c'");
+        }
         this.parcelType = parcelType;
     }
 
@@ -204,10 +211,29 @@ public class Delivery {
         supplyDistribution.put(provider, supplyDemand);
     }
 
+    /**
+     * Gets the delivery mode.
+     *
+     * @return the delivery mode.
+     */
+    public DeliveryMode getDeliveryMode() {
+        return deliveryMode;
+    }
+
+    /**
+     * Sets the delivery mode.
+     *
+     * @param deliveryMode the delivery mode to set.
+     */
+    public void setDeliveryMode(DeliveryMode deliveryMode) {
+        this.deliveryMode = deliveryMode;
+    }
+
     @Override
     public String toString() {
         return "Delivery [ID: " + id + ", Coordinate: " + coordinate + ", Provider: " + provider + ", Amount: " + amount
-                + ", Type: " + parcelType + ", TotalWeight: " + getTotalWeight() + ", PostalCode: " + postalCode + "]";
+                + ", Type: " + parcelType + ", TotalWeight: " + getTotalWeight() + ", PostalCode: " + postalCode
+                + ", DeliveryMode: " + deliveryMode + "]";
     }
 
     /**
@@ -219,8 +245,9 @@ public class Delivery {
         private String provider;
         private int amount;
         private String parcelType;
-        private String postalCode; // Optional postal code
+        private String postalCode;
         private ArrayList<Double> individualWeights;
+        private DeliveryMode deliveryMode;
 
         /**
          * Constructor for the Builder class.
@@ -260,8 +287,12 @@ public class Delivery {
          *
          * @param parcelType the type to set.
          * @return the Builder instance.
+         * @throws IllegalArgumentException if the type is not b2b, b2c, or c2c.
          */
         public Builder withParcelType(String parcelType) {
+            if (!parcelType.equals("b2b") && !parcelType.equals("b2c") && !parcelType.equals("c2c") && !parcelType.equals("wl")) {
+                throw new IllegalArgumentException("Parcel type must be either 'b2b', 'b2c', or 'c2c' but is " + parcelType + " Type");
+            }
             this.parcelType = parcelType;
             return this;
         }
@@ -272,6 +303,7 @@ public class Delivery {
          *
          * @param individualWeights the list of individual weights to set.
          * @return the Builder instance.
+         * @throws IllegalArgumentException if any weight is not between 0 and 31.5 kg.
          */
         public Builder withIndividualWeights(ArrayList<Double> individualWeights) {
             for (Double weight : individualWeights) {
@@ -288,12 +320,24 @@ public class Delivery {
          *
          * @param postalCode the postal code to set.
          * @return the Builder instance.
+         * @throws IllegalArgumentException if the postal code is not a 5-digit number.
          */
         public Builder withPostalCode(String postalCode) {
             if (!postalCode.matches("\\d{5}")) {
                 throw new IllegalArgumentException("Postal code must be a 5-digit number.");
             }
             this.postalCode = postalCode;
+            return this;
+        }
+
+        /**
+         * Sets the delivery mode.
+         *
+         * @param deliveryMode the delivery mode to set.
+         * @return the Builder instance.
+         */
+        public Builder withDeliveryMode(DeliveryMode deliveryMode) {
+            this.deliveryMode = deliveryMode;
             return this;
         }
 
@@ -305,5 +349,12 @@ public class Delivery {
         public Delivery build() {
             return new Delivery(this);
         }
+    }
+
+    /**
+     * Enumeration representing the delivery mode.
+     */
+    public enum DeliveryMode {
+        HOME, PARCEL_LOCKER, PARCEL_LOCKER_EXISTING
     }
 }

@@ -90,12 +90,12 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String MAX_DURATION_PER_STOP_DESC = "Maximum duration per stop in minutes.";
 
     @Positive
-    private int packstationDemand = 25;
-    private static final String PACKSTATION_DEMAND_DESC = "Packstation demand threshold.";
+    private int parcelLockerDemand = 25;
+    private static final String PARCEL_LOCKER_DEMAND_DESC = "Parcel locker demand threshold.";
 
     @Positive
-    private int packstationTime = 20;
-    private static final String PACKSTATION_TIME_DESC = "Time spent at packstation in minutes.";
+    private int parcelLockerDuration = 20;
+    private static final String PARCEL_LOCKER_DURATION_DESC = "Time spent at parcel locker in minutes.";
 
     @Positive
     private int hubLimitDHL = 16000;
@@ -181,21 +181,19 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     }
 
     @StringSetter(FREIGHT_DEMAND_PATH)
-    public void setVehicleTypePath(String freightVehicleTypePath) {
-        this.freightVehicleTypePath = freightVehicleTypePath;
+    public void setFreightDemandPath(String freightDemandPath) {
+        this.freightDemandPath = freightDemandPath;
     }
 
-    
     @StringGetter(FREIGHT_VEHICLE_TYPES_PATH)
     public String getVehicleTypePath() {
         return freightVehicleTypePath;
     }
 
     @StringSetter(FREIGHT_VEHICLE_TYPES_PATH)
-    public void setFreightDemandPath(String freightDemandPath) {
-        this.freightDemandPath = freightDemandPath;
+    public void setVehicleTypePath(String freightVehicleTypePath) {
+        this.freightVehicleTypePath = freightVehicleTypePath;
     }
-
 
     @StringGetter(HUB_DATA_PATH)
     public String getHubDataPath() {
@@ -458,24 +456,24 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         this.maxDurationPerStop = maxDurationPerStop;
     }
 
-    @StringGetter("packstationDemand")
-    public int getPackstationDemand() {
-        return packstationDemand;
+    @StringGetter("parcelLockerDemand")
+    public int getParcelLockerDemand() {
+        return parcelLockerDemand;
     }
 
-    @StringSetter("packstationDemand")
-    public void setPackstationDemand(int packstationDemand) {
-        this.packstationDemand = packstationDemand;
+    @StringSetter("parcelLockerDemand")
+    public void setParcelLockerDemand(int parcelLockerDemand) {
+        this.parcelLockerDemand = parcelLockerDemand;
     }
 
-    @StringGetter("packstationTime")
-    public int getPackstationTime() {
-        return packstationTime;
+    @StringGetter("parcelLockerDuration")
+    public int getParcelLockerDuration() {
+        return parcelLockerDuration;
     }
 
-    @StringSetter("packstationTime")
-    public void setPackstationTime(int packstationTime) {
-        this.packstationTime = packstationTime;
+    @StringSetter("parcelLockerDuration")
+    public void setParcelLockerDuration(int parcelLockerDuration) {
+        this.parcelLockerDuration = parcelLockerDuration;
     }
 
     @StringGetter("maxDriverTime")
@@ -511,8 +509,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put("maxRouteDuration", MAX_ROUTE_DURATION_DESC);
         map.put("durationPerParcel", DURATION_PER_PARCEL_DESC);
         map.put("maxDurationPerStop", MAX_DURATION_PER_STOP_DESC);
-        map.put("packstationDemand", PACKSTATION_DEMAND_DESC);
-        map.put("packstationTime", PACKSTATION_TIME_DESC);
+        map.put("parcelLockerDemand", PARCEL_LOCKER_DEMAND_DESC);
+        map.put("parcelLockerDuration", PARCEL_LOCKER_DURATION_DESC);
         map.put("hubLimitDHL", HUB_LIMIT_DHL_DESC);
         map.put("hubLimitPost", HUB_LIMIT_POST_DESC);
         map.put("maxDriverTime", MAX_DRIVER_TIME_DESC);
