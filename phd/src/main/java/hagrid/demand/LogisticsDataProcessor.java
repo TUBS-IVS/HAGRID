@@ -17,6 +17,7 @@ import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -95,7 +96,7 @@ public class LogisticsDataProcessor implements Runnable {
         LOGGER.info("Reading data from file: {}", filename);
 
         File file = new File(filename);
-        try (Scanner reader = new Scanner(file, "utf-8")) {
+        try (Scanner reader = new Scanner(file, StandardCharsets.UTF_8.name())) {
             reader.nextLine(); // Skip header line
 
             while (reader.hasNextLine()) {
