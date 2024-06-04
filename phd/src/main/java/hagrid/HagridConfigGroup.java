@@ -1,13 +1,16 @@
 package hagrid;
 
 import jakarta.validation.constraints.Positive;
+import org.geotools.xml.xsi.XSISimpleTypes.Boolean;
 import org.matsim.core.config.ConfigGroup;
 import org.matsim.core.config.ReflectiveConfigGroup;
-
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 
+/**
+ * HagridConfigGroup class defines the configuration settings for the Hagrid module.
+ */
 public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     public static final String GROUPNAME = "hagrid";
@@ -132,6 +135,12 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private int deliveryRateAmazon = 95;
     private int deliveryRateFedex = 92;
     private int deliveryRateWl = 94;
+
+    // Vehicle operation times
+    private int startHourRegular = 7;
+    private int endHourRegular = 14;
+    private int startHourAmazon = 9;
+    private int endHourAmazon = 17;
 
     public HagridConfigGroup() {
         super(GROUPNAME);
@@ -486,6 +495,47 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         this.maxDriverTime = maxDriverTime;
     }
 
+    @StringGetter("startHourRegular")
+    public int getStartHourRegular() {
+        return startHourRegular;
+    }
+
+    @StringSetter("startHourRegular")
+    public void setStartHourRegular(int startHourRegular) {
+        this.startHourRegular = startHourRegular;
+    }
+
+    @StringGetter("endHourRegular")
+    public int getEndHourRegular() {
+        return endHourRegular;
+    }
+
+    @StringSetter("endHourRegular")
+    public void setEndHourRegular(int endHourRegular) {
+        this.endHourRegular = endHourRegular;
+    }
+
+    @StringGetter("startHourAmazon")
+    public int getStartHourAmazon() {
+        return startHourAmazon;
+    }
+
+    @StringSetter("startHourAmazon")
+    public void setStartHourAmazon(int startHourAmazon) {
+        this.startHourAmazon = startHourAmazon;
+    }
+
+    @StringGetter("endHourAmazon")
+    public int getEndHourAmazon() {
+        return endHourAmazon;
+    }
+
+    @StringSetter("endHourAmazon")
+    public void setEndHourAmazon(int endHourAmazon) {
+        this.endHourAmazon = endHourAmazon;
+    }
+
+    
     public boolean isWhiteLabel() {
         return this.concept == Concept.WHITE_LABEL;
     }
