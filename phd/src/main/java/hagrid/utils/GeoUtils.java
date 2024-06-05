@@ -8,7 +8,7 @@ import org.matsim.api.core.v01.Coord;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
 
-import hagrid.demand.Delivery;
+import hagrid.utils.demand.Delivery;
 
 /**
  * Utility class for coordinate transformations.

@@ -1,4 +1,4 @@
-package hagrid.demand;
+package hagrid.utils.demand;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -65,19 +65,19 @@ public class ParcelStatisticsLogger {
                 .flatMap(List::stream)
                 .forEach(delivery -> {
                     totalDeliveries.incrementAndGet();
-                    if ("b2b".equalsIgnoreCase(delivery.getParcelType())) {
+                    if (Delivery.ParcelType.B2B.equals(delivery.getParcelType())) {
                         totalB2BDeliveries.incrementAndGet();
                     }
                     totalParcels.addAndGet(delivery.getAmount());
-                    if ("b2b".equalsIgnoreCase(delivery.getParcelType())) {
+                    if (Delivery.ParcelType.B2B.equals(delivery.getParcelType())) {
                         totalB2BParcels.addAndGet(delivery.getAmount());
                     }
                     totalWeight.addAndGet((long) delivery.getIndividualWeights().stream().mapToDouble(Double::doubleValue).sum());
-                    if ("b2b".equalsIgnoreCase(delivery.getParcelType())) {
+                    if (Delivery.ParcelType.B2B.equals(delivery.getParcelType())) {
                         totalB2BWeight.addAndGet((long) delivery.getIndividualWeights().stream().mapToDouble(Double::doubleValue).sum());
                     }
-                    if (delivery.getDeliveryMode() == Delivery.DeliveryMode.PARCEL_LOCKER ||
-                            delivery.getDeliveryMode() == Delivery.DeliveryMode.PARCEL_LOCKER_EXISTING) {
+                    if (Delivery.DeliveryMode.PARCEL_LOCKER.equals(delivery.getDeliveryMode()) ||
+                            Delivery.DeliveryMode.PARCEL_LOCKER_EXISTING.equals(delivery.getDeliveryMode())) {
                         totalLockerDeliveries.incrementAndGet();
                         totalLockerParcels.addAndGet(delivery.getAmount());
                     }
@@ -93,13 +93,13 @@ public class ParcelStatisticsLogger {
                     .forEach((provider, deliveryList) -> {
                         long providerDeliveryCount = deliveryList.size();
                         long providerB2BDeliveryCount = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .count();
                         long providerParcelCount = deliveryList.stream()
                                 .mapToLong(Delivery::getAmount)
                                 .sum();
                         long providerB2BParcelCount = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .mapToLong(Delivery::getAmount)
                                 .sum();
 
@@ -108,11 +108,11 @@ public class ParcelStatisticsLogger {
                                         .stream().mapToDouble(Double::doubleValue))
                                 .sum();
                         double providerB2BWeight = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .flatMapToDouble(delivery -> delivery.getIndividualWeights()
                                         .stream().mapToDouble(Double::doubleValue))
                                 .sum();
-                        double providerAverageWeight = providerTotalWeight / providerParcelCount;
+                        double providerAverageWeight = providerParcelCount == 0 ? 0 : providerTotalWeight / providerParcelCount;
                         double providerAverageB2BWeight = providerB2BParcelCount == 0 ? 0
                                 : providerB2BWeight / providerB2BParcelCount;
 
@@ -137,13 +137,13 @@ public class ParcelStatisticsLogger {
                     .forEach((postalCode, deliveryList) -> {
                         long postalCodeDeliveryCount = deliveryList.size();
                         long postalCodeB2BDeliveryCount = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .count();
                         long postalCodeParcelCount = deliveryList.stream()
                                 .mapToLong(Delivery::getAmount)
                                 .sum();
                         long postalCodeB2BParcelCount = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .mapToLong(Delivery::getAmount)
                                 .sum();
 
@@ -152,11 +152,11 @@ public class ParcelStatisticsLogger {
                                         .stream().mapToDouble(Double::doubleValue))
                                 .sum();
                         double postalCodeB2BWeight = deliveryList.stream()
-                                .filter(delivery -> "b2b".equalsIgnoreCase(delivery.getParcelType()))
+                                .filter(delivery -> Delivery.ParcelType.B2B.equals(delivery.getParcelType()))
                                 .flatMapToDouble(delivery -> delivery.getIndividualWeights()
                                         .stream().mapToDouble(Double::doubleValue))
                                 .sum();
-                        double postalCodeAverageWeight = postalCodeTotalWeight / postalCodeParcelCount;
+                        double postalCodeAverageWeight = postalCodeParcelCount == 0 ? 0 : postalCodeTotalWeight / postalCodeParcelCount;
                         double postalCodeAverageB2BWeight = postalCodeB2BParcelCount == 0 ? 0
                                 : postalCodeB2BWeight / postalCodeB2BParcelCount;
 

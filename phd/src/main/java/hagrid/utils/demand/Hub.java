@@ -1,4 +1,4 @@
-package hagrid.demand;
+package hagrid.utils.demand;
 
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;

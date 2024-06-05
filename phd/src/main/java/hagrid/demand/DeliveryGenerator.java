@@ -15,8 +15,12 @@ import org.matsim.api.core.v01.network.Link;
 import org.matsim.core.network.NetworkUtils;
 
 import hagrid.HagridConfigGroup;
-import hagrid.demand.Delivery.DeliveryMode;
 import hagrid.utils.GeoUtils;
+import hagrid.utils.demand.Delivery;
+import hagrid.utils.demand.Hub;
+import hagrid.utils.demand.ParcelStatisticsLogger;
+import hagrid.utils.demand.WeightGenerator;
+import hagrid.utils.demand.Delivery.DeliveryMode;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -67,7 +71,8 @@ public class DeliveryGenerator implements Runnable {
                         addParcelLockerServices(deliveries, parcelLockerList);
 
                         // Log parcel statistics
-                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(false); // Set to true for detailed log
+                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(false); // Set to true for detailed
+                                                                                           // log
                         logger.logStatistics(deliveries);
 
                         // Store parcels in scenario
@@ -223,8 +228,8 @@ public class DeliveryGenerator implements Runnable {
 
                 Long amount = (Long) feature.getAttribute(provider + "_tag");
 
-                String b2bInfo = getB2BInformation(feature, provider).toLowerCase();
-                boolean isB2B = "b2b".equalsIgnoreCase(b2bInfo);
+                Delivery.ParcelType b2bInfo = getB2BInformation(feature, provider);
+                boolean isB2B = Delivery.ParcelType.B2B.equals(b2bInfo);
 
                 ArrayList<Double> individualWeights = new ArrayList<>();
                 for (int i = 0; i < amount; i++) {
@@ -232,14 +237,17 @@ public class DeliveryGenerator implements Runnable {
                         individualWeights.add(weight);
                 }
 
-                return new Delivery.Builder(deliveryPointId + "_" + deliveryPointId, coord)
-                                .withProvider(provider)
-                                .withAmount(amount.intValue())
-                                .withParcelType(b2bInfo)
-                                .withPostalCode(postalCode)
-                                .withIndividualWeights(individualWeights)
-                                .withDeliveryMode(mode)
+                return Delivery.builder()
+                                .id(deliveryPointId + "_" + deliveryPointId)
+                                .coordinate(coord)
+                                .provider(provider)
+                                .amount(amount.intValue())
+                                .parcelType(b2bInfo)
+                                .postalCode(postalCode)
+                                .individualWeights(individualWeights)
+                                .deliveryMode(mode)
                                 .build();
+
         }
 
         /**
@@ -253,19 +261,19 @@ public class DeliveryGenerator implements Runnable {
          *
          * @param feature  SimpleFeature object representing a geographical feature.
          * @param provider String representing the provider name.
-         * @return String containing B2B information.
+         * @return Delivery.ParcelType containing B2B information.
          * @throws IllegalArgumentException if the attribute for the provider is not
          *                                  found.
          */
-        private String getB2BInformation(SimpleFeature feature, String provider) {
+        private Delivery.ParcelType getB2BInformation(SimpleFeature feature, String provider) {
                 if (hagridConfig.isWhiteLabel()) {
-                        return "wl";
+                        return Delivery.ParcelType.WHITE_LABEL;
                 } else {
                         String nameInShape = providerShapeMapping.get(provider);
                         String attributeValue = (String) feature.getAttribute(nameInShape);
 
                         if ("amazon".equals(provider) && (attributeValue == null || attributeValue.isEmpty())) {
-                                return "b2c";
+                                return Delivery.ParcelType.B2C;
                         }
 
                         if (attributeValue == null || attributeValue.isEmpty()) {
@@ -275,7 +283,7 @@ public class DeliveryGenerator implements Runnable {
                                                                 + " in feature: " + feature.getAttribute("id"));
                         }
 
-                        return attributeValue;
+                        return Delivery.ParcelType.valueOf(attributeValue.toUpperCase());
                 }
         }
 
@@ -320,19 +328,29 @@ public class DeliveryGenerator implements Runnable {
                 // Generate new individual weights for the parcels
                 ArrayList<Double> individualWeights = new ArrayList<>();
                 for (int i = 0; i < parcelLockerDemand; i++) {
-                        double weight = parcelWeightGenerator.generateWeight(false); // Assuming parcel locker deliveries are
-                                                                               // not B2B
+                        double weight = parcelWeightGenerator.generateWeight(false); // Assuming parcel locker
+                                                                                     // deliveries are
+                                                                                     // not B2B
                         individualWeights.add(weight);
                 }
 
-                return new Delivery.Builder(hub.getId().toString(), hub.getCoord())
-                                .withProvider("dhl") // Assuming the provider is DHL for parcel lockers
-                                .withAmount(parcelLockerDemand) // Set the number of parcels as per the configuration
-                                .withParcelType("b2c") // Assuming parcel locker deliveries are B2C
-                                .withPostalCode(hub.getAttributes().getAttribute("plz").toString())
-                                .withIndividualWeights(individualWeights) // Set the generated individual weights
-                                .withDeliveryMode(DeliveryMode.PARCEL_LOCKER_EXISTING)
-                                .build();
+                return Delivery.builder() // Start building a new Delivery object using the Builder pattern
+                                .id(hub.getId().toString()) // Set the ID of the delivery point as a string
+                                                            // representation of hub's ID
+                                .coordinate(hub.getCoord()) // Set the coordinates of the delivery point using the hub's
+                                                            // coordinates
+                                .provider("dhl") // Assume the provider is DHL for parcel lockers
+                                .amount(parcelLockerDemand) // Set the number of parcels as per the configuration
+                                .parcelType(Delivery.ParcelType.B2C) // Assume parcel locker deliveries are
+                                                                     // Business-to-Consumer (B2C)
+                                .postalCode(hub.getAttributes().getAttribute("plz").toString()) // Set the postal code
+                                                                                                // from hub's attributes
+                                .individualWeights(individualWeights) // Set the generated individual weights for each
+                                                                      // parcel
+                                .deliveryMode(Delivery.DeliveryMode.PARCEL_LOCKER_EXISTING) // Set the delivery mode to
+                                                                                            // existing parcel locker
+                                .build(); // Build the Delivery object
+
         }
 
         /**
@@ -399,7 +417,5 @@ public class DeliveryGenerator implements Runnable {
                 // Return the list of possible keys
                 return possibleKeys;
         }
-
- 
 
 }
