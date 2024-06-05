@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Positive;
 import org.geotools.xml.xsi.XSISimpleTypes.Boolean;
 import org.matsim.core.config.ConfigGroup;
 import org.matsim.core.config.ReflectiveConfigGroup;
+import org.matsim.freight.carriers.TimeWindow;
+
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
@@ -141,6 +143,9 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private int endHourRegular = 14;
     private int startHourAmazon = 9;
     private int endHourAmazon = 17;
+
+    // Delivery time window
+    private TimeWindow deliveryTimeWindow = TimeWindow.newInstance(8 * 60 * 60, 20 * 60 * 60);
 
     public HagridConfigGroup() {
         super(GROUPNAME);
@@ -535,7 +540,26 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         this.endHourAmazon = endHourAmazon;
     }
 
-    
+    @StringGetter("deliveryTimeWindowStart")
+    public double getDeliveryTimeWindowStart() {
+        return deliveryTimeWindow.getStart();
+    }
+
+    @StringSetter("deliveryTimeWindowStart")
+    public void setDeliveryTimeWindowStart(double start) {
+        this.deliveryTimeWindow = TimeWindow.newInstance(start, this.deliveryTimeWindow.getEnd());
+    }
+
+    @StringGetter("deliveryTimeWindowEnd")
+    public double getDeliveryTimeWindowEnd() {
+        return deliveryTimeWindow.getEnd();
+    }
+
+    @StringSetter("deliveryTimeWindowEnd")
+    public void setDeliveryTimeWindowEnd(double end) {
+        this.deliveryTimeWindow = TimeWindow.newInstance(this.deliveryTimeWindow.getStart(), end);
+    }
+
     public boolean isWhiteLabel() {
         return this.concept == Concept.WHITE_LABEL;
     }
@@ -567,6 +591,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put(MIN_LINK_LENGTH, MIN_LINK_LENGTH_DESC);
         map.put(MIN_FREE_SPEED, MIN_FREE_SPEED_DESC);
         map.put(FREE_SPEED_THRESHOLD, FREE_SPEED_THRESHOLD_DESC);
+        map.put("deliveryTimeWindowStart", "Start time of the delivery time window.");
+        map.put("deliveryTimeWindowEnd", "End time of the delivery time window.");
         return map;
     }
 }

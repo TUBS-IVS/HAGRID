@@ -15,6 +15,7 @@ import org.matsim.freight.carriers.CarrierVehicleTypes;
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
+import hagrid.utils.demand.Hub;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;

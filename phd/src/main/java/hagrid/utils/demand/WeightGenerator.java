@@ -1,4 +1,4 @@
-package hagrid.demand;
+package hagrid.utils.demand;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -49,8 +49,8 @@ public class WeightGenerator {
 
         // Initialize default weight classes and probabilities for B2B parcels
         defaultB2BWeightClasses.put("0.5 kg to 1 kg", 0.10);
-        defaultB2BWeightClasses.put("1 kg to 3 kg", 0.20);
-        defaultB2BWeightClasses.put("3 kg to 10 kg", 0.30);
+        defaultB2BWeightClasses.put("1 kg to 3 kg", 0.12);
+        defaultB2BWeightClasses.put("3 kg to 10 kg", 0.33);
         defaultB2BWeightClasses.put("10 kg to 20 kg", 0.25);
         defaultB2BWeightClasses.put("20 kg to 31.5 kg", 0.15);
 

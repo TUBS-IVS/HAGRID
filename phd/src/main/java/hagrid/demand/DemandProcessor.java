@@ -21,6 +21,7 @@ import org.locationtech.jts.geom.MultiPoint;
 import org.locationtech.jts.geom.Point;
 
 import hagrid.HagridConfigGroup;
+import hagrid.utils.demand.SameSizeKMeans;
 
 import java.io.File;
 import java.io.IOException;

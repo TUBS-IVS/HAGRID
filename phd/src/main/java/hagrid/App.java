@@ -99,7 +99,7 @@ public class App {
     private static void runCarrierGeneration(Injector injector) {
         LOGGER.info("Initializing CarrierGenerator...");
         CarrierGenerator carrierGenerator = injector.getInstance(CarrierGenerator.class);
-
+    
         LOGGER.info("Starting carrier generation based on sorted demand...");
         carrierGenerator.run();
         LOGGER.info("Carrier generation completed.");

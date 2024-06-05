@@ -1,4 +1,4 @@
-package hagrid.demand;
+package hagrid.utils.demand;
 
 import elki.distance.minkowski.SquaredEuclideanDistance;
 
