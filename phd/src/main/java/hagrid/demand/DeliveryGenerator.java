@@ -18,9 +18,9 @@ import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
-import hagrid.utils.demand.ParcelStatisticsLogger;
 import hagrid.utils.demand.WeightGenerator;
 import hagrid.utils.demand.Delivery.DeliveryMode;
+import hagrid.utils.general.ParcelStatisticsLogger;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -71,7 +71,7 @@ public class DeliveryGenerator implements Runnable {
                         addParcelLockerServices(deliveries, parcelLockerList);
 
                         // Log parcel statistics
-                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(false); // Set to true for detailed
+                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for detailed
                                                                                            // log
                         logger.logStatistics(deliveries);
 

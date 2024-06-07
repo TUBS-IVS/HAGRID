@@ -129,14 +129,14 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private String algorithmFile = "./res/freight/jsprit_algorithm.xml";
 
     // Delivery rates
-    private int deliveryRateDhl = 96;
-    private int deliveryRateGls = 93;
-    private int deliveryRateHermes = 93;
-    private int deliveryRateDpd = 92;
-    private int deliveryRateUps = 92;
-    private int deliveryRateAmazon = 95;
-    private int deliveryRateFedex = 92;
-    private int deliveryRateWl = 94;
+    private int deliveryRateDhl = 0;
+    private int deliveryRateGls = 0;
+    private int deliveryRateHermes = 0;
+    private int deliveryRateDpd = 0;
+    private int deliveryRateUps = 0;
+    private int deliveryRateAmazon = 0;
+    private int deliveryRateFedex = 0;
+    private int deliveryRateWl = 0;
 
     // Vehicle operation times
     private int startHourRegular = 7;
@@ -166,13 +166,13 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 break;
             case BASELINE:
             default:
-                deliveryRateDhl = 96;
-                deliveryRateGls = 93;
-                deliveryRateHermes = 93;
-                deliveryRateDpd = 92;
-                deliveryRateUps = 92;
+                deliveryRateDhl = 94; //+2
+                deliveryRateGls = 91; // +2
+                deliveryRateHermes = 91; // +2
+                deliveryRateDpd = 89; // +3
+                deliveryRateUps = 89; // +3
                 deliveryRateAmazon = 95;
-                deliveryRateFedex = 92;
+                deliveryRateFedex = 89; // +3
                 shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
                         "fedex_tag");
                 break;
