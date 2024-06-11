@@ -335,7 +335,7 @@ public class DeliveryGenerator implements Runnable {
                 }
 
                 return Delivery.builder() // Start building a new Delivery object using the Builder pattern
-                                .id(hub.getId().toString()) // Set the ID of the delivery point as a string
+                                .id(hub.getId().toString()+"_locker") // Set the ID of the delivery point as a string
                                                             // representation of hub's ID
                                 .coordinate(hub.getCoord()) // Set the coordinates of the delivery point using the hub's
                                                             // coordinates
