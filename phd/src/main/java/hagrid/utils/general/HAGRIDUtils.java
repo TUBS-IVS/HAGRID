@@ -6,12 +6,7 @@ import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierService;
-import org.matsim.freight.carriers.CarrierShipment;
 import org.matsim.freight.carriers.Carriers;
-import org.matsim.utils.objectattributes.ObjectAttributes;
-
-import hagrid.demand.CarrierGenerator;
-
 import java.util.Map;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
@@ -66,13 +61,13 @@ public class HAGRIDUtils {
             Object value = entry.getValue();
             try {
                 // Enhanced logging
-                // LOGGER.info("Processing key: " + key + ", value: " + value + " for Carrier ID: " + carrierId);
+                LOGGER.debug("Processing key: " + key + ", value: " + value + " for Carrier ID: " + carrierId);
 
                 // Attempt to convert the attribute to a string
                 String valueAsString = value == null ? "null" : value.toString();
 
-                // LOGGER.info("Successfully processed key: " + key + ", valueAsString: " + valueAsString
-                //         + " for Carrier ID: " + carrierId);
+                LOGGER.debug("Successfully processed key: " + key + ", valueAsString: " + valueAsString
+                        + " for Carrier ID: " + carrierId);
             } catch (ConcurrentModificationException e) {
                 LOGGER.error("ConcurrentModificationException for Carrier ID: " + carrierId + ", Key: " + key
                         , e);
