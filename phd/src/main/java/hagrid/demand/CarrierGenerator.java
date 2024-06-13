@@ -11,6 +11,10 @@ import hagrid.utils.general.HAGRIDUtils;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
+import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
@@ -20,12 +24,14 @@ import org.matsim.freight.carriers.*;
 import org.matsim.freight.carriers.CarrierCapabilities.FleetSize;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.ConcurrentModificationException;
 
 /**
@@ -59,10 +65,14 @@ public class CarrierGenerator implements Runnable {
             final Map<String, ArrayList<Delivery>> deliveries = HAGRIDUtils.getScenarioElementAs("deliveries",
                     scenario);
             final Network subNetwork = HAGRIDUtils.getScenarioElementAs("parcelServiceNetwork", scenario);
+            final CarrierVehicleTypes vehicleTypes = HAGRIDUtils.getScenarioElementAs("carrierVehicleTypes", scenario);
+            final Map<Id<Hub>, Hub> hubList = HAGRIDUtils.getScenarioElementAs("hubList", scenario);
             LOGGER.info("Scenario elements retrieved.");
 
             // Process the deliveries to create carriers
-            final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork);
+            final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork, vehicleTypes, hubList);
+
+            // Validate the generated carriers
             validateCarriers(carriers);
 
             // Check and log attributes of all carriers
@@ -103,12 +113,14 @@ public class CarrierGenerator implements Runnable {
      * Generates carriers and their services based on the provided deliveries and
      * network.
      *
-     * @param deliveries Map containing the deliveries sorted by carrier ID.
-     * @param subNetwork The network used for parcel services.
+     * @param deliveries   Map containing the deliveries sorted by carrier ID.
+     * @param subNetwork   The network used for parcel services.
+     * @param hubList
+     * @param vehicleTypes
      * @return The generated carriers.
      */
     private Carriers generateCarriersAndCarrierServices(final Map<String, ArrayList<Delivery>> deliveries,
-            final Network subNetwork) {
+            final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList) {
         final Carriers carriers = new Carriers();
         final Map<String, Double> deliveryRates = initializeDeliveryRate();
 
@@ -118,14 +130,11 @@ public class CarrierGenerator implements Runnable {
 
             final Carrier carrier = CarriersUtils.createCarrier(Id.create(carrierID, Carrier.class));
 
-            carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
-            carrier.getAttributes().putAttribute("provider", carrierID.split("_")[0]);
-            carrier.getAttributes().putAttribute("plz", carrierID.split("_")[1].substring(0, 5));
-            carrier.getAttributes().putAttribute("missedParcels", 0);
-            carrier.getAttributes().putAttribute("missedParcelsAsList", null);
+            setupCarrierAttributes(carrier, carrierID);
 
             try {
                 addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork, deliveryRates);
+                addCarrierVehiclesToCarrier(carrier, vehicleTypes, hubList);
             } catch (ServiceCreationException e) {
                 LOGGER.error(carrierID + ": Error creating carrier services", e);
             }
@@ -137,6 +146,37 @@ public class CarrierGenerator implements Runnable {
         scenario.addScenarioElement("carriers", carriers);
 
         return carriers;
+    }
+
+    /**
+     * Sets up the attributes for a given carrier based on its ID.
+     *
+     * This method initializes the fleet size to infinite and sets several
+     * attributes
+     * including the provider, postal code, missed parcels count, and a list to
+     * track
+     * missed parcels.
+     *
+     * @param carrier   The carrier whose attributes are to be set.
+     * @param carrierID The ID of the carrier, used to extract and set specific
+     *                  attributes.
+     */
+    private void setupCarrierAttributes(Carrier carrier, String carrierID) {
+        // Set the fleet size of the carrier to infinite
+        carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
+
+        // Extract and set the provider attribute from the carrier ID
+        carrier.getAttributes().putAttribute("provider", carrierID.split("_")[0]);
+
+        // Extract and set the postal code (first 5 digits) attribute from the carrier
+        // ID
+        carrier.getAttributes().putAttribute("plz", carrierID.split("_")[1].substring(0, 5));
+
+        // Initialize the missed parcels count to 0
+        carrier.getAttributes().putAttribute("missedParcels", 0);
+
+        // Initialize the missed parcels list to null
+        carrier.getAttributes().putAttribute("missedParcelsAsList", null);
     }
 
     /**
@@ -326,15 +366,6 @@ public class CarrierGenerator implements Runnable {
     }
 
     /**
-     * Exception thrown when there is an error creating a CarrierService.
-     */
-    public class ServiceCreationException extends Exception {
-        public ServiceCreationException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
-    /**
      * Determines missed parcels based on the delivery rate and updates the
      * carrier's attributes accordingly.
      *
@@ -373,6 +404,98 @@ public class CarrierGenerator implements Runnable {
         currentMissedList.addAll(missedDeliveries);
 
         carrier.getAttributes().putAttribute("missedParcelsAsList", currentMissedList);
+    }
+
+    /**
+     * Adds vehicles to a carrier based on the carrier ID and closest hub.
+     *
+     * This method determines the closest hub for a carrier, sets the relevant
+     * attributes, and adds vehicles to the carrier with appropriate start times
+     * based on the provider.
+     *
+     * @param carrier      The carrier to which vehicles will be added.
+     * @param carrierID    The ID of the carrier, used to determine attributes.
+     * @param vehicleTypes The types of vehicles available for assignment.
+     * @param hubs         A map of hubs used to find the closest hub.
+     */
+    private void addCarrierVehiclesToCarrier(final Carrier carrier,
+            final CarrierVehicleTypes vehicleTypes, final Map<Id<Hub>, Hub> hubs) {
+
+        // Find the closest hub for the carrier based on its ID and number of parcels
+        Hub closestHub = getClosestHub(carrier, hubs);
+
+        // Set hub attributes for the carrier
+        carrier.getAttributes().putAttribute("hub", closestHub);
+        carrier.getAttributes().putAttribute("hubId", closestHub.getId().toString());
+
+        // Retrieve start and end times from configuration
+        int start = hagridConfig.getDeliveryStartTime((String) carrier.getAttributes().getAttribute("provider"));
+        int end = hagridConfig.getDeliveryEndTime((String) carrier.getAttributes().getAttribute("provider"));
+
+        // Add vehicles to the carrier with start times from the determined range
+        for (int startTime = start; startTime <= end; startTime++) {
+            // CarrierVehicle carrierVehicleSizeM = createCEPVehicle(closestHub.getLink(),
+            // closestHub.getId().toString(), vehicleTypes, startTime, "m");
+            // CarrierVehicle carrierVehicleSizeXL = createCEPVehicle(closestHub.getLink(),
+            // closestHub.getId().toString(), vehicleTypes, startTime, "xl");
+            // CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
+            // CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeXL);
+        }
+
+        // Log the creation of the carrier and its services
+        LOGGER.info("Created Carrier {} with a number of {} services", carrier.getId(),
+                carrier.getServices().values().size());
+
+        int numberOfParcels = (int) carrier.getAttributes().getAttribute("numberOfParcels");
+        // Increase the assigned supply demand for the closest hub
+        closestHub.increaseAssignedSupplyDemand(numberOfParcels);
+    }
+
+    /**
+     * Finds the closest hub with enough capacity for the given number of parcels.
+     *
+     * @param carrier   The carrier with services to be assigned to a hub.
+     * @param hubList   A map of hub IDs to Hub objects.
+     * @return The closest Hub with sufficient capacity.
+     */
+    private static Hub getClosestHub(Carrier carrier, Map<Id<Hub>, Hub> hubList) {
+
+        // Create a GeometryFactory for point creation
+        GeometryFactory geometryFactory = new GeometryFactory();
+
+        // Determine the number of parcels for the carrier
+        int numberOfParcels = carrier.getServices().values().stream()
+                .mapToInt(CarrierService::getCapacityDemand)
+                .sum();
+        carrier.getAttributes().putAttribute("numberOfParcels", numberOfParcels);
+
+        // Extract the provider from the carrier's attributes
+        String provider = (String) carrier.getAttributes().getAttribute("provider");
+
+        // Find the closest hub using streams
+        Optional<Hub> closestHub = carrier.getServices().values().stream()
+                .flatMap(service -> {
+                    Coord serviceCoord = (Coord) service.getAttributes().getAttribute("coord");
+                    Point servicePoint = geometryFactory.createPoint(new Coordinate(serviceCoord.getX(), serviceCoord.getY()));
+                    return hubList.values().stream()
+                            .filter(hub -> hub.getCompany().contains(provider) && hub.hasCapacity(numberOfParcels))
+                            .map(hub -> new Object[] { hub, servicePoint, hub.getCoord() });
+                })
+                .min(Comparator.comparingDouble(hubServiceCoord -> NetworkUtils.getEuclideanDistance(
+                        ((Point) hubServiceCoord[1]).getX(),
+                        ((Point) hubServiceCoord[1]).getY(),
+                        ((Coord) hubServiceCoord[2]).getX(),
+                        ((Coord) hubServiceCoord[2]).getY())))
+                .map(hubServiceCoord -> (Hub) hubServiceCoord[0]);
+
+        // Throw an exception if no suitable hub is found
+        if (!closestHub.isPresent()) {
+            throw new IllegalStateException("No suitable hub found for provider: " + provider);
+        }
+
+        // Log the found hub
+        LOGGER.info("Found hub: {} for provider: {}", closestHub.get().getId(), provider);
+        return closestHub.get();
     }
 
     /**

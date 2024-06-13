@@ -45,8 +45,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Providers
     static final String SHP_PROVIDERS = "shpProviders";
     private static final String SHP_PROVIDERS_DESC = "List of shapefile providers.";
-    private List<String> shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
-            "fedex_tag");
+    private List<String> shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag", "fedex_tag");
 
     static final String LOCATION_PROVIDERS = "locationProviders";
     private static final String LOCATION_PROVIDERS_DESC = "List of location providers.";
@@ -139,10 +138,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private int deliveryRateWl = 0;
 
     // Vehicle operation times
-    private int startHourRegular = 7;
-    private int endHourRegular = 14;
-    private int startHourAmazon = 9;
-    private int endHourAmazon = 17;
+    private Map<String, Integer> startHourMap = new HashMap<>();
+    private Map<String, Integer> endHourMap = new HashMap<>();
 
     // Delivery time window
     private TimeWindow deliveryTimeWindow = TimeWindow.newInstance(8 * 60 * 60, 20 * 60 * 60);
@@ -150,6 +147,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     public HagridConfigGroup() {
         super(GROUPNAME);
         setDefaultDeliveryRates();
+        setDefaultOperationHours();
     }
 
     private void setDefaultDeliveryRates() {
@@ -166,17 +164,32 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 break;
             case BASELINE:
             default:
-                deliveryRateDhl = 94; //+2
-                deliveryRateGls = 91; // +2
-                deliveryRateHermes = 91; // +2
-                deliveryRateDpd = 89; // +3
-                deliveryRateUps = 89; // +3
+                deliveryRateDhl = 94;
+                deliveryRateGls = 91;
+                deliveryRateHermes = 91;
+                deliveryRateDpd = 89;
+                deliveryRateUps = 89;
                 deliveryRateAmazon = 95;
-                deliveryRateFedex = 89; // +3
-                shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
-                        "fedex_tag");
+                deliveryRateFedex = 89;
+                shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag", "fedex_tag");
                 break;
         }
+    }
+
+    private void setDefaultOperationHours() {
+        startHourMap.put("default", 7);
+        endHourMap.put("default", 14);
+
+        startHourMap.put("amazon", 9);
+        endHourMap.put("amazon", 17);
+    }
+
+    public int getDeliveryStartTime(String provider) {
+        return startHourMap.getOrDefault(provider.toLowerCase(), startHourMap.get("default"));
+    }
+
+    public int getDeliveryEndTime(String provider) {
+        return endHourMap.getOrDefault(provider.toLowerCase(), endHourMap.get("default"));
     }
 
     @StringGetter(NETWORK_XML_PATH)
@@ -498,46 +511,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     @StringSetter("maxDriverTime")
     public void setMaxDriverTime(double maxDriverTime) {
         this.maxDriverTime = maxDriverTime;
-    }
-
-    @StringGetter("startHourRegular")
-    public int getStartHourRegular() {
-        return startHourRegular;
-    }
-
-    @StringSetter("startHourRegular")
-    public void setStartHourRegular(int startHourRegular) {
-        this.startHourRegular = startHourRegular;
-    }
-
-    @StringGetter("endHourRegular")
-    public int getEndHourRegular() {
-        return endHourRegular;
-    }
-
-    @StringSetter("endHourRegular")
-    public void setEndHourRegular(int endHourRegular) {
-        this.endHourRegular = endHourRegular;
-    }
-
-    @StringGetter("startHourAmazon")
-    public int getStartHourAmazon() {
-        return startHourAmazon;
-    }
-
-    @StringSetter("startHourAmazon")
-    public void setStartHourAmazon(int startHourAmazon) {
-        this.startHourAmazon = startHourAmazon;
-    }
-
-    @StringGetter("endHourAmazon")
-    public int getEndHourAmazon() {
-        return endHourAmazon;
-    }
-
-    @StringSetter("endHourAmazon")
-    public void setEndHourAmazon(int endHourAmazon) {
-        this.endHourAmazon = endHourAmazon;
     }
 
     @StringGetter("deliveryTimeWindowStart")
