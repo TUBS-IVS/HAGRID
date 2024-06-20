@@ -149,10 +149,55 @@ public class CarrierGenerator implements Runnable {
                         return carrier;
                 }).forEach(carriers::addCarrier);
 
+                filterCarriers(carriers);
+
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
+
+
                 scenario.addScenarioElement("carriers", carriers);
 
                 return carriers;
+        }
+
+        /**
+         * Logs information about carriers, including the ones with the most and least
+         * services,
+         * and removes carriers with fewer than 5 services. -> Problem with Hannover Shape -> there are some deliveries not corretly removed
+         * since the shape is not 100% correct - or at least does not fit to the zip code areas 
+         * -> not a solid solution, but at least a working on i hope TODO adjust Shape Files that the are inline with the zip code areas
+         * -> lol not working, there are actualy more problems then I thought^^ -> 
+         * 2024-06-20 18:49:56 INFO  CarrierGenerator:196 - Number of carriers removed with fewer than 5 services: 24
+         * -> need to check     
+         *
+         * @param carriers The Carriers object containing all carriers.
+         */
+        private void filterCarriers(Carriers carriers) {
+                // Find the carrier with the most services
+                Optional<Carrier> carrierWithMostServices = carriers.getCarriers().values().stream()
+                                .max(Comparator.comparingInt(carrier -> carrier.getServices().size()));
+
+                // Find the carrier with the least services
+                Optional<Carrier> carrierWithLeastServices = carriers.getCarriers().values().stream()
+                                .min(Comparator.comparingInt(carrier -> carrier.getServices().size()));
+
+                // Log the carrier with the most services
+                carrierWithMostServices
+                                .ifPresent(carrier -> LOGGER.info("Carrier with the most services: {} with {} services",
+                                                carrier.getId(), carrier.getServices().size()));
+
+                // Log the carrier with the least services
+                carrierWithLeastServices.ifPresent(
+                                carrier -> LOGGER.info("Carrier with the least services: {} with {} services",
+                                                carrier.getId(), carrier.getServices().size()));
+
+                // Filter out carriers with fewer than 5 services
+                int initialSize = carriers.getCarriers().size();
+                carriers.getCarriers().values().removeIf(carrier -> carrier.getServices().size() < 5);
+                int filteredSize = carriers.getCarriers().size();
+                int removedCarriers = initialSize - filteredSize;
+
+                LOGGER.info("Number of carriers removed with fewer than 5 services: {}", removedCarriers);
+                LOGGER.info("Number of remaining carriers: {}", filteredSize);
         }
 
         /**
@@ -494,7 +539,7 @@ public class CarrierGenerator implements Runnable {
                 // Extract the provider from the carrier's attributes
                 String provider = (String) carrier.getAttributes().getAttribute("provider");
 
-                // Find the closest hub 
+                // Find the closest hub
                 Optional<Hub> closestHub = carrier.getServices().values().stream()
                                 .flatMap(service -> {
                                         Coord serviceCoord = (Coord) service.getAttributes().getAttribute("coord");
@@ -840,7 +885,9 @@ public class CarrierGenerator implements Runnable {
                         double originalWeight = entry.getValue();
                         double createdWeight = createdWeightsMap.getOrDefault(key, 0.0);
 
-                        if (Double.compare(originalWeight, createdWeight) != 0) {
+                        double epsilon = 1e-9; // Epsilon for floating point comparison
+
+                        if (Math.abs(originalWeight - createdWeight) > epsilon) {
                                 throw new ServiceCreationException("Validation failed for key: " + key +
                                                 ". Original weight: " + originalWeight + ", Created weight: "
                                                 + createdWeight, null);
@@ -870,7 +917,7 @@ public class CarrierGenerator implements Runnable {
                         }
                 }
 
-                LOGGER.debug("Validation passed for all carriers and their missed parcel deliveries.");
+                LOGGER.info("Validation passed for all carriers and their missed parcel deliveries.");
         }
 
         /**

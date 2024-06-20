@@ -16,12 +16,16 @@ import org.knowm.xchart.style.markers.TriangleDown;
 import org.knowm.xchart.style.markers.TriangleUp;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.utils.gis.GeoFileReader;
-
+import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.MultiPoint;
+import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 
 import hagrid.HagridConfigGroup;
+import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.SameSizeKMeans;
+import hagrid.utils.general.HAGRIDUtils;
+import hagrid.utils.general.Region;
 
 import java.io.File;
 import java.io.IOException;
@@ -64,9 +68,15 @@ public class DemandProcessor implements Runnable {
         try {
             LOGGER.info("Reading freight demand data from file: {}", hagridConfig.getFreightDemandPath());
             Collection<SimpleFeature> freightFeatures = readFreightDemandData(hagridConfig.getFreightDemandPath());
+            // Read Hanover GeoData from scenario
+            Collection<SimpleFeature> hanoverGeoData = HAGRIDUtils.getScenarioElementAs("hanoverGeoData", scenario);            
+
+            // Filter the freight demand data by regions definied in the configuration
+            Collection<SimpleFeature> filteredFreightFeatures = GeoUtils.filterFeaturesByRegions(freightFeatures, hanoverGeoData,
+                    hagridConfig.getFilterRegions());
 
             // Process the freight demand data
-            Map<String, List<SimpleFeature>> carrierDemand = sortCarrierDemandSameSizeKMeans(freightFeatures);
+            Map<String, List<SimpleFeature>> carrierDemand = sortCarrierDemandSameSizeKMeans(filteredFreightFeatures);
 
             // Store data in scenario
             scenario.addScenarioElement("carrierDemand", carrierDemand);
@@ -76,6 +86,8 @@ public class DemandProcessor implements Runnable {
             LOGGER.error("Error reading freight demand data", e);
         }
     }
+
+
 
     private Collection<SimpleFeature> readFreightDemandData(String filename) throws Exception {
         return new GeoFileReader().readFileAndInitialize(filename);
@@ -91,7 +103,8 @@ public class DemandProcessor implements Runnable {
      *                        demand data.
      * @return Map of carrier demands.
      */
-    private Map<String, List<SimpleFeature>> sortCarrierDemandSameSizeKMeans(Collection<SimpleFeature> freightFeatures) {
+    private Map<String, List<SimpleFeature>> sortCarrierDemandSameSizeKMeans(
+            Collection<SimpleFeature> freightFeatures) {
 
         // Step 1: Filter and group features by provider and postal code
         Map<String, List<SimpleFeature>> carrierDemand = groupFeaturesByProviderAndPostalCode(freightFeatures);

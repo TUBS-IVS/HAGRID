@@ -6,16 +6,24 @@ import org.matsim.core.config.ConfigGroup;
 import org.matsim.core.config.ReflectiveConfigGroup;
 import org.matsim.freight.carriers.TimeWindow;
 
+import hagrid.utils.general.Region;
+
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 
 /**
- * HagridConfigGroup class defines the configuration settings for the Hagrid module.
+ * HagridConfigGroup class defines the configuration settings for the Hagrid
+ * module.
  */
 public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     public static final String GROUPNAME = "hagrid";
+
+    private Set<Region> filterRegions = new HashSet<>(Set.of(Region.ALL)); // Default to ALL
 
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
@@ -45,7 +53,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Providers
     static final String SHP_PROVIDERS = "shpProviders";
     private static final String SHP_PROVIDERS_DESC = "List of shapefile providers.";
-    private List<String> shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag", "fedex_tag");
+    private List<String> shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
+            "fedex_tag");
 
     static final String LOCATION_PROVIDERS = "locationProviders";
     private static final String LOCATION_PROVIDERS_DESC = "List of location providers.";
@@ -144,6 +153,9 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Delivery time window
     private TimeWindow deliveryTimeWindow = TimeWindow.newInstance(8 * 60 * 60, 20 * 60 * 60);
 
+    static final String FILTER_REGIONS = "filterRegions";
+    private static final String FILTER_REGIONS_DESC = "Regions to filter freight demand data. Use 'ALL' to include all regions.";
+
     public HagridConfigGroup() {
         super(GROUPNAME);
         setDefaultDeliveryRates();
@@ -171,7 +183,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 deliveryRateUps = 89;
                 deliveryRateAmazon = 95;
                 deliveryRateFedex = 89;
-                shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag", "fedex_tag");
+                shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
+                        "fedex_tag");
                 break;
         }
     }
@@ -537,6 +550,45 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         return this.concept == Concept.WHITE_LABEL;
     }
 
+    /**
+     * Returns the current set of filter regions.
+     *
+     * @return the set of regions.
+     */
+    public Set<Region> getFilterRegions() {
+        return filterRegions;
+    }
+    /**
+     * Adds a single region to the filterRegions set.
+     *
+     * @param region the region to be added.
+     * @return the updated set of regions.
+     */
+    public Set<Region> addRegion(Region region) {
+        if (filterRegions.contains(Region.ALL)) {
+            filterRegions.remove(Region.ALL);
+        }
+        filterRegions.add(region);
+        return filterRegions;
+    }
+
+    @StringGetter("filterRegions")
+    public String getFilterRegionsAsString() {
+        return filterRegions.stream()
+                .map(Enum::name)
+                .map(String::toLowerCase)
+                .collect(Collectors.joining(","));
+    }
+
+    @StringSetter("filterRegions")
+    public void setFilterRegionsAsString(String filterRegions) {
+        this.filterRegions = Set.of(filterRegions.split(","))
+                .stream()
+                .map(String::toUpperCase)
+                .map(Region::valueOf)
+                .collect(Collectors.toSet());
+    }
+
     @Override
     public Map<String, String> getComments() {
         Map<String, String> map = super.getComments();
@@ -566,6 +618,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put(FREE_SPEED_THRESHOLD, FREE_SPEED_THRESHOLD_DESC);
         map.put("deliveryTimeWindowStart", "Start time of the delivery time window.");
         map.put("deliveryTimeWindowEnd", "End time of the delivery time window.");
+        map.put(FILTER_REGIONS, FILTER_REGIONS_DESC);
         return map;
     }
 }

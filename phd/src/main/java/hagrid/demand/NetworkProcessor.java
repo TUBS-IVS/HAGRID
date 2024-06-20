@@ -11,6 +11,7 @@ import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import hagrid.HagridConfigGroup;
+import hagrid.utils.general.Region;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -42,6 +43,8 @@ public class NetworkProcessor implements Runnable {
     public void processNetwork() {
         try {
             LOGGER.info("Starting network processing...");
+
+            hagridConfig.addRegion(Region.HANNOVER);
 
             // Read the network file
             LOGGER.info("Reading the network file from path: {}", hagridConfig.getNetworkXmlPath());
