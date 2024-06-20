@@ -1,14 +1,27 @@
 package hagrid.utils;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.geotools.api.feature.simple.SimpleFeature;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.MultiPolygon;
+import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
 
 import hagrid.utils.demand.Delivery;
+import hagrid.utils.demand.Hub;
+import hagrid.utils.general.Region;
 
 /**
  * Utility class for coordinate transformations.
@@ -16,6 +29,123 @@ import hagrid.utils.demand.Delivery;
 public class GeoUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(GeoUtils.class);
+
+    /**
+     * Filters the hubs by the specified regions.
+     *
+     * @param hubs           The map of Hub objects representing the hubs.
+     * @param hanoverGeoData The collection of SimpleFeature representing Hanover
+     *                       GeoData.
+     * @param regions        The list of regions to filter by.
+     * @return A filtered map of Hub objects.
+     */
+    public static Map<Id<Hub>, Hub> filterHubsByRegions(Map<Id<Hub>, Hub> hubs,
+            Collection<SimpleFeature> hanoverGeoData, Set<Region> regions) {
+        // If 'ALL' region is specified, return the unfiltered map
+        if (regions.contains(Region.ALL)) {
+            LOGGER.info("No filtering applied. 'ALL' region specified. Returning all hubs.");
+            return hubs;
+        }
+
+        int originalSize = hubs.size();
+        LOGGER.info("Original number of hubs: {}", originalSize);
+
+        // Log the regions being used for filtering
+        String regionsList = regions.stream()
+                .map(Enum::name)
+                .collect(Collectors.joining(", "));
+        LOGGER.info("Filtering hubs by regions: {}", regionsList);
+
+        // Filter hubs by specified regions
+        GeometryFactory geometryFactory = new GeometryFactory();
+        Map<Id<Hub>, Hub> filteredHubs = hubs.entrySet().stream()
+                .filter(entry -> {
+                    Hub hub = entry.getValue();
+                    Point hubPoint = geometryFactory
+                            .createPoint(new Coordinate(hub.getCoord().getX(), hub.getCoord().getY()));
+                    for (Region region : regions) {
+                        MultiPolygon regionGeometry = getRegionGeometry(hanoverGeoData, region);
+                        if (regionGeometry.contains(hubPoint)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        int filteredSize = filteredHubs.size();
+        LOGGER.info("Filtered number of hubs: {}", filteredSize);
+        LOGGER.info("Number of hubs removed: {}", originalSize - filteredSize);
+
+        return filteredHubs;
+    }
+
+    /**
+     * Filters the freight demand data by the specified regions.
+     *
+     * @param features       The collection of SimpleFeature representing the
+     *                       freight demand data.
+     * @param hanoverGeoData The collection of SimpleFeature representing Hanover
+     *                       GeoData.
+     * @param set            The list of regions to filter by.
+     * @return A filtered collection of SimpleFeature representing the freight
+     *         demand data.
+     */
+    public static Collection<SimpleFeature> filterFeaturesByRegions(Collection<SimpleFeature> features,
+            Collection<SimpleFeature> hanoverGeoData, Set<Region> set) {
+        // If 'ALL' region is specified, return the unfiltered list
+
+        if (set.contains(Region.ALL)) {
+            LOGGER.info("No filtering applied. 'ALL' region specified. Returning all features.");
+            return features;
+        }
+
+        int originalSize = features.size();
+        LOGGER.info("Original number of freight features: {}", originalSize);
+
+        // Log the regions being used for filtering
+        String regionsList = set.stream()
+                .map(Enum::name)
+                .collect(Collectors.joining(", "));
+        LOGGER.info("Filtering freight features by regions: {}", regionsList);
+
+        // Filter features by specified regions
+        Set<Region> finalRegions = set;
+        Collection<SimpleFeature> filteredFeatures = features.stream()
+                .filter(feature -> {
+                    for (Region region : finalRegions) {
+                        MultiPolygon regionGeometry = getRegionGeometry(hanoverGeoData, region);
+                        if (regionGeometry.contains((Geometry) feature.getDefaultGeometry())) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+
+        int filteredSize = filteredFeatures.size();
+        LOGGER.info("Filtered number of freight features: {}", filteredSize);
+        LOGGER.info("Number of features removed: {}", originalSize - filteredSize);
+
+        return filteredFeatures;
+    }
+
+    /**
+     * Gets the geometry of the specified region from the Hanover GeoData.
+     *
+     * @param hanoverGeoData The collection of SimpleFeature representing Hanover
+     *                       GeoData.
+     * @param region         The region for which the geometry is to be retrieved.
+     * @return The MultiPolygon geometry of the specified region.
+     */
+    private static MultiPolygon getRegionGeometry(Collection<SimpleFeature> hanoverGeoData, Region region) {
+        for (SimpleFeature feature : hanoverGeoData) {
+            if (region.name().equalsIgnoreCase((String) feature.getAttribute("NAME_3"))) {
+                return (MultiPolygon) feature.getDefaultGeometry();
+            }
+        }
+        throw new IllegalArgumentException("Region " + region + " not found in Hanover GeoData.");
+    }
 
     /**
      * Transforms coordinates to the desired EPSG:25832 format if they are not

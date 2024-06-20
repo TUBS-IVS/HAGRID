@@ -4,21 +4,29 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.geotools.api.feature.simple.SimpleFeature;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.utils.gis.GeoFileReader;
+import org.matsim.core.utils.gis.ShapeFileReader;
 import org.matsim.freight.carriers.CarrierVehicleTypeReader;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Hub;
+import hagrid.utils.general.Region;
+
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -33,6 +41,7 @@ public class LogisticsDataProcessor implements Runnable {
     private static final Logger LOGGER = LogManager.getLogger(LogisticsDataProcessor.class);
 
     private static final String CARRIER_VEHICLE_TYPES = "carrierVehicleTypes";
+    private static final String geoDataPath = "phd/input/geodata/Region Hannover.shp";
 
     @Inject
     private Scenario scenario;
@@ -49,9 +58,16 @@ public class LogisticsDataProcessor implements Runnable {
         try {
             LOGGER.info("Reading logistics data...");
 
+            // Read shipping point data from files in the folder
+            LOGGER.info("Reading geodata of Hanover Region from folder: {}", geoDataPath);
+            Collection<SimpleFeature> hanoverGeoData = GeoFileReader.getAllFeatures(geoDataPath);
+
             // Read hub data from file
+            // Filter out all Hubs that are not located in the Hanover region, e.g. Nienburg
             LOGGER.info("Reading hub data from file: {}", hagridConfig.getHubDataPath());
             Map<Id<Hub>, Hub> hubList = readDataFromFile(hagridConfig.getHubDataPath(), DataType.HUB);
+            hubList =  GeoUtils.filterHubsByRegions(hubList, hanoverGeoData,
+                            EnumSet.complementOf(EnumSet.of(Region.ALL)));
 
             // Read parcel locker data from file
             LOGGER.info("Reading parcel locker data from file: {}", hagridConfig.getParcelLockerDataPath());
@@ -68,9 +84,15 @@ public class LogisticsDataProcessor implements Runnable {
             }
 
             // Store data in scenario
+            // Filter out all parcel lockers and shipping points that are not located in the in the config defined regions
             scenario.addScenarioElement("hubList", hubList);
-            scenario.addScenarioElement("parcelLockerList", parcelLockerList);
-            scenario.addScenarioElement("shippingPointList", shippingPointList);
+            scenario.addScenarioElement("parcelLockerList",
+                    GeoUtils.filterHubsByRegions(parcelLockerList, hanoverGeoData,
+                            hagridConfig.getFilterRegions()));
+            scenario.addScenarioElement("shippingPointList",
+                    GeoUtils.filterHubsByRegions(shippingPointList, hanoverGeoData,
+                            hagridConfig.getFilterRegions()));
+            scenario.addScenarioElement("hanoverGeoData", hanoverGeoData);
 
             LOGGER.info("Loading carrier vehicle types...");
             CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
@@ -140,13 +162,12 @@ public class LogisticsDataProcessor implements Runnable {
                     company = "wl";
                 }
                 String idAsString = dataSplit[2] + "_" + dataSplit[7];
-                idAsString = idAsString.toLowerCase();
 
-                id = Id.create(idAsString, Hub.class);
+                id = Id.create(cleanId(idAsString), Hub.class);
                 x = Double.valueOf(dataSplit[0]);
                 y = Double.valueOf(dataSplit[1]);
 
-                hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));               
+                hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));
 
                 linkId = NetworkUtils.getNearestLinkExactly(scenario.getNetwork(), hubCoord).getId();
                 hub = new Hub(id, company, hubCoord);
@@ -167,7 +188,7 @@ public class LogisticsDataProcessor implements Runnable {
 
             case SHIPPING_POINT:
                 // Parsing shipping point data
-                id = Id.create(dataSplit[0], Hub.class);
+                id = Id.create(cleanId(dataSplit[0]), Hub.class);
                 x = Double.valueOf(dataSplit[1]);
                 y = Double.valueOf(dataSplit[2]);
 
@@ -180,14 +201,14 @@ public class LogisticsDataProcessor implements Runnable {
                 hub.setLink(linkId);
                 break;
 
-                case PARCEL_LOCKER:
+            case PARCEL_LOCKER:
                 // Parsing parcel locker data
                 if (dataSplit[6].contains("PACKSTATION")) {
-                    id = Id.create(dataSplit[7], Hub.class);
+                    id = Id.create(cleanId(dataSplit[7]), Hub.class);
                     x = Double.valueOf(dataSplit[9]);
                     y = Double.valueOf(dataSplit[8]);
                     company = "dhl";
-    
+
                     hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));
                     linkId = NetworkUtils.getNearestLinkExactly(scenario.getNetwork(), hubCoord).getId();
                     hub = new Hub(id, company, hubCoord);
@@ -205,6 +226,44 @@ public class LogisticsDataProcessor implements Runnable {
         }
 
         return hub;
+    }
+
+    /**
+     * Cleans a string ID by replacing special characters and umlauts.
+     *
+     * @param id The original ID string.
+     * @return The cleaned ID string.
+     */
+    private static String cleanId(String id) {
+        return replaceUmlaute(
+                id.toLowerCase()
+                        .replace("ß", "ss")
+                        .replace("'", "")
+                        .replace(" ", "_")
+                        .replace("&", "")
+                        .replace("\"", "")
+                        .replace("__", "_")
+                        .toLowerCase());
+    }
+
+    /**
+     * Replaces German umlauts in a string with their respective non-umlaut
+     * versions.
+     *
+     * @param input The input string containing umlauts.
+     * @return The string with umlauts replaced.
+     */
+    private static String replaceUmlaute(String input) {
+        return input.replace("\u00fc", "ue")
+                .replace("\u00f6", "oe")
+                .replace("\u00e4", "ae")
+                .replace("\u00df", "ss")
+                .replaceAll("\u00dc(?=[a-z\u00e4\u00f6\u00fc\u00df ])", "Ue")
+                .replaceAll("\u00d6(?=[a-z\u00e4\u00f6\u00fc\u00df ])", "Oe")
+                .replaceAll("\u00c4(?=[a-z\u00e4\u00f6\u00fc\u00df ])", "Ae")
+                .replace("\u00dc", "UE")
+                .replace("\u00d6", "OE")
+                .replace("\u00c4", "AE");
     }
 
     /**
