@@ -45,13 +45,14 @@ public class CarrierGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(CarrierGenerator.class);
         private final static Random random = new Random();
-        private CarrierVehicleFactory carrierVehicleFactory = new CarrierVehicleFactory();
 
         @Inject
         private Scenario scenario;
 
         @Inject
         private HagridConfigGroup hagridConfig;
+
+        private CarrierVehicleFactory carrierVehicleFactory;
 
         /**
          * Executes the carrier generation process. This method retrieves the necessary
@@ -73,6 +74,9 @@ public class CarrierGenerator implements Runnable {
                                         scenario);
                         final Map<Id<Hub>, Hub> hubList = HAGRIDUtils.getScenarioElementAs("hubList", scenario);
                         LOGGER.info("Scenario elements retrieved.");
+
+                        // Create an instance of CarrierVehicleFactory with the retrieved vehicle types
+                        carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes);
 
                         // Process the deliveries to create carriers
                         final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
@@ -141,7 +145,7 @@ public class CarrierGenerator implements Runnable {
 
                         try {
                                 addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork, deliveryRates);
-                                addCarrierVehiclesToCarrier(carrier, vehicleTypes, hubList);
+                                addCarrierVehiclesToCarrier(carrier, hubList);
                         } catch (ServiceCreationException e) {
                                 LOGGER.error(carrierID + ": Error creating carrier services", e);
                         }
@@ -149,10 +153,9 @@ public class CarrierGenerator implements Runnable {
                         return carrier;
                 }).forEach(carriers::addCarrier);
 
-                filterCarriers(carriers);
+                logAndValidateInsufficientCarrier(carriers);
 
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
-
 
                 scenario.addScenarioElement("carriers", carriers);
 
@@ -162,16 +165,22 @@ public class CarrierGenerator implements Runnable {
         /**
          * Logs information about carriers, including the ones with the most and least
          * services,
-         * and removes carriers with fewer than 5 services. -> Problem with Hannover Shape -> there are some deliveries not corretly removed
-         * since the shape is not 100% correct - or at least does not fit to the zip code areas 
-         * -> not a solid solution, but at least a working on i hope TODO adjust Shape Files that the are inline with the zip code areas
-         * -> lol not working, there are actualy more problems then I thought^^ -> 
-         * 2024-06-20 18:49:56 INFO  CarrierGenerator:196 - Number of carriers removed with fewer than 5 services: 24
-         * -> need to check     
+         * and removes carriers with fewer than 5 services. -> Problem with Hannover
+         * Shape -> there are some deliveries not corretly removed
+         * since the shape is not 100% correct - or at least does not fit to the zip
+         * code areas
+         * -> not a solid solution, but at least a working on i hope TODO adjust Shape
+         * Files that the are inline with the zip code areas
+         * -> lol not working, there are actualy more problems then I thought^^ ->
+         * 2024-06-20 18:49:56 INFO CarrierGenerator:196 - Number of carriers removed
+         * with fewer than 5 services: 24
+         * -> need to check
+         * -> fixed using postal codes -> keepe
          *
          * @param carriers The Carriers object containing all carriers.
+         * @throws RuntimeException if any carriers have fewer than 5 services.
          */
-        private void filterCarriers(Carriers carriers) {
+        private void logAndValidateInsufficientCarrier(Carriers carriers) {
                 // Find the carrier with the most services
                 Optional<Carrier> carrierWithMostServices = carriers.getCarriers().values().stream()
                                 .max(Comparator.comparingInt(carrier -> carrier.getServices().size()));
@@ -190,14 +199,23 @@ public class CarrierGenerator implements Runnable {
                                 carrier -> LOGGER.info("Carrier with the least services: {} with {} services",
                                                 carrier.getId(), carrier.getServices().size()));
 
-                // Filter out carriers with fewer than 5 services
-                int initialSize = carriers.getCarriers().size();
-                carriers.getCarriers().values().removeIf(carrier -> carrier.getServices().size() < 5);
-                int filteredSize = carriers.getCarriers().size();
-                int removedCarriers = initialSize - filteredSize;
+                // Collect IDs of carriers with fewer than 5 services
+                List<Id<Carrier>> insufficientServiceCarrierIds = carriers.getCarriers().values().stream()
+                                .filter(carrier -> carrier.getServices().size() < 5)
+                                .map(Carrier::getId)
+                                .collect(Collectors.toList());
 
-                LOGGER.info("Number of carriers removed with fewer than 5 services: {}", removedCarriers);
-                LOGGER.info("Number of remaining carriers: {}", filteredSize);
+                // Log the carriers with insufficient services
+                LOGGER.info("Number of carriers with fewer than 5 services: {}", insufficientServiceCarrierIds.size());
+                LOGGER.info("Carriers with insufficient services: {}", insufficientServiceCarrierIds.toString());
+
+                if (!insufficientServiceCarrierIds.isEmpty()) {
+                        throw new RuntimeException("There are carriers with fewer than 5 services. IDs: "
+                                        + insufficientServiceCarrierIds.toString());
+                }
+
+                int remainingSize = carriers.getCarriers().size();
+                LOGGER.info("Number of remaining carriers: {}", remainingSize);
         }
 
         /**
@@ -480,11 +498,11 @@ public class CarrierGenerator implements Runnable {
          * attributes, and adds vehicles to the carrier with appropriate start times
          * based on the provider.
          *
-         * @param carrier      The carrier to which vehicles will be added.
-         * @param vehicleTypes The types of vehicles available for assignment.
-         * @param hubs         A map of hubs used to find the closest hub.
+         * @param carrier               The carrier to which vehicles will be added.
+         * @param carrierVehicleFactory The types of vehicles available for assignment.
+         * @param hubs                  A map of hubs used to find the closest hub.
          */
-        private void addCarrierVehiclesToCarrier(final Carrier carrier, final CarrierVehicleTypes vehicleTypes,
+        private void addCarrierVehiclesToCarrier(final Carrier carrier,
                         final Map<Id<Hub>, Hub> hubs) {
 
                 // Find the closest hub for the carrier based on its ID and number of parcels
@@ -504,10 +522,10 @@ public class CarrierGenerator implements Runnable {
                 for (int startTime = start; startTime <= end; startTime++) {
                         CarrierVehicle carrierVehicleSizeM = carrierVehicleFactory.createCEPVehicle(
                                         closestHub.getLink(),
-                                        closestHub.getId().toString(), vehicleTypes, startTime, maxRouteDuration, "m");
+                                        closestHub.getId().toString(), startTime, maxRouteDuration, "m");
                         CarrierVehicle carrierVehicleSizeL = carrierVehicleFactory.createCEPVehicle(
                                         closestHub.getLink(),
-                                        closestHub.getId().toString(), vehicleTypes, startTime, maxRouteDuration, "l");
+                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeL);
                 }
