@@ -1,6 +1,7 @@
 package hagrid.utils;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +30,36 @@ import hagrid.utils.general.Region;
 public class GeoUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(GeoUtils.class);
+
+    // Define the postal codes for each region
+    private static final Map<Region, Set<String>> regionPostalCodes = new HashMap<>();
+
+    static {
+        regionPostalCodes.put(Region.BARSINGHAUSEN, Set.of("30890"));
+        regionPostalCodes.put(Region.BURGDORF, Set.of("31303"));
+        regionPostalCodes.put(Region.BURGWEDEL, Set.of("30938"));
+        regionPostalCodes.put(Region.GARBSEN, Set.of("30823", "30826", "30827"));
+        regionPostalCodes.put(Region.GEHRDEN, Set.of("30989"));
+        regionPostalCodes.put(Region.HANNOVER,
+                Set.of("30159", "30161", "30163", "30165", "30167", "30169", "30171", "30173", "30175", "30177",
+                        "30179", "30419", "30449", "30451", "30453", "30455", "30457", "30459", "30519", "30521",
+                        "30539", "30559", "30625", "30627", "30629", "30655", "30657", "30659", "30669"));
+        regionPostalCodes.put(Region.HEMMINGEN, Set.of("30966"));
+        regionPostalCodes.put(Region.ISERNHAGEN, Set.of("30916"));
+        regionPostalCodes.put(Region.LAATZEN, Set.of("30880"));
+        regionPostalCodes.put(Region.LANGENHAGEN, Set.of("30851", "30853", "30855"));
+        regionPostalCodes.put(Region.LEHRTE, Set.of("31275"));
+        regionPostalCodes.put(Region.NEUSTADT, Set.of("31535"));
+        regionPostalCodes.put(Region.PATTENSEN, Set.of("30982"));
+        regionPostalCodes.put(Region.RONNENBERG, Set.of("30952"));
+        regionPostalCodes.put(Region.SEELZE, Set.of("30926"));
+        regionPostalCodes.put(Region.SEHNDE, Set.of("31319"));
+        regionPostalCodes.put(Region.SPRINGE, Set.of("31832"));
+        regionPostalCodes.put(Region.UETZE, Set.of("31311"));
+        regionPostalCodes.put(Region.WEDEMARK, Set.of("30900"));
+        regionPostalCodes.put(Region.WENNIGSEN, Set.of("30974"));
+        regionPostalCodes.put(Region.WUNSTORF, Set.of("31515"));
+    }
 
     /**
      * Filters the hubs by the specified regions.
@@ -126,6 +157,50 @@ public class GeoUtils {
         int filteredSize = filteredFeatures.size();
         LOGGER.info("Filtered number of freight features: {}", filteredSize);
         LOGGER.info("Number of features removed: {}", originalSize - filteredSize);
+
+        /**
+         * This filter is necessary because the shapes do not match exactly, and
+         * otherwise,
+         * deliveries would remain in the model with postal codes outside of Hanover but
+         * allegedly located within the Hanover shape. This discrepancy is due to
+         * inaccurate
+         * input data. While filtering by postal codes alone might suffice, this
+         * additional
+         * check ensures that all deliveries are indeed within the specified area.
+         */
+
+        filteredFeatures = GeoUtils.filterFeaturesByPostalCodes(filteredFeatures, set);
+
+        return filteredFeatures;
+    }
+
+    /**
+     * Filters the features based on the postal codes for the specified regions.
+     *
+     * @param features The collection of SimpleFeature representing the freight
+     *                 demand data.
+     * @param regions  The set of regions to filter by.
+     * @return A filtered collection of SimpleFeature based on postal codes.
+     */
+    private static Collection<SimpleFeature> filterFeaturesByPostalCodes(Collection<SimpleFeature> features,
+            Set<Region> regions) {
+        int originalSize = features.size();
+
+        Collection<SimpleFeature> filteredFeatures = features.stream()
+                .filter(feature -> {
+                    String postalCode = (String) feature.getAttribute("postal_cod");
+                    for (Region region : regions) {
+                        if (regionPostalCodes.get(region).contains(postalCode)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+
+        int filteredSize = filteredFeatures.size();
+        LOGGER.info("Filtered number of freight features by postal codes: {}", filteredSize);
+        LOGGER.info("Number of features removed by postal codes: {}", originalSize - filteredSize);
 
         return filteredFeatures;
     }

@@ -73,7 +73,7 @@ public class DemandProcessor implements Runnable {
 
             // Filter the freight demand data by regions definied in the configuration
             Collection<SimpleFeature> filteredFreightFeatures = GeoUtils.filterFeaturesByRegions(freightFeatures, hanoverGeoData,
-                    hagridConfig.getFilterRegions());
+                    hagridConfig.getFilterRegions());            
 
             // Process the freight demand data
             Map<String, List<SimpleFeature>> carrierDemand = sortCarrierDemandSameSizeKMeans(filteredFreightFeatures);

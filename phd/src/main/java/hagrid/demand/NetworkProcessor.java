@@ -44,7 +44,7 @@ public class NetworkProcessor implements Runnable {
         try {
             LOGGER.info("Starting network processing...");
 
-            hagridConfig.addRegion(Region.HANNOVER);
+            // hagridConfig.addRegion(Region.HANNOVER);
 
             // Read the network file
             LOGGER.info("Reading the network file from path: {}", hagridConfig.getNetworkXmlPath());
