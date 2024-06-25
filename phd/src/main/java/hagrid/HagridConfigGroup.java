@@ -28,7 +28,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "phd/input/reduced_network.xml.gz";
+    private String networkXmlPath = "U:/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/Sim-Input/car_cargobike_network_zones_MH_V3.xml.gz";
 
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
@@ -36,7 +36,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     static final String FREIGHT_VEHICLE_TYPES_PATH = "freightVehicleTypePath";
     private static final String FREIGHT_VEHICLE_TYPES_PATH_DESC = "Path to the freight vehicle type xml.";
-    private String freightVehicleTypePath = "phd/input/HAGRID_vehicleTypes.xml";
+    private String freightVehicleTypePath = "phd/input/HAGRID_vehicleTypes2.0.xml";
 
     static final String HUB_DATA_PATH = "hubDataPath";
     private static final String HUB_DATA_PATH_DESC = "Path to the hub data file.";
@@ -181,7 +181,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 deliveryRateHermes = 91;
                 deliveryRateDpd = 89;
                 deliveryRateUps = 89;
-                deliveryRateAmazon = 95;
+                deliveryRateAmazon = 93;
                 deliveryRateFedex = 89;
                 shpProviders = List.of("dhl_tag", "hermes_tag", "ups_tag", "amazon_tag", "dpd_tag", "gls_tag",
                         "fedex_tag");

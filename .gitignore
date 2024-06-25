@@ -33,5 +33,5 @@ log/
 pakethochrechnung/Verflechtungsprognose2030/ketten-2010.csv
 pakethochrechnung/Verflechtungsprognose2030/ketten-2030.csv
 
-# Exclude carriers.xml file
-phd/output/carriers.xml
+# Exclude entire output folder
+phd/output/

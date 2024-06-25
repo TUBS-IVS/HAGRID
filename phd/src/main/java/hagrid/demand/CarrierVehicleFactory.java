@@ -1,11 +1,14 @@
 package hagrid.demand;
 
+import java.util.Collections;
 import java.util.Random;
+import java.util.Set;
 
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.freight.carriers.CarrierVehicle;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
+import org.matsim.freight.carriers.CarriersUtils;
 import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
 
@@ -36,11 +39,13 @@ public class CarrierVehicleFactory {
         String suffix = String.valueOf(startTime);
 
         // Determine vehicle type based on size
-        VehicleType type = getVehicleType(size);
+        VehicleType vehicleType = getVehicleType(size);
+        // not nesscary to add skill - but i guess i keep it for now
+        CarriersUtils.addSkill(vehicleType, "conventional");  
 
         // Create vehicle ID based on size and start time suffix
         CarrierVehicle.Builder vBuilder = CarrierVehicle.Builder
-                .newInstance(Id.create("cep_size_" + size + "_" + suffix, Vehicle.class), homeId, type);
+                .newInstance(Id.create("cep_size_" + size + "_" + suffix, Vehicle.class), homeId, vehicleType);
 
         // Apply time shift based on size
         double timeShift = getTimeShift(size);
@@ -72,6 +77,8 @@ public class CarrierVehicleFactory {
 
         // Get the vehicle type
         VehicleType vehicleType = getVehicleType(vehicleIdSuffix);
+        // not nesscary to add skill - but i guess i keep it for now
+        CarriersUtils.addSkill(vehicleType, "supply");       
 
         // Create the vehicle builder
         CarrierVehicle.Builder vBuilder = CarrierVehicle.Builder.newInstance(vehicleId, homeId, vehicleType);
