@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<vehicleDefinitions xmlns="http://www.matsim.org/files/dtd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd">
+
+	<vehicleType id="ct_bus">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="50.0">
+
+		</capacity>
+		<length meter="12.0"/>
+		<width meter="2.5"/>
+		<maximumVelocity meterPerSecond="27.77777777777778"/>
+		<costInformation fixedCostsPerDay="160.0" costsPerMeter="7.7E-4" costsPerSecond="8.0E-4">
+
+		</costInformation>
+		<passengerCarEquivalents pce="2.8"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_car">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="5.0">
+
+		</capacity>
+		<length meter="5.0"/>
+		<width meter="2.0"/>
+		<maximumVelocity meterPerSecond="55.55555555555556"/>
+		<costInformation fixedCostsPerDay="38.8" costsPerMeter="3.70807E-4" costsPerSecond="0.00627778">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.00627778</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.0"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_cep_bike">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="23.0">
+
+		</capacity>
+		<length meter="7.5"/>
+		<width meter="1.0"/>
+		<maximumVelocity meterPerSecond="4.166666666666667"/>
+		<costInformation fixedCostsPerDay="137.39" costsPerMeter="0.0" costsPerSecond="1.0E-8">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">0.001</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="0.5"/>
+		<networkMode networkMode="cargobike"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_cep_size_l">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="230.0">
+
+		</capacity>
+		<length meter="6.0"/>
+		<width meter="2.25"/>
+		<maximumVelocity meterPerSecond="38.888888888888886"/>
+		<costInformation fixedCostsPerDay="189.15" costsPerMeter="3.86430173292559E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.5"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+	<vehicleType id="ct_cep_size_m">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="165.0">
+
+		</capacity>
+		<length meter="5.0"/>
+		<width meter="2.0"/>
+		<maximumVelocity meterPerSecond="44.44444444444444"/>
+		<costInformation fixedCostsPerDay="171.78" costsPerMeter="3.71826707441386E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.45"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+	<vehicleType id="ct_egrocery_bike">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="5.0">
+
+		</capacity>
+		<length meter="7.5"/>
+		<width meter="1.0"/>
+		<maximumVelocity meterPerSecond="4.166666666666667"/>
+		<costInformation fixedCostsPerDay="137.39" costsPerMeter="0.0" costsPerSecond="1.0E-8">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">0.001</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="0.5"/>
+		<networkMode networkMode="cargobike"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_egrocery_van">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="18.0">
+
+		</capacity>
+		<length meter="7.5"/>
+		<width meter="1.0"/>
+		<costInformation fixedCostsPerDay="189.59" costsPerMeter="1.23E-4" costsPerSecond="1.0E-8">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">0.001</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.5"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+	<vehicleType id="ct_motorbike">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="1.0">
+
+		</capacity>
+		<length meter="2.0"/>
+		<width meter="1.0"/>
+		<maximumVelocity meterPerSecond="44.44444444444444"/>
+		<costInformation fixedCostsPerDay="50.0" costsPerMeter="2.3E-4" costsPerSecond="0.008">
+
+		</costInformation>
+		<passengerCarEquivalents pce="0.75"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_other">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="5.0">
+
+		</capacity>
+		<length meter="5.0"/>
+		<width meter="2.0"/>
+		<maximumVelocity meterPerSecond="44.44444444444444"/>
+		<costInformation fixedCostsPerDay="80.0" costsPerMeter="4.7E-4" costsPerSecond="0.008">
+
+		</costInformation>
+		<passengerCarEquivalents pce="1.0"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_truck_heavy">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">supply</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="2000.0">
+
+		</capacity>
+		<length meter="18.0"/>
+		<width meter="2.5"/>
+		<maximumVelocity meterPerSecond="22.22222222222222"/>
+		<costInformation fixedCostsPerDay="618.55" costsPerMeter="5.55126E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="2.8"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_truck_light">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">supply</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="1000.0">
+
+		</capacity>
+		<length meter="7.0"/>
+		<width meter="2.25"/>
+		<maximumVelocity meterPerSecond="22.22222222222222"/>
+		<costInformation fixedCostsPerDay="550.63" costsPerMeter="4.86430173292559E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="2.2"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="1.0"/>
+	</vehicleType>
+
+	<vehicleType id="ct_truck_super_light">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">supply</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="230.0">
+
+		</capacity>
+		<length meter="6.0"/>
+		<width meter="2.25"/>
+		<maximumVelocity meterPerSecond="38.888888888888886"/>
+		<costInformation fixedCostsPerDay="189.15" costsPerMeter="3.86430173292559E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.5"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+		
+
+</vehicleDefinitions>

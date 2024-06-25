@@ -91,7 +91,10 @@ public class CarrierGenerator implements Runnable {
 
                         LOGGER.info("Carrier generation completed.");
 
-                        new CarrierPlanWriter(carriers).write("phd/output/carriers.xml");
+                        new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers.xml");
+                        // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
+                        // "phd/output/delivery_carriers.shp");
+
 
                 } catch (Exception e) {
                         LOGGER.error("Error generating carriers", e);
@@ -247,6 +250,9 @@ public class CarrierGenerator implements Runnable {
 
                 // Initialize the missed parcels list to null
                 carrier.getAttributes().putAttribute("missedParcelsAsList", null);
+
+                // Initialize the carrier type attribute to CarrierType = delivery
+                carrier.getAttributes().putAttribute("carrierType", "delivery");
         }
 
         /**
@@ -420,6 +426,7 @@ public class CarrierGenerator implements Runnable {
                                 determineMissedParcels(carrier, service, rate);
                         }
 
+                        CarriersUtils.addSkill(service, "conventional");  
                         CarriersUtils.addService(carrier, service);
 
                         return service;
@@ -565,7 +572,7 @@ public class CarrierGenerator implements Runnable {
                                                         .createPoint(new Coordinate(serviceCoord.getX(),
                                                                         serviceCoord.getY()));
                                         return hubList.values().stream()
-                                                        .filter(hub -> hub.getCompany().contains(provider)
+                                                        .filter(hub -> hub.getProvider().contains(provider)
                                                                         && hub.hasCapacity(numberOfParcels))
                                                         .map(hub -> new Object[] { hub, servicePoint, hub.getCoord() });
                                 })

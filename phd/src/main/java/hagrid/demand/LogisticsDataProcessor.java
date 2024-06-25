@@ -14,11 +14,13 @@ import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.core.utils.gis.ShapeFileReader;
 import org.matsim.freight.carriers.CarrierVehicleTypeReader;
+import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Hub;
+import hagrid.utils.general.HAGRIDUtils;
 import hagrid.utils.general.Region;
 
 import static org.junit.jupiter.api.Assertions.fail;
@@ -97,6 +99,10 @@ public class LogisticsDataProcessor implements Runnable {
             LOGGER.info("Loading carrier vehicle types...");
             CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
             new CarrierVehicleTypeReader(vehicleTypes).readFile(hagridConfig.getVehicleTypePath());
+            // HAGRIDUtils.addSkills(vehicleTypes);
+            // new CarrierVehicleTypeWriter(vehicleTypes).write("HAGRID_vehicleTypes2.0.xml");
+
+
             scenario.addScenarioElement(CARRIER_VEHICLE_TYPES, vehicleTypes);
 
             LOGGER.info("Logistics data processing completed.");

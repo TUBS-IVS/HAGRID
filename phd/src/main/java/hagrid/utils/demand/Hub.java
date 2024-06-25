@@ -21,7 +21,7 @@ public class Hub implements Attributable {
     // Unique identifier for the hub
     private final Id<Hub> id;
     // Company associated with the hub
-    private String company;
+    private String provider;
     // Address of the hub
     private String address;
     // Type of the hub
@@ -45,12 +45,12 @@ public class Hub implements Attributable {
      * Constructor to initialize a Hub with an ID, company, and coordinates.
      *
      * @param id      The ID of the hub.
-     * @param company The company associated with the hub.
+     * @param provider The company associated with the hub.
      * @param coord   The coordinates of the hub.
      */
-    public Hub(Id<Hub> id, String company, Coord coord) {
+    public Hub(Id<Hub> id, String provider, Coord coord) {
         this.id = id;
-        this.company = company;
+        this.provider = provider;
         this.coord = coord;
     }
 
@@ -61,7 +61,7 @@ public class Hub implements Attributable {
      */
     public Hub(Hub hub) {
         this.id = hub.id;
-        this.company = hub.company;
+        this.provider = hub.provider;
         this.address = hub.address;
         this.type = hub.type;
         this.coord = hub.coord;
@@ -117,13 +117,13 @@ public class Hub implements Attributable {
     }
 
     // Getter for the company associated with the hub
-    public String getCompany() {
-        return company;
+    public String getProvider() {
+        return provider;
     }
 
     // Setter for the company associated with the hub
-    public void setCompany(String company) {
-        this.company = company;
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 
     // Getter for the coordinates of the hub
@@ -164,7 +164,7 @@ public class Hub implements Attributable {
     // Returns a string representation of the hub
     @Override
     public String toString() {
-        return "Hub [id=" + id + ", company=" + company + " with coordinates =" + coord + "]";
+        return "Hub [id=" + id + ", company=" + provider + " with coordinates =" + coord + "]";
     }
 
     // Getter for the attributes of the hub
