@@ -6,11 +6,13 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 
 import hagrid.demand.CarrierGenerator;
+import hagrid.demand.CarrierRouter;
 import hagrid.demand.DeliveryGenerator;
 import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
 import hagrid.demand.NetworkProcessor;
 import hagrid.demand.SupplyCarrierGenerator;
+import hagrid.utils.routing.ThreadingType;
 
 public class App {
     private static final Logger LOGGER = LogManager.getLogger(App.class);
@@ -28,6 +30,9 @@ public class App {
         runDeliveryGeneration(injector); // Step 4: Generate parcels based on the processed demand data
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
+        runRouter(injector, ThreadingType.FORK_JOIN_POOL); // Step 7: Run routing for delivery supply carriers based on
+                                                           // the generated
+        // carriers
 
         LOGGER.info("Application finished.");
     }
@@ -130,6 +135,35 @@ public class App {
         LOGGER.info("Starting supply carrier generation based on generated carriers...");
         supplyCarrierGenerator.run();
         LOGGER.info("Supply carrier generation completed.");
+    }
+
+    /**
+     * Runs the routing process for both delivery and supply carriers,
+     * initializing and executing the CarrierRouter.
+     * This step performs the routing for the carriers based on the provided network
+     * and costs,
+     * utilizing the specified threading type for parallel processing.
+     * 
+     * @param injector      the Guice injector used for dependency injection.
+     * @param threadingType the threading type to be used for parallel processing.
+     */
+    private static void runRouter(Injector injector, ThreadingType threadingType) {
+        try {
+            LOGGER.info("Initializing CarrierRouter with threading type: {}...", threadingType);
+            CarrierRouter carrierRouter = injector.getInstance(CarrierRouter.class);
+            if (carrierRouter == null) {
+                LOGGER.error("CarrierRouter instance is null");
+                return;
+            }
+            // carrierRouter.setThreadingType(threadingType);
+
+            LOGGER.info("Starting routing process for delivery and supply carriers...");
+            carrierRouter.run();
+            LOGGER.info("Routing process for delivery and supply carriers completed.");
+        } catch (Exception e) {
+            LOGGER.error("Error initializing or running CarrierRouter", e);
+        }
+
     }
 
 }

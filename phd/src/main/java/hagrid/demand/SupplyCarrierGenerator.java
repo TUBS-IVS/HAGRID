@@ -155,6 +155,8 @@ public class SupplyCarrierGenerator implements Runnable {
             }
         }
 
+        scenario.addScenarioElement("supply", splitSupplyCarriers);
+
         return splitSupplyCarriers;
     }
 
