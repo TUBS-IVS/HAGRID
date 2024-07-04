@@ -135,7 +135,8 @@ public class Router {
                 (endTime - startTime) / 1000);
 
         // Plotting the runtime
-        HAGRIDRouterUtils.plotRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
+        HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
+        HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes, threadingType.toString(), carrierType);
     }
 
     /**

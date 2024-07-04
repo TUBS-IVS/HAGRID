@@ -84,19 +84,20 @@ public class HAGRIDRouterUtils {
     }
 
     /**
-     * Plots the routing runtime as a line chart.
+     * Plots the cumulative routing runtime as a line chart.
      *
      * @param startTime   The start time of the routing process.
      * @param endTime     The end time of the routing process.
      * @param routedTimes A list of timestamps when each carrier routing finished.
      * @param fileName    The file name for the output plot.
-     * @param carrierType 
+     * @param carrierType The type of carrier (e.g., delivery, supply).
      */
-    public static void plotRoutingRuntime(long startTime, long endTime, List<Long> routedTimes, String fileName, String carrierType) {
-        LOGGER.info("Plotting routing runtime...");
+    public static void plotCumulativeRoutingRuntime(long startTime, long endTime, List<Long> routedTimes,
+            String fileName, String carrierType) {
+        LOGGER.info("Plotting cumulative routing runtime...");
 
         // Create the XY series for the plot
-        XYSeries series = new XYSeries("Routing Runtime");
+        XYSeries series = new XYSeries("Cumulative Routing Runtime");
         for (int i = 0; i < routedTimes.size(); i++) {
             long routedTime = routedTimes.get(i);
             series.add(i + 1, (routedTime - startTime) / 1000.0);
@@ -107,7 +108,7 @@ public class HAGRIDRouterUtils {
 
         // Create the chart
         JFreeChart chart = ChartFactory.createXYLineChart(
-                "Routing Runtime",
+                "Cumulative Routing Runtime",
                 "Number of Routed Carriers",
                 "Time (seconds)",
                 dataset,
@@ -126,11 +127,66 @@ public class HAGRIDRouterUtils {
 
         // Output the chart to a file
         try {
-            File outputFile = new File("phd/output/" + fileName + "_" + carrierType + "_routing_runtime.png");
+            File outputFile = new File(
+                    "phd/output/" + fileName + "_" + carrierType + "_cumulative_routing_runtime.png");
             ChartUtils.saveChartAsPNG(outputFile, chart, 800, 600);
-            LOGGER.info("Routing runtime plot saved as {}", outputFile.getAbsolutePath());
+            LOGGER.info("Cumulative routing runtime plot saved as {}", outputFile.getAbsolutePath());
         } catch (IOException e) {
-            LOGGER.error("Error saving routing runtime plot", e);
+            LOGGER.error("Error saving cumulative routing runtime plot", e);
+        }
+    }
+
+    /**
+     * Plots the individual routing runtime per carrier as a line chart.
+     *
+     * @param startTime   The start time of the routing process.
+     * @param routedTimes A list of timestamps when each carrier routing finished.
+     * @param fileName    The file name for the output plot.
+     * @param carrierType The type of carrier (e.g., delivery, supply).
+     */
+    public static void plotIndividualRoutingRuntime(long startTime, List<Long> routedTimes, String fileName,
+            String carrierType) {
+        LOGGER.info("Plotting individual routing runtime...");
+
+        // Create the XY series for the plot
+        XYSeries series = new XYSeries("Individual Routing Runtime");
+        long previousTime = startTime;
+        for (int i = 0; i < routedTimes.size(); i++) {
+            long routedTime = routedTimes.get(i);
+            series.add(i + 1, (routedTime - previousTime) / 1000.0);
+            previousTime = routedTime;
+        }
+
+        // Create a dataset
+        XYSeriesCollection dataset = new XYSeriesCollection(series);
+
+        // Create the chart
+        JFreeChart chart = ChartFactory.createXYLineChart(
+                "Individual Routing Runtime",
+                "Number of Routed Carriers",
+                "Time (seconds)",
+                dataset,
+                PlotOrientation.VERTICAL,
+                true,
+                true,
+                false);
+
+        // Customize the plot appearance
+        XYPlot plot = chart.getXYPlot();
+        XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer();
+        renderer.setSeriesPaint(0, Color.RED);
+        renderer.setSeriesShapesVisible(0, true);
+        plot.setRenderer(renderer);
+        plot.setBackgroundPaint(Color.white);
+
+        // Output the chart to a file
+        try {
+            File outputFile = new File(
+                    "phd/output/" + fileName + "_" + carrierType + "_individual_routing_runtime.png");
+            ChartUtils.saveChartAsPNG(outputFile, chart, 800, 600);
+            LOGGER.info("Individual routing runtime plot saved as {}", outputFile.getAbsolutePath());
+        } catch (IOException e) {
+            LOGGER.error("Error saving individual routing runtime plot", e);
         }
     }
 
