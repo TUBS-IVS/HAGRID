@@ -38,3 +38,6 @@ phd/output/
 
 # Exclude vs code settings
 .vscode/
+
+# Exclude target folder
+/target
