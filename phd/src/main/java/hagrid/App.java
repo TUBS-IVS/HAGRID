@@ -155,7 +155,7 @@ public class App {
                 LOGGER.error("CarrierRouter instance is null");
                 return;
             }
-            // carrierRouter.setThreadingType(threadingType);
+            carrierRouter.setThreadingType(threadingType);
 
             LOGGER.info("Starting routing process for delivery and supply carriers...");
             carrierRouter.run();
