@@ -35,3 +35,6 @@ pakethochrechnung/Verflechtungsprognose2030/ketten-2030.csv
 
 # Exclude entire output folder
 phd/output/
+
+# Exclude vs code settings
+.vscode/
