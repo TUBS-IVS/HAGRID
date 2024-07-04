@@ -90,8 +90,9 @@ public class HAGRIDRouterUtils {
      * @param endTime     The end time of the routing process.
      * @param routedTimes A list of timestamps when each carrier routing finished.
      * @param fileName    The file name for the output plot.
+     * @param carrierType 
      */
-    public static void plotRoutingRuntime(long startTime, long endTime, List<Long> routedTimes, String fileName) {
+    public static void plotRoutingRuntime(long startTime, long endTime, List<Long> routedTimes, String fileName, String carrierType) {
         LOGGER.info("Plotting routing runtime...");
 
         // Create the XY series for the plot
@@ -125,7 +126,7 @@ public class HAGRIDRouterUtils {
 
         // Output the chart to a file
         try {
-            File outputFile = new File("phd/output/" + fileName + "_routing_runtime.png");
+            File outputFile = new File("phd/output/" + fileName + "_" + carrierType + "_routing_runtime.png");
             ChartUtils.saveChartAsPNG(outputFile, chart, 800, 600);
             LOGGER.info("Routing runtime plot saved as {}", outputFile.getAbsolutePath());
         } catch (IOException e) {

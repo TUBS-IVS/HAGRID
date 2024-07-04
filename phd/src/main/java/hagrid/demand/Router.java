@@ -21,6 +21,8 @@ import hagrid.utils.routing.HAGRIDRouterUtils;
 import hagrid.utils.routing.JspritCarrierTask;
 import hagrid.utils.routing.JspritTreadPoolExecutor;
 import hagrid.utils.routing.ThreadingType;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -46,7 +48,8 @@ public class Router {
      * @param netBasedCosts The network-based transport costs.
      * @param network       The network.
      */
-    public void routeCarriers(Carriers carriers, final VRPTransportCosts netBasedCosts, Network network , String carrierType) {
+    public void routeCarriers(Carriers carriers, final VRPTransportCosts netBasedCosts, Network network,
+            String carrierType) {
         LOGGER.info("Starting routing of carriers using {}...", threadingType);
 
         // Sort carriers by the number of services and shipments in descending order
@@ -103,6 +106,25 @@ public class Router {
                     CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).get();
                     completableFutureExecutor.shutdown();
                     break;
+                case SINGLE_THREAD:
+                    // Use single thread for sequential processing
+                    sortedCarriers.forEach(carrier -> {
+                        routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size());
+                        routedTimes.add(System.currentTimeMillis());
+                    });
+                    break;
+                case REACTOR:
+                    // Use Reactor for parallel processing
+                    Flux.fromIterable(sortedCarriers)
+                            .parallel()
+                            .runOn(Schedulers.parallel())
+                            .doOnNext(carrier -> {
+                                routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size());
+                                routedTimes.add(System.currentTimeMillis());
+                            })
+                            .sequential()
+                            .blockLast();
+                    break;
             }
         } catch (InterruptedException | ExecutionException e) {
             LOGGER.error("Error in parallel routing execution", e);
@@ -113,7 +135,7 @@ public class Router {
                 (endTime - startTime) / 1000);
 
         // Plotting the runtime
-        HAGRIDRouterUtils.plotRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString());
+        HAGRIDRouterUtils.plotRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
     }
 
     /**

@@ -51,7 +51,7 @@ public class JspritCarrierTask implements Runnable {
     @Override
     public void run() {
         LOGGER.info("Started VRP solving for carrier number {} out of {} carriers. Thread id: {}. Priority: {}",
-                startedVRPCounter.incrementAndGet(), taskCount, Thread.currentThread().getId(), this.getPriority());
+                startedVRPCounter.incrementAndGet(), taskCount, Thread.currentThread().threadId(), this.getPriority());
 
         double start = System.currentTimeMillis();
         int serviceCount = carrier.getServices().size();
