@@ -32,7 +32,7 @@ import org.apache.logging.log4j.LogManager;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
-import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
+
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
 public class HAGRIDRouterUtils {

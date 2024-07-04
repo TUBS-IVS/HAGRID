@@ -18,8 +18,10 @@ import hagrid.utils.routing.ThreadingType;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
 
 /**
- * The CarrierRouter class is responsible for routing both delivery and supply carriers.
- * It retrieves the necessary elements from the scenario and performs the routing using the specified threading type.
+ * The CarrierRouter class is responsible for routing both delivery and supply
+ * carriers.
+ * It retrieves the necessary elements from the scenario and performs the
+ * routing using the specified threading type.
  */
 @Singleton
 public class CarrierRouter implements Runnable {
@@ -34,47 +36,48 @@ public class CarrierRouter implements Runnable {
     @Inject
     private HagridConfigGroup hagridConfig;
 
-    @Inject
-    private CarrierVehicleTypes vehicleTypes;
-
-    @Inject
-    private Network network;
-
     public void setThreadingType(ThreadingType threadingType) {
         this.threadingType = threadingType;
     }
 
     /**
      * Executes the routing process for both delivery and supply carriers.
-     * It retrieves the necessary elements from the scenario and performs the routing using the specified threading type.
+     * It retrieves the necessary elements from the scenario and performs the
+     * routing using the specified threading type.
      */
     @Override
     public void run() {
         try {
-            LOGGER.info("Starting routing process for carriers...");
+            LOGGER.info("Starting routing process for carriers with threading type: {}.", threadingType);
 
             // Retrieve existing delivery carriers from the scenario
             Carriers carriers = HAGRIDUtils.getScenarioElementAs("carriers", scenario);
             LOGGER.info("Retrieved {} delivery carriers from the scenario.", carriers.getCarriers().size());
 
             // Retrieve existing supply carriers from the scenario
-            Carriers supplyCarriers = HAGRIDUtils.getScenarioElementAs("supplyCarriers", scenario);
+            Carriers supplyCarriers = HAGRIDUtils.getScenarioElementAs("supply", scenario);
             LOGGER.info("Retrieved {} supply carriers from the scenario.", supplyCarriers.getCarriers().size());
 
             // Retrieve car filtered network from the scenario
             Network carFilteredNetwork = HAGRIDUtils.getScenarioElementAs("carFilteredNetwork", scenario);
             LOGGER.info("Retrieved {} links from the carFilteredNetwork.", carFilteredNetwork.getLinks().size());
 
+            // Retrieve car filtered network from the scenario
+            CarrierVehicleTypes vehicleTypes = HAGRIDUtils.getScenarioElementAs("carrierVehicleTypes", scenario);
+            LOGGER.info("Retrieved {} carrier vehicles types.", vehicleTypes.getVehicleTypes().size());
+
             // Set up routing costs
 
             LOGGER.info("Set up routing costs: NetworkBasedTransportCosts and ZoneBasedTransportCosts.");
             // Routing
-            NetworkBasedTransportCosts.Builder netBuilder = NetworkBasedTransportCosts.Builder.newInstance(carFilteredNetwork,
+            NetworkBasedTransportCosts.Builder netBuilder = NetworkBasedTransportCosts.Builder.newInstance(
+                    carFilteredNetwork,
                     vehicleTypes.getVehicleTypes().values());
             netBuilder.setTimeSliceWidth(1800);
             final NetworkBasedTransportCosts netBasedCosts = netBuilder.build();
 
-            ZoneBasedTransportCosts.Builder zoneBuilder = ZoneBasedTransportCosts.Builder.newInstance(carFilteredNetwork,
+            ZoneBasedTransportCosts.Builder zoneBuilder = ZoneBasedTransportCosts.Builder.newInstance(
+                    carFilteredNetwork,
                     vehicleTypes.getVehicleTypes().values());
             zoneBuilder.setTimeSliceWidth(1800);
             final ZoneBasedTransportCosts zoneBasedCosts = zoneBuilder.build();
@@ -82,14 +85,14 @@ public class CarrierRouter implements Runnable {
             // Initialize the router with the specified threading type
             Router router = new Router(threadingType);
 
-            // Route delivery carriers
-            router.routeCarriers(carriers, zoneBasedCosts, network, "delivery");
+            // // Route delivery carriers
+            // router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
 
             // Route supply carriers
-            router.routeCarriers(supplyCarriers, netBasedCosts, network, "supply");
+            router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");
 
-            // Write the routed plans to XML files
-            new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers_routed.xml");
+            // // Write the routed plans to XML files
+            // new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers_routed.xml");
             new CarrierPlanWriter(supplyCarriers).write("phd/output/supply_carriers_routed.xml");
 
             LOGGER.info("Routing process for carriers completed successfully.");
