@@ -10,13 +10,21 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.geotools.api.feature.simple.SimpleFeature;
+import org.geotools.api.feature.simple.SimpleFeatureType;
+import org.geotools.api.geometry.MismatchedDimensionException;
+import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.api.referencing.operation.MathTransform;
+import org.geotools.api.referencing.operation.TransformException;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
 
@@ -281,5 +289,66 @@ public class GeoUtils {
         double dx = coord1.getX() - coord2.getX();
         double dy = coord1.getY() - coord2.getY();
         return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * Checks if a given coordinate intersects with a specified geometry.
+     *
+     * @param geo   The geometry to check intersection with.
+     * @param coord The coordinate to be checked.
+     * @return True if the coordinate intersects the geometry, false otherwise.
+     */
+    public static boolean isCoordIntersectingShape(Geometry geo, Coord coord) {
+        Point point = getPointFromCoord(coord);
+        return geo.intersects(point);
+    }
+
+    /**
+     * Converts a MATSim Coord object to a JTS Point object.
+     *
+     * @param coord The MATSim coordinate.
+     * @return The corresponding JTS Point.
+     */
+    public static Point getPointFromCoord(Coord coord) {
+        GeometryFactory geometryFactory = new GeometryFactory();
+        return geometryFactory.createPoint(new Coordinate(coord.getX(), coord.getY()));
+    }
+
+    /**
+     * Creates a LineString geometry from a MATSim Link.
+     *
+     * @param link The MATSim link
+     * @return A LineString representing the link geometry
+     */
+    public static LineString createLineStringFromLink(Link link) {
+        GeometryFactory geometryFactory = new GeometryFactory();
+        Coordinate fromCoord = new Coordinate(
+                link.getFromNode().getCoord().getX(),
+                link.getFromNode().getCoord().getY()
+        );
+        Coordinate toCoord = new Coordinate(
+                link.getToNode().getCoord().getX(),
+                link.getToNode().getCoord().getY()
+        );
+        return geometryFactory.createLineString(new Coordinate[]{fromCoord, toCoord});
+    }
+
+    /**
+     * Retrieves the combined boundary geometry from a collection of features.
+     *
+     * @param boundaryFeatures The collection of boundary features
+     * @return A Geometry object representing the combined boundary
+     */
+    public static Geometry getBoundaryGeometry(Collection<SimpleFeature> boundaryFeatures) {
+        Geometry combinedGeometry = null;
+        for (SimpleFeature feature : boundaryFeatures) {
+            Geometry geometry = (Geometry) feature.getDefaultGeometry();
+            if (combinedGeometry == null) {
+                combinedGeometry = geometry;
+            } else {
+                combinedGeometry = combinedGeometry.union(geometry);
+            }
+        }
+        return combinedGeometry;
     }
 }
