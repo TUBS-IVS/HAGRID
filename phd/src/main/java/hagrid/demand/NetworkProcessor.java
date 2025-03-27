@@ -6,6 +6,7 @@ import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
+import org.matsim.api.core.v01.network.NetworkWriter;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
@@ -102,6 +103,8 @@ public class NetworkProcessor implements Runnable {
             // Add the networks to the scenario
             scenario.addScenarioElement("carFilteredNetwork", carFilteredNetwork);
             scenario.addScenarioElement("parcelServiceNetwork", parcelServiceNetwork);
+
+
         } catch (Exception e) {
             // Log any exceptions that occur during the network processing
             LOGGER.error("Error processing network", e);

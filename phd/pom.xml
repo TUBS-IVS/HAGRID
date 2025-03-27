@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
   <modelVersion>4.0.0</modelVersion>
 
@@ -60,10 +59,10 @@
       <artifactId>matsim</artifactId>
       <version>${matsim.version}</version>
       <exclusions>
-        <exclusion>
+        <!-- <exclusion>
           <artifactId>guava</artifactId>
           <groupId>com.google.guava</groupId>
-        </exclusion>
+        </exclusion> -->
       </exclusions>
     </dependency>
     <dependency>
@@ -102,6 +101,12 @@
       <groupId>org.geotools</groupId>
       <artifactId>gt-api</artifactId>
       <version>${geotools.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>javax.inject</groupId>
+          <artifactId>javax.inject</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.geotools</groupId>
@@ -200,7 +205,17 @@
       <artifactId>jakarta.validation-api</artifactId>
       <version>3.0.2</version>
     </dependency>
-
+    <!-- https://mvnrepository.com/artifact/jakarta.inject/jakarta.inject-api -->
+    <dependency>
+      <groupId>jakarta.inject</groupId>
+      <artifactId>jakarta.inject-api</artifactId>
+      <version>2.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>2.13.0</version>
+  </dependency>
     <!-- Hibernate Validator (Reference Implementation) -->
     <dependency>
       <groupId>org.hibernate.validator</groupId>
@@ -214,11 +229,11 @@
       <artifactId>jakarta.el</artifactId>
       <version>4.0.2</version>
     </dependency>
-    <dependency>
+    <!-- <dependency>
       <groupId>com.google.inject</groupId>
       <artifactId>guice</artifactId>
       <version>5.0.1</version>
-    </dependency>
+    </dependency> -->
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
@@ -254,7 +269,7 @@
     <dependency>
       <groupId>io.projectreactor</groupId>
       <artifactId>reactor-core</artifactId>
-      <version>3.4.13</version> <!-- Sie können auch die neueste Version verwenden -->
+      <version>3.4.13</version>      <!-- Sie können auch die neueste Version verwenden -->
     </dependency>
 
   </dependencies>

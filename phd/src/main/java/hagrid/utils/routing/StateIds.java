@@ -22,10 +22,10 @@ import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 public class StateIds {	
 	
 	private final StateManager manager;
-	static StateId LATEST_ACTIVITY_START = null;
-	static StateId DEPARTURE_AT_DEPOT = null;
-	static StateId LATEST_ARR_AT_DEPOT = null;
-	static StateId ARRIVAL_AT_DEPOT = null;
+	public static StateId LATEST_ACTIVITY_START = null;
+	public static StateId DEPARTURE_AT_DEPOT = null;
+	public static StateId LATEST_ARR_AT_DEPOT = null;
+	public static StateId ARRIVAL_AT_DEPOT = null;
 
 	public  StateIds(StateManager manager) {		
 		this.manager = manager;

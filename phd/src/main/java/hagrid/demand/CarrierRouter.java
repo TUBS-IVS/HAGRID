@@ -14,6 +14,7 @@ import com.google.inject.Singleton;
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.general.HAGRIDUtils;
+import hagrid.utils.routing.HAGRIDRouterUtils;
 import hagrid.utils.routing.ThreadingType;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
 
@@ -83,7 +84,7 @@ public class CarrierRouter implements Runnable {
             final ZoneBasedTransportCosts zoneBasedCosts = zoneBuilder.build();
 
             // Initialize the router with the specified threading type
-            Router router = new Router(threadingType);
+            Router router = new Router(threadingType);            
 
             // Route delivery carriers
             router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
@@ -92,7 +93,7 @@ public class CarrierRouter implements Runnable {
             router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");
 
             // // Write the routed plans to XML files
-            // new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers_routed.xml");
+            new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers_routed.xml");
             new CarrierPlanWriter(supplyCarriers).write("phd/output/supply_carriers_routed.xml");
 
             LOGGER.info("Routing process for carriers completed successfully.");

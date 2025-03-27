@@ -506,7 +506,6 @@ public class CarrierGenerator implements Runnable {
          * based on the provider.
          *
          * @param carrier               The carrier to which vehicles will be added.
-         * @param carrierVehicleFactory The types of vehicles available for assignment.
          * @param hubs                  A map of hubs used to find the closest hub.
          */
         private void addCarrierVehiclesToCarrier(final Carrier carrier,
