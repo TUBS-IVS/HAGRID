@@ -90,6 +90,11 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private int demandBorder = 600;
     private static final String DEMAND_BORDER_DESC = "Demand border threshold.";
 
+    // Other configurations
+    @Positive
+    private int dhlBorder = 2 * cepVehCap;
+    private static final String DHL_DEMAND_BORDER_DESC = "DHL Demand border threshold. -> For fitltering out Deliveries with a demand higher than 2 CEP vehicle capacities.";
+
     @Positive
     private int maxRouteDuration = 8 * 3600;
     private static final String MAX_ROUTE_DURATION_DESC = "Maximum route duration in seconds.";
@@ -461,9 +466,19 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         return demandBorder;
     }
 
+    @StringGetter("dhlBorder")
+    public int getDHLBorder() {
+        return dhlBorder;
+    }
+
     @StringSetter("demandBorder")
     public void setDemandBorder(int demandBorder) {
         this.demandBorder = demandBorder;
+    }
+
+    @StringSetter("dhlBorder")
+    public void setDHLBorder(int dhlBorder) {
+        this.dhlBorder = dhlBorder;
     }
 
     @StringGetter("maxRouteDuration")
@@ -605,6 +620,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put("cepVehCap", CEP_VEH_CAP_DESC);
         map.put("supplyVehCap", SUPPLY_VEH_CAP_DESC);
         map.put("demandBorder", DEMAND_BORDER_DESC);
+        map.put("dhlBorder", DHL_DEMAND_BORDER_DESC);
         map.put("maxRouteDuration", MAX_ROUTE_DURATION_DESC);
         map.put("durationPerParcel", DURATION_PER_PARCEL_DESC);
         map.put("maxDurationPerStop", MAX_DURATION_PER_STOP_DESC);
