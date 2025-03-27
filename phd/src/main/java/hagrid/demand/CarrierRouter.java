@@ -85,8 +85,8 @@ public class CarrierRouter implements Runnable {
             // Initialize the router with the specified threading type
             Router router = new Router(threadingType);
 
-            // // Route delivery carriers
-            // router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
+            // Route delivery carriers
+            router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
 
             // Route supply carriers
             router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");

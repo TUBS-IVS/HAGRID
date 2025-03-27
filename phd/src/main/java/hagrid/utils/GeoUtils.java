@@ -282,4 +282,34 @@ public class GeoUtils {
         double dy = coord1.getY() - coord2.getY();
         return Math.sqrt(dx * dx + dy * dy);
     }
+
+        /**
+     * Checks if a given coordinate intersects with a geometric shape.
+     *
+     * @param geometry The geometric shape to check against.
+     * @param coord    The coordinate point to check for intersection.
+     * @return {@code true} if the coordinate intersects with the shape; {@code false} otherwise.
+     */
+    public static boolean isCoordIntersectingShape(Geometry geometry, Coord coord) {
+        // Convert the MATSim Coord object to a JTS Point object
+        Point point = getPointFromCoord(coord);
+
+        // Check if the geometry intersects with the point
+        return geometry.intersects(point);
+    }
+
+    /**
+     * Converts a MATSim {@link Coord} object to a JTS {@link Point} object.
+     *
+     * @param coord The coordinate to convert.
+     * @return A JTS Point object representing the given coordinate.
+     */
+    public static Point getPointFromCoord(Coord coord) {
+        // Create a Coordinate object from the Coord's x and y values
+        Coordinate jtsCoordinate = new Coordinate(coord.getX(), coord.getY());
+
+        // Create a Point object using a GeometryFactory
+        GeometryFactory geometryFactory = new GeometryFactory();
+        return geometryFactory.createPoint(jtsCoordinate);
+    }
 }

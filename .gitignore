@@ -41,3 +41,15 @@ phd/output/
 
 # Exclude target folder
 /target
+
+# Exclude Shapefiles and associated formats
+*.shp
+*.shx
+*.dbf
+*.prj
+*.sbn
+*.sbx
+*.cpg
+*.qpj
+*.shp.xml
+*.fix
