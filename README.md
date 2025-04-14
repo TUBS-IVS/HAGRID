@@ -6,6 +6,14 @@ By integrating multiple data sources (national and local) and applying different
 The tool generates synthetic, yet empirically grounded, **daily parcel delivery datasets** for every single day between 2014 and 2050.  
 While projections are technically available for the full time range, the results are considered **most reliable up to approximately 2030**, assuming a moderately stable market evolution without major disruptive events.
 
+In addition to demand estimation, the repository also supports the **integration of parcel flows into the agent-based simulation framework MATSim**.  
+A dedicated workflow is under development to:
+- convert demand datasets into MATSim-compatible formats
+- generate routed delivery plans for simulation
+- evaluate delivery traffic patterns under varying network and policy conditions
+
+> 🛠️ This MATSim integration is currently a work in progress and will be documented in the corresponding subfolders (`phd/`, `phd-sim/phd/`) as it evolves.
+
 These scenario datasets enable users to:
 
 - Analyze **future parcel traffic patterns** on a fine spatial and temporal scale  
@@ -43,21 +51,32 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
 ## 2. Repository Structure
 
 ```
-├── 00_EstimateGlobalGermanParcelMarketShares.ipynb  
-├── 01_EstimateGlobalGermanB2BShares.ipynb  
-├── 02_EstimateGlobalGermanParcelVolumens.ipynb  
-├── 03_EstimateWeekyParcelDistribution.ipynb  
-├── 04_EstimateLocalB2BDistribution.ipynb  
-├── 05_EstimateLocalMarketShares.ipynb  
-├── 06_DistributeEstimationWeightsPerSegment.ipynb  
-├── ParcelDemandScenarioGenerator.ipynb  
-├── data/  
-│   └── ...  
-├── output/  
-│   └── parcel_demand_2050-04-09_(Samstag).csv  
+├── parcel-demand-estimation/
+│   ├── 00_EstimateGlobalGermanParcelMarketShares.ipynb  
+│   ├── 01_EstimateGlobalGermanB2BShares.ipynb  
+│   ├── 02_EstimateGlobalGermanParcelVolumens.ipynb  
+│   ├── 03_EstimateWeekyParcelDistribution.ipynb  
+│   ├── 04_EstimateLocalB2BDistribution.ipynb  
+│   ├── 05_EstimateLocalMarketShares.ipynb  
+│   ├── 06_DistributeEstimationWeightsPerSegment.ipynb  
+│   ├── ParcelDemandScenarioGenerator.ipynb  
+│   └── output/
+│       └── parcel_demand_2050-04-09_(Samstag).csv  
+
+├── phd/
+│   └── demand preparation, MATSim conversion and further routing setup
+
+├── phd-sim/phd/
+│   └── Simulation input/output structure for MATSim (routes, plans, configs)
+
 ├── requirements.txt  
 └── README.md
 ```
+
+- The folder `parcel-demand-estimation/` contains all notebooks used to estimate and allocate parcel demand from national trends down to street segment level.
+- The folders `phd/` and `phd-sim/phd/` are used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
+- Documentation of the MATSim integration and postprocessing pipeline will be added step-by-step in the corresponding subfolders.
+
 
 - **Notebooks 00–06**: Each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: The final assembly that produces daily, segment-level demand.  
