@@ -34,6 +34,9 @@ parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010
 parcel-demand-estimation/Project USEfUL XT//Verflechtungsprognose2030/ketten-2030.csv
 
 # Exclude entire output folder
+parcel-demand-estimation/input/
+parcel-demand-estimation/output/
+
 phd/output/
 phd/sim-input/
 phd/sim-output/
