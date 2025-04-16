@@ -30,10 +30,13 @@ log/
 *.log
 
 # Exclude specific large files
-pakethochrechnung/Verflechtungsprognose2030/ketten-2010.csv
-pakethochrechnung/Verflechtungsprognose2030/ketten-2030.csv
+parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
+parcel-demand-estimation/Project USEfUL XT//Verflechtungsprognose2030/ketten-2030.csv
 
 # Exclude entire output folder
+parcel-demand-estimation/input/
+parcel-demand-estimation/output/
+
 phd/output/
 phd/sim-input/
 phd/sim-output/
@@ -43,3 +46,20 @@ phd/sim-output/
 
 # Exclude target folder
 /target
+
+# Exclude Shapefiles and associated formats
+*.shp
+*.shx
+*.dbf
+*.prj
+*.sbn
+*.sbx
+*.cpg
+*.qpj
+*.shp.xml
+*.fix
+parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
+parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
+parcel-demand-estimation/input/multimodalNetwork.xml
+parcel-demand-estimation/input/persons_total.csv
+parcel-demand-estimation/input/companies_Total_reduced.xml

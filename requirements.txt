@@ -1,0 +1,12 @@
+deap==1.4.2
+geopandas==0.14.2
+matplotlib==3.8.4
+matsim-tools==0.0.14
+numpy==1.26.2
+pandas==2.2.3
+scipy==1.15.2
+seaborn==0.13.2
+shapely==2.0.2
+scikit-learn==1.6.1
+statsmodels==0.14.4
+tqdm==4.67.1
