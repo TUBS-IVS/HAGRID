@@ -35,5 +35,9 @@
         <Logger name="org.matsim.core.utils.geometry.geotools.MGC" level="error" additivity="false">
             <AppenderRef ref="Console" />
         </Logger>
+        
+        <Logger name="org.matsim.core.mobsim.qsim.qnetsimengine.QueueWithBuffer" level="error" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
     </Loggers>
 </Configuration>

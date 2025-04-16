@@ -253,6 +253,10 @@ public class CarrierGenerator implements Runnable {
 
                 // Initialize the carrier type attribute to CarrierType = delivery
                 carrier.getAttributes().putAttribute("carrierType", "delivery");
+
+                // Set the carrier mode to "car"     
+                // TODO: Add an implementation for all modes etc.            
+                CarriersUtils.setCarrierMode(carrier, "car");
         }
 
         /**
@@ -404,7 +408,7 @@ public class CarrierGenerator implements Runnable {
                                         carrier.getAttributes().getAttribute("provider"));
                         service.getAttributes().putAttribute("coord", carrierDelivery.getCoordinate());
                         service.getAttributes().putAttribute("type", carrierDelivery.getParcelType());
-                        service.getAttributes().putAttribute("mode", carrierDelivery.getDeliveryMode());
+                        service.getAttributes().putAttribute("carrierMode", carrierDelivery.getDeliveryMode());
                         service.getAttributes().putAttribute("postalcode", carrierDelivery.getPostalCode());
 
                         // Handle case where weights is null

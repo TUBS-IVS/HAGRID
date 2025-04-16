@@ -15,7 +15,7 @@
   <properties>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
-    <matsim.version>2025.0-2024w21</matsim.version>
+    <matsim.version>2025.0-2025w13</matsim.version>
     <geotools.version>31.1</geotools.version>
     <jsprit.version>1.8</jsprit.version>
 
@@ -146,7 +146,7 @@
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <version>42.2.0</version>
+      <version>42.7.5</version>
     </dependency>
     <dependency>
       <groupId>net.postgis</groupId>
@@ -214,7 +214,7 @@
     <dependency>
       <groupId>commons-io</groupId>
       <artifactId>commons-io</artifactId>
-      <version>2.13.0</version>
+      <version>2.18.0</version>
   </dependency>
     <!-- Hibernate Validator (Reference Implementation) -->
     <dependency>
@@ -237,7 +237,7 @@
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
-      <version>31.0.1-jre</version>
+      <version>33.4.7-jre</version>
     </dependency>
     <dependency>
       <groupId>io.github.elki-project</groupId>
@@ -261,9 +261,14 @@
       <version>1.7.32</version>
     </dependency>
     <dependency>
-      <groupId>log4j</groupId>
-      <artifactId>log4j</artifactId>
-      <version>1.2.17</version>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.20.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.20.0</version>
     </dependency>
     <!-- Reactor Core dependency -->
     <dependency>

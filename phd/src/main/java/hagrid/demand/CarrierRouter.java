@@ -34,9 +34,6 @@ public class CarrierRouter implements Runnable {
     @Inject
     private Scenario scenario;
 
-    @Inject
-    private HagridConfigGroup hagridConfig;
-
     public void setThreadingType(ThreadingType threadingType) {
         this.threadingType = threadingType;
     }
