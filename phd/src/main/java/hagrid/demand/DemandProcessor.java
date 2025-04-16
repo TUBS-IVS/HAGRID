@@ -137,7 +137,35 @@ public class DemandProcessor implements Runnable {
     private Map<String, List<SimpleFeature>> groupFeaturesByProviderAndPostalCode(
             Collection<SimpleFeature> freightFeatures) {
         return freightFeatures.stream()
-                .filter(feature -> (Long) feature.getAttribute("total") <= 1500)
+
+
+                // Note: In my dissertation project, I filtered out features where 'total' > 1500 to exclude large deliveries.
+                // These large DHL deliveries are somewhat ambiguous in the dataset and are likely handled differently.
+                // Assumption:
+                // - DHL manages these large deliveries separately, possibly due to specific business relationships.
+                // - At a 'dhl_total' threshold of 1500, considering DHL's market share, this corresponds to about 800 packages.
+                // - This is approximately the threshold where deploying a ~3/4 full 7.5-ton truck becomes viable.
+                // Reasoning:
+                // - Our estimation methods might incorrectly assign packages to other providers at these points,
+                //   even though DHL likely has unique, provider-specific delivery relationships there.
+                // - These points might represent locations where DHL has significant business clients,
+                //   resulting in large, concentrated delivery volumes that are not representative of standard CEP services.
+                // Adjustment:
+                // - In the dissertation, we evaluated 'total' values, which may be challenging for external readers to interpret.
+                // - To enhance clarity and realism, we adjust the threshold to (2 * 230) for DHL.
+                //   - The number 230 represents the approximate capacity of a large delivery van.
+                //   - Therefore, (2 * 230) equals 460 packages, corresponding to more than two fully loaded vans.
+                //   - Deliveries exceeding this amount are likely handled directly by trucks and are not typical CEP services.
+                //   - Direct Delivery by Supply Trucks! Not using the CEP Supply Chain / Warehouse Network.
+
+                // Outcome:
+                // - This approach is better to read and more realistic.
+                // - There are not many features with 'dhl_total' greater than 1500, so filtering at 1500 or 460 yields similar results.
+                // - By filtering DHL deliveries over 460 packages (more than two delivery vans), the package input remains effectively the same.
+                // - This adjustment is more realistic and easier to understand for external readers! 
+
+
+                .filter(feature -> (Long) feature.getAttribute("dhl_tag") <= hagridConfig.getDHLBorder())
                 .filter(feature -> !((String) feature.getAttribute("postal_cod")).isEmpty())
                 .flatMap(feature -> hagridConfig.getShpProviders().stream()
                         .map(provider -> new AbstractMap.SimpleEntry<>(

@@ -5,14 +5,13 @@ import com.google.inject.Singleton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.geotools.api.feature.simple.SimpleFeature;
-import org.jline.utils.Log;
+
 import org.locationtech.jts.geom.MultiPoint;
 import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
-import org.matsim.api.core.v01.network.Link;
-import org.matsim.core.network.NetworkUtils;
+
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
@@ -23,7 +22,7 @@ import hagrid.utils.demand.Delivery.DeliveryMode;
 import hagrid.utils.general.ParcelStatisticsLogger;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
+
 import java.util.stream.Collectors;
 
 /**
