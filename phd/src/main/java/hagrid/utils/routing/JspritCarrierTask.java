@@ -60,7 +60,7 @@ public class JspritCarrierTask implements Runnable {
         VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount);
 
         VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-        CarrierPlan newPlan = MatsimJspritFactory.createPlan(carrier, solution);
+        CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
 
         LOGGER.info("Routing plan for carrier {}", carrier.getId());
         NetworkRouter.routePlan(newPlan, netBasedCosts);

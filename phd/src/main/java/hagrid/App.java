@@ -31,7 +31,7 @@ public class App {
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
         
-        // runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based on the generated
+        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based on the generated
                                                 // carriers
         
         // runRouter(injector, ThreadingType.SINGLE_THREAD); // Step 7: Run routing for delivery supply carriers based on

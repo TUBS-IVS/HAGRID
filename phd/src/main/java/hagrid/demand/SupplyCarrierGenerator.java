@@ -411,7 +411,10 @@ public class SupplyCarrierGenerator implements Runnable {
         supplyCarrier.getAttributes().putAttribute("carrierType", "supply");
         supplyCarrier.getAttributes().putAttribute("supplyLink", finalLinkId.toString());
         supplyCarrier.getAttributes().putAttribute("hubId", hub.getId().toString());
-        supplyCarrier.getAttributes().putAttribute("provider", hub.getProvider());        
+        supplyCarrier.getAttributes().putAttribute("provider", hub.getProvider());  
+        
+        // TODO: Add working implementaion
+        CarriersUtils.setCarrierMode(supplyCarrier, "car");
 
         setupCarrierSupplyVehicles(supplyCarrier, linkId);
 

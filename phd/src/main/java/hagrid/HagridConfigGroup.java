@@ -28,11 +28,11 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "U:/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/Sim-Input/car_cargobike_network_zones_MH_V3.xml.gz";
+    private String networkXmlPath = "phd/sim-input/network/car_network_filtered_V2.xml.gz";
 
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
-    private String freightDemandPath = "T:/bienzeisler/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/vm-hochrechnung_matsim-punkte_epsg25832_mit_plz_v4_b2b.shp";
+    private String freightDemandPath = "T:/bienzeisler/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/vm-hochrechnung_matsim-punkte_epsg25832_mit_plz_v5_b2b.shp";
 
     static final String FREIGHT_VEHICLE_TYPES_PATH = "freightVehicleTypePath";
     private static final String FREIGHT_VEHICLE_TYPES_PATH_DESC = "Path to the freight vehicle type xml.";
