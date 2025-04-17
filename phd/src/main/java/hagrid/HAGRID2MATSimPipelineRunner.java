@@ -28,12 +28,12 @@ public class HAGRID2MATSimPipelineRunner {
 
         String concept = "basecase";
         List<LocalDate> dates = List.of(
-                LocalDate.of(2025, 5, 12),
-                LocalDate.of(2025, 5, 13),
-                LocalDate.of(2025, 5, 14),
-                LocalDate.of(2025, 5, 15),
-                LocalDate.of(2025, 5, 16),
-                LocalDate.of(2025, 5, 17)
+                LocalDate.of(2025, 5, 12)
+                // LocalDate.of(2025, 5, 13),
+                // LocalDate.of(2025, 5, 14),
+                // LocalDate.of(2025, 5, 15),
+                // LocalDate.of(2025, 5, 16),
+                // LocalDate.of(2025, 5, 17)
         );
 
         dates.forEach(date -> {
@@ -53,10 +53,8 @@ public class HAGRID2MATSimPipelineRunner {
         Injector injector = Guice.createInjector(new HagridModule("phd/input/config.xml"));
         HagridConfigGroup config = injector.getInstance(HagridConfigGroup.class);
         config.setConcept(runId.split("_")[0]);
-        config.setSimulationDate(date);        
-
+        config.setSimulationDate(date);  
         
-
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
         runLogisticsDataProcessing(injector); // Step 2: Process the logistics data

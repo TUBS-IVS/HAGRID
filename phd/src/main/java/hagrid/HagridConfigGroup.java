@@ -144,10 +144,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String CONCEPT_DESC = "Concept being simulated (baseline, white-label, ucc, collection points).";
     private Concept concept = Concept.BASECASE;
 
-    // Algorithm file path
-    static final String ALGORITHM_FILE = "algorithmFile";
-    private static final String ALGORITHM_FILE_DESC = "Path to the vehicle routing algorithm file.";
-    private String algorithmFile = "./res/freight/jsprit_algorithm.xml";
+
 
     // Delivery rates
     private int deliveryRateDhl = 0;
@@ -311,16 +308,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     public void setConcept(String concept) {
         this.concept = Concept.valueOf(concept.toUpperCase());
         setDefaultDeliveryRates();
-    }
-
-    @StringGetter(ALGORITHM_FILE)
-    public String getAlgorithmFile() {
-        return algorithmFile;
-    }
-
-    @StringSetter(ALGORITHM_FILE)
-    public void setAlgorithmFile(String algorithmFile) {
-        this.algorithmFile = algorithmFile;
     }
 
     @StringGetter("deliveryRateDhl")
@@ -689,7 +676,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put(SHP_PROVIDERS, SHP_PROVIDERS_DESC);
         map.put(LOCATION_PROVIDERS, LOCATION_PROVIDERS_DESC);
         map.put(CONCEPT, CONCEPT_DESC);
-        map.put(ALGORITHM_FILE, ALGORITHM_FILE_DESC);
         map.put("cepVehCap", CEP_VEH_CAP_DESC);
         map.put("supplyVehCap", SUPPLY_VEH_CAP_DESC);
         map.put("demandBorder", DEMAND_BORDER_DESC);
