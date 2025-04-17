@@ -31,6 +31,7 @@ import org.matsim.vehicles.VehicleType;
 
 import java.util.Map;
 import java.util.Optional;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -185,6 +186,7 @@ public class CarrierGenerator implements Runnable {
          * with fewer than 5 services: 24
          * -> need to check
          * -> fixed using postal codes -> keep
+         * -> UPDATED with merge funtionality to merge smaller carriers into larger ones
          *
          * @param carriers The Carriers object containing all carriers.
          * @throws RuntimeException if any carriers have fewer than 5 services.
@@ -395,6 +397,8 @@ public class CarrierGenerator implements Runnable {
          * to the carrier. It also calculates and updates the total weight of parcels
          * and the correction
          * factor in the summary.
+         * We also calcualte the daily number of missed delivery based on simple statistics
+         * TODO: Add a more sophisticated and deeper model for missed deliveries in the future! 
          *
          * @param carrier           The carrier to which services are to be added.
          * @param carrierDeliveries The deliveries for the carrier.
@@ -419,13 +423,23 @@ public class CarrierGenerator implements Runnable {
                 double totalWeightForCarrier = 0.0;
                 List<CarrierService> createdServices = new ArrayList<>();
 
+                // Determine the standard deviation (sigma) for daily bias by provider
+                double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
+
+                // Sample a daily bias around zero (in percentage points)
+                double dailyBias = random.nextGaussian() * sigmaPercent;  // DHL: ±2.5%, others: ±5%
+                carrier.getAttributes().putAttribute("dailyDeliveryBias", dailyBias);
+
                 // Iterate through each delivery associated with the carrier
                 for (final Delivery carrierDelivery : carrierDeliveries) {
-                        double rate = deliveryRates.get(provider);
+
+                        // Get the base delivery success rate (e.g. 94.0 for 94%)
+                        double baseRate = deliveryRates.get(provider); // e.g. 94.0
+                        double effectiveRate = Math.max(0.0, Math.min(100.0, baseRate + dailyBias));
 
                         // Set the delivery rate to 100% for B2B parcel types
                         if (carrierDelivery.getParcelType() == ParcelType.B2B) {
-                                rate = 100.0;
+                                effectiveRate = 100.0;
                         }
 
                         final int amount = carrierDelivery.getAmount();
@@ -450,7 +464,7 @@ public class CarrierGenerator implements Runnable {
                                                 + serviceWeights);
                                 weights.subList(0, cap).clear();
                                 LOGGER.debug("Remaining weights after clearing: " + weights);
-                                CarrierService service = addAndGetCarrierService(carrier, linkId, rate, cap,
+                                CarrierService service = addAndGetCarrierService(carrier, linkId, effectiveRate, cap,
                                                 carrierDelivery,
                                                 totalServices++, serviceWeights);
                                 createdServices.add(service);
@@ -464,7 +478,7 @@ public class CarrierGenerator implements Runnable {
                                 List<Double> serviceWeights = new ArrayList<>(weights.subList(0, remainingCapacity));
                                 LOGGER.debug("Service " + totalServices + ": Weights for this service: "
                                                 + serviceWeights);
-                                CarrierService service = addAndGetCarrierService(carrier, linkId, rate,
+                                CarrierService service = addAndGetCarrierService(carrier, linkId, effectiveRate,
                                                 remainingCapacity, carrierDelivery,
                                                 totalServices++, serviceWeights);
                                 createdServices.add(service);
@@ -526,7 +540,7 @@ public class CarrierGenerator implements Runnable {
 
                         serviceBuilder.setCapacityDemand(capacityDemand);
                         serviceBuilder.setServiceDuration(serviceDuration);
-                        serviceBuilder.setServiceStartTimeWindow(TimeWindow.newInstance(begin, end));
+                        serviceBuilder.setServiceStartingTimeWindow(TimeWindow.newInstance(begin, end));
 
                         final CarrierService service = serviceBuilder.build();
                         service.getAttributes().putAttribute("provider",
@@ -1060,13 +1074,14 @@ public class CarrierGenerator implements Runnable {
                 for (Carrier carrier : carriers.getCarriers().values()) {
                         int expectedMissedDeliveries = (int) carrier.getAttributes().getAttribute("missedParcels");
                         List<Id<CarrierService>> missedDeliveries = (List<Id<CarrierService>>) carrier.getAttributes()
-                                        .getAttribute("missedParcelsAsList");
+                                        .getAttribute("missedParcelsAsList");                        
 
                         if (missedDeliveries.size() != expectedMissedDeliveries) {
                                 throw new ServiceCreationException("Validation failed for carrier: " + carrier.getId() +
                                                 ". Expected missed parcel deliveries: " + expectedMissedDeliveries +
                                                 ", Actual missed parcel deliveries: " + missedDeliveries.size(), null);
                         }
+                        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedDeliveries.toString());
                 }
 
                 LOGGER.info("Validation passed for all carriers and their missed parcel deliveries.");

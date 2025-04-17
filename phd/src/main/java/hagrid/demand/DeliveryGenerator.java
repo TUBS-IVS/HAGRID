@@ -40,8 +40,6 @@ public class DeliveryGenerator implements Runnable {
         @Inject
         private HagridConfigGroup hagridConfig;
 
-        private Map<String, String> providerShapeMapping;
-
         private WeightGenerator parcelWeightGenerator = new WeightGenerator();
 
         @Override
@@ -346,43 +344,6 @@ public class DeliveryGenerator implements Runnable {
                                 .individualWeights(individualWeights)
                                 .deliveryMode(mode)
                                 .build();
-        }
-
-        /**
-         * Retrieves B2B information for the given feature and provider.
-         *
-         * This method checks if the configuration is set to white label. If so, it
-         * returns "wl". Otherwise, it retrieves the attribute name corresponding to the
-         * provider from the providerShapeMapping and attempts to fetch the attribute
-         * value from the given feature. If the attribute is not found, it throws an
-         * IllegalArgumentException.
-         *
-         * @param feature  SimpleFeature object representing a geographical feature.
-         * @param provider String representing the provider name.
-         * @return Delivery.ParcelType containing B2B information.
-         * @throws IllegalArgumentException if the attribute for the provider is not
-         *                                  found.
-         */
-        private Delivery.ParcelType getB2BInformation(SimpleFeature feature, String provider) {
-                if (hagridConfig.isWhiteLabel()) {
-                        return Delivery.ParcelType.WHITE_LABEL;
-                } else {
-                        String nameInShape = providerShapeMapping.get(provider);
-                        String attributeValue = (String) feature.getAttribute(nameInShape);
-
-                        if ("amazon".equals(provider) && (attributeValue == null || attributeValue.isEmpty())) {
-                                return Delivery.ParcelType.B2C;
-                        }
-
-                        if (attributeValue == null || attributeValue.isEmpty()) {
-                                throw new IllegalArgumentException(
-                                                "No attribute found or attribute is empty for provider: " + provider
-                                                                + " and attribute name: " + nameInShape
-                                                                + " in feature: " + feature.getAttribute("id"));
-                        }
-
-                        return Delivery.ParcelType.valueOf(attributeValue.toUpperCase());
-                }
         }
 
         /**
