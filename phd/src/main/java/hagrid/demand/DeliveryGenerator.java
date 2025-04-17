@@ -12,13 +12,13 @@ import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 
-
 import hagrid.HagridConfigGroup;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
 import hagrid.utils.demand.WeightGenerator;
 import hagrid.utils.demand.Delivery.DeliveryMode;
+import hagrid.utils.demand.Delivery.ParcelType;
 import hagrid.utils.general.ParcelStatisticsLogger;
 
 import java.util.*;
@@ -58,11 +58,8 @@ public class DeliveryGenerator implements Runnable {
                                         .orElseThrow(() -> new IllegalStateException(
                                                         "Parcel locker list data is missing in the scenario."));
 
-                        // Initialize provider shape mapping dynamically
-                        providerShapeMapping = generateProviderShapeMapping();
-
                         long totalParcels = calculateTotalParcels(carrierDemand);
-                        LOGGER.info("Total Parcels from carrier demand: {}", totalParcels);
+                        LOGGER.info("Total Parcel Stops from carrier demand: {}", totalParcels);
 
                         Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
 
@@ -70,8 +67,9 @@ public class DeliveryGenerator implements Runnable {
                         addParcelLockerServices(deliveries, parcelLockerList);
 
                         // Log parcel statistics
-                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for detailed
-                                                                                           // log
+                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
+                                                                                                     // detailed
+                        // log
                         logger.logStatistics(deliveries);
 
                         // Store parcels in scenario
@@ -82,36 +80,6 @@ public class DeliveryGenerator implements Runnable {
                 } catch (Exception e) {
                         LOGGER.error("Error generating parcels", e);
                 }
-        }
-
-        /**
-         * Generates the provider shape mapping dynamically from the HagridConfigGroup.
-         * 
-         * This method ensures that the correct suffix ('_type' or '_typ') is applied to
-         * provider names.
-         * Due to the input data from the shapefile (SHP) being limited to 12
-         * characters, some provider
-         * names might have truncated suffixes such as '_typ' instead of '_type'. This
-         * method handles
-         * these cases by mapping '_type' for most providers and '_typ' for 'hermes' and
-         * 'amazon'.
-         *
-         * @return A map of provider names to their corresponding shapefile attributes.
-         */
-        private Map<String, String> generateProviderShapeMapping() {
-                return hagridConfig.getShpProviders().stream()
-                                .collect(Collectors.toMap(
-                                                shpType -> shpType.split("_")[0], // Extract provider name
-                                                shpType -> {
-                                                        String provider = shpType.split("_")[0];
-                                                        if (provider.equals("hermes") || provider.equals("amazon")) {
-                                                                return provider + "_typ"; // Use '_typ' for 'hermes' and
-                                                                                          // 'amazon'
-                                                        } else {
-                                                                return provider + "_type"; // Use '_type' for all other
-                                                                                           // providers
-                                                        }
-                                                }));
         }
 
         /**
@@ -131,17 +99,17 @@ public class DeliveryGenerator implements Runnable {
          * the totals.
          *
          * @param carrierDemand Map of carrier demands with SimpleFeatures.
-         * @param totalParcels  Expected total number of parcels.
+         * @param totalStops    Expected total number of parcels.
          * @return Map of carrier demands with Parcel objects.
          */
-        public Map<String, ArrayList<Delivery>> processCarrierDemand(Map<String, List<SimpleFeature>> carrierDemand,
-                        long totalParcels) {
+        private Map<String, ArrayList<Delivery>> processCarrierDemand(Map<String, List<SimpleFeature>> carrierDemand,
+                        long totalStops) {
 
                 // Check the total parcels before conversion
-                long totalParcelsBefore = getTotalParcelsFromFeatures(carrierDemand);
-                if (totalParcels != totalParcelsBefore) {
+                long totalParcelStopsBefore = getTotalParcelStopsFromFeatures(carrierDemand);
+                if (totalStops != totalParcelStopsBefore) {
                         throw new IllegalStateException(
-                                        "Total parcels before conversion do not match expected total parcels.");
+                                        "Total parcels before conversion do not match expected total parcel stops.");
                 }
 
                 // Convert the demand from SimpleFeature to Parcel objects
@@ -150,85 +118,217 @@ public class DeliveryGenerator implements Runnable {
 
                 // Check the total parcels after conversion
                 long totalParcelsAfter = getTotalParcelsFromParcelObjects(carrierDemandWithDeliveries);
-                if (totalParcels != totalParcelsAfter) {
-                        throw new IllegalStateException(
-                                        "Total parcels after conversion do not match expected total parcels.");
+                long expectedTotalParcels = calculateExpectedParcelsFromFeatures(carrierDemand);
+
+                if (expectedTotalParcels != totalParcelsAfter) {
+                        long diff = totalParcelsAfter - expectedTotalParcels;
+                        // Log-Level ERROR oder WARN, je nach Schwere
+                        LOGGER.error("Parcel count mismatch, expected: {}, actual: {}, difference: {}",
+                                        expectedTotalParcels, totalParcelsAfter, diff);
+
+                        throw new IllegalStateException(String.format(
+                                        "Total parcels after conversion do not match expected total parcels: expected=%d, actual=%d, diff=%d",
+                                        expectedTotalParcels, totalParcelsAfter, diff));
                 }
 
                 return carrierDemandWithDeliveries;
         }
 
         /**
-         * Helper method to get total parcels from the original SimpleFeature map.
+         * Helper method to get total parcels stops from the original SimpleFeature map.
          *
          * @param demand Map of carrier demands with SimpleFeatures.
          * @return Total number of parcels.
          */
-        private long getTotalParcelsFromFeatures(Map<String, List<SimpleFeature>> demand) {
+        private long getTotalParcelStopsFromFeatures(Map<String, List<SimpleFeature>> demand) {
                 return demand.values().stream()
                                 .mapToLong(List::size)
                                 .sum();
         }
 
         /**
-         * Helper method to get total parcels from the converted Parcel map.
+         * Helper method to calculate the total number of parcels
+         * by summing the amount field from all Delivery objects.
          *
-         * @param demandWithParcels Map of carrier demands with Parcel objects.
-         * @return Total number of parcels.
+         * @param demandWithParcels Map of carrier demands with Delivery objects.
+         * @return Total number of parcels across all deliveries.
          */
         private long getTotalParcelsFromParcelObjects(Map<String, ArrayList<Delivery>> demandWithParcels) {
                 return demandWithParcels.values().stream()
-                                .mapToLong(List::size)
+                                .flatMap(List::stream) // flatten all delivery lists
+                                .mapToLong(Delivery::getAmount) // sum up amount per delivery
+                                .sum();
+        }
+
+        /**
+         * /**
+         * Calculates the expected total number of parcels from grouped carrier demand
+         * features.
+         * Only evaluates the carrier relevant for each group (based on the map key).
+         * 
+         * Each feature may contain total demand in <carrier>_tag and b2b in
+         * <carrier>_type.
+         * b2c is derived as (tag - type), and total = b2b + b2c.
+         *
+         * @param carrierDemand Map where key = "carrier_plz" (e.g., "dhl_30159") and
+         *                      value = features
+         * @return Total expected parcel count
+         */
+        private long calculateExpectedParcelsFromFeatures(Map<String, List<SimpleFeature>> carrierDemand) {
+                return carrierDemand.entrySet().stream()
+                                .mapToLong(entry -> {
+                                        String key = entry.getKey(); // e.g. "dhl_30159"
+                                        String[] parts = key.split("_");
+                                        String carrierAbbr = parts[0].toLowerCase(); // extract "dhl"
+
+                                        return entry.getValue().stream()
+                                                        .mapToLong(feature -> {
+                                                                long total = getLongAttribute(feature,
+                                                                                carrierAbbr + "_tag");
+                                                                long b2b = getLongAttribute(feature,
+                                                                                carrierAbbr + "_type");
+                                                                long b2c = Math.max(0L, total - b2b);
+                                                                return b2b + b2c;
+                                                        })
+                                                        .sum();
+                                })
                                 .sum();
         }
 
         /**
          * Converts the carrier demand from SimpleFeature to Delivery objects.
          *
-         * @param carrierDemand Map of carrier demands with SimpleFeatures.
-         * @return Map of carrier demands with delivery objects.
+         * For each SimpleFeature, this method creates:
+         * - A B2B delivery if the provider_type attribute > 0
+         * - A B2C delivery if (provider_tag - provider_type) > 0
+         *
+         * The input key format is expected to be: "provider_plz" (e.g. "dhl_30159")
+         *
+         * @param carrierDemand Map where the key is "provider_plz", and the value is a
+         *                      list of SimpleFeatures
+         * @return Map with the same keys, each containing a list of generated Delivery
+         *         objects.
          */
         private Map<String, ArrayList<Delivery>> convertDemandFromShapeToParcels(
                         Map<String, List<SimpleFeature>> carrierDemand) {
+
                 return carrierDemand.entrySet().stream()
                                 .collect(Collectors.toMap(
-                                                Map.Entry::getKey, // Preserve the key (providerPLZ)
-                                                entry -> { // Transform the value
-                                                        String provider = entry.getKey().split("_")[0];
-                                                        return entry.getValue().stream() // Stream the SimpleFeature
-                                                                                         // list
-                                                                        .map(simpleFeature -> createDelivery(
-                                                                                        simpleFeature, provider,
-                                                                                        DeliveryMode.HOME)) // Convert
-                                                                        // each
-                                                                        // SimpleFeature
-                                                                        // to
-                                                                        // Delivery
+                                                Map.Entry::getKey, // keep key "provider_plz"
+                                                entry -> {
+                                                        String[] keyParts = entry.getKey().split("_");
+                                                        if (keyParts.length < 2) {
+                                                                throw new IllegalArgumentException(
+                                                                                "Invalid carrier key format: "
+                                                                                                + entry.getKey());
+                                                        }
+
+                                                        String provider = keyParts[0].toLowerCase(); // e.g. "dhl"
+                                                        return entry.getValue().stream()
+                                                                        .flatMap(feature -> {
+                                                                                List<Delivery> deliveries = new ArrayList<>();
+
+                                                                                // Handle shapefile truncation: limit to
+                                                                                // 10 chars max
+                                                                                String tagAttr = (provider + "_tag");
+                                                                                String typeAttr = (provider + "_type");
+                                                                                if (tagAttr.length() > 10)
+                                                                                        tagAttr = tagAttr.substring(0,
+                                                                                                        10);
+                                                                                if (typeAttr.length() > 10)
+                                                                                        typeAttr = typeAttr.substring(0,
+                                                                                                        10);
+
+                                                                                long total = getLongAttribute(feature,
+                                                                                                tagAttr);
+                                                                                long b2b = getLongAttribute(feature,
+                                                                                                typeAttr);
+                                                                                long b2c = Math.max(0, total - b2b);
+
+                                                                                // Create B2B delivery
+                                                                                if (b2b > 0) {
+                                                                                        deliveries.add(createDelivery(
+                                                                                                        feature,
+                                                                                                        provider,
+                                                                                                        DeliveryMode.HOME,
+                                                                                                        ParcelType.B2B,
+                                                                                                        b2b));
+                                                                                }
+
+                                                                                // Create B2C delivery
+                                                                                if (b2c > 0) {
+                                                                                        deliveries.add(createDelivery(
+                                                                                                        feature,
+                                                                                                        provider,
+                                                                                                        DeliveryMode.HOME,
+                                                                                                        ParcelType.B2C,
+                                                                                                        b2c));
+                                                                                }
+
+                                                                                return deliveries.stream();
+                                                                        })
                                                                         .collect(Collectors
-                                                                                        .toCollection(ArrayList::new)); // Collect
-                                                                                                                        // to
-                                                                                                                        // ArrayList<Delivery>
+                                                                                        .toCollection(ArrayList::new));
                                                 }));
+        }
+
+        /**
+         * Safely retrieves a numeric attribute value from a given feature and converts
+         * it to a long.
+         *
+         * This method is designed to work with shapefile features that may contain
+         * optional or
+         * missing attributes. It ensures robust parsing of attribute values,
+         * particularly for
+         * numeric fields such as delivery demand counts.
+         *
+         * - If the attribute is found and is a valid Number (e.g., Integer, Double),
+         * its long value is returned.
+         * - If the attribute is missing, null, or not a Number, a fallback value of 0L
+         * is returned.
+         *
+         * Example usage in delivery conversion:
+         * - "dhl_tag" → total parcels
+         * - "dhl_type" → business deliveries (B2B)
+         *
+         * @param feature  The SimpleFeature object from the shapefile.
+         * @param attrName The name of the attribute to retrieve (e.g., "dhl_tag",
+         *                 "amazon_type").
+         * @return The long value of the attribute, or 0L if it is missing or invalid.
+         */
+        private long getLongAttribute(SimpleFeature feature, String attrName) {
+                Object value = feature.getAttribute(attrName);
+
+                // Check if the attribute exists and is numeric
+                if (value instanceof Number) {
+                        return ((Number) value).longValue(); // Convert to long
+                }
+
+                // Return 0L for missing or non-numeric attributes
+                return 0L;
         }
 
         /**
          * Creates a Delivery object from a SimpleFeature.
          *
-         * @param feature  SimpleFeature object.
-         * @param provider Provider name.
+         * @param feature         SimpleFeature object.
+         * @param provider        Provider name.
+         * @param deliveryMode    Delivery mode (HOME, PARCEL_LOCKER, etc.).
+         * @param parcelType      Parcel type (B2B, B2C, etc.).
+         * @param numberOfParcels Number of parcels to be delivered at this stop.
          * @return Delivery object.
          */
-        private Delivery createDelivery(SimpleFeature feature, String provider, Delivery.DeliveryMode mode) {
-                Point point = ((MultiPoint) feature.getAttribute(0)).getCentroid();
+        private Delivery createDelivery(SimpleFeature feature, String provider, Delivery.DeliveryMode mode,
+                        ParcelType parcelType, long numberOfParcels) {
+                Point point = ((Point) feature.getAttribute(0)).getCentroid();
                 Coord coord = new Coord(point.getX(), point.getY());
 
                 String deliveryPointId = String.valueOf((Long) feature.getAttribute("id"));
                 String postalCode = (String) feature.getAttribute("postal_cod");
 
-                Long amount = (Long) feature.getAttribute(provider + "_tag");
+                Long amount = numberOfParcels;
 
-                Delivery.ParcelType b2bInfo = getB2BInformation(feature, provider);
-                boolean isB2B = Delivery.ParcelType.B2B.equals(b2bInfo);
+                boolean isB2B = Delivery.ParcelType.B2B.equals(parcelType);
 
                 ArrayList<Double> individualWeights = new ArrayList<>();
                 for (int i = 0; i < amount; i++) {
@@ -241,12 +341,11 @@ public class DeliveryGenerator implements Runnable {
                                 .coordinate(coord)
                                 .provider(provider)
                                 .amount(amount.intValue())
-                                .parcelType(b2bInfo)
+                                .parcelType(parcelType)
                                 .postalCode(postalCode)
                                 .individualWeights(individualWeights)
                                 .deliveryMode(mode)
                                 .build();
-
         }
 
         /**
@@ -334,8 +433,8 @@ public class DeliveryGenerator implements Runnable {
                 }
 
                 return Delivery.builder() // Start building a new Delivery object using the Builder pattern
-                                .id(hub.getId().toString()+"_locker") // Set the ID of the delivery point as a string
-                                                            // representation of hub's ID
+                                .id(hub.getId().toString() + "_locker") // Set the ID of the delivery point as a string
+                                // representation of hub's ID
                                 .coordinate(hub.getCoord()) // Set the coordinates of the delivery point using the hub's
                                                             // coordinates
                                 .provider("dhl") // Assume the provider is DHL for parcel lockers

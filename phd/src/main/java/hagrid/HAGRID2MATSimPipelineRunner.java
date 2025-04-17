@@ -1,5 +1,9 @@
 package hagrid;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import com.google.inject.Guice;
@@ -14,14 +18,44 @@ import hagrid.demand.NetworkProcessor;
 import hagrid.demand.SupplyCarrierGenerator;
 import hagrid.utils.routing.ThreadingType;
 
-public class App {
-    private static final Logger LOGGER = LogManager.getLogger(App.class);
+public class HAGRID2MATSimPipelineRunner {
+
+    private static final Logger LOGGER = LogManager.getLogger(HAGRID2MATSimPipelineRunner.class);
+    private static final DateTimeFormatter RUN_ID_FORMAT = DateTimeFormatter.ofPattern("ddMMyyyy");
 
     public static void main(String[] args) {
-        LOGGER.info("Starting application...");
+        LOGGER.info("Starting HAGRID Demand Pipeline for multiple dates...");
+
+        String concept = "basecase";
+        List<LocalDate> dates = List.of(
+                LocalDate.of(2025, 5, 12),
+                LocalDate.of(2025, 5, 13),
+                LocalDate.of(2025, 5, 14),
+                LocalDate.of(2025, 5, 15),
+                LocalDate.of(2025, 5, 16),
+                LocalDate.of(2025, 5, 17)
+        );
+
+        dates.forEach(date -> {
+            String runId = createRunId(concept, date);
+            runPipeline(runId, date);
+        });
+
+        LOGGER.info("All demand pipeline scenarios completed.");
+    }
+
+    private static void runPipeline(String runId, LocalDate date) {
+        LOGGER.info("--------------------------------------------------");
+        LOGGER.info("Processing scenario: {}", runId);
+        LOGGER.info("--------------------------------------------------");
 
         // Create the Guice injector with the HagridModule configuration
         Injector injector = Guice.createInjector(new HagridModule("phd/input/config.xml"));
+        HagridConfigGroup config = injector.getInstance(HagridConfigGroup.class);
+        config.setConcept(runId.split("_")[0]);
+        config.setSimulationDate(date);        
+
+        
 
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
@@ -30,15 +64,14 @@ public class App {
         runDeliveryGeneration(injector); // Step 4: Generate parcels based on the processed demand data
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
-        
-        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based on the generated
-                                                // carriers
-        
-        // runRouter(injector, ThreadingType.SINGLE_THREAD); // Step 7: Run routing for delivery supply carriers based on
-        //                                                    // the generated
-        // // carriers
+        // runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based
+                                                               // on the generated
 
-        LOGGER.info("Application finished.");
+        LOGGER.info("Finished scenario: {}", runId);
+    }
+
+    private static String createRunId(String concept, LocalDate date) {
+        return concept + "_" + date.format(RUN_ID_FORMAT);
     }
 
     /**
