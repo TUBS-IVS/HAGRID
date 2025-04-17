@@ -1,5 +1,8 @@
 package hagrid.demand;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
@@ -33,6 +36,9 @@ public class CarrierRouter implements Runnable {
 
     @Inject
     private Scenario scenario;
+
+    @Inject
+    private HagridConfigGroup hagridConfig;
 
     public void setThreadingType(ThreadingType threadingType) {
         this.threadingType = threadingType;
@@ -90,8 +96,10 @@ public class CarrierRouter implements Runnable {
             router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");
 
             // // Write the routed plans to XML files
-            new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers_routed.xml");
-            new CarrierPlanWriter(supplyCarriers).write("phd/output/supply_carriers_routed.xml");
+            Files.createDirectories(Path.of(hagridConfig.getCarrierOutputDirectory()));
+
+            new CarrierPlanWriter(carriers).write(hagridConfig.getDeliveryCarrierOutputFile());
+            new CarrierPlanWriter(supplyCarriers).write(hagridConfig.getSupplyCarrierOutputFile());
 
             LOGGER.info("Routing process for carriers completed successfully.");
         } catch (Exception e) {

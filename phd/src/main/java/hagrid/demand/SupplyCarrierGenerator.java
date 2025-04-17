@@ -100,9 +100,11 @@ public class SupplyCarrierGenerator implements Runnable {
             // Validate generated supply carriers
             validateSupplyCarriers(supplyCarriers, splitSupplyCarriers, hubs, hagridConfig.isWhiteLabel());
 
-            new CarrierPlanWriter(supplyCarriers).write("phd/output/supply_carriers.xml");
+            String outputPath = "phd/output/" + hagridConfig.getRunId() ;
+
+            new CarrierPlanWriter(supplyCarriers).write(outputPath + "_supply_carriers.xml");
             // HAGRIDUtils.convertDemandFromParcelsToShapeFile(supplyCarriers, "phd/output/supply_carriers.shp");
-            new CarrierPlanWriter(splitSupplyCarriers).write("phd/output/split_supply_carriers.xml");
+            new CarrierPlanWriter(splitSupplyCarriers).write(outputPath + "_split_supply_carriers.xml");
             // HAGRIDUtils.convertDemandFromParcelsToShapeFile(splitSupplyCarriers,
             //         "phd/output/split_supply_carriers.shp");
 
