@@ -40,6 +40,7 @@ public class CarrierVehicleFactory {
 
         // Determine vehicle type based on size
         VehicleType vehicleType = getVehicleType(size);
+        vehicleType.setNetworkMode("car");
         // not nesscary to add skill - but i guess i keep it for now
         CarriersUtils.addSkill(vehicleType, "conventional");  
 
@@ -77,6 +78,7 @@ public class CarrierVehicleFactory {
 
         // Get the vehicle type
         VehicleType vehicleType = getVehicleType(vehicleIdSuffix);
+        vehicleType.setNetworkMode("car");
         // not nesscary to add skill - but i guess i keep it for now
         CarriersUtils.addSkill(vehicleType, "supply");       
 

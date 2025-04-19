@@ -37,11 +37,15 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
 
         Set<VehicleType> vehicleTypes = new HashSet<>();
         Set<String> vehicleTransportModes = new HashSet<>();
-
-        // Collect vehicle types and transport modes
-        carriers.getCarriers().values().forEach(carrier -> vehicleTypes.addAll(carrier.getCarrierCapabilities().getVehicleTypes()));
-        carriers.getCarriers().values().forEach(carrier -> carrier.getCarrierCapabilities().getVehicleTypes()
-                .forEach(type -> vehicleTransportModes.add(type.getNetworkMode())));
+        
+        carriers.getCarriers().values().forEach(carrier -> {
+            carrier.getCarrierCapabilities().getVehicleTypes().forEach(type -> {
+                vehicleTypes.add(type);
+                if (type.getNetworkMode() != null) {
+                    vehicleTransportModes.add(type.getNetworkMode());
+                }
+            });
+        });
 
         for (String mode : vehicleTransportModes) {
             log.info("Creating ZoneBasedTransportCosts for Mode: " + mode);
@@ -55,6 +59,13 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
             
             // Create ZoneBasedTransportCosts, which uses the shared cache
             byModeVRPTransportCosts.put(mode, zoneBuilder.build());
+        }
+
+        for (VehicleType type : vehicleTypes) {
+            if (type.getNetworkMode() == null) {
+                log.warn("VehicleType {} has no networkMode. Setting 'car' as default.", type.getId());
+                type.setNetworkMode("car");
+            }
         }
 
         return byModeVRPTransportCosts;

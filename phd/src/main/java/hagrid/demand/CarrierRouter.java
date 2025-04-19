@@ -2,11 +2,15 @@ package hagrid.demand;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Network;
+import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierPlanWriter;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.Carriers;
@@ -17,7 +21,6 @@ import com.google.inject.Singleton;
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.general.HAGRIDUtils;
-import hagrid.utils.routing.HAGRIDRouterUtils;
 import hagrid.utils.routing.ThreadingType;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
 
@@ -27,7 +30,7 @@ import hagrid.utils.routing.ZoneBasedTransportCosts;
  * It retrieves the necessary elements from the scenario and performs the
  * routing using the specified threading type.
  */
-@Singleton
+// @Singleton
 public class CarrierRouter implements Runnable {
 
     private ThreadingType threadingType;
@@ -91,6 +94,14 @@ public class CarrierRouter implements Runnable {
 
             // Route delivery carriers
             router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
+
+            // For testing purposes, limit the number of carriers to route
+            // Carriers firstThreeCarriers = new Carriers();
+            // carriers.getCarriers().entrySet().stream()
+            //     .limit(3)
+            //     .forEach(entry -> firstThreeCarriers.getCarriers().put(entry.getKey(), entry.getValue()));
+
+            // router.routeCarriers(firstThreeCarriers, zoneBasedCosts, carFilteredNetwork, "delivery");
 
             // Route supply carriers
             router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");

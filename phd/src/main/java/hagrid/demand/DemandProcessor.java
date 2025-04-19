@@ -52,7 +52,7 @@ import elki.utilities.random.RandomFactory;
  * The DemandProcessor class is responsible for reading freight demand data
  * from a shapefile and processing it.
  */
-@Singleton
+// @Singleton
 public class DemandProcessor implements Runnable {
 
     private static final Logger LOGGER = LogManager.getLogger(DemandProcessor.class);
