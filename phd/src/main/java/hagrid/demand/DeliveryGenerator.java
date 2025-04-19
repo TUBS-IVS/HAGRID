@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * The ParcelGenerator class is responsible for converting sorted carrier demand
  * into Parcel objects and validating the totals.
  */
-@Singleton
+// @Singleton
 public class DeliveryGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(DeliveryGenerator.class);

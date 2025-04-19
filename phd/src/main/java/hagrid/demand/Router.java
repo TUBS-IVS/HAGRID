@@ -172,9 +172,9 @@ public class Router {
         
         CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
 
-
         LOGGER.info("Routing plan for carrier {}", carrier.getId());
         NetworkRouter.routePlan(newPlan, netBasedCosts);
+        carrier.addPlan(newPlan);
         carrier.setSelectedPlan(newPlan);
 
         double timeForPlanningAndRouting = (System.currentTimeMillis() - start) / 1000;

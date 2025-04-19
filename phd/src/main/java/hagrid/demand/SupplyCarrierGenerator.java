@@ -19,7 +19,7 @@ import java.util.*;
  * The SupplyCarrierGenerator class is responsible for generating supply
  * carriers based on the previously generated carriers and their services.
  */
-@Singleton
+// @Singleton
 public class SupplyCarrierGenerator implements Runnable {
 
     // TODO Add Information to Config Group!
@@ -197,6 +197,7 @@ public class SupplyCarrierGenerator implements Runnable {
             // Create a new sub-carrier with the original carrier's ID and the direction
             Carrier subCarrier = CarriersUtils
                     .createCarrier(Id.create(originalCarrier.getId().toString() + "_" + direction, Carrier.class));
+            CarriersUtils.setCarrierMode(subCarrier, "car");
 
             // Copy attributes from the original carrier to the sub-carrier
             subCarrier.getAttributes().putAttribute("carrierType",
@@ -394,6 +395,7 @@ public class SupplyCarrierGenerator implements Runnable {
     private Carrier createSupplyCarrier(Hub hub, Id<Link> linkId, String carrierId, boolean isWhiteLabel) {
         String id = carrierId == null ? "supply_" + hub.getId().toString().replace("/", "_") : carrierId;
         Carrier supplyCarrier = CarriersUtils.createCarrier(Id.create(id, Carrier.class));
+        CarriersUtils.setCarrierMode(supplyCarrier, "car");
         String supplyLink = null;
 
         if (isWhiteLabel) {

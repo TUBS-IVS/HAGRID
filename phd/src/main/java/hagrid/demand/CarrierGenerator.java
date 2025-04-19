@@ -45,7 +45,7 @@ import java.util.ConcurrentModificationException;
  * The CarrierGenerator class is responsible for converting sorted demand
  * into Carrier objects and validating the totals.
  */
-@Singleton
+// @Singleton
 public class CarrierGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(CarrierGenerator.class);
@@ -98,6 +98,7 @@ public class CarrierGenerator implements Runnable {
 
                         String outputPath = "phd/output/" + hagridConfig.getRunId() + "_delivery_carriers.xml";
                         new CarrierPlanWriter(carriers).write(outputPath);
+                        // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" + hagridConfig.getRunId() + "_types.xml");
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 
@@ -150,6 +151,7 @@ public class CarrierGenerator implements Runnable {
                         final ArrayList<Delivery> carrierDeliveries = entry.getValue();
 
                         final Carrier carrier = CarriersUtils.createCarrier(Id.create(carrierID, Carrier.class));
+                        CarriersUtils.setCarrierMode(carrier, "car");
 
                         setupCarrierAttributes(carrier, carrierID);
 
@@ -222,7 +224,7 @@ public class CarrierGenerator implements Runnable {
                                 .map(Carrier::getId)
                                 .collect(Collectors.toList());
 
-                LOGGER.info("Number of carriers before merging smaller carriers: {}", carriers.getCarriers().size());                
+                LOGGER.info("Number of carriers before merging smaller carriers: {}", carriers.getCarriers().size());
                 // Log the carriers with insufficient services
                 LOGGER.info("Number of carriers with fewer than {} parcels to delivery: {}", minLMDVehCap,
                                 insufficientServiceCarrierIds.size());
@@ -253,7 +255,7 @@ public class CarrierGenerator implements Runnable {
 
                 int remainingSize = carriers.getCarriers().size();
                 LOGGER.info("Number of remaining carriers: {}", remainingSize);
- 
+
         }
 
         /**
@@ -397,8 +399,10 @@ public class CarrierGenerator implements Runnable {
          * to the carrier. It also calculates and updates the total weight of parcels
          * and the correction
          * factor in the summary.
-         * We also calcualte the daily number of missed delivery based on simple statistics
-         * TODO: Add a more sophisticated and deeper model for missed deliveries in the future! 
+         * We also calcualte the daily number of missed delivery based on simple
+         * statistics
+         * TODO: Add a more sophisticated and deeper model for missed deliveries in the
+         * future!
          *
          * @param carrier           The carrier to which services are to be added.
          * @param carrierDeliveries The deliveries for the carrier.
@@ -427,15 +431,16 @@ public class CarrierGenerator implements Runnable {
                 double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
 
                 // Sample a daily bias around zero (in percentage points)
-                double dailyBias = random.nextGaussian() * sigmaPercent;  // DHL: ±2.5%, others: ±5%
+                double dailyBias = random.nextGaussian() * sigmaPercent; // DHL: ±2.5%, others: ±5%
                 carrier.getAttributes().putAttribute("dailyDeliveryBias", dailyBias);
 
                 // Iterate through each delivery associated with the carrier
                 for (final Delivery carrierDelivery : carrierDeliveries) {
 
                         // Get the base delivery success rate (e.g. 94.0 for 94%)
+                        // 100% is not possible -> so 98% ist max
                         double baseRate = deliveryRates.get(provider); // e.g. 94.0
-                        double effectiveRate = Math.max(0.0, Math.min(100.0, baseRate + dailyBias));
+                        double effectiveRate = Math.max(0.0, Math.min(98.0, baseRate + dailyBias));
 
                         // Set the delivery rate to 100% for B2B parcel types
                         if (carrierDelivery.getParcelType() == ParcelType.B2B) {
@@ -673,7 +678,7 @@ public class CarrierGenerator implements Runnable {
                                         closestHub.getId().toString(), startTime, maxRouteDuration, "m");
                         CarrierVehicle carrierVehicleSizeL = carrierVehicleFactory.createCEPVehicle(
                                         closestHub.getLink(),
-                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");
+                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");                                        
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeL);
                 }
@@ -1074,14 +1079,19 @@ public class CarrierGenerator implements Runnable {
                 for (Carrier carrier : carriers.getCarriers().values()) {
                         int expectedMissedDeliveries = (int) carrier.getAttributes().getAttribute("missedParcels");
                         List<Id<CarrierService>> missedDeliveries = (List<Id<CarrierService>>) carrier.getAttributes()
-                                        .getAttribute("missedParcelsAsList");                        
+                                        .getAttribute("missedParcelsAsList");
+                        int missedSize = 0; // Initialize missedSize to 0
+                        if (missedDeliveries != null) {
+                                missedSize = missedDeliveries.size();
+                        }
 
-                        if (missedDeliveries.size() != expectedMissedDeliveries) {
+                        if (missedSize != expectedMissedDeliveries) {
                                 throw new ServiceCreationException("Validation failed for carrier: " + carrier.getId() +
                                                 ". Expected missed parcel deliveries: " + expectedMissedDeliveries +
                                                 ", Actual missed parcel deliveries: " + missedDeliveries.size(), null);
                         }
-                        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedDeliveries.toString());
+                        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString",
+                                        missedDeliveries.toString());
                 }
 
                 LOGGER.info("Validation passed for all carriers and their missed parcel deliveries.");

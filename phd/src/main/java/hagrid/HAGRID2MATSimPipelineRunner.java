@@ -28,12 +28,12 @@ public class HAGRID2MATSimPipelineRunner {
 
         String concept = "basecase";
         List<LocalDate> dates = List.of(
-                LocalDate.of(2025, 5, 12)
-                // LocalDate.of(2025, 5, 13),
-                // LocalDate.of(2025, 5, 14),
-                // LocalDate.of(2025, 5, 15),
-                // LocalDate.of(2025, 5, 16),
-                // LocalDate.of(2025, 5, 17)
+            LocalDate.of(2025, 5, 12),
+            LocalDate.of(2025, 5, 13),
+            LocalDate.of(2025, 5, 14),
+            LocalDate.of(2025, 5, 15),
+            LocalDate.of(2025, 5, 16),
+            LocalDate.of(2025, 5, 17)
         );
 
         dates.forEach(date -> {
@@ -62,9 +62,17 @@ public class HAGRID2MATSimPipelineRunner {
         runDeliveryGeneration(injector); // Step 4: Generate parcels based on the processed demand data
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
-        // runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based
+        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based
                                                                // on the generated
+        System.gc();
+        injector = null; 
 
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } // gibt GC etwas Luft
         LOGGER.info("Finished scenario: {}", runId);
     }
 
