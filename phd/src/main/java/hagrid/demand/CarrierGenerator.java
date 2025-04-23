@@ -3,6 +3,7 @@ package hagrid.demand;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import hagrid.HagridConfigGroup;
+import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
 import hagrid.utils.demand.Delivery.ParcelType;
@@ -11,6 +12,7 @@ import hagrid.utils.general.HAGRIDUtils;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jxmapviewer.viewer.util.GeoUtil;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
@@ -20,6 +22,8 @@ import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.utils.geometry.CoordUtils;
+import org.matsim.core.utils.geometry.GeometryUtils;
 import org.matsim.freight.carriers.*;
 import org.matsim.freight.carriers.CarrierCapabilities.FleetSize;
 import org.matsim.vehicles.Vehicle;
@@ -27,6 +31,7 @@ import org.matsim.vehicles.VehicleType;
 
 import java.util.Map;
 import java.util.Optional;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -40,7 +45,7 @@ import java.util.ConcurrentModificationException;
  * The CarrierGenerator class is responsible for converting sorted demand
  * into Carrier objects and validating the totals.
  */
-@Singleton
+// @Singleton
 public class CarrierGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(CarrierGenerator.class);
@@ -80,7 +85,7 @@ public class CarrierGenerator implements Runnable {
 
                         // Process the deliveries to create carriers
                         final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
-                                        vehicleTypes, hubList);
+                                        vehicleTypes, hubList, hagridConfig.getMinLMDVehCap());
 
                         // Validate the generated carriers and supply demand
                         validateCarriers(carriers);
@@ -91,10 +96,11 @@ public class CarrierGenerator implements Runnable {
 
                         LOGGER.info("Carrier generation completed.");
 
-                        new CarrierPlanWriter(carriers).write("phd/output/delivery_carriers.xml");
+                        String outputPath = "phd/output/" + hagridConfig.getRunId() + "_delivery_carriers.xml";
+                        new CarrierPlanWriter(carriers).write(outputPath);
+                        // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" + hagridConfig.getRunId() + "_types.xml");
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
-
 
                 } catch (Exception e) {
                         LOGGER.error("Error generating carriers", e);
@@ -131,10 +137,12 @@ public class CarrierGenerator implements Runnable {
          * @param subNetwork   The network used for parcel services.
          * @param hubList
          * @param vehicleTypes
+         * @param minLMDVehCap Minimum vehicle capacity for LMD vehicles.
          * @return The generated carriers.
          */
         private Carriers generateCarriersAndCarrierServices(final Map<String, ArrayList<Delivery>> deliveries,
-                        final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList) {
+                        final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
+                        int minLMDVehCap) {
                 final Carriers carriers = new Carriers();
                 final Map<String, Double> deliveryRates = initializeDeliveryRate();
 
@@ -143,6 +151,7 @@ public class CarrierGenerator implements Runnable {
                         final ArrayList<Delivery> carrierDeliveries = entry.getValue();
 
                         final Carrier carrier = CarriersUtils.createCarrier(Id.create(carrierID, Carrier.class));
+                        CarriersUtils.setCarrierMode(carrier, "car");
 
                         setupCarrierAttributes(carrier, carrierID);
 
@@ -156,7 +165,7 @@ public class CarrierGenerator implements Runnable {
                         return carrier;
                 }).forEach(carriers::addCarrier);
 
-                logAndValidateInsufficientCarrier(carriers);
+                logAndValidateInsufficientCarrier(carriers, minLMDVehCap);
 
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
 
@@ -178,12 +187,13 @@ public class CarrierGenerator implements Runnable {
          * 2024-06-20 18:49:56 INFO CarrierGenerator:196 - Number of carriers removed
          * with fewer than 5 services: 24
          * -> need to check
-         * -> fixed using postal codes -> keepe
+         * -> fixed using postal codes -> keep
+         * -> UPDATED with merge funtionality to merge smaller carriers into larger ones
          *
          * @param carriers The Carriers object containing all carriers.
          * @throws RuntimeException if any carriers have fewer than 5 services.
          */
-        private void logAndValidateInsufficientCarrier(Carriers carriers) {
+        private void logAndValidateInsufficientCarrier(Carriers carriers, int minLMDVehCap) {
                 // Find the carrier with the most services
                 Optional<Carrier> carrierWithMostServices = carriers.getCarriers().values().stream()
                                 .max(Comparator.comparingInt(carrier -> carrier.getServices().size()));
@@ -202,23 +212,142 @@ public class CarrierGenerator implements Runnable {
                                 carrier -> LOGGER.info("Carrier with the least services: {} with {} services",
                                                 carrier.getId(), carrier.getServices().size()));
 
-                // Collect IDs of carriers with fewer than 5 services
+                // Collect IDs of carriers with total parcel demand (summed over all services) <
+                // min Vehicle Capacity = 165
                 List<Id<Carrier>> insufficientServiceCarrierIds = carriers.getCarriers().values().stream()
-                                .filter(carrier -> carrier.getServices().size() < 5)
+                                .filter(carrier -> carrier.getServices().values().stream()
+                                                .mapToLong(service -> service.getCapacityDemand()) // Assuming
+                                                                                                   // single
+                                                                                                   // capacity
+                                                                                                   // dimension
+                                                .sum() < minLMDVehCap)
                                 .map(Carrier::getId)
                                 .collect(Collectors.toList());
 
+                LOGGER.info("Number of carriers before merging smaller carriers: {}", carriers.getCarriers().size());
                 // Log the carriers with insufficient services
-                LOGGER.info("Number of carriers with fewer than 5 services: {}", insufficientServiceCarrierIds.size());
-                LOGGER.info("Carriers with insufficient services: {}", insufficientServiceCarrierIds.toString());
+                LOGGER.info("Number of carriers with fewer than {} parcels to delivery: {}", minLMDVehCap,
+                                insufficientServiceCarrierIds.size());
+
+                // Merge carriers with insufficient services into larger carriers from same
+                // company
+                mergeCarriersWithInsufficientServices(carriers.getCarriers(), insufficientServiceCarrierIds);
+                insufficientServiceCarrierIds.clear();
+
+                // Re-Collect IDs of carriers with total parcel demand (summed over all
+                // services) <
+                // min Vehicle Capacity = 165
+                // For validation to check if the merging was successful
+                insufficientServiceCarrierIds = carriers.getCarriers().values().stream()
+                                .filter(carrier -> carrier.getServices().values().stream()
+                                                .mapToLong(service -> service.getCapacityDemand()) // Assuming
+                                                                                                   // single
+                                                                                                   // capacity
+                                                                                                   // dimension
+                                                .sum() < minLMDVehCap)
+                                .map(Carrier::getId)
+                                .collect(Collectors.toList());
 
                 if (!insufficientServiceCarrierIds.isEmpty()) {
-                        throw new RuntimeException("There are carriers with fewer than 5 services. IDs: "
+                        throw new RuntimeException("There are carriers with fewer than 100 services. IDs: "
                                         + insufficientServiceCarrierIds.toString());
                 }
 
                 int remainingSize = carriers.getCarriers().size();
                 LOGGER.info("Number of remaining carriers: {}", remainingSize);
+
+        }
+
+        /**
+         * Merges underutilized carriers (with insufficient parcel volume) into nearby
+         * larger carriers
+         * of the same provider. Preserves total demand across all services.
+         *
+         * @param carrierMap             Full map of carriers (modifiable).
+         * @param insufficientCarrierIds Set of carrier IDs previously identified as
+         *                               under threshold.
+         */
+        public void mergeCarriersWithInsufficientServices(Map<Id<Carrier>, Carrier> carrierMap,
+                        List<Id<Carrier>> insufficientCarrierIds) {
+                Logger LOGGER = LogManager.getLogger(getClass());
+
+                // Calculate initial parcel count to validate later
+                long totalDemandBefore = carrierMap.values().stream()
+                                .flatMap(c -> c.getServices().values().stream())
+                                .mapToLong(CarrierService::getCapacityDemand)
+                                .sum();
+
+                // Tag providers from carrier IDs
+                Map<String, List<Carrier>> carriersByProvider = carrierMap.values().stream()
+                                .peek(c -> c.getAttributes().putAttribute("provider", extractProviderFromId(c.getId())))
+                                .collect(Collectors.groupingBy(
+                                                c -> c.getAttributes().getAttribute("provider").toString()));
+
+                List<Id<Carrier>> carriersToRemove = new ArrayList<>();
+
+                for (Map.Entry<String, List<Carrier>> entry : carriersByProvider.entrySet()) {
+                        String provider = entry.getKey();
+                        List<Carrier> carriers = entry.getValue();
+
+                        // Identify small and large carriers for this provider
+                        List<Carrier> small = carriers.stream()
+                                        .filter(c -> insufficientCarrierIds.contains(c.getId()))
+                                        .collect(Collectors.toList());
+
+                        List<Carrier> large = carriers.stream()
+                                        .filter(c -> !insufficientCarrierIds.contains(c.getId()))
+                                        .collect(Collectors.toList());
+
+                        for (Carrier smallCarrier : small) {
+                                Coord smallCoord = GeoUtils.getMedianCoordOfStoredServiceCoords(smallCarrier);
+                                // Find nearest large carrier
+                                Carrier nearestLarge = large.stream()
+                                                .min(Comparator.comparingDouble(
+                                                                big -> CoordUtils.calcEuclideanDistance(smallCoord,
+                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                big))))
+                                                .orElse(null);
+
+                                if (nearestLarge != null) {
+                                        smallCarrier.getServices().values().forEach(
+                                                        service -> CarriersUtils.addService(nearestLarge, service));
+                                        carriersToRemove.add(smallCarrier.getId());
+
+                                        LOGGER.info("Merged carrier '{}' into '{}'", smallCarrier.getId(),
+                                                        nearestLarge.getId());
+                                } else {
+                                        LOGGER.warn("No merge target found for '{}'", smallCarrier.getId());
+                                }
+                        }
+                }
+
+                // Remove all merged carriers from map
+                carriersToRemove.forEach(carrierMap::remove);
+
+                // Validate demand integrity
+                long totalDemandAfter = carrierMap.values().stream()
+                                .flatMap(c -> c.getServices().values().stream())
+                                .mapToLong(CarrierService::getCapacityDemand)
+                                .sum();
+
+                if (totalDemandBefore != totalDemandAfter) {
+                        throw new IllegalStateException(String.format(
+                                        "Parcel count mismatch after merging carriers. Before: %d, After: %d, Diff: %d",
+                                        totalDemandBefore, totalDemandAfter, (totalDemandAfter - totalDemandBefore)));
+                }
+
+                LOGGER.info("Merged {} small carriers. Parcel volume preserved.", carriersToRemove.size());
+        }
+
+        /**
+         * Extracts the provider name from a carrier ID (assuming ID format is
+         * 'provider_something').
+         *
+         * @param id The carrier ID.
+         * @return The provider prefix as lowercase.
+         */
+        private String extractProviderFromId(Id<Carrier> id) {
+                return id.toString().split("_")[0].toLowerCase();
         }
 
         /**
@@ -253,6 +382,10 @@ public class CarrierGenerator implements Runnable {
 
                 // Initialize the carrier type attribute to CarrierType = delivery
                 carrier.getAttributes().putAttribute("carrierType", "delivery");
+
+                // Set the carrier mode to "car"
+                // TODO: Add an implementation for all modes etc.
+                CarriersUtils.setCarrierMode(carrier, "car");
         }
 
         /**
@@ -266,6 +399,10 @@ public class CarrierGenerator implements Runnable {
          * to the carrier. It also calculates and updates the total weight of parcels
          * and the correction
          * factor in the summary.
+         * We also calcualte the daily number of missed delivery based on simple
+         * statistics
+         * TODO: Add a more sophisticated and deeper model for missed deliveries in the
+         * future!
          *
          * @param carrier           The carrier to which services are to be added.
          * @param carrierDeliveries The deliveries for the carrier.
@@ -290,13 +427,24 @@ public class CarrierGenerator implements Runnable {
                 double totalWeightForCarrier = 0.0;
                 List<CarrierService> createdServices = new ArrayList<>();
 
+                // Determine the standard deviation (sigma) for daily bias by provider
+                double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
+
+                // Sample a daily bias around zero (in percentage points)
+                double dailyBias = random.nextGaussian() * sigmaPercent; // DHL: ±2.5%, others: ±5%
+                carrier.getAttributes().putAttribute("dailyDeliveryBias", dailyBias);
+
                 // Iterate through each delivery associated with the carrier
                 for (final Delivery carrierDelivery : carrierDeliveries) {
-                        double rate = deliveryRates.get(provider);
+
+                        // Get the base delivery success rate (e.g. 94.0 for 94%)
+                        // 100% is not possible -> so 98% ist max
+                        double baseRate = deliveryRates.get(provider); // e.g. 94.0
+                        double effectiveRate = Math.max(0.0, Math.min(98.0, baseRate + dailyBias));
 
                         // Set the delivery rate to 100% for B2B parcel types
                         if (carrierDelivery.getParcelType() == ParcelType.B2B) {
-                                rate = 100.0;
+                                effectiveRate = 100.0;
                         }
 
                         final int amount = carrierDelivery.getAmount();
@@ -321,7 +469,7 @@ public class CarrierGenerator implements Runnable {
                                                 + serviceWeights);
                                 weights.subList(0, cap).clear();
                                 LOGGER.debug("Remaining weights after clearing: " + weights);
-                                CarrierService service = addAndGetCarrierService(carrier, linkId, rate, cap,
+                                CarrierService service = addAndGetCarrierService(carrier, linkId, effectiveRate, cap,
                                                 carrierDelivery,
                                                 totalServices++, serviceWeights);
                                 createdServices.add(service);
@@ -335,7 +483,7 @@ public class CarrierGenerator implements Runnable {
                                 List<Double> serviceWeights = new ArrayList<>(weights.subList(0, remainingCapacity));
                                 LOGGER.debug("Service " + totalServices + ": Weights for this service: "
                                                 + serviceWeights);
-                                CarrierService service = addAndGetCarrierService(carrier, linkId, rate,
+                                CarrierService service = addAndGetCarrierService(carrier, linkId, effectiveRate,
                                                 remainingCapacity, carrierDelivery,
                                                 totalServices++, serviceWeights);
                                 createdServices.add(service);
@@ -397,16 +545,15 @@ public class CarrierGenerator implements Runnable {
 
                         serviceBuilder.setCapacityDemand(capacityDemand);
                         serviceBuilder.setServiceDuration(serviceDuration);
-                        serviceBuilder.setServiceStartTimeWindow(TimeWindow.newInstance(begin, end));
+                        serviceBuilder.setServiceStartingTimeWindow(TimeWindow.newInstance(begin, end));
 
                         final CarrierService service = serviceBuilder.build();
                         service.getAttributes().putAttribute("provider",
                                         carrier.getAttributes().getAttribute("provider"));
                         service.getAttributes().putAttribute("coord", carrierDelivery.getCoordinate());
                         service.getAttributes().putAttribute("type", carrierDelivery.getParcelType());
-                        service.getAttributes().putAttribute("mode", carrierDelivery.getDeliveryMode());
+                        service.getAttributes().putAttribute("carrierMode", carrierDelivery.getDeliveryMode());
                         service.getAttributes().putAttribute("postalcode", carrierDelivery.getPostalCode());
-
                         // Handle case where weights is null
                         if (weights == null) {
                                 throw new IllegalArgumentException("Weights list is null");
@@ -426,7 +573,7 @@ public class CarrierGenerator implements Runnable {
                                 determineMissedParcels(carrier, service, rate);
                         }
 
-                        CarriersUtils.addSkill(service, "conventional");  
+                        CarriersUtils.addSkill(service, "conventional");
                         CarriersUtils.addService(carrier, service);
 
                         return service;
@@ -505,8 +652,8 @@ public class CarrierGenerator implements Runnable {
          * attributes, and adds vehicles to the carrier with appropriate start times
          * based on the provider.
          *
-         * @param carrier               The carrier to which vehicles will be added.
-         * @param hubs                  A map of hubs used to find the closest hub.
+         * @param carrier The carrier to which vehicles will be added.
+         * @param hubs    A map of hubs used to find the closest hub.
          */
         private void addCarrierVehiclesToCarrier(final Carrier carrier,
                         final Map<Id<Hub>, Hub> hubs) {
@@ -531,7 +678,7 @@ public class CarrierGenerator implements Runnable {
                                         closestHub.getId().toString(), startTime, maxRouteDuration, "m");
                         CarrierVehicle carrierVehicleSizeL = carrierVehicleFactory.createCEPVehicle(
                                         closestHub.getLink(),
-                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");
+                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");                                        
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeL);
                 }
@@ -933,12 +1080,18 @@ public class CarrierGenerator implements Runnable {
                         int expectedMissedDeliveries = (int) carrier.getAttributes().getAttribute("missedParcels");
                         List<Id<CarrierService>> missedDeliveries = (List<Id<CarrierService>>) carrier.getAttributes()
                                         .getAttribute("missedParcelsAsList");
+                        int missedSize = 0; // Initialize missedSize to 0
+                        if (missedDeliveries != null) {
+                                missedSize = missedDeliveries.size();
+                        }
 
-                        if (missedDeliveries.size() != expectedMissedDeliveries) {
+                        if (missedSize != expectedMissedDeliveries) {
                                 throw new ServiceCreationException("Validation failed for carrier: " + carrier.getId() +
                                                 ". Expected missed parcel deliveries: " + expectedMissedDeliveries +
                                                 ", Actual missed parcel deliveries: " + missedDeliveries.size(), null);
                         }
+                        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString",
+                                        missedDeliveries.toString());
                 }
 
                 LOGGER.info("Validation passed for all carriers and their missed parcel deliveries.");

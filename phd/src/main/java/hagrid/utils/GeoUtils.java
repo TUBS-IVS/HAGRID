@@ -1,6 +1,8 @@
 package hagrid.utils;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +15,6 @@ import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.geometry.MismatchedDimensionException;
 import org.geotools.api.referencing.FactoryException;
-import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.api.referencing.operation.TransformException;
 import org.locationtech.jts.geom.Coordinate;
@@ -27,6 +28,8 @@ import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
+import org.matsim.freight.carriers.Carrier;
+import org.matsim.freight.carriers.CarrierService;
 
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
@@ -324,13 +327,11 @@ public class GeoUtils {
         GeometryFactory geometryFactory = new GeometryFactory();
         Coordinate fromCoord = new Coordinate(
                 link.getFromNode().getCoord().getX(),
-                link.getFromNode().getCoord().getY()
-        );
+                link.getFromNode().getCoord().getY());
         Coordinate toCoord = new Coordinate(
                 link.getToNode().getCoord().getX(),
-                link.getToNode().getCoord().getY()
-        );
-        return geometryFactory.createLineString(new Coordinate[]{fromCoord, toCoord});
+                link.getToNode().getCoord().getY());
+        return geometryFactory.createLineString(new Coordinate[] { fromCoord, toCoord });
     }
 
     /**
@@ -350,5 +351,56 @@ public class GeoUtils {
             }
         }
         return combinedGeometry;
+    }
+
+    /**
+     * Computes the median coordinate of a carrier's services using stored "coord"
+     * attributes.
+     * 
+     * @param carrier Carrier with services (each having "coord" set).
+     * @return Median coordinate. Returns (0,0) if no services available.
+     */    
+    public static Coord getMedianCoordOfStoredServiceCoords(Carrier carrier) {
+        List<CarrierService> services = new ArrayList<>(carrier.getServices().values());
+
+        if (services.isEmpty()) {
+            return new Coord(0, 0);
+        }
+
+        List<Double> xCoords = new ArrayList<>();
+        List<Double> yCoords = new ArrayList<>();
+
+        for (CarrierService service : services) {
+            Object attr = service.getAttributes().getAttribute("coord");
+
+            if (attr instanceof Coord coord) {
+                xCoords.add(coord.getX());
+                yCoords.add(coord.getY());
+            }
+        }
+
+        if (xCoords.isEmpty() || yCoords.isEmpty()) {
+            return new Coord(0, 0);
+        }
+
+        Collections.sort(xCoords);
+        Collections.sort(yCoords);
+
+        double medianX = computeMedian(xCoords);
+        double medianY = computeMedian(yCoords);
+
+        return new Coord(medianX, medianY);
+    }
+
+    /**
+     * Computes the median value from a sorted list.
+     */
+    private static double computeMedian(List<Double> values) {
+        int size = values.size();
+        if (size % 2 == 1) {
+            return values.get(size / 2);
+        } else {
+            return (values.get(size / 2 - 1) + values.get(size / 2)) / 2.0;
+        }
     }
 }

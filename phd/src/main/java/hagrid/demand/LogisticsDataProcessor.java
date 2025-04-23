@@ -37,7 +37,7 @@ import java.util.Scanner;
  * The LogisticsDataProcessor class is responsible for reading logistics data
  * from various files and storing it in the MATSim scenario.
  */
-@Singleton
+// @Singleton
 public class LogisticsDataProcessor implements Runnable {
 
     private static final Logger LOGGER = LogManager.getLogger(LogisticsDataProcessor.class);

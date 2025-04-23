@@ -19,7 +19,7 @@ import java.util.*;
  * The SupplyCarrierGenerator class is responsible for generating supply
  * carriers based on the previously generated carriers and their services.
  */
-@Singleton
+// @Singleton
 public class SupplyCarrierGenerator implements Runnable {
 
     // TODO Add Information to Config Group!
@@ -100,9 +100,11 @@ public class SupplyCarrierGenerator implements Runnable {
             // Validate generated supply carriers
             validateSupplyCarriers(supplyCarriers, splitSupplyCarriers, hubs, hagridConfig.isWhiteLabel());
 
-            new CarrierPlanWriter(supplyCarriers).write("phd/output/supply_carriers.xml");
+            String outputPath = "phd/output/" + hagridConfig.getRunId() ;
+
+            new CarrierPlanWriter(supplyCarriers).write(outputPath + "_supply_carriers.xml");
             // HAGRIDUtils.convertDemandFromParcelsToShapeFile(supplyCarriers, "phd/output/supply_carriers.shp");
-            new CarrierPlanWriter(splitSupplyCarriers).write("phd/output/split_supply_carriers.xml");
+            new CarrierPlanWriter(splitSupplyCarriers).write(outputPath + "_split_supply_carriers.xml");
             // HAGRIDUtils.convertDemandFromParcelsToShapeFile(splitSupplyCarriers,
             //         "phd/output/split_supply_carriers.shp");
 
@@ -195,6 +197,7 @@ public class SupplyCarrierGenerator implements Runnable {
             // Create a new sub-carrier with the original carrier's ID and the direction
             Carrier subCarrier = CarriersUtils
                     .createCarrier(Id.create(originalCarrier.getId().toString() + "_" + direction, Carrier.class));
+            CarriersUtils.setCarrierMode(subCarrier, "car");
 
             // Copy attributes from the original carrier to the sub-carrier
             subCarrier.getAttributes().putAttribute("carrierType",
@@ -392,6 +395,7 @@ public class SupplyCarrierGenerator implements Runnable {
     private Carrier createSupplyCarrier(Hub hub, Id<Link> linkId, String carrierId, boolean isWhiteLabel) {
         String id = carrierId == null ? "supply_" + hub.getId().toString().replace("/", "_") : carrierId;
         Carrier supplyCarrier = CarriersUtils.createCarrier(Id.create(id, Carrier.class));
+        CarriersUtils.setCarrierMode(supplyCarrier, "car");
         String supplyLink = null;
 
         if (isWhiteLabel) {
@@ -411,7 +415,10 @@ public class SupplyCarrierGenerator implements Runnable {
         supplyCarrier.getAttributes().putAttribute("carrierType", "supply");
         supplyCarrier.getAttributes().putAttribute("supplyLink", finalLinkId.toString());
         supplyCarrier.getAttributes().putAttribute("hubId", hub.getId().toString());
-        supplyCarrier.getAttributes().putAttribute("provider", hub.getProvider());        
+        supplyCarrier.getAttributes().putAttribute("provider", hub.getProvider());  
+        
+        // TODO: Add working implementaion
+        CarriersUtils.setCarrierMode(supplyCarrier, "car");
 
         setupCarrierSupplyVehicles(supplyCarrier, linkId);
 

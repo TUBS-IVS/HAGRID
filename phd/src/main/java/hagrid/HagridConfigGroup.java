@@ -11,6 +11,8 @@ import hagrid.utils.general.Region;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -28,11 +30,11 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "U:/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/Sim-Input/car_cargobike_network_zones_MH_V3.xml.gz";
+    private String networkXmlPath = "phd/sim-input/network/car_network_filtered_V2.xml.gz";
 
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
-    private String freightDemandPath = "T:/bienzeisler/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/vm-hochrechnung_matsim-punkte_epsg25832_mit_plz_v4_b2b.shp";
+    private String freightDemandPath = "";
 
     static final String FREIGHT_VEHICLE_TYPES_PATH = "freightVehicleTypePath";
     private static final String FREIGHT_VEHICLE_TYPES_PATH_DESC = "Path to the freight vehicle type xml.";
@@ -80,6 +82,12 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     @Positive
     private int cepVehCap = 230;
     private static final String CEP_VEH_CAP_DESC = "Capacity of CEP vehicles.";
+
+    static final String MIN_CEP_VEH_CAP = "minLMDVehCap";
+    // Vehicle capacities
+    @Positive
+    private int minCepVehCap = 165;
+    private static final String MIN_CEP_VEH_CAP_DESC = "Min Capacity of CEP vehicles.";
 
     @Positive
     private int supplyVehCap = 2000;
@@ -129,17 +137,14 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Concept enumeration
     public enum Concept {
-        BASELINE, WHITE_LABEL, UCC, COLLECTION_POINTS
+        BASECASE, WHITE_LABEL, UCC, COLLECTION_POINTS
     }
 
     static final String CONCEPT = "concept";
     private static final String CONCEPT_DESC = "Concept being simulated (baseline, white-label, ucc, collection points).";
-    private Concept concept = Concept.BASELINE;
+    private Concept concept = Concept.BASECASE;
 
-    // Algorithm file path
-    static final String ALGORITHM_FILE = "algorithmFile";
-    private static final String ALGORITHM_FILE_DESC = "Path to the vehicle routing algorithm file.";
-    private String algorithmFile = "./res/freight/jsprit_algorithm.xml";
+
 
     // Delivery rates
     private int deliveryRateDhl = 0;
@@ -157,6 +162,10 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Delivery time window
     private TimeWindow deliveryTimeWindow = TimeWindow.newInstance(8 * 60 * 60, 20 * 60 * 60);
+
+    private String runId;
+
+    private LocalDate simulationDate;
 
     static final String FILTER_REGIONS = "filterRegions";
     private static final String FILTER_REGIONS_DESC = "Regions to filter freight demand data. Use 'ALL' to include all regions.";
@@ -179,7 +188,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
             case COLLECTION_POINTS:
                 // Define collection points-specific defaults here
                 break;
-            case BASELINE:
+            case BASECASE:
             default:
                 deliveryRateDhl = 94;
                 deliveryRateGls = 91;
@@ -299,16 +308,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     public void setConcept(String concept) {
         this.concept = Concept.valueOf(concept.toUpperCase());
         setDefaultDeliveryRates();
-    }
-
-    @StringGetter(ALGORITHM_FILE)
-    public String getAlgorithmFile() {
-        return algorithmFile;
-    }
-
-    @StringSetter(ALGORITHM_FILE)
-    public void setAlgorithmFile(String algorithmFile) {
-        this.algorithmFile = algorithmFile;
     }
 
     @StringGetter("deliveryRateDhl")
@@ -573,6 +572,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     public Set<Region> getFilterRegions() {
         return filterRegions;
     }
+
     /**
      * Adds a single region to the filterRegions set.
      *
@@ -604,6 +604,66 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 .collect(Collectors.toSet());
     }
 
+    public LocalDate getSimulationDate() {
+        return simulationDate;
+    }
+
+    public void setSimulationDate(LocalDate simulationDate) {
+        this.simulationDate = simulationDate;
+
+        String runId = concept + "_" + simulationDate.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        setRunId(runId);
+        String formattedDate = simulationDate.format(DateTimeFormatter.ISO_LOCAL_DATE); // yyyy-MM-dd
+        String dayOfWeek = simulationDate.getDayOfWeek().toString().substring(0, 1).toUpperCase() +
+                simulationDate.getDayOfWeek().toString().substring(1).toLowerCase();
+
+        String shapefileName = "hagrid_parcel_demand_" + formattedDate + "_(" + dayOfWeek + ").shp";
+        String demandPath = "phd/input/demand/" + runId + "/" + shapefileName;
+        this.freightDemandPath = demandPath;
+    }
+
+    private void setRunId(String runId) {
+        this.runId = runId;
+    }
+
+    public String getCarrierOutputDirectory() {
+        String runId = concept + "_" + simulationDate.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        return "phd/sim-input/carrier/" + runId + "_carrier_files/";
+    }
+
+    public String getDeliveryCarrierOutputFile() {
+        return getCarrierOutputDirectory() + "delivery_carriers_routed.xml";
+    }
+
+    public String getSupplyCarrierOutputFile() {
+        return getCarrierOutputDirectory() + "supply_carriers_routed.xml";
+    }
+
+    public String getRunId() {
+        return runId;
+    }
+
+    /**
+     * Returns the minimum capacity of CEP vehicles.
+     *
+     * @return the minimum number of parcels a CEP vehicle must be able to carry.
+     */
+    @StringGetter("minCepVehCap")
+    public int getMinLMDVehCap() {
+        return minCepVehCap;
+    }
+
+    /**
+     * Sets the minimum capacity of CEP vehicles.
+     *
+     * @param minCepVehCap the minimum number of parcels a CEP vehicle must be able
+     *                     to carry.
+     */
+    @StringSetter("minCepVehCap")
+    public void setMinLMDVehCap(int minCepVehCap) {
+        this.minCepVehCap = minCepVehCap;
+    }
+
     @Override
     public Map<String, String> getComments() {
         Map<String, String> map = super.getComments();
@@ -616,7 +676,6 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put(SHP_PROVIDERS, SHP_PROVIDERS_DESC);
         map.put(LOCATION_PROVIDERS, LOCATION_PROVIDERS_DESC);
         map.put(CONCEPT, CONCEPT_DESC);
-        map.put(ALGORITHM_FILE, ALGORITHM_FILE_DESC);
         map.put("cepVehCap", CEP_VEH_CAP_DESC);
         map.put("supplyVehCap", SUPPLY_VEH_CAP_DESC);
         map.put("demandBorder", DEMAND_BORDER_DESC);
@@ -635,6 +694,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put("deliveryTimeWindowStart", "Start time of the delivery time window.");
         map.put("deliveryTimeWindowEnd", "End time of the delivery time window.");
         map.put(FILTER_REGIONS, FILTER_REGIONS_DESC);
+        map.put(MIN_CEP_VEH_CAP, MIN_CEP_VEH_CAP_DESC);
         return map;
     }
 }
