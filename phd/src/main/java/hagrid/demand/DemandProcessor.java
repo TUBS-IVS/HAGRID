@@ -52,7 +52,7 @@ import elki.utilities.random.RandomFactory;
  * The DemandProcessor class is responsible for reading freight demand data
  * from a shapefile and processing it.
  */
-@Singleton
+// @Singleton
 public class DemandProcessor implements Runnable {
 
     private static final Logger LOGGER = LogManager.getLogger(DemandProcessor.class);
@@ -284,7 +284,7 @@ public class DemandProcessor implements Runnable {
         }
 
         double[][] dataPoints = demand.stream()
-                .map(feature -> ((MultiPoint) feature.getAttribute(0)).getCentroid())
+                .map(feature -> ((Point) feature.getAttribute(0)).getCentroid())
                 .map(point -> new double[] { point.getX(), point.getY() })
                 .toArray(double[][]::new);
 
@@ -354,7 +354,7 @@ public class DemandProcessor implements Runnable {
             List<Double> yData = new ArrayList<>();
 
             for (SimpleFeature feature : clusterFeatures) {
-                Point point = ((MultiPoint) feature.getAttribute(0)).getCentroid();
+                Point point = ((Point) feature.getAttribute(0)).getCentroid();
                 xData.add(point.getX());
                 yData.add(point.getY());
             }
@@ -365,14 +365,14 @@ public class DemandProcessor implements Runnable {
         }
 
         // Create output directory if it doesn't exist
-        File outputDir = new File("phd/output/demand_clustering/");
+        File outputDir = new File("phd/output/demand_clustering/" + hagridConfig.getRunId() + "/");
         if (!outputDir.exists()) {
             outputDir.mkdirs();
         }
 
         // Save chart to a file:
         try {
-            BitmapEncoder.saveBitmap(chart, "phd/output/demand_clustering/" + fileName, BitmapEncoder.BitmapFormat.PNG);
+            BitmapEncoder.saveBitmap(chart, "phd/output/demand_clustering/" + hagridConfig.getRunId() + "/" + fileName, BitmapEncoder.BitmapFormat.PNG);
             LOGGER.info("Chart saved successfully at: phd/output/demand_clustering/{}.png", fileName);
         } catch (IOException e) {
             e.printStackTrace();

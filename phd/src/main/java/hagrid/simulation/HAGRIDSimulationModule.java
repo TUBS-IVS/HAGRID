@@ -18,8 +18,8 @@ import org.matsim.core.router.util.TravelTime;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.Carriers;
 import org.matsim.freight.carriers.CarriersUtils;
-import org.matsim.freight.carriers.controler.CarrierScoringFunctionFactory;
-import org.matsim.freight.carriers.controler.CarrierStrategyManager;
+import org.matsim.freight.carriers.controller.CarrierScoringFunctionFactory;
+import org.matsim.freight.carriers.controller.CarrierStrategyManager;
 import org.matsim.freight.carriers.usecases.analysis.CarrierScoreStats;
 import org.matsim.freight.carriers.usecases.analysis.LegHistogram;
 
@@ -45,18 +45,15 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	@Override
 	public void install() {
 		// Scoring and replanning function
-		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork());
-		ReplanningStrategies strategyManagerFactory = new ReplanningStrategies(types, isUsingZones);
+		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork());		
 
 		bind(Carriers.class).toProvider(new CarrierProvider()).asEagerSingleton();
-		bind(CarrierStrategyManager.class).toProvider(strategyManagerFactory);
+		bind(CarrierStrategyManager.class).toProvider(new ReplanningStrategies(types, isUsingZones));
 
 		bind(CarrierScoringFunctionFactory.class).toInstance(scoringFunctionFactory);
 		
 		bind(VRPTransportCostsFactory.class).to(ZoneBasedTransportCostsFactory.class).in(Singleton.class);
 
-//		bind(TourLengthAnalyzer.class).in(Singleton.class);
-//		addControlerListenerBinding().to(CommercialTrafficAnalysisListener.class);
 
 		Carriers carriers = CarriersUtils.getCarriers(scenario);
 

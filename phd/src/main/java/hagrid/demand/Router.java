@@ -7,12 +7,14 @@ import org.matsim.core.router.RouterUtils;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierPlan;
 import org.matsim.freight.carriers.Carriers;
+import org.matsim.freight.carriers.CarriersUtils;
 import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
 import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
 import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
+import com.graphhopper.jsprit.core.algorithm.listener.IterationEndsListener;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.util.Solutions;
@@ -34,6 +36,8 @@ import java.util.stream.Collectors;
 public class Router {
 
     private static final Logger LOGGER = LogManager.getLogger(Router.class);
+
+    private static final String JSPRIT_ITERATIONS = "jspritIterations";
 
     private final ThreadingType threadingType;
 
@@ -135,8 +139,8 @@ public class Router {
                 (endTime - startTime) / 1000);
 
         // Plotting the runtime
-        HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
-        HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes, threadingType.toString(), carrierType);
+        // HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
+        // HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes, threadingType.toString(), carrierType);
     }
 
     /**
@@ -158,12 +162,23 @@ public class Router {
         VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
         VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount);
 
-        VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-        CarrierPlan newPlan = MatsimJspritFactory.createPlan(carrier, solution);
+        // Iterationen counter
+        AtomicInteger iterationCounter = new AtomicInteger(0);
+        algorithm.addListener((IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
+
+        VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());        
+        
+        CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
+        
+        CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
 
         LOGGER.info("Routing plan for carrier {}", carrier.getId());
         NetworkRouter.routePlan(newPlan, netBasedCosts);
+        carrier.addPlan(newPlan);
         carrier.setSelectedPlan(newPlan);
+
+        double timeForPlanningAndRouting = (System.currentTimeMillis() - start) / 1000;
+        CarriersUtils.setJspritComputationTime(carrier, timeForPlanningAndRouting);
         LOGGER.info(
                 "Routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
                 carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);

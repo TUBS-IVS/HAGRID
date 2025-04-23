@@ -21,13 +21,13 @@ import org.matsim.api.core.v01.network.NetworkFactory;
 import org.matsim.api.core.v01.network.NetworkWriter;
 import org.matsim.api.core.v01.network.Node;
 
-import org.matsim.core.network.DisallowedNextLinks;
 import org.matsim.core.network.NetworkChangeEvent;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.TimeDependentNetwork;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
-
+import org.matsim.core.network.io.NetworkChangeEventsWriter;
+import org.matsim.core.network.turnRestrictions.DisallowedNextLinks;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.utils.objectattributes.attributable.AttributesUtils;
 
@@ -46,10 +46,11 @@ public class NetworkFilterAndReducer {
     private static final String NETWORK_XML_PATH = "U:/USEfUL-XT/matsim-hanover/01_MATSimModelCreator/Sim-Input/car_cargobike_network_zones_MH_V3.xml.gz";
     private static final String BOUNDARY_SHAPEFILE_PATH = "phd/sim-input/network/RH_useful__zone.shp";
     private static final String OUTPUT_NETWORK_PATH = "phd/sim-input/network/car_network_filtered_V2.xml.gz";
+    private static final String OUTPUT_CHANGE_EVENT_PATH = "phd/sim-input/network/car_network_filtered_V2_change_events.xml.gz";
 
     // Thresholds for link attributes
     private static final double MIN_LINK_LENGTH = 5.0; // Minimum link length in meters
-    private static final double MIN_FREE_SPEED = 2.777778; // Minimum free speed in m/s (10 km/h)
+    private static final double MIN_FREE_SPEED = 1.39; // Minimum free speed in m/s (5 km/h)
 
     /**
      * Main method to execute the network filtering and reduction process.
@@ -87,12 +88,12 @@ public class NetworkFilterAndReducer {
             }
 
             // Copy network change events (if any)
-            copyNetworkChangeEvents(carFilteredNetwork, boundaryFilteredNetwork);
+            copyAndWriteNetworkChangeEvents(carFilteredNetwork, boundaryFilteredNetwork);
 
             // Write the filtered network to a file
             LOGGER.info("Writing the filtered network to file: {}", OUTPUT_NETWORK_PATH);
             new NetworkWriter(boundaryFilteredNetwork).write(OUTPUT_NETWORK_PATH);
-
+            
             LOGGER.info("Network filtering and reduction completed successfully.");
 
         } catch (RuntimeException e) {
@@ -221,7 +222,7 @@ public class NetworkFilterAndReducer {
      * @param originalNetwork The original network
      * @param filteredNetwork The filtered network
      */
-    private static void copyNetworkChangeEvents(Network originalNetwork, Network filteredNetwork) {
+    private static void copyAndWriteNetworkChangeEvents(Network originalNetwork, Network filteredNetwork) {
         if (originalNetwork instanceof TimeDependentNetwork) {
             TimeDependentNetwork timeDependentOriginal = (TimeDependentNetwork) originalNetwork;
             TimeDependentNetwork timeDependentFiltered = (TimeDependentNetwork) filteredNetwork;
@@ -247,6 +248,8 @@ public class NetworkFilterAndReducer {
                     }
                 }
                 LOGGER.info("Network change events copied.");
+                LOGGER.info("Writing the filtered Network change events to file: {}", OUTPUT_CHANGE_EVENT_PATH);
+                new NetworkChangeEventsWriter().write(OUTPUT_CHANGE_EVENT_PATH, timeDependentFiltered.getNetworkChangeEvents());
             }
         }
     }
