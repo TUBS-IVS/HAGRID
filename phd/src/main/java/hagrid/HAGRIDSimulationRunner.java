@@ -44,8 +44,13 @@ public class HAGRIDSimulationRunner {
 
         // Define simulation scenarios to run
         List<HAGRIDSimulationConfig> scenarios = List.of(
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 4, 16), 150)
-                // new HAGRIDSimulationConfig("bike_plus", LocalDate.of(2025, 4, 17), 100)
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 12), 150)
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 13), 30),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 14), 30),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 15), 30),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 16), 30),
+                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 17), 150)
+                // new HAGRIDSimulationConfig("bike_plus", LocalDate.of(2025, 4,ö 17), 100)
         );
 
         // Validate input files for all scenarios
@@ -96,7 +101,7 @@ public class HAGRIDSimulationRunner {
         LOGGER.info("Step 4/5: Setup simulation modules...");
         Controler controler = new Controler(scenario);
         controler.addOverridingModule(new CarrierModule());
-        controler.addOverridingModule(new HAGRIDSimulationModule(scenario, true));
+        controler.addOverridingModule(new HAGRIDSimulationModule(scenario, true, simConfig.getMaxIterations()));
         LOGGER.info("Modules successfully added");
 
         // Step 5: Run simulation
@@ -115,6 +120,16 @@ public class HAGRIDSimulationRunner {
         LOGGER.info("Simulation '{}' completed successfully!", simConfig.getRunId());        
         LOGGER.info("Total runtime: {} (hh:mm:ss)", runtimeFormatted);
         LOGGER.info("------------------------------------------------------------");
+
+        System.gc();  
+
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } // gibt GC etwas Luft
+
     }
 
     /**
