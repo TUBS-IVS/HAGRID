@@ -65,16 +65,17 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
 
 ├── phd/
 │   └── demand preparation, MATSim conversion and further routing setup
+│   └── HAGRID2MATSim Pipeline
 
 ├── phd-sim/phd/
-│   └── Simulation input/output structure for MATSim (routes, plans, configs)
+│   └── OLD Structure -> TODO Remove
 
 ├── requirements.txt  
 └── README.md
 ```
 
 - The folder `parcel-demand-estimation/` contains all notebooks used to estimate and allocate parcel demand from national trends down to street segment level.
-- The folders `phd/` and `phd-sim/phd/` are used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
+- The folder `phd/` is used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
 - Documentation of the MATSim integration and postprocessing pipeline will be added step-by-step in the corresponding subfolders.
 
 
