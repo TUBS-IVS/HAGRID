@@ -34,10 +34,10 @@ public class NetworkChangeEventFilterer {
 
     // Paths to input and output files
     private static final String INPUT_NETWORK_ORIGINAL_PATH = "phd/sim-input/network/car_cargobike_network_zones_MH_V3.xml.gz";
-    private static final String INPUT_NETWORK_PATH = "phd/sim-input/network/car_network_filtered_V2.xml.gz";
-    private static final String OUTPUT_NETWORK_PATH = "phd/sim-input/network/car_network_filtered_V2_clean.xml.gz";
+    private static final String INPUT_NETWORK_PATH = "phd/sim-input/carrier/BASECASE_12052025_carrier_files/carFilteredCleanedNetwork.xml.gz";
+    // private static final String OUTPUT_NETWORK_PATH = "phd/sim-input/carrierr/BASECASE_12052025_carrier_files/car_network_filtered_V2_clean.xml.gz";
     private static final String INPUT_CHANGE_EVENT_PATH = "phd/sim-input/network/hanover-v1.0-10pct-ct.resulting.networkChangeEvents.smooth.xml.gz";
-    private static final String OUTPUT_CHANGE_EVENT_PATH = "phd/sim-input/network/car_network_filtered_V2_change_events.xml.gz";
+    private static final String OUTPUT_CHANGE_EVENT_PATH = "phd/sim-input/carrier/BASECASE_12052025_carrier_files/car_network_filtered_V2_change_events.xml.gz";
 
     /**
      * Main method that performs the filtering process.
@@ -65,7 +65,7 @@ public class NetworkChangeEventFilterer {
         Network networkFiltered = NetworkUtils.createNetwork();
         LOGGER.info("Filtered network XML path: {}", new File(INPUT_NETWORK_PATH).getAbsolutePath());
         new MatsimNetworkReader(networkFiltered).readFile(INPUT_NETWORK_PATH);
-        new NetworkCleaner().run(networkFiltered);
+        // new NetworkCleaner().run(networkFiltered);
 
         int removedCounter = 0;
         int totalEvents = networkChangeEvents.size();
@@ -108,6 +108,6 @@ public class NetworkChangeEventFilterer {
 
         LOGGER.info("Writing filtered events to file: {}", OUTPUT_CHANGE_EVENT_PATH);
         new NetworkChangeEventsWriter().write(OUTPUT_CHANGE_EVENT_PATH, networkChangeEvents);
-        new NetworkWriter(networkFiltered).write(OUTPUT_NETWORK_PATH);
+        // new NetworkWriter(networkFiltered).write(OUTPUT_NETWORK_PATH);
     }
 }

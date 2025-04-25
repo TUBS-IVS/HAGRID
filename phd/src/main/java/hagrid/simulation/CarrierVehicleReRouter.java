@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -185,8 +186,8 @@ public final class CarrierVehicleReRouter {
 
                 Carrier carrier = carrierPlan.getCarrier();
                 int serviceCount = carrier.getServices().size();
-                        // Iterationen counter
-        
+                // Iterationen counter
+
                 if (!(carrier.getAttributes().getAttribute("algoRunTime") == null)) {
                     double algoRunTime = (double) carrier.getAttributes().getAttribute("algoRunTime");
 
@@ -195,8 +196,8 @@ public final class CarrierVehicleReRouter {
                         termination = Math.ceil(termination / 2);
                     }
 
-                    if (termination < 2) {
-                        termination = 2;
+                    if (termination < 3) {
+                        termination = 3;
                     }
 
                     if (iterations < 10) {
@@ -277,7 +278,8 @@ public final class CarrierVehicleReRouter {
                         .buildAlgorithm();
 
                 AtomicInteger iterationCounter = new AtomicInteger(0);
-                algorithm.addListener((IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
+                algorithm.addListener(
+                        (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
 
                 // VehicleRoutingAlgorithm algorithm =
                 // VehicleRoutingAlgorithms.readAndCreateAlgorithm(vrp,
@@ -288,17 +290,18 @@ public final class CarrierVehicleReRouter {
                         VehicleRoutingAlgorithmListeners.Priority.HIGH);
 
                 algorithm.addListener(new DepartureTimeReScheduler());
-                
 
-                // String basePath = "C:/Users/bienzeisler/HAGRID/HAGRID/phd/sim-output/basecase/jsprit";
+                // String basePath =
+                // "C:/Users/bienzeisler/HAGRID/HAGRID/phd/sim-output/basecase/jsprit";
                 // File outputDir = createUniqueRunDirectory(basePath);
-                
-                // String chartFile = new File(outputDir, carrier.getId() + ".png").getAbsolutePath();
+
+                // String chartFile = new File(outputDir, carrier.getId() +
+                // ".png").getAbsolutePath();
                 // System.out.println("Generated chart file: " + chartFile);
-                
+
                 // algorithm.getAlgorithmListeners().addListener(
-                //     new AlgorithmSearchProgressChartListener(chartFile),
-                //     VehicleRoutingAlgorithmListeners.Priority.HIGH
+                // new AlgorithmSearchProgressChartListener(chartFile),
+                // VehicleRoutingAlgorithmListeners.Priority.HIGH
                 // );
 
                 VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
@@ -307,8 +310,15 @@ public final class CarrierVehicleReRouter {
                 CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
                 NetworkRouter.routePlan(plan, netBasedTransportCosts);
 
+                
                 carrierPlan.getScheduledTours().clear();
                 carrierPlan.getScheduledTours().addAll(plan.getScheduledTours());
+
+                vrp = null;
+                algorithm = null;
+                stateManager = null;
+                constraintManager = null;
+                plan = null;
             }
 
             @Override
@@ -372,6 +382,7 @@ public final class CarrierVehicleReRouter {
                             long start = System.currentTimeMillis();
 
                             if (serviceCount > 250) {
+                                // test if it works with 40 then remove this if statement
                                 createAndSolveRoutingProblem(carrierPlan, 20, 3);
                             } else {
                                 createAndSolveRoutingProblem(carrierPlan, 40, 5);
@@ -383,7 +394,7 @@ public final class CarrierVehicleReRouter {
                                     "routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
                                     carrier.getId(), algoRunTime, serviceCount);
 
-                            carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);                            
+                            carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);
                             CarriersUtils.setJspritComputationTime(carrier, algoRunTime);
 
                         }, executor))
@@ -395,7 +406,32 @@ public final class CarrierVehicleReRouter {
                     log.error("Error during parallel carrier routing", e);
                     throw new RuntimeException("Parallel routing failed", e);
                 } finally {
+                    // ✅ Executor ordentlich beenden
                     executor.shutdown();
+                    try {
+                        if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                            log.warn("Executor did not terminate in 60 seconds. Forcing shutdown...");
+                            List<Runnable> droppedTasks = executor.shutdownNow();
+                            log.warn("{} tasks were forcefully terminated.", droppedTasks.size());
+                        }
+                    } catch (InterruptedException e) {
+                        log.error("Interrupted while waiting for executor termination", e);
+                        executor.shutdownNow();
+                        Thread.currentThread().interrupt();
+                    }
+
+                    // Optional: CompletableFutures-Referenz nullen
+                    futures.clear(); // clears references from list
+                    // futures = null; // falls final erlaubt
+
+                    // 🔍 Optional: Log Heap Info (nur für Debugging)
+                    Runtime runtime = Runtime.getRuntime();
+                    long usedMemoryMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
+                    long maxMemoryMB = runtime.maxMemory() / (1024 * 1024);
+                    log.info("Heap usage after routing: {} MB used of {} MB max", usedMemoryMB, maxMemoryMB);
+
+                    // 
+                    System.gc();
                 }
             }
 
@@ -422,18 +458,18 @@ public final class CarrierVehicleReRouter {
     public static File createUniqueRunDirectory(String basePath) {
         int runIndex = 1;
         File runDir;
-    
+
         do {
             runDir = new File(basePath, "run" + runIndex);
             runIndex++;
         } while (runDir.exists());
-    
+
         if (runDir.mkdirs()) {
             System.out.println("Created directory: " + runDir.getAbsolutePath());
         } else {
             throw new RuntimeException("Could not create directory: " + runDir.getAbsolutePath());
         }
-    
+
         return runDir;
     }
 

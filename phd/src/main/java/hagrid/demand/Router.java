@@ -13,12 +13,15 @@ import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
+import com.graphhopper.jsprit.analysis.toolbox.AlgorithmSearchProgressChartListener;
 import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
 import com.graphhopper.jsprit.core.algorithm.listener.IterationEndsListener;
+import com.graphhopper.jsprit.core.algorithm.listener.VehicleRoutingAlgorithmListeners;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.util.Solutions;
 
+import hagrid.simulation.CarrierVehicleReRouter;
 import hagrid.utils.routing.HAGRIDRouterUtils;
 import hagrid.utils.routing.JspritCarrierTask;
 import hagrid.utils.routing.JspritTreadPoolExecutor;
@@ -26,7 +29,9 @@ import hagrid.utils.routing.ThreadingType;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.*;
@@ -97,18 +102,50 @@ public class Router {
                     executor.shutdown();
                     break;
                 case COMPLETABLE_FUTURE:
-                    // Use CompletableFuture for parallel processing
-                    ExecutorService completableFutureExecutor = Executors
-                            .newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+                    ExecutorService completableFutureExecutor = Executors.newFixedThreadPool(
+                            Runtime.getRuntime().availableProcessors());
+
+                    AtomicInteger finishedCounter = new AtomicInteger();
+
                     List<CompletableFuture<Void>> completableFutures = sortedCarriers.stream()
                             .map(carrier -> CompletableFuture.runAsync(() -> {
-                                routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size());
-                                routedTimes.add(System.currentTimeMillis());
+                                long start = System.currentTimeMillis();
+                                try {
+                                    routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size());
+                                } catch (Exception ex) {
+                                    LOGGER.error("Routing failed for carrier {}: {}", carrier.getId(),
+                                            ex.getMessage(), ex);
+                                } finally {
+                                    routedTimes.add(System.currentTimeMillis());
+                                    int done = finishedCounter.incrementAndGet();
+                                    LOGGER.info("Finished routing for carrier {} ({} / {}) in {}s",
+                                            carrier.getId(), done, sortedCarriers.size(),
+                                            (System.currentTimeMillis() - start) / 1000.0);
+                                }
                             }, completableFutureExecutor))
                             .collect(Collectors.toList());
 
-                    CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).get();
-                    completableFutureExecutor.shutdown();
+                    try {
+                        // Optional timeout protection
+                        CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0]))
+                                .get(1, TimeUnit.HOURS); // adjust timeout as needed
+                    } catch (TimeoutException e) {
+                        LOGGER.error("Routing timed out after 1 hour!", e);
+                    } catch (Exception e) {
+                        LOGGER.error("Error during routing completion", e);
+                    } finally {
+                        completableFutureExecutor.shutdown();
+                        try {
+                            if (!completableFutureExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                                LOGGER.warn("Executor did not shut down gracefully – forcing...");
+                                List<Runnable> dropped = completableFutureExecutor.shutdownNow();
+                                LOGGER.warn("{} tasks were forcefully terminated.", dropped.size());
+                            }
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Thread interrupted during executor shutdown", e);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
                     break;
                 case SINGLE_THREAD:
                     // Use single thread for sequential processing
@@ -139,8 +176,10 @@ public class Router {
                 (endTime - startTime) / 1000);
 
         // Plotting the runtime
-        // HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime, routedTimes, threadingType.toString(), carrierType);
-        // HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes, threadingType.toString(), carrierType);
+        // HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime,
+        // routedTimes, threadingType.toString(), carrierType);
+        // HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes,
+        // threadingType.toString(), carrierType);
     }
 
     /**
@@ -164,12 +203,57 @@ public class Router {
 
         // Iterationen counter
         AtomicInteger iterationCounter = new AtomicInteger(0);
-        algorithm.addListener((IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
+        algorithm.addListener(
+                (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
 
-        VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());        
-        
+        // Make sure output dir exists
+        File outputDir = new File("phd/output/jsprit");
+        if (!outputDir.exists() && !outputDir.mkdirs()) {
+            throw new RuntimeException("Could not create output directory: " + outputDir.getAbsolutePath());
+        }
+        // Build output file name: carrierId + "_jsprit.png"
+        String chartFile = new File(outputDir, carrier.getId() + "_jsprit.png").getAbsolutePath();
+
+        algorithm.getAlgorithmListeners().addListener(
+                new AlgorithmSearchProgressChartListener(chartFile),
+                VehicleRoutingAlgorithmListeners.Priority.HIGH);
+
+        algorithm.addListener(new IterationEndsListener() {
+            @Override
+            public void informIterationEnds(int iteration,
+                    VehicleRoutingProblem problem,
+                    Collection<VehicleRoutingProblemSolution> solutions) {
+                if (solutions.isEmpty()) {
+                    LOGGER.warn("Carrier {}: Iteration {} no solution found yet.", carrier.getId(), iteration);
+                    return;
+                }
+
+                VehicleRoutingProblemSolution best = Solutions.bestOf(solutions);
+                LOGGER.info(
+                        "Carrier {}: Iteration {} finished. " +
+                                "Best Cost: {}, " +
+                                "Tours: {}, " +
+                                "Unassigned Jobs: {}, " +
+                                "Vehicles Used: {}, " +
+                                "Total Transport Time: {} s",
+                        carrier.getId(),
+                        iteration,
+                        String.format("%.2f", best.getCost()),
+                        best.getRoutes().size(),
+                        best.getUnassignedJobs().size(),
+                        best.getRoutes().stream().map(route -> route.getVehicle().getId()).distinct().count(),
+                        getTotalTransportTime(best));
+            }
+        });
+
+        VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
+
+        LOGGER.info(
+                "JSPRIT Solution for carrier {} found. Search took {} seconds. Carrier has {} services",
+                carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);
+
         CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
-        
+
         CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
 
         LOGGER.info("Routing plan for carrier {}", carrier.getId());
@@ -183,5 +267,14 @@ public class Router {
                 "Routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
                 carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);
     }
+
+
+    private double getTotalTransportTime(VehicleRoutingProblemSolution solution) {
+        return solution.getRoutes().stream()
+            .mapToDouble(route -> route.getEnd().getArrTime() - route.getStart().getEndTime())
+            .sum();
+    }
+    
+    
 
 }

@@ -95,7 +95,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Other configurations
     @Positive
-    private int demandBorder = 600;
+    private int demandBorder = 550;
     private static final String DEMAND_BORDER_DESC = "Demand border threshold.";
 
     // Other configurations
