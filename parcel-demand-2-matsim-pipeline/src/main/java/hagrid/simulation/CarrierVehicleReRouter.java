@@ -87,7 +87,7 @@ public final class CarrierVehicleReRouter {
     private static final int STARTOPTIMIZATION = 0;
     private static final int STOPOPTIMIZATION = 100;
 
-    private static final int MAXREPLANNINGSIZE = 32;
+    private static final int MAXREPLANNINGSIZE = 16;
 
     private final double timeParameter = 0.008;
 
@@ -168,14 +168,14 @@ public final class CarrierVehicleReRouter {
                         }
 
                     } else {
-                        Random r = new Random();
-                        int result = r.nextInt(100 - 1) + 1;
+                        // Random r = new Random();
+                        // int result = r.nextInt(100 - 1) + 1;
 
-                        if (result <= 5) {
-                            log.info("Simulation Replanning for Carrier " + carrier.getId());
-                            plansForReOptimization.add(carrierPlan);
+                        // if (result <= 5) {
+                        //     log.info("Simulation Replanning for Carrier " + carrier.getId());
+                        //     plansForReOptimization.add(carrierPlan);
 
-                        }
+                        // }
 
                     }
                 }
@@ -191,18 +191,18 @@ public final class CarrierVehicleReRouter {
                 if (!(carrier.getAttributes().getAttribute("algoRunTime") == null)) {
                     double algoRunTime = (double) carrier.getAttributes().getAttribute("algoRunTime");
 
-                    if (algoRunTime > (3600 / 4)) {
-                        iterations = Math.ceil(iterations / 2);
-                        termination = Math.ceil(termination / 2);
-                    }
+                    // if (algoRunTime > (3600 / 4)) {
+                    //     // iterations = Math.ceil(iterations / 2);
+                    //     termination = Math.ceil(termination / 2);
+                    // }
 
-                    if (termination < 3) {
-                        termination = 3;
-                    }
+                    // if (termination < 4) {
+                    //     termination = 4;
+                    // }
 
-                    if (iterations < 10) {
-                        iterations = 10;
-                    }
+                    // if (iterations < 10) {
+                    //     iterations = 10;
+                    // }
                 }
 
                 VehicleRoutingProblem.Builder vrpBuilder = null;
@@ -383,9 +383,9 @@ public final class CarrierVehicleReRouter {
 
                             if (serviceCount > 250) {
                                 // test if it works with 40 then remove this if statement
-                                createAndSolveRoutingProblem(carrierPlan, 20, 3);
+                                createAndSolveRoutingProblem(carrierPlan, 50, 7);
                             } else {
-                                createAndSolveRoutingProblem(carrierPlan, 40, 5);
+                                createAndSolveRoutingProblem(carrierPlan, 50, 10);
                             }
 
                             long algoRunTime = (System.currentTimeMillis() - start) / 1000;

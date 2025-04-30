@@ -31,12 +31,12 @@ public class HAGRID2MATSimPipelineRunner {
         Boolean applyServiceSimplifier = true; 
 
         List<LocalDate> dates = List.of(
-                // LocalDate.of(2025, 5, 12),
-                // LocalDate.of(2025, 5, 13),
+                LocalDate.of(2025, 5, 9),
+                LocalDate.of(2025, 5, 10));
                 // LocalDate.of(2025, 5, 14),
                 // LocalDate.of(2025, 5, 15),
                 // LocalDate.of(2025, 5, 16),
-                LocalDate.of(2025, 5, 17));
+                // LocalDate.of(2025, 5, 17));
 
         dates.forEach(date -> {
             String runId = createRunId(concept, date);
@@ -57,6 +57,8 @@ public class HAGRID2MATSimPipelineRunner {
         config.setConcept(runId.split("_")[0]);
         config.setSimulationDate(date);
 
+        config.setFilterRegionsAsString("Hannover");
+
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
         runLogisticsDataProcessing(injector); // Step 2: Process the logistics data
@@ -67,7 +69,7 @@ public class HAGRID2MATSimPipelineRunner {
 
         if(applyServiceSimplifier) {
             LOGGER.info("Applying service simplifier...");
-            runCarrierServiceMerger(injector, false); // Step 7: Merge carrier services to reduce the number of services
+            runCarrierServiceMerger(injector, true); // Step 7: Merge carrier services to reduce the number of services
         }
         runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 8: Run routing for delivery supply carriers based
                                                                // on the generated
