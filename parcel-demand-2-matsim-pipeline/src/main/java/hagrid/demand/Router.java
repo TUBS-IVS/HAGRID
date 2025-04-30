@@ -126,11 +126,9 @@ public class Router {
                             .collect(Collectors.toList());
 
                     try {
-                        // Optional timeout protection
+                        // Ohne Timeout – einfach warten, bis alle fertig sind
                         CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0]))
-                                .get(1, TimeUnit.HOURS); // adjust timeout as needed
-                    } catch (TimeoutException e) {
-                        LOGGER.error("Routing timed out after 1 hour!", e);
+                                .get();
                     } catch (Exception e) {
                         LOGGER.error("Error during routing completion", e);
                     } finally {
@@ -206,17 +204,19 @@ public class Router {
         algorithm.addListener(
                 (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
 
-        // Make sure output dir exists
-        File outputDir = new File("phd/output/jsprit");
-        if (!outputDir.exists() && !outputDir.mkdirs()) {
-            throw new RuntimeException("Could not create output directory: " + outputDir.getAbsolutePath());
-        }
-        // Build output file name: carrierId + "_jsprit.png"
-        String chartFile = new File(outputDir, carrier.getId() + "_jsprit.png").getAbsolutePath();
+        // // Make sure output dir exists
+        // File outputDir = new File("phd/output/jsprit");
+        // if (!outputDir.exists() && !outputDir.mkdirs()) {
+        // throw new RuntimeException("Could not create output directory: " +
+        // outputDir.getAbsolutePath());
+        // }
+        // // Build output file name: carrierId + "_jsprit.png"
+        // String chartFile = new File(outputDir, carrier.getId() +
+        // "_jsprit.png").getAbsolutePath();
 
-        algorithm.getAlgorithmListeners().addListener(
-                new AlgorithmSearchProgressChartListener(chartFile),
-                VehicleRoutingAlgorithmListeners.Priority.HIGH);
+        // algorithm.getAlgorithmListeners().addListener(
+        // new AlgorithmSearchProgressChartListener(chartFile),
+        // VehicleRoutingAlgorithmListeners.Priority.HIGH);
 
         algorithm.addListener(new IterationEndsListener() {
             @Override
@@ -268,13 +268,10 @@ public class Router {
                 carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);
     }
 
-
     private double getTotalTransportTime(VehicleRoutingProblemSolution solution) {
         return solution.getRoutes().stream()
-            .mapToDouble(route -> route.getEnd().getArrTime() - route.getStart().getEndTime())
-            .sum();
+                .mapToDouble(route -> route.getEnd().getArrTime() - route.getStart().getEndTime())
+                .sum();
     }
-    
-    
 
 }

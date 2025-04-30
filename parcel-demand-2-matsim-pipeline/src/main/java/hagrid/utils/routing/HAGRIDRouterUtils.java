@@ -65,7 +65,8 @@ public class HAGRIDRouterUtils {
         stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
         stateManager.updateLoadStates();
         stateManager.updateTimeWindowStates();
-        stateManager.updateSkillStates();
+        //TODO TEST
+        // stateManager.updateSkillStates();
         stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
         stateManager.addStateUpdater(new OpenRouteStateVerifier());
         stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
@@ -85,7 +86,8 @@ public class HAGRIDRouterUtils {
 
         constraintManager.addTimeWindowConstraint();
         constraintManager.addLoadConstraint();
-        constraintManager.addSkillsConstraint();
+        // TODO 
+        // constraintManager.addSkillsConstraint();
         constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
         double radialShare = 0.3; // standard radial share is 0.3
@@ -110,11 +112,12 @@ public class HAGRIDRouterUtils {
 
         // int iterations = serviceCount > 250 ? 20 : 40;
         // int termination = serviceCount > 250 ? 3 : 5;
-        int iterations = serviceCount > 250 ? 3 : 5;
-        int termination = serviceCount > 250 ? 2 : 2;
+        int iterations = 1;
+        int termination = 1;
+        
 
         algorithm.setMaxIterations(iterations);
-        algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
+        // algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
         algorithm.getAlgorithmListeners().addListener(new StopWatch(), VehicleRoutingAlgorithmListeners.Priority.HIGH);
         algorithm.addListener(new DepartureTimeReScheduler());
   

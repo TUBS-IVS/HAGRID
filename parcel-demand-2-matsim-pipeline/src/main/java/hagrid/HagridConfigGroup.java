@@ -95,7 +95,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Other configurations
     @Positive
-    private int demandBorder = 550;
+    private int demandBorder = 600;
     private static final String DEMAND_BORDER_DESC = "Demand border threshold.";
 
     // Other configurations
@@ -104,7 +104,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private static final String DHL_DEMAND_BORDER_DESC = "DHL Demand border threshold. -> For fitltering out Deliveries with a demand higher than 2 CEP vehicle capacities.";
 
     @Positive
-    private int maxRouteDuration = 8 * 3600;
+    private int maxRouteDuration = 27000;
     private static final String MAX_ROUTE_DURATION_DESC = "Maximum route duration in seconds.";
 
     @Positive
