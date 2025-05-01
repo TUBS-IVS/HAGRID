@@ -33,10 +33,13 @@ public class HAGRIDSimulationModule extends AbstractModule {
 
 	private final Boolean isUsingZones;
 
-	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones) {
+	private int maxIterations;
+
+	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterations) {
 		this.types = CarriersUtils.getCarrierVehicleTypes(scenario);
 		this.scenario = scenario;
 		this.isUsingZones = isUsingZones;
+		this.maxIterations = maxIterations;
 	}
 
 	@Inject
@@ -48,7 +51,7 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork());		
 
 		bind(Carriers.class).toProvider(new CarrierProvider()).asEagerSingleton();
-		bind(CarrierStrategyManager.class).toProvider(new ReplanningStrategies(types, isUsingZones));
+		bind(CarrierStrategyManager.class).toProvider(new ReplanningStrategies(types, isUsingZones, maxIterations));
 
 		bind(CarrierScoringFunctionFactory.class).toInstance(scoringFunctionFactory);
 		

@@ -54,15 +54,21 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 	// Shared path calculator, initialized once per iteration
 	private LeastCostPathCalculator sharedPathCalculator;
 
+	private int stopReplanningJsprit;
+	private int stopReplanning;
+
 	/**
 	 * Constructor for ReplanningStrategies.
 	 *
 	 * @param types        The carrier vehicle types used in the simulation.
 	 * @param isUsingZones Indicates if zone-based routing is used.
+	 * @param maxIterations 
 	 */
-	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones) {
+	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones, int maxIterations) {
 		this.types = types;
 		this.isUsingZones = isUsingZones;
+		this.stopReplanningJsprit = (int) Math.round(maxIterations - maxIterations * 0.35);
+		this.stopReplanning = (int) Math.round(maxIterations - maxIterations * 0.2);
 	}
 
 	@Override
@@ -150,7 +156,7 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 		strategy.addStrategyModule(new CarrierReRouteVehicles.Factory(sharedPathCalculator, network,
 				modeTravelTimes.get(TransportMode.car)).build());
 		carrierStrategyManager.addStrategy(strategy, null, 0.5);
-		carrierStrategyManager.addChangeRequest(125, strategy, null, 0);
+		carrierStrategyManager.addChangeRequest(stopReplanning, strategy, null, 0);
 	}
 
 	/**
@@ -178,6 +184,6 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 				.createStrategy();
 
 		carrierStrategyManager.addStrategy(strategy3, null, 1.0);
-		carrierStrategyManager.addChangeRequest(125, strategy3, null, 0);
+		carrierStrategyManager.addChangeRequest(stopReplanningJsprit, strategy3, null, 0);
 	}
 }

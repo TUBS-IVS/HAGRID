@@ -7,6 +7,17 @@ import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 import com.graphhopper.jsprit.core.algorithm.state.UpdateEndLocationIfRouteIsOpen;
 import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprovementTermination;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
+import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
+import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
+import com.graphhopper.jsprit.core.problem.constraint.ServiceDeliveriesFirstConstraint;
+import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
+import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
+
+import hagrid.simulation.MaxRouteDurationConstraint;
+import hagrid.simulation.OpenRouteStateVerifier;
+import hagrid.simulation.RouteRealStartTimeMemorizer;
+import hagrid.simulation.TimeWindowConstraintWithDriverTime;
+
 import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
 
 import org.apache.logging.log4j.Logger;
@@ -38,7 +49,7 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 public class HAGRIDRouterUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDRouterUtils.class);
-    private static final int MAX_DRIVE_DURATION = 8 * 3600; // example value, adjust as needed
+    private static final int MAXROUTEDURATION = 27000; // example value, adjust as needed
 
     /**
      * Configures the routing algorithm.
@@ -49,36 +60,67 @@ public class HAGRIDRouterUtils {
      */
     public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount) {
         StateManager stateManager = new StateManager(vrp);
+        ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
+
+        stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
+        stateManager.updateLoadStates();
+        stateManager.updateTimeWindowStates();
+        //TODO TEST
+        // stateManager.updateSkillStates();
         stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
+        stateManager.addStateUpdater(new OpenRouteStateVerifier());
         stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
-                vrp.getTransportCosts(), MAX_DRIVE_DURATION));
+                vrp.getTransportCosts(), MAXROUTEDURATION));
 
-        double RADIAL_SHARE = 0.3;
-        double RANDOM_SHARE = 0.5;
+        constraintManager.addConstraint(
+                new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
+                Priority.CRITICAL);
+        constraintManager.addConstraint(
+                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
+                Priority.CRITICAL);
 
-        if (serviceCount > 250) {
-            RADIAL_SHARE = 0.15;
-            RANDOM_SHARE = 0.25;
+        constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
+                vrp.getTransportCosts(), vrp.getActivityCosts()), ConstraintManager.Priority.HIGH);
+        constraintManager.addConstraint(new ServiceDeliveriesFirstConstraint(),
+                ConstraintManager.Priority.CRITICAL);
+
+        constraintManager.addTimeWindowConstraint();
+        constraintManager.addLoadConstraint();
+        // TODO 
+        // constraintManager.addSkillsConstraint();
+        constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
+
+        double radialShare = 0.3; // standard radial share is 0.3
+        double randomShare = 0.5; // standard random share is 0.5
+
+        if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
+            radialShare = 0.15;
+            randomShare = 0.25;
         }
 
-        int radialServicesReplanned = Math.max(1, (int) (serviceCount * RADIAL_SHARE));
-        int randomServicesReplanned = Math.max(1, (int) (serviceCount * RANDOM_SHARE));
+        int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
+        int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
         VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
-                .setStateAndConstraintManager(stateManager, null)
+                .setStateAndConstraintManager(stateManager, constraintManager)
+                // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
                 .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
                 .buildAlgorithm();
 
-        int iterations = serviceCount > 250 ? 20 : 40;
-        int termination = serviceCount > 250 ? 3 : 5;
+        // int iterations = serviceCount > 250 ? 20 : 40;
+        // int termination = serviceCount > 250 ? 3 : 5;
+        int iterations = 1;
+        int termination = 1;
+        
 
         algorithm.setMaxIterations(iterations);
-        algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
+        // algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
         algorithm.getAlgorithmListeners().addListener(new StopWatch(), VehicleRoutingAlgorithmListeners.Priority.HIGH);
         algorithm.addListener(new DepartureTimeReScheduler());
+  
 
         return algorithm;
     }

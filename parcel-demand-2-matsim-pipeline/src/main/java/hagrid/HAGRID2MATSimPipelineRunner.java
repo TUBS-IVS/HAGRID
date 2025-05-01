@@ -11,6 +11,7 @@ import com.google.inject.Injector;
 
 import hagrid.demand.CarrierGenerator;
 import hagrid.demand.CarrierRouter;
+import hagrid.demand.CarrierServiceMerger;
 import hagrid.demand.DeliveryGenerator;
 import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
@@ -27,24 +28,25 @@ public class HAGRID2MATSimPipelineRunner {
         LOGGER.info("Starting HAGRID Demand Pipeline for multiple dates...");
 
         String concept = "basecase";
+        Boolean applyServiceSimplifier = true; 
+
         List<LocalDate> dates = List.of(
-            LocalDate.of(2025, 5, 12),
-            LocalDate.of(2025, 5, 13),
-            LocalDate.of(2025, 5, 14),
-            LocalDate.of(2025, 5, 15),
-            LocalDate.of(2025, 5, 16),
-            LocalDate.of(2025, 5, 17)
-        );
+                LocalDate.of(2025, 5, 9),
+                LocalDate.of(2025, 5, 10));
+                // LocalDate.of(2025, 5, 14),
+                // LocalDate.of(2025, 5, 15),
+                // LocalDate.of(2025, 5, 16),
+                // LocalDate.of(2025, 5, 17));
 
         dates.forEach(date -> {
             String runId = createRunId(concept, date);
-            runPipeline(runId, date);
+            runPipeline(runId, date, applyServiceSimplifier);
         });
 
         LOGGER.info("All demand pipeline scenarios completed.");
     }
 
-    private static void runPipeline(String runId, LocalDate date) {
+    private static void runPipeline(String runId, LocalDate date, Boolean applyServiceSimplifier) {
         LOGGER.info("--------------------------------------------------");
         LOGGER.info("Processing scenario: {}", runId);
         LOGGER.info("--------------------------------------------------");
@@ -53,8 +55,10 @@ public class HAGRID2MATSimPipelineRunner {
         Injector injector = Guice.createInjector(new HagridModule("phd/input/config.xml"));
         HagridConfigGroup config = injector.getInstance(HagridConfigGroup.class);
         config.setConcept(runId.split("_")[0]);
-        config.setSimulationDate(date);  
-        
+        config.setSimulationDate(date);
+
+        config.setFilterRegionsAsString("Hannover");
+
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
         runLogisticsDataProcessing(injector); // Step 2: Process the logistics data
@@ -62,15 +66,19 @@ public class HAGRID2MATSimPipelineRunner {
         runDeliveryGeneration(injector); // Step 4: Generate parcels based on the processed demand data
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
-        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 7: Run routing for delivery supply carriers based
+
+        if(applyServiceSimplifier) {
+            LOGGER.info("Applying service simplifier...");
+            runCarrierServiceMerger(injector, true); // Step 7: Merge carrier services to reduce the number of services
+        }
+        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 8: Run routing for delivery supply carriers based
                                                                // on the generated
         System.gc();
-        injector = null; 
+        injector = null;
 
         try {
             Thread.sleep(5000);
         } catch (InterruptedException e) {
-            // TODO Auto-generated catch block
             e.printStackTrace();
         } // gibt GC etwas Luft
         LOGGER.info("Finished scenario: {}", runId);
@@ -178,6 +186,33 @@ public class HAGRID2MATSimPipelineRunner {
         LOGGER.info("Starting supply carrier generation based on generated carriers...");
         supplyCarrierGenerator.run();
         LOGGER.info("Supply carrier generation completed.");
+    }
+
+    /**
+     * Executes the carrier service merging step to consolidate B2B/B2C services
+     * per link and provider (e.g. DHL, Hermes, etc.). This reduces the number of
+     * services for routing optimization while preserving original capacity, type,
+     * and attribute information via embedded JSON metadata.
+     *
+     * The method uses dependency injection (via Guice) to initialize the
+     * {@link CarrierServiceMerger} and runs it within the current MATSim scenario.
+     *
+     * @param injector Guice injector providing the necessary dependencies
+     * @param string 
+     */
+    private static void runCarrierServiceMerger(Injector injector, Boolean fullMerge) {
+        LOGGER.info("Initializing CarrierServiceMerger for parcel service consolidation...");
+
+        CarrierServiceMerger carrierServiceMerger = injector.getInstance(CarrierServiceMerger.class);
+
+        LOGGER.info("Starting carrier service merge based on previously generated delivery carriers...");
+        if(fullMerge) {
+            carrierServiceMerger.setFullMerge(true);
+        } else {
+            carrierServiceMerger.setFullMerge(false);
+        }
+        carrierServiceMerger.run();
+        LOGGER.info("Carrier service merge completed successfully.");
     }
 
     /**

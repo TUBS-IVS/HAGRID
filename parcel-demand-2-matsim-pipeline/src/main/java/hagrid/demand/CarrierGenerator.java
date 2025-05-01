@@ -84,8 +84,12 @@ public class CarrierGenerator implements Runnable {
                         carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes);
 
                         // Process the deliveries to create carriers
+                        // Max Service Size Puffer: 50 -> demand border - puffer to add services to
+                        // close carriers
+                        int maxServiceSizePuffer = 50;
                         final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
-                                        vehicleTypes, hubList, hagridConfig.getMinLMDVehCap());
+                                        vehicleTypes, hubList, hagridConfig.getMinLMDVehCap(),
+                                        (hagridConfig.getDemandBorder() - maxServiceSizePuffer));
 
                         // Validate the generated carriers and supply demand
                         validateCarriers(carriers);
@@ -98,7 +102,8 @@ public class CarrierGenerator implements Runnable {
 
                         String outputPath = "phd/output/" + hagridConfig.getRunId() + "_delivery_carriers.xml";
                         new CarrierPlanWriter(carriers).write(outputPath);
-                        // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" + hagridConfig.getRunId() + "_types.xml");
+                        // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" +
+                        // hagridConfig.getRunId() + "_types.xml");
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 
@@ -142,9 +147,10 @@ public class CarrierGenerator implements Runnable {
          */
         private Carriers generateCarriersAndCarrierServices(final Map<String, ArrayList<Delivery>> deliveries,
                         final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
-                        int minLMDVehCap) {
+                        int minLMDVehCap, int maxServiceSize) {
                 final Carriers carriers = new Carriers();
-                final Map<String, Double> deliveryRates = initializeDeliveryRate();
+                Map<String, Double> adjustedDeliveryRates= adjustDeliveryRatesConsideringB2B(initializeDeliveryRate(), deliveries);
+
 
                 deliveries.entrySet().stream().map(entry -> {
                         final String carrierID = entry.getKey();
@@ -156,7 +162,7 @@ public class CarrierGenerator implements Runnable {
                         setupCarrierAttributes(carrier, carrierID);
 
                         try {
-                                addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork, deliveryRates);
+                                addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork, adjustedDeliveryRates);
                                 addCarrierVehiclesToCarrier(carrier, hubList);
                         } catch (ServiceCreationException e) {
                                 LOGGER.error(carrierID + ": Error creating carrier services", e);
@@ -165,13 +171,105 @@ public class CarrierGenerator implements Runnable {
                         return carrier;
                 }).forEach(carriers::addCarrier);
 
-                logAndValidateInsufficientCarrier(carriers, minLMDVehCap);
+                logAndValidateInsufficientCarrier(carriers, minLMDVehCap, maxServiceSize);
 
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
 
                 scenario.addScenarioElement("carriers", carriers);
 
                 return carriers;
+        }
+
+        /**
+         * Adjusts the delivery success rates per provider based on the share of B2B and
+         * B2C parcels.
+         *
+         * <p>
+         * Since B2B parcels are assumed to be delivered with a guaranteed 100% success
+         * rate,
+         * this method computes the adjusted B2C delivery rate such that the overall
+         * delivery
+         * success rate per provider (including both B2B and B2C) matches the target
+         * value from the configuration.
+         * </p>
+         *
+         * <p>
+         * This ensures more accurate simulation of missed parcel behavior and aligns
+         * with real-world
+         * expectations where B2C deliveries are less reliable than B2B.
+         * </p>
+         *
+         * <p>
+         * The adjustment is based on the formula:
+         * 
+         * <pre>{@code
+         * adjustedB2C = (targetRate * totalParcels - b2bParcels) / b2cParcels
+         * }</pre>
+         * 
+         * with proper clamping to the [0, 1] interval.
+         * </p>
+         *
+         * @param initialRates A map of providers and their original delivery rates (as
+         *                     percentage values from config, e.g. 94.0).
+         * @param deliveries   A map of carrier IDs to their associated delivery
+         *                     objects.
+         * @return A map of providers and their adjusted B2C delivery rates (still in
+         *         percentage format).
+         */
+        private Map<String, Double> adjustDeliveryRatesConsideringB2B(
+                        Map<String, Double> initialRates,
+                        Map<String, ArrayList<Delivery>> deliveries) {
+
+                // Store total parcel volume per provider
+                Map<String, Long> totalParcelsPerProvider = new HashMap<>();
+
+                // Store B2B parcel volume per provider
+                Map<String, Long> b2bParcelsPerProvider = new HashMap<>();
+
+                // Iterate through all delivery entries grouped by carrier
+                deliveries.forEach((carrierId, deliveryList) -> {
+                        // Extract the provider name from the carrier ID (e.g., "dhl_30926" → "dhl")
+                        String provider = carrierId.split("_")[0].toLowerCase();
+
+                        for (Delivery d : deliveryList) {
+                                long amount = d.getAmount();
+                                totalParcelsPerProvider.merge(provider, amount, Long::sum);
+
+                                // Count only B2B parcels
+                                if (d.getParcelType() == Delivery.ParcelType.B2B) {
+                                        b2bParcelsPerProvider.merge(provider, amount, Long::sum);
+                                }
+                        }
+                });
+
+                // Final result map containing adjusted B2C rates
+                Map<String, Double> adjustedRates = new HashMap<>();
+
+                // Iterate over the original rates to compute adjusted values
+                for (Map.Entry<String, Double> entry : initialRates.entrySet()) {
+                        String provider = entry.getKey();
+                        double targetRate = entry.getValue() / 100.0; // Convert from percent to ratio
+
+                        long total = totalParcelsPerProvider.getOrDefault(provider, 0L);
+                        long b2b = b2bParcelsPerProvider.getOrDefault(provider, 0L);
+                        long b2c = total - b2b;
+
+                        double adjustedB2CRate;
+
+                        if (b2c == 0) {
+                                // No B2C parcels present → fallback to 100%
+                                adjustedB2CRate = 1.0;
+                        } else {
+                                // Recompute B2C rate to match the overall target
+                                adjustedB2CRate = (targetRate * total - b2b) / (double) b2c;
+                        }
+
+                        // Clamp value to a valid percentage range [0%, 100%]
+                        adjustedB2CRate = Math.min(1.0, Math.max(0.0, adjustedB2CRate));
+                        adjustedRates.put(provider, adjustedB2CRate * 100); // Return as percentage again
+                }
+
+                return adjustedRates;
         }
 
         /**
@@ -193,7 +291,7 @@ public class CarrierGenerator implements Runnable {
          * @param carriers The Carriers object containing all carriers.
          * @throws RuntimeException if any carriers have fewer than 5 services.
          */
-        private void logAndValidateInsufficientCarrier(Carriers carriers, int minLMDVehCap) {
+        private void logAndValidateInsufficientCarrier(Carriers carriers, int minLMDVehCap, int maxServiceSize) {
                 // Find the carrier with the most services
                 Optional<Carrier> carrierWithMostServices = carriers.getCarriers().values().stream()
                                 .max(Comparator.comparingInt(carrier -> carrier.getServices().size()));
@@ -231,7 +329,8 @@ public class CarrierGenerator implements Runnable {
 
                 // Merge carriers with insufficient services into larger carriers from same
                 // company
-                mergeCarriersWithInsufficientServices(carriers.getCarriers(), insufficientServiceCarrierIds);
+                mergeCarriersWithInsufficientServices(carriers.getCarriers(), insufficientServiceCarrierIds,
+                                maxServiceSize);
                 insufficientServiceCarrierIds.clear();
 
                 // Re-Collect IDs of carriers with total parcel demand (summed over all
@@ -268,7 +367,7 @@ public class CarrierGenerator implements Runnable {
          *                               under threshold.
          */
         public void mergeCarriersWithInsufficientServices(Map<Id<Carrier>, Carrier> carrierMap,
-                        List<Id<Carrier>> insufficientCarrierIds) {
+                        List<Id<Carrier>> insufficientCarrierIds, int maxServiceSize) {
                 Logger LOGGER = LogManager.getLogger(getClass());
 
                 // Calculate initial parcel count to validate later
@@ -296,6 +395,7 @@ public class CarrierGenerator implements Runnable {
 
                         List<Carrier> large = carriers.stream()
                                         .filter(c -> !insufficientCarrierIds.contains(c.getId()))
+                                        .filter(c -> c.getServices().size() <= maxServiceSize)
                                         .collect(Collectors.toList());
 
                         for (Carrier smallCarrier : small) {
@@ -318,6 +418,11 @@ public class CarrierGenerator implements Runnable {
                                 } else {
                                         LOGGER.warn("No merge target found for '{}'", smallCarrier.getId());
                                 }
+                                large = carriers.stream()
+                                                .filter(c -> !insufficientCarrierIds.contains(c.getId()))
+                                                .filter(c -> c.getServices().size() <= maxServiceSize)
+                                                .collect(Collectors.toList());
+                                // Update the list of large carriers after each merge
                         }
                 }
 
@@ -678,7 +783,7 @@ public class CarrierGenerator implements Runnable {
                                         closestHub.getId().toString(), startTime, maxRouteDuration, "m");
                         CarrierVehicle carrierVehicleSizeL = carrierVehicleFactory.createCEPVehicle(
                                         closestHub.getLink(),
-                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");                                        
+                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
                         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeL);
                 }
