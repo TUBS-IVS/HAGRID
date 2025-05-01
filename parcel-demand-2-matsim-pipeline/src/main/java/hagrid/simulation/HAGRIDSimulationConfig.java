@@ -95,7 +95,7 @@ public class HAGRIDSimulationConfig {
      * @return the car network file path
      */
     public Path getCarNetworkPath() {
-        return baseInputDir.resolve("network/car_network_filtered_V2_clean.xml.gz");
+        return getRunCarrierDir().resolve("carFilteredCleanedNetwork.xml.gz");
     }
 
     /**
@@ -113,7 +113,7 @@ public class HAGRIDSimulationConfig {
      * @return the change events file path
      */
     public Path getNetworkChangeEventPath() {
-        return baseInputDir.resolve("network/car_network_filtered_V2_change_events.xml.gz");
+        return getRunCarrierDir().resolve("car_network_filtered_V2_change_events.xml.gz");
     }
 
     /**

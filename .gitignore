@@ -37,9 +37,9 @@ parcel-demand-estimation/Project USEfUL XT//Verflechtungsprognose2030/ketten-203
 parcel-demand-estimation/input/
 parcel-demand-estimation/output/
 
-phd/output/
-phd/sim-input/
-phd/sim-output/
+parcel-demand-2-matsim-pipeline/output/
+parcel-demand-2-matsim-pipeline/sim-input/
+parcel-demand-2-matsim-pipeline/sim-output/
 
 # Exclude vs code settings
 .vscode/

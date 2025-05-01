@@ -9,6 +9,7 @@ import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.NetworkWriter;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.network.algorithms.NetworkCleaner;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import hagrid.HagridConfigGroup;
@@ -72,6 +73,9 @@ public class NetworkProcessor implements Runnable {
             new TransportModeNetworkFilter(network).filter(carFilteredNetwork, carMode);
             LOGGER.info("Car mode network filtering completed.");
 
+            NetworkCleaner cleaner = new NetworkCleaner();
+            cleaner.run(carFilteredNetwork);
+
             // Create another filtered network based on custom criteria
             LOGGER.info("Creating parcel service network based on custom criteria...");
             Network parcelServiceNetwork = NetworkUtils.createNetwork();
@@ -96,6 +100,9 @@ public class NetworkProcessor implements Runnable {
                     addedLinks++;
                 }
             }
+
+            String output = "/"+ "carFilteredCleanedNetwork.xml.gz";
+            new NetworkWriter(carFilteredNetwork).write(hagridConfig.getCarrierOutputDirectory() + output);
 
             LOGGER.info("Parcel service network created successfully with {} links added.", addedLinks);
             LOGGER.info("Difference in number of links between carFilteredNetwork and parcel service network: {}", (totalLinks - addedLinks));

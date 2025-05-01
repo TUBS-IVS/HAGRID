@@ -30,7 +30,7 @@ public class Delivery {
      * Enumeration representing the type of delivery.
      */
     public enum ParcelType {
-        B2B, B2C, C2C, WHITE_LABEL
+        Mixed, B2B, B2C, C2C, WHITE_LABEL
     }
 
     /**
