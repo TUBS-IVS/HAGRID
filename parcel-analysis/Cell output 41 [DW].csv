@@ -1,0 +1,4 @@
+area_type_agg,Tour Duration [hrs],Driving Time [hrs],Total Delivery Duration [hrs],Tour Length [km],Initial Delivery Distance [km],Number of Stops [#],Mean Distance Between Stops [km],Maximum Segment Distance [km],Delivery Area [km²],Driving Share [%],Average Speed [km/h],Deliveries [#],Missed Deliveries [#],Deliveries per Stop [#],B2B Ratio [%],Total Weight [kg],Avg. Weight per Parcel [kg],Vehicle Utilization [%],Total Vehicle Cost [€],Fixed Vehicle Cost [€],Distance-based Cost [€],Overtime Cost [€],Total Vehicles [#]
+Rural,7.5,3.85,3.65,117.22,18.71,58.11,1.44,8.16,54.08,52.19,30.51,105.84,19.58,1.96,0.12,470.96,4.53,0.59,235.72,175.94,43.95,15.83,397
+Suburban,7.61,3.22,4.38,89.33,14.26,53.76,1.19,5.83,19.27,42.95,27.67,129.13,36.77,2.97,0.23,658.88,5.11,0.69,227.56,178.1,33.6,15.85,1022
+Urban,7.61,2.43,5.19,57.38,11.01,45.84,0.78,3.71,4.16,32.9,23.72,153.29,53.02,4.35,0.28,810.17,5.32,0.77,218.98,180.6,21.66,16.72,325
