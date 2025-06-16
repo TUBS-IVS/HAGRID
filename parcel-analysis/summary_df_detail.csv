@@ -1,0 +1,9 @@
+main_area_description,Tour Duration [hrs],Driving Time [hrs],Total Delivery Duration [hrs],Tour Length [km],Initial Delivery Distance [km],Number of Stops [#],Mean Distance Between Stops [km],Maximum Segment Distance [km],Delivery Area [km²],Driving Share [%],Average Speed [km/h],Deliveries [#],Deliveries per Stop [#],Missed Deliveries [#],Vehicle Delivery Ration [%],B2B Ratio [%],Total Weight [kg],Avg. Weight per Parcel [kg],Vehicle Utilization [%],Total Vehicle Cost [€],Fixed Vehicle Cost [€],Distance-based Cost [€],Overtime Cost [€],Total Vehicles [#]
+Dense Mixed Use,7.53,2.75,4.79,65.16,11.6,47.77,0.9,4.42,5.77,37.69,23.94,140.57,3.51,44.41,0.77,0.25,711.55,5.17,0.73,221.44,178.82,24.53,18.08,148
+High-Density Residential Use,7.62,2.18,5.43,52.35,10.46,46.15,0.68,3.18,2.98,29.58,23.99,160.97,4.44,54.46,0.74,0.26,832.03,5.21,0.8,215.93,181.44,19.78,14.7,142
+Industrial Use,7.53,2.76,4.77,74.22,10.56,47.6,1.19,6.1,13.31,38.34,27.36,139.8,3.74,42.79,0.78,0.29,757.38,5.37,0.72,223.39,179.15,27.97,16.27,106
+Metropolitan Center,7.94,2.07,5.87,44.93,10.75,36.4,0.68,2.87,2.16,26.13,21.67,175.91,7.55,83.6,0.63,0.44,1138.53,6.39,0.82,220.92,184.68,17.13,19.11,35
+Residential Use,7.62,3.11,4.52,82.66,13.83,53.9,1.08,4.97,13.2,41.27,26.66,134.17,3.1,38.56,0.81,0.21,676.23,5.06,0.7,226.07,179.07,31.13,15.87,448
+Rural with Industrial Influence,7.52,3.98,3.55,122.53,19.62,57.88,1.51,8.53,60.26,53.55,30.87,102.87,1.92,17.73,0.9,0.15,473.61,4.69,0.58,237.81,175.82,45.95,16.05,258
+Rural without Industrial Influence,7.46,3.61,3.84,107.35,17.0,58.53,1.31,7.48,42.61,49.66,29.84,111.35,2.02,23.03,0.87,0.07,466.03,4.21,0.62,231.84,176.15,40.26,15.43,139
+Urbanized Periphery,7.6,3.44,4.16,99.15,15.5,55.01,1.3,6.58,26.43,45.6,28.71,121.9,2.67,33.7,0.82,0.23,619.97,5.11,0.66,229.92,176.94,37.24,15.74,468
