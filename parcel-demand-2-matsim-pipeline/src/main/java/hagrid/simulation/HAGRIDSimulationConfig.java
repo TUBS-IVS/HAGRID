@@ -20,8 +20,8 @@ public class HAGRIDSimulationConfig {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDSimulationConfig.class);
 
-    private final Path baseInputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/phd/sim-input");
-    private final Path baseOutputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/phd/sim-output");
+    private final Path baseInputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-input");
+    private final Path baseOutputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-output");
 
     private final String concept;
     private final LocalDate date;
