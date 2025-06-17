@@ -43,11 +43,11 @@ parcel-demand-2-matsim-pipeline/sim-output/
 
 parcel-analysis/input
 
-phd/sim-input
-phd/input
+parcel-demand-2-matsim-pipeline/sim-input
+parcel-demand-2-matsim-pipeline/input
 
-phd/sim-output
-phd/output
+parcel-demand-2-matsim-pipeline/sim-output
+parcel-demand-2-matsim-pipeline/output
 
 # Exclude vs code settings
 .vscode/
