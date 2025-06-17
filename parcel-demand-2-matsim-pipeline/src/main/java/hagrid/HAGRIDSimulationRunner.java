@@ -46,11 +46,11 @@ public class HAGRIDSimulationRunner {
         List<HAGRIDSimulationConfig> scenarios = List.of(
                 // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 12), 150)
                 new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 13), 150),
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 14), 150),
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 15), 150),
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 16), 150),
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 17), 150)
-                // new HAGRIDSimulationConfig("bike_plus", LocalDate.of(2025, 4,ö 17), 100)
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 14), 150),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 15), 150),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 16), 150),
+                // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 17), 150)
+                // new HAGRIDSimulationConfig("bike_plus", LocalDate.of(2025, 4, 17), 100)
         );
 
         // Validate input files for all scenarios
