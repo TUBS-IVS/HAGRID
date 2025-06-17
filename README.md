@@ -51,31 +51,32 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
 ## 2. Repository Structure
 
 ```
+├── parcel-analysis/
+│   └── Jupyter notebooks and scripts for analyzing simulation outputs and performance indicators.
+
+├── parcel-demand-2-matsim-pipeline/
+│   ├── HAGRIDSimulationRunner.java
+│   ├── HAGRID2MATSimPipelineRunner.java
+│   └── Java-based MATSim integration for running parcel delivery simulations and converting external demand data.
+
 ├── parcel-demand-estimation/
-│   ├── 00_EstimateGlobalGermanParcelMarketShares.ipynb  
-│   ├── 01_EstimateGlobalGermanB2BShares.ipynb  
-│   ├── 02_EstimateGlobalGermanParcelVolumens.ipynb  
-│   ├── 03_EstimateWeekyParcelDistribution.ipynb  
-│   ├── 04_EstimateLocalB2BDistribution.ipynb  
-│   ├── 05_EstimateLocalMarketShares.ipynb  
-│   ├── 06_DistributeEstimationWeightsPerSegment.ipynb  
-│   ├── ParcelDemandScenarioGenerator.ipynb  
+│   ├── 00_EstimateGlobalGermanParcelMarketShares.ipynb
+│   ├── 01_EstimateGlobalGermanB2BShares.ipynb
+│   ├── 02_EstimateGlobalGermanParcelVolumes.ipynb
+│   ├── 03_EstimateWeeklyParcelDistribution.ipynb
+│   ├── 04_EstimateLocalB2BDistribution.ipynb
+│   ├── 05_EstimateLocalMarketShares.ipynb
+│   ├── 06_DistributeEstimationWeightsPerSegment.ipynb
+│   ├── ParcelDemandScenarioGenerator.ipynb
 │   └── output/
-│       └── parcel_demand_2050-04-09_(Samstag).csv  
-
-├── phd/
-│   └── demand preparation, MATSim conversion and further routing setup
-│   └── HAGRID2MATSim Pipeline
-
-├── phd-sim/phd/
-│   └── OLD Structure -> TODO Remove
+│       └── parcel_demand_2050-04-09_(Samstag).csv
 
 ├── requirements.txt  
 └── README.md
 ```
 
 - The folder `parcel-demand-estimation/` contains all notebooks used to estimate and allocate parcel demand from national trends down to street segment level.
-- The folder `phd/` is used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
+- The folder `parcel-demand-2-matsim-pipeline/` is used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
 - Documentation of the MATSim integration and postprocessing pipeline will be added step-by-step in the corresponding subfolders.
 
 
