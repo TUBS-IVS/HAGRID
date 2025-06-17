@@ -45,7 +45,7 @@ public class HAGRIDSimulationRunner {
         // Define simulation scenarios to run
         List<HAGRIDSimulationConfig> scenarios = List.of(
                 // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 12), 150)
-                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 13), 150),
+                new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 13), 150)
                 // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 14), 150),
                 // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 15), 150),
                 // new HAGRIDSimulationConfig("basecase", LocalDate.of(2025, 5, 16), 150),
