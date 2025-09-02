@@ -1,9 +1,9 @@
 main_area_description,Total Vehicles m [#],Total Vehicles l [#],Total Vehicles all [#],Total Tour Length [km],Total Number of Stops [#],Total Number of Deliveries [#]
-Dense Mixed Use,88,60,148,9643.290606559058,7070,20804.0
-High-Density Residential Use,63,79,142,7433.505434262146,6553,22858.0
-Industrial Use,61,45,106,7867.55583736269,5046,14819.0
-Metropolitan Center,9,26,35,1572.3904583207736,1274,6157.0
-Residential Use,260,188,448,37029.70869580676,24147,60107.0
-Rural with Industrial Influence,198,60,258,31613.713975168677,14934,26540.0
-Rural without Industrial Influence,104,35,139,14921.094464936097,8135,15478.0
-Urbanized Periphery,329,139,468,46402.01541514754,25747,57049.0
+Dense Mixed Use,87,61,148,9696.047564132263,7159,20969.0
+High-Density Residential Use,57,82,139,7226.914603137555,6556,22905.0
+Industrial Use,56,46,102,7723.519808262047,5029,14897.0
+Metropolitan Center,9,27,36,1591.7808953662616,1274,6157.0
+Residential Use,260,179,439,36421.55010962183,23989,59710.0
+Rural with Industrial Influence,194,55,249,31337.341294266862,14951,26357.0
+Rural without Industrial Influence,106,30,136,14421.349464758045,8011,15341.0
+Urbanized Periphery,330,136,466,46489.260120875784,25864,57382.0
