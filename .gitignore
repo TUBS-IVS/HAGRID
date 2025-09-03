@@ -52,6 +52,11 @@ parcel-demand-2-matsim-pipeline/output
 parcel-analysis/emission_maps
 parcel-analysis/emission_maps_cum
 
+parcel-analysis/*
+!parcel-analysis/*.py
+!parcel-analysis/*.ipynb
+!.gitignore
+
 # Exclude vs code settings
 .vscode/
 
