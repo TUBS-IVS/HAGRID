@@ -369,43 +369,36 @@ public final class CarrierVehicleReRouter {
                     }
                 }
 
+
                 List<CarrierPlan> tempList = plansForOptimization;
-                AtomicInteger progress = new AtomicInteger();
+                int totalCarriers = carrierActivityCounterMap != null ? carrierActivityCounterMap.size() : tempList.size();
+                AtomicInteger globalProgress = new AtomicInteger(0);
 
                 ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
                 List<CompletableFuture<Void>> futures = tempList.stream()
                         .map(carrierPlan -> CompletableFuture.runAsync(() -> {
+                            int currentNumber = globalProgress.incrementAndGet();
                             Carrier carrier = carrierPlan.getCarrier();
                             int serviceCount = carrier.getServices().size();
 
-                            log.info("ROUTING CARRIER {} OUT OF {} TOTAL CARRIERS", progress.incrementAndGet(),
-                                    tempList.size());
+                            log.info("[Routing {} / {}] START: Carrier {} ({} services)", currentNumber, tempList.size(), carrier.getId(), serviceCount);
 
                             long start = System.currentTimeMillis();
 
                             int noImprovementThreshold;
                             if (serviceCount > 250) {
-                                // bei großen Instanzen -> 25% der Iterationen
                                 noImprovementThreshold = jspritIterations / 4;
                             } else {
-                                // bei kleineren Instanzen -> 50% der Iterationen
                                 noImprovementThreshold = jspritIterations / 2;
                             }
 
-
-                            if (serviceCount > 250) {
-                                // test if it works with 40 then remove this if statement
-                                createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
-                            } else {
-                                createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
-                            }
+                            createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
 
                             long algoRunTime = (System.currentTimeMillis() - start) / 1000;
 
-                            log.info(
-                                    "routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
-                                    carrier.getId(), algoRunTime, serviceCount);
+                            log.info("[Routing {} / {}] DONE: Carrier {} | {} services | {}s (Tour planning + routing)",
+                                    currentNumber, tempList.size(), carrier.getId(), serviceCount, algoRunTime);
 
                             carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);
                             CarriersUtils.setJspritComputationTime(carrier, algoRunTime);

@@ -42,8 +42,8 @@ public class HAGRID2MATSimPipelineRunner {
         List<String> concepts = List.of(
                 "batchHigh",
                 "batchMedium"
-                // "batchModerate",
-                // "basecase"
+        // "batchModerate",
+        // "basecase"
         );
 
         // Servo flag for service merger
@@ -56,8 +56,7 @@ public class HAGRID2MATSimPipelineRunner {
                 LocalDate.of(2025, 5, 14),
                 LocalDate.of(2025, 5, 15),
                 LocalDate.of(2025, 5, 16),
-                LocalDate.of(2025, 5, 17)
-        );
+                LocalDate.of(2025, 5, 17));
 
         // Verschachtelte Iteration: jedes Konzept × jedes Datum
         for (String concept : concepts) {
@@ -69,7 +68,7 @@ public class HAGRID2MATSimPipelineRunner {
             LOGGER.info("--- Concept batch finished: {} ---", concept);
         }
 
-        LOGGER.info("All demand pipeline scenarios (concept × date) completed.");
+        LOGGER.info("All demand pipeline scenarios (concept and date) completed.");
     }
 
     private static void runPipeline(String runId, LocalDate date, Boolean applyServiceSimplifier) {
@@ -93,10 +92,15 @@ public class HAGRID2MATSimPipelineRunner {
             LOGGER.warn("Could not attach per-run file appender: {}", e.getMessage());
         }
 
-        // Set system properties to ensure Router cache activation (can be overridden per run)
+        // Set system properties to ensure Router cache activation (can be overridden
+        // per run)
         Path cacheBase = Paths.get("parcel-demand-2-matsim-pipeline", "routerCache");
         Path runCacheDir = cacheBase.resolve(runId);
-        try { Files.createDirectories(runCacheDir); } catch (Exception e) { LOGGER.warn("Could not create cache dir {}: {}", runCacheDir, e.getMessage()); }
+        try {
+            Files.createDirectories(runCacheDir);
+        } catch (Exception e) {
+            LOGGER.warn("Could not create cache dir {}: {}", runCacheDir, e.getMessage());
+        }
         System.setProperty("hagrid.router.cache.enabled", "true");
         System.setProperty("hagrid.router.cache.dir", runCacheDir.toString());
         System.setProperty("hagrid.runId", runId); // expose runId globally for Router cache naming
@@ -113,19 +117,27 @@ public class HAGRID2MATSimPipelineRunner {
         invokeIfExists(config, "setCarrierCacheEnabled", true);
         invokeIfExists(config, "setCarrierCacheDir", runCacheDir.toString());
         invokeIfExists(config, "setCacheDir", runCacheDir.toString());
-        LOGGER.info("Configured carrier routing cache directory: {} (exists={})", runCacheDir, Files.exists(runCacheDir));
+        LOGGER.info("Configured carrier routing cache directory: {} (exists={})", runCacheDir,
+                Files.exists(runCacheDir));
 
-        // Configure routing cache (baseDir/routerCache/<runId>) via reflection setters if available
-        /*Path cacheBase = Paths.get("parcel-demand-2-matsim-pipeline", "routerCache");
-        Path runCacheDir = cacheBase.resolve(runId);
-        try { Files.createDirectories(runCacheDir); } catch (Exception e) { LOGGER.warn("Could not create cache dir {}: {}", runCacheDir, e.getMessage()); }
-        invokeIfExists(config, "setCarrierRoutingCacheEnabled", true);
-        invokeIfExists(config, "setCarrierCacheEnabled", true); // fallback alternative name
-        invokeIfExists(config, "setLoadCarrierCache", true); // legacy flag
-        invokeIfExists(config, "setCarrierRoutingCacheDir", runCacheDir.toString());
-        invokeIfExists(config, "setCarrierCacheDir", runCacheDir.toString());
-        invokeIfExists(config, "setCacheDir", runCacheDir.toString());
-        LOGGER.info("Configured carrier routing cache directory: {} (exists={})", runCacheDir, Files.exists(runCacheDir));*/
+        // Configure routing cache (baseDir/routerCache/<runId>) via reflection setters
+        // if available
+        /*
+         * Path cacheBase = Paths.get("parcel-demand-2-matsim-pipeline", "routerCache");
+         * Path runCacheDir = cacheBase.resolve(runId);
+         * try { Files.createDirectories(runCacheDir); } catch (Exception e) {
+         * LOGGER.warn("Could not create cache dir {}: {}", runCacheDir,
+         * e.getMessage()); }
+         * invokeIfExists(config, "setCarrierRoutingCacheEnabled", true);
+         * invokeIfExists(config, "setCarrierCacheEnabled", true); // fallback
+         * alternative name
+         * invokeIfExists(config, "setLoadCarrierCache", true); // legacy flag
+         * invokeIfExists(config, "setCarrierRoutingCacheDir", runCacheDir.toString());
+         * invokeIfExists(config, "setCarrierCacheDir", runCacheDir.toString());
+         * invokeIfExists(config, "setCacheDir", runCacheDir.toString());
+         * LOGGER.info("Configured carrier routing cache directory: {} (exists={})",
+         * runCacheDir, Files.exists(runCacheDir));
+         */
 
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
@@ -135,7 +147,7 @@ public class HAGRID2MATSimPipelineRunner {
         runCarrierGeneration(injector); // Step 5: Generate carriers based on the processed demand data
         runSupplyGeneration(injector); // Step 6: Generate supply carriers based on the generated carriers
 
-        if(applyServiceSimplifier) {
+        if (applyServiceSimplifier) {
             LOGGER.info("Applying service simplifier...");
             runCarrierServiceMerger(injector, true); // Step 7: Merge carrier services to reduce the number of services
         }
@@ -275,7 +287,7 @@ public class HAGRID2MATSimPipelineRunner {
      * {@link CarrierServiceMerger} and runs it within the current MATSim scenario.
      *
      * @param injector Guice injector providing the necessary dependencies
-     * @param string 
+     * @param string
      */
     private static void runCarrierServiceMerger(Injector injector, Boolean fullMerge) {
         LOGGER.info("Initializing CarrierServiceMerger for parcel service consolidation...");
@@ -283,7 +295,7 @@ public class HAGRID2MATSimPipelineRunner {
         CarrierServiceMerger carrierServiceMerger = injector.getInstance(CarrierServiceMerger.class);
 
         LOGGER.info("Starting carrier service merge based on previously generated delivery carriers...");
-        if(fullMerge) {
+        if (fullMerge) {
             carrierServiceMerger.setFullMerge(true);
         } else {
             carrierServiceMerger.setFullMerge(false);
@@ -322,7 +334,8 @@ public class HAGRID2MATSimPipelineRunner {
     }
 
     /**
-     * Attaches a temporary FileAppender to the root logger that writes to the given file.
+     * Attaches a temporary FileAppender to the root logger that writes to the given
+     * file.
      * Returns the appender name so it can be removed later.
      */
     private static String attachPerRunFileAppender(String filePath) {
@@ -335,11 +348,11 @@ public class HAGRID2MATSimPipelineRunner {
                 .withPattern("%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n")
                 .build();
 
-    FileAppender appender = FileAppender.newBuilder()
+        FileAppender appender = FileAppender.newBuilder()
                 .setName(name)
                 .withFileName(filePath)
                 .withAppend(true)
-        .withLocking(false)
+                .withLocking(false)
                 .setLayout(layout)
                 .setConfiguration(config)
                 .build();
@@ -375,10 +388,17 @@ public class HAGRID2MATSimPipelineRunner {
             for (var m : clazz.getMethods()) {
                 if (m.getName().equals(method) && m.getParameterCount() == 1) {
                     Class<?> pt = m.getParameterTypes()[0];
-                    if (value instanceof Boolean b && (pt == boolean.class || pt == Boolean.class)) { m.invoke(target, b); return; }
-                    if (value instanceof String s && pt == String.class) { m.invoke(target, s); return; }
+                    if (value instanceof Boolean b && (pt == boolean.class || pt == Boolean.class)) {
+                        m.invoke(target, b);
+                        return;
+                    }
+                    if (value instanceof String s && pt == String.class) {
+                        m.invoke(target, s);
+                        return;
+                    }
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Exception ignored) {
+        }
     }
 }
