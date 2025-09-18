@@ -75,6 +75,7 @@ parcel-analysis/*
 *.qpj
 *.shp.xml
 *.fix
+
 parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
 parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
 parcel-demand-estimation/input/multimodalNetwork.xml
