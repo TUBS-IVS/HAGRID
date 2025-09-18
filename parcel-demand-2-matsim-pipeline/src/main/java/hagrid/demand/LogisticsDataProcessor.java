@@ -43,7 +43,7 @@ public class LogisticsDataProcessor implements Runnable {
     private static final Logger LOGGER = LogManager.getLogger(LogisticsDataProcessor.class);
 
     private static final String CARRIER_VEHICLE_TYPES = "carrierVehicleTypes";
-    private static final String geoDataPath = "phd/input/geodata/Region Hannover.shp";
+    private static final String geoDataPath = "parcel-demand-2-matsim-pipeline/input/geodata/Region Hannover.shp";
 
     @Inject
     private Scenario scenario;

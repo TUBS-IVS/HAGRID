@@ -5,7 +5,6 @@ import com.graphhopper.jsprit.core.algorithm.box.Jsprit;
 import com.graphhopper.jsprit.core.algorithm.listener.VehicleRoutingAlgorithmListeners;
 import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 import com.graphhopper.jsprit.core.algorithm.state.UpdateEndLocationIfRouteIsOpen;
-import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprovementTermination;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
@@ -21,19 +20,15 @@ import hagrid.simulation.TimeWindowConstraintWithDriverTime;
 import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
 
 import org.apache.logging.log4j.Logger;
-import org.jfree.chart.ChartColor;
 import org.jfree.chart.ChartFactory;
-import org.jfree.chart.ChartPanel;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.chart.ui.ApplicationFrame;
 
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
@@ -49,7 +44,7 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 public class HAGRIDRouterUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDRouterUtils.class);
-    private static final int MAXROUTEDURATION = 27000; // example value, adjust as needed
+    private static final int MAXROUTEDURATION = 25200; // example value, adjust as needed
 
     /**
      * Configures the routing algorithm.
@@ -90,30 +85,35 @@ public class HAGRIDRouterUtils {
         // constraintManager.addSkillsConstraint();
         constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
-        double radialShare = 0.3; // standard radial share is 0.3
-        double randomShare = 0.5; // standard random share is 0.5
+        double radialShare = 0.25; // lower default shares to reduce ruin size
+        double randomShare = 0.40;
 
-        if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
-            radialShare = 0.15;
-            randomShare = 0.25;
+        if (serviceCount > 500) { // very large instance: use very small ruin to get a solution faster
+            radialShare = 0.05;
+            randomShare = 0.10;
+        } else if (serviceCount > 250) { // large instance
+            radialShare = 0.12;
+            randomShare = 0.20;
         }
 
         int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
         int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
-        VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
+    // int jspritThreads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
+    VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
                 .setStateAndConstraintManager(stateManager, constraintManager)
                 // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
                 .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
+                .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.BEST_INSERTION.toString())
+                .setProperty(Jsprit.Parameter.FAST_REGRET, "false")
                 .buildAlgorithm();
 
         // int iterations = serviceCount > 250 ? 20 : 40;
         // int termination = serviceCount > 250 ? 3 : 5;
-        int iterations = 1;
-        int termination = 1;
+        int iterations = 1; // keep one iteration to get a quick solution
         
 
         algorithm.setMaxIterations(iterations);
@@ -224,7 +224,7 @@ public class HAGRIDRouterUtils {
         // Output the chart to a file
         try {
             File outputFile = new File(
-                    "phd/output/" + fileName + "_" + carrierType + "_individual_routing_runtime.png");
+                    "parcel-demand-2-matsim-pipeline/output/" + fileName + "_" + carrierType + "_individual_routing_runtime.png");
             ChartUtils.saveChartAsPNG(outputFile, chart, 800, 600);
             LOGGER.info("Individual routing runtime plot saved as {}", outputFile.getAbsolutePath());
         } catch (IOException e) {

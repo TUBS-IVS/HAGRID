@@ -2,27 +2,32 @@ package hagrid.demand;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.nio.file.StandardOpenOption;
+ 
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.matsim.api.core.v01.Id;
+ 
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Network;
-import org.matsim.freight.carriers.Carrier;
+ 
 import org.matsim.freight.carriers.CarrierPlanWriter;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.Carriers;
 import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 
 import com.google.inject.Inject;
-import com.google.inject.Singleton;
+ 
 
 import hagrid.HagridConfigGroup;
 import hagrid.utils.general.HAGRIDUtils;
 import hagrid.utils.routing.ThreadingType;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
+import hagrid.utils.routing.CarrierRoutingMetrics;
+import hagrid.utils.routing.CarrierRoutingStatusLogger;
+import java.util.Collection;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * The CarrierRouter class is responsible for routing both delivery and supply
@@ -36,6 +41,9 @@ public class CarrierRouter implements Runnable {
     private ThreadingType threadingType;
 
     private static final Logger LOGGER = LogManager.getLogger(CarrierRouter.class);
+
+    // Shared, lazily-initialized ZoneBasedTransportCosts to avoid rebuilding per run
+    private static volatile ZoneBasedTransportCosts SHARED_ZONE_COSTS;
 
     @Inject
     private Scenario scenario;
@@ -83,14 +91,12 @@ public class CarrierRouter implements Runnable {
             netBuilder.setTimeSliceWidth(1800);
             final NetworkBasedTransportCosts netBasedCosts = netBuilder.build();
 
-            ZoneBasedTransportCosts.Builder zoneBuilder = ZoneBasedTransportCosts.Builder.newInstance(
-                    carFilteredNetwork,
-                    vehicleTypes.getVehicleTypes().values());
-            zoneBuilder.setTimeSliceWidth(1800);
-            final ZoneBasedTransportCosts zoneBasedCosts = zoneBuilder.build();
+            final ZoneBasedTransportCosts zoneBasedCosts = getOrCreateZoneCosts(carFilteredNetwork, vehicleTypes);
 
-            // Initialize the router with the specified threading type
-            Router router = new Router(threadingType);            
+            // Initialize the router with the specified threading type and live status CSV logger
+            Path statusCsv = Path.of(hagridConfig.getCarrierOutputDirectory(), "carrier_routing_status.csv");
+            CarrierRoutingStatusLogger statusLogger = new CarrierRoutingStatusLogger(statusCsv);
+            Router router = new Router(threadingType, statusLogger, hagridConfig, vehicleTypes);
 
             // Route delivery carriers
             router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
@@ -112,9 +118,68 @@ public class CarrierRouter implements Runnable {
             new CarrierPlanWriter(carriers).write(hagridConfig.getDeliveryCarrierOutputFile());
             new CarrierPlanWriter(supplyCarriers).write(hagridConfig.getSupplyCarrierOutputFile());
 
+            // Export per-carrier routing metrics CSV (summary at the end)
+            writeMetricsCsv(router.getMetrics(), Path.of(hagridConfig.getCarrierOutputDirectory(), "carrier_routing_metrics.csv"));
+
             LOGGER.info("Routing process for carriers completed successfully.");
         } catch (Exception e) {
             LOGGER.error("Error routing carriers", e);
         }
+    }
+
+    private static ZoneBasedTransportCosts getOrCreateZoneCosts(Network network, CarrierVehicleTypes vehicleTypes) {
+        ZoneBasedTransportCosts local = SHARED_ZONE_COSTS;
+        if (local == null) {
+            synchronized (CarrierRouter.class) {
+                local = SHARED_ZONE_COSTS;
+                if (local == null) {
+                    LOGGER.info("[INIT] Building shared ZoneBasedTransportCosts instance (timeSliceWidth=1800)");
+                    ZoneBasedTransportCosts.Builder zoneBuilder = ZoneBasedTransportCosts.Builder.newInstance(
+                            network,
+                            vehicleTypes.getVehicleTypes().values());
+                    zoneBuilder.setTimeSliceWidth(1800);
+                    local = zoneBuilder.build();
+                    SHARED_ZONE_COSTS = local;
+                }
+            }
+        }
+        return local;
+    }
+
+    private void writeMetricsCsv(Collection<CarrierRoutingMetrics> metrics, Path csvPath) throws IOException {
+        Files.createDirectories(csvPath.getParent());
+        // Header
+        String header = String.join(",",
+                "carrierId","provider","services","shipments","totalCapacityDemand","b2bParcels","b2cParcels",
+                "sizeClass","threadingType","carrierType","jspritSeconds","routeSeconds","totalSeconds") + System.lineSeparator();
+        Files.writeString(csvPath, header, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        // Rows
+        for (CarrierRoutingMetrics m : metrics) {
+            String row = String.join(",",
+                    escape(m.carrierId),
+                    escape(m.provider),
+                    Integer.toString(m.services),
+                    Integer.toString(m.shipments),
+                    Integer.toString(m.totalCapacityDemand),
+                    Integer.toString(m.b2bParcels),
+                    Integer.toString(m.b2cParcels),
+                    m.sizeClass,
+                    m.threadingType,
+                    m.carrierType,
+                    String.format(java.util.Locale.ROOT, "%.3f", m.jspritSeconds),
+                    String.format(java.util.Locale.ROOT, "%.3f", m.routeSeconds),
+                    String.format(java.util.Locale.ROOT, "%.3f", m.totalSeconds)
+            ) + System.lineSeparator();
+            Files.writeString(csvPath, row, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+        }
+        LOGGER.info("Wrote carrier routing metrics CSV: {} ({} rows)", csvPath.toAbsolutePath(), metrics.size());
+    }
+
+    private static String escape(String v) {
+        if (v == null) return "";
+        String needsQuote = ",\n\r\"";
+        boolean quote = v.chars().anyMatch(c -> needsQuote.indexOf(c) >= 0);
+        String s = v.replace("\"", "\"\"");
+        return quote ? ("\"" + s + "\"") : s;
     }
 }

@@ -2,10 +2,20 @@ package hagrid;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.appender.FileAppender;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 
@@ -23,27 +33,43 @@ public class HAGRID2MATSimPipelineRunner {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRID2MATSimPipelineRunner.class);
     private static final DateTimeFormatter RUN_ID_FORMAT = DateTimeFormatter.ofPattern("ddMMyyyy");
+    private static final DateTimeFormatter RUN_TS_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
     public static void main(String[] args) {
-        LOGGER.info("Starting HAGRID Demand Pipeline for multiple dates...");
+        LOGGER.info("Starting HAGRID Demand Pipeline for multiple concepts and dates...");
 
-        String concept = "basecase";
-        Boolean applyServiceSimplifier = true; 
+        // List of diffrent concepts to process
+        List<String> concepts = List.of(
+                "batchHigh",
+                "batchMedium"
+                // "batchModerate",
+                // "basecase"
+        );
 
+        // Servo flag for service merger
+        boolean applyServiceSimplifier = true;
+
+        // Datumsserie
         List<LocalDate> dates = List.of(
-                LocalDate.of(2025, 5, 9),
-                LocalDate.of(2025, 5, 10));
-                // LocalDate.of(2025, 5, 14),
-                // LocalDate.of(2025, 5, 15),
-                // LocalDate.of(2025, 5, 16),
-                // LocalDate.of(2025, 5, 17));
+                LocalDate.of(2025, 5, 12),
+                LocalDate.of(2025, 5, 13),
+                LocalDate.of(2025, 5, 14),
+                LocalDate.of(2025, 5, 15),
+                LocalDate.of(2025, 5, 16),
+                LocalDate.of(2025, 5, 17)
+        );
 
-        dates.forEach(date -> {
-            String runId = createRunId(concept, date);
-            runPipeline(runId, date, applyServiceSimplifier);
-        });
+        // Verschachtelte Iteration: jedes Konzept × jedes Datum
+        for (String concept : concepts) {
+            LOGGER.info("--- Concept batch start: {} ---", concept);
+            for (LocalDate date : dates) {
+                String runId = createRunId(concept, date);
+                runPipeline(runId, date, applyServiceSimplifier);
+            }
+            LOGGER.info("--- Concept batch finished: {} ---", concept);
+        }
 
-        LOGGER.info("All demand pipeline scenarios completed.");
+        LOGGER.info("All demand pipeline scenarios (concept × date) completed.");
     }
 
     private static void runPipeline(String runId, LocalDate date, Boolean applyServiceSimplifier) {
@@ -51,13 +77,55 @@ public class HAGRID2MATSimPipelineRunner {
         LOGGER.info("Processing scenario: {}", runId);
         LOGGER.info("--------------------------------------------------");
 
-        // Create the Guice injector with the HagridModule configuration
-        Injector injector = Guice.createInjector(new HagridModule("phd/input/config.xml"));
+        // Prepare per-run logging into output/logs/<runId>_<timestamp>/runner.log
+        LocalDateTime startedAt = LocalDateTime.now();
+        String ts = startedAt.format(RUN_TS_FORMAT);
+        Path runLogDir = Paths.get("parcel-demand-2-matsim-pipeline", "output", "logs", runId + "_" + ts);
+        try {
+            Files.createDirectories(runLogDir);
+        } catch (Exception e) {
+            LOGGER.warn("Could not create run log directory {}: {}", runLogDir, e.getMessage());
+        }
+        String appenderName = null;
+        try {
+            appenderName = attachPerRunFileAppender(runLogDir.resolve("runner.log").toString());
+        } catch (Exception e) {
+            LOGGER.warn("Could not attach per-run file appender: {}", e.getMessage());
+        }
+
+        // Set system properties to ensure Router cache activation (can be overridden per run)
+        Path cacheBase = Paths.get("parcel-demand-2-matsim-pipeline", "routerCache");
+        Path runCacheDir = cacheBase.resolve(runId);
+        try { Files.createDirectories(runCacheDir); } catch (Exception e) { LOGGER.warn("Could not create cache dir {}: {}", runCacheDir, e.getMessage()); }
+        System.setProperty("hagrid.router.cache.enabled", "true");
+        System.setProperty("hagrid.router.cache.dir", runCacheDir.toString());
+        System.setProperty("hagrid.runId", runId); // expose runId globally for Router cache naming
+        LOGGER.info("(SysProp) Router cache forced ENABLED at {}", runCacheDir.toAbsolutePath());
+
+        // Create the Guice injector
+        Injector injector = Guice.createInjector(new HagridModule("parcel-demand-2-matsim-pipeline/input/config.xml"));
         HagridConfigGroup config = injector.getInstance(HagridConfigGroup.class);
         config.setConcept(runId.split("_")[0]);
         config.setSimulationDate(date);
+        // Retain reflective config (still write for consistency)
+        invokeIfExists(config, "setCarrierRoutingCacheEnabled", true);
+        invokeIfExists(config, "setCarrierRoutingCacheDir", runCacheDir.toString());
+        invokeIfExists(config, "setCarrierCacheEnabled", true);
+        invokeIfExists(config, "setCarrierCacheDir", runCacheDir.toString());
+        invokeIfExists(config, "setCacheDir", runCacheDir.toString());
+        LOGGER.info("Configured carrier routing cache directory: {} (exists={})", runCacheDir, Files.exists(runCacheDir));
 
-        config.setFilterRegionsAsString("Hannover");
+        // Configure routing cache (baseDir/routerCache/<runId>) via reflection setters if available
+        /*Path cacheBase = Paths.get("parcel-demand-2-matsim-pipeline", "routerCache");
+        Path runCacheDir = cacheBase.resolve(runId);
+        try { Files.createDirectories(runCacheDir); } catch (Exception e) { LOGGER.warn("Could not create cache dir {}: {}", runCacheDir, e.getMessage()); }
+        invokeIfExists(config, "setCarrierRoutingCacheEnabled", true);
+        invokeIfExists(config, "setCarrierCacheEnabled", true); // fallback alternative name
+        invokeIfExists(config, "setLoadCarrierCache", true); // legacy flag
+        invokeIfExists(config, "setCarrierRoutingCacheDir", runCacheDir.toString());
+        invokeIfExists(config, "setCarrierCacheDir", runCacheDir.toString());
+        invokeIfExists(config, "setCacheDir", runCacheDir.toString());
+        LOGGER.info("Configured carrier routing cache directory: {} (exists={})", runCacheDir, Files.exists(runCacheDir));*/
 
         // Execute processing steps in a structured manner
         runNetworkProcessing(injector); // Step 1: Process the network data
@@ -82,6 +150,15 @@ public class HAGRID2MATSimPipelineRunner {
             e.printStackTrace();
         } // gibt GC etwas Luft
         LOGGER.info("Finished scenario: {}", runId);
+
+        // Detach per-run file appender at the very end
+        if (appenderName != null) {
+            try {
+                detachPerRunFileAppender(appenderName);
+            } catch (Exception e) {
+                LOGGER.warn("Could not detach per-run file appender {}: {}", appenderName, e.getMessage());
+            }
+        }
     }
 
     private static String createRunId(String concept, LocalDate date) {
@@ -244,4 +321,64 @@ public class HAGRID2MATSimPipelineRunner {
 
     }
 
+    /**
+     * Attaches a temporary FileAppender to the root logger that writes to the given file.
+     * Returns the appender name so it can be removed later.
+     */
+    private static String attachPerRunFileAppender(String filePath) {
+        LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+        Configuration config = ctx.getConfiguration();
+
+        String name = "PerRunFileAppender_" + System.nanoTime();
+        PatternLayout layout = PatternLayout.newBuilder()
+                .withConfiguration(config)
+                .withPattern("%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n")
+                .build();
+
+    FileAppender appender = FileAppender.newBuilder()
+                .setName(name)
+                .withFileName(filePath)
+                .withAppend(true)
+        .withLocking(false)
+                .setLayout(layout)
+                .setConfiguration(config)
+                .build();
+        appender.start();
+
+        config.addAppender(appender);
+        LoggerConfig root = config.getRootLogger();
+        root.addAppender(appender, Level.INFO, null);
+        ctx.updateLoggers();
+        LOGGER.info("Attached per-run file logger to {}", filePath);
+        return name;
+    }
+
+    /**
+     * Detaches and stops a previously attached per-run FileAppender.
+     */
+    private static void detachPerRunFileAppender(String appenderName) {
+        LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+        Configuration config = ctx.getConfiguration();
+        LoggerConfig root = config.getRootLogger();
+        root.removeAppender(appenderName);
+        if (config.getAppenders().containsKey(appenderName)) {
+            config.getAppenders().get(appenderName).stop();
+            config.getAppenders().remove(appenderName);
+        }
+        ctx.updateLoggers();
+    }
+
+    // Reflection helper for optional config setters
+    private static void invokeIfExists(Object target, String method, Object value) {
+        try {
+            Class<?> clazz = target.getClass();
+            for (var m : clazz.getMethods()) {
+                if (m.getName().equals(method) && m.getParameterCount() == 1) {
+                    Class<?> pt = m.getParameterTypes()[0];
+                    if (value instanceof Boolean b && (pt == boolean.class || pt == Boolean.class)) { m.invoke(target, b); return; }
+                    if (value instanceof String s && pt == String.class) { m.invoke(target, s); return; }
+                }
+            }
+        } catch (Exception ignored) { }
+    }
 }
