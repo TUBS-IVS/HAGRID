@@ -43,42 +43,47 @@ public class DeliveryGenerator implements Runnable {
         private WeightGenerator parcelWeightGenerator = new WeightGenerator();
 
         @Override
-        public void run() {
-                try {
-                        LOGGER.info("Generating parcels from sorted carrier demand...");
-                        Map<String, List<SimpleFeature>> carrierDemand = Optional.ofNullable(
-                                        (Map<String, List<SimpleFeature>>) scenario.getScenarioElement("carrierDemand"))
-                                        .orElseThrow(() -> new IllegalStateException(
-                                                        "Carrier demand data is missing in the scenario."));
+                public void run() {
+                        try {
+                                // Set deterministic random seed based on runId for full reproducibility
+                                String runId = hagridConfig.getRunId();
+                                long seed = (runId != null) ? runId.hashCode() : 42L;
+                                WeightGenerator.setGlobalRandomSeed(seed); // Also seed the weight generator
 
-                        Map<Id<Hub>, Hub> parcelLockerList = Optional
-                                        .ofNullable((Map<Id<Hub>, Hub>) scenario.getScenarioElement("parcelLockerList"))
-                                        .orElseThrow(() -> new IllegalStateException(
-                                                        "Parcel locker list data is missing in the scenario."));
+                                LOGGER.info("Generating parcels from sorted carrier demand...");
+                                Map<String, List<SimpleFeature>> carrierDemand = Optional.ofNullable(
+                                                (Map<String, List<SimpleFeature>>) scenario.getScenarioElement("carrierDemand"))
+                                                .orElseThrow(() -> new IllegalStateException(
+                                                                "Carrier demand data is missing in the scenario."));
 
-                        long totalParcels = calculateTotalParcels(carrierDemand);
-                        LOGGER.info("Total Parcel Stops from carrier demand: {}", totalParcels);
+                                Map<Id<Hub>, Hub> parcelLockerList = Optional
+                                                .ofNullable((Map<Id<Hub>, Hub>) scenario.getScenarioElement("parcelLockerList"))
+                                                .orElseThrow(() -> new IllegalStateException(
+                                                                "Parcel locker list data is missing in the scenario."));
 
-                        Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
+                                long totalParcels = calculateTotalParcels(carrierDemand);
+                                LOGGER.info("Total Parcel Stops from carrier demand: {}", totalParcels);
 
-                        // Add parcel lockers to deliveries
-                        addParcelLockerServices(deliveries, parcelLockerList);
+                                Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
 
-                        // Log parcel statistics
-                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
-                                                                                                     // detailed
-                        // log
-                        logger.logStatistics(deliveries);
+                                // Add parcel lockers to deliveries
+                                addParcelLockerServices(deliveries, parcelLockerList);
 
-                        // Store parcels in scenario
-                        scenario.addScenarioElement("deliveries", deliveries);
+                                // Log parcel statistics
+                                ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
+                                                                                                                                                                                         // detailed
+                                // log
+                                logger.logStatistics(deliveries);
 
-                        LOGGER.info("Parcel generation completed.");
+                                // Store parcels in scenario
+                                scenario.addScenarioElement("deliveries", deliveries);
 
-                } catch (Exception e) {
-                        LOGGER.error("Error generating parcels", e);
+                                LOGGER.info("Parcel generation completed.");
+
+                        } catch (Exception e) {
+                                LOGGER.error("Error generating parcels", e);
+                        }
                 }
-        }
 
         /**
          * Calculates the total number of parcels from the carrier demand.

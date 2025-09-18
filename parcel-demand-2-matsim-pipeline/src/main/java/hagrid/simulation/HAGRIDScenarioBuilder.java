@@ -25,17 +25,23 @@ import java.util.Set;
 /**
  * Builds a complete MATSim {@link Scenario} for the HAGRID simulation.
  * <p>
- * Includes configuration setup, network loading, carrier merging, zone assignment, and freight info logging.
+ * Includes configuration setup, network loading, carrier merging, zone
+ * assignment, and freight info logging.
  */
 public class HAGRIDScenarioBuilder {
+    /**
+     * Ensures that all CarrierService objects have the correct ParcelType attribute (MIXED, not Mixed).
+     */
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDScenarioBuilder.class);
 
     /**
-     * Builds and returns a fully configured MATSim scenario based on the provided simulation config.
+     * Builds and returns a fully configured MATSim scenario based on the provided
+     * simulation config.
      *
-     * @param simConfig     the HAGRID scenario configuration
-     * @param zoneFeatures  collection of freight zone features (used for spatial link tagging & zone based routing with jsprit)
+     * @param simConfig    the HAGRID scenario configuration
+     * @param zoneFeatures collection of freight zone features (used for spatial
+     *                     link tagging & zone based routing with jsprit)
      * @return the initialized MATSim scenario
      * @throws Exception if any error occurs during setup (e.g., file reading)
      */
@@ -75,10 +81,11 @@ public class HAGRIDScenarioBuilder {
     }
 
     /**
-     * Configures the MATSim config object using parameters from the simulation config.
+     * Configures the MATSim config object using parameters from the simulation
+     * config.
      *
-     * @param config     the MATSim config to modify
-     * @param simConfig  the HAGRID simulation configuration
+     * @param config    the MATSim config to modify
+     * @param simConfig the HAGRID simulation configuration
      */
     private static void setupConfig(Config config, HAGRIDSimulationConfig simConfig) {
 
@@ -87,7 +94,7 @@ public class HAGRIDScenarioBuilder {
         config.network().setInputFile(simConfig.getCarNetworkPath().toString());
         config.network().setTimeVariantNetwork(true);
         config.network().setChangeEventsInputFile(simConfig.getNetworkChangeEventPath().toString());
-        config.network().setInputCRS("EPSG:25832");        
+        config.network().setInputCRS("EPSG:25832");
 
         config.controller().setOutputDirectory(simConfig.getOutputDirectory().toString());
         config.controller().setRunId(simConfig.getRunId());
@@ -122,9 +129,9 @@ public class HAGRIDScenarioBuilder {
     /**
      * Copies scoring parameters from one mode to another.
      *
-     * @param config    the config object to modify
-     * @param fromMode  the source mode (e.g. "car")
-     * @param toMode    the target mode (e.g. "cargobike")
+     * @param config   the config object to modify
+     * @param fromMode the source mode (e.g. "car")
+     * @param toMode   the target mode (e.g. "cargobike")
      */
     private static void copyScoringMode(Config config, String fromMode, String toMode) {
         ModeParams from = config.scoring().getOrCreateModeParams(fromMode);
@@ -142,16 +149,26 @@ public class HAGRIDScenarioBuilder {
     /**
      * Merges HAGRID delivery and supply carriers into a single carrier file.
      *
-     * @param types      the vehicle types to apply
-     * @param simConfig  the simulation configuration with paths
+     * @param types     the vehicle types to apply
+     * @param simConfig the simulation configuration with paths
      * @throws Exception if carrier files cannot be read or written
      */
     private static void mergeCarriers(CarrierVehicleTypes types, HAGRIDSimulationConfig simConfig) throws Exception {
-        Carriers delivery = new Carriers();
-        new CarrierPlanXmlReader(delivery, types).readFile(simConfig.getDeliveryCarrierPath().toString());
+    // Fix legacy <attribute name="type">Mixed</attribute> in XMLs before reading
+    // Not nice, but quick workaround until upstream MATSim issue is fixed
 
-        Carriers supply = new Carriers();
-        new CarrierPlanXmlReader(supply, types).readFile(simConfig.getSupplyCarrierPath().toString());
+    LOGGER.info("Fixing mixed type attributes in XML files");
+    XMLParcelTypeFixer.fixMixedTypeInFile(simConfig.getDeliveryCarrierPath().toString());
+    XMLParcelTypeFixer.fixMixedTypeInFile(simConfig.getSupplyCarrierPath().toString());
+    LOGGER.info("Finished fixing mixed type attributes in XML files");
+
+    Carriers delivery = new Carriers();
+    new CarrierPlanXmlReader(delivery, types).readFile(simConfig.getDeliveryCarrierPath().toString());
+    fixServiceParcelTypeAttributes(delivery);
+
+    Carriers supply = new Carriers();
+    new CarrierPlanXmlReader(supply, types).readFile(simConfig.getSupplyCarrierPath().toString());
+    fixServiceParcelTypeAttributes(supply);
 
         Carriers merged = new Carriers();
         delivery.getCarriers().values().forEach(merged::addCarrier);
@@ -163,18 +180,29 @@ public class HAGRIDScenarioBuilder {
             CarriersUtils.setJspritIterations(carrier, 40);
             CarriersUtils.setJspritComputationTime(carrier, 900.0);
         }
+        // Quick Fix service parcel type attributes (e.g. "Mixed" -> "MIXED" -> Change of enum values)
+        fixServiceParcelTypeAttributes(merged);
 
-    // Write merged carriers to output/runid instead of phd/output
-    java.nio.file.Path mergedOut = java.nio.file.Path.of("output", "runid", java.nio.file.Path.of(simConfig.getMergedCarrierPath().toString()).getFileName().toString());
-    java.nio.file.Files.createDirectories(mergedOut.getParent());
-    new CarrierPlanWriter(merged).write(mergedOut.toString());
+        // Write merged carriers to sim-input/carrier/<runId>_carrier_files/carrierPlans_total.xml
+        String runId = simConfig.getRunId();
+        String baseDir = System.getProperty("user.dir");
+        java.nio.file.Path mergedOut = java.nio.file.Path.of(
+            baseDir,
+            "sim-input",
+            "carrier",
+            runId + "_carrier_files",
+            "carrierPlans_total.xml"
+        );
+        LOGGER.info("Writing merged carriers to {}", mergedOut);
+        // java.nio.file.Files.createDirectories(mergedOut.getParent());
+        new CarrierPlanWriter(merged).write(mergedOut.toString());
     }
 
     /**
      * Assigns freight zones to network links based on spatial intersection.
      *
-     * @param scenario  the scenario containing the network
-     * @param features  zone features with geometry and zone ID
+     * @param scenario the scenario containing the network
+     * @param features zone features with geometry and zone ID
      */
     private static void assignZones(Scenario scenario, Collection<SimpleFeature> features) {
         Counter counter = new Counter("Zone Assignments");
@@ -228,5 +256,16 @@ public class HAGRIDScenarioBuilder {
 
         LOGGER.info("Last Mile Delivery Services: {}, Parcels: {}", servicesCep, parcelsLastMileDelivery);
         LOGGER.info("Supply Services: {}, Parcels: {}", servicesSupply, parcelsSupply);
+    }
+
+    private static void fixServiceParcelTypeAttributes(Carriers carriers) {
+        for (Carrier carrier : carriers.getCarriers().values()) {
+            for (CarrierService service : carrier.getServices().values()) {
+                Object attr = service.getAttributes().getAttribute("type");
+                if (attr instanceof String && ((String) attr).equals("Mixed")) {
+                    service.getAttributes().putAttribute("type", "MIXED");
+                }
+            }
+        }
     }
 }

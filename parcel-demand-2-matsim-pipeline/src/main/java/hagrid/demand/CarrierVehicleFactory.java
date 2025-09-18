@@ -20,7 +20,15 @@ public class CarrierVehicleFactory {
         this.vehicleTypes = vehicleTypes;
     }
 
-    private static final Random random = new Random();
+    private static Random random = new Random();
+
+    /**
+     * Set the global random seed for deterministic behavior (should be called before any random logic).
+     * @param seed the seed to use (e.g. runId.hashCode())
+     */
+    public static void setGlobalRandomSeed(long seed) {
+        random = new Random(seed);
+    }
 
     /**
      * Creates a CEP vehicle with specified parameters.

@@ -30,12 +30,12 @@ echo Starting with args from vmargs.txt
 type vmargs.txt
 
 "%JAVA_EXE%" @vmargs.txt -jar "%JAR%" ^
-concept=batchmoderate,date=2025-05-12,maxIter=150,jspritIter=100 ^
-concept=batchmoderate,date=2025-05-13,maxIter=150,jspritIter=100 ^
-concept=batchmoderate,date=2025-05-14,maxIter=150,jspritIter=100 ^
-concept=batchmoderate,date=2025-05-15,maxIter=150,jspritIter=100 ^
-concept=batchmoderate,date=2025-05-16,maxIter=150,jspritIter=100 ^
-concept=batchmoderate,date=2025-05-17,maxIter=150,jspritIter=100
+concept=batchhigh,date=2025-05-12,maxIter=150,jspritIter=100 ^
+concept=batchhigh,date=2025-05-13,maxIter=150,jspritIter=100 ^
+concept=batchhigh,date=2025-05-14,maxIter=150,jspritIter=100 ^
+concept=batchhigh,date=2025-05-15,maxIter=150,jspritIter=100 ^
+concept=batchhigh,date=2025-05-16,maxIter=150,jspritIter=100 ^
+concept=batchhigh,date=2025-05-17,maxIter=150,jspritIter=100
 
 set "RC=%ERRORLEVEL%"
 echo Exit code %RC%

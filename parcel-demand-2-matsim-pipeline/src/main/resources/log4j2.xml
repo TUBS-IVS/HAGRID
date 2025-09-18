@@ -7,8 +7,8 @@
         </Console>
 
         <!-- RollingFile appender configuration -->
-        <RollingFile name="RollingFile" fileName="sim-output/logs/runid/hagrid.log"
-            filePattern="sim-output/logs/runid/hagrid-%d{yyyy-MM-dd}-%i.log.gz">
+        <RollingFile name="RollingFile" fileName="output/logs/runid/hagrid.log"
+            filePattern="output/logs/runid/hagrid-%d{yyyy-MM-dd}-%i.log.gz">
             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
             <Policies>
                 <TimeBasedTriggeringPolicy />

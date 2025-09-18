@@ -52,7 +52,7 @@ public class SupplyCarrierGenerator implements Runnable {
         }
     };    
 
-    Random rand = new Random();
+    private Random rand;
 
     @Inject
     private Scenario scenario;
@@ -68,6 +68,12 @@ public class SupplyCarrierGenerator implements Runnable {
     public void run() {
         try {
             LOGGER.info("Starting supply carrier generation...");
+
+            // Use a deterministic random seed based on the runId for reproducibility
+            String runId = hagridConfig.getRunId();
+            long seed = (runId != null) ? runId.hashCode() : 42L;
+            this.rand = new Random(seed);
+            CarrierVehicleFactory.setGlobalRandomSeed(seed);
 
             // Retrieve existing carriers from the scenario
             Carriers carriers = HAGRIDUtils.getScenarioElementAs("carriers", scenario);
@@ -100,15 +106,22 @@ public class SupplyCarrierGenerator implements Runnable {
             // Validate generated supply carriers
             validateSupplyCarriers(supplyCarriers, splitSupplyCarriers, hubs, hagridConfig.isWhiteLabel());
 
-            String outputPath = "phd/output/" + hagridConfig.getRunId() ;
 
-            new CarrierPlanWriter(supplyCarriers).write(outputPath + "_supply_carriers.xml");
-            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(supplyCarriers, "phd/output/supply_carriers.shp");
-            new CarrierPlanWriter(splitSupplyCarriers).write(outputPath + "_split_supply_carriers.xml");
-            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(splitSupplyCarriers,
-            //         "phd/output/split_supply_carriers.shp");
+            String baseDir = System.getProperty("user.dir");
+            String outputDir = baseDir + java.io.File.separator + "parcel-demand-2-matsim-pipeline" + java.io.File.separator + "output" + java.io.File.separator + hagridConfig.getRunId() + java.io.File.separator;
+            HAGRIDUtils.createDirectoryIfNotExists(outputDir);
 
+            String outputPath = outputDir + hagridConfig.getRunId() + "_supply_carriers.xml";
+            LOGGER.info("Writing unrouted supply carriers to output directory {}", outputPath);
+            new CarrierPlanWriter(supplyCarriers).write(outputPath);
+            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(supplyCarriers, outputDir + "supply_carriers.shp");
+
+            outputPath = outputDir + hagridConfig.getRunId() + "_split_supply_carriers.xml";
+            LOGGER.info("Writing unrouted splitted supply carriers to output directory {}", outputPath);
+            new CarrierPlanWriter(splitSupplyCarriers).write(outputPath);
+            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(splitSupplyCarriers, outputDir + "split_supply_carriers.shp");
             LOGGER.info("Supply carrier generation completed successfully.");
+
         } catch (Exception e) {
             LOGGER.error("Error generating supply carriers", e);
         }

@@ -99,7 +99,7 @@ public class CarrierRouter implements Runnable {
             Router router = new Router(threadingType, statusLogger, hagridConfig, vehicleTypes);
 
             // Route delivery carriers
-            router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
+            // router.routeCarriers(carriers, zoneBasedCosts, carFilteredNetwork, "delivery");
 
             // For testing purposes, limit the number of carriers to route
             // Carriers firstThreeCarriers = new Carriers();
@@ -115,7 +115,7 @@ public class CarrierRouter implements Runnable {
             // // Write the routed plans to XML files
             Files.createDirectories(Path.of(hagridConfig.getCarrierOutputDirectory()));
 
-            new CarrierPlanWriter(carriers).write(hagridConfig.getDeliveryCarrierOutputFile());
+            // new CarrierPlanWriter(carriers).write(hagridConfig.getDeliveryCarrierOutputFile());
             new CarrierPlanWriter(supplyCarriers).write(hagridConfig.getSupplyCarrierOutputFile());
 
             // Export per-carrier routing metrics CSV (summary at the end)

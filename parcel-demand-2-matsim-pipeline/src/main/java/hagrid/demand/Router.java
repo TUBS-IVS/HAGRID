@@ -843,10 +843,23 @@ public class Router {
             if (cached == null) return false;
             Object v = cached.getAttributes().getAttribute("cacheVersion");
             if (v == null || !CACHE_VERSION.equals(v.toString())) return false;
+
+            // If we restore a plan from cache, we must also ensure that the services and vehicles are exactly as in the cached carrier.
+            // Remove all existing services and vehicles, then add all from the cached carrier for full consistency.
             if (targetCarrier.getPlans().isEmpty()) {
+                // Remove all existing services
+                targetCarrier.getServices().clear();
+                // Remove all existing vehicles
+                targetCarrier.getCarrierCapabilities().getCarrierVehicles().clear();
+                // Add all services from cache
+                cached.getServices().forEach((id, service) -> CarriersUtils.addService(targetCarrier, service));
+                // Add all vehicles from cache
+                cached.getCarrierCapabilities().getCarrierVehicles().forEach((id, vehicle) -> targetCarrier.getCarrierCapabilities().getCarrierVehicles().put(id, vehicle));
+                // Add plans
                 cached.getPlans().forEach(targetCarrier::addPlan);
                 if (cached.getSelectedPlan() != null) targetCarrier.setSelectedPlan(cached.getSelectedPlan());
             }
+            // If plan was not loaded, do not touch services (keep as is)
             copyAttrIfExists(cached, targetCarrier, "jspritIterations");
             copyAttrIfExists(cached, targetCarrier, "jspritComputationTime");
             // compute and store deliveries

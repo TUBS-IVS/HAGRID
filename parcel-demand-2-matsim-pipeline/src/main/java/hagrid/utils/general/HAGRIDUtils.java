@@ -44,6 +44,23 @@ import java.util.List;
  */
 public class HAGRIDUtils {
 
+    /**
+     * Creates the directory if it does not exist.
+     * @param dirPath The directory path to create.
+     */
+    public static void createDirectoryIfNotExists(String dirPath) {
+        LOGGER.info("Calling createDirectoryIfNotExists for: {}", dirPath);
+        File dir = new File(dirPath);
+        if (!dir.exists()) {
+            boolean created = dir.mkdirs();
+            if (created) {
+                LOGGER.info("Created output directory: {}", dirPath);
+            } else {
+                LOGGER.warn("Could not create output directory: {}", dirPath);
+            }
+        }
+    }
+
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDUtils.class);
 
     /**

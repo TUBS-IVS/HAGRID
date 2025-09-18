@@ -149,7 +149,7 @@ public class CarrierServiceMerger implements Runnable {
 
         // Validate post-merge consistency (e.g. no lost parcels or mismatched capacity)
         // and print comparison summary
-        CarrierMergeValidator.validatePostMerge(carriers, preStats, hagridConfig.getRunId());
+        CarrierMergeValidator.validatePostMerge(carriers, preStats, hagridConfig);
 
         // Final log statement for completed merge step
         LOGGER.info("Service merging completed.");
