@@ -30,7 +30,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     // Path configurations
     static final String NETWORK_XML_PATH = "networkXmlPath";
     private static final String NETWORK_XML_PATH_DESC = "Path to the network XML file.";
-    private String networkXmlPath = "phd/sim-input/network/car_network_filtered_V2.xml.gz";
+    private String networkXmlPath = "parcel-demand-2-matsim-pipeline/sim-input/network/car_network_filtered_V2.xml.gz";
 
     static final String FREIGHT_DEMAND_PATH = "freightDemandPath";
     private static final String FREIGHT_DEMAND_PATH_DESC = "Path to the freight demand shapefile.";
@@ -38,19 +38,19 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     static final String FREIGHT_VEHICLE_TYPES_PATH = "freightVehicleTypePath";
     private static final String FREIGHT_VEHICLE_TYPES_PATH_DESC = "Path to the freight vehicle type xml.";
-    private String freightVehicleTypePath = "phd/input/HAGRID_vehicleTypes2.0.xml";
+    private String freightVehicleTypePath = "parcel-demand-2-matsim-pipeline/input/HAGRID_vehicleTypes2.0.xml";
 
     static final String HUB_DATA_PATH = "hubDataPath";
     private static final String HUB_DATA_PATH_DESC = "Path to the hub data file.";
-    private String hubDataPath = "phd/input/hubs/KEP-hubs_v3.csv";
+    private String hubDataPath = "parcel-demand-2-matsim-pipeline/input/hubs/KEP-hubs_v3.csv";
 
     static final String SHIPPING_POINT_DATA_PATH = "shippingPointDataPath";
     private static final String SHIPPING_POINT_DATA_PATH_DESC = "Path to the shipping point data file.";
-    private String shippingPointDataPath = "phd/input/hubs/standorte_von_paket.net/";
+    private String shippingPointDataPath = "parcel-demand-2-matsim-pipeline/input/hubs/standorte_von_paket.net/";
 
     static final String PARCEL_LOCKER_DATA_PATH = "parcelLockerDataPath";
     private static final String PARCEL_LOCKER_DATA_PATH_DESC = "Path to the parcel locker data file.";
-    private String parcelLockerDataPath = "phd/input/hubs/standorte_von_dhl.de.csv";
+    private String parcelLockerDataPath = "parcel-demand-2-matsim-pipeline/input/hubs/standorte_von_dhl.de.csv";
 
     // Providers
     static final String SHP_PROVIDERS = "shpProviders";
@@ -137,7 +137,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     // Concept enumeration
     public enum Concept {
-        BASECASE, WHITE_LABEL, UCC, COLLECTION_POINTS
+        BASECASE, WHITE_LABEL, UCC, COLLECTION_POINTS, BATCHMODERATE, BATCHMEDIUM, BATCHHIGH, BATCHFULL
     }
 
     static final String CONCEPT = "concept";
@@ -618,7 +618,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
                 simulationDate.getDayOfWeek().toString().substring(1).toLowerCase();
 
         String shapefileName = "hagrid_parcel_demand_" + formattedDate + "_(" + dayOfWeek + ").shp";
-        String demandPath = "phd/input/demand/" + runId + "/" + shapefileName;
+        String demandPath = "parcel-demand-2-matsim-pipeline/input/demand/" + runId + "/" + shapefileName;
         this.freightDemandPath = demandPath;
     }
 
@@ -628,7 +628,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     public String getCarrierOutputDirectory() {
         String runId = concept + "_" + simulationDate.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
-        return "phd/sim-input/carrier/" + runId + "_carrier_files/";
+        return "parcel-demand-2-matsim-pipeline/sim-input/carrier/" + runId + "_carrier_files/";
     }
 
     public String getDeliveryCarrierOutputFile() {

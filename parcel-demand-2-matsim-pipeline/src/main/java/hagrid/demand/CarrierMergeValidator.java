@@ -43,7 +43,7 @@ public class CarrierMergeValidator {
                         totalB2B += cap;
                     } else if (type == ParcelType.B2C) {
                         totalB2C += cap;
-                    } else if (type == ParcelType.Mixed) {
+                    } else if (type == ParcelType.MIXED) {
                         // Mixed-Service: B2B & B2C getrennt zählen
                         Object b2bAttr = service.getAttributes().getAttribute("b2b");
                         Object b2cAttr = service.getAttributes().getAttribute("b2c");
@@ -111,7 +111,7 @@ public class CarrierMergeValidator {
                             b2b = 0;
                             b2c = cap;
                         }
-                        case Mixed -> {
+                        case MIXED -> {
                             throw new IllegalStateException(
                                     "Mixed ParcelType but no b2b/b2c attributes for service " + service.getId());
                         }

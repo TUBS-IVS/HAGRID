@@ -81,10 +81,13 @@ public class HAGRIDScenarioBuilder {
      * @param simConfig  the HAGRID simulation configuration
      */
     private static void setupConfig(Config config, HAGRIDSimulationConfig simConfig) {
+
+        config.global().setRandomSeed(1337);
+
         config.network().setInputFile(simConfig.getCarNetworkPath().toString());
         config.network().setTimeVariantNetwork(true);
         config.network().setChangeEventsInputFile(simConfig.getNetworkChangeEventPath().toString());
-        config.network().setInputCRS("EPSG:25832");
+        config.network().setInputCRS("EPSG:25832");        
 
         config.controller().setOutputDirectory(simConfig.getOutputDirectory().toString());
         config.controller().setRunId(simConfig.getRunId());
@@ -161,7 +164,10 @@ public class HAGRIDScenarioBuilder {
             CarriersUtils.setJspritComputationTime(carrier, 900.0);
         }
 
-        new CarrierPlanWriter(merged).write(simConfig.getMergedCarrierPath().toString());
+    // Write merged carriers to output/runid instead of phd/output
+    java.nio.file.Path mergedOut = java.nio.file.Path.of("output", "runid", java.nio.file.Path.of(simConfig.getMergedCarrierPath().toString()).getFileName().toString());
+    java.nio.file.Files.createDirectories(mergedOut.getParent());
+    new CarrierPlanWriter(merged).write(mergedOut.toString());
     }
 
     /**
