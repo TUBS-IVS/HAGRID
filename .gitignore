@@ -33,18 +33,14 @@ log/
 parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
 parcel-demand-estimation/Project USEfUL XT//Verflechtungsprognose2030/ketten-2030.csv
 
-# Exclude entire output folder
-parcel-demand-estimation/input/
-parcel-demand-estimation/output/
-
-parcel-demand-2-matsim-pipeline/output/
-parcel-demand-2-matsim-pipeline/sim-input/
-parcel-demand-2-matsim-pipeline/sim-output/
+ d
 
 parcel-analysis/input
 
 parcel-demand-2-matsim-pipeline/sim-input
 parcel-demand-2-matsim-pipeline/input
+parcel-demand-2-matsim-pipeline/routerCache
+parcel-demand-2-matsim-pipeline/logs
 
 parcel-demand-2-matsim-pipeline/sim-output
 parcel-demand-2-matsim-pipeline/output
@@ -75,6 +71,7 @@ parcel-analysis/*
 *.qpj
 *.shp.xml
 *.fix
+
 parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
 parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
 parcel-demand-estimation/input/multimodalNetwork.xml

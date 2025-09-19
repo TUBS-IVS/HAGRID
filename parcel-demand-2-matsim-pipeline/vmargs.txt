@@ -1,0 +1,16 @@
+-Xms32g
+-Xmx124g
+-Xss512k
+-XX:MaxDirectMemorySize=4g
+-XX:ActiveProcessorCount=16
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:+ExitOnOutOfMemoryError
+-XX:HeapDumpPath=logs\heapdump.hprof
+-XX:ErrorFile=logs\hs_err_%p.log
+-XX:NativeMemoryTracking=summary
+-Xlog:nmt=info
+-Xlog:gc*,safepoint,class+load,class+unload:file=logs\jvm_gc.log:utctime,uptime,level,tags,tid
+-XX:+UseZGC
+-XX:+AlwaysPreTouch
+--add-opens
+java.base/java.lang=ALL-UNNAMED

@@ -6,48 +6,94 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * Configuration container for a single HAGRID simulation scenario.
+ * Container for configuration parameters of a single HAGRID simulation scenario.
  * <p>
- * Encapsulates paths, parameters, and identifiers used for preparing and running a scenario.
- * Includes functionality for input validation and directory resolution.
+ * The configuration includes input and output directories, run identifiers,
+ * and iteration settings for both MATSim and jsprit. It also provides
+ * convenience methods to resolve scenario specific file paths and validate
+ * the existence of required input data.
  */
 public class HAGRIDSimulationConfig {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDSimulationConfig.class);
 
+    /**
+     * Formatter used to generate the run identifier from the simulation date.
+     */
+    private static final DateTimeFormatter RUN_ID_DATE_FMT = DateTimeFormatter.ofPattern("ddMMyyyy");
+
+    /**
+     * Base directory containing all input resources for the simulation pipeline.
+     */
     private final Path baseInputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-input");
+
+    /**
+     * Base directory where simulation outputs will be written.
+     */
     private final Path baseOutputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-output");
 
+    /**
+     * Scenario concept name, e.g. "basecase" or "policyA".
+     */
     private final String concept;
+
+    /**
+     * Simulation date used to construct the run identifier and to select
+     * dated input files.
+     */
     private final LocalDate date;
+
+    /**
+     * Maximum number of MATSim iterations for this scenario.
+     */
     private final int maxIterations;
+
+    /**
+     * Maximum number of jsprit iterations for the carrier routing step.
+     */
+    private final int jspritIterations;
+
+    /**
+     * Unique run identifier, composed of the concept and the date.
+     */
     private final String runId;
 
     /**
-     * Constructs a new simulation configuration for a given concept and simulation date.
+     * Creates a new scenario configuration.
      *
-     * @param concept        the scenario concept name (e.g. "basecase")
-     * @param date           the simulation date
-     * @param maxIterations  maximum number of MATSim iterations
+     * @param concept          scenario concept name
+     * @param date             simulation date
+     * @param maxIterations    maximum number of MATSim iterations
+     * @param jspritIterations maximum number of jsprit iterations
+     * @throws NullPointerException     if concept or date is null
+     * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
      */
-    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations) {
-        this.concept = concept;
-        this.date = date;
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations) {
+        this.concept = Objects.requireNonNull(concept, "concept must not be null");
+        this.date = Objects.requireNonNull(date, "date must not be null");
+        if (maxIterations <= 0) {
+            throw new IllegalArgumentException("maxIterations must be positive");
+        }
+        if (jspritIterations <= 0) {
+            throw new IllegalArgumentException("jspritIterations must be positive");
+        }
         this.maxIterations = maxIterations;
-        this.runId = concept + "_" + date.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        this.jspritIterations = jspritIterations;
+        this.runId = concept + "_" + date.format(RUN_ID_DATE_FMT);
     }
 
     // === GETTERS ===
 
     /**
-     * Returns the unique run ID for this scenario (e.g. "basecase_16042025").
+     * Returns the unique run identifier of this scenario.
      *
-     * @return the scenario run ID
+     * @return run identifier
      */
     public String getRunId() {
         return runId;
@@ -56,43 +102,61 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the scenario concept name.
      *
-     * @return the scenario concept
+     * @return concept name
      */
     public String getConcept() {
         return concept;
     }
 
     /**
-     * Returns the scenario date as ISO string (e.g. "2025-04-16").
+     * Returns the scenario date formatted as ISO string.
      *
-     * @return the formatted date string
+     * @return formatted date string
      */
     public String getFormattedDate() {
         return date.format(DateTimeFormatter.ISO_DATE);
     }
 
     /**
+     * Returns the configured maximum number of MATSim iterations.
+     *
+     * @return MATSim iteration count
+     */
+    public int getMaxIterations() {
+        return maxIterations;
+    }
+
+    /**
+     * Returns the configured maximum number of jsprit iterations.
+     *
+     * @return jsprit iteration count
+     */
+    public int getJspritIterations() {
+        return jspritIterations;
+    }
+
+    /**
      * Returns the path to the freight zone shapefile.
      *
-     * @return the freight zone path
+     * @return freight zone file path
      */
     public Path getFreightZonePath() {
         return baseInputDir.resolve("network/RH_useful__zone.shp");
     }
 
     /**
-     * Returns the path to the vehicle type XML.
+     * Returns the path to the vehicle type definition XML.
      *
-     * @return the vehicle type definition file path
+     * @return vehicle types file path
      */
     public Path getVehicleTypePath() {
         return baseInputDir.resolve("carrier/HAGRID_vehicleTypes2.0.xml");
     }
 
     /**
-     * Returns the path to the car network file.
+     * Returns the path to the car network file for this run.
      *
-     * @return the car network file path
+     * @return car network file path
      */
     public Path getCarNetworkPath() {
         return getRunCarrierDir().resolve("carFilteredCleanedNetwork.xml.gz");
@@ -101,25 +165,25 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the path to the bike network file.
      *
-     * @return the bike network file path
+     * @return bike network file path
      */
     public Path getBikeNetworkPath() {
         return baseInputDir.resolve("network/cargobike_network_zones_MH_V3_clean.xml.gz");
     }
 
     /**
-     * Returns the path to the network change events file.
+     * Returns the path to the network change events file for this run.
      *
-     * @return the change events file path
+     * @return network change events file path
      */
     public Path getNetworkChangeEventPath() {
         return getRunCarrierDir().resolve("car_network_filtered_V2_change_events.xml.gz");
     }
 
     /**
-     * Returns the directory path containing carrier input files for this run.
+     * Returns the directory with carrier input files for this run.
      *
-     * @return the run-specific carrier directory path
+     * @return run specific carrier directory
      */
     public Path getRunCarrierDir() {
         return baseInputDir.resolve("carrier/" + runId + "_carrier_files");
@@ -128,7 +192,7 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the path to the delivery carriers XML.
      *
-     * @return the delivery carriers file path
+     * @return delivery carriers file path
      */
     public Path getDeliveryCarrierPath() {
         return getRunCarrierDir().resolve("delivery_carriers_routed.xml");
@@ -137,7 +201,7 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the path to the supply carriers XML.
      *
-     * @return the supply carriers file path
+     * @return supply carriers file path
      */
     public Path getSupplyCarrierPath() {
         return getRunCarrierDir().resolve("supply_carriers_routed.xml");
@@ -146,53 +210,53 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the path to the merged carriers file.
      *
-     * @return the merged carrier plans file path
+     * @return merged carriers file path
      */
     public Path getMergedCarrierPath() {
         return getRunCarrierDir().resolve("carrierPlans_total.xml");
     }
 
     /**
-     * Returns the path to the simulation configuration XML.
+     * Returns the path to the MATSim configuration XML.
      *
-     * @return the MATSim config file path
+     * @return MATSim config file path
      */
     public Path getConfigPath() {
         return baseInputDir.resolve("sim-config.xml");
     }
 
     /**
-     * Returns the directory where simulation output will be written.
+     * Returns the directory where output for this run will be written.
+     * <p>
+     * The directory is derived from the base output path and the run identifier,
+     * extended with iteration settings to avoid collisions when running the
+     * same scenario with different MATSim or jsprit iteration budgets.
+     * <p>
+     * Example: {@code sim-output/basecase_12052025_iter150_jsprit100}
      *
-     * @return the output directory path
+     * @return output directory path
      */
     public Path getOutputDirectory() {
-        return baseOutputDir.resolve(runId);
+        return baseOutputDir.resolve(
+                String.format("%s_iter%d_jsprit%d", runId, maxIterations, jspritIterations)
+        );
     }
 
     /**
-     * Returns the output directory path as a string.
+     * Returns the output directory as a string.
      *
-     * @return output directory as string
+     * @return output directory string
      */
     public String getOutputDirectoryAsString() {
         return getOutputDirectory().toString();
     }
 
-    /**
-     * Returns the configured maximum number of iterations.
-     *
-     * @return maximum number of iterations
-     */
-    public int getMaxIterations() {
-        return maxIterations;
-    }
+    // === VALIDATION ===
 
     /**
-     * Validates that all required input files exist for this scenario.
-     * <p>
-     * Logs any missing files and throws an {@link IllegalStateException} if any are not found.
-     * Also warns if the output directory already exists.
+     * Validates that all required input files exist for this scenario and reports
+     * the state of the output directory. Throws an exception if required inputs
+     * are missing.
      */
     public void validateInputFiles() {
         List<String> missing = new ArrayList<>();
@@ -212,22 +276,24 @@ public class HAGRIDSimulationConfig {
 
         if (getOutputDirectory().toFile().exists()) {
             LOGGER.warn("Output directory already exists: {}", getOutputDirectory().toAbsolutePath());
-            LOGGER.warn("Contents may be overwritten depending on MATSim settings (e.g. OverwriteFileSetting).");
+            LOGGER.warn("Contents may be overwritten depending on MATSim settings such as OverwriteFileSetting.");
         } else {
             LOGGER.info("Output directory will be created: {}", getOutputDirectory().toAbsolutePath());
         }
     }
 
     /**
-     * Checks if a file exists and adds it to the list of missing files if not found.
+     * Verifies the existence of a file and records it as missing if not found.
+     * <p>
+     * Used by {@link #validateInputFiles()} to collect missing file messages.
      *
-     * @param path    path to the file to check
-     * @param label   user-readable label for logging
-     * @param missing list of missing files to append to
+     * @param path    the file path to be checked
+     * @param label   descriptive label for the file, used in log messages
+     * @param missing list that collects descriptions of missing files
      */
     private void checkFile(Path path, String label, List<String> missing) {
         if (!path.toFile().exists()) {
-            missing.add("❌ " + label + ": " + path.toAbsolutePath());
+            missing.add("Missing " + label + ": " + path.toAbsolutePath());
         }
     }
 }

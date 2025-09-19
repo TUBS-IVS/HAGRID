@@ -43,9 +43,9 @@ import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolutio
 import com.graphhopper.jsprit.core.problem.solution.route.activity.TourActivity;
 import com.graphhopper.jsprit.core.problem.vehicle.Vehicle;
 import com.graphhopper.jsprit.core.util.Solutions;
-import com.graphhopper.jsprit.io.algorithm.AlgorithmConfig;
-import com.graphhopper.jsprit.io.algorithm.AlgorithmConfigXmlReader;
-import com.graphhopper.jsprit.io.algorithm.VehicleRoutingAlgorithms;
+// import com.graphhopper.jsprit.io.algorithm.AlgorithmConfig;
+// import com.graphhopper.jsprit.io.algorithm.AlgorithmConfigXmlReader;
+// import com.graphhopper.jsprit.io.algorithm.VehicleRoutingAlgorithms;
 
 import hagrid.utils.routing.DepartureTimeReScheduler;
 import hagrid.utils.routing.UpdateDepartureTimeAndPracticalTimeWindows;
@@ -81,10 +81,10 @@ public final class CarrierVehicleReRouter {
 
     private String pathAlgo;
 
-    private static final double MAXROUTEDURATIONHOUR = 7.5;
+    private static final double MAXROUTEDURATIONHOUR = 7.0;
     private static final int MAXROUTEDURATION = (int) MAXROUTEDURATIONHOUR * 3600;
 
-    private static final int STARTOPTIMIZATION = 0;
+    private static final int STARTOPTIMIZATION = 25;
     private static final int STOPOPTIMIZATION = 100;
 
     private static final int MAXREPLANNINGSIZE = 16;
@@ -99,9 +99,11 @@ public final class CarrierVehicleReRouter {
 
     private final Network bikeNetwork;
 
+    private int jspritIterations;
+
     public CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
             TravelTime travelTimes,
-            Boolean isUsingZones, Map<String, VRPTransportCosts> byModeVRPTransportCosts) {
+            Boolean isUsingZones, Map<String, VRPTransportCosts> byModeVRPTransportCosts, int jspritIterations) {
         super();
         this.carNetwork = carNetwork;
         this.bikeNetwork = bikeNetwork;
@@ -109,6 +111,7 @@ public final class CarrierVehicleReRouter {
         this.travelTimes = travelTimes;
         this.isUsingZones = isUsingZones;
         this.byModeVRPTransportCosts = byModeVRPTransportCosts;
+        this.jspritIterations = jspritIterations;
 
         this.activityCosts = createVehicleRoutingActivityCosts();
 
@@ -257,24 +260,24 @@ public final class CarrierVehicleReRouter {
                 constraintManager.addSkillsConstraint();
                 constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
-                double radialShare = 0.3; // standard radial share is 0.3
-                double randomShare = 0.5; // standard random share is 0.5
+                // double radialShare = 0.6; // standard radial share is 0.3
+                // double randomShare = 0.3; // standard random share is 0.5
 
-                if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
-                    radialShare = 0.15;
-                    randomShare = 0.25;
-                }
+                // if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
+                //     radialShare = 0.15;
+                //     randomShare = 0.25;
+                // }
 
-                int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
-                int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
+                // int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
+                // int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
                 VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
                         .setStateAndConstraintManager(stateManager, constraintManager)
                         // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
-                        .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
-                        .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
-                        .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
-                        .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
+                        // .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
+                        // .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
+                        // .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
+                        // .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
                         .buildAlgorithm();
 
                 AtomicInteger iterationCounter = new AtomicInteger(0);
@@ -366,33 +369,36 @@ public final class CarrierVehicleReRouter {
                     }
                 }
 
+
                 List<CarrierPlan> tempList = plansForOptimization;
-                AtomicInteger progress = new AtomicInteger();
+                int totalCarriers = carrierActivityCounterMap != null ? carrierActivityCounterMap.size() : tempList.size();
+                AtomicInteger globalProgress = new AtomicInteger(0);
 
                 ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
                 List<CompletableFuture<Void>> futures = tempList.stream()
                         .map(carrierPlan -> CompletableFuture.runAsync(() -> {
+                            int currentNumber = globalProgress.incrementAndGet();
                             Carrier carrier = carrierPlan.getCarrier();
                             int serviceCount = carrier.getServices().size();
 
-                            log.info("ROUTING CARRIER {} OUT OF {} TOTAL CARRIERS", progress.incrementAndGet(),
-                                    tempList.size());
+                            log.info("[Routing {} / {}] START: Carrier {} ({} services)", currentNumber, tempList.size(), carrier.getId(), serviceCount);
 
                             long start = System.currentTimeMillis();
 
+                            int noImprovementThreshold;
                             if (serviceCount > 250) {
-                                // test if it works with 40 then remove this if statement
-                                createAndSolveRoutingProblem(carrierPlan, 50, 7);
+                                noImprovementThreshold = jspritIterations / 4;
                             } else {
-                                createAndSolveRoutingProblem(carrierPlan, 50, 10);
+                                noImprovementThreshold = jspritIterations / 2;
                             }
+
+                            createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
 
                             long algoRunTime = (System.currentTimeMillis() - start) / 1000;
 
-                            log.info(
-                                    "routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
-                                    carrier.getId(), algoRunTime, serviceCount);
+                            log.info("[Routing {} / {}] DONE: Carrier {} | {} services | {}s (Tour planning + routing)",
+                                    currentNumber, tempList.size(), carrier.getId(), serviceCount, algoRunTime);
 
                             carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);
                             CarriersUtils.setJspritComputationTime(carrier, algoRunTime);

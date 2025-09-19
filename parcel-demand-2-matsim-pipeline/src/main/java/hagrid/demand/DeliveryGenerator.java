@@ -5,7 +5,7 @@ import com.google.inject.Singleton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.geotools.api.feature.simple.SimpleFeature;
-
+import org.jline.utils.Log;
 import org.locationtech.jts.geom.MultiPoint;
 import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
@@ -43,42 +43,47 @@ public class DeliveryGenerator implements Runnable {
         private WeightGenerator parcelWeightGenerator = new WeightGenerator();
 
         @Override
-        public void run() {
-                try {
-                        LOGGER.info("Generating parcels from sorted carrier demand...");
-                        Map<String, List<SimpleFeature>> carrierDemand = Optional.ofNullable(
-                                        (Map<String, List<SimpleFeature>>) scenario.getScenarioElement("carrierDemand"))
-                                        .orElseThrow(() -> new IllegalStateException(
-                                                        "Carrier demand data is missing in the scenario."));
+                public void run() {
+                        try {
+                                // Set deterministic random seed based on runId for full reproducibility
+                                String runId = hagridConfig.getRunId();
+                                long seed = (runId != null) ? runId.hashCode() : 42L;
+                                WeightGenerator.setGlobalRandomSeed(seed); // Also seed the weight generator
 
-                        Map<Id<Hub>, Hub> parcelLockerList = Optional
-                                        .ofNullable((Map<Id<Hub>, Hub>) scenario.getScenarioElement("parcelLockerList"))
-                                        .orElseThrow(() -> new IllegalStateException(
-                                                        "Parcel locker list data is missing in the scenario."));
+                                LOGGER.info("Generating parcels from sorted carrier demand...");
+                                Map<String, List<SimpleFeature>> carrierDemand = Optional.ofNullable(
+                                                (Map<String, List<SimpleFeature>>) scenario.getScenarioElement("carrierDemand"))
+                                                .orElseThrow(() -> new IllegalStateException(
+                                                                "Carrier demand data is missing in the scenario."));
 
-                        long totalParcels = calculateTotalParcels(carrierDemand);
-                        LOGGER.info("Total Parcel Stops from carrier demand: {}", totalParcels);
+                                Map<Id<Hub>, Hub> parcelLockerList = Optional
+                                                .ofNullable((Map<Id<Hub>, Hub>) scenario.getScenarioElement("parcelLockerList"))
+                                                .orElseThrow(() -> new IllegalStateException(
+                                                                "Parcel locker list data is missing in the scenario."));
 
-                        Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
+                                long totalParcels = calculateTotalParcels(carrierDemand);
+                                LOGGER.info("Total Parcel Stops from carrier demand: {}", totalParcels);
 
-                        // Add parcel lockers to deliveries
-                        addParcelLockerServices(deliveries, parcelLockerList);
+                                Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
 
-                        // Log parcel statistics
-                        ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
-                                                                                                     // detailed
-                        // log
-                        logger.logStatistics(deliveries);
+                                // Add parcel lockers to deliveries
+                                addParcelLockerServices(deliveries, parcelLockerList);
 
-                        // Store parcels in scenario
-                        scenario.addScenarioElement("deliveries", deliveries);
+                                // Log parcel statistics
+                                ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
+                                                                                                                                                                                         // detailed
+                                // log
+                                logger.logStatistics(deliveries);
 
-                        LOGGER.info("Parcel generation completed.");
+                                // Store parcels in scenario
+                                scenario.addScenarioElement("deliveries", deliveries);
 
-                } catch (Exception e) {
-                        LOGGER.error("Error generating parcels", e);
+                                LOGGER.info("Parcel generation completed.");
+
+                        } catch (Exception e) {
+                                LOGGER.error("Error generating parcels", e);
+                        }
                 }
-        }
 
         /**
          * Calculates the total number of parcels from the carrier demand.
@@ -117,6 +122,8 @@ public class DeliveryGenerator implements Runnable {
                 // Check the total parcels after conversion
                 long totalParcelsAfter = getTotalParcelsFromParcelObjects(carrierDemandWithDeliveries);
                 long expectedTotalParcels = calculateExpectedParcelsFromFeatures(carrierDemand);
+                LOGGER.info("Total Parcel Stops after conversion: {} | Expected: {} | Difference: {}",
+                                totalParcelsAfter, expectedTotalParcels, (expectedTotalParcels - totalParcelsAfter));
 
                 if (expectedTotalParcels != totalParcelsAfter) {
                         long diff = totalParcelsAfter - expectedTotalParcels;
@@ -158,6 +165,13 @@ public class DeliveryGenerator implements Runnable {
                                 .sum();
         }
 
+        // Helper to build provider-specific attribute names with DBF truncation to 10
+        // chars
+        private static String truncatedAttrName(String providerLowercase, String suffix) {
+                String name = providerLowercase + "_" + suffix;
+                return name.length() > 10 ? name.substring(0, 10) : name;
+        }
+
         /**
          * /**
          * Calculates the expected total number of parcels from grouped carrier demand
@@ -177,16 +191,24 @@ public class DeliveryGenerator implements Runnable {
                                 .mapToLong(entry -> {
                                         String key = entry.getKey(); // e.g. "dhl_30159"
                                         String[] parts = key.split("_");
-                                        String carrierAbbr = parts[0].toLowerCase(); // extract "dhl"
+                                        if (parts.length < 2) {
+                                                throw new IllegalArgumentException(
+                                                                "Invalid carrier key format: " + key);
+                                        }
+
+                                        String provider = parts[0].toLowerCase();
+
+                                        // Build attribute names with truncation identical to
+                                        // convertDemandFromShapeToParcels
+                                        final String tagAttr = truncatedAttrName(provider, "tag");
+                                        final String typeAttr = truncatedAttrName(provider, "type");
 
                                         return entry.getValue().stream()
                                                         .mapToLong(feature -> {
-                                                                long total = getLongAttribute(feature,
-                                                                                carrierAbbr + "_tag");
-                                                                long b2b = getLongAttribute(feature,
-                                                                                carrierAbbr + "_type");
-                                                                long b2c = Math.max(0L, total - b2b);
-                                                                return b2b + b2c;
+                                                                long b2c = getLongAttribute(feature, tagAttr);
+                                                                long b2b = getLongAttribute(feature, typeAttr);
+                                                                return b2b + b2c; // equals total if inputs are
+                                                                                  // consistent
                                                         })
                                                         .sum();
                                 })
@@ -236,12 +258,10 @@ public class DeliveryGenerator implements Runnable {
                                                                                 if (typeAttr.length() > 10)
                                                                                         typeAttr = typeAttr.substring(0,
                                                                                                         10);
-
-                                                                                long total = getLongAttribute(feature,
+                                                                                long b2c = getLongAttribute(feature,
                                                                                                 tagAttr);
                                                                                 long b2b = getLongAttribute(feature,
                                                                                                 typeAttr);
-                                                                                long b2c = Math.max(0, total - b2b);
 
                                                                                 // Create B2B delivery
                                                                                 if (b2b > 0) {
@@ -424,7 +444,9 @@ public class DeliveryGenerator implements Runnable {
         private String getDeliveryKey(Map<String, ArrayList<Delivery>> deliveries, Hub hub,
                         List<String> possibleDeliveryKeys) {
                 List<Delivery> possibleDeliveries = possibleDeliveryKeys.stream()
-                                .flatMap(key -> deliveries.get(key).stream())
+                                .map(deliveries::get)              // may be null
+                                .filter(Objects::nonNull)          // avoid NPE
+                                .flatMap(List::stream)             // flatten lists
                                 .collect(Collectors.toList());
 
                 if (possibleDeliveries.isEmpty()) {
@@ -444,37 +466,58 @@ public class DeliveryGenerator implements Runnable {
         }
 
         /**
-         * Finds possible delivery keys based on the provided postal code (PLZ) and
-         * whether
-         * it is a white label delivery or not. If no keys are found, it throws an
-         * exception.
+         * Returns delivery keys for the given postal code (PLZ).
          *
-         * @param deliveries   The map of all deliveries, where the key is the delivery
-         *                     identifier.
-         * @param plz          The postal code to search for in the delivery keys.
-         * @param isWhiteLabel Whether the search is for white label deliveries.
-         * @return A list of possible delivery keys that match the provided postal code
-         *         and prefix.
-         * @throws IllegalArgumentException If no matching delivery keys are found.
+         * Strategy:
+         * 1. Try PLZ-specific keys: <providerPrefix><plz> (e.g. dhl_30159).
+         * 2. If none exist: fallback to ALL keys of that provider (e.g. all dhl_*).
+         * 3. If provider has no deliveries at all: return empty list (caller will fail
+         * later).
+         *
+         * The nearest delivery among the returned keys is selected later in
+         * getDeliveryKey().
+         *
+         * @param deliveries   Map: key = provider_plz, value = list of deliveries
+         * @param plz          Postal code to match
+         * @param isWhiteLabel Whether white-label mode is active
+         * @return List of candidate keys (may be empty if provider has no deliveries)
+         *
+         *         TODO: White-label logic currently only switches prefix (wl_ vs dhl_).
+         *         Extend if WL pooling rules change.
          */
-        private static List<String> findPossibleDeliveryKeys(Map<String, ArrayList<Delivery>> deliveries, Integer plz,
+        private static List<String> findPossibleDeliveryKeys(Map<String, ArrayList<Delivery>> deliveries,
+                        Integer plz,
                         boolean isWhiteLabel) {
-                // Determine the prefix based on whether it is a white label delivery or not
-                String prefix = isWhiteLabel ? "wl_" + plz : "dhl_" + plz;
+                final String providerPrefix = isWhiteLabel ? "wl_" : "dhl_";
+                final String plzPrefix = providerPrefix + plz;
 
-                // Filter the delivery keys that start with the determined prefix
-                List<String> possibleKeys = deliveries.keySet().stream()
-                                .filter(key -> key.startsWith(prefix))
+                // 1. Collect PLZ-specific keys
+                List<String> plzKeys = deliveries.keySet().stream()
+                                .filter(k -> k.startsWith(plzPrefix))
                                 .collect(Collectors.toList());
-
-                // If no keys are found, throw an exception
-                if (possibleKeys.isEmpty()) {
-                        throw new IllegalArgumentException(
-                                        "No delivery keys found for PLZ: " + plz + " with prefix: " + prefix);
+                if (!plzKeys.isEmpty()) {
+                        return plzKeys;
                 }
 
-                // Return the list of possible keys
-                return possibleKeys;
+                // 2. Fallback: all keys of this provider
+                List<String> providerKeys = deliveries.keySet().stream()
+                                .filter(k -> k.startsWith(providerPrefix))
+                                .collect(Collectors.toList());
+
+                if (providerKeys.isEmpty()) {
+                        LOGGER.warn("No deliveries found for provider prefix '{}' (PLZ {}).",
+                                        providerPrefix, plz);
+                        LOGGER.info("Key does not exist in deliveries map: {}",  deliveries.keySet().toString());
+
+                        // Throw instead of returning empty list
+                        throw new IllegalStateException(
+                                        "No deliveries found for provider prefix '" + providerPrefix + "' (PLZ " + plz + ").");
+                }
+
+                LOGGER.warn("No PLZ-specific keys for {}. Fallback using {} provider keys.",
+                                plzPrefix, providerKeys.size());
+
+                return providerKeys;
         }
 
 }

@@ -10,7 +10,15 @@ import java.util.Random;
  */
 public class WeightGenerator {
 
-    private static final Random RANDOM = new Random();
+    private static Random RANDOM = new Random();
+
+    /**
+     * Set the global random seed for deterministic behavior.
+     * @param seed the seed to use
+     */
+    public static void setGlobalRandomSeed(long seed) {
+        RANDOM = new Random(seed);
+    }
 
     // Default weight classes and probabilities for regular parcels
     private static final Map<String, Double> defaultWeightClasses = new HashMap<>();

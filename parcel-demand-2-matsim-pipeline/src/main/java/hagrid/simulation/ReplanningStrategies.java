@@ -50,6 +50,7 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 
 	private final CarrierVehicleTypes types;
 	private final Boolean isUsingZones;
+	private final int jspritIterations;
 
 	// Shared path calculator, initialized once per iteration
 	private LeastCostPathCalculator sharedPathCalculator;
@@ -62,13 +63,14 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 	 *
 	 * @param types        The carrier vehicle types used in the simulation.
 	 * @param isUsingZones Indicates if zone-based routing is used.
-	 * @param maxIterations 
+	 * @param maxIterationsMATSim 
 	 */
-	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones, int maxIterations) {
+	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations) {
 		this.types = types;
 		this.isUsingZones = isUsingZones;
-		this.stopReplanningJsprit = (int) Math.round(maxIterations - maxIterations * 0.35);
-		this.stopReplanning = (int) Math.round(maxIterations - maxIterations * 0.2);
+		this.stopReplanningJsprit = (int) Math.round(maxIterationsMATSim - maxIterationsMATSim * 0.35);
+		this.stopReplanning = (int) Math.round(maxIterationsMATSim - maxIterationsMATSim * 0.2);
+		this.jspritIterations = jspritIterations;
 	}
 
 	@Override
@@ -180,7 +182,7 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 
 		// Create the strategy using the shared path calculator
 		GenericPlanStrategy<CarrierPlan, Carrier> strategy3 = new CarrierVehicleReRouter(carNetwork, bikeNetwork, types, myTravelTime,
-				isUsingZones, vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime())
+				isUsingZones, vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime(), jspritIterations)
 				.createStrategy();
 
 		carrierStrategyManager.addStrategy(strategy3, null, 1.0);

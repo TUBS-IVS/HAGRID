@@ -149,7 +149,7 @@ public class CarrierServiceMerger implements Runnable {
 
         // Validate post-merge consistency (e.g. no lost parcels or mismatched capacity)
         // and print comparison summary
-        CarrierMergeValidator.validatePostMerge(carriers, preStats, hagridConfig.getRunId());
+        CarrierMergeValidator.validatePostMerge(carriers, preStats, hagridConfig);
 
         // Final log statement for completed merge step
         LOGGER.info("Service merging completed.");
@@ -257,6 +257,18 @@ public class CarrierServiceMerger implements Runnable {
 
                 double finalDuration = totalDuration + timeBonus;
 
+                // Define parcel type based on b2b and b2c counts
+                ParcelType mergedType;
+                if (b2b > 0 && b2c > 0) {
+                    mergedType = ParcelType.MIXED;
+                } else if (b2b > 0) {
+                    mergedType = ParcelType.B2B;
+                } else if (b2c > 0) {
+                    mergedType = ParcelType.B2C;
+                } else {
+                    throw new IllegalStateException("Merged service has no parcel type assigned (b2b=0, b2c=0)");
+                }
+
                 String newServiceId = String.format("service_%s_%s_%d",
                         "MIXED", carrier.getId().toString(), merged);
 
@@ -278,18 +290,6 @@ public class CarrierServiceMerger implements Runnable {
                 mergedService.getAttributes().putAttribute("b2c", b2c);
                 mergedService.getAttributes().putAttribute("serviceDuration", (int) totalDuration);
                 mergedService.getAttributes().putAttribute("travelDuration", (int) timeBonus);
-
-                // Define parcel type based on b2b and b2c counts
-                ParcelType mergedType;
-                if (b2b > 0 && b2c > 0) {
-                    mergedType = ParcelType.Mixed;
-                } else if (b2b > 0) {
-                    mergedType = ParcelType.B2B;
-                } else if (b2c > 0) {
-                    mergedType = ParcelType.B2C;
-                } else {
-                    throw new IllegalStateException("Merged service has no parcel type assigned (b2b=0, b2c=0)");
-                }
 
                 mergedService.getAttributes().putAttribute("type", mergedType);
 
