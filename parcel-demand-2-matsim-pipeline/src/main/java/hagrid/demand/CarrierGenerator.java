@@ -12,6 +12,7 @@ import hagrid.utils.general.HAGRIDUtils;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.geotools.api.feature.simple.SimpleFeature;
 import org.jxmapviewer.viewer.util.GeoUtil;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -34,10 +35,12 @@ import java.util.Optional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
 
@@ -49,7 +52,17 @@ import java.util.ConcurrentModificationException;
 public class CarrierGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(CarrierGenerator.class);
-        private final static Random random = new Random();
+        private static Random random = new Random();
+
+        /**
+         * Set the global random seed for deterministic behavior (should be called
+         * before any random logic).
+         * 
+         * @param seed the seed to use (e.g. runId.hashCode())
+         */
+        public static void setGlobalRandomSeed(long seed) {
+                random = new Random(seed);
+        }
 
         @Inject
         private Scenario scenario;
@@ -67,6 +80,12 @@ public class CarrierGenerator implements Runnable {
         @Override
         public void run() {
                 try {
+                        // Set deterministic random seed based on runId for full reproducibility
+                        String runId = hagridConfig.getRunId();
+                        long seed = (runId != null) ? runId.hashCode() : 42L;
+                        setGlobalRandomSeed(seed);
+                        CarrierVehicleFactory.setGlobalRandomSeed(seed);
+
                         LOGGER.info("Generating carriers from sorted deliveries and parcels...");
 
                         // Get scenario elements
@@ -86,7 +105,7 @@ public class CarrierGenerator implements Runnable {
                         // Process the deliveries to create carriers
                         // Max Service Size Puffer: 50 -> demand border - puffer to add services to
                         // close carriers
-                        int maxServiceSizePuffer = 50;
+                        int maxServiceSizePuffer = 150;
                         final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
                                         vehicleTypes, hubList, hagridConfig.getMinLMDVehCap(),
                                         (hagridConfig.getDemandBorder() - maxServiceSizePuffer));
@@ -99,8 +118,15 @@ public class CarrierGenerator implements Runnable {
                         HAGRIDUtils.checkAndLogCarrierAttributes(carriers);
 
                         LOGGER.info("Carrier generation completed.");
+                        
 
-                        String outputPath = "phd/output/" + hagridConfig.getRunId() + "_delivery_carriers.xml";
+                        String baseDir = System.getProperty("user.dir");
+                        String outputDir = baseDir + java.io.File.separator + "parcel-demand-2-matsim-pipeline" + java.io.File.separator + "output" + java.io.File.separator + hagridConfig.getRunId() + java.io.File.separator;
+                        HAGRIDUtils.createDirectoryIfNotExists(outputDir);
+
+                        String outputPath = outputDir + hagridConfig.getRunId() + "_delivery_carriers.xml";
+                        LOGGER.info("Writing unrouted carriers to output directory {}", outputPath);
+
                         new CarrierPlanWriter(carriers).write(outputPath);
                         // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" +
                         // hagridConfig.getRunId() + "_types.xml");
@@ -149,8 +175,8 @@ public class CarrierGenerator implements Runnable {
                         final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
                         int minLMDVehCap, int maxServiceSize) {
                 final Carriers carriers = new Carriers();
-                Map<String, Double> adjustedDeliveryRates= adjustDeliveryRatesConsideringB2B(initializeDeliveryRate(), deliveries);
-
+                Map<String, Double> adjustedDeliveryRates = adjustDeliveryRatesConsideringB2B(initializeDeliveryRate(),
+                                deliveries);
 
                 deliveries.entrySet().stream().map(entry -> {
                         final String carrierID = entry.getKey();
@@ -162,7 +188,8 @@ public class CarrierGenerator implements Runnable {
                         setupCarrierAttributes(carrier, carrierID);
 
                         try {
-                                addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork, adjustedDeliveryRates);
+                                addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork,
+                                                adjustedDeliveryRates);
                                 addCarrierVehiclesToCarrier(carrier, hubList);
                         } catch (ServiceCreationException e) {
                                 LOGGER.error(carrierID + ": Error creating carrier services", e);
@@ -220,53 +247,88 @@ public class CarrierGenerator implements Runnable {
                         Map<String, Double> initialRates,
                         Map<String, ArrayList<Delivery>> deliveries) {
 
+                // Log initial (target overall) delivery rates per provider
+                try {
+                        String initialRatesStr = initialRates.entrySet().stream()
+                                        .sorted(Map.Entry.comparingByKey())
+                                        .map(e -> e.getKey() + "=" + String.format("%.2f%%", e.getValue()))
+                                        .collect(Collectors.joining(", "));
+                        LOGGER.info("[DeliveryRates] Initial target (overall) per provider: {}", initialRatesStr);
+                } catch (Exception ignore) {
+                        // logging best-effort only
+                }
+
                 // Store total parcel volume per provider
                 Map<String, Long> totalParcelsPerProvider = new HashMap<>();
 
                 // Store B2B parcel volume per provider
                 Map<String, Long> b2bParcelsPerProvider = new HashMap<>();
 
-                // Iterate through all delivery entries grouped by carrier
                 deliveries.forEach((carrierId, deliveryList) -> {
-                        // Extract the provider name from the carrier ID (e.g., "dhl_30926" → "dhl")
                         String provider = carrierId.split("_")[0].toLowerCase();
-
                         for (Delivery d : deliveryList) {
                                 long amount = d.getAmount();
                                 totalParcelsPerProvider.merge(provider, amount, Long::sum);
-
-                                // Count only B2B parcels
                                 if (d.getParcelType() == Delivery.ParcelType.B2B) {
                                         b2bParcelsPerProvider.merge(provider, amount, Long::sum);
                                 }
                         }
                 });
 
-                // Final result map containing adjusted B2C rates
                 Map<String, Double> adjustedRates = new HashMap<>();
 
-                // Iterate over the original rates to compute adjusted values
                 for (Map.Entry<String, Double> entry : initialRates.entrySet()) {
-                        String provider = entry.getKey();
-                        double targetRate = entry.getValue() / 100.0; // Convert from percent to ratio
+                        String provider = entry.getKey(); // ensure variable kept (used in conditions & trace)
+                        double targetRate = entry.getValue() / 100.0; // percent -> ratio
+
+                        // NEW: For predominantly B2B carriers (UPS, FedEx) keep original target (no B2C
+                        // back-calculation)
+                        if ("ups".equals(provider) || "fedex".equals(provider)) {
+                                adjustedRates.put(provider, entry.getValue());
+                                if (LOGGER.isTraceEnabled())
+                                        LOGGER.trace("[DeliveryRates] Provider {} kept at target {}% (B2B heavy)",
+                                                        provider, entry.getValue());
+                                continue;
+                        }
 
                         long total = totalParcelsPerProvider.getOrDefault(provider, 0L);
                         long b2b = b2bParcelsPerProvider.getOrDefault(provider, 0L);
                         long b2c = total - b2b;
 
                         double adjustedB2CRate;
-
                         if (b2c == 0) {
-                                // No B2C parcels present → fallback to 100%
-                                adjustedB2CRate = 1.0;
+                                // No B2C parcels; leave at original target (or 100?). Keep original target for
+                                // consistency
+                                adjustedB2CRate = targetRate * 100.0; // convert back to percent
                         } else {
-                                // Recompute B2C rate to match the overall target
-                                adjustedB2CRate = (targetRate * total - b2b) / (double) b2c;
+                                adjustedB2CRate = (targetRate * total - b2b) / (double) b2c; // ratio
+                                adjustedB2CRate = Math.min(1.0, Math.max(0.0, adjustedB2CRate));
+                                adjustedB2CRate *= 100.0; // to percent
                         }
+                        adjustedRates.put(provider, adjustedB2CRate);
+                }
 
-                        // Clamp value to a valid percentage range [0%, 100%]
-                        adjustedB2CRate = Math.min(1.0, Math.max(0.0, adjustedB2CRate));
-                        adjustedRates.put(provider, adjustedB2CRate * 100); // Return as percentage again
+                // Log adjusted B2C delivery rates per provider
+                try {
+                        String adjustedRatesStr = adjustedRates.entrySet().stream()
+                                        .sorted(Map.Entry.comparingByKey())
+                                        .map(e -> e.getKey() + "=" + String.format("%.2f%%", e.getValue()))
+                                        .collect(Collectors.joining(", "));
+                        LOGGER.info("[DeliveryRates] Adjusted B2C per provider: {}", adjustedRatesStr);
+
+                        if (LOGGER.isDebugEnabled()) {
+                                String volumesStr = totalParcelsPerProvider.keySet().stream()
+                                                .sorted()
+                                                .map(p -> String.format("%s(total=%d, b2b=%d, b2c=%d)", p,
+                                                                totalParcelsPerProvider.getOrDefault(p, 0L),
+                                                                b2bParcelsPerProvider.getOrDefault(p, 0L),
+                                                                totalParcelsPerProvider.getOrDefault(p, 0L)
+                                                                                - b2bParcelsPerProvider.getOrDefault(p,
+                                                                                                0L)))
+                                                .collect(Collectors.joining(", "));
+                                LOGGER.debug("[DeliveryRates] Volumes used for adjustment: {}", volumesStr);
+                        }
+                } catch (Exception ignore) {
                 }
 
                 return adjustedRates;
@@ -348,8 +410,9 @@ public class CarrierGenerator implements Runnable {
                                 .collect(Collectors.toList());
 
                 if (!insufficientServiceCarrierIds.isEmpty()) {
-                        throw new RuntimeException("There are carriers with fewer than 100 services. IDs: "
-                                        + insufficientServiceCarrierIds.toString());
+                        throw new RuntimeException("There are carriers with parcel demand below minLMDVehCap ("
+                                        + minLMDVehCap + "). IDs: "
+                                        + insufficientServiceCarrierIds);
                 }
 
                 int remainingSize = carriers.getCarriers().size();
@@ -387,43 +450,231 @@ public class CarrierGenerator implements Runnable {
                 for (Map.Entry<String, List<Carrier>> entry : carriersByProvider.entrySet()) {
                         String provider = entry.getKey();
                         List<Carrier> carriers = entry.getValue();
+                        final int minCap = hagridConfig.getMinLMDVehCap();
 
-                        // Identify small and large carriers for this provider
-                        List<Carrier> small = carriers.stream()
+                        // --- Legacy Initial Pass (exakte alte Logik für small->large Auswahl) ---
+                        List<Carrier> initialSmall = carriers.stream()
                                         .filter(c -> insufficientCarrierIds.contains(c.getId()))
                                         .collect(Collectors.toList());
-
-                        List<Carrier> large = carriers.stream()
+                        List<Carrier> initialLarge = carriers.stream()
                                         .filter(c -> !insufficientCarrierIds.contains(c.getId()))
-                                        .filter(c -> c.getServices().size() <= maxServiceSize)
+                                        .filter(c -> c.getServices().size() <= (maxServiceSize)) // Pufffer -> has
+                                                                                                 // Performance Reasons
                                         .collect(Collectors.toList());
 
-                        for (Carrier smallCarrier : small) {
+                        for (Carrier smallCarrier : new ArrayList<>(initialSmall)) {
+                                if (carriersToRemove.contains(smallCarrier.getId()))
+                                        continue;
                                 Coord smallCoord = GeoUtils.getMedianCoordOfStoredServiceCoords(smallCarrier);
-                                // Find nearest large carrier
-                                Carrier nearestLarge = large.stream()
-                                                .min(Comparator.comparingDouble(
-                                                                big -> CoordUtils.calcEuclideanDistance(smallCoord,
-                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                big))))
+                                Carrier nearestLarge = initialLarge.stream()
+                                                .min(Comparator.comparingDouble(big -> CoordUtils.calcEuclideanDistance(
+                                                                smallCoord,
+                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(big))))
                                                 .orElse(null);
 
                                 if (nearestLarge != null) {
-                                        smallCarrier.getServices().values().forEach(
-                                                        service -> CarriersUtils.addService(nearestLarge, service));
+                                        smallCarrier.getServices().values()
+                                                        .forEach(svc -> CarriersUtils.addService(nearestLarge, svc));
                                         carriersToRemove.add(smallCarrier.getId());
-
-                                        LOGGER.info("Merged carrier '{}' into '{}'", smallCarrier.getId(),
-                                                        nearestLarge.getId());
+                                        LOGGER.info("[Small->Large Merge] Merged carrier '{}' into '{}'",
+                                                        smallCarrier.getId(), nearestLarge.getId());
                                 } else {
-                                        LOGGER.warn("No merge target found for '{}'", smallCarrier.getId());
+                                        // Legacy Fallback (klein->klein) mit Scoring
+                                        final double DIST_WEIGHT = 1.0;
+                                        final double FILL_WEIGHT = 0;
+                                        Carrier fallbackTarget = initialSmall.stream()
+                                                        .filter(c -> !c.getId().equals(smallCarrier.getId()))
+                                                        .filter(c -> !carriersToRemove.contains(c.getId()))
+                                                        .filter(c -> (c.getServices().size() + smallCarrier
+                                                                        .getServices().size()) <= maxServiceSize)
+                                                        .min(Comparator.comparingDouble(other -> {
+                                                                double dist = CoordUtils.calcEuclideanDistance(
+                                                                                smallCoord,
+                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                other));
+                                                                double projectedFillRatio = (other.getServices().size()
+                                                                                + smallCarrier.getServices().size())
+                                                                                / (double) maxServiceSize;
+                                                                return DIST_WEIGHT * dist + FILL_WEIGHT
+                                                                                * projectedFillRatio * dist;
+                                                        }))
+                                                        .orElse(null);
+                                        if (fallbackTarget != null) {
+                                                int before = fallbackTarget.getServices().size();
+                                                smallCarrier.getServices().values().forEach(
+                                                                s -> CarriersUtils.addService(fallbackTarget, s));
+                                                int after = fallbackTarget.getServices().size();
+                                                carriersToRemove.add(smallCarrier.getId());
+                                                double dist = CoordUtils.calcEuclideanDistance(smallCoord, GeoUtils
+                                                                .getMedianCoordOfStoredServiceCoords(fallbackTarget));
+                                                double fillPct = (after / (double) maxServiceSize) * 100.0;
+                                                LOGGER.info("[Small->Small Merge] '{}' -> '{}' | dist={}.1f added={} newSize={} fill={}.1f%% (<= {})",
+                                                                smallCarrier.getId(),
+                                                                fallbackTarget.getId(),
+                                                                dist,
+                                                                (after - before),
+                                                                after,
+                                                                fillPct,
+                                                                maxServiceSize);
+                                        } else {
+                                                String blockedInfo = initialSmall.stream()
+                                                                .filter(c -> !c.getId().equals(smallCarrier.getId()))
+                                                                .filter(c -> !carriersToRemove.contains(c.getId()))
+                                                                .filter(c -> (c.getServices().size() + smallCarrier
+                                                                                .getServices().size()) > maxServiceSize)
+                                                                .sorted(Comparator.comparingDouble(c -> CoordUtils
+                                                                                .calcEuclideanDistance(smallCoord,
+                                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                                c))))
+                                                                .limit(3)
+                                                                .map(c -> {
+                                                                        int combined = c.getServices().size()
+                                                                                        + smallCarrier.getServices()
+                                                                                                        .size();
+                                                                        return c.getId() + "(would=" + combined + ">"
+                                                                                        + maxServiceSize + ")";
+                                                                })
+                                                                .collect(Collectors.joining(", "));
+                                                LOGGER.warn("No merge target found for '{}' (capacity). Closest blocked: {}",
+                                                                smallCarrier.getId(),
+                                                                blockedInfo.isEmpty() ? "-" : blockedInfo);
+                                        }
                                 }
-                                large = carriers.stream()
+                                // Update large list wie früher (basierend auf ursprünglicher
+                                // insufficientCarrierIds)
+                                initialLarge = carriers.stream()
                                                 .filter(c -> !insufficientCarrierIds.contains(c.getId()))
                                                 .filter(c -> c.getServices().size() <= maxServiceSize)
                                                 .collect(Collectors.toList());
-                                // Update the list of large carriers after each merge
                         }
+
+                        // --- Iterativer Zusatz-Pass nur für übrig gebliebene unter-Schwelle Carrier
+                        // ---
+                        boolean progress;
+                        int iteration = 0;
+                        do {
+                                iteration++;
+                                progress = false;
+                                List<Carrier> active = carriers.stream()
+                                                .filter(c -> !carriersToRemove.contains(c.getId()))
+                                                .collect(Collectors.toList());
+                                List<Carrier> smallDyn = active.stream()
+                                                .filter(c -> c.getServices().values().stream()
+                                                                .mapToLong(CarrierService::getCapacityDemand)
+                                                                .sum() < minCap)
+                                                .collect(Collectors.toList());
+                                if (smallDyn.isEmpty())
+                                        break;
+                                List<Carrier> largeDyn = active.stream()
+                                                .filter(c -> !smallDyn.contains(c))
+                                                .filter(c -> c.getServices().size() <= maxServiceSize)
+                                                .collect(Collectors.toList());
+                                for (Carrier smallCarrier : new ArrayList<>(smallDyn)) {
+                                        if (carriersToRemove.contains(smallCarrier.getId()))
+                                                continue;
+                                        Coord smallCoord = GeoUtils.getMedianCoordOfStoredServiceCoords(smallCarrier);
+                                        Carrier nearestLarge = largeDyn.stream()
+                                                        .min(Comparator.comparingDouble(
+                                                                        big -> CoordUtils.calcEuclideanDistance(
+                                                                                        smallCoord,
+                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                        big))))
+                                                        .orElse(null);
+                                        if (nearestLarge != null) {
+                                                smallCarrier.getServices().values().forEach(
+                                                                svc -> CarriersUtils.addService(nearestLarge, svc));
+                                                carriersToRemove.add(smallCarrier.getId());
+                                                LOGGER.info("[Small->Large Merge][it={}] '{}' -> '{}'", iteration,
+                                                                smallCarrier.getId(), nearestLarge.getId());
+                                                progress = true;
+                                        } else {
+                                                final double DIST_WEIGHT = 0.75;
+                                                final double FILL_WEIGHT = 0.25;
+                                                Carrier fallbackTarget = smallDyn.stream()
+                                                                .filter(c -> !c.getId().equals(smallCarrier.getId()))
+                                                                .filter(c -> !carriersToRemove.contains(c.getId()))
+                                                                .filter(c -> (c.getServices().size() + smallCarrier
+                                                                                .getServices()
+                                                                                .size()) <= maxServiceSize)
+                                                                .min(Comparator.comparingDouble(other -> {
+                                                                        double dist = CoordUtils.calcEuclideanDistance(
+                                                                                        smallCoord,
+                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                        other));
+                                                                        double projectedFillRatio = (other.getServices()
+                                                                                        .size()
+                                                                                        + smallCarrier.getServices()
+                                                                                                        .size())
+                                                                                        / (double) maxServiceSize;
+                                                                        return DIST_WEIGHT * dist + FILL_WEIGHT
+                                                                                        * projectedFillRatio * dist;
+                                                                }))
+                                                                .orElse(null);
+                                                if (fallbackTarget != null) {
+                                                        int before = fallbackTarget.getServices().size();
+                                                        smallCarrier.getServices().values().forEach(s -> CarriersUtils
+                                                                        .addService(fallbackTarget, s));
+                                                        int after = fallbackTarget.getServices().size();
+                                                        carriersToRemove.add(smallCarrier.getId());
+                                                        double dist = CoordUtils.calcEuclideanDistance(smallCoord,
+                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                        fallbackTarget));
+                                                        double fillPct = (after / (double) maxServiceSize) * 100.0;
+                                                        LOGGER.info("[Small->Small Merge][it={}] '{}' -> '{}' | dist={}.1f added={} newSize={} fill={}.1f%% (<= {})",
+                                                                        iteration,
+                                                                        smallCarrier.getId(),
+                                                                        fallbackTarget.getId(),
+                                                                        dist,
+                                                                        (after - before),
+                                                                        after,
+                                                                        fillPct,
+                                                                        maxServiceSize);
+                                                        progress = true;
+                                                } else {
+                                                        String blockedInfo = smallDyn.stream()
+                                                                        .filter(c -> !c.getId()
+                                                                                        .equals(smallCarrier.getId()))
+                                                                        .filter(c -> !carriersToRemove
+                                                                                        .contains(c.getId()))
+                                                                        .filter(c -> (c.getServices().size()
+                                                                                        + smallCarrier.getServices()
+                                                                                                        .size()) > maxServiceSize)
+                                                                        .sorted(Comparator.comparingDouble(
+                                                                                        c -> CoordUtils.calcEuclideanDistance(
+                                                                                                        smallCoord,
+                                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
+                                                                                                                        c))))
+                                                                        .limit(3)
+                                                                        .map(c -> {
+                                                                                int combined = c.getServices().size()
+                                                                                                + smallCarrier.getServices()
+                                                                                                                .size();
+                                                                                return c.getId() + "(would=" + combined
+                                                                                                + ">" + maxServiceSize
+                                                                                                + ")";
+                                                                        })
+                                                                        .collect(Collectors.joining(", "));
+                                                        LOGGER.warn("[Merge-Stall][it={}] No merge target for '{}' (capacity). Closest blocked: {}",
+                                                                        iteration, smallCarrier.getId(),
+                                                                        blockedInfo.isEmpty() ? "-" : blockedInfo);
+                                                }
+                                        }
+                                }
+                                if (!progress) {
+                                        List<Carrier> stillSmall = carriers.stream()
+                                                        .filter(c -> !carriersToRemove.contains(c.getId()))
+                                                        .filter(c -> c.getServices().values().stream()
+                                                                        .mapToLong(CarrierService::getCapacityDemand)
+                                                                        .sum() < minCap)
+                                                        .collect(Collectors.toList());
+                                        if (!stillSmall.isEmpty()) {
+                                                LOGGER.warn("[Merge-Result] Stalled with {} under-threshold carriers: {}",
+                                                                stillSmall.size(),
+                                                                stillSmall.stream().map(c -> c.getId().toString())
+                                                                                .collect(Collectors.joining(",")));
+                                        }
+                                }
+                        } while (progress);
                 }
 
                 // Remove all merged carriers from map
@@ -629,6 +880,7 @@ public class CarrierGenerator implements Runnable {
          * @return The created CarrierService.
          * @throws ServiceCreationException if the service could not be created.
          */
+        @SuppressWarnings({ "deprecation" })
         private CarrierService addAndGetCarrierService(final Carrier carrier, final Id<Link> linkId, final double rate,
                         final int capacityDemand, final Delivery carrierDelivery,
                         final int serviceNumber, final List<Double> weights) throws ServiceCreationException {
@@ -737,9 +989,9 @@ public class CarrierGenerator implements Runnable {
                 carrier.getAttributes().putAttribute("missedParcels", newMissed);
 
                 // Get the current list of missed parcels and append the new missed deliveries
+                @SuppressWarnings("unchecked")
                 ArrayList<Id<CarrierService>> currentMissedList = (ArrayList<Id<CarrierService>>) carrier
-                                .getAttributes()
-                                .getAttribute("missedParcelsAsList");
+                                .getAttributes().getAttribute("missedParcelsAsList");
 
                 if (currentMissedList == null) {
                         currentMissedList = new ArrayList<>();
@@ -1183,6 +1435,7 @@ public class CarrierGenerator implements Runnable {
         private void validateMissedParcelDeliveries(Carriers carriers) throws ServiceCreationException {
                 for (Carrier carrier : carriers.getCarriers().values()) {
                         int expectedMissedDeliveries = (int) carrier.getAttributes().getAttribute("missedParcels");
+                        @SuppressWarnings("unchecked")
                         List<Id<CarrierService>> missedDeliveries = (List<Id<CarrierService>>) carrier.getAttributes()
                                         .getAttribute("missedParcelsAsList");
                         int missedSize = 0; // Initialize missedSize to 0

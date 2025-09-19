@@ -17,7 +17,7 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class JspritCarrierTask implements Runnable {
+public class JspritCarrierTask implements PrioritizedRunnable {
     private static final Logger LOGGER = LogManager.getLogger(JspritCarrierTask.class);
     private final Carrier carrier;
     private final VRPTransportCosts netBasedCosts;
@@ -44,9 +44,11 @@ public class JspritCarrierTask implements Runnable {
         this.network = network;
     }
 
-    public int getPriority() {
-        return carrier.getServices().size();
-    }
+    public int getPriority() { return carrier.getServices().size(); }
+
+    public int getServiceCount() { return carrier.getServices().size(); }
+
+    public String getCarrierId() { return carrier.getId().toString(); }
 
     @Override
     public void run() {
@@ -64,6 +66,7 @@ public class JspritCarrierTask implements Runnable {
 
         LOGGER.info("Routing plan for carrier {}", carrier.getId());
         NetworkRouter.routePlan(newPlan, netBasedCosts);
+        carrier.addPlan(newPlan);
         carrier.setSelectedPlan(newPlan);
         LOGGER.info("Routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
                 carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);

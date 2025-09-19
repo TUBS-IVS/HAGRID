@@ -38,6 +38,8 @@ import org.matsim.utils.objectattributes.attributable.Attributes;
 import org.matsim.utils.objectattributes.attributable.AttributesImpl;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -78,6 +80,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  */
 public class ZoneBasedTransportCosts implements VRPTransportCosts {
+
+	private static final Logger LOGGER = LogManager.getLogger(ZoneBasedTransportCosts.class);
 
 	private final Map<Id<Link>, Integer> zoneCache = new ConcurrentHashMap<>();
 	private final Map<String, Id<Link>> idCache = new ConcurrentHashMap<>();
@@ -573,12 +577,14 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	private static boolean isCacheInitialized = false; // Flag for cache initialization
 
 	// Synchronized method to initialize the shared cache
-	private synchronized void initializeSharedCache() {
-		if (!isCacheInitialized) {
-			// Add any pre-computation for cache if necessary
-			isCacheInitialized = true;
-		}
-	}
+	// private synchronized void initializeSharedCache() {
+	// 	if (!isCacheInitialized) {
+	// 		LOGGER.info("Initializing shared ZoneBasedTransportCosts cache (currently {} entries)...", sharedCostCache.size());
+	// 		// Add any pre-computation for cache if necessary (placeholder)
+	// 		isCacheInitialized = true;
+	// 		LOGGER.info("Shared ZoneBasedTransportCosts cache initialized.");
+	// 	}
+	// }
 
 	/**
 	 * caches leastCostPathCalculators according to
@@ -621,7 +627,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 		this.roadPricingCalc = builder.roadPricingCalculator;
 		this.timeSliceWidth = builder.timeSliceWidth;
 		this.defaultTypeId = builder.defaultTypeId;
-		initializeSharedCache();
+		// initializeSharedCache();
 
 		// Preload all zones into zoneCache (fast lookup during routing)
 		for (Link link : network.getLinks().values()) {
