@@ -40,23 +40,23 @@ public class HAGRID2MATSimPipelineRunner {
 
         // List of diffrent concepts to process
         List<String> concepts = List.of(
-                "batchHigh",
-                "batchMedium"
+                // "batchHigh",
+                // "batchMedium"
         // "batchModerate",
-        // "basecase"
+        "basecase"
         );
 
         // Servo flag for service merger
-        boolean applyServiceSimplifier = true;
+        boolean applyServiceSimplifier = false;
 
         // Datumsserie
         List<LocalDate> dates = List.of(
-                LocalDate.of(2025, 5, 12),
-                LocalDate.of(2025, 5, 13),
-                LocalDate.of(2025, 5, 14),
-                LocalDate.of(2025, 5, 15),
-                LocalDate.of(2025, 5, 16),
-                LocalDate.of(2025, 5, 17));
+                // LocalDate.of(2025, 5, 12),
+                LocalDate.of(2025, 5, 13));
+                // LocalDate.of(2025, 5, 14),
+                // LocalDate.of(2025, 5, 15),
+                // LocalDate.of(2025, 5, 16),
+                // LocalDate.of(2025, 5, 17));
 
         // Verschachtelte Iteration: jedes Konzept × jedes Datum
         for (String concept : concepts) {
@@ -111,6 +111,7 @@ public class HAGRID2MATSimPipelineRunner {
         HagridConfigGroup config = injector.getInstance(HagridConfigGroup.class);
         config.setConcept(runId.split("_")[0]);
         config.setSimulationDate(date);
+        config.setFilterRegionsAsString("Hannover");
         // Retain reflective config (still write for consistency)
         invokeIfExists(config, "setCarrierRoutingCacheEnabled", true);
         invokeIfExists(config, "setCarrierRoutingCacheDir", runCacheDir.toString());

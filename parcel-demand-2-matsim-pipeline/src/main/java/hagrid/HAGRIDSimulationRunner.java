@@ -131,10 +131,19 @@ public class HAGRIDSimulationRunner {
         }
 
         int maxIter = parsePositiveInt(map.getOrDefault("maxIter", String.valueOf(DEFAULT_MAX_ITER)), "maxIter");
-        int jspritIter = parsePositiveInt(map.getOrDefault("jspritIter", String.valueOf(DEFAULT_JSPRIT_ITER)), "jspritIter");
+    int jspritIter = parsePositiveInt(map.getOrDefault("jspritIter", String.valueOf(DEFAULT_JSPRIT_ITER)), "jspritIter");
 
-        LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={}", concept, date, maxIter, jspritIter);
-        return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter);
+    boolean zoneCaching = parseBoolean(map.getOrDefault("zoneCaching", "false"), "zoneCaching");
+    double zoneThreshold;
+    if (map.containsKey("zoneThreshold")) {
+        zoneThreshold = parseNonNegativeDouble(map.get("zoneThreshold"), "zoneThreshold");
+    } else {
+        zoneThreshold = zoneCaching ? 1500.0 : 0.0;
+    }
+
+    LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m",
+        concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold);
+    return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold);
     }
 
     /**
@@ -207,9 +216,15 @@ public class HAGRIDSimulationRunner {
         LOGGER.info("Step 4/5: Setup simulation modules...");
         Controler controler = new Controler(scenario);
         controler.addOverridingModule(new CarrierModule());
-        controler.addOverridingModule(
-                new HAGRIDSimulationModule(scenario, true, simConfig.getMaxIterations(), simConfig.getJspritIterations())
-        );
+    controler.addOverridingModule(
+        new HAGRIDSimulationModule(
+            scenario,
+            true,
+            simConfig.getMaxIterations(),
+            simConfig.getJspritIterations(),
+            simConfig.isZoneBasedCachingEnabled(),
+            simConfig.getZoneBasedCachingThresholdMeters())
+    );
         LOGGER.info("Modules added");
 
         // Step 5: Run simulation
@@ -278,6 +293,29 @@ public class HAGRIDSimulationRunner {
         }
     }
 
+    private static boolean parseBoolean(String s, String name) {
+        String normalized = s.trim().toLowerCase(Locale.ROOT);
+        if (normalized.equals("true") || normalized.equals("1") || normalized.equals("yes")) {
+            return true;
+        }
+        if (normalized.equals("false") || normalized.equals("0") || normalized.equals("no")) {
+            return false;
+        }
+        throw new IllegalArgumentException("Invalid boolean for " + name + ": " + s);
+    }
+
+    private static double parseNonNegativeDouble(String s, String name) {
+        try {
+            double v = Double.parseDouble(s);
+            if (v < 0) {
+                throw new IllegalArgumentException(name + " must be >= 0 but was " + v);
+            }
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
+    }
+
     /**
      * Checks whether the argument list contains a help request.
      *
@@ -307,7 +345,10 @@ public class HAGRIDSimulationRunner {
         LOGGER.info("  Optional keys");
         LOGGER.info("    maxIter      MATSim iterations default {}", DEFAULT_MAX_ITER);
         LOGGER.info("    jspritIter   jsprit iterations default {}", DEFAULT_JSPRIT_ITER);
+        LOGGER.info("    zoneCaching  enable zone-based transport cost caching (true/false, default false)");
+    LOGGER.info("    zoneThreshold minimum crow-fly distance in meters for zone caching (default 1500 when zoneCaching=true, otherwise 0)");
         LOGGER.info("  Example");
-        LOGGER.info("    java -cp target/classes hagrid.HAGRIDSimulationRunner concept=basecase,date=2025-05-15,maxIter=150,jspritIter=100");
+        LOGGER.info(
+            "    java -cp target/classes hagrid.HAGRIDSimulationRunner concept=basecase,date=2025-05-15,maxIter=150,jspritIter=100,zoneCaching=true,zoneThreshold=1200");
     }
 }

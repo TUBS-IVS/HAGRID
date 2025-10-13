@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -49,10 +50,12 @@ import com.graphhopper.jsprit.core.util.Solutions;
 
 import hagrid.utils.routing.DepartureTimeReScheduler;
 import hagrid.utils.routing.UpdateDepartureTimeAndPracticalTimeWindows;
+import hagrid.utils.routing.ZoneBasedTransportCosts;
 
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Network;
+import org.matsim.api.core.v01.network.Link;
 
 import org.matsim.core.replanning.GenericPlanStrategy;
 import org.matsim.core.replanning.GenericPlanStrategyImpl;
@@ -157,6 +160,11 @@ public final class CarrierVehicleReRouter {
 
             private VRPTransportCosts netBasedTransportCosts = null;
 
+            private final AtomicInteger zoneBasedRoutingCount = new AtomicInteger();
+            private final AtomicInteger networkRoutingCount = new AtomicInteger();
+
+            record RoutingRunResult(boolean usedZoneRouting, int visitedZones) {}
+
             @Override
             public void handlePlan(CarrierPlan carrierPlan) {
                 Carrier carrier = carrierPlan.getCarrier();
@@ -185,7 +193,7 @@ public final class CarrierVehicleReRouter {
 
             }
 
-            private void createAndSolveRoutingProblem(CarrierPlan carrierPlan, double iterations, double termination) {
+            private RoutingRunResult createAndSolveRoutingProblem(CarrierPlan carrierPlan, double iterations, double termination) {
 
                 Carrier carrier = carrierPlan.getCarrier();
                 int serviceCount = carrier.getServices().size();
@@ -209,6 +217,8 @@ public final class CarrierVehicleReRouter {
                 }
 
                 VehicleRoutingProblem.Builder vrpBuilder = null;
+                VRPTransportCosts transportCosts;
+                boolean usingZoneBasedRouting = false;
 
                 if (isUsingZones) {
                     // TODO Different modes?
@@ -219,13 +229,20 @@ public final class CarrierVehicleReRouter {
                         vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier,
                                 carNetwork);
                     }
-                    netBasedTransportCosts = byModeVRPTransportCosts.get(CarriersUtils.getCarrierMode(carrier));
+                    transportCosts = byModeVRPTransportCosts.get(CarriersUtils.getCarrierMode(carrier));
+                    if (transportCosts == null) {
+                        log.warn("No zone-based transport costs registered for mode {}. Falling back to network-based costs for carrier {}.",
+                                CarriersUtils.getCarrierMode(carrier), carrier.getId());
+                        transportCosts = netBasedTransportCosts;
+                    }
+                    usingZoneBasedRouting = transportCosts instanceof ZoneBasedTransportCosts;
                 } else {
                     vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier,
                             carNetwork);
+                    transportCosts = netBasedTransportCosts;
                 }
 
-                vrpBuilder.setRoutingCost(netBasedTransportCosts);
+                vrpBuilder.setRoutingCost(transportCosts);
                 vrpBuilder.setActivityCosts(activityCosts);
 
                 // build the problem
@@ -260,13 +277,13 @@ public final class CarrierVehicleReRouter {
                 constraintManager.addSkillsConstraint();
                 constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
-                // double radialShare = 0.6; // standard radial share is 0.3
-                // double randomShare = 0.3; // standard random share is 0.5
+                double radialShare = 0.6; // standard radial share is 0.3
+                double randomShare = 0.3; // standard random share is 0.5
 
-                // if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
-                //     radialShare = 0.15;
-                //     randomShare = 0.25;
-                // }
+                if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
+                    radialShare = 0.15;
+                    randomShare = 0.25;
+                }
 
                 // int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
                 // int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
@@ -311,9 +328,15 @@ public final class CarrierVehicleReRouter {
                 CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
                 //
                 CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
-                NetworkRouter.routePlan(plan, netBasedTransportCosts);
+                NetworkRouter.routePlan(plan, transportCosts);
 
-                
+                if (transportCosts instanceof ZoneBasedTransportCosts zoneCosts) {
+                    String mode = CarriersUtils.getCarrierMode(carrier);
+                    zoneCosts.logCacheSummary(String.format("Carrier %s (%s) reroute", carrier.getId(), mode));
+                }
+
+                int visitedZones = usingZoneBasedRouting ? countVisitedZones(carrier, plan) : -1;
+
                 carrierPlan.getScheduledTours().clear();
                 carrierPlan.getScheduledTours().addAll(plan.getScheduledTours());
 
@@ -322,6 +345,7 @@ public final class CarrierVehicleReRouter {
                 stateManager = null;
                 constraintManager = null;
                 plan = null;
+                return new RoutingRunResult(usingZoneBasedRouting, visitedZones);
             }
 
             @Override
@@ -388,17 +412,32 @@ public final class CarrierVehicleReRouter {
 
                             int noImprovementThreshold;
                             if (serviceCount > 250) {
-                                noImprovementThreshold = jspritIterations / 4;
+                                // noImprovementThreshold = jspritIterations / 4;
+                                noImprovementThreshold = 50;
                             } else {
-                                noImprovementThreshold = jspritIterations / 2;
+                                // noImprovementThreshold = jspritIterations / 2;
+                                noImprovementThreshold = 75;
                             }
 
-                            createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
+                            RoutingRunResult runResult = createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
+                            boolean usedZoneRouting = runResult.usedZoneRouting();
+                            int visitedZones = runResult.visitedZones();
 
                             long algoRunTime = (System.currentTimeMillis() - start) / 1000;
 
-                            log.info("[Routing {} / {}] DONE: Carrier {} | {} services | {}s (Tour planning + routing)",
-                                    currentNumber, tempList.size(), carrier.getId(), serviceCount, algoRunTime);
+                            if (usedZoneRouting) {
+                                zoneBasedRoutingCount.incrementAndGet();
+                            } else {
+                                networkRoutingCount.incrementAndGet();
+                            }
+
+                String providerLabel = usedZoneRouting
+                    ? String.format("zone-based (zones=%d)", Math.max(0, visitedZones))
+                    : "network-based";
+
+                log.info("[Routing {} / {}] DONE: Carrier {} | {} services | {}min (Tour planning + routing) | provider={}",
+                    currentNumber, tempList.size(), carrier.getId(), serviceCount, algoRunTime/60,
+                    providerLabel);
 
                             carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);
                             CarriersUtils.setJspritComputationTime(carrier, algoRunTime);
@@ -412,6 +451,15 @@ public final class CarrierVehicleReRouter {
                     log.error("Error during parallel carrier routing", e);
                     throw new RuntimeException("Parallel routing failed", e);
                 } finally {
+                    int totalZoneBased = zoneBasedRoutingCount.get();
+                    int totalNetworkBased = networkRoutingCount.get();
+                    if (totalZoneBased + totalNetworkBased > 0) {
+                        log.info("Carrier routing provider usage summary: {} zone-based | {} network-based",
+                                totalZoneBased, totalNetworkBased);
+                    }
+                    zoneBasedRoutingCount.set(0);
+                    networkRoutingCount.set(0);
+
                     // ✅ Executor ordentlich beenden
                     executor.shutdown();
                     try {
@@ -439,6 +487,57 @@ public final class CarrierVehicleReRouter {
                     // 
                     System.gc();
                 }
+            }
+
+            private int countVisitedZones(Carrier carrier, CarrierPlan plan) {
+                Network networkForCarrier = resolveNetworkForCarrier(carrier);
+                if (networkForCarrier == null) {
+                    return 0;
+                }
+
+                HashSet<Integer> uniqueZones = new HashSet<>();
+
+                plan.getScheduledTours().forEach(scheduledTour ->
+                        scheduledTour.getTour().getTourElements().forEach(element -> {
+                            if (element instanceof TourActivity activity && activity.getLocation() != null) {
+                                String locationId = activity.getLocation().getId();
+                                if (locationId != null) {
+                                    Link link = networkForCarrier.getLinks().get(Id.createLinkId(locationId));
+                                    Integer zone = extractZoneIdentifier(link);
+                                    if (zone != null) {
+                                        uniqueZones.add(zone);
+                                    }
+                                }
+                            }
+                        }));
+
+                return uniqueZones.size();
+            }
+
+            private Network resolveNetworkForCarrier(Carrier carrier) {
+                String mode = CarriersUtils.getCarrierMode(carrier);
+                if (mode != null && mode.contains("cargobike")) {
+                    return bikeNetwork;
+                }
+                return carNetwork;
+            }
+
+            private Integer extractZoneIdentifier(Link link) {
+                if (link == null) {
+                    return null;
+                }
+                Object zoneAttr = link.getAttributes().getAttribute("zone");
+                if (zoneAttr instanceof Number number) {
+                    return number.intValue();
+                }
+                if (zoneAttr instanceof String stringValue) {
+                    try {
+                        return Integer.parseInt(stringValue.trim());
+                    } catch (NumberFormatException ignored) {
+                        return null;
+                    }
+                }
+                return null;
             }
 
         };
