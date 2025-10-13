@@ -29,6 +29,7 @@ import org.matsim.core.router.util.LeastCostPathCalculator.Path;
 import org.matsim.core.router.util.LeastCostPathCalculatorFactory;
 import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
+import org.matsim.core.utils.geometry.CoordUtils;
 import org.matsim.core.utils.misc.Counter;
 import org.matsim.freight.carriers.CarrierVehicle;
 import org.matsim.freight.carriers.jsprit.FiFoTravelTime;
@@ -42,7 +43,13 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
 import java.util.*;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * This calculates transport-times, transport-costs and the distance to cover
@@ -79,6 +86,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author stefan schröder
  *
  */
+@SuppressWarnings("deprecation")
 public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 	private static final Logger LOGGER = LogManager.getLogger(ZoneBasedTransportCosts.class);
@@ -423,9 +431,15 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 		private VehicleTypeDependentRoadPricingCalculator roadPricingCalculator = new VehicleTypeDependentRoadPricingCalculator();
 
-		private boolean withToll = false;
+	private boolean withToll = false;
 
-		private final Network network;
+	private boolean zoneBasedCachingEnabled = false;
+
+	private double zoneBasedEuclideanThresholdMeters = 0.0;
+
+	private final Network network;
+
+	private int routerPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
 
 		private final Map<String, VehicleTypeVarCosts> typeSpecificCosts = new HashMap<String, ZoneBasedTransportCosts.VehicleTypeVarCosts>();
 
@@ -516,6 +530,34 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 			return this;
 		}
 
+		public Builder setRouterPoolSize(int routerPoolSize) {
+			if (routerPoolSize <= 0) {
+				throw new IllegalArgumentException("routerPoolSize must be positive");
+			}
+			this.routerPoolSize = routerPoolSize;
+			return this;
+		}
+
+		public Builder enableZoneBasedCaching(boolean enabled) {
+			this.zoneBasedCachingEnabled = enabled;
+			return this;
+		}
+
+		public Builder setZoneBasedEuclideanThreshold(double thresholdMeters) {
+			if (thresholdMeters < 0) {
+				throw new IllegalArgumentException("Zone-based Euclidean threshold must be non-negative");
+			}
+			this.zoneBasedEuclideanThresholdMeters = thresholdMeters;
+			return this;
+		}
+
+		public Builder enableZoneWarmup(boolean enabled, double departureTimeSeconds) {
+			LOGGER.warn(
+					"Zone warmup support has been removed and will be ignored (enabled={}, departureTimeSeconds={}).",
+					enabled, departureTimeSeconds);
+			return this;
+		}
+
 		public Builder setRoadPricingCalculator(VehicleTypeDependentRoadPricingCalculator calculator) {
 			withToll = true;
 			this.roadPricingCalculator = calculator;
@@ -574,7 +616,6 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	 */
 	// Shared, static cache for transport data
 	private static final ConcurrentHashMap<TransportDataKey, TransportData> sharedCostCache = new ConcurrentHashMap<>();
-	private static boolean isCacheInitialized = false; // Flag for cache initialization
 
 	// Synchronized method to initialize the shared cache
 	// private synchronized void initializeSharedCache() {
@@ -590,7 +631,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	 * caches leastCostPathCalculators according to
 	 * <code>Thread.currentThread().getId()</code>
 	 */
-	private final ConcurrentHashMap<Long, LeastCostPathCalculator> routerCache = new ConcurrentHashMap<Long, LeastCostPathCalculator>();
+    private final ConcurrentHashMap<Long, LeastCostPathCalculator> legacyRouterCache = new ConcurrentHashMap<>();
 
 	private final TravelDisutility travelDisutility;
 
@@ -618,6 +659,34 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 	private final String defaultTypeId;
 
+	private final boolean zoneBasedCachingEnabled;
+
+	private final double zoneBasedEuclideanThresholdMeters;
+
+	private final int routerPoolSize;
+
+	private final ConcurrentLinkedQueue<LeastCostPathCalculator> routerPool = new ConcurrentLinkedQueue<>();
+
+	private final AtomicInteger routerPoolCount = new AtomicInteger(0);
+
+	public final Counter cacheRequestedCounter = new Counter("#ZoneTransportCostRequests ");
+
+	public final Counter cacheHitCounter = new Counter("#ZoneTransportCostCacheHits ");
+
+	public final Counter cacheMemorizedCounter = new Counter("#ZoneTransportCostValues cached ");
+
+	private final LongAdder totalRequestCount = new LongAdder();
+
+	private final LongAdder totalHitCount = new LongAdder();
+
+	private final LongAdder totalMemoizedCount = new LongAdder();
+
+	private final AtomicLong lastSummaryTotalRequests = new AtomicLong();
+
+	private final AtomicLong lastSummaryTotalHits = new AtomicLong();
+
+	private final AtomicLong lastSummaryTotalMemoized = new AtomicLong();
+
 	private ZoneBasedTransportCosts(Builder builder) {
 		super();
 		this.travelDisutility = builder.finalDisutility;
@@ -627,15 +696,18 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 		this.roadPricingCalc = builder.roadPricingCalculator;
 		this.timeSliceWidth = builder.timeSliceWidth;
 		this.defaultTypeId = builder.defaultTypeId;
+		this.zoneBasedCachingEnabled = builder.zoneBasedCachingEnabled;
+		this.zoneBasedEuclideanThresholdMeters = builder.zoneBasedEuclideanThresholdMeters;
+		this.routerPoolSize = builder.routerPoolSize;
 		// initializeSharedCache();
 
 		// Preload all zones into zoneCache (fast lookup during routing)
-		for (Link link : network.getLinks().values()) {
-			Object zoneAttr = link.getAttributes().getAttribute("zone");
-			if (zoneAttr instanceof Integer) {
-				zoneCache.put(link.getId(), (Integer) zoneAttr);
-			}
-		}
+		// for (Link link : network.getLinks().values()) {
+		// 	Object zoneAttr = link.getAttributes().getAttribute("zone");
+		// 	if (zoneAttr instanceof Integer) {
+		// 		zoneCache.put(link.getId(), (Integer) zoneAttr);
+		// 	}
+		// }
 
 		// this.ttMemorizedCounter = new Counter("#TransportCostValues cached ");
 		// this.ttRequestedCounter = new Counter("numTravelCosts requested ");
@@ -657,7 +729,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	public double getTransportTime(Location fromId, Location toId, double departureTime, Driver driver,
 			Vehicle vehicle) {
 		// If the origin and destination are the same, transport time is zero
-		if (fromId.equals(toId)) {
+		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
 			return 0.0;
 		}
 
@@ -678,10 +750,14 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 				toLink);
 
 		// Retrieve the transport data from the shared cache
+		cacheRequestedCounter.incCounter();
+		recordCacheRequest();
 		TransportData data = sharedCostCache.get(transportDataKey);
 
 		// If cached data is found, return the cached transport time
 		if (data != null) {
+			cacheHitCounter.incCounter();
+			recordCacheHit();
 			return data.transportTime;
 		} else {
 			// Notify listeners that calculation is starting
@@ -705,13 +781,15 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	}
 
 	private void informEndCalc() {
+		long threadId = Thread.currentThread().threadId();
 		for (InternalLeastCostPathCalculatorListener l : listeners)
-			l.endCalculation(Thread.currentThread().getId());
+			l.endCalculation(threadId);
 	}
 
 	private void informStartCalc() {
+		long threadId = Thread.currentThread().threadId();
 		for (InternalLeastCostPathCalculatorListener l : listeners)
-			l.startCalculation(Thread.currentThread().getId());
+			l.startCalculation(threadId);
 	}
 
 	/**
@@ -730,7 +808,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	public double getTransportCost(Location fromId, Location toId, double departureTime, Driver driver,
 			Vehicle vehicle) {
 		// If the origin and destination are the same, transport cost is zero
-		if (fromId.equals(toId)) {
+		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
 			return 0.0;
 		}
 
@@ -752,10 +830,14 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 				toLink);
 
 		// Retrieve the transport data from the shared cache
+		cacheRequestedCounter.incCounter();
+		recordCacheRequest();
 		TransportData data = sharedCostCache.get(transportDataKey);
 
 		// If cached data is found, return the cached transport cost
 		if (data != null) {
+			cacheHitCounter.incCounter();
+			recordCacheHit();
 			return data.transportCosts;
 		} else {
 			// Notify listeners that calculation is starting
@@ -770,10 +852,6 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 			return newData.transportCosts;
 		}
-	}
-
-	private boolean checkZoneUsage(Link fromLink, Link toLink) {
-		return getZone(fromLink) != null && getZone(toLink) != null;
 	}
 
 	private Integer getZone(Link link) {
@@ -798,7 +876,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	@Override
 	public double getDistance(Location fromId, Location toId, double departureTime, Vehicle vehicle) {
 		// If the origin and destination are the same, distance is zero
-		if (fromId.equals(toId)) {
+		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
 			return 0.0;
 		}
 
@@ -819,10 +897,14 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 				toLink);
 
 		// Retrieve the transport data from the shared cache
+		cacheRequestedCounter.incCounter();
+		recordCacheRequest();
 		TransportData data = sharedCostCache.get(transportDataKey);
 
 		// If cached data is found, return the cached transport distance
 		if (data != null) {
+			cacheHitCounter.incCounter();
+			recordCacheHit();
 			return data.transportDistance;
 		} else {
 			// Notify listeners that calculation is starting
@@ -883,31 +965,44 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 		return matsimVehicles.computeIfAbsent(key, k -> new MatsimVehicleWrapper(vehicle));
 	}
 
-	private TransportDataKey makeKey(String fromId, String toId, long time, String vehicleType) {
-		return new TransportDataKey(fromId, toId, time, vehicleType);
-	}
-
 	private TransportDataKey createTransportDataKey(Location fromId, Location toId, double time, Vehicle vehicle,
 			Link fromLink, Link toLink) {
 		String typeId = vehicle.getType().getTypeId();
 		int timeSlice = (int) (time / timeSliceWidth);
 
-		// Check for zone attributes and create a zone-based key if present
-		if (checkZoneUsage(fromLink, toLink)) {
-			int fromZone = (int) fromLink.getAttributes().getAttribute("zone");
-			int toZone = (int) toLink.getAttributes().getAttribute("zone");
-			return new TransportDataKey(fromZone + "_zone", toZone + "_zone", timeSlice, typeId);
-		} else {
-			return new TransportDataKey(fromId.getId(), toId.getId(), timeSlice, typeId);
+		if (zoneBasedCachingEnabled && fromLink != null && toLink != null) {
+			Integer fromZone = getZone(fromLink);
+			Integer toZone = getZone(toLink);
+
+			if (fromZone != null && toZone != null && !fromZone.equals(toZone)) {
+				boolean useZoneKey = true;
+				if (zoneBasedEuclideanThresholdMeters > 0) {
+					double directDistance = CoordUtils.calcEuclideanDistance(fromLink.getCoord(), toLink.getCoord());
+					useZoneKey = directDistance >= zoneBasedEuclideanThresholdMeters;
+				}
+
+				if (useZoneKey) {
+					return new TransportDataKey("zone_" + fromZone, "zone_" + toZone, timeSlice, typeId);
+				}
+			}
 		}
+
+		return new TransportDataKey(fromId.getId(), toId.getId(), timeSlice, typeId);
 	}
 
 	private Id<Link> getLinkId(String id) {
 		return idCache.computeIfAbsent(id, s -> Id.create(s, Link.class));
 	}
 
+	@Override
 	public LeastCostPathCalculator getRouter() {
-		return createLeastCostPathCalculator();
+		long threadId = Thread.currentThread().threadId();
+		return legacyRouterCache.computeIfAbsent(threadId, id -> {
+			LeastCostPathCalculator calc = leastCostPathCalculatorFactory
+					.createPathCalculator(network, travelDisutility, travelTime);
+			LOGGER.trace("Created thread-local router via getRouter for thread {}", id);
+			return calc;
+		});
 	}
 
 	// private LeastCostPathCalculator createLeastCostPathCalculator() {
@@ -925,9 +1020,46 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	// return router;
 	// }
 
-	private LeastCostPathCalculator createLeastCostPathCalculator() {
-		return routerCache.computeIfAbsent(Thread.currentThread().getId(),
-				id -> leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime));
+	private record RouterHandle(LeastCostPathCalculator router, boolean pooled) {}
+
+	private RouterHandle borrowRouter() {
+		LeastCostPathCalculator router = routerPool.poll();
+		if (router != null) {
+			return new RouterHandle(router, true);
+		}
+
+		if (routerPoolCount.get() < routerPoolSize) {
+			if (routerPoolCount.incrementAndGet() <= routerPoolSize) {
+				LeastCostPathCalculator created = leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime);
+				LOGGER.trace("Created pooled router. poolSize={} created={}", routerPoolSize, routerPoolCount.get());
+				return new RouterHandle(created, true);
+			}
+			routerPoolCount.decrementAndGet();
+		}
+
+		router = routerPool.poll();
+		if (router != null) {
+			return new RouterHandle(router, true);
+		}
+
+		long threadId = Thread.currentThread().threadId();
+		LeastCostPathCalculator fallback = legacyRouterCache.computeIfAbsent(threadId,
+				id -> {
+					LeastCostPathCalculator calc = leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime);
+					LOGGER.trace("Created thread-local router for thread {}", id);
+					return calc;
+				});
+		return new RouterHandle(fallback, false);
+	}
+
+	private void returnRouter(RouterHandle handle) {
+		if (handle == null || !handle.pooled) {
+			return;
+		}
+		LeastCostPathCalculator router = handle.router();
+		if (router != null) {
+			routerPool.offer(router);
+		}
 	}
 
 	/**
@@ -960,7 +1092,8 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	private TransportData computeAndCacheTransportData(Location fromId, Location toId, double departureTime,
 			Vehicle vehicle, TransportDataKey key, Link fromLink, Link toLink) {
 		org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
-		LeastCostPathCalculator router = createLeastCostPathCalculator();
+		RouterHandle routerHandle = borrowRouter();
+		LeastCostPathCalculator router = routerHandle.router();
 
 		Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
 				matsimVehicle);
@@ -977,8 +1110,84 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 		TransportData newData = new TransportData(path.travelCost + additionalCostTo,
 				path.travelTime + additionalTimeTo, travelDistance);
-		sharedCostCache.putIfAbsent(key, newData);
-		return newData;
+		TransportData existing = sharedCostCache.putIfAbsent(key, newData);
+		if (existing == null) {
+			cacheMemorizedCounter.incCounter();
+			recordCacheMemoized();
+			existing = newData;
+		} else {
+			cacheHitCounter.incCounter();
+			recordCacheHit();
+		}
+		returnRouter(routerHandle);
+		return existing;
+	}
+
+	private void recordCacheRequest() {
+		totalRequestCount.increment();
+	}
+
+	private void recordCacheHit() {
+		totalHitCount.increment();
+	}
+
+	private void recordCacheMemoized() {
+		totalMemoizedCount.increment();
+	}
+
+	public synchronized CacheStatsSnapshot snapshotAndResetSummaryWindow() {
+		long totalRequests = totalRequestCount.sum();
+		long totalHits = totalHitCount.sum();
+		long totalMemoized = totalMemoizedCount.sum();
+
+		long periodRequests = Math.max(0L, totalRequests - lastSummaryTotalRequests.getAndSet(totalRequests));
+		long periodHits = Math.max(0L, totalHits - lastSummaryTotalHits.getAndSet(totalHits));
+		long periodMemoized = Math.max(0L, totalMemoized - lastSummaryTotalMemoized.getAndSet(totalMemoized));
+
+		return new CacheStatsSnapshot(sharedCostCache.size(), totalRequests, totalHits, totalMemoized,
+				periodRequests, periodHits, periodMemoized);
+	}
+
+	public synchronized void logCacheSummary(String contextLabel) {
+		CacheStatsSnapshot snapshot = snapshotAndResetSummaryWindow();
+
+		String totalHitRate = toPercent(snapshot.totalHits(), snapshot.totalRequests());
+		String periodHitRate = toPercent(snapshot.periodHits(), snapshot.periodRequests());
+		long periodMisses = Math.max(0L, snapshot.periodRequests() - snapshot.periodHits());
+		long totalMisses = Math.max(0L, snapshot.totalRequests() - snapshot.totalHits());
+
+		LOGGER.info(
+				"[ZoneCostCache] {} | uniqueKeys={} | total: {} req, {} hits, {} misses (hit rate {}) | period: {} req, {} hits, {} misses (hit rate {}) | memoized+: {} (total {})",
+				contextLabel,
+				snapshot.uniqueEntries(),
+				snapshot.totalRequests(),
+				snapshot.totalHits(),
+				totalMisses,
+				totalHitRate,
+				snapshot.periodRequests(),
+				snapshot.periodHits(),
+				periodMisses,
+				periodHitRate,
+				snapshot.periodMemoized(),
+				snapshot.totalMemoized());
+	}
+
+	private static String toPercent(long hits, long requests) {
+		if (requests <= 0L) {
+			return "n/a";
+		}
+		double rate = (hits * 100.0d) / requests;
+		return String.format(Locale.ENGLISH, "%.2f%%", rate);
+	}
+
+	public static record CacheStatsSnapshot(
+			long uniqueEntries,
+			long totalRequests,
+			long totalHits,
+			long totalMemoized,
+			long periodRequests,
+			long periodHits,
+			long periodMemoized) {
 	}
 
 }

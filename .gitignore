@@ -40,6 +40,7 @@ parcel-analysis/input
 parcel-demand-2-matsim-pipeline/sim-input
 parcel-demand-2-matsim-pipeline/input
 parcel-demand-2-matsim-pipeline/routerCache
+parcel-demand-2-matsim-pipeline/logs*
 parcel-demand-2-matsim-pipeline/logs
 
 parcel-demand-2-matsim-pipeline/sim-output
@@ -49,6 +50,7 @@ parcel-analysis/cache
 parcel-analysis/emission_maps
 parcel-analysis/emission_maps_cum
 
+output/*
 parcel-analysis/*
 !parcel-analysis/*.py
 !parcel-analysis/*.ipynb

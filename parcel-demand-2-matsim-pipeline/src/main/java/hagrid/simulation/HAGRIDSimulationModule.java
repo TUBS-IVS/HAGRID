@@ -36,12 +36,19 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	private int maxIterationsMATSim;
 	private int jspritIterations;
 
-	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations) {
+	private final boolean zoneBasedCachingEnabled;
+
+	private final double zoneBasedEuclideanThresholdMeters;
+
+	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations,
+			boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters) {
 		this.types = CarriersUtils.getCarrierVehicleTypes(scenario);
 		this.scenario = scenario;
 		this.isUsingZones = isUsingZones;
 		this.maxIterationsMATSim = maxIterationsMATSim;
 		this.jspritIterations = jspritIterations;
+		this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
+		this.zoneBasedEuclideanThresholdMeters = zoneBasedEuclideanThresholdMeters;
 	}
 
 	@Inject
@@ -115,7 +122,8 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	private ZoneBasedTransportCostsFactory provideNetworkBasedTransportCostsFactory(Scenario scenario,
 			Carriers carriers, Map<String, TravelTime> travelTimes, Config config) {
 
-		return new ZoneBasedTransportCostsFactory(scenario, carriers, travelTimes, config);
+		return new ZoneBasedTransportCostsFactory(scenario, carriers, travelTimes, config,
+				zoneBasedCachingEnabled, zoneBasedEuclideanThresholdMeters);
 	}
 
 }

@@ -21,13 +21,18 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
     Carriers carriers;
     Map<String, TravelTime> travelTimes;
     Config config;
+    private final boolean zoneBasedCachingEnabled;
+    private final double zoneBasedEuclideanThresholdMeters;
     private static final Logger log = (Logger) org.apache.logging.log4j.LogManager.getLogger(ZoneBasedTransportCostsFactory.class);
 
-    public ZoneBasedTransportCostsFactory(Scenario scenario, Carriers carriers, Map<String, TravelTime> travelTimes, Config config) {
+    public ZoneBasedTransportCostsFactory(Scenario scenario, Carriers carriers, Map<String, TravelTime> travelTimes, Config config,
+                                          boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters) {
         this.scenario = scenario;
         this.carriers = carriers;
         this.travelTimes = travelTimes;
         this.config = config;
+        this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
+        this.zoneBasedEuclideanThresholdMeters = zoneBasedEuclideanThresholdMeters;
     }
 
     @Override
@@ -56,6 +61,11 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
             // Set time slice width and travel time
             zoneBuilder.setTimeSliceWidth(freightConfigGroup.getTravelTimeSliceWidth());
             zoneBuilder.setTravelTime(travelTimes.get(mode));
+
+            if (zoneBasedCachingEnabled) {
+                zoneBuilder.enableZoneBasedCaching(true);
+                zoneBuilder.setZoneBasedEuclideanThreshold(zoneBasedEuclideanThresholdMeters);
+            }
             
             // Create ZoneBasedTransportCosts, which uses the shared cache
             byModeVRPTransportCosts.put(mode, zoneBuilder.build());
@@ -80,6 +90,11 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
         ZoneBasedTransportCosts.Builder zoneBuilder = ZoneBasedTransportCosts.Builder.newInstance(scenario.getNetwork(), vehicleTypes);
         zoneBuilder.setTimeSliceWidth(freightConfigGroup.getTravelTimeSliceWidth());
         zoneBuilder.setTravelTime(travelTimes.get(TransportMode.car));
+
+        if (zoneBasedCachingEnabled) {
+            zoneBuilder.enableZoneBasedCaching(true);
+            zoneBuilder.setZoneBasedEuclideanThreshold(zoneBasedEuclideanThresholdMeters);
+        }
         
         // Create ZoneBasedTransportCosts, which uses the shared cache
         return zoneBuilder.build();

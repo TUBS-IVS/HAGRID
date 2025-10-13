@@ -60,6 +60,16 @@ public class HAGRIDSimulationConfig {
     private final int jspritIterations;
 
     /**
+     * Enables aggregation of transport cost cache entries by freight zone when true.
+     */
+    private final boolean zoneBasedCachingEnabled;
+
+    /**
+     * Minimum crow-fly distance (in metres) required to use zone-based caching between distinct zones.
+     */
+    private final double zoneBasedCachingThresholdMeters;
+
+    /**
      * Unique run identifier, composed of the concept and the date.
      */
     private final String runId;
@@ -74,7 +84,8 @@ public class HAGRIDSimulationConfig {
      * @throws NullPointerException     if concept or date is null
      * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
      */
-    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations) {
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations <= 0) {
@@ -83,8 +94,13 @@ public class HAGRIDSimulationConfig {
         if (jspritIterations <= 0) {
             throw new IllegalArgumentException("jspritIterations must be positive");
         }
+        if (zoneBasedCachingThresholdMeters < 0) {
+            throw new IllegalArgumentException("zoneBasedCachingThresholdMeters must be >= 0");
+        }
         this.maxIterations = maxIterations;
         this.jspritIterations = jspritIterations;
+        this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
+        this.zoneBasedCachingThresholdMeters = zoneBasedCachingThresholdMeters;
         this.runId = concept + "_" + date.format(RUN_ID_DATE_FMT);
     }
 
@@ -133,6 +149,20 @@ public class HAGRIDSimulationConfig {
      */
     public int getJspritIterations() {
         return jspritIterations;
+    }
+
+    /**
+     * Indicates whether zone-based transport-cost caching should be used for this scenario.
+     */
+    public boolean isZoneBasedCachingEnabled() {
+        return zoneBasedCachingEnabled;
+    }
+
+    /**
+     * Returns the minimum Euclidean distance (in metres) required to aggregate transport costs by zone.
+     */
+    public double getZoneBasedCachingThresholdMeters() {
+        return zoneBasedCachingThresholdMeters;
     }
 
     /**

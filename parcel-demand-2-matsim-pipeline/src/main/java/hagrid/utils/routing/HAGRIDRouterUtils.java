@@ -5,6 +5,7 @@ import com.graphhopper.jsprit.core.algorithm.box.Jsprit;
 import com.graphhopper.jsprit.core.algorithm.listener.VehicleRoutingAlgorithmListeners;
 import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 import com.graphhopper.jsprit.core.algorithm.state.UpdateEndLocationIfRouteIsOpen;
+import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprovementTermination;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
@@ -113,11 +114,12 @@ public class HAGRIDRouterUtils {
 
         // int iterations = serviceCount > 250 ? 20 : 40;
         // int termination = serviceCount > 250 ? 3 : 5;
-        int iterations = 1; // keep one iteration to get a quick solution
-        
+        // int iterations = 1; // keep one iteration to get a quick solution
+        int iterations = 1000; // keep one iteration to get a quick solution
+        int termination = (int) (0.1 * iterations);
 
         algorithm.setMaxIterations(iterations);
-        // algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
+        algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
         algorithm.getAlgorithmListeners().addListener(new StopWatch(), VehicleRoutingAlgorithmListeners.Priority.HIGH);
         algorithm.addListener(new DepartureTimeReScheduler());
   
