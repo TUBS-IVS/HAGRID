@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.Arrays;
@@ -1023,21 +1024,38 @@ public class CarrierGenerator implements Runnable {
                 carrier.getAttributes().putAttribute("hubId", closestHub.getId().toString());
 
                 // Retrieve start and end times from configuration
-                int start = hagridConfig
-                                .getDeliveryStartTime((String) carrier.getAttributes().getAttribute("provider"));
-                int end = hagridConfig.getDeliveryEndTime((String) carrier.getAttributes().getAttribute("provider"));
+                Object providerAttribute = carrier.getAttributes().getAttribute("provider");
+                String provider = providerAttribute == null ? "default"
+                                : providerAttribute.toString().toLowerCase(Locale.ROOT);
+
+                int start = hagridConfig.getDeliveryStartTime(provider);
+                int end = hagridConfig.getDeliveryEndTime(provider);
                 int maxRouteDuration = hagridConfig.getMaxRouteDuration();
 
-                // Add vehicles to the carrier with start times from the determined range
-                for (int startTime = start; startTime <= end; startTime++) {
-                        CarrierVehicle carrierVehicleSizeM = carrierVehicleFactory.createCEPVehicle(
-                                        closestHub.getLink(),
-                                        closestHub.getId().toString(), startTime, maxRouteDuration, "m");
-                        CarrierVehicle carrierVehicleSizeL = carrierVehicleFactory.createCEPVehicle(
-                                        closestHub.getLink(),
-                                        closestHub.getId().toString(), startTime, maxRouteDuration, "l");
-                        CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeM);
-                        CarriersUtils.addCarrierVehicle(carrier, carrierVehicleSizeL);
+                List<String> vehicleSizes = hagridConfig.getVehicleSizesForProvider(provider);
+                List<Integer> dispatchHours = hagridConfig.getDispatchHours(provider);
+
+                // Add vehicles to the carrier respecting provider-specific deployment profiles
+                if (!dispatchHours.isEmpty()) {
+                        for (int startTime : dispatchHours) {
+                                for (String sizeAlias : vehicleSizes) {
+                                        CarrierVehicle vehicle = carrierVehicleFactory.createCEPVehicle(
+                                                        closestHub.getLink(),
+                                                        closestHub.getId().toString(), startTime, maxRouteDuration,
+                                                        sizeAlias);
+                                        CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                                }
+                        }
+                } else {
+                        for (int startTime = start; startTime <= end; startTime++) {
+                                for (String sizeAlias : vehicleSizes) {
+                                        CarrierVehicle vehicle = carrierVehicleFactory.createCEPVehicle(
+                                                        closestHub.getLink(),
+                                                        closestHub.getId().toString(), startTime, maxRouteDuration,
+                                                        sizeAlias);
+                                        CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                                }
+                        }
                 }
 
                 // Log the creation of the carrier and its services

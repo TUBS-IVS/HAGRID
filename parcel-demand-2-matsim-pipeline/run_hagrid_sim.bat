@@ -1,14 +1,9 @@
 @echo off
 setlocal
 
-rem Optional: enable/disable zone-based caching. Use "true" or "false". Default true for scenario run.
-set "ZONE_CACHING=true"
-rem Optional: override the zone distance threshold in meters. Leave empty to use runner defaults (1500m when caching=true).
-set "ZONE_THRESHOLD="
-
 cd /d "%~dp0"
 
-rem logs are now written to sim-output/logs/runid
+rem logs for each run land in sim-output/<runId...>/logs
 
 rem harte Vorgabe JDK 21
 set "JAVA_EXE=C:\Program Files\Eclipse Adoptium\jdk-21.0.3.9-hotspot\bin\java.exe"
@@ -34,23 +29,7 @@ if not exist "%JAR%" (
 echo Starting with args from vmargs.txt
 type vmargs.txt
 
-set "SCENARIO_ARGS=concept=basecase,date=2025-05-13,maxIter=150,jspritIter=100"
-
-if /I "%ZONE_CACHING%"=="true" goto zone_true
-if /I "%ZONE_CACHING%"=="false" goto zone_false
-goto zone_args_done
-
-:zone_true
-set "SCENARIO_ARGS=%SCENARIO_ARGS%,zoneCaching=true"
-if defined ZONE_THRESHOLD set "SCENARIO_ARGS=%SCENARIO_ARGS%,zoneThreshold=%ZONE_THRESHOLD%"
-goto zone_args_done
-
-:zone_false
-set "SCENARIO_ARGS=%SCENARIO_ARGS%,zoneCaching=false"
-if defined ZONE_THRESHOLD set "SCENARIO_ARGS=%SCENARIO_ARGS%,zoneThreshold=%ZONE_THRESHOLD%"
-goto zone_args_done
-
-:zone_args_done
+set "SCENARIO_ARGS=concept=basecase,date=2025-05-13,maxIter=150,jspritIter=10000,zoneThreshold=1500"
 
 echo Running scenario with %SCENARIO_ARGS%
 "%JAVA_EXE%" @vmargs.txt -jar "%JAR%" %SCENARIO_ARGS%

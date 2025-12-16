@@ -8,7 +8,12 @@ import org.matsim.freight.carriers.TimeWindow;
 
 import hagrid.utils.general.Region;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.time.LocalDate;
@@ -160,6 +165,12 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
     private Map<String, Integer> startHourMap = new HashMap<>();
     private Map<String, Integer> endHourMap = new HashMap<>();
 
+    static final String CEP_VEHICLE_SIZES = "cepVehicleSizes";
+    private static final String CEP_VEHICLE_SIZES_DESC = "Comma separated list of CEP vehicle size aliases to instantiate (supported: m,l).";
+    private List<String> cepVehicleSizes = new ArrayList<>(List.of("m", "l"));
+    private final Map<String, List<String>> providerVehicleSizes = new HashMap<>();
+    private final Map<String, List<Integer>> providerDispatchHours = new HashMap<>();
+
     // Delivery time window
     private TimeWindow deliveryTimeWindow = TimeWindow.newInstance(8 * 60 * 60, 20 * 60 * 60);
 
@@ -217,6 +228,155 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
 
     public int getDeliveryEndTime(String provider) {
         return endHourMap.getOrDefault(provider.toLowerCase(), endHourMap.get("default"));
+    }
+
+    public void setDefaultDeliveryHours(int startHour, int endHour) {
+        setDeliveryHours("default", startHour, endHour);
+    }
+
+    public void setDeliveryHours(String provider, int startHour, int endHour) {
+        validateDeliveryHours(startHour, endHour);
+        String key = provider.toLowerCase(Locale.ROOT);
+        startHourMap.put(key, startHour);
+        endHourMap.put(key, endHour);
+    }
+
+    private void validateDeliveryHours(int startHour, int endHour) {
+        if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) {
+            throw new IllegalArgumentException("Delivery hours must be within [0,23].");
+        }
+        if (endHour < startHour) {
+            throw new IllegalArgumentException("End hour must be greater than or equal to start hour.");
+        }
+    }
+
+    @StringGetter(CEP_VEHICLE_SIZES)
+    public String getCepVehicleSizesAsString() {
+        return String.join(",", cepVehicleSizes);
+    }
+
+    @StringSetter(CEP_VEHICLE_SIZES)
+    public void setCepVehicleSizesAsString(String sizes) {
+        if (sizes == null || sizes.isBlank()) {
+            this.cepVehicleSizes = new ArrayList<>(List.of("m", "l"));
+            return;
+        }
+
+        setCepVehicleSizes(Arrays.stream(sizes.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList()));
+    }
+
+    public List<String> getCepVehicleSizes() {
+        return Collections.unmodifiableList(cepVehicleSizes);
+    }
+
+    public void setCepVehicleSizes(List<String> sizes) {
+        this.cepVehicleSizes = new ArrayList<>(normalizeVehicleSizeList(sizes));
+    }
+
+    private static List<String> normalizeVehicleSizeList(List<String> sizes) {
+        if (sizes == null || sizes.isEmpty()) {
+            throw new IllegalArgumentException("At least one CEP vehicle size must be provided.");
+        }
+
+        List<String> normalized = new ArrayList<>();
+        for (String size : sizes) {
+            String normalizedSize = Objects.requireNonNull(size, "vehicle size").trim()
+                    .toLowerCase(Locale.ROOT);
+            if (normalizedSize.isEmpty()) {
+                throw new IllegalArgumentException("Vehicle size must not be empty.");
+            }
+            if (!normalizedSize.equals("m") && !normalizedSize.equals("l")) {
+                throw new IllegalArgumentException("Unsupported CEP vehicle size alias: " + size
+                        + ". Supported values: m, l");
+            }
+            normalized.add(normalizedSize);
+        }
+
+        return normalized;
+    }
+
+    public void clearProviderVehicleSizes() {
+        providerVehicleSizes.clear();
+    }
+
+    public void setProviderVehicleSizes(String provider, List<String> sizes) {
+        String key = normalizeProviderKey(provider);
+        if (sizes == null || sizes.isEmpty()) {
+            providerVehicleSizes.remove(key);
+            return;
+        }
+        List<String> normalized = normalizeVehicleSizeList(sizes);
+        providerVehicleSizes.put(key, Collections.unmodifiableList(new ArrayList<>(normalized)));
+    }
+
+    public List<String> getVehicleSizesForProvider(String provider) {
+        if (provider == null) {
+            return Collections.unmodifiableList(cepVehicleSizes);
+        }
+        String key = normalizeProviderKey(provider);
+        List<String> sizes = providerVehicleSizes.get(key);
+        if (sizes != null) {
+            return sizes;
+        }
+        return Collections.unmodifiableList(cepVehicleSizes);
+    }
+
+    public void clearProviderDispatchHours() {
+        providerDispatchHours.clear();
+    }
+
+    public void setProviderDispatchHours(String provider, List<Integer> hours) {
+        String key = normalizeProviderKey(provider);
+        if (hours == null || hours.isEmpty()) {
+            providerDispatchHours.remove(key);
+            return;
+        }
+        List<Integer> normalized = normalizeDispatchHours(hours);
+        providerDispatchHours.put(key, Collections.unmodifiableList(new ArrayList<>(normalized)));
+    }
+
+    public List<Integer> getDispatchHours(String provider) {
+        if (provider == null) {
+            return Collections.emptyList();
+        }
+        String key = normalizeProviderKey(provider);
+        List<Integer> hours = providerDispatchHours.get(key);
+        if (hours != null) {
+            return hours;
+        }
+        return Collections.emptyList();
+    }
+
+    private static List<Integer> normalizeDispatchHours(List<Integer> hours) {
+        List<Integer> normalized = hours.stream()
+                .map(hour -> {
+                    if (hour == null) {
+                        throw new IllegalArgumentException("Dispatch hour must not be null.");
+                    }
+                    if (hour < 0 || hour > 23) {
+                        throw new IllegalArgumentException(
+                                "Dispatch hours must be within [0,23]. Provided: " + hour);
+                    }
+                    return hour;
+                })
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("At least one dispatch hour must remain after normalization.");
+        }
+        return normalized;
+    }
+
+    private static String normalizeProviderKey(String provider) {
+        String key = Objects.requireNonNull(provider, "provider").trim().toLowerCase(Locale.ROOT);
+        if (key.isEmpty()) {
+            throw new IllegalArgumentException("Provider identifier must not be empty.");
+        }
+        return key;
     }
 
     @StringGetter(NETWORK_XML_PATH)
@@ -695,6 +855,7 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         map.put("deliveryTimeWindowEnd", "End time of the delivery time window.");
         map.put(FILTER_REGIONS, FILTER_REGIONS_DESC);
         map.put(MIN_CEP_VEH_CAP, MIN_CEP_VEH_CAP_DESC);
+        map.put(CEP_VEHICLE_SIZES, CEP_VEHICLE_SIZES_DESC);
         return map;
     }
 }

@@ -1,27 +1,18 @@
 package hagrid.simulation;
 
-import java.io.File;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.google.inject.Inject;
-import com.graphhopper.jsprit.analysis.toolbox.AlgorithmSearchProgressChartListener;
 import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
 import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
 import com.graphhopper.jsprit.core.algorithm.box.Jsprit;
@@ -33,13 +24,11 @@ import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprove
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
-import com.graphhopper.jsprit.core.problem.constraint.HardRouteConstraint;
 import com.graphhopper.jsprit.core.problem.constraint.ServiceDeliveriesFirstConstraint;
 import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
 import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
 import com.graphhopper.jsprit.core.problem.cost.VehicleRoutingActivityCosts;
 import com.graphhopper.jsprit.core.problem.driver.Driver;
-import com.graphhopper.jsprit.core.problem.misc.JobInsertionContext;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.problem.solution.route.activity.TourActivity;
 import com.graphhopper.jsprit.core.problem.vehicle.Vehicle;
@@ -82,8 +71,6 @@ public final class CarrierVehicleReRouter {
 
     private final TravelTime travelTimes;
 
-    private String pathAlgo;
-
     private static final double MAXROUTEDURATIONHOUR = 7.0;
     private static final int MAXROUTEDURATION = (int) MAXROUTEDURATIONHOUR * 3600;
 
@@ -91,8 +78,6 @@ public final class CarrierVehicleReRouter {
     private static final int STOPOPTIMIZATION = 100;
 
     private static final int MAXREPLANNINGSIZE = 16;
-
-    private final double timeParameter = 0.008;
 
     private final VehicleRoutingActivityCosts activityCosts;
 
@@ -152,7 +137,6 @@ public final class CarrierVehicleReRouter {
 
             private boolean startCarrierReplanning = false;
 
-            private HashMap<CarrierPlan, Integer> carrierActivityCounterMap = null;
             // private ForkJoinPool forkJoinPool = null;
 
             private List<CarrierPlan> plansForOptimization = null;
@@ -199,21 +183,8 @@ public final class CarrierVehicleReRouter {
                 int serviceCount = carrier.getServices().size();
                 // Iterationen counter
 
-                if (!(carrier.getAttributes().getAttribute("algoRunTime") == null)) {
-                    double algoRunTime = (double) carrier.getAttributes().getAttribute("algoRunTime");
-
-                    // if (algoRunTime > (3600 / 4)) {
-                    //     // iterations = Math.ceil(iterations / 2);
-                    //     termination = Math.ceil(termination / 2);
-                    // }
-
-                    // if (termination < 4) {
-                    //     termination = 4;
-                    // }
-
-                    // if (iterations < 10) {
-                    //     iterations = 10;
-                    // }
+                if (carrier.getAttributes().getAttribute("algoRunTime") != null) {
+                    // Placeholder for potential future adaptive iteration configuration using previous runtime
                 }
 
                 VehicleRoutingProblem.Builder vrpBuilder = null;
@@ -277,12 +248,8 @@ public final class CarrierVehicleReRouter {
                 constraintManager.addSkillsConstraint();
                 constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
-                double radialShare = 0.6; // standard radial share is 0.3
-                double randomShare = 0.3; // standard random share is 0.5
-
                 if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
-                    radialShare = 0.15;
-                    randomShare = 0.25;
+                    // Previously adjusted radial/random share when replanning subsets; logic retained for future tuning
                 }
 
                 // int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
@@ -351,7 +318,6 @@ public final class CarrierVehicleReRouter {
             @Override
             public void prepareReplanning(ReplanningContext replanningContext) {
 
-                carrierActivityCounterMap = new HashMap<>();
                 // forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
                 plansForOptimization = new ArrayList<>();
                 plansForReOptimization = new ArrayList<>();
@@ -395,7 +361,6 @@ public final class CarrierVehicleReRouter {
 
 
                 List<CarrierPlan> tempList = plansForOptimization;
-                int totalCarriers = carrierActivityCounterMap != null ? carrierActivityCounterMap.size() : tempList.size();
                 AtomicInteger globalProgress = new AtomicInteger(0);
 
                 ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -489,6 +454,7 @@ public final class CarrierVehicleReRouter {
                 }
             }
 
+            @SuppressWarnings("deprecation")
             private int countVisitedZones(Carrier carrier, CarrierPlan plan) {
                 Network networkForCarrier = resolveNetworkForCarrier(carrier);
                 if (networkForCarrier == null) {
@@ -497,21 +463,46 @@ public final class CarrierVehicleReRouter {
 
                 HashSet<Integer> uniqueZones = new HashSet<>();
 
-                plan.getScheduledTours().forEach(scheduledTour ->
-                        scheduledTour.getTour().getTourElements().forEach(element -> {
-                            if (element instanceof TourActivity activity && activity.getLocation() != null) {
-                                String locationId = activity.getLocation().getId();
-                                if (locationId != null) {
-                                    Link link = networkForCarrier.getLinks().get(Id.createLinkId(locationId));
-                                    Integer zone = extractZoneIdentifier(link);
-                                    if (zone != null) {
-                                        uniqueZones.add(zone);
+                carrier.getServices().values()
+                        .forEach(service -> addZoneFromLinkId(networkForCarrier, uniqueZones, service.getLocationLinkId()));
+
+                carrier.getShipments().values().forEach(shipment -> {
+                    addZoneFromLinkId(networkForCarrier, uniqueZones, shipment.getPickupLinkId());
+                    addZoneFromLinkId(networkForCarrier, uniqueZones, shipment.getDeliveryLinkId());
+                });
+
+                if (uniqueZones.isEmpty()) {
+                    plan.getScheduledTours().forEach(scheduledTour ->
+                            scheduledTour.getTour().getTourElements().forEach(element -> {
+                                if (element instanceof TourActivity activity && activity.getLocation() != null) {
+                                    String locationId = activity.getLocation().getId();
+                                    if (locationId != null) {
+                                        Link link = networkForCarrier.getLinks().get(Id.createLinkId(locationId));
+                                        addZoneFromLink(networkForCarrier, uniqueZones, link);
                                     }
                                 }
-                            }
-                        }));
+                            }));
+                }
 
                 return uniqueZones.size();
+            }
+
+            private void addZoneFromLinkId(Network network, HashSet<Integer> zones, Id<Link> linkId) {
+                if (linkId == null) {
+                    return;
+                }
+                Link link = network.getLinks().get(linkId);
+                addZoneFromLink(network, zones, link);
+            }
+
+            private void addZoneFromLink(Network network, HashSet<Integer> zones, Link link) {
+                if (link == null) {
+                    return;
+                }
+                Integer zone = extractZoneIdentifier(link);
+                if (zone != null) {
+                    zones.add(zone);
+                }
             }
 
             private Network resolveNetworkForCarrier(Carrier carrier) {
@@ -531,8 +522,12 @@ public final class CarrierVehicleReRouter {
                     return number.intValue();
                 }
                 if (zoneAttr instanceof String stringValue) {
+                    String trimmed = stringValue.trim();
+                    if (trimmed.isEmpty()) {
+                        return null;
+                    }
                     try {
-                        return Integer.parseInt(stringValue.trim());
+                        return Integer.parseInt(trimmed);
                     } catch (NumberFormatException ignored) {
                         return null;
                     }
@@ -545,37 +540,4 @@ public final class CarrierVehicleReRouter {
         replanningStrat.addStrategyModule(vraModule);
         return replanningStrat;
     }
-
-    private String getUniqueFileName(String baseName, String extension) {
-        int counter = 0;
-        String fileName = baseName + extension;
-        File file = new File(fileName);
-
-        while (file.exists()) {
-            fileName = baseName + "_" + counter + extension;
-            file = new File(fileName);
-            counter++;
-        }
-
-        return fileName;
-    }
-
-    public static File createUniqueRunDirectory(String basePath) {
-        int runIndex = 1;
-        File runDir;
-
-        do {
-            runDir = new File(basePath, "run" + runIndex);
-            runIndex++;
-        } while (runDir.exists());
-
-        if (runDir.mkdirs()) {
-            System.out.println("Created directory: " + runDir.getAbsolutePath());
-        } else {
-            throw new RuntimeException("Could not create directory: " + runDir.getAbsolutePath());
-        }
-
-        return runDir;
-    }
-
 }
