@@ -11,6 +11,9 @@ import org.matsim.core.controler.Controler;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.freight.carriers.controller.CarrierModule;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -192,6 +195,14 @@ public class HAGRIDSimulationRunner {
      */
     private static void runSingleSimulation(HAGRIDSimulationConfig simConfig) throws Exception {
         Instant startTime = Instant.now();
+
+        Path simLogDir = simConfig.getOutputDirectory().resolve("logs");
+        try {
+            Files.createDirectories(simLogDir);
+        } catch (IOException e) {
+            LOGGER.warn("Could not create simulation log directory {}: {}", simLogDir, e.getMessage());
+        }
+        System.setProperty("hagrid.log.dir", simLogDir.toAbsolutePath().toString());
 
         LOGGER.info("------------------------------------------------------------");
         LOGGER.info("Starting simulation for '{}'", simConfig.getRunId());
