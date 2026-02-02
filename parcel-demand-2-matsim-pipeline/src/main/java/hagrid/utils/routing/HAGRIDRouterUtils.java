@@ -114,9 +114,10 @@ public class HAGRIDRouterUtils {
 
         // int iterations = serviceCount > 250 ? 20 : 40;
         // int termination = serviceCount > 250 ? 3 : 5;
-        // int iterations = 1; // keep one iteration to get a quick solution
-        int iterations = 1000; // keep one iteration to get a quick solution
-        int termination = (int) (0.1 * iterations);
+        int iterations = 1; // keep one iteration to get a quick solution
+        // int iterations = 1000; // keep one iteration to get a quick solution
+        // int termination = (int) (0.1 * iterations);
+        int termination = 1;
 
         algorithm.setMaxIterations(iterations);
         algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));

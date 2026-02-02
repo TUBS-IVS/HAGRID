@@ -129,8 +129,10 @@ public class CarrierGenerator implements Runnable {
                         LOGGER.info("Writing unrouted carriers to output directory {}", outputPath);
 
                         new CarrierPlanWriter(carriers).write(outputPath);
-                        // new CarrierVehicleTypeWriter(vehicleTypes).write("phd/output/" +
-                        // hagridConfig.getRunId() + "_types.xml");
+
+                        outputPath = outputDir + hagridConfig.getRunId() + "_vehicle_types.xml";
+                        LOGGER.info("Writing unrouted carriers to output directory {}", outputPath);
+                        new CarrierVehicleTypeWriter(vehicleTypes).write(outputPath);
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 

@@ -27,6 +27,9 @@ import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.logging.log4j.core.appender.FileAppender;
 import org.apache.logging.log4j.core.layout.PatternLayout;
+import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
+import org.matsim.freight.carriers.CarrierVehicleTypes;
+
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 
@@ -38,6 +41,7 @@ import hagrid.demand.DemandProcessor;
 import hagrid.demand.LogisticsDataProcessor;
 import hagrid.demand.NetworkProcessor;
 import hagrid.demand.SupplyCarrierGenerator;
+import hagrid.utils.general.HAGRIDUtils;
 import hagrid.utils.routing.ThreadingType;
 
 public class HAGRID2MATSimPipelineRunner {
@@ -66,12 +70,12 @@ public class HAGRID2MATSimPipelineRunner {
                 ))
                 .applyServiceSimplifier(false)
         // Vehicle schedule options: FULL_WINDOW (default), SIMPLE_STAGGERED (8/11/14), EARLY_ONLY (start-1)
-        .vehicleSchedule(PipelineConfig.VehicleScheduleOption.FULL_WINDOW)
-        .vehicleSchedule("amazon", PipelineConfig.VehicleScheduleOption.EARLY_ONLY)
-        .cepVehicleSizes(List.of("m", "l"))
-                .providerVehicleSizes("amazon", List.of("l"))
-                .deliveryWindow("default", 7, 14)
-                .deliveryWindow("amazon", 9, 17)
+        .vehicleSchedule(PipelineConfig.VehicleScheduleOption.SIMPLE_STAGGERED)
+        // .vehicleSchedule("amazon", PipelineConfig.VehicleScheduleOption.FULL_WINDOW)
+        .cepVehicleSizes(List.of("80"))
+                // .providerVehicleSizes("amazon", List.of("l"))
+                .deliveryWindow("default", 7, 9)
+                // .deliveryWindow("amazon", 7, 9)
         .filterRegions("Hannover")
         // ----- customize section ends -----
         .build();
@@ -233,7 +237,7 @@ public class HAGRID2MATSimPipelineRunner {
             LOGGER.info("Applying service simplifier...");
             runCarrierServiceMerger(injector, true); // Step 7: Merge carrier services to reduce the number of services
         }
-        runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 8: Run routing for delivery supply carriers based
+        // runRouter(injector, ThreadingType.COMPLETABLE_FUTURE); // Step 8: Run routing for delivery supply carriers based
                                                                // on the generated
 
     writeScenarioSummary(config.pipelineRoot(), runId, concept, date, startedAt, config,
@@ -798,10 +802,10 @@ public class HAGRID2MATSimPipelineRunner {
                 if (normalized.isEmpty()) {
                     throw new IllegalArgumentException("Vehicle size must not be empty.");
                 }
-                if (!SUPPORTED_CEP_VEHICLE_SIZES.contains(normalized)) {
-                    throw new IllegalArgumentException("Unsupported vehicle size alias: " + size
-                            + ". Supported values: " + SUPPORTED_CEP_VEHICLE_SIZES);
-                }
+                // if (!SUPPORTED_CEP_VEHICLE_SIZES.contains(normalized)) {
+                //     throw new IllegalArgumentException("Unsupported vehicle size alias: " + size
+                //             + ". Supported values: " + SUPPORTED_CEP_VEHICLE_SIZES);
+                // }
                 return normalized;
             }
 
@@ -870,10 +874,11 @@ public class HAGRID2MATSimPipelineRunner {
                 }
             },
             SIMPLE_STAGGERED {
-                private final List<Integer> defaults = List.of(8, 11, 14);
+                private final List<Integer> defaults = List.of(8, 13);
 
                 @Override
                 List<Integer> computeDispatchHours(int startHour, int endHour) {
+                    
                     List<Integer> filtered = defaults.stream()
                             .filter(hour -> hour >= 0 && hour <= 23)
                             .filter(hour -> hour >= startHour && hour <= endHour)

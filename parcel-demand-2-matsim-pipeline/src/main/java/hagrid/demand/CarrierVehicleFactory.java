@@ -5,12 +5,17 @@ import java.util.Random;
 import java.util.Set;
 
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.freight.carriers.CarrierVehicle;
+import org.matsim.freight.carriers.CarrierVehicleType;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.CarriersUtils;
+import org.matsim.vehicles.CostInformation;
+import org.matsim.vehicles.EngineInformation;
 import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
+import org.matsim.vehicles.VehicleUtils;
 
 public class CarrierVehicleFactory {
 
@@ -23,7 +28,9 @@ public class CarrierVehicleFactory {
     private static Random random = new Random();
 
     /**
-     * Set the global random seed for deterministic behavior (should be called before any random logic).
+     * Set the global random seed for deterministic behavior (should be called
+     * before any random logic).
+     * 
      * @param seed the seed to use (e.g. runId.hashCode())
      */
     public static void setGlobalRandomSeed(long seed) {
@@ -50,7 +57,7 @@ public class CarrierVehicleFactory {
         VehicleType vehicleType = getVehicleType(size);
         vehicleType.setNetworkMode("car");
         // not nesscary to add skill - but i guess i keep it for now
-        CarriersUtils.addSkill(vehicleType, "conventional");  
+        CarriersUtils.addSkill(vehicleType, "conventional");
 
         // Create vehicle ID based on size and start time suffix
         CarrierVehicle.Builder vBuilder = CarrierVehicle.Builder
@@ -87,8 +94,9 @@ public class CarrierVehicleFactory {
         // Get the vehicle type
         VehicleType vehicleType = getVehicleType(vehicleIdSuffix);
         vehicleType.setNetworkMode("car");
+
         // not nesscary to add skill - but i guess i keep it for now
-        CarriersUtils.addSkill(vehicleType, "supply");       
+        CarriersUtils.addSkill(vehicleType, "supply");
 
         // Create the vehicle builder
         CarrierVehicle.Builder vBuilder = CarrierVehicle.Builder.newInstance(vehicleId, homeId, vehicleType);
@@ -101,25 +109,102 @@ public class CarrierVehicleFactory {
         return vBuilder.build();
     }
 
-    /**
-     * Determines the vehicle type based on the provided size.
-     *
-     * @param vehicleTypes The available vehicle types.
-     * @param size         The size of the vehicle ("l" or "m").
-     * @return The determined VehicleType.
-     * @throws IllegalArgumentException If an unsupported vehicle size is provided.
-     */
+    // /**
+    // * Determines the vehicle type based on the provided size.
+    // *
+    // * @param vehicleTypes The available vehicle types.
+    // * @param size The size of the vehicle ("l" or "m").
+    // * @return The determined VehicleType.
+    // * @throws IllegalArgumentException If an unsupported vehicle size is
+    // provided.
+    // */
+    // private static VehicleType getVehicleType(String size) {
+
+    // switch (size.toLowerCase()) {
+    // case "l":
+    // return vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_l",
+    // VehicleType.class));
+    // case "m":
+    // return vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_m",
+    // VehicleType.class));
+    // case "supply_early":
+    // case "supply_late":
+    // return vehicleTypes.getVehicleTypes().get(Id.create("ct_truck_heavy",
+    // VehicleType.class));
+    // default:
+    // throw new IllegalArgumentException("Unsupported vehicle size: " + size);
+    // }
+    // }
+
     private static VehicleType getVehicleType(String size) {
-        switch (size.toLowerCase()) {
-            case "l":
-                return vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_l", VehicleType.class));
-            case "m":
-                return vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_m", VehicleType.class));
+        if (size == null || size.trim().isEmpty()) {
+            throw new IllegalArgumentException("Vehicle size string is null or empty.");
+        }
+
+        String trimmed = size.trim();
+
+        Integer capacity = tryParsePositiveInt(trimmed);
+        if (capacity != null) {
+            VehicleType baseType = vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_l", VehicleType.class));
+            if (baseType == null) {
+                throw new IllegalStateException("Base vehicle type 'ct_truck_heavy' not found in vehicleTypes.");
+            }
+
+            Id<VehicleType> newTypeId = Id.create("ct_freight_cap_" + capacity, VehicleType.class);
+            VehicleType newType = VehicleUtils.getFactory().createVehicleType(newTypeId);
+
+            copyVehicleTypeAttributes(baseType, newType);
+
+            newType.getCapacity().setOther((double) capacity);
+            vehicleTypes.getVehicleTypes().put(newTypeId, newType);
+            
+            return newType;
+        }
+
+        switch (trimmed.toLowerCase()) {
             case "supply_early":
             case "supply_late":
                 return vehicleTypes.getVehicleTypes().get(Id.create("ct_truck_heavy", VehicleType.class));
             default:
                 throw new IllegalArgumentException("Unsupported vehicle size: " + size);
+        }
+    }
+
+    private static Integer tryParsePositiveInt(String value) {
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed <= 0) {
+                throw new IllegalArgumentException("Capacity must be positive but was: " + parsed);
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static void copyVehicleTypeAttributes(VehicleType from, VehicleType to) {
+        to.setNetworkMode(from.getNetworkMode() != null ? from.getNetworkMode() : TransportMode.car);
+
+        to.setDescription(from.getDescription());
+        to.setMaximumVelocity(from.getMaximumVelocity());
+        
+        // EngineInformation fromEngine = from.getEngineInformation();
+        // EngineInformation toEngine = to.getEngineInformation();
+        // if (fromEngine != null && toEngine != null) {
+        //     toEngine.setFuelType(fromEngine.getFuelType());
+        //     toEngine.setGasConsumption(fromEngine.);
+        //     toEngine.setHbefaVehicleCategory(fromEngine.getHbefaVehicleCategory());
+        //     toEngine.setHbefaTechnology(fromEngine.);
+        //     toEngine.setHbefaSizeClass(fromEngine.getHbefaSizeClass());
+        //     toEngine.setHbefaEmissionsConcept(fromEngine.getHbefaEmissionsConcept());
+        // }
+
+        CostInformation fromCost = from.getCostInformation();
+        CostInformation toCost = to.getCostInformation();
+        if (fromCost != null && toCost != null) {
+            toCost.setFixedCost(fromCost.getFixedCosts());
+            toCost.setCostsPerMeter(fromCost.getCostsPerMeter());
+            toCost.setCostsPerSecond(fromCost.getCostsPerSecond());
         }
     }
 
@@ -141,7 +226,7 @@ public class CarrierVehicleFactory {
             case "supply_late":
                 return random.nextGaussian() * 20;
             default:
-                throw new IllegalArgumentException("Unsupported vehicle size: " + size);
+                return random.nextGaussian() * 15;
         }
     }
 
