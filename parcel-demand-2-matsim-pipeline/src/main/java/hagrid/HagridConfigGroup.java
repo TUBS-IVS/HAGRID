@@ -218,8 +218,8 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
         startHourMap.put("default", 7);
         endHourMap.put("default", 14);
 
-        startHourMap.put("amazon", 9);
-        endHourMap.put("amazon", 17);
+        // startHourMap.put("amazon", 9);
+        // endHourMap.put("amazon", 17);
     }
 
     public int getDeliveryStartTime(String provider) {
@@ -288,10 +288,10 @@ public class HagridConfigGroup extends ReflectiveConfigGroup {
             if (normalizedSize.isEmpty()) {
                 throw new IllegalArgumentException("Vehicle size must not be empty.");
             }
-            if (!normalizedSize.equals("m") && !normalizedSize.equals("l")) {
-                throw new IllegalArgumentException("Unsupported CEP vehicle size alias: " + size
-                        + ". Supported values: m, l");
-            }
+            // if (!normalizedSize.equals("m") && !normalizedSize.equals("l")) {
+            //     throw new IllegalArgumentException("Unsupported CEP vehicle size alias: " + size
+            //             + ". Supported values: m, l");
+            // }
             normalized.add(normalizedSize);
         }
 
