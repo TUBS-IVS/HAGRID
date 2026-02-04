@@ -1,6 +1,5 @@
 package hagrid.utils.routing;
 
-import org.apache.logging.log4j.core.Logger;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.core.config.Config;
@@ -23,7 +22,7 @@ public class ZoneBasedTransportCostsFactory implements VRPTransportCostsFactory 
     Config config;
     private final boolean zoneBasedCachingEnabled;
     private final double zoneBasedEuclideanThresholdMeters;
-    private static final Logger log = (Logger) org.apache.logging.log4j.LogManager.getLogger(ZoneBasedTransportCostsFactory.class);
+        private static final org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(ZoneBasedTransportCostsFactory.class);
 
     public ZoneBasedTransportCostsFactory(Scenario scenario, Carriers carriers, Map<String, TravelTime> travelTimes, Config config,
                                           boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters) {
