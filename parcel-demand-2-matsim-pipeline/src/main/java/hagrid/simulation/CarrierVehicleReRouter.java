@@ -41,7 +41,6 @@ import hagrid.utils.routing.DepartureTimeReScheduler;
 import hagrid.utils.routing.UpdateDepartureTimeAndPracticalTimeWindows;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
 
-import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Link;
@@ -63,7 +62,7 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
 public final class CarrierVehicleReRouter {
 
-    private static final Logger log = org.apache.logging.log4j.LogManager.getLogger(CarrierVehicleReRouter.class);
+    private static final org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(CarrierVehicleReRouter.class);
 
     private final Network carNetwork;
 

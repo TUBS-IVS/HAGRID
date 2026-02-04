@@ -31,12 +31,12 @@ public class HAGRIDSimulationConfig {
     /**
      * Base directory containing all input resources for the simulation pipeline.
      */
-    private final Path baseInputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-input");
+    private final Path baseInputDir = Paths.get("sim-input").toAbsolutePath();
 
     /**
      * Base directory where simulation outputs will be written.
      */
-    private final Path baseOutputDir = Paths.get("C:/Users/bienzeisler/HAGRID/HAGRID/parcel-demand-2-matsim-pipeline/sim-output");
+    private final Path baseOutputDir = Paths.get("sim-output").toAbsolutePath();
 
     /**
      * Scenario concept name, e.g. "basecase" or "policyA".
