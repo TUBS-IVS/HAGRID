@@ -170,7 +170,8 @@ public class Router {
     }
 
     /**
-     * Gets U-turn penalty seconds from HagridConfig or returns default (300).
+     * Gets U-turn penalty from HagridConfig or returns default (1.0).
+     * This is a SCORE penalty (JSprit cost units), not real seconds.
      */
     private double getUTurnPenaltySeconds() {
         if (hagridConfigRef != null) {
@@ -180,7 +181,7 @@ public class Router {
                 LOGGER.debug("Could not get uTurnPenaltySeconds from config, using default: {}", e.getMessage());
             }
         }
-        return 300.0; // default: 5 minutes penalty
+        return 1.0; // default: score penalty per U-turn
     }
 
     // Thread-safe store for per-carrier metrics

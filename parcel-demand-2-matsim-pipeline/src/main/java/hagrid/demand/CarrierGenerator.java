@@ -137,6 +137,8 @@ public class CarrierGenerator implements Runnable {
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 
+                        
+
                 } catch (Exception e) {
                         LOGGER.error("Error generating carriers", e);
                 }

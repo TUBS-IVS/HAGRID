@@ -384,15 +384,16 @@ public class HagridConfig {
         public int getCarrierMergeThreshold() { return carrierMergeThreshold; }
         public void setCarrierMergeThreshold(int threshold) { this.carrierMergeThreshold = Math.max(1, threshold); }
 
-        // U-turn penalty — soft cost penalty for reverse-link U-turns in JSprit routing.
-        // In cost units (≈ seconds of travel). 0 = disabled.
-        private double uTurnPenaltySeconds = 300.0;  // 5 minutes
+        // U-turn penalty — soft SCORE penalty for reverse-link U-turns in JSprit routing.
+        // In JSprit cost units (not real seconds/euros). 0 = disabled.
+        private double uTurnPenaltySeconds = 1.0;  // score penalty per U-turn
 
         /**
          * Soft penalty for U-turns during JSprit route optimization.
          * A U-turn is detected when consecutive stops are on reverse links (A→B then B→A).
          * The penalty discourages unnecessary reversals without forbidding them.
-         * Set to 0.0 to disable. Typical values: 180–600 (3–10 minutes).
+         * This is a SCORE penalty (JSprit cost units), NOT a real-time or monetary cost.
+         * Set to 0.0 to disable.
          */
         public double getUTurnPenaltySeconds() { return uTurnPenaltySeconds; }
         public void setUTurnPenaltySeconds(double seconds) { this.uTurnPenaltySeconds = Math.max(0.0, seconds); }
@@ -628,11 +629,31 @@ public class HagridConfig {
     }
 
     /**
-     * Soft penalty for U-turns in JSprit routing (in cost units ≈ seconds).
+     * Soft penalty for U-turns in JSprit routing (score units).
      * 0.0 = disabled. Convenience method delegating to routing().
      */
     public double getUTurnPenaltySeconds() {
         return routing.getUTurnPenaltySeconds();
+    }
+
+    // =========================================================================
+    // CARRIER ROUTING CACHE
+    // =========================================================================
+
+    /**
+     * Whether the carrier routing cache is enabled.
+     * The Router reads this via reflection — method name must match exactly.
+     */
+    public boolean isCarrierRoutingCacheEnabled() {
+        return true; // cache always enabled
+    }
+
+    /**
+     * Directory for persisting per-carrier routing plans.
+     * The Router reads this via reflection — method name must match exactly.
+     */
+    public String getCarrierRoutingCacheDir() {
+        return hagridPaths.cacheDir().toAbsolutePath().toString();
     }
 
     // =========================================================================

@@ -70,6 +70,12 @@ public final class PipelineStatistics {
     // ── Carrier merge log (from CarrierGenerator) ───────────────────────────
     private final CarrierMergeLog carrierMergeLog;
 
+    // ── Routing statistics (from routed carrier plans) ──────────────────────
+    private final RoutingStatistics routingStatistics;
+
+    // ── Pipeline timing (wall-clock per module) ─────────────────────────────
+    private final PipelineTiming pipelineTiming;
+
     // =====================================================================
     //  DTOs
     // =====================================================================
@@ -143,7 +149,23 @@ public final class PipelineStatistics {
             LOGGER.warn("Could not read CarrierMergeLog from scenario: {}", e.getMessage());
         }
 
-        return new PipelineStatistics(summary, carriers, carrierDemand, mergeLog);
+        // ── Routing statistics (after routing module) ────────────────────
+        RoutingStatistics routingStats = null;
+        try {
+            routingStats = RoutingStatistics.collectFrom(scenario);
+        } catch (Exception e) {
+            LOGGER.warn("Could not collect routing statistics: {}", e.getMessage());
+        }
+
+        // ── Pipeline timing ──────────────────────────────────────────────
+        PipelineTiming timing = null;
+        try {
+            timing = (PipelineTiming) scenario.getScenarioElement("pipelineTiming");
+        } catch (Exception e) {
+            LOGGER.warn("Could not read PipelineTiming from scenario: {}", e.getMessage());
+        }
+
+        return new PipelineStatistics(summary, carriers, carrierDemand, mergeLog, routingStats, timing);
     }
 
     // =====================================================================
@@ -151,7 +173,8 @@ public final class PipelineStatistics {
     // =====================================================================
 
     private PipelineStatistics(HAGRIDSummary summary, Carriers carriers,
-                               Map<String, ?> carrierDemand, CarrierMergeLog mergeLog) {
+                               Map<String, ?> carrierDemand, CarrierMergeLog mergeLog,
+                               RoutingStatistics routingStats, PipelineTiming timing) {
 
         // ── Demand overview from HAGRIDSummary ───────────────────────────
         if (summary != null) {
@@ -307,6 +330,9 @@ public final class PipelineStatistics {
 
         this.carrierMergeLog = mergeLog;
 
+        this.routingStatistics = routingStats;
+        this.pipelineTiming = timing;
+
         LOGGER.info("Pipeline statistics collected: {} carriers, {} services, {} parcels",
                 finalCarriers, finalServices, totalCap);
     }
@@ -376,4 +402,8 @@ public final class PipelineStatistics {
     public double getAvgServicesPerCarrier() { return avgServicesPerCarrier; }
 
     public CarrierMergeLog getCarrierMergeLog() { return carrierMergeLog; }
+
+    public RoutingStatistics getRoutingStatistics() { return routingStatistics; }
+
+    public PipelineTiming getPipelineTiming() { return pipelineTiming; }
 }

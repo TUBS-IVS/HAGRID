@@ -144,7 +144,7 @@ public class HAGRIDSimulationRunner {
         zoneThreshold = zoneCaching ? 1500.0 : 0.0;
     }
 
-    double uTurnPenalty = parseNonNegativeDouble(map.getOrDefault("uTurnPenalty", "300.0"), "uTurnPenalty");
+    double uTurnPenalty = parseNonNegativeDouble(map.getOrDefault("uTurnPenalty", "1.0"), "uTurnPenalty");
 
     LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={}",
         concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenalty);

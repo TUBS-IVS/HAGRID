@@ -59,13 +59,13 @@ public class HAGRIDScenarioBuilder {
     Instant buildStart = Instant.now();
 
     LOGGER.info("[1/8] Loading MATSim base config from {}", simConfig.getConfigPath());
-        Config config = ConfigUtils.loadConfig(simConfig.getConfigPath().toString());
+        Config config = ConfigUtils.loadConfig(simConfig.getConfigPath().toAbsolutePath().toString());
     LOGGER.info("[2/8] Applying HAGRID simulation overrides");
         setupConfig(config, simConfig);
 
     LOGGER.info("[3/8] Loading carrier vehicle types from {}", simConfig.getVehicleTypePath());
         CarrierVehicleTypes types = new CarrierVehicleTypes();
-        new CarrierVehicleTypeReader(types).readFile(simConfig.getVehicleTypePath().toString());
+        new CarrierVehicleTypeReader(types).readFile(simConfig.getVehicleTypePath().toAbsolutePath().toString());
     LOGGER.info("Loaded {} vehicle type definitions", types.getVehicleTypes().size());
 
     LOGGER.info("[4/8] Merging delivery and supply carriers into unified plans");
@@ -73,8 +73,8 @@ public class HAGRIDScenarioBuilder {
 
     LOGGER.info("[5/8] Configuring freight carrier module");
         FreightCarriersConfigGroup freightConfig = ConfigUtils.addOrGetModule(config, FreightCarriersConfigGroup.class);
-        freightConfig.setCarriersFile(simConfig.getMergedCarrierPath().toString());
-        freightConfig.setCarriersVehicleTypesFile(simConfig.getVehicleTypePath().toString());
+        freightConfig.setCarriersFile(simConfig.getMergedCarrierPath().toAbsolutePath().toString());
+        freightConfig.setCarriersVehicleTypesFile(simConfig.getVehicleTypePath().toAbsolutePath().toString());
 
     LOGGER.info("[6/8] Loading MATSim scenario graph and population");
         Scenario scenario = ScenarioUtils.loadScenario(config);
@@ -85,12 +85,12 @@ public class HAGRIDScenarioBuilder {
     LOGGER.info("[7/8] Loading modal networks for car and cargobike routing");
         NetworkConfigGroup netCfg = ConfigUtils.addOrGetModule(config, NetworkConfigGroup.class);
         Network carNet = org.matsim.core.network.NetworkUtils.createNetwork(netCfg);
-        new MatsimNetworkReader(carNet).readFile(simConfig.getCarNetworkPath().toString());
+        new MatsimNetworkReader(carNet).readFile(simConfig.getCarNetworkPath().toAbsolutePath().toString());
         scenario.addScenarioElement("carNetwork", carNet);
     LOGGER.info("Loaded car network with {} links", carNet.getLinks().size());
 
         Network bikeNet = org.matsim.core.network.NetworkUtils.createNetwork(netCfg);
-        new MatsimNetworkReader(bikeNet).readFile(simConfig.getBikeNetworkPath().toString());
+        new MatsimNetworkReader(bikeNet).readFile(simConfig.getBikeNetworkPath().toAbsolutePath().toString());
         scenario.addScenarioElement("bikeNetwork", bikeNet);
     LOGGER.info("Loaded cargobike network with {} links", bikeNet.getLinks().size());
 
@@ -120,12 +120,12 @@ public class HAGRIDScenarioBuilder {
 
         config.global().setRandomSeed(1337);
 
-        config.network().setInputFile(simConfig.getCarNetworkPath().toString());
+        config.network().setInputFile(simConfig.getCarNetworkPath().toAbsolutePath().toString());
         config.network().setTimeVariantNetwork(true);
-        config.network().setChangeEventsInputFile(simConfig.getNetworkChangeEventPath().toString());
+        config.network().setChangeEventsInputFile(simConfig.getNetworkChangeEventPath().toAbsolutePath().toString());
         config.network().setInputCRS("EPSG:25832");
 
-        config.controller().setOutputDirectory(simConfig.getOutputDirectory().toString());
+        config.controller().setOutputDirectory(simConfig.getOutputDirectory().toAbsolutePath().toString());
         config.controller().setRunId(simConfig.getRunId());
         config.controller().setFirstIteration(0);
         config.controller().setLastIteration(simConfig.getMaxIterations());
@@ -216,7 +216,10 @@ public class HAGRIDScenarioBuilder {
         // Quick Fix service parcel type attributes (e.g. "Mixed" -> "MIXED" -> Change of enum values)
         fixServiceParcelTypeAttributes(merged);
 
-        // Write merged carriers to hagrid-output/{runId}/carriers/carrier_plans_combined.xml\n        LOGGER.info(\"Writing merged carriers to {}\", simConfig.getMergedCarrierPath());\n        java.nio.file.Files.createDirectories(simConfig.getMergedCarrierPath().getParent());\n        new CarrierPlanWriter(merged).write(simConfig.getMergedCarrierPath().toString());
+        // Write merged carriers to hagrid-output/{runId}/carriers/carrier_plans_combined.xml
+        LOGGER.info("Writing merged carriers to {}", simConfig.getMergedCarrierPath());
+        java.nio.file.Files.createDirectories(simConfig.getMergedCarrierPath().getParent());
+        new CarrierPlanWriter(merged).write(simConfig.getMergedCarrierPath().toAbsolutePath().toString());
         Duration mergeDuration = Duration.between(start, Instant.now());
         LOGGER.info("Carrier merge completed in {} ms", mergeDuration.toMillis());
     }

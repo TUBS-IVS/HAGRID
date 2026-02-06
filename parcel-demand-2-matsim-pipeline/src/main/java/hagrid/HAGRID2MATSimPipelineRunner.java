@@ -36,9 +36,9 @@ public final class HAGRID2MATSimPipelineRunner {
 	private static final VehicleSchedule SCHEDULE = VehicleSchedule.SIMPLE_STAGGERED;
 	private static final int DELIVERY_START = 7;
 	private static final int DELIVERY_END = 14;
-	private static final boolean RUN_ROUTING = false;
+	private static final boolean RUN_ROUTING = true;
 	private static final boolean ENABLE_CACHING = true;
-	private static final int JSPRIT_ITERATIONS = 1;  // 1 for initial model, 20-50 for production
+	private static final int JSPRIT_ITERATIONS = 1;  // 1 for initial model
 
 	// =========================================================================
 	// SCENARIO DEFINITIONS - Define your scenarios here
