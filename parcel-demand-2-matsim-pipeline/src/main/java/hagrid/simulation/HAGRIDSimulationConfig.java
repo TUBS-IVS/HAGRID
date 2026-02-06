@@ -33,16 +33,7 @@ public class HAGRIDSimulationConfig {
     /**
      * Centralized path manager for all pipeline I/O.
      */
-<<<<<<< Updated upstream
-    private final Path baseInputDir = Paths.get("sim-input").toAbsolutePath();
-
-    /**
-     * Base directory where simulation outputs will be written.
-     */
-    private final Path baseOutputDir = Paths.get("sim-output").toAbsolutePath();
-=======
     private final HagridPaths paths;
->>>>>>> Stashed changes
 
     /**
      * Scenario concept name, e.g. "basecase" or "policyA".
