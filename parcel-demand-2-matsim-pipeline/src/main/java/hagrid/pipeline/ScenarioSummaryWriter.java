@@ -79,6 +79,7 @@ public final class ScenarioSummaryWriter {
 				appendDemandOverview(sb, context);
 				appendDemandByProvider(sb, context);
 				appendSplittingInfo(sb, context);
+				appendCarrierMerging(sb, context);
 				appendFinalCarrierStats(sb, context);
 			}
 
@@ -247,6 +248,64 @@ public final class ScenarioSummaryWriter {
 			}
 			sb.append(SEPARATOR);
 		}
+	}
+
+	private static void appendCarrierMerging(StringBuilder sb, RunContext context) {
+		PipelineStatistics stats = context.getPipelineStatistics();
+		CarrierMergeLog mergeLog = stats.getCarrierMergeLog();
+		if (mergeLog == null) return;
+
+		sb.append("┌──────────────────────────────────────────────────────────┐").append(SEPARATOR);
+		sb.append("│              CARRIER MERGING (Small → Large)             │").append(SEPARATOR);
+		sb.append("└──────────────────────────────────────────────────────────┘").append(SEPARATOR);
+		sb.append(SEPARATOR);
+		sb.append(String.format(Locale.US, "  Merge threshold:           %,d parcels%n", mergeLog.getMergeThreshold()));
+		sb.append(String.format(Locale.US, "  Carriers before merge:     %,d%n", mergeLog.getCarriersBeforeMerge()));
+		sb.append(String.format(Locale.US, "  Carriers below threshold:  %,d%n", mergeLog.getCarriersBelowThreshold()));
+		sb.append(String.format(Locale.US, "  Carriers after merge:      %,d%n", mergeLog.getCarriersAfterMerge()));
+		sb.append(String.format(Locale.US, "  Total merge operations:    %,d%n", mergeLog.getEntries().size()));
+		sb.append(SEPARATOR);
+
+		if (!mergeLog.getEntries().isEmpty()) {
+			sb.append("  Merge details:").append(SEPARATOR);
+			sb.append(String.format("  %-26s │ %-26s │ %5s │ %6s │ %6s │ %6s │ %-14s%n",
+					"Source (dissolved)", "Target (absorbed)",
+					"Svc-S", "Pcl-S", "Tgt-b", "Tgt-a", "Type"));
+			sb.append("  ──────────────────────────┼────────────────────────────┼───────┼────────┼────────┼────────┼──────────────").append(SEPARATOR);
+
+			for (CarrierMergeLog.MergeEntry e : mergeLog.getEntries()) {
+				String srcId = truncate(e.sourceCarrierId(), 26);
+				String tgtId = truncate(e.targetCarrierId(), 26);
+				String type = e.iteration() > 0
+						? e.mergeType() + "[" + e.iteration() + "]"
+						: e.mergeType();
+				sb.append(String.format(Locale.US, "  %-26s │ %-26s │ %,5d │ %,6d │ %,6d │ %,6d │ %-14s%n",
+						srcId, tgtId,
+						e.sourceServices(), e.sourceParcels(),
+						e.targetParcelsBefore(), e.targetParcelsAfter(),
+						type));
+			}
+			sb.append(SEPARATOR);
+
+			// Summary by merge type
+			var byType = mergeLog.getEntries().stream()
+					.collect(java.util.stream.Collectors.groupingBy(
+							CarrierMergeLog.MergeEntry::mergeType,
+							java.util.LinkedHashMap::new,
+							java.util.stream.Collectors.toList()));
+			sb.append("  Summary by merge type:").append(SEPARATOR);
+			for (var entry : byType.entrySet()) {
+				int count = entry.getValue().size();
+				int parcels = entry.getValue().stream().mapToInt(CarrierMergeLog.MergeEntry::sourceParcels).sum();
+				sb.append(String.format(Locale.US, "    %-20s  %,3d merges  (%,d parcels moved)%n",
+						entry.getKey(), count, parcels));
+			}
+			sb.append(SEPARATOR);
+		}
+	}
+
+	private static String truncate(String s, int maxLen) {
+		return s.length() <= maxLen ? s : s.substring(0, maxLen - 2) + "..";
 	}
 
 	private static void appendFinalCarrierStats(StringBuilder sb, RunContext context) {
