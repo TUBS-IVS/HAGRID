@@ -48,13 +48,36 @@ public class HAGRIDRouterUtils {
     private static final int MAXROUTEDURATION = 25200; // example value, adjust as needed
 
     /**
-     * Configures the routing algorithm.
+     * Configures the routing algorithm (no U-turn penalty).
      *
      * @param vrp          The vehicle routing problem.
      * @param serviceCount The number of services.
      * @return The configured vehicle routing algorithm.
      */
     public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount) {
+        return configureAlgorithm(vrp, serviceCount, 1, null, 0.0);
+    }
+
+    /**
+     * Configures the routing algorithm with custom iteration count (no U-turn penalty).
+     */
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount, int jspritIterations) {
+        return configureAlgorithm(vrp, serviceCount, jspritIterations, null, 0.0);
+    }
+
+    /**
+     * Configures the routing algorithm with custom iteration count and optional U-turn penalty.
+     *
+     * @param vrp                  The vehicle routing problem.
+     * @param serviceCount         The number of services.
+     * @param jspritIterations     Number of JSprit iterations (1=quick, 20-50=production)
+     * @param network              MATSim network for U-turn detection (null to disable)
+     * @param uTurnPenaltySeconds  Soft penalty per U-turn in cost units (0 to disable)
+     * @return The configured vehicle routing algorithm.
+     */
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
+                                                              int jspritIterations, Network network,
+                                                              double uTurnPenaltySeconds) {
         StateManager stateManager = new StateManager(vrp);
         ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
 
@@ -86,6 +109,11 @@ public class HAGRIDRouterUtils {
         // constraintManager.addSkillsConstraint();
         constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
+        // Soft U-turn penalty: discourages reverse-link maneuvers in route solutions
+        if (network != null && uTurnPenaltySeconds > 0.0) {
+            constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltySeconds));
+        }
+
         double radialShare = 0.25; // lower default shares to reduce ruin size
         double randomShare = 0.40;
 
@@ -112,12 +140,8 @@ public class HAGRIDRouterUtils {
                 .setProperty(Jsprit.Parameter.FAST_REGRET, "false")
                 .buildAlgorithm();
 
-        // int iterations = serviceCount > 250 ? 20 : 40;
-        // int termination = serviceCount > 250 ? 3 : 5;
-        int iterations = 1; // keep one iteration to get a quick solution
-        // int iterations = 1000; // keep one iteration to get a quick solution
-        // int termination = (int) (0.1 * iterations);
-        int termination = 1;
+        int iterations = Math.max(1, jspritIterations);
+        int termination = Math.max(1, (int) (0.1 * iterations)); // 10% of iterations without improvement
 
         algorithm.setMaxIterations(iterations);
         algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));

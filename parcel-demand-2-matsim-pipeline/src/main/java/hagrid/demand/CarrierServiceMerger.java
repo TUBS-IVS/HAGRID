@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.demand.CarrierMergeValidator.CarrierMergeStats;
 import hagrid.utils.demand.Delivery.ParcelType;
 import hagrid.utils.general.HAGRIDUtils;
@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class CarrierServiceMerger implements Runnable {
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     @Inject
     private Scenario scenario;
@@ -155,7 +155,7 @@ public class CarrierServiceMerger implements Runnable {
         LOGGER.info("Service merging completed.");
     }
 
-    public static void mergeServices(Carriers carriers, Scenario scenario, HagridConfigGroup hagridConfig,
+    public static void mergeServices(Carriers carriers, Scenario scenario, HagridConfig hagridConfig,
             boolean fullMerge) {
         final Network subNetwork = HAGRIDUtils.getScenarioElementAs("parcelServiceNetwork", scenario);
 
@@ -238,13 +238,12 @@ public class CarrierServiceMerger implements Runnable {
                 }
 
                 // Validate capacity demand before service creation
-                // TODO: Implement a splitting of merged services if the demand exceeds the
-                // demand border. But with our date it does not happen currently.
-
-                if (totalCapacity > hagridConfig.getDemandBorder()) {
-                    throw new IllegalStateException(String.format(
-                            "Merged service exceeds demand border! Capacity = %d, Border = %d. Carrier: %s, Link: %s",
-                            totalCapacity, hagridConfig.getDemandBorder(), carrier.getId(), key.linkId));
+                // Uses demand border (max services per carrier from config) as upper limit for merged services
+                final int demandBorder = hagridConfig.getDemandBorder();
+                if (totalCapacity > demandBorder) {
+                    LOGGER.warn("Skipping merge group: total capacity {} exceeds demand border {} — keeping {} individual services. Carrier: {}, Link: {}",
+                            totalCapacity, demandBorder, services.size(), carrier.getId(), key.linkId);
+                    continue;
                 }
                 Id<Link> selectedLinkId = fullMerge
                         ? key.linkId

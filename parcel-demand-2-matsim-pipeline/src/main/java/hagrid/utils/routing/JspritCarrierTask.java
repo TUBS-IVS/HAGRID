@@ -24,24 +24,34 @@ public class JspritCarrierTask implements PrioritizedRunnable {
     private final AtomicInteger startedVRPCounter;
     private final int taskCount;
     private final Network network;
+    private final double uTurnPenaltySeconds;
 
     /**
      * Constructs a new JspritCarrierTask.
      * Used from MATSim CarriersUtils Class 
      *
-     * @param carrier            The carrier to route.
-     * @param netBasedCosts      The network-based transport costs.
-     * @param startedVRPCounter  The counter for started VRP tasks.
-     * @param taskCount          The total number of tasks.
-     * @param network            The network.
+     * @param carrier                The carrier to route.
+     * @param netBasedCosts          The network-based transport costs.
+     * @param startedVRPCounter      The counter for started VRP tasks.
+     * @param taskCount              The total number of tasks.
+     * @param network                The network.
+     * @param uTurnPenaltySeconds    Soft penalty per U-turn (0 to disable).
      */
     public JspritCarrierTask(Carrier carrier, VRPTransportCosts netBasedCosts,
-                             AtomicInteger startedVRPCounter, int taskCount, Network network) {
+                             AtomicInteger startedVRPCounter, int taskCount, Network network,
+                             double uTurnPenaltySeconds) {
         this.carrier = carrier;
         this.netBasedCosts = netBasedCosts;
         this.startedVRPCounter = startedVRPCounter;
         this.taskCount = taskCount;
         this.network = network;
+        this.uTurnPenaltySeconds = uTurnPenaltySeconds;
+    }
+
+    /** Backward-compatible constructor (no U-turn penalty). */
+    public JspritCarrierTask(Carrier carrier, VRPTransportCosts netBasedCosts,
+                             AtomicInteger startedVRPCounter, int taskCount, Network network) {
+        this(carrier, netBasedCosts, startedVRPCounter, taskCount, network, 0.0);
     }
 
     public int getPriority() { return carrier.getServices().size(); }
@@ -59,7 +69,8 @@ public class JspritCarrierTask implements PrioritizedRunnable {
         int serviceCount = carrier.getServices().size();
 
         VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-        VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount);
+        VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
+                vrp, serviceCount, 1, network, uTurnPenaltySeconds);
 
         VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
         CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);

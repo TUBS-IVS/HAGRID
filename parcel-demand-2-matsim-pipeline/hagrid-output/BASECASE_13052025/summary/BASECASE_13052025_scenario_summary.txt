@@ -1,0 +1,33 @@
+HAGRID Demand Pipeline Run Summary
+===================================
+
+[Scenario Information]
+  Run ID:          BASECASE_13052025
+  Concept:         basecase
+  Simulation Date: 2025-05-13
+  Started At:      2026-02-06T18:08:47.398007800
+  Filter Regions:  Hannover
+
+[Pipeline Settings]
+  Service Simplifier: true
+  Run Routing:        false
+  Caching Enabled:    true
+
+[Delivery Windows]
+  default: 07:00-14:00
+
+[Vehicle Configuration]
+  default:
+    Sizes:    [m, l]
+    Schedule: SIMPLE_STAGGERED (07:00 and 14:00)
+    Dispatch: [7, 14]
+  amazon:
+    Sizes:    [m, l]
+    Schedule: SIMPLE_STAGGERED (07:00 and 14:00)
+    Dispatch: [7, 14]
+
+[Cache Configuration]
+  Enabled:   true
+  Directory: parcel-demand-2-matsim-pipeline\hagrid-output\BASECASE_13052025\cache\BASECASE_13052025
+  Run ID:    BASECASE_13052025
+

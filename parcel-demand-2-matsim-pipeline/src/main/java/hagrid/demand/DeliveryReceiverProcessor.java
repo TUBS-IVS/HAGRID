@@ -8,7 +8,7 @@ import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
 
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 
 
 @Singleton
@@ -20,7 +20,7 @@ public class DeliveryReceiverProcessor {
     private Scenario scenario;
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     public void run() {
         try {

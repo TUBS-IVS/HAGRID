@@ -40,8 +40,11 @@ public class HAGRIDSimulationModule extends AbstractModule {
 
 	private final double zoneBasedEuclideanThresholdMeters;
 
+	private final double uTurnPenaltySeconds;
+
 	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations,
-			boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters) {
+			boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters,
+			double uTurnPenaltySeconds) {
 		this.types = CarriersUtils.getCarrierVehicleTypes(scenario);
 		this.scenario = scenario;
 		this.isUsingZones = isUsingZones;
@@ -49,6 +52,7 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		this.jspritIterations = jspritIterations;
 		this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
 		this.zoneBasedEuclideanThresholdMeters = zoneBasedEuclideanThresholdMeters;
+		this.uTurnPenaltySeconds = uTurnPenaltySeconds;
 	}
 
 	@Inject
@@ -57,7 +61,7 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	@Override
 	public void install() {
 		// Scoring and replanning function
-		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork());		
+		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork(), uTurnPenaltySeconds);		
 
 		bind(Carriers.class).toProvider(new CarrierProvider()).asEagerSingleton();
 		bind(CarrierStrategyManager.class).toProvider(new ReplanningStrategies(types, isUsingZones, maxIterationsMATSim, jspritIterations));

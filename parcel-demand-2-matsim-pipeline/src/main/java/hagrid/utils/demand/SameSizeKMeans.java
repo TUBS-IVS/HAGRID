@@ -160,7 +160,10 @@ public class SameSizeKMeans<V extends NumberVector> extends AbstractKMeans<V, Me
                 Meta c = metas.get(id);
                 // Assigning to best cluster - which cannot be full yet!
                 ModifiableDBIDs cluster = clusters.get(c.primary);
-                assert (cluster.size() <= maxsize);
+                if (cluster.size() > maxsize) {
+                    throw new IllegalStateException(
+                        "Cluster " + c.primary + " exceeds max size " + maxsize + ": " + cluster.size());
+                }
                 cluster.add(id);
                 start++;
                 // Now the cluster may have become completely filled:
@@ -263,7 +266,10 @@ public class SameSizeKMeans<V extends NumberVector> extends AbstractKMeans<V, Me
                 Meta c = metas.get(id);
                 IntegerArrayQuickSort.sort(preferences, pcomp.select(c));
                 ModifiableDBIDs source = clusters.get(c.primary);
-                assert (source.contains(id));
+                if (!source.contains(id)) {
+                    throw new IllegalStateException(
+                        "Cluster " + c.primary + " does not contain expected element during transfer");
+                }
                 tloop:
                 for (int i : preferences) {
                     if (i == c.primary) {

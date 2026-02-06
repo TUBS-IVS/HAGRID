@@ -216,19 +216,7 @@ public class HAGRIDScenarioBuilder {
         // Quick Fix service parcel type attributes (e.g. "Mixed" -> "MIXED" -> Change of enum values)
         fixServiceParcelTypeAttributes(merged);
 
-        // Write merged carriers to sim-input/carrier/<runId>_carrier_files/carrierPlans_total.xml
-        String runId = simConfig.getRunId();
-        String baseDir = System.getProperty("user.dir");
-        java.nio.file.Path mergedOut = java.nio.file.Path.of(
-            baseDir,
-            "sim-input",
-            "carrier",
-            runId + "_carrier_files",
-            "carrierPlans_total.xml"
-        );
-        LOGGER.info("Writing merged carriers to {}", mergedOut);
-        // java.nio.file.Files.createDirectories(mergedOut.getParent());
-        new CarrierPlanWriter(merged).write(mergedOut.toString());
+        // Write merged carriers to hagrid-output/{runId}/carriers/carrier_plans_combined.xml\n        LOGGER.info(\"Writing merged carriers to {}\", simConfig.getMergedCarrierPath());\n        java.nio.file.Files.createDirectories(simConfig.getMergedCarrierPath().getParent());\n        new CarrierPlanWriter(merged).write(simConfig.getMergedCarrierPath().toString());
         Duration mergeDuration = Duration.between(start, Instant.now());
         LOGGER.info("Carrier merge completed in {} ms", mergeDuration.toMillis());
     }

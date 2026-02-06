@@ -17,13 +17,11 @@ import org.matsim.freight.carriers.CarrierVehicleTypeReader;
 import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Hub;
 import hagrid.utils.general.HAGRIDUtils;
 import hagrid.utils.general.Region;
-
-import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -49,7 +47,7 @@ public class LogisticsDataProcessor implements Runnable {
     private Scenario scenario;
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     /**
      * Runs the logistics data processing, reading data from specified files

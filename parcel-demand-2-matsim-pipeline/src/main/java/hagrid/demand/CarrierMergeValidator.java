@@ -12,7 +12,7 @@ import org.matsim.freight.carriers.Carriers;
 
 import com.google.inject.Inject;
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.demand.Delivery.ParcelType;
 import hagrid.utils.general.HAGRIDUtils;
 
@@ -72,7 +72,7 @@ public class CarrierMergeValidator {
     /**
      * Validates the post-merge stats and asserts consistency.
      */
-    public static void validatePostMerge(Carriers carriers, CarrierMergeStats preStats, HagridConfigGroup hagridConfig) {
+    public static void validatePostMerge(Carriers carriers, CarrierMergeStats preStats, HagridConfig hagridConfig) {
         int totalServices = 0;
         int totalB2B = 0;
         int totalB2C = 0;
@@ -141,12 +141,8 @@ public class CarrierMergeValidator {
 
         LOGGER.info("Merge validation passed: all parcel counts and capacity are consistent.");
 
-    String baseDir = System.getProperty("user.dir");
-    String outputDir = baseDir + java.io.File.separator + "parcel-demand-2-matsim-pipeline" + java.io.File.separator + "output" + java.io.File.separator + hagridConfig.getRunId() + java.io.File.separator;
-    HAGRIDUtils.createDirectoryIfNotExists(outputDir);
-
-    String outputPath = outputDir + hagridConfig.getRunId() + "_delivery_carriers_merged_services.xml";
-    new CarrierPlanWriter(carriers).write(outputPath);
+    new CarrierPlanWriter(carriers).write(hagridConfig.io().deliveryCarriersMerged());
+    LOGGER.info("Written: {}", hagridConfig.io().deliveryCarriersMerged());
     }
 
     private static int parseIntSafe(Object value) {

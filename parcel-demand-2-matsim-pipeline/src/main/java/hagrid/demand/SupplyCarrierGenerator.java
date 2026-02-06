@@ -2,7 +2,7 @@ package hagrid.demand;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.demand.Hub;
 import hagrid.utils.general.HAGRIDUtils;
 import org.apache.logging.log4j.LogManager;
@@ -22,35 +22,15 @@ import java.util.*;
 // @Singleton
 public class SupplyCarrierGenerator implements Runnable {
 
-    // TODO Add Information to Config Group!
-
     private static final Logger LOGGER = LogManager.getLogger(SupplyCarrierGenerator.class);
-    private static final int SUPPLY_VEH_CAP = 2000;
-    private static final int DURATION_PER_STOP = 30 * 60;
 
-    private static final List<Id<Link>> SUPPLY_LINK_IDS = Arrays.asList(
-            Id.createLinkId("2847279"),
-            Id.createLinkId("3029295"),
-            Id.createLinkId("3821892-1136438-2142663-2143065-982322"),
-            Id.createLinkId("2591669"));
-
-    private static final Map<String, Id<Link>> SUPPLY_LINK_DIRECTIONS = new HashMap<>() {
-        {
-            put("south", Id.createLinkId("2847279"));
-            put("north", Id.createLinkId("3821892-1136438-2142663-2143065-982322"));
-            put("east", Id.createLinkId("3029295"));
-            put("west", Id.createLinkId("2591669"));
-        }
-    };
-
-    private static final Map<String, Double> SUPPLY_DIRECTION_PROBABILITIES = new HashMap<>() {
-        {
-            put("south", 0.25);
-            put("north", 0.25);
-            put("east", 0.25);
-            put("west", 0.25);
-        }
-    };    
+    // Values loaded from HagridConfig at runtime
+    private int supplyVehCap;
+    private int durationPerStop;
+    private int minSupplySplitDemand;
+    private Map<String, Id<Link>> supplyLinkDirections;
+    private List<Id<Link>> supplyLinkIds;
+    private Map<String, Double> supplyDirectionProbabilities;    
 
     private Random rand;
 
@@ -58,7 +38,7 @@ public class SupplyCarrierGenerator implements Runnable {
     private Scenario scenario;
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     private CarrierVehicleFactory carrierVehicleFactory;
     private CarrierVehicleTypes vehicleTypes;
@@ -68,6 +48,9 @@ public class SupplyCarrierGenerator implements Runnable {
     public void run() {
         try {
             LOGGER.info("Starting supply carrier generation...");
+
+            // Load configuration values from HagridConfig
+            loadConfigValues();
 
             // Use a deterministic random seed based on the runId for reproducibility
             String runId = hagridConfig.getRunId();
@@ -107,24 +90,42 @@ public class SupplyCarrierGenerator implements Runnable {
             validateSupplyCarriers(supplyCarriers, splitSupplyCarriers, hubs, hagridConfig.isWhiteLabel());
 
 
-            String baseDir = System.getProperty("user.dir");
-            String outputDir = baseDir + java.io.File.separator + "parcel-demand-2-matsim-pipeline" + java.io.File.separator + "output" + java.io.File.separator + hagridConfig.getRunId() + java.io.File.separator;
-            HAGRIDUtils.createDirectoryIfNotExists(outputDir);
+            new CarrierPlanWriter(supplyCarriers).write(hagridConfig.io().supplyCarriersUnrouted());
+            LOGGER.info("Written: {}", hagridConfig.io().supplyCarriersUnrouted());
 
-            String outputPath = outputDir + hagridConfig.getRunId() + "_supply_carriers.xml";
-            LOGGER.info("Writing unrouted supply carriers to output directory {}", outputPath);
-            new CarrierPlanWriter(supplyCarriers).write(outputPath);
-            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(supplyCarriers, outputDir + "supply_carriers.shp");
-
-            outputPath = outputDir + hagridConfig.getRunId() + "_split_supply_carriers.xml";
-            LOGGER.info("Writing unrouted splitted supply carriers to output directory {}", outputPath);
-            new CarrierPlanWriter(splitSupplyCarriers).write(outputPath);
-            // HAGRIDUtils.convertDemandFromParcelsToShapeFile(splitSupplyCarriers, outputDir + "split_supply_carriers.shp");
+            new CarrierPlanWriter(splitSupplyCarriers).write(hagridConfig.io().supplyCarriersSplitUnrouted());
+            LOGGER.info("Written: {}", hagridConfig.io().supplyCarriersSplitUnrouted());
             LOGGER.info("Supply carrier generation completed successfully.");
 
         } catch (Exception e) {
             LOGGER.error("Error generating supply carriers", e);
         }
+    }
+
+    /**
+     * Loads configuration values from HagridConfig.
+     * Converts string-based link IDs from config to proper Id<Link> objects.
+     */
+    private void loadConfigValues() {
+        // Basic numeric values
+        this.supplyVehCap = hagridConfig.getSupplyVehCap();
+        this.durationPerStop = hagridConfig.getSupplyDurationPerStop();
+        this.minSupplySplitDemand = hagridConfig.getMinSupplySplitDemand();
+        
+        // Convert supply link directions from String to Id<Link>
+        this.supplyLinkDirections = new HashMap<>();
+        this.supplyLinkIds = new ArrayList<>();
+        for (Map.Entry<String, String> entry : hagridConfig.getSupplyLinkDirections().entrySet()) {
+            Id<Link> linkId = Id.createLinkId(entry.getValue());
+            supplyLinkDirections.put(entry.getKey(), linkId);
+            supplyLinkIds.add(linkId);
+        }
+        
+        // Copy direction probabilities
+        this.supplyDirectionProbabilities = new HashMap<>(hagridConfig.getSupplyDirectionProbabilities());
+        
+        LOGGER.info("Loaded supply config: supplyVehCap={}, durationPerStop={}, minSupplySplitDemand={}, directions={}",
+                supplyVehCap, durationPerStop, minSupplySplitDemand, supplyLinkDirections.keySet());
     }
 
     /**
@@ -141,6 +142,8 @@ public class SupplyCarrierGenerator implements Runnable {
     private Carriers splitSupplyCarriers(Carriers supplyCarriers) {
 
         LOGGER.info("Split Supply Services in different Starting Points on the Map");
+        LOGGER.info("Using minSupplySplitDemand = {} (supplyVehCap / 2 = {} / 2)", 
+                minSupplySplitDemand, supplyVehCap);
 
         Carriers splitSupplyCarriers = new Carriers();
 
@@ -148,6 +151,17 @@ public class SupplyCarrierGenerator implements Runnable {
         for (Carrier carrier : new ArrayList<>(supplyCarriers.getCarriers().values())) {
             // Skip the carrier "from_dhl_anderten"
             if (!carrier.getId().toString().contains("from_dhl_anderten")) {
+                
+                int carrierDemand = getNumberOfParcels(carrier);
+                
+                // Only split if demand is large enough, otherwise keep carrier as-is
+                if (carrierDemand < minSupplySplitDemand) {
+                    splitSupplyCarriers.addCarrier(carrier);
+                    LOGGER.info("Carrier ID = {} NOT split (Demand = {} < {})", 
+                            carrier.getId(), carrierDemand, minSupplySplitDemand);
+                    continue;
+                }
+                
                 // Create sub-carriers for each direction (North, East, South, West)
                 Carriers splitCarriers = createSubSupplyCarriers(carrier);
 
@@ -203,7 +217,7 @@ public class SupplyCarrierGenerator implements Runnable {
         Map<String, Carrier> subCarriers = new HashMap<>();
 
         // Initialize sub-carriers for each direction
-        for (Map.Entry<String, Id<Link>> entry : SUPPLY_LINK_DIRECTIONS.entrySet()) {
+        for (Map.Entry<String, Id<Link>> entry : supplyLinkDirections.entrySet()) {
             String direction = entry.getKey();
             Id<Link> linkId = entry.getValue();
 
@@ -255,15 +269,15 @@ public class SupplyCarrierGenerator implements Runnable {
         double cumulativeProbability = 0.0;
 
         // Iterate over the supply direction probabilities
-        for (Map.Entry<String, Double> entry : SUPPLY_DIRECTION_PROBABILITIES.entrySet()) {
+        for (Map.Entry<String, Double> entry : supplyDirectionProbabilities.entrySet()) {
             cumulativeProbability += entry.getValue();
             if (randomValue <= cumulativeProbability) {
                 return entry.getKey();
             }
         }
 
-        // Default to "South" if something goes wrong
-        return "South";
+        // Default to "south" if something goes wrong
+        return "south";
     }
 
     /**
@@ -482,13 +496,13 @@ public class SupplyCarrierGenerator implements Runnable {
         String hubCompany = (hub == null) ? company : hub.getProvider();
         Id<Link> hubLink = (hub == null) ? linkId : hub.getLink();
 
-        int numberOfServices = (int) Math.ceil(((double) amountToHub) / SUPPLY_VEH_CAP);
+        int numberOfServices = (int) Math.ceil(((double) amountToHub) / supplyVehCap);
 
         for (int i = 0; i < numberOfServices - 1; i++) {
             CarrierService.Builder serviceBuilder = CarrierService.Builder
                     .newInstance(Id.create(hubId.replace("/", "_") + "_" + i, CarrierService.class), hubLink);
-            serviceBuilder.setCapacityDemand(SUPPLY_VEH_CAP);
-            serviceBuilder.setServiceDuration(DURATION_PER_STOP);
+            serviceBuilder.setCapacityDemand(supplyVehCap);
+            serviceBuilder.setServiceDuration(durationPerStop);
             serviceBuilder.setServiceStartTimeWindow(TimeWindow.newInstance(0, 24 * 3600));
             CarrierService service = serviceBuilder.build();
             service.getAttributes().putAttribute("provider", hubCompany);
@@ -500,8 +514,8 @@ public class SupplyCarrierGenerator implements Runnable {
 
         CarrierService.Builder serviceBuilder = CarrierService.Builder.newInstance(
                 Id.create(hubId.replace("/", "_") + "_" + (numberOfServices - 1), CarrierService.class), hubLink);
-        serviceBuilder.setCapacityDemand(amountToHub - ((numberOfServices - 1) * SUPPLY_VEH_CAP));
-        serviceBuilder.setServiceDuration(DURATION_PER_STOP);
+        serviceBuilder.setCapacityDemand(amountToHub - ((numberOfServices - 1) * supplyVehCap));
+        serviceBuilder.setServiceDuration(durationPerStop);
         serviceBuilder.setServiceStartTimeWindow(TimeWindow.newInstance(0, 24 * 3600));
         CarrierService service = serviceBuilder.build();
         service.getAttributes().putAttribute("provider", hubCompany);
@@ -683,11 +697,11 @@ public class SupplyCarrierGenerator implements Runnable {
     }
 
     /**
-     * Retrieves a random supply link ID from a predefined list.
+     * Retrieves a random supply link ID from the configured list.
      *
      * @return A random supply link ID.
      */
     private Id<Link> getRandomSupplyLinkID() {
-        return Id.createLinkId(SUPPLY_LINK_IDS.get(rand.nextInt(SUPPLY_LINK_IDS.size())));
+        return supplyLinkIds.get(rand.nextInt(supplyLinkIds.size()));
     }
 }

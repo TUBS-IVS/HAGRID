@@ -20,6 +20,7 @@ public class HagridModule extends AbstractModule {
     private final String configFilePath;
     private Config config;
     private Scenario scenario;
+    private HagridConfig hagridConfig;
 
     public HagridModule(String configFilePath) {
         this.configFilePath = configFilePath;
@@ -29,7 +30,8 @@ public class HagridModule extends AbstractModule {
     protected void configure() {
         this.config = ConfigUtils.loadConfig(configFilePath);
         this.scenario = ScenarioUtils.loadScenario(config);
-        this.scenario.addScenarioElement(HagridConfigGroup.GROUPNAME, ConfigUtils.addOrGetModule(config, HagridConfigGroup.class));
+        this.hagridConfig = new HagridConfig();
+        this.scenario.addScenarioElement("hagridConfig", hagridConfig);
 
         // Bind NetworkProcessor as a singleton.
         bind(NetworkProcessor.class).in(Singleton.class);
@@ -57,7 +59,7 @@ public class HagridModule extends AbstractModule {
 
     @Provides
     @Singleton
-    public HagridConfigGroup provideHagridConfigGroup() {
-        return ConfigUtils.addOrGetModule(this.config, HagridConfigGroup.class);
+    public HagridConfig provideHagridConfig() {
+        return this.hagridConfig;
     }
 }
