@@ -46,6 +46,10 @@ parcel-demand-2-matsim-pipeline/logs
 parcel-demand-2-matsim-pipeline/sim-output
 parcel-demand-2-matsim-pipeline/output
 
+parcel-demand-2-matsim-pipeline/hagrid-input
+parcel-demand-2-matsim-pipeline/hagrid-matsim-output
+parcel-demand-2-matsim-pipeline/hagrid-output
+
 parcel-analysis/cache
 parcel-analysis/emission_maps
 parcel-analysis/emission_maps_cum
