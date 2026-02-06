@@ -23,6 +23,8 @@ import org.apache.logging.log4j.Logger;
 
 import com.google.inject.Injector;
 
+import org.matsim.api.core.v01.Scenario;
+
 import hagrid.demand.CarrierGenerator;
 import hagrid.demand.CarrierRouter;
 import hagrid.demand.CarrierServiceMerger;
@@ -95,14 +97,52 @@ public final class PipelineExecutor {
 
 	/**
 	 * Executes the complete demand pipeline with optional service merging and routing.
+	 * <p>
+	 * Records wall-clock timing for every module and stores a {@link PipelineTiming}
+	 * snapshot in the MATSim {@code Scenario} for the summary writer.
 	 *
 	 * @param applyServiceSimplifier if true, merges carrier services
 	 * @param runRouting             if true, runs the routing step
 	 */
 	public void executeAll(boolean applyServiceSimplifier, boolean runRouting) {
-		executeAll(applyServiceSimplifier);
+		PipelineTiming timing = new PipelineTiming();
+		timing.startPipeline();
+
+		timed(timing, "Network Processing",      this::runNetworkProcessing);
+		timed(timing, "Logistics Data",          this::runLogisticsDataProcessing);
+		timed(timing, "Demand Processing",       this::runDemandProcessing);
+		timed(timing, "Delivery Generation",     this::runDeliveryGeneration);
+		timed(timing, "Carrier Generation",      this::runCarrierGeneration);
+		timed(timing, "Supply Generation",       this::runSupplyGeneration);
+
+		if (applyServiceSimplifier) {
+			timed(timing, "Service Merge", () -> runCarrierServiceMerger(true));
+		}
 		if (runRouting) {
-			runRouter(ThreadingType.COMPLETABLE_FUTURE);
+			timed(timing, "Routing", () -> runRouter(ThreadingType.COMPLETABLE_FUTURE));
+		}
+
+		timing.endPipeline();
+		storeTiming(timing);
+	}
+
+	/** Runs and times a single pipeline step. */
+	private void timed(PipelineTiming timing, String moduleName, Runnable step) {
+		long start = System.currentTimeMillis();
+		step.run();
+		timing.recordModule(moduleName, System.currentTimeMillis() - start);
+	}
+
+	/** Stores PipelineTiming in the Scenario so the summary writer can access it. */
+	private void storeTiming(PipelineTiming timing) {
+		try {
+			Scenario scenario = injector.getInstance(Scenario.class);
+			scenario.addScenarioElement("pipelineTiming", timing);
+			LOGGER.info("Pipeline completed in {} — stored timing for {} modules.",
+					PipelineTiming.formatDuration(timing.getTotalMs()),
+					timing.getModuleDurations().size());
+		} catch (Exception e) {
+			LOGGER.warn("Could not store pipeline timing in scenario: {}", e.getMessage());
 		}
 	}
 

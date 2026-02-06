@@ -154,7 +154,13 @@ class HagridPathsTest {
         @DisplayName("network outputs have RunID prefix")
         void networkOutputPrefix() {
             assertThat(paths.networkFiltered()).contains(RUN_ID + "_network_filtered");
-            assertThat(paths.networkChangeEvents()).contains(RUN_ID + "_network_change_events");
+        }
+
+        @Test
+        @DisplayName("network change events point to shared directory")
+        void networkChangeEventsShared() {
+            assertThat(paths.networkChangeEvents()).contains("shared");
+            assertThat(paths.networkChangeEvents()).contains("network_change_events");
         }
 
         @Test

@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Centralized path management for the HAGRID pipeline.
@@ -25,15 +26,22 @@ import java.nio.file.Paths;
  * │   ├── network/                         Road networks, zone files
  * │   └── vehicles/                        Vehicle type definitions
  * │
- * ├── hagrid-output/{RUN_ID}/              Pipeline results (one folder per run)
- * │   ├── carriers/                        {RUN_ID}_delivery_carriers_*.xml, {RUN_ID}_supply_carriers_*.xml
- * │   ├── vehicles/                        {RUN_ID}_vehicle_types.xml
- * │   ├── network/                         {RUN_ID}_network_filtered.xml.gz
- * │   ├── routing/                         {RUN_ID}_routing_metrics.csv, {RUN_ID}_routing_status.csv
- * │   ├── demand/clustering/               Demand analysis and clustering plots
- * │   ├── summary/                         {RUN_ID}_scenario_summary.txt
- * │   ├── cache/                           Routing cache
- * │   └── logs/                            Run-specific logs
+ * ├── hagrid-output/                       Pipeline results
+ * │   ├── shared/                          Shared simulation inputs (same for ALL runs)
+ * │   │   ├── sim-config.xml               MATSim base configuration
+ * │   │   ├── cargobike_network.xml.gz     Cargobike network
+ * │   │   ├── network_change_events.xml.gz Time-dependent network change events
+ * │   │   └── zones/                       Freight zone shapefile (all parts)
+ * │   │
+ * │   └── {RUN_ID}/                        Run-specific results
+ * │       ├── carriers/                    {RUN_ID}_delivery/supply_carriers_*.xml
+ * │       ├── vehicles/                    {RUN_ID}_vehicle_types.xml
+ * │       ├── network/                     {RUN_ID}_network_filtered.xml.gz
+ * │       ├── routing/                     {RUN_ID}_routing_metrics/status.csv
+ * │       ├── demand/clustering/           Demand analysis and clustering plots
+ * │       ├── summary/                     {RUN_ID}_scenario_summary.txt
+ * │       ├── cache/                       Routing cache
+ * │       └── logs/                        Run-specific logs
  * │
  * └── hagrid-matsim-output/{RUN_ID}/       MATSim simulation results
  * </pre>
@@ -110,11 +118,11 @@ public class HagridPaths {
     public String shippingPointsDir() { return hubsDir().resolve("standorte_von_paket.net").toString() + "/"; }
     public String parcelLockersFile() { return hubsDir().resolve("standorte_von_dhl.de.csv").toString(); }
 
-    // --- Network ---
+    // --- Network (pipeline reads from input, simulation reads from shared output) ---
     public Path networkInputDir() { return inputBase.resolve("network"); }
     public String networkFile() { return networkInputDir().resolve("car_network_filtered_V2.xml.gz").toString(); }
-    public String cargobikeNetworkFile() { return networkInputDir().resolve("cargobike_network_zones_MH_V3_clean.xml.gz").toString(); }
-    public String zoneShapefile() { return networkInputDir().resolve("RH_useful__zone.shp").toString(); }
+    public String cargobikeNetworkFile() { return sharedDir().resolve("cargobike_network.xml.gz").toString(); }
+    public String zoneShapefile() { return sharedZonesDir().resolve("RH_useful__zone.shp").toString(); }
 
     // --- Vehicles ---
     public Path vehicleInputDir() { return inputBase.resolve("vehicles"); }
@@ -122,8 +130,21 @@ public class HagridPaths {
 
     // --- Config ---
     public Path configDir() { return inputBase.resolve("config"); }
-    public String matsimConfigFile() { return configDir().resolve("sim-config.xml").toString(); }
+    public String matsimConfigFile() { return sharedDir().resolve("sim-config.xml").toString(); }
     public String jspritAlgorithmFile() { return configDir().resolve("jsprit-algorithm.xml").toString(); }
+
+    // =========================================================================
+    // SHARED SIMULATION INPUTS  (hagrid-output/shared/)
+    // =========================================================================
+
+    /** Shared directory for files needed by ALL simulation runs (config, networks, zones). */
+    public Path sharedDir() { return outputBase.resolve("shared"); }
+
+    /** Zone shapefile directory under shared. */
+    public Path sharedZonesDir() { return sharedDir().resolve("zones"); }
+
+    /** Shared network change events (same for all runs). */
+    public String sharedNetworkChangeEvents() { return sharedDir().resolve("network_change_events.xml.gz").toString(); }
 
     // =========================================================================
     // OUTPUT PATHS  (hagrid-output/{RUN_ID}/)
@@ -161,7 +182,8 @@ public class HagridPaths {
     // --- Network ---
     public Path networkOutputDir() { return runDir().resolve("network"); }
     public String networkFiltered()     { return networkOutputDir().resolve(p() + "network_filtered.xml.gz").toString(); }
-    public String networkChangeEvents() { return networkOutputDir().resolve(p() + "network_change_events.xml.gz").toString(); }
+    /** Network change events — shared across all runs, stored in shared/ directory. */
+    public String networkChangeEvents() { return sharedNetworkChangeEvents(); }
 
     // --- Routing ---
     public Path routingDir() { return runDir().resolve("routing"); }
@@ -175,6 +197,7 @@ public class HagridPaths {
     // --- Summary ---
     public Path summaryDir() { return runDir().resolve("summary"); }
     public String scenarioSummary() { return summaryDir().resolve(p() + "scenario_summary.txt").toString(); }
+    public String carrierRoutingCsv() { return summaryDir().resolve(p() + "carrier_routing_detail.csv").toString(); }
 
     // --- Cache ---
     public Path cacheDir() { return runDir().resolve("cache"); }
@@ -207,10 +230,13 @@ public class HagridPaths {
 
     /**
      * Create all output directories for the current run.
+     * Also ensures the shared simulation directory exists and copies
+     * static simulation input files (config, networks, zones) there.
      * Call this once after {@link #initializeRun(String)}.
      */
     public void createOutputDirectories() throws IOException {
         checkRunInitialized();
+        // Run-specific directories
         Files.createDirectories(carrierDir());
         Files.createDirectories(vehicleOutputDir());
         Files.createDirectories(networkOutputDir());
@@ -220,6 +246,87 @@ public class HagridPaths {
         Files.createDirectories(cacheDir());
         Files.createDirectories(logDir());
         LOGGER.info("Created output directories under: {}", runDir);
+
+        // Shared simulation inputs (only copied once, idempotent)
+        copySharedSimulationInputs();
+    }
+
+    /**
+     * Ensures that the shared simulation input directory ({@code hagrid-output/shared/})
+     * is populated with all static files needed for MATSim runs.
+     * <p>
+     * Safe to call multiple times — only copies files that are not yet present.
+     * Can be called from both the pipeline ({@link #createOutputDirectories()})
+     * and the simulation runner ({@link hagrid.simulation.HAGRIDSimulationConfig}).
+     *
+     * @throws IOException if any file-system operation fails
+     */
+    public void ensureSharedSimulationInputs() throws IOException {
+        copySharedSimulationInputs();
+    }
+
+    /**
+     * Copies static simulation input files into {@code hagrid-output/shared/}.
+     * <p>These files are the same for ALL simulation runs and don't change
+     * between scenarios or dates:</p>
+     * <ul>
+     *   <li>{@code sim-config.xml} — MATSim base configuration</li>
+     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network</li>
+     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes</li>
+     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (all parts)</li>
+     * </ul>
+     * <p>Files are only copied if missing. Existing files are not overwritten.</p>
+     */
+    private void copySharedSimulationInputs() throws IOException {
+        Files.createDirectories(sharedDir());
+        Files.createDirectories(sharedZonesDir());
+
+        // Source locations (all simulation-specific files live in sim-input/)
+        Path simInputDir = pipelineRoot.resolve("sim-input");
+        Path simNetworkDir = simInputDir.resolve("network");
+
+        // 1) sim-config.xml
+        copyIfMissing(simInputDir.resolve("sim-config.xml"),
+                      sharedDir().resolve("sim-config.xml"), "sim-config.xml");
+
+        // 2) Cargobike network
+        copyIfMissing(simNetworkDir.resolve("cargobike_network_zones_MH_V3_clean.xml.gz"),
+                      sharedDir().resolve("cargobike_network.xml.gz"), "cargobike network");
+
+        // 3) Network change events
+        copyIfMissing(simNetworkDir.resolve("car_network_filtered_V2_change_events.xml.gz"),
+                      sharedDir().resolve("network_change_events.xml.gz"), "network change events");
+
+        // 4) Zone shapefile (all parts: .shp, .dbf, .shx, .prj, .cpg, .ctf)
+        //    Sources on disk may be upper-case; destinations use lower-case.
+        String[][] zonePairs = {
+            { ".SHP", ".shp" }, { ".DBF", ".dbf" }, { ".SHX", ".shx" },
+            { ".PRJ", ".prj" }, { ".CPG", ".cpg" }, { ".CTF", ".ctf" }
+        };
+        String zoneBase = "RH_useful__zone";
+        for (String[] pair : zonePairs) {
+            Path src = simNetworkDir.resolve(zoneBase + pair[0]);
+            Path dst = sharedZonesDir().resolve(zoneBase + pair[1]);
+            if (Files.exists(src)) {
+                copyIfMissing(src, dst, "zone " + pair[1]);
+            }
+        }
+
+        LOGGER.info("Shared simulation inputs ready at: {}", sharedDir().toAbsolutePath());
+    }
+
+    /** Copy a file only if the destination does not yet exist. */
+    private void copyIfMissing(Path source, Path destination, String label) throws IOException {
+        if (Files.exists(destination)) {
+            LOGGER.debug("[shared] {} already exists, skipping", label);
+            return;
+        }
+        if (!Files.exists(source)) {
+            LOGGER.warn("[shared] Source for {} not found: {} — skipping", label, source);
+            return;
+        }
+        Files.copy(source, destination, StandardCopyOption.COPY_ATTRIBUTES);
+        LOGGER.info("[shared] Copied {} → {}", label, destination.toAbsolutePath());
     }
 
     // =========================================================================

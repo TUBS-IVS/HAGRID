@@ -18,9 +18,11 @@
 
 package hagrid.pipeline;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -81,10 +83,31 @@ public final class ScenarioSummaryWriter {
 				appendSplittingInfo(sb, context);
 				appendCarrierMerging(sb, context);
 				appendFinalCarrierStats(sb, context);
+				// Routing results (only if carriers were routed)
+				if (context.getPipelineStatistics().getRoutingStatistics() != null) {
+					appendRoutingOverview(sb, context);
+					appendRoutingByProvider(sb, context);
+					appendVehicleClassBreakdown(sb, context);
+				}
+				// Runtime summary (only if timing was recorded)
+				if (context.getPipelineStatistics().getPipelineTiming() != null) {
+					appendRuntimeSummary(sb, context);
+				}
 			}
 
 			Files.writeString(summaryFile, sb.toString(), StandardCharsets.UTF_8);
 			LOGGER.info("Wrote run configuration summary to {}", summaryFile.toAbsolutePath());
+
+			// Write per-carrier CSV if routing data is available
+			if (context.getPipelineStatistics() != null
+					&& context.getPipelineStatistics().getRoutingStatistics() != null) {
+				try {
+					Path csvFile = outputDir.resolve(runId + "_carrier_routing_detail.csv");
+					context.getPipelineStatistics().getRoutingStatistics().writeCsv(csvFile);
+				} catch (IOException csvEx) {
+					LOGGER.warn("Could not write carrier routing CSV: {}", csvEx.getMessage());
+				}
+			}
 		} catch (Exception e) {
 			LOGGER.warn("Could not write run configuration summary for {}: {}", runId, e.getMessage());
 		}
@@ -323,6 +346,118 @@ public final class ScenarioSummaryWriter {
 		sb.append(String.format(Locale.US, "    ├─ Min:     %,d%n", stats.getMinServicesPerCarrier()));
 		sb.append(String.format(Locale.US, "    ├─ Max:     %,d%n", stats.getMaxServicesPerCarrier()));
 		sb.append(String.format(Locale.US, "    └─ Average: %.1f%n", stats.getAvgServicesPerCarrier()));
+		sb.append(SEPARATOR);
+	}
+
+	// =========================================================================
+	//  Routing statistics sections
+	// =========================================================================
+
+	private static void appendRoutingOverview(StringBuilder sb, RunContext context) {
+		RoutingStatistics rs = context.getPipelineStatistics().getRoutingStatistics();
+
+		sb.append("┌──────────────────────────────────────────────────────────┐").append(SEPARATOR);
+		sb.append("│                    ROUTING OVERVIEW                      │").append(SEPARATOR);
+		sb.append("└──────────────────────────────────────────────────────────┘").append(SEPARATOR);
+		sb.append(SEPARATOR);
+		sb.append(String.format(Locale.US, "  Routed Carriers:           %,d%n", rs.getTotalCarriers()));
+		sb.append(String.format(Locale.US, "  Total Vehicles (tours):    %,d%n", rs.getTotalTours()));
+		sb.append(String.format(Locale.US, "  Total Distance:            %,.1f km%n", rs.getTotalDistanceKm()));
+		sb.append(String.format(Locale.US, "  Avg Tour Distance:         %,.1f km%n", rs.getAvgTourDistanceKm()));
+		sb.append(SEPARATOR);
+
+		sb.append("  JSprit Routing Time:").append(SEPARATOR);
+		sb.append(String.format(Locale.US, "    ├─ Total:   %,.1f s%n", rs.getTotalRoutingTimeSeconds()));
+		sb.append(String.format(Locale.US, "    ├─ Average: %,.1f s/carrier%n", rs.getAvgRoutingTimePerCarrier()));
+		sb.append(String.format(Locale.US, "    ├─ Min:     %,.1f s  (%s)%n", rs.getMinRoutingTimeCarrier(), rs.getMinRoutingTimeCarrierId()));
+		sb.append(String.format(Locale.US, "    └─ Max:     %,.1f s  (%s)%n", rs.getMaxRoutingTimeCarrier(), rs.getMaxRoutingTimeCarrierId()));
+		sb.append(SEPARATOR);
+	}
+
+	private static void appendRoutingByProvider(StringBuilder sb, RunContext context) {
+		RoutingStatistics rs = context.getPipelineStatistics().getRoutingStatistics();
+		Map<String, RoutingStatistics.ProviderRoutingStats> provStats = rs.getProviderStats();
+		if (provStats.isEmpty()) return;
+
+		sb.append("┌──────────────────────────────────────────────────────────────────────────────────────┐").append(SEPARATOR);
+		sb.append("│                           ROUTING BY PROVIDER                                       │").append(SEPARATOR);
+		sb.append("└──────────────────────────────────────────────────────────────────────────────────────┘").append(SEPARATOR);
+		sb.append(SEPARATOR);
+
+		// Table header
+		sb.append(String.format("  %-10s │ %5s │ %5s │ %8s │ %10s │ %9s │ %10s │ %5s │ %5s%n",
+				"Provider", "Carr.", "Tours", "Parcels", "Dist (km)", "Avg Tour", "Costs (€)", "Quota", "Util."));
+		sb.append("  ───────────┼───────┼───────┼──────────┼────────────┼───────────┼────────────┼───────┼──────").append(SEPARATOR);
+
+		for (var entry : provStats.entrySet()) {
+			RoutingStatistics.ProviderRoutingStats ps = entry.getValue();
+			sb.append(String.format(Locale.US, "  %-10s │ %,5d │ %,5d │ %,8d │ %,10.1f │ %,9.1f │ %,10.1f │ %4.0f%% │ %4.0f%%%n",
+					truncate(entry.getKey(), 10),
+					ps.carriers(), ps.tours(), ps.totalParcels(),
+					ps.totalDistanceKm(), ps.avgTourDistanceKm(), ps.totalCosts(),
+					ps.deliveryQuota() * 100.0, ps.avgUtilization() * 100.0));
+		}
+		sb.append(SEPARATOR);
+	}
+
+	private static void appendVehicleClassBreakdown(StringBuilder sb, RunContext context) {
+		RoutingStatistics rs = context.getPipelineStatistics().getRoutingStatistics();
+		Map<String, RoutingStatistics.VehicleClassStats> vcStats = rs.getVehicleClassStats();
+		if (vcStats.isEmpty()) return;
+
+		sb.append("┌──────────────────────────────────────────────────────────┐").append(SEPARATOR);
+		sb.append("│                  VEHICLE CLASS BREAKDOWN                 │").append(SEPARATOR);
+		sb.append("└──────────────────────────────────────────────────────────┘").append(SEPARATOR);
+		sb.append(SEPARATOR);
+
+		sb.append(String.format("  %-22s │ %6s │ %7s │ %10s │ %7s │ %6s%n",
+				"Vehicle Type", "Count", "Fleet %", "Dist (km)", "Dist %", "Capac."));
+		sb.append("  ───────────────────────┼────────┼─────────┼────────────┼─────────┼───────").append(SEPARATOR);
+
+		for (var entry : vcStats.entrySet()) {
+			RoutingStatistics.VehicleClassStats vc = entry.getValue();
+			sb.append(String.format(Locale.US, "  %-22s │ %,6d │ %6.1f%% │ %,10.1f │ %6.1f%% │ %,5.0f%n",
+					truncate(vc.vehicleTypeId(), 22),
+					vc.count(),
+					vc.shareOfFleet() * 100.0,
+					vc.totalDistanceKm(),
+					vc.shareOfDistance() * 100.0,
+					vc.capacity()));
+		}
+		sb.append(SEPARATOR);
+	}
+
+	// =========================================================================
+	//  Runtime summary section
+	// =========================================================================
+
+	private static void appendRuntimeSummary(StringBuilder sb, RunContext context) {
+		PipelineTiming timing = context.getPipelineStatistics().getPipelineTiming();
+
+		sb.append("┌──────────────────────────────────────────────────────────┐").append(SEPARATOR);
+		sb.append("│                    RUNTIME SUMMARY                       │").append(SEPARATOR);
+		sb.append("└──────────────────────────────────────────────────────────┘").append(SEPARATOR);
+		sb.append(SEPARATOR);
+
+		long totalMs = timing.getTotalMs();
+		sb.append(String.format(Locale.US, "  Total Pipeline Runtime:    %s  (%,d ms)%n",
+				PipelineTiming.formatDuration(totalMs), totalMs));
+		sb.append(SEPARATOR);
+
+		// Table
+		sb.append(String.format("  %-25s │ %10s │ %7s%n", "Module", "Duration", "Share"));
+		sb.append("  ──────────────────────────┼────────────┼────────").append(SEPARATOR);
+
+		for (var entry : timing.getModuleDurations().entrySet()) {
+			long ms = entry.getValue();
+			double pct = totalMs > 0 ? (double) ms / totalMs * 100.0 : 0.0;
+			sb.append(String.format(Locale.US, "  %-25s │ %10s │ %5.1f%%%n",
+					entry.getKey(), PipelineTiming.formatDuration(ms), pct));
+		}
+
+		sb.append("  ──────────────────────────┼────────────┼────────").append(SEPARATOR);
+		sb.append(String.format(Locale.US, "  %-25s │ %10s │ %5.1f%%%n",
+				"TOTAL", PipelineTiming.formatDuration(totalMs), 100.0));
 		sb.append(SEPARATOR);
 	}
 

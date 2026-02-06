@@ -110,6 +110,13 @@ public class HAGRIDSimulationConfig {
         this.runId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.paths = new HagridPaths();
         this.paths.initializeRun(runId);
+
+        // Ensure shared simulation inputs are available in hagrid-output/shared/
+        try {
+            this.paths.ensureSharedSimulationInputs();
+        } catch (java.io.IOException e) {
+            LOGGER.warn("Could not ensure shared simulation inputs: {}", e.getMessage());
+        }
     }
 
     // === GETTERS ===
