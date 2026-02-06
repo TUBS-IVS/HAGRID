@@ -19,7 +19,7 @@ import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 import com.google.inject.Inject;
  
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.general.HAGRIDUtils;
 import hagrid.utils.routing.ThreadingType;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
@@ -49,7 +49,7 @@ public class CarrierRouter implements Runnable {
     private Scenario scenario;
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     public void setThreadingType(ThreadingType threadingType) {
         this.threadingType = threadingType;
@@ -94,7 +94,7 @@ public class CarrierRouter implements Runnable {
             final ZoneBasedTransportCosts zoneBasedCosts = getOrCreateZoneCosts(carFilteredNetwork, vehicleTypes);
 
             // Initialize the router with the specified threading type and live status CSV logger
-            Path statusCsv = Path.of(hagridConfig.getCarrierOutputDirectory(), "carrier_routing_status.csv");
+            Path statusCsv = Path.of(hagridConfig.io().routingStatus());
             CarrierRoutingStatusLogger statusLogger = new CarrierRoutingStatusLogger(statusCsv);
             Router router = new Router(threadingType, statusLogger, hagridConfig, vehicleTypes);
 
@@ -113,13 +113,15 @@ public class CarrierRouter implements Runnable {
             router.routeCarriers(supplyCarriers, netBasedCosts, carFilteredNetwork, "supply");
 
             // // Write the routed plans to XML files
-            Files.createDirectories(Path.of(hagridConfig.getCarrierOutputDirectory()));
+            Files.createDirectories(hagridConfig.io().carrierDir());
 
-            new CarrierPlanWriter(carriers).write(hagridConfig.getDeliveryCarrierOutputFile());
-            new CarrierPlanWriter(supplyCarriers).write(hagridConfig.getSupplyCarrierOutputFile());
+            new CarrierPlanWriter(carriers).write(hagridConfig.io().deliveryCarriersRouted());
+            LOGGER.info("Written: {}", hagridConfig.io().deliveryCarriersRouted());
+            new CarrierPlanWriter(supplyCarriers).write(hagridConfig.io().supplyCarriersRouted());
+            LOGGER.info("Written: {}", hagridConfig.io().supplyCarriersRouted());
 
             // Export per-carrier routing metrics CSV (summary at the end)
-            writeMetricsCsv(router.getMetrics(), Path.of(hagridConfig.getCarrierOutputDirectory(), "carrier_routing_metrics.csv"));
+            writeMetricsCsv(router.getMetrics(), Path.of(hagridConfig.io().routingMetrics()));
 
             LOGGER.info("Routing process for carriers completed successfully.");
         } catch (Exception e) {

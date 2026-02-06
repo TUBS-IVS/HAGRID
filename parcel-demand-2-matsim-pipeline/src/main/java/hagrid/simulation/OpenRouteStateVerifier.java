@@ -24,8 +24,12 @@ public class OpenRouteStateVerifier implements StateUpdater, ReverseActivityVisi
 	public void visit(TourActivity activity) {
 		if (firstAct) {
 			firstAct = false;
-            assert vehicle.isReturnToDepot() || activity.getLocation().getId().equals(end.getLocation().getId())
-                    : "route end and last activity are not equal even route is open. this should not be.";
+			if (!vehicle.isReturnToDepot()
+					&& !activity.getLocation().getId().equals(end.getLocation().getId())) {
+				throw new IllegalStateException(
+						"Route end and last activity are not equal even though route is open. "
+								+ "End: " + end.getLocation().getId() + ", Last: " + activity.getLocation().getId());
+			}
 		}
 
 	}

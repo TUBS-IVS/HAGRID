@@ -21,7 +21,7 @@ import org.locationtech.jts.geom.MultiPoint;
 import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.SameSizeKMeans;
 import hagrid.utils.general.HAGRIDUtils;
@@ -61,7 +61,7 @@ public class DemandProcessor implements Runnable {
     private Scenario scenario;
 
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     @Override
     public void run() {
@@ -252,6 +252,7 @@ public class DemandProcessor implements Runnable {
                 // vans), the package input remains effectively the same.
                 // - This adjustment is more realistic and easier to understand for external
                 // readers!
+                // - Updated: Now using getDynamicDHLBorder() = 2 × max vehicle capacity
 
                 .filter(feature -> (Long) feature.getAttribute("dhl_tag") <= hagridConfig.getDHLBorder())
                 .filter(feature -> !((String) feature.getAttribute("postal_cod")).isEmpty())
@@ -369,6 +370,8 @@ public class DemandProcessor implements Runnable {
                                     ? 1
                                     : 0)
                             .sum();
+                    // Use demandBorder (default 600) for KMeans clustering split
+                    // This is different from minVehicleCapacity which is used for parcel splitting!
                     boolean needForSplit = entryTotalDeliveries > hagridConfig.getDemandBorder();
 
                     return needForSplit;
@@ -385,12 +388,16 @@ public class DemandProcessor implements Runnable {
      */
     private void processCarrierDemandNeedForSplitWithKMeans(Map<String, List<SimpleFeature>> carrierDemand,
             Map<String, List<SimpleFeature>> carrierDemandNeedForSplit) {
-        LOGGER.info("Demand Border: {}", hagridConfig.getDemandBorder());
+        // Use demandBorder (default 600) for KMeans clustering split
+        // This controls max deliveries per carrier cluster (performance/routing complexity)
+        // Different from minVehicleCapacity which controls parcel splitting per vehicle!
+        final int demandBorder = hagridConfig.getDemandBorder();
+        LOGGER.info("KMeans Demand Border (max deliveries per carrier): {}", demandBorder);
         carrierDemandNeedForSplit.forEach((key, demand) -> {
             long deliveries = demand.stream()
                     .mapToLong(feature -> (Long) feature.getAttribute(key.split("_")[0] + "_tag") > 0 ? 1 : 0)
                     .sum();
-            int toSplit = (int) Math.ceil(deliveries / (double) hagridConfig.getDemandBorder());
+            int toSplit = (int) Math.ceil(deliveries / (double) demandBorder);
 
             LOGGER.info("Need for Split: {}: Number of Deliveries: {}", key, deliveries);
 
@@ -520,18 +527,16 @@ public class DemandProcessor implements Runnable {
         }
 
         // Create output directory if it doesn't exist
-        File outputDir = new File(
-                "parcel-demand-2-matsim-pipeline/output/demand_clustering/" + hagridConfig.getRunId() + "/");
+        File outputDir = hagridConfig.io().clusteringDir().toFile();
         if (!outputDir.exists()) {
             outputDir.mkdirs();
         }
 
         // Save chart to a file:
         try {
-            BitmapEncoder.saveBitmap(chart, "parcel-demand-2-matsim-pipeline/output/demand_clustering/"
-                    + hagridConfig.getRunId() + "/" + fileName, BitmapEncoder.BitmapFormat.PNG);
-            LOGGER.info("Chart saved successfully at: parcel-demand-2-matsim-pipeline/output/demand_clustering/{}.png",
-                    fileName);
+            String chartPath = hagridConfig.io().clusteringDir().resolve(fileName).toString();
+            BitmapEncoder.saveBitmap(chart, chartPath, BitmapEncoder.BitmapFormat.PNG);
+            LOGGER.info("Chart saved: {}", chartPath);
         } catch (IOException e) {
             e.printStackTrace();
         }

@@ -1,0 +1,26 @@
+X;Y;Anbieter;Bezeichnun;Typ;Straße;Postleitzahl;Ort
+559605.059550175;5801322.85786548;DHL;Paketzentrum / Zustellbasis Anderten;PZ/ZB;Kleiner Holzhägen 2;30559;Hannover_Anderten
+549686.455778475;5804338.35865887;DHL;Zustellbasis Hannover am Güterbahnhof;ZB;Gertrud-Knebusch-Straße 11;30167;Hannover_Güterbahnhof
+548255.731127915;5800066.01967631;DHL;Zustellbasis Hannover-Süd;ZB;Mercedesstraße 5;30453;Hannover_Süd
+553326.446313013;5790295.69739596;DHL;Brief- und Logistikzentrum in Pattensen (Hannover);BZ;Ludwig-Erhard-Str. 39;30982;Pattensen
+532555.807673469;5817483.37960079;DP/DHL;Deutsche Post, Neustadt;ZSP;Justus-von-Liebig-Straße;31535;Neustadt_am_Rübenberge
+538668.436408604;5811042.40992679;DP/DHL;Deutsche Post, Garbsen;ZSP;Molkereistraße 13;30826;Garbsen
+547039.230775932;5811060.33261829;Hermes;Hermes LC Hannover Langenhagen;PZ;Münchner Str. 39;30855;Langenhagen
+538731.347745696;5808450.57479578;Amazon;Amazon Logistics HAJ8 in Garbsen;PZ;Grabenfeldstraße;30826;Garbsen
+564735.633715398;5804057.37874932;DPD;DPD Paketzentrum in Lehrte;PZ;Europastraße 1;31275;Lehrte
+555795.773974773;5792959.84075619;GLS;GLS in Hannover Laatzen;PZ;Koldinger Straße 1;30880;Laatzen
+549829.312790719;5812596.2967744;UPS;UPS Depot Hannover;PZ;Rehkamp 15;30853;Hannover
+549978.89;5818810.28;DP/DHL;Deutsche Post, Bissendorf;ZSP;Auf d. Haube 6;30900;Wedemark
+583113.595843654;5814035.67754687;DP/DHL;Dummy Uetze;ZSP;Nan;0000;Uetze
+567753.77;5812669.46;DP/DHL;Deutsche Post, Burgdorf;ZSP;Lise-Meitner-Straße 13;31303;Burgdorf
+566316.70;5803523.67;DP/DHL;Deutsche Post, Lehrte;ZSP;Poststraße 12;31275;Lehrte
+566376.73;5796630.67;DP/DHL;Dummy Sehnde;ZSP;Peiner Str. 59;31319;Sehnde
+537806.10;5784739.40;DP/DHL;Deutsche Post, Springe;ZSP;Fünfhausenstraße 21;31832;Springe
+531150.88;5806910.58;DP/DHL;Deutsche Post, Wunstorf;ZSP;Max-Planck-Straße 3;31515;Wunstorf
+538940.996;5791518.817;DP/DHL;Dummy Wennigsen;ZSP;Hauptstraße 15;30974;Wennigsen
+528190.077;5798531.397;DP/DHL;Deutsche Post, Bantorf;ZSP;Laverastr;30890;Barsinghausen
+539366.23;5804416.68;DP/DHL;Dummy Seelze;ZSP;Immengarten 8 Tor West;30926;Seelze
+564026.55;5780215.6;DP/DHL;Deutsche Post, Hildesheim;ZSP;Ernst-Morsch-Straße 4;31137;Hildesheim
+530357.57;5783106.10;DP/DHL;Deutsche Post, Bad Münder;ZSP;Gewerbepark Rahlmühle 14;31848;Bad_Münder
+574653.83;5833035.61;DP/DHL;Deutsche Post, Celle;ZB;Rütger-Hinüber-Straße 4;29223;Celle
+546135.6575420063;5812586.542594621;fedex;FedEx Station - Heinz-Peter-Piper Str.;PZ;Heinz-Peter-Piper Str.;30855;Hannover

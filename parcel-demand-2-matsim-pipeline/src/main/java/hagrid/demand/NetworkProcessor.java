@@ -12,7 +12,7 @@ import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.algorithms.NetworkCleaner;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.general.Region;
 
 import java.util.HashSet;
@@ -31,7 +31,7 @@ public class NetworkProcessor implements Runnable {
     @Inject
     private Scenario scenario;
     @Inject
-    private HagridConfigGroup hagridConfig;
+    private HagridConfig hagridConfig;
 
     @Override
     public void run() {
@@ -101,8 +101,9 @@ public class NetworkProcessor implements Runnable {
                 }
             }
 
-            String output = "/"+ "carFilteredCleanedNetwork.xml.gz";
-            new NetworkWriter(carFilteredNetwork).write(hagridConfig.getCarrierOutputDirectory() + output);
+            String output = hagridConfig.io().networkFiltered();
+            new NetworkWriter(carFilteredNetwork).write(output);
+            LOGGER.info("Written: {}", output);
 
             LOGGER.info("Parcel service network created successfully with {} links added.", addedLinks);
             LOGGER.info("Difference in number of links between carFilteredNetwork and parcel service network: {}", (totalLinks - addedLinks));

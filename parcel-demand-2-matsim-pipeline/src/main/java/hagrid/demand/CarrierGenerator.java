@@ -2,7 +2,8 @@ package hagrid.demand;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
+import hagrid.pipeline.CarrierMergeLog;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
@@ -69,7 +70,7 @@ public class CarrierGenerator implements Runnable {
         private Scenario scenario;
 
         @Inject
-        private HagridConfigGroup hagridConfig;
+        private HagridConfig hagridConfig;
 
         private CarrierVehicleFactory carrierVehicleFactory;
 
@@ -104,12 +105,19 @@ public class CarrierGenerator implements Runnable {
                         carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes);
 
                         // Process the deliveries to create carriers
-                        // Max Service Size Puffer: 50 -> demand border - puffer to add services to
-                        // close carriers
-                        int maxServiceSizePuffer = 150;
+                        // minVehicleCapacity: Used for splitting parcels into vehicle-sized portions
+                        // carrierMergeThreshold: Fixed threshold for merging small carriers (scenario-independent)
+                        // demandBorder (600): Used for KMeans clustering and max services per carrier (routing performance)
+                        final int minVehicleCapacity = hagridConfig.getMinVehicleCapacity();
+                        final int carrierMergeThreshold = hagridConfig.getCarrierMergeThreshold();
+                        final int maxServicesPerCarrier = hagridConfig.getDemandBorder();
+                        LOGGER.info("Using min vehicle capacity for parcel split: {}", minVehicleCapacity);
+                        LOGGER.info("Using fixed carrier merge threshold: {}", carrierMergeThreshold);
+                        LOGGER.info("Using demand border for max services per carrier: {}", maxServicesPerCarrier);
+                        
                         final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
-                                        vehicleTypes, hubList, hagridConfig.getMinLMDVehCap(),
-                                        (hagridConfig.getDemandBorder() - maxServiceSizePuffer));
+                                        vehicleTypes, hubList, carrierMergeThreshold,
+                                        maxServicesPerCarrier);
 
                         // Validate the generated carriers and supply demand
                         validateCarriers(carriers);
@@ -121,18 +129,11 @@ public class CarrierGenerator implements Runnable {
                         LOGGER.info("Carrier generation completed.");
                         
 
-                        String baseDir = System.getProperty("user.dir");
-                        String outputDir = baseDir + java.io.File.separator + "parcel-demand-2-matsim-pipeline" + java.io.File.separator + "output" + java.io.File.separator + hagridConfig.getRunId() + java.io.File.separator;
-                        HAGRIDUtils.createDirectoryIfNotExists(outputDir);
+                        new CarrierPlanWriter(carriers).write(hagridConfig.io().deliveryCarriersUnrouted());
+                        LOGGER.info("Written: {}", hagridConfig.io().deliveryCarriersUnrouted());
 
-                        String outputPath = outputDir + hagridConfig.getRunId() + "_delivery_carriers.xml";
-                        LOGGER.info("Writing unrouted carriers to output directory {}", outputPath);
-
-                        new CarrierPlanWriter(carriers).write(outputPath);
-
-                        outputPath = outputDir + hagridConfig.getRunId() + "_vehicle_types.xml";
-                        LOGGER.info("Writing unrouted carriers to output directory {}", outputPath);
-                        new CarrierVehicleTypeWriter(vehicleTypes).write(outputPath);
+                        new CarrierVehicleTypeWriter(vehicleTypes).write(hagridConfig.io().vehicleTypesOutput());
+                        LOGGER.info("Written: {}", hagridConfig.io().vehicleTypesOutput());
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 
@@ -143,14 +144,14 @@ public class CarrierGenerator implements Runnable {
 
         /**
          * Initializes the delivery rate map based on the providers listed in the
-         * HagridConfigGroup.
+         * HagridConfig.
          *
          * @return A map containing the delivery rates for each provider.
          */
         private Map<String, Double> initializeDeliveryRate() {
                 final Map<String, Double> deliveryRate = new HashMap<>();
 
-                // Get the delivery rates from the HagridConfigGroup
+                // Get the delivery rates from the HagridConfig
                 deliveryRate.put("dhl", (double) hagridConfig.getDeliveryRateDhl());
                 deliveryRate.put("hermes", (double) hagridConfig.getDeliveryRateHermes());
                 deliveryRate.put("ups", (double) hagridConfig.getDeliveryRateUps());
@@ -171,12 +172,12 @@ public class CarrierGenerator implements Runnable {
          * @param subNetwork   The network used for parcel services.
          * @param hubList
          * @param vehicleTypes
-         * @param minLMDVehCap Minimum vehicle capacity for LMD vehicles.
+         * @param mergeThreshold Fixed carrier merge threshold (parcels). Carriers below this get merged.
          * @return The generated carriers.
          */
         private Carriers generateCarriersAndCarrierServices(final Map<String, ArrayList<Delivery>> deliveries,
                         final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
-                        int minLMDVehCap, int maxServiceSize) {
+                        int mergeThreshold, int maxServiceSize) {
                 final Carriers carriers = new Carriers();
                 Map<String, Double> adjustedDeliveryRates = adjustDeliveryRatesConsideringB2B(initializeDeliveryRate(),
                                 deliveries);
@@ -201,7 +202,7 @@ public class CarrierGenerator implements Runnable {
                         return carrier;
                 }).forEach(carriers::addCarrier);
 
-                logAndValidateInsufficientCarrier(carriers, minLMDVehCap, maxServiceSize);
+                logAndValidateInsufficientCarrier(carriers, mergeThreshold, maxServiceSize);
 
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
 
@@ -356,7 +357,7 @@ public class CarrierGenerator implements Runnable {
          * @param carriers The Carriers object containing all carriers.
          * @throws RuntimeException if any carriers have fewer than 5 services.
          */
-        private void logAndValidateInsufficientCarrier(Carriers carriers, int minLMDVehCap, int maxServiceSize) {
+        private void logAndValidateInsufficientCarrier(Carriers carriers, int mergeThreshold, int maxServiceSize) {
                 // Find the carrier with the most services
                 Optional<Carrier> carrierWithMostServices = carriers.getCarriers().values().stream()
                                 .max(Comparator.comparingInt(carrier -> carrier.getServices().size()));
@@ -376,31 +377,36 @@ public class CarrierGenerator implements Runnable {
                                                 carrier.getId(), carrier.getServices().size()));
 
                 // Collect IDs of carriers with total parcel demand (summed over all services) <
-                // min Vehicle Capacity = 165
+                // minimum configured vehicle capacity
                 List<Id<Carrier>> insufficientServiceCarrierIds = carriers.getCarriers().values().stream()
                                 .filter(carrier -> carrier.getServices().values().stream()
                                                 .mapToLong(service -> service.getCapacityDemand()) // Assuming
                                                                                                    // single
                                                                                                    // capacity
                                                                                                    // dimension
-                                                .sum() < minLMDVehCap)
+                                .sum() < mergeThreshold)
                                 .map(Carrier::getId)
                                 .collect(Collectors.toList());
 
                 LOGGER.info("Number of carriers before merging smaller carriers: {}", carriers.getCarriers().size());
                 // Log the carriers with insufficient services
-                LOGGER.info("Number of carriers with fewer than {} parcels to delivery: {}", minLMDVehCap,
+                LOGGER.info("Number of carriers with fewer than {} parcels to delivery: {}", mergeThreshold,
                                 insufficientServiceCarrierIds.size());
+
+                // Create merge log and record pre-merge state
+                CarrierMergeLog mergeLog = new CarrierMergeLog();
+                mergeLog.setMergeThreshold(mergeThreshold);
+                mergeLog.setCarriersBeforeMerge(carriers.getCarriers().size());
+                mergeLog.setCarriersBelowThreshold(insufficientServiceCarrierIds.size());
 
                 // Merge carriers with insufficient services into larger carriers from same
                 // company
                 mergeCarriersWithInsufficientServices(carriers.getCarriers(), insufficientServiceCarrierIds,
-                                maxServiceSize);
+                                maxServiceSize, mergeLog);
                 insufficientServiceCarrierIds.clear();
 
                 // Re-Collect IDs of carriers with total parcel demand (summed over all
-                // services) <
-                // min Vehicle Capacity = 165
+                // services) < fixed merge threshold
                 // For validation to check if the merging was successful
                 insufficientServiceCarrierIds = carriers.getCarriers().values().stream()
                                 .filter(carrier -> carrier.getServices().values().stream()
@@ -408,18 +414,22 @@ public class CarrierGenerator implements Runnable {
                                                                                                    // single
                                                                                                    // capacity
                                                                                                    // dimension
-                                                .sum() < minLMDVehCap)
+                                                .sum() < mergeThreshold)
                                 .map(Carrier::getId)
                                 .collect(Collectors.toList());
 
                 if (!insufficientServiceCarrierIds.isEmpty()) {
-                        throw new RuntimeException("There are carriers with parcel demand below minLMDVehCap ("
-                                        + minLMDVehCap + "). IDs: "
+                        throw new RuntimeException("There are carriers with parcel demand below mergeThreshold ("
+                                        + mergeThreshold + "). IDs: "
                                         + insufficientServiceCarrierIds);
                 }
 
                 int remainingSize = carriers.getCarriers().size();
                 LOGGER.info("Number of remaining carriers: {}", remainingSize);
+
+                // Store merge log in scenario for summary writer
+                mergeLog.setCarriersAfterMerge(remainingSize);
+                scenario.addScenarioElement("carrierMergeLog", mergeLog);
 
         }
 
@@ -431,10 +441,16 @@ public class CarrierGenerator implements Runnable {
          * @param carrierMap             Full map of carriers (modifiable).
          * @param insufficientCarrierIds Set of carrier IDs previously identified as
          *                               under threshold.
+         * @param mergeLog               Collects structured merge events for the summary.
          */
         public void mergeCarriersWithInsufficientServices(Map<Id<Carrier>, Carrier> carrierMap,
-                        List<Id<Carrier>> insufficientCarrierIds, int maxServiceSize) {
+                        List<Id<Carrier>> insufficientCarrierIds, int maxServiceSize,
+                        CarrierMergeLog mergeLog) {
                 Logger LOGGER = LogManager.getLogger(getClass());
+
+                // Helper: sum parcel demand of a carrier
+                java.util.function.ToIntFunction<Carrier> parcelDemand = c -> c.getServices().values().stream()
+                                .mapToInt(CarrierService::getCapacityDemand).sum();
 
                 // Calculate initial parcel count to validate later
                 long totalDemandBefore = carrierMap.values().stream()
@@ -453,7 +469,8 @@ public class CarrierGenerator implements Runnable {
                 for (Map.Entry<String, List<Carrier>> entry : carriersByProvider.entrySet()) {
                         String provider = entry.getKey();
                         List<Carrier> carriers = entry.getValue();
-                        final int minCap = hagridConfig.getMinLMDVehCap();
+                        // Use fixed carrier merge threshold (scenario-independent)
+                        final int minCap = hagridConfig.getCarrierMergeThreshold();
 
                         // --- Legacy Initial Pass (exakte alte Logik für small->large Auswahl) ---
                         List<Carrier> initialSmall = carriers.stream()
@@ -476,11 +493,26 @@ public class CarrierGenerator implements Runnable {
                                                 .orElse(null);
 
                                 if (nearestLarge != null) {
+                                        int srcServices = smallCarrier.getServices().size();
+                                        int srcParcels = parcelDemand.applyAsInt(smallCarrier);
+                                        int tgtServicesBefore = nearestLarge.getServices().size();
+                                        int tgtParcelsBefore = parcelDemand.applyAsInt(nearestLarge);
+
                                         smallCarrier.getServices().values()
                                                         .forEach(svc -> CarriersUtils.addService(nearestLarge, svc));
                                         carriersToRemove.add(smallCarrier.getId());
                                         LOGGER.info("[Small->Large Merge] Merged carrier '{}' into '{}'",
                                                         smallCarrier.getId(), nearestLarge.getId());
+
+                                        mergeLog.addEntry(new CarrierMergeLog.MergeEntry(
+                                                        smallCarrier.getId().toString(),
+                                                        nearestLarge.getId().toString(),
+                                                        srcServices, srcParcels,
+                                                        tgtServicesBefore,
+                                                        nearestLarge.getServices().size(),
+                                                        tgtParcelsBefore,
+                                                        parcelDemand.applyAsInt(nearestLarge),
+                                                        "Small→Large", 0));
                                 } else {
                                         // Legacy Fallback (klein->klein) mit Scoring
                                         final double DIST_WEIGHT = 1.0;
@@ -503,6 +535,9 @@ public class CarrierGenerator implements Runnable {
                                                         }))
                                                         .orElse(null);
                                         if (fallbackTarget != null) {
+                                                int srcServices = smallCarrier.getServices().size();
+                                                int srcParcels = parcelDemand.applyAsInt(smallCarrier);
+                                                int tgtParcelsBefore = parcelDemand.applyAsInt(fallbackTarget);
                                                 int before = fallbackTarget.getServices().size();
                                                 smallCarrier.getServices().values().forEach(
                                                                 s -> CarriersUtils.addService(fallbackTarget, s));
@@ -519,6 +554,15 @@ public class CarrierGenerator implements Runnable {
                                                                 after,
                                                                 fillPct,
                                                                 maxServiceSize);
+
+                                                mergeLog.addEntry(new CarrierMergeLog.MergeEntry(
+                                                                smallCarrier.getId().toString(),
+                                                                fallbackTarget.getId().toString(),
+                                                                srcServices, srcParcels,
+                                                                before, after,
+                                                                tgtParcelsBefore,
+                                                                parcelDemand.applyAsInt(fallbackTarget),
+                                                                "Small→Small", 0));
                                         } else {
                                                 String blockedInfo = initialSmall.stream()
                                                                 .filter(c -> !c.getId().equals(smallCarrier.getId()))
@@ -584,12 +628,27 @@ public class CarrierGenerator implements Runnable {
                                                                                                         big))))
                                                         .orElse(null);
                                         if (nearestLarge != null) {
+                                                int srcServices = smallCarrier.getServices().size();
+                                                int srcParcels = parcelDemand.applyAsInt(smallCarrier);
+                                                int tgtServicesBefore = nearestLarge.getServices().size();
+                                                int tgtParcelsBefore = parcelDemand.applyAsInt(nearestLarge);
+
                                                 smallCarrier.getServices().values().forEach(
                                                                 svc -> CarriersUtils.addService(nearestLarge, svc));
                                                 carriersToRemove.add(smallCarrier.getId());
                                                 LOGGER.info("[Small->Large Merge][it={}] '{}' -> '{}'", iteration,
                                                                 smallCarrier.getId(), nearestLarge.getId());
                                                 progress = true;
+
+                                                mergeLog.addEntry(new CarrierMergeLog.MergeEntry(
+                                                                smallCarrier.getId().toString(),
+                                                                nearestLarge.getId().toString(),
+                                                                srcServices, srcParcels,
+                                                                tgtServicesBefore,
+                                                                nearestLarge.getServices().size(),
+                                                                tgtParcelsBefore,
+                                                                parcelDemand.applyAsInt(nearestLarge),
+                                                                "Small→Large", iteration));
                                         } else {
                                                 final double DIST_WEIGHT = 0.75;
                                                 final double FILL_WEIGHT = 0.25;
@@ -614,6 +673,9 @@ public class CarrierGenerator implements Runnable {
                                                                 }))
                                                                 .orElse(null);
                                                 if (fallbackTarget != null) {
+                                                        int srcServices = smallCarrier.getServices().size();
+                                                        int srcParcels = parcelDemand.applyAsInt(smallCarrier);
+                                                        int tgtParcelsBefore = parcelDemand.applyAsInt(fallbackTarget);
                                                         int before = fallbackTarget.getServices().size();
                                                         smallCarrier.getServices().values().forEach(s -> CarriersUtils
                                                                         .addService(fallbackTarget, s));
@@ -633,6 +695,15 @@ public class CarrierGenerator implements Runnable {
                                                                         fillPct,
                                                                         maxServiceSize);
                                                         progress = true;
+
+                                                        mergeLog.addEntry(new CarrierMergeLog.MergeEntry(
+                                                                        smallCarrier.getId().toString(),
+                                                                        fallbackTarget.getId().toString(),
+                                                                        srcServices, srcParcels,
+                                                                        before, after,
+                                                                        tgtParcelsBefore,
+                                                                        parcelDemand.applyAsInt(fallbackTarget),
+                                                                        "Small→Small", iteration));
                                                 } else {
                                                         String blockedInfo = smallDyn.stream()
                                                                         .filter(c -> !c.getId()
@@ -807,8 +878,10 @@ public class CarrierGenerator implements Runnable {
                         }
 
                         final int amount = carrierDelivery.getAmount();
-                        final int numberOfServices = (int) Math.ceil((double) amount / hagridConfig.getCepVehCap());
-                        final int cap = hagridConfig.getCepVehCap();
+                        // Use minimum vehicle capacity for splitting to ensure each segment fits
+                        final int minVehicleCap = hagridConfig.getMinVehicleCapacity();
+                        final int numberOfServices = (int) Math.ceil((double) amount / minVehicleCap);
+                        final int cap = minVehicleCap;
                         final List<Double> weights = new ArrayList<>(carrierDelivery.getIndividualWeights());
 
                         // Calculate the total weight of parcels for the carrier

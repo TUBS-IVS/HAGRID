@@ -42,7 +42,7 @@ import java.util.Locale;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import org.matsim.freight.carriers.CarrierPlanWriter;
 import org.matsim.freight.carriers.CarrierPlanXmlReader;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
@@ -59,7 +59,7 @@ public class Router {
 
     private final ThreadingType threadingType;
     private final CarrierRoutingStatusLogger statusLogger;
-    private final HagridConfigGroup hagridConfigRef; // keep reference for lazy cache init
+    private final HagridConfig hagridConfigRef; // keep reference for lazy cache init
     private final CarrierVehicleTypes sharedVehicleTypes; // may be null if not provided
 
     // ===== Carrier routing cache (configurable) =====
@@ -91,17 +91,17 @@ public class Router {
     }
 
     /**
-     * Extended constructor enabling optional per-carrier routing cache controlled by HagridConfigGroup.
+     * Extended constructor enabling optional per-carrier routing cache controlled by HagridConfig.
      * Expected config methods (adjust if names differ):
      *  - boolean isCarrierRoutingCacheEnabled()
      *  - String getCarrierRoutingCacheDir()
      * If methods differ, adapt in code (TODO markers left).
      */
-    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfigGroup hagridConfig) {
+    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig) {
         this(threadingType, statusLogger, hagridConfig, null);
     }
 
-    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfigGroup hagridConfig, CarrierVehicleTypes vehicleTypes) {
+    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig, CarrierVehicleTypes vehicleTypes) {
         this.threadingType = threadingType;
         this.statusLogger = statusLogger;
         this.hagridConfigRef = hagridConfig;
@@ -153,6 +153,34 @@ public class Router {
         if (!carrierCacheEnabled) {
             initializeCacheFromConfig();
         }
+    }
+
+    /**
+     * Gets JSprit iterations from HagridConfig or returns default (1).
+     */
+    private int getJspritIterations() {
+        if (hagridConfigRef != null) {
+            try {
+                return hagridConfigRef.routing().getJspritIterations();
+            } catch (Exception e) {
+                LOGGER.debug("Could not get jspritIterations from config, using default: {}", e.getMessage());
+            }
+        }
+        return 1; // default: 1 iteration for initial model
+    }
+
+    /**
+     * Gets U-turn penalty seconds from HagridConfig or returns default (300).
+     */
+    private double getUTurnPenaltySeconds() {
+        if (hagridConfigRef != null) {
+            try {
+                return hagridConfigRef.routing().getUTurnPenaltySeconds();
+            } catch (Exception e) {
+                LOGGER.debug("Could not get uTurnPenaltySeconds from config, using default: {}", e.getMessage());
+            }
+        }
+        return 300.0; // default: 5 minutes penalty
     }
 
     // Thread-safe store for per-carrier metrics
@@ -437,7 +465,7 @@ public class Router {
                     List<Future<?>> futures = interleavedSchedule.stream()
                             .map(carrier -> {
                                 JspritCarrierTask task = new JspritCarrierTask(carrier, netBasedCosts, progress,
-                                        sortedCarriers.size(), network);
+                                        sortedCarriers.size(), network, getUTurnPenaltySeconds());
                                 Runnable gated = new GatedCarrierTask(task, bigGate, BIG_THRESHOLD);
                                 boolean isSmall = carrier.getServices().size() < BIG_THRESHOLD;
                                 return (Runnable) () -> {
@@ -702,9 +730,11 @@ public class Router {
         Thread heartbeat = startHeartbeat(carrier.getId().toString(), provider, effectiveCarrierType,
                 services, deliveriesTotal, clazz, (long) start, workerThread);
         int serviceCount = services;
+        int jspritIterations = getJspritIterations();
         try {
             VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount);
+            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
+                    vrp, serviceCount, jspritIterations, network, getUTurnPenaltySeconds());
             AtomicInteger iterationCounter = new AtomicInteger(0);
             algorithm.addListener(
                     (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());

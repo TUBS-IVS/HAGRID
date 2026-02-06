@@ -144,9 +144,11 @@ public class HAGRIDSimulationRunner {
         zoneThreshold = zoneCaching ? 1500.0 : 0.0;
     }
 
-    LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m",
-        concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold);
-    return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold);
+    double uTurnPenalty = parseNonNegativeDouble(map.getOrDefault("uTurnPenalty", "300.0"), "uTurnPenalty");
+
+    LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={}",
+        concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenalty);
+    return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenalty);
     }
 
     /**
@@ -234,7 +236,8 @@ public class HAGRIDSimulationRunner {
             simConfig.getMaxIterations(),
             simConfig.getJspritIterations(),
             simConfig.isZoneBasedCachingEnabled(),
-            simConfig.getZoneBasedCachingThresholdMeters())
+            simConfig.getZoneBasedCachingThresholdMeters(),
+            simConfig.getUTurnPenaltySeconds())
     );
         LOGGER.info("Modules added");
 

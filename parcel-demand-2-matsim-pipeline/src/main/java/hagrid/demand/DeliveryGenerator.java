@@ -12,7 +12,7 @@ import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 
-import hagrid.HagridConfigGroup;
+import hagrid.HagridConfig;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Hub;
@@ -38,7 +38,7 @@ public class DeliveryGenerator implements Runnable {
         private Scenario scenario;
 
         @Inject
-        private HagridConfigGroup hagridConfig;
+        private HagridConfig hagridConfig;
 
         private WeightGenerator parcelWeightGenerator = new WeightGenerator();
 

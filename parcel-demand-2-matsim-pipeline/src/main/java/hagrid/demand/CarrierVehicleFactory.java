@@ -136,38 +136,139 @@ public class CarrierVehicleFactory {
     // }
     // }
 
+    /**
+     * Resolves a VehicleType from the given size identifier.
+     * <p>
+     * Supported formats:
+     * <ul>
+     *   <li><b>"m"</b> → uses {@code ct_cep_size_m} (capacity 165) with all costs from XML</li>
+     *   <li><b>"l"</b> → uses {@code ct_cep_size_l} (capacity 230) with all costs from XML</li>
+     *   <li><b>"bike"</b> → uses {@code ct_cep_bike} (capacity 23) with all costs from XML</li>
+     *   <li><b>"capacity_type"</b> (e.g., "60_m", "100_l") → creates a new type with the
+     *       specified capacity, using the given type (m/l/bike) as template for costs, speed, etc.</li>
+     *   <li><b>Numeric only (e.g., "80")</b> → auto-selects template: "m" for ≤165, "l" for >165</li>
+     * </ul>
+     * </p>
+     *
+     * @param size the size identifier (alias, "capacity_type", or numeric capacity)
+     * @return the resolved VehicleType
+     * @throws IllegalArgumentException if the size is not recognized
+     */
     private static VehicleType getVehicleType(String size) {
         if (size == null || size.trim().isEmpty()) {
             throw new IllegalArgumentException("Vehicle size string is null or empty.");
         }
 
-        String trimmed = size.trim();
+        String trimmed = size.trim().toLowerCase();
 
-        Integer capacity = tryParsePositiveInt(trimmed);
-        if (capacity != null) {
-            VehicleType baseType = vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_l", VehicleType.class));
-            if (baseType == null) {
-                throw new IllegalStateException("Base vehicle type 'ct_truck_heavy' not found in vehicleTypes.");
-            }
-
-            Id<VehicleType> newTypeId = Id.create("ct_freight_cap_" + capacity, VehicleType.class);
-            VehicleType newType = VehicleUtils.getFactory().createVehicleType(newTypeId);
-
-            copyVehicleTypeAttributes(baseType, newType);
-
-            newType.getCapacity().setOther((double) capacity);
-            vehicleTypes.getVehicleTypes().put(newTypeId, newType);
-            
-            return newType;
-        }
-
-        switch (trimmed.toLowerCase()) {
+        // Handle known aliases first - use the XML types directly (with original capacity)
+        switch (trimmed) {
+            case "m":
+                VehicleType typeM = vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_m", VehicleType.class));
+                if (typeM == null) {
+                    throw new IllegalStateException("Vehicle type 'ct_cep_size_m' not found in vehicleTypes.");
+                }
+                return typeM;
+            case "l":
+                VehicleType typeL = vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_size_l", VehicleType.class));
+                if (typeL == null) {
+                    throw new IllegalStateException("Vehicle type 'ct_cep_size_l' not found in vehicleTypes.");
+                }
+                return typeL;
+            case "bike":
+                VehicleType typeBike = vehicleTypes.getVehicleTypes().get(Id.create("ct_cep_bike", VehicleType.class));
+                if (typeBike == null) {
+                    throw new IllegalStateException("Vehicle type 'ct_cep_bike' not found in vehicleTypes.");
+                }
+                return typeBike;
             case "supply_early":
             case "supply_late":
                 return vehicleTypes.getVehicleTypes().get(Id.create("ct_truck_heavy", VehicleType.class));
-            default:
-                throw new IllegalArgumentException("Unsupported vehicle size: " + size);
         }
+
+        // Check for "capacity_type" format (e.g., "60_m", "100_l", "50_bike")
+        if (trimmed.contains("_")) {
+            String[] parts = trimmed.split("_", 2);
+            Integer capacity = tryParsePositiveInt(parts[0]);
+            if (capacity != null && parts.length == 2) {
+                String baseAlias = parts[1];
+                if (isValidBaseAlias(baseAlias)) {
+                    return createCustomCapacityType(capacity, baseAlias);
+                }
+            }
+            throw new IllegalArgumentException("Invalid format: '" + size + 
+                    "'. Expected 'capacity_type' (e.g., '60_m', '100_l', '50_bike').");
+        }
+
+        // Try parsing as numeric capacity only (auto-select base type)
+        Integer capacity = tryParsePositiveInt(trimmed);
+        if (capacity != null) {
+            // Auto-determine base type: use "m" for smaller capacities, "l" for larger
+            String baseAlias = (capacity <= 165) ? "m" : "l";
+            return createCustomCapacityType(capacity, baseAlias);
+        }
+
+        throw new IllegalArgumentException("Unsupported vehicle size: '" + size + 
+                "'. Use 'm', 'l', 'bike', 'capacity_type' (e.g., '60_m'), or a numeric capacity.");
+    }
+
+    /**
+     * Checks if the given alias is a valid base type for custom capacity vehicles.
+     */
+    private static boolean isValidBaseAlias(String alias) {
+        return "m".equals(alias) || "l".equals(alias) || "bike".equals(alias);
+    }
+
+    /**
+     * Creates a custom vehicle type with the specified capacity, based on an existing type template.
+     * <p>
+     * The new type ID follows the pattern: {@code ct_cep_[capacity]_[baseAlias]}
+     * (e.g., "ct_cep_60_m", "ct_cep_100_l", "ct_cep_50_bike")
+     * </p>
+     *
+     * @param capacity the desired capacity
+     * @param baseAlias the base type alias ("m", "l", or "bike")
+     * @return a new VehicleType with the custom capacity and template properties
+     */
+    private static VehicleType createCustomCapacityType(int capacity, String baseAlias) {
+        // Map alias to XML type ID
+        String baseTypeId;
+        switch (baseAlias.toLowerCase()) {
+            case "m":
+                baseTypeId = "ct_cep_size_m";
+                break;
+            case "l":
+                baseTypeId = "ct_cep_size_l";
+                break;
+            case "bike":
+                baseTypeId = "ct_cep_bike";
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown base alias: '" + baseAlias + 
+                        "'. Use 'm', 'l', or 'bike'.");
+        }
+
+        VehicleType baseType = vehicleTypes.getVehicleTypes().get(Id.create(baseTypeId, VehicleType.class));
+        if (baseType == null) {
+            throw new IllegalStateException("Base vehicle type '" + baseTypeId + "' not found in vehicleTypes.");
+        }
+
+        // Create unique ID: ct_cep_[capacity]_[baseAlias] (e.g., ct_cep_60_m)
+        Id<VehicleType> newTypeId = Id.create("ct_cep_" + capacity + "_" + baseAlias, VehicleType.class);
+        
+        // Check if we already created this type
+        VehicleType existingType = vehicleTypes.getVehicleTypes().get(newTypeId);
+        if (existingType != null) {
+            return existingType;
+        }
+
+        // Create new type with custom capacity
+        VehicleType newType = VehicleUtils.getFactory().createVehicleType(newTypeId);
+        copyVehicleTypeAttributes(baseType, newType);
+        newType.getCapacity().setOther((double) capacity);
+        vehicleTypes.getVehicleTypes().put(newTypeId, newType);
+
+        return newType;
     }
 
     private static Integer tryParsePositiveInt(String value) {
