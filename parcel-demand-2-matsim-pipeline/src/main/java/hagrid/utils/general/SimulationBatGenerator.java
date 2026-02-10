@@ -148,7 +148,7 @@ public final class SimulationBatGenerator {
 			bat.append(String.format("set \"SCENARIO_%d=%s\"\r\n", i + 1, arg));
 			bat.append("echo.\r\n");
 			bat.append(String.format("echo Running scenario %d/%d: %%SCENARIO_%d%%\r\n", i + 1, scenarioArgs.size(), i + 1));
-			bat.append(String.format("\"%sJAVA_EXE%s\" @vmargs.txt -jar \"%sJAR%s\" %%SCENARIO_%d%%\r\n",
+			bat.append(String.format("\"%sJAVA_EXE%s\" @vmargs.txt -Dhagrid.pipeline.root=. -jar \"%sJAR%s\" %%SCENARIO_%d%%\r\n",
 					"%", "%", "%", "%", i + 1));
 			bat.append(String.format("if %%ERRORLEVEL%% neq 0 (\r\n"));
 			bat.append(String.format("  echo FAILED scenario %d with exit code %%ERRORLEVEL%%\r\n", i + 1));
