@@ -92,27 +92,49 @@ public class HagridPaths {
         this.matsimOutputBase = pipelineRoot.resolve("hagrid-matsim-output");
     }
 
+    /** System property that, if set, overrides automatic root detection. */
+    private static final String PIPELINE_ROOT_PROPERTY = "hagrid.pipeline.root";
+
     /**
-     * Detects whether CWD is already inside the pipeline directory.
-     * Checks for the presence of {@code hagrid-input/} (or {@code hagrid-output/})
-     * in the current directory — if found, returns {@code "."}, otherwise
-     * returns the default {@code PIPELINE_ROOT} prefix.
+     * Detects the pipeline root directory.
+     *
+     * <p>Resolution order:</p>
+     * <ol>
+     *   <li>System property {@code hagrid.pipeline.root} — set by the bat via
+     *       {@code -Dhagrid.pipeline.root=.} so the simulation server always
+     *       uses CWD directly (the bat already {@code cd}s into the pipeline
+     *       directory).</li>
+     *   <li>CWD contains {@code hagrid-input/} or {@code hagrid-output/}
+     *       → we are already inside the pipeline dir → use {@code "."}.</li>
+     *   <li>CWD/{@code PIPELINE_ROOT}/hagrid-input/ exists → IDE case,
+     *       workspace root is one level above → use {@code PIPELINE_ROOT}.</li>
+     *   <li>Fallback → {@code PIPELINE_ROOT}.</li>
+     * </ol>
      */
     private static Path detectPipelineRoot() {
+        // 1) Explicit system property (set by run_hagrid_sim.bat)
+        String prop = System.getProperty(PIPELINE_ROOT_PROPERTY);
+        if (prop != null && !prop.isBlank()) {
+            LOGGER.debug("Pipeline root from system property: {}", prop);
+            return Paths.get(prop);
+        }
+
+        // 2) CWD is the pipeline dir (hagrid-input/ or hagrid-output/ present)
         Path cwd = Paths.get("").toAbsolutePath();
-        // If hagrid-input/ exists in CWD, we're already inside the pipeline dir
         if (Files.isDirectory(cwd.resolve("hagrid-input"))
                 || Files.isDirectory(cwd.resolve("hagrid-output"))) {
             LOGGER.debug("CWD is pipeline root: {}", cwd);
             return Paths.get(".");
         }
-        // Otherwise prepend the pipeline subfolder (IDE / workspace-root case)
+
+        // 3) IDE / workspace-root case — pipeline dir is a subfolder
         Path sub = Paths.get(PIPELINE_ROOT);
         if (Files.isDirectory(cwd.resolve(sub).resolve("hagrid-input"))) {
             LOGGER.debug("Pipeline root detected at: {}", sub);
             return sub;
         }
-        // Fallback — use PIPELINE_ROOT and hope for the best
+
+        // 4) Fallback
         LOGGER.warn("Could not auto-detect pipeline root (CWD={}), falling back to '{}'", cwd, PIPELINE_ROOT);
         return sub;
     }

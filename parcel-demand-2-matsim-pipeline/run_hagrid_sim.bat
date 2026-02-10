@@ -33,7 +33,7 @@ type vmargs.txt
 set "SCENARIO_ARGS=concept=basecase,date=2025-05-13,maxIter=150,jspritIter=10000,zoneThreshold=1500"
 
 echo Running scenario with %SCENARIO_ARGS%
-"%JAVA_EXE%" @vmargs.txt -jar "%JAR%" %SCENARIO_ARGS%
+"%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_ARGS%
 
 
 set "RC=%ERRORLEVEL%"
