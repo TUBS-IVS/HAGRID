@@ -16,6 +16,7 @@ import org.matsim.vehicles.EngineInformation;
 import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
+import org.matsim.utils.objectattributes.attributable.AttributesUtils;
 
 public class CarrierVehicleFactory {
 
@@ -284,29 +285,36 @@ public class CarrierVehicleFactory {
     }
 
     private static void copyVehicleTypeAttributes(VehicleType from, VehicleType to) {
+        // Basic properties
         to.setNetworkMode(from.getNetworkMode() != null ? from.getNetworkMode() : TransportMode.car);
-
         to.setDescription(from.getDescription());
         to.setMaximumVelocity(from.getMaximumVelocity());
-        
-        // EngineInformation fromEngine = from.getEngineInformation();
-        // EngineInformation toEngine = to.getEngineInformation();
-        // if (fromEngine != null && toEngine != null) {
-        //     toEngine.setFuelType(fromEngine.getFuelType());
-        //     toEngine.setGasConsumption(fromEngine.);
-        //     toEngine.setHbefaVehicleCategory(fromEngine.getHbefaVehicleCategory());
-        //     toEngine.setHbefaTechnology(fromEngine.);
-        //     toEngine.setHbefaSizeClass(fromEngine.getHbefaSizeClass());
-        //     toEngine.setHbefaEmissionsConcept(fromEngine.getHbefaEmissionsConcept());
-        // }
 
+        // Physical dimensions
+        to.setLength(from.getLength());
+        to.setWidth(from.getWidth());
+
+        // Traffic flow properties
+        to.setPcuEquivalents(from.getPcuEquivalents());
+        to.setFlowEfficiencyFactor(from.getFlowEfficiencyFactor());
+
+        // Copy all free-form attributes (e.g. "skills")
+        AttributesUtils.copyAttributesFromTo(from, to);
+
+        // Cost information (standard fields + nested attributes like costsPerSecondWaiting)
         CostInformation fromCost = from.getCostInformation();
         CostInformation toCost = to.getCostInformation();
         if (fromCost != null && toCost != null) {
             toCost.setFixedCost(fromCost.getFixedCosts());
             toCost.setCostsPerMeter(fromCost.getCostsPerMeter());
             toCost.setCostsPerSecond(fromCost.getCostsPerSecond());
+            // Copy extended cost attributes (costsPerSecondInService, costsPerSecondWaiting)
+            AttributesUtils.copyAttributesFromTo(fromCost, toCost);
         }
+
+        // Capacity (seats, standing room — other/freight capacity is set separately)
+        to.getCapacity().setSeats(from.getCapacity().getSeats());
+        to.getCapacity().setStandingRoom(from.getCapacity().getStandingRoom());
     }
 
     /**
