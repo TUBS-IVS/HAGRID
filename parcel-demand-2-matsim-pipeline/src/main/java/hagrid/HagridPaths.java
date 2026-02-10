@@ -104,12 +104,19 @@ public class HagridPaths {
      *       {@code -Dhagrid.pipeline.root=.} so the simulation server always
      *       uses CWD directly (the bat already {@code cd}s into the pipeline
      *       directory).</li>
-     *   <li>CWD contains {@code hagrid-input/} or {@code hagrid-output/}
-     *       → we are already inside the pipeline dir → use {@code "."}.</li>
-     *   <li>CWD/{@code PIPELINE_ROOT}/hagrid-input/ exists → IDE case,
-     *       workspace root is one level above → use {@code PIPELINE_ROOT}.</li>
+     *   <li>CWD contains the canonical marker file
+     *       {@code hagrid-input/config/config.xml} → we are already inside the
+     *       pipeline dir → use {@code "."}.</li>
+     *   <li>CWD/{@code PIPELINE_ROOT}/hagrid-input/config/config.xml exists
+     *       → IDE case, workspace root is one level above
+     *       → use {@code PIPELINE_ROOT}.</li>
      *   <li>Fallback → {@code PIPELINE_ROOT}.</li>
      * </ol>
+     *
+     * <p><b>Note:</b> We deliberately check for the config <em>file</em> rather
+     * than just the {@code hagrid-input/} or {@code hagrid-output/} directories,
+     * because a failed previous run may have created empty {@code hagrid-output/}
+     * directories at the wrong level, which would trick a directory-only check.</p>
      */
     private static Path detectPipelineRoot() {
         // 1) Explicit system property (set by run_hagrid_sim.bat)
@@ -119,17 +126,19 @@ public class HagridPaths {
             return Paths.get(prop);
         }
 
-        // 2) CWD is the pipeline dir (hagrid-input/ or hagrid-output/ present)
+        // Canonical marker file — always present in the real pipeline dir
+        Path marker = Paths.get("hagrid-input", "config", "config.xml");
         Path cwd = Paths.get("").toAbsolutePath();
-        if (Files.isDirectory(cwd.resolve("hagrid-input"))
-                || Files.isDirectory(cwd.resolve("hagrid-output"))) {
-            LOGGER.debug("CWD is pipeline root: {}", cwd);
+
+        // 2) CWD IS the pipeline dir (marker file exists here)
+        if (Files.exists(cwd.resolve(marker))) {
+            LOGGER.debug("CWD is pipeline root (found {}): {}", marker, cwd);
             return Paths.get(".");
         }
 
         // 3) IDE / workspace-root case — pipeline dir is a subfolder
         Path sub = Paths.get(PIPELINE_ROOT);
-        if (Files.isDirectory(cwd.resolve(sub).resolve("hagrid-input"))) {
+        if (Files.exists(cwd.resolve(sub).resolve(marker))) {
             LOGGER.debug("Pipeline root detected at: {}", sub);
             return sub;
         }
