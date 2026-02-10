@@ -149,9 +149,12 @@ public class Router {
         }
     }
 
+    private boolean cacheInitialized = false;
+
     private void ensureCacheInitialized() {
-        if (!carrierCacheEnabled) {
+        if (!cacheInitialized) {
             initializeCacheFromConfig();
+            cacheInitialized = true;
         }
     }
 

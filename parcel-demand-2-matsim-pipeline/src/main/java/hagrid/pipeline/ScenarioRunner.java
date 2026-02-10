@@ -287,10 +287,10 @@ public final class ScenarioRunner {
 			Path cacheDir = cacheConfig.getCacheDirectory();
 			invokeSetter(hagridConfig, "setCarrierRoutingCacheEnabled", true);
 			invokeSetter(hagridConfig, "setCarrierRoutingCacheDir", cacheDir.toString());
-			invokeSetter(hagridConfig, "setCarrierCacheEnabled", true);
-			invokeSetter(hagridConfig, "setCarrierCacheDir", cacheDir.toString());
-			invokeSetter(hagridConfig, "setCacheDir", cacheDir.toString());
 			LOGGER.info("Configured carrier routing cache: {}", cacheDir);
+		} else {
+			invokeSetter(hagridConfig, "setCarrierRoutingCacheEnabled", false);
+			LOGGER.info("Carrier routing cache DISABLED by configuration");
 		}
 		
 		// JSprit iterations configuration

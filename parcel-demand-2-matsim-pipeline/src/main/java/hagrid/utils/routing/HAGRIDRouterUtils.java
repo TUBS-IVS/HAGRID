@@ -141,7 +141,7 @@ public class HAGRIDRouterUtils {
                 .buildAlgorithm();
 
         int iterations = Math.max(1, jspritIterations);
-        int termination = Math.max(1, (int) (0.1 * iterations)); // 10% of iterations without improvement
+        int termination = calculateNoImprovementThreshold(iterations);
 
         algorithm.setMaxIterations(iterations);
         algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
@@ -150,6 +150,29 @@ public class HAGRIDRouterUtils {
   
 
         return algorithm;
+    }
+
+    /**
+     * Calculates the jsprit "no improvement" termination threshold as a
+     * logarithmic function of the configured iteration count.
+     *
+     * <p>The curve flattens out for large iteration counts, giving roughly:
+     * <ul>
+     *   <li>100 iter  &rarr; 25</li>
+     *   <li>1 000 iter &rarr; ~100</li>
+     *   <li>10 000 iter &rarr; ~130</li>
+     * </ul>
+     *
+     * For very small iteration counts the result is capped at iterations/4.
+     *
+     * @param jspritIterations the configured maximum jsprit iterations
+     * @return no-improvement threshold (&ge; 1)
+     */
+    public static int calculateNoImprovementThreshold(int jspritIterations) {
+        int iterations = Math.max(1, jspritIterations);
+        int logBased   = (int) Math.round(14.0 * Math.log(iterations));
+        int linearCap  = iterations / 4;
+        return Math.max(1, Math.min(linearCap, logBased));
     }
 
     /**

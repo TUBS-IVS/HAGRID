@@ -296,6 +296,23 @@ public class HagridConfig {
             setDispatchHours("default", hours);
         }
 
+        /**
+         * Clears all provider-specific dispatch hours, keeping only the default.
+         * Called between scenarios to prevent state leaking.
+         */
+        public void clearDispatchHours() {
+            dispatchHours.clear();
+            initializeDefaultDispatchHours();
+        }
+
+        /**
+         * Clears all provider-specific vehicle size overrides.
+         * Called between scenarios to prevent state leaking.
+         */
+        public void clearProviderSizes() {
+            providerSizes.clear();
+        }
+
         // --- Time Shifts ---
 
         public void setProviderTimeShift(String provider, int hoursShift) {
@@ -656,12 +673,23 @@ public class HagridConfig {
     // CARRIER ROUTING CACHE
     // =========================================================================
 
+    private boolean carrierRoutingCacheEnabled = false;
+    private String carrierRoutingCacheDirOverride = null;
+
     /**
      * Whether the carrier routing cache is enabled.
      * The Router reads this via reflection — method name must match exactly.
      */
     public boolean isCarrierRoutingCacheEnabled() {
-        return true; // cache always enabled
+        return carrierRoutingCacheEnabled;
+    }
+
+    /**
+     * Enable or disable the carrier routing cache.
+     * Called via reflection from ScenarioRunner.
+     */
+    public void setCarrierRoutingCacheEnabled(boolean enabled) {
+        this.carrierRoutingCacheEnabled = enabled;
     }
 
     /**
@@ -669,7 +697,16 @@ public class HagridConfig {
      * The Router reads this via reflection — method name must match exactly.
      */
     public String getCarrierRoutingCacheDir() {
+        if (carrierRoutingCacheDirOverride != null) return carrierRoutingCacheDirOverride;
         return hagridPaths.cacheDir().toAbsolutePath().toString();
+    }
+
+    /**
+     * Override the carrier routing cache directory.
+     * Called via reflection from ScenarioRunner.
+     */
+    public void setCarrierRoutingCacheDir(String dir) {
+        this.carrierRoutingCacheDirOverride = dir;
     }
 
     // =========================================================================
@@ -701,10 +738,10 @@ public class HagridConfig {
     public List<String> getVehicleSizesForProvider(String provider) { return vehicles.getSizesForProvider(provider); }
     public List<Integer> getDispatchHours(String provider) { return vehicles.getDispatchHours(provider); }
     public void setProviderDispatchHours(String provider, List<Integer> hours) { vehicles.setDispatchHours(provider, hours); }
-    public void clearProviderDispatchHours() { /* clear dispatch hours map - implement if needed */ }
+    public void clearProviderDispatchHours() { vehicles.clearDispatchHours(); }
     public void setCepVehicleSizes(List<String> sizes) { vehicles.setActiveSizes(sizes); }
     public void setProviderVehicleSizes(String provider, List<String> sizes) { vehicles.setProviderSizes(provider, sizes); }
-    public void clearProviderVehicleSizes() { /* clear provider sizes - implement if needed */ }
+    public void clearProviderVehicleSizes() { vehicles.clearProviderSizes(); }
 
     // --- Routing ---
     public int getMaxRouteDuration() { return routing.getMaxRouteDurationSeconds(); }
