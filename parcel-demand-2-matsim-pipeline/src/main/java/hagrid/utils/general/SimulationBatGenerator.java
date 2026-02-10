@@ -12,6 +12,7 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import hagrid.HagridPaths;
 import hagrid.pipeline.ScenarioConfig;
 
 /**
@@ -176,13 +177,10 @@ public final class SimulationBatGenerator {
 	// =========================================================================
 
 	private static void writeBatFile(String content, List<String> scenarioArgs) {
-		Path batFile = Path.of("run_hagrid_sim.bat");
+		// Use HagridPaths auto-detection to find the pipeline root
+		Path pipelineRoot = new HagridPaths().getPipelineRoot();
+		Path batFile = pipelineRoot.resolve("run_hagrid_sim.bat");
 		try {
-			// Resolve relative to pipeline root (CWD may be workspace root)
-			Path pipelineRoot = Path.of("parcel-demand-2-matsim-pipeline");
-			if (Files.isDirectory(pipelineRoot)) {
-				batFile = pipelineRoot.resolve("run_hagrid_sim.bat");
-			}
 			Files.writeString(batFile, content, StandardCharsets.UTF_8);
 			LOGGER.info("Generated simulation bat file: {}", batFile.toAbsolutePath());
 			LOGGER.info("  {} scenario(s) configured:", scenarioArgs.size());
