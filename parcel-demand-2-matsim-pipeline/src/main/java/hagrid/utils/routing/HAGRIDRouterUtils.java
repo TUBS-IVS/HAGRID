@@ -13,6 +13,7 @@ import com.graphhopper.jsprit.core.problem.constraint.ServiceDeliveriesFirstCons
 import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
 import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
 
+import hagrid.HagridPaths;
 import hagrid.simulation.MaxRouteDurationConstraint;
 import hagrid.simulation.OpenRouteStateVerifier;
 import hagrid.simulation.RouteRealStartTimeMemorizer;
@@ -274,7 +275,8 @@ public class HAGRIDRouterUtils {
         // Output the chart to a file
         try {
             File outputFile = new File(
-                    "parcel-demand-2-matsim-pipeline/output/" + fileName + "_" + carrierType + "_individual_routing_runtime.png");
+                    new HagridPaths().getPipelineRoot().resolve("hagrid-output").resolve(
+                            fileName + "_" + carrierType + "_individual_routing_runtime.png").toString());
             ChartUtils.saveChartAsPNG(outputFile, chart, 800, 600);
             LOGGER.info("Individual routing runtime plot saved as {}", outputFile.getAbsolutePath());
         } catch (IOException e) {
