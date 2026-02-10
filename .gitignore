@@ -46,9 +46,20 @@ parcel-demand-2-matsim-pipeline/logs
 parcel-demand-2-matsim-pipeline/sim-output
 parcel-demand-2-matsim-pipeline/output
 
-parcel-demand-2-matsim-pipeline/hagrid-input
-parcel-demand-2-matsim-pipeline/hagrid-matsim-output
-parcel-demand-2-matsim-pipeline/hagrid-output
+# hagrid-input: ignore contents but keep folder structure via .gitkeep
+parcel-demand-2-matsim-pipeline/hagrid-input/**
+!parcel-demand-2-matsim-pipeline/hagrid-input/**/
+!parcel-demand-2-matsim-pipeline/hagrid-input/**/.gitkeep
+
+# hagrid-output: ignore contents but keep folder structure via .gitkeep
+parcel-demand-2-matsim-pipeline/hagrid-output/**
+!parcel-demand-2-matsim-pipeline/hagrid-output/**/
+!parcel-demand-2-matsim-pipeline/hagrid-output/**/.gitkeep
+
+# hagrid-matsim-output: ignore contents but keep folder structure via .gitkeep
+parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**
+!parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**/
+!parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**/.gitkeep
 
 parcel-analysis/cache
 parcel-analysis/emission_maps
