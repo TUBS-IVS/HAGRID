@@ -22,15 +22,7 @@ public class CarrierRoutingStatusLogger {
     private final DateTimeFormatter tsFmt = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC);
 
     public CarrierRoutingStatusLogger(Path csvPath) {
-        // Force all status CSVs into parcel-demand-2-matsim-pipeline/output/logs/runid regardless of input
-        Path forced = csvPath;
-        try {
-            String fileName = csvPath.getFileName().toString();
-            forced = Path.of("parcel-demand-2-matsim-pipeline", "output", "logs", "runid", fileName);
-        } catch (Exception e) {
-            // fallback: use as is
-        }
-        this.csvPath = forced;
+        this.csvPath = csvPath;
         initIfNeeded();
     }
 
