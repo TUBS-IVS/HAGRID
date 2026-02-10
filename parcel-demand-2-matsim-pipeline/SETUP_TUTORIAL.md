@@ -11,9 +11,11 @@ Ensure the following folder structure exists in the `parcel-demand-2-matsim-pipe
 ```
 parcel-demand-2-matsim-pipeline/
 │
-├── input/
-│   ├── config.xml
-│   ├── HAGRID_vehicleTypes2.0.xml
+├── hagrid-input/
+│   ├── config/
+│   │   ├── config.xml
+│   │   ├── sim-config.xml
+│   │   └── jsprit-algorithm.xml
 │   │
 │   ├── demand/
 │   │   ├── basecase_12052025/
@@ -24,43 +26,48 @@ parcel-demand-2-matsim-pipeline/
 │   ├── geodata/
 │   │   └── Region Hannover.*
 │   │
-│   └── hubs/
-│       ├── KEP-hubs_v3.csv
-│       ├── standorte_von_dhl.de.csv
-│       └── standorte_von_paket.net/
-│           ├── dhl_paketnet_list.csv
-│           ├── dpd_paketnet_list.csv
-│           ├── gls_paketnet_list.csv
-│           ├── hermes_paketnet_list.csv
-│           └── ups_paketnet_list.csv
-│
-├── sim-input/
+│   ├── hubs/
+│   │   ├── KEP-hubs_v3.csv
+│   │   ├── standorte_von_dhl.de.csv
+│   │   └── standorte_von_paket.net/
+│   │       ├── dhl_paketnet_list.csv
+│   │       ├── dpd_paketnet_list.csv
+│   │       ├── gls_paketnet_list.csv
+│   │       ├── hermes_paketnet_list.csv
+│   │       └── ups_paketnet_list.csv
+│   │
 │   ├── network/
-│   │   └── car_network_filtered_V2.xml.gz
-│   ├── algorithm.xml
-│   └── algo_V2.xml
+│   │   ├── car_network_filtered_V2.xml.gz
+│   │   ├── cargobike_network_zones_MH_V3_clean.xml.gz
+│   │   ├── car_network_filtered_V2_change_events.xml.gz
+│   │   └── RH_useful__zone.*
+│   │
+│   └── vehicles/
+│       └── HAGRID_vehicleTypes2.0.xml
 │
-├── output/                 ← created automatically
-├── routerCache/            ← created automatically
-└── src/                    ← Java source code
+├── hagrid-output/              ← created automatically
+├── hagrid-matsim-output/       ← created automatically
+├── routerCache/                ← created automatically
+└── src/                        ← Java source code
 ```
 
 ---
 
 ## 📦 Required Files in Detail
 
-### 1. Configuration Files (`input/`)
+### 1. Configuration Files (`hagrid-input/config/`)
 
 | File | Description | Format |
 |------|-------------|--------|
 | `config.xml` | MATSim main configuration | XML |
-| `HAGRID_vehicleTypes2.0.xml` | Vehicle type definitions (capacity, costs, etc.) | XML |
+| `sim-config.xml` | MATSim simulation configuration | XML |
+| `jsprit-algorithm.xml` | jsprit algorithm configuration | XML |
 
 > ⚠️ **Important:** These files are already included in the repository and usually do not need to be modified.
 
 ---
 
-### 2. Parcel Demand Data (`input/demand/`)
+### 2. Parcel Demand Data (`hagrid-input/demand/`)
 
 The parcel demand is provided as a **Shapefile**. Each scenario (concept + date) requires its own subfolder.
 
@@ -101,7 +108,7 @@ basecase_13052025/
 
 ---
 
-### 3. Geodata for Region Filter (`input/geodata/`)
+### 3. Geodata for Region Filter (`hagrid-input/geodata/`)
 
 | File | Description |
 |------|-------------|
@@ -114,7 +121,7 @@ These files define the geographic area for which the simulation is performed.
 
 ---
 
-### 4. Hub and Location Data (`input/hubs/`)
+### 4. Hub and Location Data (`hagrid-input/hubs/`)
 
 #### CEP Hubs (Distribution Centers)
 | File | Description |
@@ -143,11 +150,14 @@ These files define the geographic area for which the simulation is performed.
 
 ---
 
-### 5. Road Network (`sim-input/network/`)
+### 5. Road Network (`hagrid-input/network/`)
 
 | File | Description |
 |------|-------------|
 | `car_network_filtered_V2.xml.gz` | MATSim network (compressed) |
+| `cargobike_network_zones_MH_V3_clean.xml.gz` | Cargobike routing network |
+| `car_network_filtered_V2_change_events.xml.gz` | Time-dependent network change events |
+| `RH_useful__zone.*` | Freight zone shapefile (all parts) |
 
 > ⚠️ **Important:** The network must be in coordinate system **EPSG:25832**!
 
@@ -236,13 +246,13 @@ parcel-demand-2-matsim-pipeline/output/logs/<RUN_ID>_<TIMESTAMP>/runner.log
 
 ## 📋 Pre-Start Checklist
 
-- [ ] `input/config.xml` present
-- [ ] `input/HAGRID_vehicleTypes2.0.xml` present
-- [ ] Demand shapefile in correct folder (`input/demand/<concept>_<date>/`)
-- [ ] Network file present (`sim-input/network/car_network_filtered_V2.xml.gz`)
-- [ ] Hub data present (`input/hubs/KEP-hubs_v3.csv`)
-- [ ] Shipping point data present (`input/hubs/standorte_von_paket.net/*.csv`)
-- [ ] Geodata for region present (`input/geodata/Region Hannover.*`)
+- [ ] `hagrid-input/config/config.xml` present
+- [ ] `hagrid-input/vehicles/HAGRID_vehicleTypes2.0.xml` present
+- [ ] Demand shapefile in correct folder (`hagrid-input/demand/<concept>_<date>/`)
+- [ ] Network file present (`hagrid-input/network/car_network_filtered_V2.xml.gz`)
+- [ ] Hub data present (`hagrid-input/hubs/KEP-hubs_v3.csv`)
+- [ ] Shipping point data present (`hagrid-input/hubs/standorte_von_paket.net/*.csv`)
+- [ ] Geodata for region present (`hagrid-input/geodata/Region Hannover.*`)
 - [ ] Java 17+ installed
 - [ ] Maven 3.8+ installed
 - [ ] Concept and date configured in Runner
