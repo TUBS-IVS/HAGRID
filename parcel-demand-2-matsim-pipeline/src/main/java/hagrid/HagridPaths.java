@@ -270,10 +270,10 @@ public class HagridPaths {
      * <p>These files are the same for ALL simulation runs and don't change
      * between scenarios or dates:</p>
      * <ul>
-     *   <li>{@code sim-config.xml} — MATSim base configuration</li>
-     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network</li>
-     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes</li>
-     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (all parts)</li>
+     *   <li>{@code sim-config.xml} — MATSim base configuration (from hagrid-input/config/)</li>
+     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network (from hagrid-input/network/)</li>
+     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes (from hagrid-input/network/)</li>
+     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (from hagrid-input/network/)</li>
      * </ul>
      * <p>Files are only copied if missing. Existing files are not overwritten.</p>
      */
@@ -281,20 +281,20 @@ public class HagridPaths {
         Files.createDirectories(sharedDir());
         Files.createDirectories(sharedZonesDir());
 
-        // Source locations (all simulation-specific files live in sim-input/)
-        Path simInputDir = pipelineRoot.resolve("sim-input");
-        Path simNetworkDir = simInputDir.resolve("network");
+        // Source locations (all files now live in hagrid-input/)
+        Path configInputDir = inputBase.resolve("config");
+        Path networkInputDir = inputBase.resolve("network");
 
         // 1) sim-config.xml
-        copyIfMissing(simInputDir.resolve("sim-config.xml"),
+        copyIfMissing(configInputDir.resolve("sim-config.xml"),
                       sharedDir().resolve("sim-config.xml"), "sim-config.xml");
 
         // 2) Cargobike network
-        copyIfMissing(simNetworkDir.resolve("cargobike_network_zones_MH_V3_clean.xml.gz"),
+        copyIfMissing(networkInputDir.resolve("cargobike_network_zones_MH_V3_clean.xml.gz"),
                       sharedDir().resolve("cargobike_network.xml.gz"), "cargobike network");
 
         // 3) Network change events
-        copyIfMissing(simNetworkDir.resolve("car_network_filtered_V2_change_events.xml.gz"),
+        copyIfMissing(networkInputDir.resolve("car_network_filtered_V2_change_events.xml.gz"),
                       sharedDir().resolve("network_change_events.xml.gz"), "network change events");
 
         // 4) Zone shapefile (all parts: .shp, .dbf, .shx, .prj, .cpg, .ctf)
@@ -305,7 +305,7 @@ public class HagridPaths {
         };
         String zoneBase = "RH_useful__zone";
         for (String[] pair : zonePairs) {
-            Path src = simNetworkDir.resolve(zoneBase + pair[0]);
+            Path src = networkInputDir.resolve(zoneBase + pair[0]);
             Path dst = sharedZonesDir().resolve(zoneBase + pair[1]);
             if (Files.exists(src)) {
                 copyIfMissing(src, dst, "zone " + pair[1]);
