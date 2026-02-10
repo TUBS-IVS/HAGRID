@@ -63,14 +63,14 @@ class ScenarioConfigTest {
         }
 
         @Test
-        @DisplayName("default pipeline settings: no simplifier, no routing, caching on, jsprit=1")
+        @DisplayName("default pipeline settings: no simplifier, no routing, caching off, jsprit=1")
         void defaultPipelineSettings() {
             ScenarioConfig config = ScenarioConfig.builder().build();
             PipelineSettings ps = config.getPipelineSettings();
 
             assertThat(ps.isApplyServiceSimplifier()).isFalse();
             assertThat(ps.isRunRouting()).isFalse();
-            assertThat(ps.isCachingEnabled()).isTrue();
+            assertThat(ps.isCachingEnabled()).isFalse();
             assertThat(ps.getJspritIterations()).isEqualTo(1);
         }
     }

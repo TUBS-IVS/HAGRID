@@ -38,6 +38,7 @@ import com.graphhopper.jsprit.core.util.Solutions;
 // import com.graphhopper.jsprit.io.algorithm.VehicleRoutingAlgorithms;
 
 import hagrid.utils.routing.DepartureTimeReScheduler;
+import hagrid.utils.routing.HAGRIDRouterUtils;
 import hagrid.utils.routing.UpdateDepartureTimeAndPracticalTimeWindows;
 import hagrid.utils.routing.ZoneBasedTransportCosts;
 
@@ -374,14 +375,7 @@ public final class CarrierVehicleReRouter {
 
                             long start = System.currentTimeMillis();
 
-                            int noImprovementThreshold;
-                            if (serviceCount > 250) {
-                                // noImprovementThreshold = jspritIterations / 4;
-                                noImprovementThreshold = 50;
-                            } else {
-                                // noImprovementThreshold = jspritIterations / 2;
-                                noImprovementThreshold = 75;
-                            }
+                            int noImprovementThreshold = HAGRIDRouterUtils.calculateNoImprovementThreshold(jspritIterations);
 
                             RoutingRunResult runResult = createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
                             boolean usedZoneRouting = runResult.usedZoneRouting();

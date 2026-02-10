@@ -537,7 +537,7 @@ public final class ScenarioConfig {
 		// Pipeline settings
 		private boolean applyServiceSimplifier = false;
 		private boolean runRouting = false;
-		private boolean enableCaching = true;
+		private boolean enableCaching = false;
 		private int jspritIterations = 1;
 
 		// Vehicle configuration
