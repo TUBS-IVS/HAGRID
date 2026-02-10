@@ -24,6 +24,9 @@ import org.apache.logging.log4j.Logger;
 import hagrid.pipeline.ScenarioConfig;
 import hagrid.pipeline.ScenarioRunner;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 /**
  * HAGRID Pipeline API - Main entry point for generating MATSim input files.
  * 
@@ -33,6 +36,19 @@ import hagrid.pipeline.ScenarioRunner;
  * }</pre>
  */
 public final class HAGRID {
+
+	// Set hagrid.log.dir BEFORE Log4j2 initializes (static fields are evaluated top-down)
+	static {
+		if (System.getProperty("hagrid.log.dir") == null) {
+			try {
+				Path logDir = Path.of("hagrid-output", "logs");
+				Files.createDirectories(logDir);
+				System.setProperty("hagrid.log.dir", logDir.toAbsolutePath().toString());
+			} catch (Exception ignored) {
+				// fallback: let log4j2.xml default handle it
+			}
+		}
+	}
 
 	private static final Logger LOGGER = LogManager.getLogger(HAGRID.class);
 

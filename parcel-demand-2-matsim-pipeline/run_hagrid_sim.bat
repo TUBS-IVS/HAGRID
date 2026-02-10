@@ -17,7 +17,8 @@ rem Sichtprüfung
 "%JAVA_EXE%" -version
 
 rem effektive VM Settings vor dem Start loggen
-"%JAVA_EXE%" -XshowSettings:vm -version 2> "logs\vm_settings_before.txt"
+if not exist "hagrid-output\logs\jvm" mkdir "hagrid-output\logs\jvm"
+"%JAVA_EXE%" -XshowSettings:vm -version 2> "hagrid-output\logs\jvm\vm_settings_before.txt"
 
 rem Start mit Argumentdatei, kein Umbruch Chaos
 set "JAR=target\parcel-demand-2-matsim-pipeline-1.0-SNAPSHOT.jar"
