@@ -78,6 +78,14 @@ public class HagridConfig {
     private void initializeDefaults() {
         providers.initializeDefaultRates(scenario);
         vehicles.initializeDefaultDispatchHours();
+
+        // Derive all input paths from centralized HagridPaths
+        // (handles CWD auto-detection for IDE vs simulation server)
+        inputPaths.setNetwork(hagridPaths.networkFile());
+        inputPaths.setVehicleTypes(hagridPaths.vehicleTypesFile());
+        inputPaths.setHubData(hagridPaths.hubDataFile());
+        inputPaths.setShippingPoints(hagridPaths.shippingPointsDir());
+        inputPaths.setParcelLockers(hagridPaths.parcelLockersFile());
     }
 
     // =========================================================================
@@ -88,12 +96,14 @@ public class HagridConfig {
      * All input file paths for the simulation.
      */
     public static class InputPaths {
-        private String network = "parcel-demand-2-matsim-pipeline/hagrid-input/network/car_network_filtered_V2.xml.gz";
+        // Defaults are overridden by initializeDefaults() from HagridPaths.
+        // Empty strings here → never used with the hardcoded prefix.
+        private String network = "";
         private String freightDemand = "";
-        private String vehicleTypes = "parcel-demand-2-matsim-pipeline/hagrid-input/vehicles/HAGRID_vehicleTypes2.0.xml";
-        private String hubData = "parcel-demand-2-matsim-pipeline/hagrid-input/hubs/KEP-hubs_v3.csv";
-        private String shippingPoints = "parcel-demand-2-matsim-pipeline/hagrid-input/hubs/standorte_von_paket.net/";
-        private String parcelLockers = "parcel-demand-2-matsim-pipeline/hagrid-input/hubs/standorte_von_dhl.de.csv";
+        private String vehicleTypes = "";
+        private String hubData = "";
+        private String shippingPoints = "";
+        private String parcelLockers = "";
 
         public String getNetwork() { return network; }
         public void setNetwork(String network) { this.network = network; }

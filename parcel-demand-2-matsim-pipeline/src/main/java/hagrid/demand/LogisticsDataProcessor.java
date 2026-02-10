@@ -41,7 +41,6 @@ public class LogisticsDataProcessor implements Runnable {
     private static final Logger LOGGER = LogManager.getLogger(LogisticsDataProcessor.class);
 
     private static final String CARRIER_VEHICLE_TYPES = "carrierVehicleTypes";
-    private static final String geoDataPath = "parcel-demand-2-matsim-pipeline/hagrid-input/geodata/Region Hannover.shp";
 
     @Inject
     private Scenario scenario;
@@ -58,8 +57,9 @@ public class LogisticsDataProcessor implements Runnable {
         try {
             LOGGER.info("Reading logistics data...");
 
-            // Read shipping point data from files in the folder
-            LOGGER.info("Reading geodata of Hanover Region from folder: {}", geoDataPath);
+            // Read geodata — path resolved from centralized HagridPaths
+            String geoDataPath = hagridConfig.io().geodataDir().resolve("Region Hannover.shp").toString();
+            LOGGER.info("Reading geodata of Hanover Region from: {}", geoDataPath);
             Collection<SimpleFeature> hanoverGeoData = GeoFileReader.getAllFeatures(geoDataPath);
 
             // Read hub data from file
