@@ -1,0 +1,326 @@
+package hagrid.simulation;
+
+import hagrid.HagridPaths;
+import hagrid.analysis.CarrierXmlParser;
+import hagrid.analysis.CarrierXmlParser.ParsedCarrier;
+import hagrid.analysis.DashboardGenerator;
+import hagrid.analysis.FreightEventHandler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.geotools.api.feature.simple.SimpleFeature;
+import org.matsim.api.core.v01.Scenario;
+import org.matsim.api.core.v01.network.Network;
+import org.matsim.core.api.experimental.events.EventsManager;
+import org.matsim.core.controler.Controler;
+import org.matsim.core.events.EventsUtils;
+import org.matsim.core.events.MatsimEventsReader;
+import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.network.io.MatsimNetworkReader;
+import org.matsim.core.utils.gis.GeoFileReader;
+import org.matsim.freight.carriers.controller.CarrierModule;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
+
+/**
+ * Shared utility methods for running HAGRID simulations and generating
+ * analysis dashboards afterwards.
+ * <p>
+ * Extracted from the old monolithic {@code HAGRIDSimulationRunner} so that
+ * the runner class itself stays clean and declarative.
+ */
+public final class SimulationRunnerUtils {
+
+    private static final Logger LOG = LogManager.getLogger(SimulationRunnerUtils.class);
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
+
+    private SimulationRunnerUtils() {} // utility class
+
+    // ====================================================================
+    // Argument parsing
+    // ====================================================================
+
+    /**
+     * Parses a single scenario specification of the form
+     * {@code concept=...,date=...,maxIter=...,jspritIter=...,writeDashboard=true}.
+     *
+     * @param spec comma-separated key=value string
+     * @return parsed configuration
+     */
+    public static HAGRIDSimulationConfig parseScenario(String spec) {
+        if (spec == null || spec.isBlank()) {
+            throw new IllegalArgumentException("Empty scenario specification");
+        }
+
+        Map<String, String> map = new LinkedHashMap<>();
+        for (String token : spec.split(",")) {
+            String[] kv = token.split("=", 2);
+            if (kv.length != 2 || kv[0].isBlank() || kv[1].isBlank()) {
+                throw new IllegalArgumentException("Invalid token: " + token);
+            }
+            map.put(kv[0].trim(), kv[1].trim());
+        }
+
+        String concept = require(map, "concept");
+        LocalDate date;
+        try {
+            date = LocalDate.parse(require(map, "date"), DATE_FMT);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid date (use yyyy-MM-dd): " + map.get("date"), ex);
+        }
+
+        int maxIter      = positiveInt(map.getOrDefault("maxIter", "150"), "maxIter");
+        int jspritIter   = positiveInt(map.getOrDefault("jspritIter", "100"), "jspritIter");
+        boolean zoneCaching = bool(map.getOrDefault("zoneCaching", "false"), "zoneCaching");
+        double zoneThreshold = map.containsKey("zoneThreshold")
+                ? nonNegDouble(map.get("zoneThreshold"), "zoneThreshold")
+                : (zoneCaching ? 1500.0 : 0.0);
+        double uTurnPenaltyCost = nonNegDouble(map.getOrDefault("uTurnPenalty", "1.0"), "uTurnPenalty");
+        String tag = map.getOrDefault("tag", "").trim();
+
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost);
+
+        return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
+                zoneCaching, zoneThreshold, uTurnPenaltyCost, tag);
+    }
+
+    /**
+     * Parses an array of scenario specification strings.
+     */
+    public static List<HAGRIDSimulationConfig> parseScenarios(String[] args) {
+        List<HAGRIDSimulationConfig> list = new ArrayList<>();
+        for (String arg : args) {
+            list.add(parseScenario(arg.trim()));
+        }
+        LOG.info("Parsed {} scenario(s)", list.size());
+        return list;
+    }
+
+    // ====================================================================
+    // Validation
+    // ====================================================================
+
+    /**
+     * Validates required input files for all scenarios. Throws on first batch
+     * of errors to prevent running with incomplete inputs.
+     */
+    public static void validateAll(List<HAGRIDSimulationConfig> configs) {
+        LOG.info("Validating input files for {} scenario(s)...", configs.size());
+        List<String> errors = new ArrayList<>();
+        for (HAGRIDSimulationConfig cfg : configs) {
+            try {
+                cfg.validateInputFiles();
+            } catch (IllegalStateException e) {
+                errors.add("[" + cfg.getRunId() + "] " + e.getMessage());
+            }
+        }
+        if (!errors.isEmpty()) {
+            errors.forEach(LOG::error);
+            throw new IllegalStateException("Aborting — missing input files (see above).");
+        }
+        LOG.info("All input files OK.");
+    }
+
+    // ====================================================================
+    // Simulation execution
+    // ====================================================================
+
+    /**
+     * Runs a single HAGRID MATSim simulation.
+     */
+    public static void runSimulation(HAGRIDSimulationConfig cfg) throws Exception {
+        Instant t0 = Instant.now();
+
+        Path logDir = cfg.getOutputDirectory().resolve("logs");
+        try { Files.createDirectories(logDir); } catch (IOException ignored) {}
+        System.setProperty("hagrid.log.dir", logDir.toAbsolutePath().toString());
+
+        LOG.info("─── Simulation '{}' ───", cfg.getRunId());
+
+        // Load freight zones
+        Collection<SimpleFeature> zones =
+                GeoFileReader.getAllFeatures(cfg.getFreightZonePath().toString());
+        LOG.info("Freight zones: {} features", zones.size());
+
+        // Build scenario
+        Scenario scenario = HAGRIDScenarioBuilder.build(cfg, zones);
+
+        // Setup MATSim
+        Controler controler = new Controler(scenario);
+        controler.addOverridingModule(new CarrierModule());
+        controler.addOverridingModule(new HAGRIDSimulationModule(
+                scenario, true,
+                cfg.getMaxIterations(), cfg.getJspritIterations(),
+                cfg.isZoneBasedCachingEnabled(),
+                cfg.getZoneBasedCachingThresholdMeters(),
+                cfg.getUTurnPenaltyCost()));
+
+        // Run
+        LOG.info("Output: {}", cfg.getOutputDirectoryAsString());
+        controler.run();
+
+        logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+
+        // GC hint between scenarios
+        System.gc();
+        try { Thread.sleep(5000); } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    // ====================================================================
+    // Dashboard generation (reuses HAGRIDAnalysisRunner logic)
+    // ====================================================================
+
+    /**
+     * Generates the analysis dashboard for a completed simulation run.
+     * Reads events, carriers, network from MATSim output → produces HTML.
+     */
+    public static void generateDashboard(HAGRIDSimulationConfig cfg) throws Exception {
+        Instant t0 = Instant.now();
+        HagridPaths paths = new HagridPaths();
+        paths.initializeRun(cfg.getRunId());
+
+        Path matsimDir = paths.matsimRunDir(cfg.getMaxIterations(), cfg.getJspritIterations());
+        LOG.info("─── Dashboard for '{}' ───", cfg.getRunId());
+
+        String prefix = cfg.getRunId();
+        Path eventsFile  = matsimDir.resolve(prefix + ".output_events.xml.gz");
+        Path carriersFile = matsimDir.resolve(prefix + ".output_carriers.xml.gz");
+        Path networkFile  = matsimDir.resolve(prefix + ".output_network.xml.gz");
+
+        List<String> missing = new ArrayList<>();
+        if (!Files.exists(eventsFile))   missing.add("events: " + eventsFile);
+        if (!Files.exists(carriersFile)) missing.add("carriers: " + carriersFile);
+        if (!Files.exists(networkFile))  missing.add("network: " + networkFile);
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("Missing output files:\n  " + String.join("\n  ", missing));
+        }
+
+        // Network
+        Network network = NetworkUtils.createNetwork();
+        new MatsimNetworkReader(network).readFile(networkFile.toAbsolutePath().toString());
+        LOG.info("Network: {} nodes, {} links", network.getNodes().size(), network.getLinks().size());
+
+        // Events
+        FreightEventHandler handler = new FreightEventHandler();
+        EventsManager em = EventsUtils.createEventsManager();
+        em.addHandler(handler);
+        new MatsimEventsReader(em).readFile(eventsFile.toAbsolutePath().toString());
+        LOG.info("Events: {} processed, {} vehicles", handler.getTotalEventsProcessed(),
+                handler.getVehicleTours().size());
+
+        // Carriers
+        List<ParsedCarrier> carriers = CarrierXmlParser.parse(carriersFile);
+        LOG.info("Carriers: {} total", carriers.size());
+
+        // Vehicle types
+        Path vtFile = matsimDir.resolve(prefix + ".output_carriersVehicleTypes.xml.gz");
+        Map<String, Double> caps  = Files.exists(vtFile) ? CarrierXmlParser.parseVehicleTypes(vtFile) : Map.of();
+        Map<String, Double> fixes = Files.exists(vtFile) ? CarrierXmlParser.parseVehicleTypeFixedCosts(vtFile) : Map.of();
+        Map<String, Double> cpkm  = Files.exists(vtFile) ? CarrierXmlParser.parseVehicleTypeCostsPerKm(vtFile) : Map.of();
+
+        // Generate
+        String dashRunId = prefix + "_iter" + cfg.getMaxIterations() + "_jsprit" + cfg.getJspritIterations();
+        Path outDir = matsimDir.resolve("analysis");
+        DashboardGenerator gen = new DashboardGenerator(dashRunId, network, handler, carriers, caps, fixes, cpkm, outDir);
+        Path html = gen.generate();
+
+        logDuration("Dashboard '" + html.getFileName() + "'", t0);
+    }
+
+    // ====================================================================
+    // Help / usage
+    // ====================================================================
+
+    public static boolean isHelpRequested(String[] args) {
+        if (args.length == 0) return true;
+        for (String a : args) {
+            String s = a.trim().toLowerCase(Locale.ROOT);
+            if (s.equals("help") || s.equals("--help") || s.equals("-h")) return true;
+        }
+        return false;
+    }
+
+    public static void printUsage() {
+        LOG.info("""
+            Usage:
+              java hagrid.HAGRIDSimulationRunner <scenario> [<scenario> ...]
+            
+            Each <scenario> is comma-separated key=value:
+              concept        (required) scenario concept name
+              date           (required) yyyy-MM-dd
+              tag            version tag appended to run ID (optional, e.g. V1)
+              maxIter        MATSim iterations (default 150)
+              jspritIter     jsprit iterations (default 100)
+              zoneCaching    true/false (default false)
+              zoneThreshold  metres (default 1500 when zoneCaching=true)
+              uTurnPenalty   score penalty per U-turn (default 1.0)
+              writeDashboard true/false (default false) \u2014 generate dashboard after sim
+            
+            Example:
+              concept=basecase,date=2025-05-13,tag=V1,maxIter=150,jspritIter=10000,writeDashboard=true
+            """);
+    }
+
+    // ====================================================================
+    // Internal helpers
+    // ====================================================================
+
+    private static String require(Map<String, String> map, String key) {
+        String v = map.get(key);
+        if (v == null || v.isBlank()) throw new IllegalArgumentException("Missing required key: " + key);
+        return v;
+    }
+
+    private static int positiveInt(String s, String name) {
+        try {
+            int v = Integer.parseInt(s.trim());
+            if (v <= 0) throw new IllegalArgumentException(name + " must be positive: " + v);
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid integer for " + name + ": " + s, ex);
+        }
+    }
+
+    private static boolean bool(String s, String name) {
+        return switch (s.trim().toLowerCase(Locale.ROOT)) {
+            case "true", "1", "yes" -> true;
+            case "false", "0", "no" -> false;
+            default -> throw new IllegalArgumentException("Invalid boolean for " + name + ": " + s);
+        };
+    }
+
+    public static boolean parseBool(String s) {
+        if (s == null) return false;
+        return switch (s.trim().toLowerCase(Locale.ROOT)) {
+            case "true", "1", "yes" -> true;
+            default -> false;
+        };
+    }
+
+    private static double nonNegDouble(String s, String name) {
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (v < 0) throw new IllegalArgumentException(name + " must be >= 0: " + v);
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
+    }
+
+    private static void logDuration(String label, Instant start) {
+        Duration d = Duration.between(start, Instant.now());
+        LOG.info("{} completed in {:02d}:{:02d}:{:02d}",
+                label, d.toHours(), d.toMinutesPart(), d.toSecondsPart());
+    }
+}

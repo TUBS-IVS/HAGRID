@@ -876,7 +876,7 @@ public class CarrierGenerator implements Runnable {
 
                         // Set the delivery rate to 100% for B2B parcel types
                         if (carrierDelivery.getParcelType() == ParcelType.B2B) {
-                                effectiveRate = 100.0;
+                                effectiveRate = 99.0;
                         }
 
                         final int amount = carrierDelivery.getAmount();

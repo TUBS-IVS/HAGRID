@@ -72,12 +72,12 @@ public class HAGRIDRouterUtils {
      * @param serviceCount         The number of services.
      * @param jspritIterations     Number of JSprit iterations (1=quick, 20-50=production)
      * @param network              MATSim network for U-turn detection (null to disable)
-     * @param uTurnPenaltySeconds  Soft penalty per U-turn in cost units (0 to disable)
+     * @param uTurnPenaltyCost  Soft score penalty per U-turn (0 to disable)
      * @return The configured vehicle routing algorithm.
      */
     public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
                                                               int jspritIterations, Network network,
-                                                              double uTurnPenaltySeconds) {
+                                                              double uTurnPenaltyCost) {
         StateManager stateManager = new StateManager(vrp);
         ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
 
@@ -110,8 +110,8 @@ public class HAGRIDRouterUtils {
         constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
         // Soft U-turn penalty: discourages reverse-link maneuvers in route solutions
-        if (network != null && uTurnPenaltySeconds > 0.0) {
-            constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltySeconds));
+        if (network != null && uTurnPenaltyCost > 0.0) {
+            constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltyCost));
         }
 
         double radialShare = 0.25; // lower default shares to reduce ruin size

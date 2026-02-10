@@ -204,7 +204,7 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
                 if (actTimeCosts < 0.0) {
                     throw new IllegalStateException("actTimeCosts must be non-negative but was " + actTimeCosts);
                 }
-                score += actTimeCosts*(-1);
+                score += actTimeCosts * (-1);
                 costTracker.activityCosts += actTimeCosts;
 //                try {
 //					fileWriter.write("actLinkId="+ act.getLinkId() + "; actArrTime=" + Time.writeTime(actStartTime) +
@@ -274,15 +274,15 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 		private final Network network;
 		private final Carrier carrier;
 		private final Set<CarrierVehicle> employedVehicles;
-		private final double uTurnPenaltySeconds;
+		private final double uTurnPenaltyCost;
 		private final CarrierCostTracker costTracker;
 
-		public SimpleDriversLegScoring( Carrier carrier, Network network, double uTurnPenaltySeconds,
+		public SimpleDriversLegScoring( Carrier carrier, Network network, double uTurnPenaltyCost,
 				CarrierCostTracker costTracker ) {
 			super();
 			this.network = network;
 			this.carrier = carrier;
-			this.uTurnPenaltySeconds = uTurnPenaltySeconds;
+			this.uTurnPenaltyCost = uTurnPenaltyCost;
 			this.costTracker = costTracker;
 			employedVehicles = new HashSet<>();
 		}
@@ -337,10 +337,10 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 				costTracker.totalTravelTimeSeconds += leg.getTravelTime().seconds();
 
 				// U-turn penalty: check consecutive links for reverse-link pairs
-				if (uTurnPenaltySeconds > 0.0 && leg.getRoute() instanceof NetworkRoute) {
+				if (uTurnPenaltyCost > 0.0 && leg.getRoute() instanceof NetworkRoute) {
 					int uTurnCount = countUTurns(nRoute);
 					if (uTurnCount > 0) {
-						score += (-1) * uTurnCount * uTurnPenaltySeconds;
+						score += (-1) * uTurnCount * uTurnPenaltyCost;
 						costTracker.uTurnCount += uTurnCount;
 					}
 				}
@@ -428,12 +428,12 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
     }
 
     private final Network network;
-    private final double uTurnPenaltySeconds;
+    private final double uTurnPenaltyCost;
 
-    public ScoringFunctions(Network network, double uTurnPenaltySeconds) {
+    public ScoringFunctions(Network network, double uTurnPenaltyCost) {
         super();
         this.network = network;
-        this.uTurnPenaltySeconds = uTurnPenaltySeconds;
+        this.uTurnPenaltyCost = uTurnPenaltyCost;
     }
 
 
@@ -442,7 +442,7 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 		CarrierCostTracker costTracker = new CarrierCostTracker();
 
 		SumScoringFunction sf = new SumScoringFunction();
-		SimpleDriversLegScoring driverLegScoring = new SimpleDriversLegScoring(carrier, network, uTurnPenaltySeconds, costTracker);
+		SimpleDriversLegScoring driverLegScoring = new SimpleDriversLegScoring(carrier, network, uTurnPenaltyCost, costTracker);
 		VehicleEmploymentScoring vehicleEmployment = new VehicleEmploymentScoring(carrier, costTracker);
 		DriversActivityScoring actScoring = new DriversActivityScoring(costTracker);
 		CostAttributeWriter costWriter = new CostAttributeWriter(carrier, costTracker);

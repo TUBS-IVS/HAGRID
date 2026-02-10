@@ -67,14 +67,20 @@ public class HAGRIDSimulationConfig {
     private final double zoneBasedCachingThresholdMeters;
 
     /**
-     * Soft U-turn penalty in cost units (≈ seconds). Applied both during JSprit
+     * Soft U-turn penalty in score/cost units. Applied both during JSprit
      * route optimization and in the MATSim carrier scoring function.
+     * Each detected U-turn subtracts this value from the MATSim utility score.
      * 0 = disabled.
      */
-    private final double uTurnPenaltySeconds;
+    private final double uTurnPenaltyCost;
 
     /**
-     * Unique run identifier, composed of the concept and the date.
+     * Optional version tag appended to the run ID (empty string if not set).
+     */
+    private final String tag;
+
+    /**
+     * Unique run identifier, composed of the concept, date, and optional tag.
      */
     private final String runId;
 
@@ -85,12 +91,13 @@ public class HAGRIDSimulationConfig {
      * @param date             simulation date
      * @param maxIterations    maximum number of MATSim iterations
      * @param jspritIterations maximum number of jsprit iterations
+     * @param tag              optional version tag (null or empty to disable)
      * @throws NullPointerException     if concept or date is null
      * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
      */
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
-                          double uTurnPenaltySeconds) {
+                          double uTurnPenaltyCost, String tag) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations <= 0) {
@@ -106,8 +113,10 @@ public class HAGRIDSimulationConfig {
         this.jspritIterations = jspritIterations;
         this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
         this.zoneBasedCachingThresholdMeters = zoneBasedCachingThresholdMeters;
-        this.uTurnPenaltySeconds = Math.max(0.0, uTurnPenaltySeconds);
-        this.runId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
+        this.uTurnPenaltyCost = Math.max(0.0, uTurnPenaltyCost);
+        this.tag = tag != null ? tag.trim() : "";
+        String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
+        this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths();
         this.paths.initializeRun(runId);
 
@@ -137,6 +146,15 @@ public class HAGRIDSimulationConfig {
      */
     public String getConcept() {
         return concept;
+    }
+
+    /**
+     * Returns the optional version tag (empty string if not set).
+     *
+     * @return version tag
+     */
+    public String getTag() {
+        return tag;
     }
 
     /**
@@ -181,11 +199,12 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Returns the soft U-turn penalty in cost units (≈ seconds).
+     * Returns the soft U-turn penalty in score/cost units.
+     * Each detected U-turn subtracts this value from the utility score.
      * 0 = disabled.
      */
-    public double getUTurnPenaltySeconds() {
-        return uTurnPenaltySeconds;
+    public double getUTurnPenaltyCost() {
+        return uTurnPenaltyCost;
     }
 
     /**

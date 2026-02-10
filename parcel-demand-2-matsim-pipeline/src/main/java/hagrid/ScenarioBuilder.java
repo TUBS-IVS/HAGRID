@@ -41,8 +41,8 @@ public final class ScenarioBuilder {
 
 	private static final String DEFAULT_REGION = "Hannover";
 	private static final VehicleSchedule DEFAULT_SCHEDULE = VehicleSchedule.SIMPLE_STAGGERED;
-	private static final int DEFAULT_DELIVERY_START = 7;
-	private static final int DEFAULT_DELIVERY_END = 14;
+	private static final int DEFAULT_DISPATCH_START = 7;
+	private static final int DEFAULT_DISPATCH_END = 14;
 	private static final boolean DEFAULT_RUN_ROUTING = false;
 	private static final boolean DEFAULT_ENABLE_CACHING = true;
 
@@ -63,7 +63,7 @@ public final class ScenarioBuilder {
 				.filterRegions(DEFAULT_REGION)
 				.vehicleSizes(vehicleSizes)
 				.vehicleSchedule(DEFAULT_SCHEDULE)
-				.deliveryWindow(DEFAULT_DELIVERY_START, DEFAULT_DELIVERY_END)
+				.dispatchWindow(DEFAULT_DISPATCH_START, DEFAULT_DISPATCH_END)
 				.providerTimeShift("Amazon", +1)
 				.applyServiceSimplifier(false)
 				.runRouting(DEFAULT_RUN_ROUTING)
@@ -81,7 +81,7 @@ public final class ScenarioBuilder {
 				.filterRegions(DEFAULT_REGION)
 				.vehicleSizes(vehicleSizes)
 				.vehicleSchedule(VehicleSchedule.EXTENDED)
-				.deliveryWindow(DEFAULT_DELIVERY_START, DEFAULT_DELIVERY_END)
+				.dispatchWindow(DEFAULT_DISPATCH_START, DEFAULT_DISPATCH_END)
 				.providerTimeShift("Amazon", +1)
 				.applyServiceSimplifier(false)
 				.runRouting(DEFAULT_RUN_ROUTING)
@@ -99,7 +99,7 @@ public final class ScenarioBuilder {
 				.filterRegions(region)
 				.vehicleSizes(vehicleSizes)
 				.vehicleSchedule(DEFAULT_SCHEDULE)
-				.deliveryWindow(DEFAULT_DELIVERY_START, DEFAULT_DELIVERY_END)
+				.dispatchWindow(DEFAULT_DISPATCH_START, DEFAULT_DISPATCH_END)
 				.providerTimeShift("Amazon", +1)
 				.applyServiceSimplifier(false)
 				.runRouting(DEFAULT_RUN_ROUTING)

@@ -92,11 +92,31 @@ class HagridConfigTest {
         }
 
         @Test
-        @DisplayName("setSimulationDate generates runId as SCENARIO_ddMMyyyy")
+        @DisplayName("setSimulationDate generates runId as SCENARIO_ddMMyyyy (no tag)")
         void simulationDateSetsRunId() {
             config.setSimulationDate(LocalDate.of(2025, 5, 13));
 
             assertThat(config.getRunId()).isEqualTo("BASECASE_13052025");
+        }
+
+        @Test
+        @DisplayName("setTag + setSimulationDate generates runId as SCENARIO_ddMMyyyy_TAG")
+        void simulationDateWithTagSetsRunId() {
+            config.setTag("V1");
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+
+            assertThat(config.getRunId()).isEqualTo("BASECASE_13052025_V1");
+            assertThat(config.getTag()).isEqualTo("V1");
+        }
+
+        @Test
+        @DisplayName("setTag with empty string keeps runId without tag suffix")
+        void emptyTagKeepsRunIdUnchanged() {
+            config.setTag("");
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+
+            assertThat(config.getRunId()).isEqualTo("BASECASE_13052025");
+            assertThat(config.getTag()).isEmpty();
         }
 
         @Test

@@ -181,8 +181,9 @@ PipelineConfig config = PipelineConfig.builder()
         
         // Provider-specific settings
         .providerVehicleSizes("amazon", List.of("l"))
-        .deliveryWindow("default", 7, 14)      // Default: 7am-2pm
-        .deliveryWindow("amazon", 9, 17)       // Amazon: 9am-5pm
+        .dispatchWindow("default", 7, 14)      // Default: dispatch 7am-2pm
+        .dispatchWindow("amazon", 9, 17)       // Amazon: dispatch 9am-5pm
+        .deliveryTimeWindow(8, 20)              // Real delivery TW (penalty if violated)
         
         // Filter by region
         .filterRegions("Hannover")

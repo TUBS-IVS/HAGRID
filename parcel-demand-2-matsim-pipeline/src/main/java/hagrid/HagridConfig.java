@@ -35,6 +35,7 @@ public class HagridConfig {
     
     private Scenario scenario = Scenario.BASECASE;
     private LocalDate simulationDate;
+    private String tag = "";
     private String runId;
     private Set<Region> filterRegions = new LinkedHashSet<>(Set.of(Region.ALL));
 
@@ -331,13 +332,15 @@ public class HagridConfig {
         private int durationPerParcelMinutes = 2;
         private int maxDurationPerStopMinutes = 15;
         
-        // Delivery time window
+        // Delivery time window — the REAL TW for MATSim scoring penalties.
+        // Services (deliveries) outside this window incur a TW penalty.
+        // Configured via ScenarioConfig.deliveryTimeWindow(start, end).
         private int deliveryWindowStartHour = 8;
         private int deliveryWindowEndHour = 20;
         
         // Demand splitting thresholds
         private int demandBorder = 600;  // Max deliveries per carrier for KMeans clustering
-        private int dhlBorder = 450;     // DHL-specific border
+        private int dhlBorder = 450;     // DHL-specific border  for filtering input SHP File -> >500 = ASSUME TRUCK DELIVERY
         
         // JSprit optimization
         private int jspritIterations = 1;  // 1 for initial model, 20-50 for production
@@ -384,19 +387,19 @@ public class HagridConfig {
         public int getCarrierMergeThreshold() { return carrierMergeThreshold; }
         public void setCarrierMergeThreshold(int threshold) { this.carrierMergeThreshold = Math.max(1, threshold); }
 
-        // U-turn penalty — soft SCORE penalty for reverse-link U-turns in JSprit routing.
-        // In JSprit cost units (not real seconds/euros). 0 = disabled.
-        private double uTurnPenaltySeconds = 1.0;  // score penalty per U-turn
+        // Soft SCORE penalty for reverse-link U-turns.
+        // In JSprit/MATSim cost units (not real seconds or euros). 0 = disabled.
+        private double uTurnPenaltyCost = 1.0;
 
         /**
-         * Soft penalty for U-turns during JSprit route optimization.
+         * Soft penalty for U-turns during JSprit route optimization and MATSim scoring.
          * A U-turn is detected when consecutive stops are on reverse links (A→B then B→A).
-         * The penalty discourages unnecessary reversals without forbidding them.
-         * This is a SCORE penalty (JSprit cost units), NOT a real-time or monetary cost.
+         * Each U-turn subtracts this value from the utility score.
+         * This is a SCORE penalty (cost units), NOT a real-time or monetary cost.
          * Set to 0.0 to disable.
          */
-        public double getUTurnPenaltySeconds() { return uTurnPenaltySeconds; }
-        public void setUTurnPenaltySeconds(double seconds) { this.uTurnPenaltySeconds = Math.max(0.0, seconds); }
+        public double getUTurnPenaltyCost() { return uTurnPenaltyCost; }
+        public void setUTurnPenaltyCost(double cost) { this.uTurnPenaltyCost = Math.max(0.0, cost); }
     }
 
     // =========================================================================
@@ -541,19 +544,32 @@ public class HagridConfig {
     }
 
     public LocalDate getSimulationDate() { return simulationDate; }
+
+    /**
+     * Sets the version tag appended to the run ID.
+     * Must be called <b>before</b> {@link #setSimulationDate(LocalDate)} to take effect.
+     *
+     * @param tag version tag (e.g. "V1"), or {@code null}/empty to disable
+     */
+    public void setTag(String tag) {
+        this.tag = tag == null ? "" : tag.trim();
+    }
+
+    public String getTag() { return tag; }
     
     public void setSimulationDate(LocalDate date) {
         this.simulationDate = date;
-        this.runId = scenario.name() + "_" + date.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        String baseRunId = scenario.name() + "_" + date.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        this.runId = tag.isEmpty() ? baseRunId : baseRunId + "_" + tag;
         
         // Initialize paths for this run
         hagridPaths.initializeRun(runId);
         
-        // Auto-set demand path
+        // Demand uses baseRunId (demand is shared per concept+date, tag doesn't affect it)
         String formattedDate = date.format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dayOfWeek = date.getDayOfWeek().toString().substring(0, 1).toUpperCase() +
                 date.getDayOfWeek().toString().substring(1).toLowerCase();
-        inputPaths.setFreightDemand(hagridPaths.demandShapefile(runId, formattedDate, dayOfWeek));
+        inputPaths.setFreightDemand(hagridPaths.demandShapefile(baseRunId, formattedDate, dayOfWeek));
     }
 
     public String getRunId() { return runId; }
@@ -629,11 +645,11 @@ public class HagridConfig {
     }
 
     /**
-     * Soft penalty for U-turns in JSprit routing (score units).
+     * Soft score penalty for U-turns in JSprit routing and MATSim scoring.
      * 0.0 = disabled. Convenience method delegating to routing().
      */
-    public double getUTurnPenaltySeconds() {
-        return routing.getUTurnPenaltySeconds();
+    public double getUTurnPenaltyCost() {
+        return routing.getUTurnPenaltyCost();
     }
 
     // =========================================================================
@@ -698,7 +714,8 @@ public class HagridConfig {
     public double getDeliveryTimeWindowEnd() { return routing.getDeliveryTimeWindow().getEnd(); }
     public int getDHLBorder() { return routing.getDhlBorder(); }
 
-    // --- Delivery Hours (legacy) ---
+    // --- Dispatch Hours (legacy) — when LMD vehicles can START their tours ---
+    // NOT the delivery time window for TW penalty scoring (that's in RoutingConfig).
     private final Map<String, int[]> deliveryHours = new LinkedHashMap<>();
     {
         deliveryHours.put("default", new int[]{7, 14});
@@ -756,7 +773,7 @@ public class HagridConfig {
 
     @Override
     public String toString() {
-        return String.format("HagridConfig[scenario=%s, runId=%s, date=%s, vehicleSizes=%s]",
-            scenario, runId, simulationDate, vehicles.getActiveSizes());
+        return String.format("HagridConfig[scenario=%s, runId=%s, tag=%s, date=%s, vehicleSizes=%s]",
+            scenario, runId, tag, simulationDate, vehicles.getActiveSizes());
     }
 }

@@ -34,7 +34,7 @@ import java.util.Locale;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import hagrid.pipeline.ScenarioConfig.DeliveryWindow;
+import hagrid.pipeline.ScenarioConfig.DispatchWindow;
 import hagrid.pipeline.ScenarioConfig.VehicleSchedule;
 
 /**
@@ -139,11 +139,18 @@ public final class ScenarioSummaryWriter {
 	}
 
 	private static void appendDeliveryWindows(StringBuilder sb, RunContext context) {
-		Map<String, DeliveryWindow> windows = context.getScenarioConfig().getDeliveryWindows();
-		sb.append("[Delivery Windows]").append(SEPARATOR);
+		Map<String, DispatchWindow> windows = context.getScenarioConfig().getDispatchWindows();
+		sb.append("[Dispatch Windows (vehicle start times)]").append(SEPARATOR);
 		windows.forEach((provider, window) -> {
 			sb.append("  ").append(provider).append(": ").append(window).append(SEPARATOR);
 		});
+		sb.append(SEPARATOR);
+
+		// Real delivery time window
+		int twStart = context.getScenarioConfig().getDeliveryTimeWindowStartHour();
+		int twEnd = context.getScenarioConfig().getDeliveryTimeWindowEndHour();
+		sb.append("[Delivery Time Window (TW penalty)]").append(SEPARATOR);
+		sb.append("  ").append(String.format("%02d:00-%02d:00", twStart, twEnd)).append(SEPARATOR);
 		sb.append(SEPARATOR);
 	}
 
@@ -154,7 +161,7 @@ public final class ScenarioSummaryWriter {
 		Set<String> allProviders = new LinkedHashSet<>();
 		allProviders.add("default");
 		allProviders.addAll(vehicleConfig.getAllProviders());
-		allProviders.addAll(context.getScenarioConfig().getDeliveryWindows().keySet());
+		allProviders.addAll(context.getScenarioConfig().getDispatchWindows().keySet());
 
 		for (String provider : allProviders) {
 			sb.append("  ").append(provider).append(":").append(SEPARATOR);
@@ -165,7 +172,7 @@ public final class ScenarioSummaryWriter {
 			VehicleSchedule schedule = vehicleConfig.getScheduleForProvider(provider);
 			sb.append("    Schedule: ").append(schedule.describe()).append(SEPARATOR);
 
-			DeliveryWindow window = context.getScenarioConfig().getDeliveryWindow(provider);
+			DispatchWindow window = context.getScenarioConfig().getDispatchWindow(provider);
 			if (window != null) {
 				List<Integer> dispatchHours = schedule.computeDispatchHours(
 						window.getStartHour(), window.getEndHour());

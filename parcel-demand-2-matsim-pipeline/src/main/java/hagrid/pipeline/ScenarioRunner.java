@@ -39,7 +39,7 @@ import com.google.inject.Injector;
 import hagrid.HagridConfig;
 import hagrid.HagridModule;
 import hagrid.HagridPaths;
-import hagrid.pipeline.ScenarioConfig.DeliveryWindow;
+import hagrid.pipeline.ScenarioConfig.DispatchWindow;
 import hagrid.pipeline.ScenarioConfig.VehicleConfig;
 import hagrid.pipeline.ScenarioConfig.VehicleSchedule;
 
@@ -218,6 +218,7 @@ public final class ScenarioRunner {
 		
 		// Basic scenario settings
 		hagridConfig.setConcept(concept);
+		hagridConfig.setTag(scenarioConfig.getTag());
 		hagridConfig.setSimulationDate(date);
 		hagridConfig.setFilterRegionsAsString(scenarioConfig.getFilterRegions());
 
@@ -239,18 +240,24 @@ public final class ScenarioRunner {
 		}
 		LOGGER.info("Configured vehicle sizes per provider: {}", vehicleSizeLog);
 
-		// Delivery windows
-		Map<String, DeliveryWindow> windows = scenarioConfig.getDeliveryWindows();
-		for (Map.Entry<String, DeliveryWindow> entry : windows.entrySet()) {
+		// Dispatch windows (when LMD vehicles can START tours)
+		Map<String, DispatchWindow> windows = scenarioConfig.getDispatchWindows();
+		for (Map.Entry<String, DispatchWindow> entry : windows.entrySet()) {
 			String provider = entry.getKey();
-			DeliveryWindow window = entry.getValue();
+			DispatchWindow window = entry.getValue();
 			if ("default".equalsIgnoreCase(provider)) {
 				hagridConfig.setDefaultDeliveryHours(window.getStartHour(), window.getEndHour());
 			} else {
 				hagridConfig.setDeliveryHours(provider, window.getStartHour(), window.getEndHour());
 			}
 		}
-		LOGGER.info("Configured delivery windows: {}", windows);
+		LOGGER.info("Configured dispatch windows (vehicle start times): {}", windows);
+
+		// Delivery time window (real TW for MATSim scoring penalties)
+		int twStart = scenarioConfig.getDeliveryTimeWindowStartHour();
+		int twEnd = scenarioConfig.getDeliveryTimeWindowEndHour();
+		hagridConfig.routing().setDeliveryWindow(twStart, twEnd);
+		LOGGER.info("Configured delivery time window (TW penalty): {}:00-{}:00", twStart, twEnd);
 
 		// Dispatch hours based on vehicle schedules (considers custom hours and time shifts)
 		hagridConfig.clearProviderDispatchHours();
@@ -261,10 +268,10 @@ public final class ScenarioRunner {
 
 		Map<String, List<Integer>> dispatchHoursLog = new LinkedHashMap<>();
 		for (String provider : allProviders) {
-			DeliveryWindow window = scenarioConfig.getDeliveryWindow(provider);
+			DispatchWindow window = scenarioConfig.getDispatchWindow(provider);
 			// Use VehicleConfig.computeDispatchHours which handles:
 			// 1. Custom dispatch hours (if configured)
-			// 2. Schedule preset + delivery window
+			// 2. Schedule preset + dispatch window
 			// 3. Time shift adjustments
 			List<Integer> dispatchHours = vehicleConfig.computeDispatchHours(provider, window);
 			

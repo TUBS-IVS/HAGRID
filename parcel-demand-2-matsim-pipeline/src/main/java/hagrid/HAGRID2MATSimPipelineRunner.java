@@ -34,10 +34,12 @@ public final class HAGRID2MATSimPipelineRunner {
 
 	private static final String REGION = "Hannover";
 	private static final VehicleSchedule SCHEDULE = VehicleSchedule.SIMPLE_STAGGERED;
-	private static final int DELIVERY_START = 7;
-	private static final int DELIVERY_END = 14;
+	private static final int DISPATCH_START = 7;
+	private static final int DISPATCH_END = 14;
+	private static final int DELIVERY_TW_START = 8;
+	private static final int DELIVERY_TW_END = 20;
 	private static final boolean RUN_ROUTING = true;
-	private static final boolean ENABLE_CACHING = true;
+	private static final boolean ENABLE_CACHING = false;
 	private static final int JSPRIT_ITERATIONS = 1;  // 1 for initial model
 
 	// =========================================================================
@@ -49,8 +51,8 @@ public final class HAGRID2MATSimPipelineRunner {
 			// Scenario 1: Standard Basecase mit M und L
 			scenario("basecase", LocalDate.of(2025, 5, 13), "m", "l"),
 			
-			// Scenario 2: Nur 100er Fahrzeuge (auskommentieren wenn gewünscht)
-			// scenario("basecase", LocalDate.of(2025, 5, 13), "100"),
+			// Scenario 2: Basecase V1 mit 100er Fahrzeugen (gleicher Tag, neuer Name)
+			// scenario("basecase", "V1", LocalDate.of(2025, 5, 13), "100_l"),
 			
 			// Scenario 3: Nur 80er Fahrzeuge
 			// scenario("basecase", LocalDate.of(2025, 5, 13), "80"),
@@ -71,15 +73,27 @@ public final class HAGRID2MATSimPipelineRunner {
 	// HELPER - Quick scenario builder
 	// =========================================================================
 
+	/** Create a scenario without version tag (runId = CONCEPT_ddMMyyyy). */
 	private static ScenarioConfig scenario(String concept, LocalDate date, String... vehicleSizes) {
+		return buildScenario(concept, "", date, vehicleSizes);
+	}
+
+	/** Create a scenario with a version tag (runId = CONCEPT_ddMMyyyy_TAG). */
+	private static ScenarioConfig scenario(String concept, String tag, LocalDate date, String... vehicleSizes) {
+		return buildScenario(concept, tag, date, vehicleSizes);
+	}
+
+	private static ScenarioConfig buildScenario(String concept, String tag, LocalDate date, String... vehicleSizes) {
 		return ScenarioConfig.builder()
 				.concepts(concept)
 				.dates(date)
+				.tag(tag)
 				.filterRegions(REGION)
 				.vehicleSizes(vehicleSizes)
 				.vehicleSchedule(SCHEDULE)
-				.deliveryWindow(DELIVERY_START, DELIVERY_END)
+				.dispatchWindow(DISPATCH_START, DISPATCH_END)
 				.providerTimeShift("Amazon", +1)
+				.deliveryTimeWindow(DELIVERY_TW_START, DELIVERY_TW_END)				
 				.applyServiceSimplifier(true)
 				.runRouting(RUN_ROUTING)
 				.jspritIterations(JSPRIT_ITERATIONS)

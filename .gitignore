@@ -84,3 +84,7 @@ parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
 
 parcel-demand-estimation/input/
 parcel-demand-estimation/output/
+
+# Temporary helper / analysis scripts
+analysis_cp.txt
+analyze_tw*.ps1
