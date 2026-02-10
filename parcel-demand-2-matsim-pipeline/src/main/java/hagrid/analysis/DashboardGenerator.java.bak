@@ -1,0 +1,1366 @@
+package hagrid.analysis;
+
+import hagrid.analysis.CarrierXmlParser.*;
+import hagrid.analysis.FreightEventHandler.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Generates a single-file HTML dashboard with interactive map and charts
+ * from HAGRID simulation results – v2 with provider filters, supply toggle,
+ * cost analysis, arrival-time distribution, waiting-time curves, and more.
+ *
+ * <p>Uses Leaflet.js, Chart.js, and modern CSS (glassmorphism, dark mode).
+ * All JS/CSS is inlined or loaded from CDN. Zero server-side dependencies.</p>
+ */
+public class DashboardGenerator {
+
+    private static final Logger LOG = LogManager.getLogger(DashboardGenerator.class);
+
+    private final String runId;
+    private final Network network;
+    private final FreightEventHandler eventHandler;
+    private final List<ParsedCarrier> carriers;
+    private final Path outputDir;
+
+    public DashboardGenerator(String runId, Network network,
+                              FreightEventHandler eventHandler,
+                              List<ParsedCarrier> carriers,
+                              Path outputDir) {
+        this.runId = runId;
+        this.network = network;
+        this.eventHandler = eventHandler;
+        this.carriers = carriers;
+        this.outputDir = outputDir;
+    }
+
+    public Path generate() throws IOException {
+        LOG.info("Generating HAGRID Analysis Dashboard v2 for {}", runId);
+
+        // 1) Build data JSON blocks
+        String tourGeoJson       = buildTourGeoJson();
+        String stopGeoJson       = buildStopGeoJson();
+        String linkHeatJson      = buildLinkHeatJson("all");
+        String linkHeatLmdJson   = buildLinkHeatJson("delivery");
+        String linkHeatSupplyJson= buildLinkHeatJson("supply");
+        String carrierStatsJson  = buildCarrierStatsJson();
+        String vehicleTypeJson   = buildVehicleTypeJson();
+        String timelineJson      = buildTimelineJson();
+        String kpiJson           = buildKpiJson();
+        String providerJson      = buildProviderJson();
+        String costJson          = buildCostJson();
+        String arrivalJson       = buildArrivalTimeJson();
+        String dwellJson         = buildDwellTimeJson();
+        String distTimeJson      = buildDistTimeByProviderJson();
+
+        // 2) Assemble HTML
+        String html = assembleHtml(tourGeoJson, stopGeoJson,
+                linkHeatJson, linkHeatLmdJson, linkHeatSupplyJson,
+                carrierStatsJson, vehicleTypeJson, timelineJson, kpiJson,
+                providerJson, costJson, arrivalJson, dwellJson, distTimeJson);
+
+        // 3) Write
+        Files.createDirectories(outputDir);
+        Path outFile = outputDir.resolve("HAGRID_Dashboard_" + runId + ".html");
+        Files.writeString(outFile, html, StandardCharsets.UTF_8);
+        LOG.info("Dashboard written to {}", outFile.toAbsolutePath());
+        return outFile;
+    }
+
+    // ========================================================================
+    // KPI summary  (per-vehicle success rate via mergedMetadata mapping)
+    // ========================================================================
+
+    private String buildKpiJson() {
+        // Delivery carriers only for KPIs
+        List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
+        List<ParsedCarrier> supply   = carriers.stream().filter(ParsedCarrier::isSupply).toList();
+
+        int totalVehicles    = eventHandler.getVehicleTours().size();
+        int deliveryCarriers = delivery.size();
+        int supplyCarriers   = supply.size();
+        int totalServices    = delivery.stream().mapToInt(ParsedCarrier::numServices).sum();
+        int totalDemand      = delivery.stream().mapToInt(ParsedCarrier::totalDemand).sum();
+
+        // Overall parcel-based totals (for display)
+        int totalParcels = delivery.stream().mapToInt(ParsedCarrier::numberOfParcels).sum();
+        int totalMissed  = delivery.stream().mapToInt(ParsedCarrier::numMissed).sum();
+        int parcelBase   = totalParcels > 0 ? totalParcels : totalServices;
+
+        // ── Per-vehicle success rate ──
+        // Missed parcels reference PRE-MERGE service IDs (e.g. service_B2C_fedex_30519_130).
+        // These were merged by CarrierServiceMerger into new service IDs (e.g. service_MIXED_fedex_30519_29).
+        // The mergedMetadata JSON attribute on each service maps back to original IDs.
+        //
+        // Per vehicle:
+        //   1. For each service act in the tour, look up the ParsedService
+        //   2. Get the original (pre-merge) service IDs via mergedMetadata
+        //   3. Count how many original IDs are in the carrier's missedDeliveries set
+        //   4. Vehicle success rate = (totalParcels - missedParcels) / totalParcels
+        List<Double> vehicleSuccessRates = new ArrayList<>();
+        int totalVehicleParcels = 0;
+        int totalVehicleMissed  = 0;
+
+        for (ParsedCarrier c : delivery) {
+            // Build merged-service-ID → ParsedService lookup
+            Map<String, ParsedService> svcMap = new HashMap<>();
+            for (ParsedService s : c.services()) {
+                svcMap.put(s.serviceId(), s);
+            }
+            Set<String> missedSet = new HashSet<>(c.missedDeliveries());
+
+            for (ParsedTour t : c.tours()) {
+                int vehParcels = 0;
+                int vehMissed  = 0;
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        ParsedService svc = svcMap.get(a.serviceId());
+                        if (svc != null) {
+                            // Get all original (pre-merge) IDs for this merged service
+                            Set<String> origIds = svc.originalServiceIds();
+                            vehParcels += svc.capacityDemand();
+                            // Count how many original IDs are missed
+                            for (String origId : origIds) {
+                                if (missedSet.contains(origId)) {
+                                    vehMissed++;
+                                }
+                            }
+                        } else {
+                            // Service not in service list (shouldn't happen), count capacity as 1
+                            vehParcels += 1;
+                        }
+                    }
+                }
+                if (vehParcels > 0) {
+                    double rate = 100.0 * (vehParcels - vehMissed) / vehParcels;
+                    vehicleSuccessRates.add(rate);
+                    totalVehicleParcels += vehParcels;
+                    totalVehicleMissed  += vehMissed;
+                }
+            }
+        }
+
+        double avgVehicleSuccessRate = vehicleSuccessRates.stream()
+                .mapToDouble(Double::doubleValue).average().orElse(100.0);
+        int deliveryVehicleCount = vehicleSuccessRates.size();
+
+        LOG.info("Per-vehicle success: {} vehicles, avg={} %, vehicle-level missed={}/{}",
+                deliveryVehicleCount,
+                String.format(Locale.US, "%.1f", avgVehicleSuccessRate),
+                totalVehicleMissed, totalVehicleParcels);
+
+        int totalStops = eventHandler.getServiceEvents().values().stream()
+                .mapToInt(l -> (int) l.stream().filter(ServiceEvent::isStart).count()).sum();
+
+        // Costs
+        double totalCost     = delivery.stream().mapToDouble(ParsedCarrier::costTotal).sum();
+        double totalDistance  = delivery.stream().mapToDouble(ParsedCarrier::totalDistanceMeters).sum();
+        double totalTravelT   = delivery.stream().mapToDouble(ParsedCarrier::totalTravelTimeSeconds).sum();
+
+        // Vehicle type counts from event handler
+        long vanCount   = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> classifyForKpi(v) == VehicleType.VAN).count();
+        long bikeCount  = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> classifyForKpi(v) == VehicleType.CARGOBIKE).count();
+        long truckCount = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> { var t = classifyForKpi(v);
+                    return t == VehicleType.TRUCK || t == VehicleType.TRUCK_LIGHT || t == VehicleType.SUPPLY_VAN; }).count();
+
+        return String.format(Locale.US,
+                """
+                {
+                  "totalVehicles": %d, "deliveryCarriers": %d, "supplyCarriers": %d,
+                  "totalServices": %d, "totalParcels": %d, "totalDemand": %d,
+                  "totalMissed": %d, "totalStops": %d,
+                  "vanCount": %d, "bikeCount": %d, "truckCount": %d,
+                  "avgVehicleSuccessRate": %.1f, "deliveryVehicleCount": %d,
+                  "vehicleLevelMissed": %d, "vehicleLevelParcels": %d,
+                  "eventsProcessed": %d,
+                  "totalCost": %.0f, "totalDistanceKm": %.1f, "totalTravelTimeH": %.1f
+                }""",
+                totalVehicles, deliveryCarriers, supplyCarriers,
+                totalServices, parcelBase, totalDemand,
+                totalMissed, totalStops,
+                vanCount, bikeCount, truckCount,
+                avgVehicleSuccessRate, deliveryVehicleCount,
+                totalVehicleMissed, totalVehicleParcels,
+                eventHandler.getTotalEventsProcessed(),
+                totalCost, totalDistance / 1000.0, totalTravelT / 3600.0
+        );
+    }
+
+    private static VehicleType classifyForKpi(String v) {
+        return FreightEventHandler.classifyVehicle(v);
+    }
+
+    // ========================================================================
+    // Tour GeoJSON (polylines per vehicle)
+    // ========================================================================
+
+    private String buildTourGeoJson() {
+        StringBuilder sb = new StringBuilder(1024 * 64);
+        sb.append("{\"type\":\"FeatureCollection\",\"features\":[");
+        boolean first = true;
+
+        for (var entry : eventHandler.getVehicleTours().entrySet()) {
+            String vehId = entry.getKey();
+            List<LinkVisit> visits = entry.getValue();
+            if (visits.size() < 2) continue;
+
+            VehicleType vtype = classifyForKpi(vehId);
+            String color = vtype != null ? vtype.color() : "#6b7280";
+            String label = vtype != null ? vtype.label() : "Unknown";
+
+            // Build coordinate array from link centroids
+            StringBuilder coords = new StringBuilder();
+            coords.append("[");
+            boolean cfirst = true;
+            for (LinkVisit lv : visits) {
+                Link link = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(lv.linkId()));
+                if (link == null) continue;
+                double[] ll = toLatLon(link.getCoord());
+                if (!cfirst) coords.append(",");
+                coords.append(String.format(Locale.US, "[%.6f,%.6f]", ll[1], ll[0]));
+                cfirst = false;
+            }
+            coords.append("]");
+
+            if (!first) sb.append(",");
+            first = false;
+            sb.append(String.format(
+                    """
+                    {"type":"Feature","properties":{"vehicleId":"%s","type":"%s","color":"%s","stops":%d},\
+                    "geometry":{"type":"LineString","coordinates":%s}}""",
+                    escJson(vehId), label, color, visits.size(), coords
+            ));
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    // ========================================================================
+    // Stop GeoJSON (points for each service)
+    // ========================================================================
+
+    private String buildStopGeoJson() {
+        StringBuilder sb = new StringBuilder(1024 * 32);
+        sb.append("{\"type\":\"FeatureCollection\",\"features\":[");
+        boolean first = true;
+
+        for (var entry : eventHandler.getServiceEvents().entrySet()) {
+            String vehId = entry.getKey();
+            List<ServiceEvent> events = entry.getValue();
+
+            // pair start/end
+            int stopIdx = 0;
+            for (int i = 0; i < events.size(); i++) {
+                ServiceEvent ev = events.get(i);
+                if (!ev.isStart()) continue;
+
+                double endTime = ev.timeSec();
+                // find matching end
+                for (int j = i + 1; j < events.size(); j++) {
+                    if (!events.get(j).isStart() && events.get(j).linkId().equals(ev.linkId())) {
+                        endTime = events.get(j).timeSec();
+                        break;
+                    }
+                }
+
+                Link link = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(ev.linkId()));
+                if (link == null) continue;
+                double[] ll = toLatLon(link.getCoord());
+                double dur = endTime - ev.timeSec();
+
+                if (!first) sb.append(",");
+                first = false;
+                sb.append(String.format(Locale.US,
+                        """
+                        {"type":"Feature","properties":{"vehicleId":"%s","stopIndex":%d,"linkId":"%s",\
+                        "startTime":"%.0f","endTime":"%.0f","duration":"%.0f",\
+                        "startHMS":"%s","endHMS":"%s","durHMS":"%s"},\
+                        "geometry":{"type":"Point","coordinates":[%.6f,%.6f]}}""",
+                        escJson(vehId), stopIdx, escJson(ev.linkId()),
+                        ev.timeSec(), endTime, dur,
+                        fmtHMS(ev.timeSec()), fmtHMS(endTime), fmtHMS(dur),
+                        ll[1], ll[0]
+                ));
+                stopIdx++;
+            }
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    // ========================================================================
+    // Link heat data (top N links by count, filterable by delivery/supply/all)
+    // ========================================================================
+
+    private String buildLinkHeatJson(String mode) {
+        List<Map.Entry<String, LinkCounts>> sorted = eventHandler.getLinkCountMap().entrySet().stream()
+                .sorted((a, b) -> Integer.compare(
+                        countForMode(b.getValue(), mode),
+                        countForMode(a.getValue(), mode)))
+                .filter(e -> countForMode(e.getValue(), mode) > 0)
+                .limit(5000)
+                .toList();
+
+        int maxCount = sorted.isEmpty() ? 1 : countForMode(sorted.getFirst().getValue(), mode);
+
+        StringBuilder sb = new StringBuilder(1024 * 16);
+        sb.append("[");
+        boolean first = true;
+        for (var entry : sorted) {
+            Link link = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(entry.getKey()));
+            if (link == null) continue;
+            double[] ll = toLatLon(link.getCoord());
+            double intensity = (double) countForMode(entry.getValue(), mode) / maxCount;
+
+            if (!first) sb.append(",");
+            first = false;
+            sb.append(String.format(Locale.US, "[%.6f,%.6f,%.3f]", ll[0], ll[1], intensity));
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static int countForMode(LinkCounts lc, String mode) {
+        return switch (mode) {
+            case "delivery" -> lc.totalDelivery();
+            case "supply"   -> lc.totalSupply();
+            default         -> lc.total();
+        };
+    }
+
+    // ========================================================================
+    // Carrier stats JSON (for bar chart)
+    // ========================================================================
+
+    private String buildCarrierStatsJson() {
+        // Top 30 carriers by services
+        List<ParsedCarrier> top = carriers.stream()
+                .sorted(Comparator.comparingInt(ParsedCarrier::numServices).reversed())
+                .limit(30)
+                .toList();
+
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder services = new StringBuilder("[");
+        StringBuilder demands = new StringBuilder("[");
+        StringBuilder missed = new StringBuilder("[");
+        StringBuilder tours = new StringBuilder("[");
+
+        for (int i = 0; i < top.size(); i++) {
+            ParsedCarrier c = top.get(i);
+            if (i > 0) { labels.append(","); services.append(","); demands.append(","); missed.append(","); tours.append(","); }
+            // Shorten carrier ID for display
+            String shortId = c.carrierId().length() > 20 ? c.carrierId().substring(0, 20) + "..." : c.carrierId();
+            labels.append("\"").append(escJson(shortId)).append("\"");
+            services.append(c.numServices());
+            demands.append(c.totalDemand());
+            missed.append(c.numMissed());
+            tours.append(c.tours().size());
+        }
+
+        return String.format(
+                """
+                {"labels":%s],"services":%s],"demands":%s],"missed":%s],"tours":%s]}""",
+                labels, services, demands, missed, tours
+        );
+    }
+
+    // ========================================================================
+    // Vehicle type breakdown JSON (for donut chart)
+    // ========================================================================
+
+    private String buildVehicleTypeJson() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (String vehId : eventHandler.getVehicleTours().keySet()) {
+            VehicleType vt = classifyForKpi(vehId);
+            String label = vt != null ? vt.label() : "Other";
+            counts.merge(label, 1, Integer::sum);
+        }
+
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder values = new StringBuilder("[");
+        StringBuilder colors = new StringBuilder("[");
+        boolean first = true;
+        for (var entry : counts.entrySet()) {
+            if (!first) { labels.append(","); values.append(","); colors.append(","); }
+            first = false;
+            labels.append("\"").append(escJson(entry.getKey())).append("\"");
+            values.append(entry.getValue());
+            // Find color
+            String color = "#6b7280";
+            for (VehicleType vt : VehicleType.values()) {
+                if (vt.label().equals(entry.getKey())) { color = vt.color(); break; }
+            }
+            colors.append("\"").append(color).append("\"");
+        }
+
+        return String.format("{\"labels\":%s],\"values\":%s],\"colors\":%s]}", labels, values, colors);
+    }
+
+    // ========================================================================
+    // Timeline JSON (hourly distribution of departures and services)
+    // ========================================================================
+
+    private String buildTimelineJson() {
+        int[] departures = new int[25]; // hours 0-24
+        int[] serviceStarts = new int[25];
+
+        for (TourBoundaryEvent ts : eventHandler.getTourStarts()) {
+            int h = Math.min(24, (int) (ts.timeSec() / 3600));
+            departures[h]++;
+        }
+        for (var events : eventHandler.getServiceEvents().values()) {
+            for (ServiceEvent ev : events) {
+                if (ev.isStart()) {
+                    int h = Math.min(24, (int) (ev.timeSec() / 3600));
+                    serviceStarts[h]++;
+                }
+            }
+        }
+
+        StringBuilder hours = new StringBuilder("[");
+        StringBuilder deps = new StringBuilder("[");
+        StringBuilder svcs = new StringBuilder("[");
+        for (int h = 5; h <= 22; h++) {
+            if (h > 5) { hours.append(","); deps.append(","); svcs.append(","); }
+            hours.append(String.format("\"%02d:00\"", h));
+            deps.append(departures[h]);
+            svcs.append(serviceStarts[h]);
+        }
+
+        return String.format("{\"hours\":%s],\"departures\":%s],\"services\":%s]}", hours, deps, svcs);
+    }
+
+    // ========================================================================
+    // Provider breakdown JSON (donut chart)
+    // ========================================================================
+
+    private String buildProviderJson() {
+        List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
+        Map<String, int[]> byProvider = new LinkedHashMap<>(); // [carriers, parcels, missed]
+        for (ParsedCarrier c : delivery) {
+            String p = c.provider().isEmpty() ? "other" : c.provider();
+            byProvider.computeIfAbsent(p, k -> new int[3]);
+            byProvider.get(p)[0]++;
+            byProvider.get(p)[1] += c.numberOfParcels() > 0 ? c.numberOfParcels() : c.numServices();
+            byProvider.get(p)[2] += c.numMissed();
+        }
+
+        String[] providerColors = {"#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#6b7280"};
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder counts = new StringBuilder("[");
+        StringBuilder parcels = new StringBuilder("[");
+        StringBuilder missed = new StringBuilder("[");
+        StringBuilder colors = new StringBuilder("[");
+        int ci = 0;
+        boolean first = true;
+        for (var e : byProvider.entrySet()) {
+            if (!first) { labels.append(","); counts.append(","); parcels.append(","); missed.append(","); colors.append(","); }
+            first = false;
+            labels.append("\"").append(escJson(e.getKey())).append("\"");
+            counts.append(e.getValue()[0]);
+            parcels.append(e.getValue()[1]);
+            missed.append(e.getValue()[2]);
+            colors.append("\"").append(providerColors[ci % providerColors.length]).append("\"");
+            ci++;
+        }
+        return String.format("{\"labels\":%s],\"carriers\":%s],\"parcels\":%s],\"missed\":%s],\"colors\":%s]}",
+                labels, counts, parcels, missed, colors);
+    }
+
+    // ========================================================================
+    // Cost breakdown JSON (grouped by provider)
+    // ========================================================================
+
+    private String buildCostJson() {
+        List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
+        Map<String, double[]> byProvider = new LinkedHashMap<>();
+        // [costTotal, costDistance, costTime, costFix, costActivity, costOvertime, costTWPenalty]
+        for (ParsedCarrier c : delivery) {
+            String p = c.provider().isEmpty() ? "other" : c.provider();
+            byProvider.computeIfAbsent(p, k -> new double[7]);
+            double[] v = byProvider.get(p);
+            v[0] += c.costTotal(); v[1] += c.costDistance(); v[2] += c.costTime();
+            v[3] += c.costFix(); v[4] += c.costActivity();
+            v[5] += c.costOvertime(); v[6] += c.costTimeWindowPenalty();
+        }
+
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder total = new StringBuilder("["), dist = new StringBuilder("["),
+                time = new StringBuilder("["), fix = new StringBuilder("["),
+                activity = new StringBuilder("["), overtime = new StringBuilder("["),
+                twPen = new StringBuilder("[");
+        boolean first = true;
+        for (var e : byProvider.entrySet()) {
+            if (!first) { labels.append(","); total.append(","); dist.append(",");
+                time.append(","); fix.append(","); activity.append(","); overtime.append(","); twPen.append(","); }
+            first = false;
+            labels.append("\"").append(escJson(e.getKey())).append("\"");
+            double[] v = e.getValue();
+            total.append(fmt(v[0])); dist.append(fmt(v[1])); time.append(fmt(v[2]));
+            fix.append(fmt(v[3])); activity.append(fmt(v[4])); overtime.append(fmt(v[5]));
+            twPen.append(fmt(v[6]));
+        }
+        return String.format(
+                "{\"labels\":%s],\"total\":%s],\"distance\":%s],\"time\":%s],\"fix\":%s],\"activity\":%s],\"overtime\":%s],\"twPenalty\":%s]}",
+                labels, total, dist, time, fix, activity, overtime, twPen);
+    }
+
+    // ========================================================================
+    // Arrival time distribution (histogram from carrier tour plans)
+    // ========================================================================
+
+    private String buildArrivalTimeJson() {
+        // Bin arrival times into 15-minute buckets from 05:00 to 23:00
+        int startH = 5, endH = 23, bucketMin = 15;
+        int numBuckets = (endH - startH) * 60 / bucketMin;
+        int[] deliveryArrivals = new int[numBuckets];
+        int[] supplyArrivals   = new int[numBuckets];
+
+        for (ParsedCarrier c : carriers) {
+            int[] target = c.isSupply() ? supplyArrivals : deliveryArrivals;
+            for (ParsedTour t : c.tours()) {
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.estArrival() > 0) {
+                        int minOfDay = (int) (a.estArrival() / 60.0);
+                        int bucket = (minOfDay - startH * 60) / bucketMin;
+                        if (bucket >= 0 && bucket < numBuckets) target[bucket]++;
+                    }
+                }
+            }
+        }
+
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder dArr = new StringBuilder("[");
+        StringBuilder sArr = new StringBuilder("[");
+        for (int i = 0; i < numBuckets; i++) {
+            if (i > 0) { labels.append(","); dArr.append(","); sArr.append(","); }
+            int m = startH * 60 + i * bucketMin;
+            labels.append(String.format(Locale.US, "\"%02d:%02d\"", m / 60, m % 60));
+            dArr.append(deliveryArrivals[i]);
+            sArr.append(supplyArrivals[i]);
+        }
+        return String.format("{\"labels\":%s],\"delivery\":%s],\"supply\":%s]}", labels, dArr, sArr);
+    }
+
+    // ========================================================================
+    // Dwell / waiting time at service stops (over the day, mean per hour)
+    // ========================================================================
+
+    private String buildDwellTimeJson() {
+        // Sum dwell times per hour (estDep - estArrival) for service acts
+        double[] dwellSum = new double[25]; // hours 0-24
+        int[] dwellCount = new int[25];
+
+        for (ParsedCarrier c : carriers) {
+            if (c.isSupply()) continue; // only delivery stops
+            Map<String, Integer> svcDurations = new HashMap<>();
+            for (ParsedService s : c.services()) svcDurations.put(s.serviceId(), s.durationSec());
+
+            for (ParsedTour t : c.tours()) {
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.estArrival() > 0 && a.estDeparture() > a.estArrival()) {
+                        int h = Math.min(24, (int) (a.estArrival() / 3600));
+                        double dwell = a.estDeparture() - a.estArrival();
+                        int svcDur = svcDurations.getOrDefault(a.serviceId(), 0);
+                        double waitOnly = Math.max(0, dwell - svcDur);
+                        dwellSum[h] += waitOnly;
+                        dwellCount[h]++;
+                    }
+                }
+            }
+        }
+
+        StringBuilder hours = new StringBuilder("[");
+        StringBuilder avgWait = new StringBuilder("[");
+        StringBuilder stopCount = new StringBuilder("[");
+        for (int h = 5; h <= 22; h++) {
+            if (h > 5) { hours.append(","); avgWait.append(","); stopCount.append(","); }
+            hours.append(String.format("\"%02d:00\"", h));
+            avgWait.append(String.format(Locale.US, "%.1f", dwellCount[h] > 0 ? dwellSum[h] / dwellCount[h] / 60.0 : 0));
+            stopCount.append(dwellCount[h]);
+        }
+        return String.format("{\"hours\":%s],\"avgWaitMin\":%s],\"stops\":%s]}", hours, avgWait, stopCount);
+    }
+
+    // ========================================================================
+    // Distance and travel time by provider
+    // ========================================================================
+
+    private String buildDistTimeByProviderJson() {
+        List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
+        Map<String, double[]> byProvider = new LinkedHashMap<>(); // [distKm, timeH, carriers]
+        for (ParsedCarrier c : delivery) {
+            String p = c.provider().isEmpty() ? "other" : c.provider();
+            byProvider.computeIfAbsent(p, k -> new double[3]);
+            double[] v = byProvider.get(p);
+            v[0] += c.totalDistanceMeters() / 1000.0;
+            v[1] += c.totalTravelTimeSeconds() / 3600.0;
+            v[2] += 1;
+        }
+
+        StringBuilder labels = new StringBuilder("[");
+        StringBuilder dist = new StringBuilder("["), time = new StringBuilder("[");
+        StringBuilder avgDist = new StringBuilder("["), avgTime = new StringBuilder("[");
+        boolean first = true;
+        for (var e : byProvider.entrySet()) {
+            if (!first) { labels.append(","); dist.append(","); time.append(","); avgDist.append(","); avgTime.append(","); }
+            first = false;
+            labels.append("\"").append(escJson(e.getKey())).append("\"");
+            double[] v = e.getValue();
+            dist.append(fmt(v[0])); time.append(fmt(v[1]));
+            avgDist.append(fmt(v[2] > 0 ? v[0] / v[2] : 0));
+            avgTime.append(fmt(v[2] > 0 ? v[1] / v[2] : 0));
+        }
+        return String.format("{\"labels\":%s],\"totalDistKm\":%s],\"totalTimeH\":%s],\"avgDistKm\":%s],\"avgTimeH\":%s]}",
+                labels, dist, time, avgDist, avgTime);
+    }
+
+    private static String fmt(double v) { return String.format(Locale.US, "%.1f", v); }
+
+    // ========================================================================
+    // Coord transform (EPSG:25832 → WGS84 approximation)
+    // ========================================================================
+
+    /**
+     * Fast approximate transform from EPSG:25832 (UTM zone 32N) to WGS84.
+     * Good enough for visualization (sub-meter accuracy over Braunschweig area).
+     */
+    private static double[] toLatLon(Coord c) {
+        double easting = c.getX();
+        double northing = c.getY();
+
+        // UTM Zone 32N inverse approximation
+        double lon0 = 9.0; // central meridian zone 32
+        double k0 = 0.9996;
+        double a = 6378137.0;
+        double f = 1.0 / 298.257223563;
+        double e2 = 2 * f - f * f;
+        double e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+
+        double x = easting - 500000.0;
+        double y = northing;
+        double M = y / k0;
+        double mu = M / (a * (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256));
+
+        double phi1 = mu + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * Math.sin(2 * mu)
+                + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * Math.sin(4 * mu)
+                + (151 * e1 * e1 * e1 / 96) * Math.sin(6 * mu);
+
+        double sinPhi = Math.sin(phi1);
+        double cosPhi = Math.cos(phi1);
+        double tanPhi = sinPhi / cosPhi;
+        double N1 = a / Math.sqrt(1 - e2 * sinPhi * sinPhi);
+        double T1 = tanPhi * tanPhi;
+        double C1 = (e2 / (1 - e2)) * cosPhi * cosPhi;
+        double R1 = a * (1 - e2) / Math.pow(1 - e2 * sinPhi * sinPhi, 1.5);
+        double D = x / (N1 * k0);
+
+        double lat = phi1 - (N1 * tanPhi / R1) * (D * D / 2
+                - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * e2 / (1 - e2)) * D * D * D * D / 24
+                + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * e2 / (1 - e2) - 3 * C1 * C1) * D * D * D * D * D * D / 720);
+
+        double lon = (D - (1 + 2 * T1 + C1) * D * D * D / 6
+                + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * e2 / (1 - e2) + 24 * T1 * T1) * D * D * D * D * D / 120)
+                / cosPhi;
+
+        return new double[]{Math.toDegrees(lat), Math.toDegrees(lon) + lon0};
+    }
+
+    // ========================================================================
+    // HTML Assembly
+    // ========================================================================
+
+    private String assembleHtml(String tourGeoJson, String stopGeoJson,
+                                String linkHeatJson, String linkHeatLmdJson, String linkHeatSupplyJson,
+                                String carrierStatsJson, String vehicleTypeJson, String timelineJson,
+                                String kpiJson, String providerJson, String costJson,
+                                String arrivalJson, String dwellJson, String distTimeJson) {
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+
+        // Compute map center from network bounds
+        double minLat = Double.MAX_VALUE, maxLat = -Double.MAX_VALUE;
+        double minLon = Double.MAX_VALUE, maxLon = -Double.MAX_VALUE;
+        int sampled = 0;
+        for (Link link : network.getLinks().values()) {
+            if (sampled++ % 50 != 0) continue; // sample every 50th link
+            double[] ll = toLatLon(link.getCoord());
+            minLat = Math.min(minLat, ll[0]); maxLat = Math.max(maxLat, ll[0]);
+            minLon = Math.min(minLon, ll[1]); maxLon = Math.max(maxLon, ll[1]);
+        }
+        double centerLat = (minLat + maxLat) / 2;
+        double centerLon = (minLon + maxLon) / 2;
+
+        // Build provider list for filter checkboxes
+        List<String> providers = carriers.stream()
+                .filter(ParsedCarrier::isDelivery)
+                .map(c -> c.provider().isEmpty() ? "other" : c.provider())
+                .distinct().sorted().toList();
+        StringBuilder providerListJson = new StringBuilder("[");
+        for (int i = 0; i < providers.size(); i++) {
+            if (i > 0) providerListJson.append(",");
+            providerListJson.append("\"").append(escJson(providers.get(i))).append("\"");
+        }
+        providerListJson.append("]");
+
+        return String.format(Locale.US, HTML_TEMPLATE,
+                /* 1 */ escHtml(runId),
+                /* 2 */ timestamp,
+                /* 3 */ centerLat,
+                /* 4 */ centerLon,
+                /* 5 */ String.format(Locale.US, "[[%.6f,%.6f],[%.6f,%.6f]]", minLat, minLon, maxLat, maxLon),
+                /* 6 */ kpiJson,
+                /* 7 */ tourGeoJson,
+                /* 8 */ stopGeoJson,
+                /* 9 */ linkHeatJson,
+                /* 10 */ linkHeatLmdJson,
+                /* 11 */ linkHeatSupplyJson,
+                /* 12 */ carrierStatsJson,
+                /* 13 */ vehicleTypeJson,
+                /* 14 */ timelineJson,
+                /* 15 */ providerJson,
+                /* 16 */ costJson,
+                /* 17 */ arrivalJson,
+                /* 18 */ dwellJson,
+                /* 19 */ distTimeJson,
+                /* 20 */ providerListJson.toString()
+        );
+    }
+
+    // ========================================================================
+    // Utilities
+    // ========================================================================
+
+    private static String escJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    }
+
+    private static String escHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private static String fmtHMS(double sec) {
+        int s = Math.max(0, (int) Math.round(sec));
+        return String.format("%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60);
+    }
+
+    // ========================================================================
+    // HTML TEMPLATE
+    // ========================================================================
+
+    private static final String HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HAGRID Dashboard – %1$s</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a; --surface: rgba(30,41,59,0.85); --glass: rgba(51,65,85,0.45);
+    --text: #e2e8f0; --text-dim: #94a3b8; --accent: #38bdf8; --accent2: #818cf8;
+    --success: #34d399; --danger: #f87171; --warn: #fbbf24; --radius: 16px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); overflow-x:hidden;
+    min-height:100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #0f172a 0%%, #1e293b 30%%, #0f172a 60%%, #1e1b4b 100%%);
+    padding: 24px 32px; display:flex; align-items:center; gap:20px;
+    border-bottom: 1px solid rgba(56,189,248,0.15);
+    position:relative; overflow:hidden;
+  }
+  .header::before {
+    content:''; position:absolute; top:-50%%; left:-50%%; width:200%%; height:200%%;
+    background: radial-gradient(circle at 30%% 50%%, rgba(56,189,248,0.08) 0%%, transparent 50%%),
+                radial-gradient(circle at 70%% 80%%, rgba(129,140,248,0.06) 0%%, transparent 50%%);
+    animation: shimmer 8s ease-in-out infinite alternate;
+  }
+  @keyframes shimmer { 0%%{transform:translateX(-10%%)} 100%%{transform:translateX(10%%)} }
+  .header h1 { font-size:1.6rem; font-weight:700; z-index:1;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .header .meta { font-size:0.8rem; color:var(--text-dim); z-index:1; }
+  .header .logo {
+    width:48px; height:48px; border-radius:12px;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.4rem; font-weight:900; color:#0f172a; z-index:1;
+    box-shadow: 0 0 20px rgba(56,189,248,0.3);
+  }
+  .kpi-strip {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap:10px; padding:14px 24px;
+  }
+  .kpi {
+    background: var(--glass); backdrop-filter: blur(16px);
+    border-radius: var(--radius); padding:14px 16px;
+    border: 1px solid rgba(148,163,184,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(56,189,248,0.12); }
+  .kpi .value {
+    font-size:1.6rem; font-weight:800; line-height:1;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .kpi .label { font-size:0.7rem; color:var(--text-dim); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+  .kpi.success .value { background: linear-gradient(135deg, #34d399, #38bdf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .kpi.danger  .value { background: linear-gradient(135deg, #f87171, #fbbf24); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+
+  /* Filter bar */
+  .filter-bar {
+    display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    padding:10px 24px; background: var(--surface); backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(148,163,184,0.1);
+  }
+  .filter-bar label { font-size:0.78rem; color:var(--text-dim); cursor:pointer; display:flex; align-items:center; gap:4px; }
+  .filter-bar input[type=checkbox] { accent-color: var(--accent); }
+  .filter-bar select {
+    padding:5px 10px; border-radius:8px; background: rgba(15,23,42,0.7); color:var(--text);
+    border:1px solid rgba(148,163,184,0.2); font-size:0.82rem; cursor:pointer; outline:none;
+  }
+  .filter-bar select:focus { border-color: var(--accent); }
+  .filter-group { display:flex; gap:8px; align-items:center; padding:4px 12px;
+    background: var(--glass); border-radius:10px; border:1px solid rgba(148,163,184,0.08); }
+  .filter-group-title { font-size:0.72rem; color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; }
+
+  .main { display:grid; grid-template-columns: 1fr 400px; gap:0; min-height: calc(100vh - 280px); }
+  @media(max-width:1100px) { .main { grid-template-columns:1fr; } }
+
+  #map { width:100%%; height:100%%; min-height:600px; background:#1e293b; }
+  .leaflet-container { background:#1e293b !important; }
+  .leaflet-tile-pane { filter: brightness(0.85) contrast(1.1) saturate(0.85); }
+
+  .sidebar {
+    background: var(--surface); backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(148,163,184,0.1);
+    padding:16px; overflow-y:auto; max-height: calc(100vh - 280px);
+  }
+  .sidebar h3 {
+    font-size:0.8rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:1px; color:var(--accent); margin:14px 0 8px;
+  }
+  .sidebar h3:first-child { margin-top:0; }
+
+  .chart-card {
+    background: var(--glass); border-radius: var(--radius);
+    padding:14px; margin-bottom:12px;
+    border: 1px solid rgba(148,163,184,0.08);
+  }
+  .chart-card canvas { width:100%% !important; max-height:220px; }
+  .chart-card h4 {
+    color:var(--accent); margin:0 0 8px; font-size:0.75rem; letter-spacing:1px;
+    text-transform:uppercase; font-weight:700;
+  }
+
+  .picker {
+    background: var(--glass); border-radius: var(--radius);
+    padding:12px; margin-bottom:12px;
+    border: 1px solid rgba(148,163,184,0.08);
+  }
+  .picker select {
+    width:100%%; padding:7px 10px; border-radius:8px;
+    background: rgba(15,23,42,0.7); color:var(--text);
+    border:1px solid rgba(148,163,184,0.2); font-size:0.82rem;
+    cursor:pointer; outline:none;
+  }
+  .picker select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56,189,248,0.2); }
+  .picker label { font-size:0.76rem; color:var(--text-dim); margin-right:10px; cursor:pointer; }
+  .picker input[type=checkbox] { accent-color: var(--accent); margin-right:4px; }
+  .picker .controls { margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
+
+  .stop-badge {
+    width:22px; height:22px; background:rgba(15,23,42,0.9);
+    border:2px solid var(--accent); border-radius:6px;
+    font-family:monospace; font-weight:700; font-size:10px;
+    line-height:18px; text-align:center; color:#38bdf8;
+    box-shadow:0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  .map-legend {
+    position:absolute; bottom:24px; left:24px; z-index:1000;
+    background: rgba(15,23,42,0.9); backdrop-filter:blur(12px);
+    border-radius:12px; padding:12px 16px;
+    border:1px solid rgba(148,163,184,0.15); font-size:0.75rem;
+  }
+  .map-legend .item { display:flex; align-items:center; gap:8px; margin:3px 0; }
+  .map-legend .dot { width:10px; height:10px; border-radius:50%%; display:inline-block; }
+
+  .chart-strip {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap:12px; padding:14px 24px;
+  }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:rgba(148,163,184,0.3); border-radius:3px; }
+
+  .leaflet-popup-content-wrapper {
+    background: rgba(30,41,59,0.95) !important; color: var(--text) !important;
+    border-radius: 12px !important; border: 1px solid rgba(56,189,248,0.2) !important;
+    backdrop-filter: blur(12px);
+  }
+  .leaflet-popup-tip { background: rgba(30,41,59,0.95) !important; }
+  .leaflet-popup-content { font-family: monospace; font-size: 0.82rem; line-height:1.5; }
+
+  .section-title {
+    font-size:0.85rem; font-weight:700; color:var(--accent); text-transform:uppercase;
+    letter-spacing:1.5px; padding:18px 24px 6px; display:flex; align-items:center; gap:10px;
+  }
+  .section-title::after { content:''; flex:1; height:1px; background:rgba(56,189,248,0.15); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">H</div>
+  <div>
+    <h1>HAGRID Analysis Dashboard</h1>
+    <div class="meta">Run: %1$s &nbsp;|&nbsp; Generated: %2$s</div>
+  </div>
+</div>
+
+<!-- KPI STRIP -->
+<div class="kpi-strip" id="kpiStrip"></div>
+
+<!-- FILTER BAR -->
+<div class="filter-bar" id="filterBar">
+  <div class="filter-group">
+    <span class="filter-group-title">Heatmap</span>
+    <label><input type="radio" name="heatMode" value="off" checked> Off</label>
+    <label><input type="radio" name="heatMode" value="all"> All</label>
+    <label><input type="radio" name="heatMode" value="delivery"> LMD</label>
+    <label><input type="radio" name="heatMode" value="supply"> Supply</label>
+  </div>
+  <div class="filter-group">
+    <span class="filter-group-title">Show</span>
+    <label><input type="checkbox" id="cbTours" checked> Tours</label>
+    <label><input type="checkbox" id="cbStops"> Stops</label>
+    <label><input type="checkbox" id="cbSupply" checked> Supply Vehicles</label>
+  </div>
+  <div class="filter-group" id="providerFilterGroup">
+    <span class="filter-group-title">Provider</span>
+  </div>
+</div>
+
+<!-- MAIN: Map + Sidebar -->
+<div class="main">
+  <div style="position:relative">
+    <div id="map"></div>
+    <div class="map-legend" id="legend"></div>
+  </div>
+  <div class="sidebar">
+    <h3>Vehicle Picker</h3>
+    <div class="picker">
+      <select id="vehSelect"><option value="">All vehicles</option></select>
+    </div>
+
+    <h3>Fleet Composition</h3>
+    <div class="chart-card"><canvas id="donutChart"></canvas></div>
+
+    <h3>Providers</h3>
+    <div class="chart-card"><canvas id="providerDonut"></canvas></div>
+
+    <h3>Hourly Activity</h3>
+    <div class="chart-card"><canvas id="timelineChart"></canvas></div>
+  </div>
+</div>
+
+<!-- SECTION: Delivery Timing -->
+<div class="section-title">Delivery Timing Analysis</div>
+<div class="chart-strip">
+  <div class="chart-card">
+    <h4>Arrival Time Distribution (15-min bins)</h4>
+    <canvas id="arrivalChart" style="max-height:260px"></canvas>
+  </div>
+  <div class="chart-card">
+    <h4>Avg Waiting Time at Stops (min per hour)</h4>
+    <canvas id="dwellChart" style="max-height:260px"></canvas>
+  </div>
+</div>
+
+<!-- SECTION: Costs -->
+<div class="section-title">Cost Analysis</div>
+<div class="chart-strip">
+  <div class="chart-card">
+    <h4>Cost Breakdown by Provider</h4>
+    <canvas id="costChart" style="max-height:280px"></canvas>
+  </div>
+  <div class="chart-card">
+    <h4>Cost Components by Provider</h4>
+    <canvas id="costStackChart" style="max-height:280px"></canvas>
+  </div>
+</div>
+
+<!-- SECTION: Distance & Time -->
+<div class="section-title">Distance &amp; Travel Time</div>
+<div class="chart-strip">
+  <div class="chart-card">
+    <h4>Total Distance by Provider (km)</h4>
+    <canvas id="distChart" style="max-height:260px"></canvas>
+  </div>
+  <div class="chart-card">
+    <h4>Avg Distance &amp; Time per Carrier</h4>
+    <canvas id="avgDistTimeChart" style="max-height:260px"></canvas>
+  </div>
+</div>
+
+<!-- SECTION: Carrier Details -->
+<div class="section-title">Carrier Details (Top 30)</div>
+<div class="chart-strip">
+  <div class="chart-card">
+    <h4>Services, Demand &amp; Missed per Carrier</h4>
+    <canvas id="carrierChart" style="max-height:320px"></canvas>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// DATA (injected by Java)
+// ═══════════════════════════════════════════
+const KPI             = %6$s;
+const TOUR_GEOJSON    = %7$s;
+const STOP_GEOJSON    = %8$s;
+const HEAT_ALL        = %9$s;
+const HEAT_LMD        = %10$s;
+const HEAT_SUPPLY     = %11$s;
+const CARRIER_STATS   = %12$s;
+const VEHICLE_TYPES   = %13$s;
+const TIMELINE        = %14$s;
+const PROVIDERS       = %15$s;
+const COSTS           = %16$s;
+const ARRIVAL         = %17$s;
+const DWELL           = %18$s;
+const DIST_TIME       = %19$s;
+const PROVIDER_LIST   = %20$s;
+
+// ═══════════════════════════════════════════
+// KPI CARDS
+// ═══════════════════════════════════════════
+(function(){
+  const s = document.getElementById('kpiStrip');
+  const fmt = n => typeof n==='number' ? n.toLocaleString('de-DE') : n;
+  const items = [
+    {v:KPI.totalVehicles, l:'Active Vehicles'},
+    {v:KPI.deliveryCarriers, l:'Delivery Carriers'},
+    {v:KPI.supplyCarriers, l:'Supply Carriers'},
+    {v:KPI.vanCount, l:'CEP Vans'},
+    {v:KPI.bikeCount, l:'Cargobikes'},
+    {v:KPI.truckCount, l:'Trucks / Supply'},
+    {v:fmt(KPI.totalParcels), l:'Total Parcels'},
+    {v:KPI.avgVehicleSuccessRate.toFixed(1)+'%%', l:'Avg Vehicle Success', c: KPI.avgVehicleSuccessRate>=95?'success':'danger'},
+    {v:fmt(KPI.totalMissed), l:'Missed Parcels', c: KPI.totalMissed>0?'danger':'success'},
+    {v:fmt(KPI.vehicleLevelMissed)+'/'+fmt(KPI.vehicleLevelParcels), l:'Vehicle-Level Missed', c: KPI.vehicleLevelMissed>0?'danger':'success'},
+    {v:fmt(KPI.totalStops), l:'Service Stops'},
+    {v:fmt(Math.round(KPI.totalCost))+'\\u2009\\u20AC', l:'Total Cost (delivery)'},
+    {v:fmt(Math.round(KPI.totalDistanceKm))+'\\u2009km', l:'Total Distance'},
+    {v:KPI.totalTravelTimeH.toFixed(0)+'\\u2009h', l:'Total Travel Time'},
+  ];
+  items.forEach(it=>{
+    const cls = it.c||'';
+    s.innerHTML += `<div class="kpi ${cls}"><div class="value">${it.v}</div><div class="label">${it.l}</div></div>`;
+  });
+})();
+
+// ═══════════════════════════════════════════
+// PROVIDER FILTER
+// ═══════════════════════════════════════════
+const providerState = {};
+(function(){
+  const grp = document.getElementById('providerFilterGroup');
+  PROVIDER_LIST.forEach(p => {
+    providerState[p] = true;
+    const lbl = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type='checkbox'; cb.checked=true; cb.dataset.provider=p;
+    cb.onchange = () => { providerState[p]=cb.checked; applyMapFilter(); };
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(p));
+    grp.appendChild(lbl);
+  });
+})();
+
+// ═══════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════
+const map = L.map('map',{zoomControl:true, preferCanvas:true}).setView([%3$.6f,%4$.6f],12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'OpenStreetMap, CARTO', maxZoom:19, subdomains:'abcd'
+}).addTo(map);
+map.fitBounds(%5$s);
+
+// ── Tour layers ──
+const tourLayersByVeh = {};
+const allToursGroup = L.layerGroup();
+TOUR_GEOJSON.features.forEach(f=>{
+  const vid = f.properties.vehicleId;
+  const color = f.properties.color;
+  const isSupply = vid.toLowerCase().includes('supply');
+  const line = L.geoJSON(f,{style:{color:color, weight:2.5, opacity:0.7}});
+  tourLayersByVeh[vid] = {layer:line, supply:isSupply};
+  const thin = L.geoJSON(f,{style:{color:color, weight:1.2, opacity:0.35}});
+  thin._isSupply = isSupply;
+  thin._vid = vid;
+  allToursGroup.addLayer(thin);
+});
+allToursGroup.addTo(map);
+
+// ── Stop layers ──
+const stopLayersByVeh = {};
+const allStopsCluster = L.markerClusterGroup({spiderfyOnMaxZoom:true, disableClusteringAtZoom:16, showCoverageOnHover:false,
+  iconCreateFunction:function(cluster){
+    return L.divIcon({html:'<div style="background:rgba(56,189,248,0.9);color:#0f172a;border-radius:50%%;width:32px;height:32px;line-height:32px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4);">'+cluster.getChildCount()+'</div>',className:'',iconSize:[32,32]});
+  }
+});
+STOP_GEOJSON.features.forEach(f=>{
+  const vid = f.properties.vehicleId;
+  const idx = f.properties.stopIndex;
+  const coords = f.geometry.coordinates;
+  const popup = `<b>${vid}</b><br>Stop #${idx}<br>Link: ${f.properties.linkId}<br>${f.properties.startHMS} - ${f.properties.endHMS}<br>Duration: ${f.properties.durHMS}`;
+  const icon = L.divIcon({html:`<div class="stop-badge">${idx}</div>`,iconSize:[22,22],iconAnchor:[11,11],className:''});
+  const marker = L.marker([coords[1],coords[0]],{icon:icon}).bindPopup(popup);
+  if(!stopLayersByVeh[vid]) stopLayersByVeh[vid] = L.layerGroup();
+  stopLayersByVeh[vid].addLayer(marker);
+  allStopsCluster.addLayer(L.marker([coords[1],coords[0]],{icon:icon}).bindPopup(popup));
+});
+
+// ── Heatmaps ──
+const heatOpts = {radius:14, blur:18, maxZoom:15,
+  gradient:{0.1:'#1e3a5f',0.3:'#38bdf8',0.5:'#fbbf24',0.7:'#f97316',1.0:'#ef4444'}};
+const heatAll    = L.heatLayer(HEAT_ALL, heatOpts);
+const heatLmd    = L.heatLayer(HEAT_LMD, {...heatOpts,
+  gradient:{0.1:'#1e3a5f',0.3:'#3b82f6',0.5:'#38bdf8',0.7:'#06b6d4',1.0:'#22d3ee'}});
+const heatSupply = L.heatLayer(HEAT_SUPPLY, {...heatOpts,
+  gradient:{0.1:'#2d1b4e',0.3:'#8b5cf6',0.5:'#a78bfa',0.7:'#c084fc',1.0:'#e879f9'}});
+let activeHeat = null;
+
+// ── Legend ──
+(function(){
+  const legend = document.getElementById('legend');
+  const types = [{l:'CEP Van',c:'#3b82f6'},{l:'Cargobike',c:'#10b981'},{l:'Truck',c:'#ef4444'},{l:'Truck (light)',c:'#f59e0b'},{l:'Supply Van',c:'#8b5cf6'}];
+  legend.innerHTML = '<b style="color:#38bdf8;font-size:0.8rem">Vehicle Types</b>' +
+    types.map(t=>`<div class="item"><span class="dot" style="background:${t.c}"></span>${t.l}</div>`).join('');
+})();
+
+// ── Vehicle Picker ──
+(function(){
+  const sel = document.getElementById('vehSelect');
+  const vehicles = [...new Set(TOUR_GEOJSON.features.map(f=>f.properties.vehicleId))].sort();
+  vehicles.forEach(v=>{
+    const o = document.createElement('option');
+    o.value = v; o.text = v.length>50 ? v.substring(0,50)+'...' : v;
+    sel.appendChild(o);
+  });
+  sel.onchange = applyMapFilter;
+})();
+
+// ── Map filter logic ──
+function applyMapFilter(){
+  const v = document.getElementById('vehSelect').value;
+  const showTours  = document.getElementById('cbTours').checked;
+  const showStops  = document.getElementById('cbStops').checked;
+  const showSupply = document.getElementById('cbSupply').checked;
+  const heatMode   = document.querySelector('input[name="heatMode"]:checked').value;
+
+  // Remove everything
+  map.removeLayer(allToursGroup);
+  map.removeLayer(allStopsCluster);
+  if(activeHeat) map.removeLayer(activeHeat);
+  activeHeat = null;
+  Object.values(tourLayersByVeh).forEach(o=>map.removeLayer(o.layer));
+  Object.values(stopLayersByVeh).forEach(l=>map.removeLayer(l));
+
+  // Heatmap
+  if(heatMode==='all')     { heatAll.addTo(map); activeHeat=heatAll; }
+  if(heatMode==='delivery'){ heatLmd.addTo(map); activeHeat=heatLmd; }
+  if(heatMode==='supply')  { heatSupply.addTo(map); activeHeat=heatSupply; }
+
+  if(!v){
+    // All vehicles – rebuild filtered group
+    if(showTours){
+      const fg = L.layerGroup();
+      allToursGroup.eachLayer(l=>{
+        if(!showSupply && l._isSupply) return;
+        fg.addLayer(l);
+      });
+      fg.addTo(map);
+    }
+    if(showStops) allStopsCluster.addTo(map);
+  } else {
+    const entry = tourLayersByVeh[v];
+    if(entry && showTours && (showSupply || !entry.supply)) entry.layer.addTo(map);
+    if(showStops && stopLayersByVeh[v]) stopLayersByVeh[v].addTo(map);
+  }
+}
+
+document.getElementById('cbTours').onchange = applyMapFilter;
+document.getElementById('cbStops').onchange = applyMapFilter;
+document.getElementById('cbSupply').onchange = applyMapFilter;
+document.querySelectorAll('input[name="heatMode"]').forEach(r => r.onchange = applyMapFilter);
+
+// ═══════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(148,163,184,0.1)';
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+const legendOpts = {position:'bottom',labels:{padding:8,usePointStyle:true,pointStyleWidth:8,font:{size:10}}};
+
+// ── Donut: Fleet composition ──
+new Chart(document.getElementById('donutChart'),{
+  type:'doughnut',
+  data:{labels:VEHICLE_TYPES.labels, datasets:[{data:VEHICLE_TYPES.values, backgroundColor:VEHICLE_TYPES.colors, borderWidth:0, hoverOffset:8}]},
+  options:{responsive:true, cutout:'65%%', plugins:{legend:legendOpts}}
+});
+
+// ── Donut: Providers ──
+new Chart(document.getElementById('providerDonut'),{
+  type:'doughnut',
+  data:{labels:PROVIDERS.labels, datasets:[{data:PROVIDERS.parcels, backgroundColor:PROVIDERS.colors, borderWidth:0, hoverOffset:8}]},
+  options:{responsive:true, cutout:'65%%',
+    plugins:{legend:legendOpts, tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed.toLocaleString()} parcels`}}}}
+});
+
+// ── Timeline: Hourly activity ──
+new Chart(document.getElementById('timelineChart'),{
+  type:'bar',
+  data:{labels:TIMELINE.hours,datasets:[
+    {label:'Departures',data:TIMELINE.departures,backgroundColor:'rgba(56,189,248,0.6)',borderRadius:4,barPercentage:0.8},
+    {label:'Service starts',data:TIMELINE.services,backgroundColor:'rgba(129,140,248,0.5)',borderRadius:4,barPercentage:0.8}
+  ]},
+  options:{responsive:true,interaction:{mode:'index',intersect:false},
+    scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(148,163,184,0.08)'}}},
+    plugins:{legend:legendOpts}}
+});
+
+// ── Arrival time distribution ──
+new Chart(document.getElementById('arrivalChart'),{
+  type:'bar',
+  data:{labels:ARRIVAL.labels,datasets:[
+    {label:'Delivery arrivals',data:ARRIVAL.delivery,backgroundColor:'rgba(56,189,248,0.55)',borderRadius:3,barPercentage:1.0,categoryPercentage:1.0},
+    {label:'Supply arrivals',data:ARRIVAL.supply,backgroundColor:'rgba(139,92,246,0.45)',borderRadius:3,barPercentage:1.0,categoryPercentage:1.0}
+  ]},
+  options:{responsive:true,interaction:{mode:'index',intersect:false},
+    scales:{x:{grid:{display:false},ticks:{maxRotation:90,font:{size:9},autoSkip:true,maxTicksLimit:24}},
+            y:{beginAtZero:true,stacked:true,grid:{color:'rgba(148,163,184,0.08)'}}},
+    plugins:{legend:legendOpts}}
+});
+
+// ── Waiting/dwell time curve ──
+new Chart(document.getElementById('dwellChart'),{
+  type:'line',
+  data:{labels:DWELL.hours,datasets:[
+    {label:'Avg waiting (min)',data:DWELL.avgWaitMin,
+     borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.15)',
+     fill:true,tension:0.4,pointRadius:4,pointHoverRadius:6}
+  ]},
+  options:{responsive:true,interaction:{mode:'index',intersect:false},
+    scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(148,163,184,0.08)'},
+      title:{display:true,text:'Minutes',color:'#94a3b8',font:{size:10}}}},
+    plugins:{legend:legendOpts}}
+});
+
+// ── Cost: total by provider ──
+new Chart(document.getElementById('costChart'),{
+  type:'bar',
+  data:{labels:COSTS.labels,datasets:[
+    {label:'Total Cost (\\u20AC)',data:COSTS.total,backgroundColor:'rgba(56,189,248,0.6)',borderRadius:4}
+  ]},
+  options:{responsive:true,indexAxis:'y',
+    scales:{x:{grid:{color:'rgba(148,163,184,0.08)'}},y:{grid:{display:false},ticks:{font:{size:11}}}},
+    plugins:{legend:legendOpts,tooltip:{callbacks:{label:ctx=>`\\u20AC ${Math.round(ctx.parsed.x).toLocaleString()}`}}}}
+});
+
+// ── Cost: stacked components by provider ──
+new Chart(document.getElementById('costStackChart'),{
+  type:'bar',
+  data:{labels:COSTS.labels,datasets:[
+    {label:'Distance',data:COSTS.distance,backgroundColor:'rgba(59,130,246,0.6)',stack:'s'},
+    {label:'Time',data:COSTS.time,backgroundColor:'rgba(16,185,129,0.6)',stack:'s'},
+    {label:'Fixed',data:COSTS.fix,backgroundColor:'rgba(245,158,11,0.6)',stack:'s'},
+    {label:'Activity',data:COSTS.activity,backgroundColor:'rgba(129,140,248,0.6)',stack:'s'},
+    {label:'Overtime',data:COSTS.overtime,backgroundColor:'rgba(248,113,113,0.6)',stack:'s'},
+    {label:'TW Penalty',data:COSTS.twPenalty,backgroundColor:'rgba(236,72,153,0.5)',stack:'s'}
+  ]},
+  options:{responsive:true,indexAxis:'y',
+    scales:{x:{stacked:true,grid:{color:'rgba(148,163,184,0.08)'}},
+            y:{stacked:true,grid:{display:false},ticks:{font:{size:11}}}},
+    plugins:{legend:legendOpts}}
+});
+
+// ── Distance by provider ──
+new Chart(document.getElementById('distChart'),{
+  type:'bar',
+  data:{labels:DIST_TIME.labels,datasets:[
+    {label:'Total km',data:DIST_TIME.totalDistKm,backgroundColor:'rgba(56,189,248,0.6)',borderRadius:4}
+  ]},
+  options:{responsive:true,
+    scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(148,163,184,0.08)'},
+      title:{display:true,text:'km',color:'#94a3b8',font:{size:10}}}},
+    plugins:{legend:legendOpts}}
+});
+
+// ── Avg dist & time per carrier ──
+new Chart(document.getElementById('avgDistTimeChart'),{
+  type:'bar',
+  data:{labels:DIST_TIME.labels,datasets:[
+    {label:'Avg km/carrier',data:DIST_TIME.avgDistKm,backgroundColor:'rgba(56,189,248,0.55)',borderRadius:4,yAxisID:'y'},
+    {label:'Avg h/carrier',data:DIST_TIME.avgTimeH,backgroundColor:'rgba(245,158,11,0.55)',borderRadius:4,yAxisID:'y1'}
+  ]},
+  options:{responsive:true,
+    scales:{
+      x:{grid:{display:false}},
+      y:{beginAtZero:true,position:'left',grid:{color:'rgba(148,163,184,0.08)'},
+        title:{display:true,text:'km',color:'#38bdf8',font:{size:10}}},
+      y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},
+        title:{display:true,text:'hours',color:'#f59e0b',font:{size:10}}}
+    },
+    plugins:{legend:legendOpts}}
+});
+
+// ── Carrier bar chart ──
+new Chart(document.getElementById('carrierChart'),{
+  type:'bar',
+  data:{labels:CARRIER_STATS.labels,datasets:[
+    {label:'Services',data:CARRIER_STATS.services,backgroundColor:'rgba(56,189,248,0.65)',borderRadius:3},
+    {label:'Demand',data:CARRIER_STATS.demands,backgroundColor:'rgba(52,211,153,0.5)',borderRadius:3},
+    {label:'Missed',data:CARRIER_STATS.missed,backgroundColor:'rgba(248,113,113,0.7)',borderRadius:3}
+  ]},
+  options:{responsive:true,indexAxis:'y',
+    scales:{x:{stacked:false,grid:{color:'rgba(148,163,184,0.08)'}},y:{grid:{display:false},ticks:{font:{size:9}}}},
+    plugins:{legend:legendOpts}}
+});
+</script>
+</body>
+</html>
+""";
+}

@@ -171,14 +171,14 @@ public class Router {
 
     /**
      * Gets U-turn penalty from HagridConfig or returns default (1.0).
-     * This is a SCORE penalty (JSprit cost units), not real seconds.
+     * This is a SCORE penalty (cost units), not real seconds or euros.
      */
-    private double getUTurnPenaltySeconds() {
+    private double getUTurnPenaltyCost() {
         if (hagridConfigRef != null) {
             try {
-                return hagridConfigRef.routing().getUTurnPenaltySeconds();
+                return hagridConfigRef.routing().getUTurnPenaltyCost();
             } catch (Exception e) {
-                LOGGER.debug("Could not get uTurnPenaltySeconds from config, using default: {}", e.getMessage());
+                LOGGER.debug("Could not get uTurnPenaltyCost from config, using default: {}", e.getMessage());
             }
         }
         return 1.0; // default: score penalty per U-turn
@@ -466,7 +466,7 @@ public class Router {
                     List<Future<?>> futures = interleavedSchedule.stream()
                             .map(carrier -> {
                                 JspritCarrierTask task = new JspritCarrierTask(carrier, netBasedCosts, progress,
-                                        sortedCarriers.size(), network, getUTurnPenaltySeconds());
+                                        sortedCarriers.size(), network, getUTurnPenaltyCost());
                                 Runnable gated = new GatedCarrierTask(task, bigGate, BIG_THRESHOLD);
                                 boolean isSmall = carrier.getServices().size() < BIG_THRESHOLD;
                                 return (Runnable) () -> {
@@ -735,7 +735,7 @@ public class Router {
         try {
             VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
             VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
-                    vrp, serviceCount, jspritIterations, network, getUTurnPenaltySeconds());
+                    vrp, serviceCount, jspritIterations, network, getUTurnPenaltyCost());
             AtomicInteger iterationCounter = new AtomicInteger(0);
             algorithm.addListener(
                     (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());

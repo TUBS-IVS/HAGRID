@@ -54,10 +54,10 @@ class ScenarioConfigTest {
         }
 
         @Test
-        @DisplayName("default delivery window is 7-14")
+        @DisplayName("default dispatch window is 7-14")
         void defaultDeliveryWindow() {
             ScenarioConfig config = ScenarioConfig.builder().build();
-            DeliveryWindow dw = config.getDeliveryWindow("default");
+            DispatchWindow dw = config.getDispatchWindow("default");
             assertThat(dw.getStartHour()).isEqualTo(7);
             assertThat(dw.getEndHour()).isEqualTo(14);
         }
@@ -131,7 +131,7 @@ class ScenarioConfigTest {
     class RunIdGeneration {
 
         @Test
-        @DisplayName("createRunId returns UPPERCASE_ddMMyyyy")
+        @DisplayName("createRunId returns UPPERCASE_ddMMyyyy without tag")
         void createRunIdFormat() {
             ScenarioConfig config = ScenarioConfig.builder().build();
 
@@ -156,6 +156,47 @@ class ScenarioConfigTest {
             String runId = config.createRunId("UCC", MAY_13);
             assertThat(runId).isEqualTo("UCC_13052025");
         }
+
+        @Test
+        @DisplayName("createRunId appends tag when set")
+        void runIdWithTag() {
+            ScenarioConfig config = ScenarioConfig.builder().tag("V1").build();
+
+            String runId = config.createRunId("basecase", MAY_13);
+            assertThat(runId).isEqualTo("BASECASE_13052025_V1");
+        }
+
+        @Test
+        @DisplayName("createRunId with empty tag behaves like no tag")
+        void runIdWithEmptyTag() {
+            ScenarioConfig config = ScenarioConfig.builder().tag("").build();
+
+            String runId = config.createRunId("basecase", MAY_13);
+            assertThat(runId).isEqualTo("BASECASE_13052025");
+        }
+
+        @Test
+        @DisplayName("createRunId with null tag behaves like no tag")
+        void runIdWithNullTag() {
+            ScenarioConfig config = ScenarioConfig.builder().tag(null).build();
+
+            String runId = config.createRunId("basecase", MAY_13);
+            assertThat(runId).isEqualTo("BASECASE_13052025");
+        }
+
+        @Test
+        @DisplayName("getTag returns configured tag")
+        void getTagReturnsTag() {
+            ScenarioConfig config = ScenarioConfig.builder().tag("V2").build();
+            assertThat(config.getTag()).isEqualTo("V2");
+        }
+
+        @Test
+        @DisplayName("default tag is empty string")
+        void defaultTagIsEmpty() {
+            ScenarioConfig config = ScenarioConfig.builder().build();
+            assertThat(config.getTag()).isEmpty();
+        }
     }
 
     // =========================================================================
@@ -163,13 +204,13 @@ class ScenarioConfigTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("DeliveryWindow")
+    @DisplayName("DispatchWindow")
     class DeliveryWindowTests {
 
         @Test
         @DisplayName("valid window 8-20 creates successfully")
         void validWindow() {
-            DeliveryWindow dw = new DeliveryWindow(8, 20);
+            DispatchWindow dw = new DispatchWindow(8, 20);
             assertThat(dw.getStartHour()).isEqualTo(8);
             assertThat(dw.getEndHour()).isEqualTo(20);
         }
@@ -177,7 +218,7 @@ class ScenarioConfigTest {
         @Test
         @DisplayName("start > end throws IllegalArgumentException")
         void startAfterEnd() {
-            assertThatThrownBy(() -> new DeliveryWindow(14, 7))
+            assertThatThrownBy(() -> new DispatchWindow(14, 7))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("End hour must be >= start hour");
         }
@@ -185,7 +226,7 @@ class ScenarioConfigTest {
         @Test
         @DisplayName("hour < 0 throws IllegalArgumentException")
         void negativeHour() {
-            assertThatThrownBy(() -> new DeliveryWindow(-1, 14))
+            assertThatThrownBy(() -> new DispatchWindow(-1, 14))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Hours must be within [0, 23]");
         }
@@ -193,7 +234,7 @@ class ScenarioConfigTest {
         @Test
         @DisplayName("hour > 23 throws IllegalArgumentException")
         void hourAbove23() {
-            assertThatThrownBy(() -> new DeliveryWindow(7, 24))
+            assertThatThrownBy(() -> new DispatchWindow(7, 24))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Hours must be within [0, 23]");
         }
@@ -201,7 +242,7 @@ class ScenarioConfigTest {
         @Test
         @DisplayName("same start and end hour is valid (zero-width window)")
         void sameStartAndEnd() {
-            DeliveryWindow dw = new DeliveryWindow(12, 12);
+            DispatchWindow dw = new DispatchWindow(12, 12);
             assertThat(dw.getStartHour()).isEqualTo(12);
             assertThat(dw.getEndHour()).isEqualTo(12);
         }
@@ -209,7 +250,7 @@ class ScenarioConfigTest {
         @Test
         @DisplayName("toString formats as HH:00-HH:00")
         void toStringFormat() {
-            assertThat(new DeliveryWindow(7, 14).toString()).isEqualTo("07:00-14:00");
+            assertThat(new DispatchWindow(7, 14).toString()).isEqualTo("07:00-14:00");
         }
     }
 
@@ -292,7 +333,7 @@ class ScenarioConfigTest {
                 .providerTimeShift("amazon", 1)
                 .build();
 
-            DeliveryWindow dw = new DeliveryWindow(7, 14);
+            DispatchWindow dw = new DispatchWindow(7, 14);
             List<Integer> hours = config.getVehicleConfig()
                 .computeDispatchHours("amazon", dw);
             // SIMPLE_STAGGERED [7,14] + shift 1 = [8, 15] but 15 clamped to 15 (within 0-23)
@@ -306,7 +347,7 @@ class ScenarioConfigTest {
                 .providerDispatchHours("dhl", 6, 10, 15)
                 .build();
 
-            DeliveryWindow dw = new DeliveryWindow(6, 20);
+            DispatchWindow dw = new DispatchWindow(6, 20);
             List<Integer> hours = config.getVehicleConfig()
                 .computeDispatchHours("dhl", dw);
             assertThat(hours).containsExactly(6, 10, 15);
@@ -330,7 +371,7 @@ class ScenarioConfigTest {
                 .filterRegions("MH")
                 .vehicleSizes("m", "l", "bike")
                 .vehicleSchedule(VehicleSchedule.EXTENDED)
-                .deliveryWindow(8, 20)
+                .dispatchWindow(8, 20)
                 .jspritIterations(25)
                 .runRouting(true)
                 .applyServiceSimplifier(true)
@@ -374,18 +415,18 @@ class ScenarioConfigTest {
         }
 
         @Test
-        @DisplayName("provider delivery window overrides default")
+        @DisplayName("provider dispatch window overrides default")
         void providerDeliveryWindow() {
             ScenarioConfig config = ScenarioConfig.builder()
-                .deliveryWindow("amazon", 9, 21)
+                .dispatchWindow("amazon", 9, 21)
                 .build();
 
-            DeliveryWindow amazon = config.getDeliveryWindow("amazon");
+            DispatchWindow amazon = config.getDispatchWindow("amazon");
             assertThat(amazon.getStartHour()).isEqualTo(9);
             assertThat(amazon.getEndHour()).isEqualTo(21);
 
             // Default still exists
-            DeliveryWindow def = config.getDeliveryWindow("default");
+            DispatchWindow def = config.getDispatchWindow("default");
             assertThat(def.getStartHour()).isEqualTo(7);
         }
     }

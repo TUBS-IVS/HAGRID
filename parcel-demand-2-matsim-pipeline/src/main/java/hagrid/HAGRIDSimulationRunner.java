@@ -1,368 +1,87 @@
 package hagrid;
 
-import hagrid.simulation.HAGRIDScenarioBuilder;
 import hagrid.simulation.HAGRIDSimulationConfig;
-import hagrid.simulation.HAGRIDSimulationModule;
+import hagrid.simulation.SimulationRunnerUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.geotools.api.feature.simple.SimpleFeature;
-import org.matsim.api.core.v01.Scenario;
-import org.matsim.core.controler.Controler;
-import org.matsim.core.utils.gis.GeoFileReader;
-import org.matsim.freight.carriers.controller.CarrierModule;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.*;
+import java.util.List;
 
 /**
- * Executes a sequence of HAGRID simulations based on command line scenario specifications.
+ * HAGRID Simulation Runner — configure scenarios and go.
  * <p>
- * Each scenario is passed as a single argument with comma separated key value pairs.
- * The runner parses and validates all inputs, constructs configurations, validates
- * scenario inputs, and executes simulations sequentially.
- * <p>
- * Required keys per scenario are {@code concept} and {@code date} with format yyyy-MM-dd.
- * Optional keys are {@code maxIter} for the MATSim iteration budget and {@code jspritIter}
- * for the jsprit iteration budget.
+ * Pass one or more scenario specs as command-line arguments.  Each spec is a
+ * comma-separated list of {@code key=value} pairs:
+ * <pre>
+ *   concept=basecase,date=2025-05-13,tag=V1,maxIter=150,jspritIter=10000,writeDashboard=true
+ * </pre>
+ *
+ * <h3>Required keys</h3>
+ * <ul>
+ *   <li>{@code concept} — scenario concept name</li>
+ *   <li>{@code date}    — simulation date (yyyy-MM-dd)</li>
+ * </ul>
+ *
+ * <h3>Optional keys</h3>
+ * <ul>
+ *   <li>{@code tag}            — version tag appended to run ID (e.g. V1)</li>
+ *   <li>{@code maxIter}        — MATSim iterations (default 150)</li>
+ *   <li>{@code jspritIter}     — jsprit iterations (default 100)</li>
+ *   <li>{@code zoneCaching}    — enable zone-based caching (default false)</li>
+ *   <li>{@code zoneThreshold}  — zone caching threshold in m (default 1500 when enabled)</li>
+ *   <li>{@code uTurnPenalty}   — score penalty per U-turn (default 1.0)</li>
+ *   <li>{@code writeDashboard} — generate analysis dashboard after simulation (default false)</li>
+ * </ul>
  */
 public class HAGRIDSimulationRunner {
 
-    private static final Logger LOGGER = LogManager.getLogger(HAGRIDSimulationRunner.class);
+    private static final Logger LOG = LogManager.getLogger(HAGRIDSimulationRunner.class);
 
-    /** Date format for parsing ISO style dates. */
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
-
-    /** Default MATSim iterations if not specified. */
-    private static final int DEFAULT_MAX_ITER = 150;
-
-    /** Default jsprit iterations if not specified. */
-    private static final int DEFAULT_JSPRIT_ITER = 100;
-
-    /**
-     * Entry point for the HAGRID batch simulation runner.
-     * <p>
-     * Parses scenario arguments, validates required inputs for each scenario,
-     * and runs the simulations sequentially.
-     *
-     * @param args scenario specifications as key value pairs per argument
-     * @throws Exception if any error occurs during simulation execution
-     */
     public static void main(String[] args) throws Exception {
-        LOGGER.info("===============================================");
-        LOGGER.info("HAGRID Batch Simulation Runner Started");
-        LOGGER.info("===============================================");
-
-        if (args.length == 0 || containsHelpFlag(args)) {
-            printUsage();
+        if (SimulationRunnerUtils.isHelpRequested(args)) {
+            SimulationRunnerUtils.printUsage();
             return;
         }
 
-        // Parse all scenarios from the command line
-        List<HAGRIDSimulationConfig> scenarios = parseScenarios(args);
+        LOG.info("═══════════════════════════════════════════════");
+        LOG.info("  HAGRID Simulation Runner");
+        LOG.info("═══════════════════════════════════════════════");
 
-        // Validate input files for all scenarios before running any computation
-        validateAllInputFiles(scenarios);
+        // 1) Parse & validate
+        List<HAGRIDSimulationConfig> scenarios = SimulationRunnerUtils.parseScenarios(args);
+        SimulationRunnerUtils.validateAll(scenarios);
 
-        // Run simulations sequentially
-        for (HAGRIDSimulationConfig simConfig : scenarios) {
-            runSingleSimulation(simConfig);
+        // 2) Detect writeDashboard flag per scenario from raw args
+        boolean[] dashFlags = new boolean[args.length];
+        for (int i = 0; i < args.length; i++) {
+            dashFlags[i] = extractDashboardFlag(args[i]);
         }
 
-        LOGGER.info("===============================================");
-        LOGGER.info("HAGRID Batch Simulation Runner Finished");
-        LOGGER.info("===============================================");
+        // 3) Run each scenario
+        for (int i = 0; i < scenarios.size(); i++) {
+            HAGRIDSimulationConfig cfg = scenarios.get(i);
+
+            SimulationRunnerUtils.runSimulation(cfg);
+
+            if (dashFlags[i]) {
+                LOG.info("writeDashboard=true → generating dashboard...");
+                SimulationRunnerUtils.generateDashboard(cfg);
+            }
+        }
+
+        LOG.info("═══════════════════════════════════════════════");
+        LOG.info("  All done.");
+        LOG.info("═══════════════════════════════════════════════");
     }
 
-    /**
-     * Parses all scenario arguments into configuration objects.
-     *
-     * @param args array of scenario specifications
-     * @return list of parsed configurations
-     */
-    private static List<HAGRIDSimulationConfig> parseScenarios(String[] args) {
-        List<HAGRIDSimulationConfig> scenarios = new ArrayList<>();
-        for (String arg : args) {
-            HAGRIDSimulationConfig cfg = parseSingleScenario(arg.trim());
-            scenarios.add(cfg);
-        }
-        LOGGER.info("Parsed {} scenario(s) from command line", scenarios.size());
-        return scenarios;
-    }
-
-    /**
-     * Parses one scenario specification of the form
-     * {@code concept=...,date=...,maxIter=...,jspritIter=...}.
-     *
-     * @param spec scenario specification string
-     * @return parsed configuration
-     * @throws IllegalArgumentException if required keys are missing or invalid
-     */
-    private static HAGRIDSimulationConfig parseSingleScenario(String spec) {
-        if (spec.isEmpty()) {
-            throw new IllegalArgumentException("Empty scenario specification");
-        }
-
-        Map<String, String> map = new LinkedHashMap<>();
-        String[] tokens = spec.split(",");
-        for (String token : tokens) {
+    /** Extracts the writeDashboard flag from a raw scenario spec string. */
+    private static boolean extractDashboardFlag(String spec) {
+        for (String token : spec.split(",")) {
             String[] kv = token.split("=", 2);
-            if (kv.length != 2) {
-                throw new IllegalArgumentException("Invalid token in scenario specification: " + token);
-            }
-            String key = kv[0].trim();
-            String value = kv[1].trim();
-            if (key.isEmpty() || value.isEmpty()) {
-                throw new IllegalArgumentException("Empty key or value in token: " + token);
-            }
-            map.put(key, value);
-        }
-
-        String concept = require(map, "concept");
-        String dateStr = require(map, "date");
-        LocalDate date;
-        try {
-            date = LocalDate.parse(dateStr, DATE_FMT);
-        } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException("Invalid date. Use yyyy-MM-dd. Got " + dateStr, ex);
-        }
-
-        int maxIter = parsePositiveInt(map.getOrDefault("maxIter", String.valueOf(DEFAULT_MAX_ITER)), "maxIter");
-    int jspritIter = parsePositiveInt(map.getOrDefault("jspritIter", String.valueOf(DEFAULT_JSPRIT_ITER)), "jspritIter");
-
-    boolean zoneCaching = parseBoolean(map.getOrDefault("zoneCaching", "false"), "zoneCaching");
-    double zoneThreshold;
-    if (map.containsKey("zoneThreshold")) {
-        zoneThreshold = parseNonNegativeDouble(map.get("zoneThreshold"), "zoneThreshold");
-    } else {
-        zoneThreshold = zoneCaching ? 1500.0 : 0.0;
-    }
-
-    double uTurnPenalty = parseNonNegativeDouble(map.getOrDefault("uTurnPenalty", "1.0"), "uTurnPenalty");
-
-    LOGGER.info("Scenario parsed concept={} date={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={}",
-        concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenalty);
-    return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenalty);
-    }
-
-    /**
-     * Validates the input files for all provided simulation configurations.
-     * <p>
-     * Aggregates errors from all configurations and throws an exception if any
-     * required input is missing.
-     *
-     * @param configs the list of simulation configurations to validate
-     * @throws IllegalStateException if any configuration is missing required input files
-     */
-    private static void validateAllInputFiles(List<HAGRIDSimulationConfig> configs) {
-        LOGGER.info("");
-        LOGGER.info("Step 0: Validating input files for all scenarios...");
-        List<String> validationErrors = new ArrayList<>();
-
-        for (HAGRIDSimulationConfig config : configs) {
-            try {
-                LOGGER.info("Validating scenario {}", config.getRunId());
-                config.validateInputFiles();
-            } catch (IllegalStateException e) {
-                validationErrors.add("[" + config.getRunId() + "] " + e.getMessage());
-            }
-        }
-
-        if (!validationErrors.isEmpty()) {
-            LOGGER.error("---------------------------------------------------");
-            LOGGER.error("Input validation failed. Missing input files:");
-            LOGGER.error("---------------------------------------------------");
-            validationErrors.forEach(LOGGER::error);
-            throw new IllegalStateException("Aborting batch run due to missing input files.");
-        }
-
-        LOGGER.info("All input files validated successfully.");
-        LOGGER.info("");
-    }
-
-    /**
-     * Runs a single HAGRID simulation scenario.
-     * <p>
-     * Loads scenario specific data, initializes the MATSim scenario and modules,
-     * and starts the simulation. Runtime is logged for monitoring purposes.
-     *
-     * @param simConfig the configuration of the scenario to run
-     * @throws Exception if any error occurs during scenario execution
-     */
-    private static void runSingleSimulation(HAGRIDSimulationConfig simConfig) throws Exception {
-        Instant startTime = Instant.now();
-
-        Path simLogDir = simConfig.getOutputDirectory().resolve("logs");
-        try {
-            Files.createDirectories(simLogDir);
-        } catch (IOException e) {
-            LOGGER.warn("Could not create simulation log directory {}: {}", simLogDir, e.getMessage());
-        }
-        System.setProperty("hagrid.log.dir", simLogDir.toAbsolutePath().toString());
-
-        LOGGER.info("------------------------------------------------------------");
-        LOGGER.info("Starting simulation for '{}'", simConfig.getRunId());
-        LOGGER.info("------------------------------------------------------------");
-
-        // Step 1: Configuration
-        LOGGER.info("Step 1/5: Load HAGRID simulation configuration...");
-        LOGGER.info("Configuration loaded for runId '{}'", simConfig.getRunId());
-
-        // Step 2: Load freight zones
-        LOGGER.info("Step 2/5: Load freight zone shapefile...");
-        Collection<SimpleFeature> freightZoneFeatures =
-                GeoFileReader.getAllFeatures(simConfig.getFreightZonePath().toString());
-        LOGGER.info("Freight zones loaded: {} features", freightZoneFeatures.size());
-
-        // Step 3: Build scenario
-        LOGGER.info("Step 3/5: Build MATSim scenario...");
-        Scenario scenario = HAGRIDScenarioBuilder.build(simConfig, freightZoneFeatures);
-        LOGGER.info("Scenario created");
-
-        // Step 4: Add modules
-        LOGGER.info("Step 4/5: Setup simulation modules...");
-        Controler controler = new Controler(scenario);
-        controler.addOverridingModule(new CarrierModule());
-    controler.addOverridingModule(
-        new HAGRIDSimulationModule(
-            scenario,
-            true,
-            simConfig.getMaxIterations(),
-            simConfig.getJspritIterations(),
-            simConfig.isZoneBasedCachingEnabled(),
-            simConfig.getZoneBasedCachingThresholdMeters(),
-            simConfig.getUTurnPenaltySeconds())
-    );
-        LOGGER.info("Modules added");
-
-        // Step 5: Run simulation
-        LOGGER.info("Step 5/5: Run simulation...");
-        LOGGER.info("Output directory: {}", simConfig.getOutputDirectoryAsString());
-
-        controler.run();
-
-        // Measure runtime
-        Instant endTime = Instant.now();
-        Duration duration = Duration.between(startTime, endTime);
-        long hours = duration.toHours();
-        long minutes = duration.toMinutesPart();
-        long seconds = duration.toSecondsPart();
-        String runtimeFormatted = String.format("%02d:%02d:%02d", hours, minutes, seconds);
-
-        LOGGER.info("Simulation '{}' completed", simConfig.getRunId());
-        LOGGER.info("Total runtime: {} (hh:mm:ss)", runtimeFormatted);
-        LOGGER.info("------------------------------------------------------------");
-
-        // Encourage early reclamation of large temporary structures between runs
-        System.gc();
-
-        // Give GC a short head start without blocking the pipeline for long
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            LOGGER.warn("Sleep after GC was interrupted");
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /**
-     * Reads a required key from the map.
-     *
-     * @param map key value map
-     * @param key required key
-     * @return value string
-     * @throws IllegalArgumentException if the key is missing
-     */
-    private static String require(Map<String, String> map, String key) {
-        String v = map.get(key);
-        if (v == null) {
-            throw new IllegalArgumentException("Missing required key " + key);
-        }
-        return v;
-    }
-
-    /**
-     * Parses a positive integer value.
-     *
-     * @param s    string value
-     * @param name label for error messages
-     * @return parsed positive integer
-     * @throws IllegalArgumentException if the value is not a positive integer
-     */
-    private static int parsePositiveInt(String s, String name) {
-        try {
-            int v = Integer.parseInt(s);
-            if (v <= 0) {
-                throw new IllegalArgumentException(name + " must be positive but was " + v);
-            }
-            return v;
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException("Invalid integer for " + name + ": " + s, ex);
-        }
-    }
-
-    private static boolean parseBoolean(String s, String name) {
-        String normalized = s.trim().toLowerCase(Locale.ROOT);
-        if (normalized.equals("true") || normalized.equals("1") || normalized.equals("yes")) {
-            return true;
-        }
-        if (normalized.equals("false") || normalized.equals("0") || normalized.equals("no")) {
-            return false;
-        }
-        throw new IllegalArgumentException("Invalid boolean for " + name + ": " + s);
-    }
-
-    private static double parseNonNegativeDouble(String s, String name) {
-        try {
-            double v = Double.parseDouble(s);
-            if (v < 0) {
-                throw new IllegalArgumentException(name + " must be >= 0 but was " + v);
-            }
-            return v;
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
-        }
-    }
-
-    /**
-     * Checks whether the argument list contains a help request.
-     *
-     * @param args raw arguments
-     * @return true if help is requested
-     */
-    private static boolean containsHelpFlag(String[] args) {
-        for (String a : args) {
-            String s = a.trim().toLowerCase(Locale.ROOT);
-            if (s.equals("help") || s.equals("--help") || s.equals("-h")) {
-                return true;
+            if (kv.length == 2 && kv[0].trim().equalsIgnoreCase("writeDashboard")) {
+                return SimulationRunnerUtils.parseBool(kv[1]);
             }
         }
         return false;
-    }
-
-    /**
-     * Prints a concise usage description to the log.
-     */
-    private static void printUsage() {
-        LOGGER.info("Usage");
-        LOGGER.info("  java -cp target/classes hagrid.HAGRIDSimulationRunner <scenario> [<scenario> ...]");
-        LOGGER.info("  Each <scenario> is a comma separated list of key=value items");
-        LOGGER.info("  Required keys");
-        LOGGER.info("    concept      scenario concept name");
-        LOGGER.info("    date         simulation date in yyyy-MM-dd");
-        LOGGER.info("  Optional keys");
-        LOGGER.info("    maxIter      MATSim iterations default {}", DEFAULT_MAX_ITER);
-        LOGGER.info("    jspritIter   jsprit iterations default {}", DEFAULT_JSPRIT_ITER);
-        LOGGER.info("    zoneCaching  enable zone-based transport cost caching (true/false, default false)");
-    LOGGER.info("    zoneThreshold minimum crow-fly distance in meters for zone caching (default 1500 when zoneCaching=true, otherwise 0)");
-        LOGGER.info("  Example");
-        LOGGER.info(
-            "    java -cp target/classes hagrid.HAGRIDSimulationRunner concept=basecase,date=2025-05-15,maxIter=150,jspritIter=100,zoneCaching=true,zoneThreshold=1200");
     }
 }

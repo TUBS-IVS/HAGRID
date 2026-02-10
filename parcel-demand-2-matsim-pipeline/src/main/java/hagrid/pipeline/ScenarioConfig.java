@@ -48,7 +48,8 @@ import java.util.stream.IntStream;
  *     .filterRegions("Hannover")
  *     .vehicleSizes("m", "l")
  *     .vehicleSchedule(VehicleSchedule.SIMPLE_STAGGERED)
- *     .deliveryWindow(7, 14)
+ *     .dispatchWindow(7, 14)
+ *     .deliveryTimeWindow(8, 20)
  *     .build();
  * }</pre>
  * 
@@ -61,6 +62,7 @@ public final class ScenarioConfig {
 	// Core scenario settings
 	private final List<String> concepts;
 	private final List<LocalDate> dates;
+	private final String tag;
 	private final String filterRegions;
 
 	// Pipeline settings
@@ -69,16 +71,23 @@ public final class ScenarioConfig {
 	// Vehicle configuration
 	private final VehicleConfig vehicleConfig;
 
-	// Delivery windows per provider
-	private final Map<String, DeliveryWindow> deliveryWindows;
+	// Dispatch windows per provider (when LMD vehicles can START tours)
+	private final Map<String, DispatchWindow> dispatchWindows;
+
+	// Delivery time window (real TW for scoring penalties)
+	private final int deliveryTimeWindowStartHour;
+	private final int deliveryTimeWindowEndHour;
 
 	private ScenarioConfig(Builder builder) {
 		this.concepts = Collections.unmodifiableList(new ArrayList<>(builder.concepts));
 		this.dates = Collections.unmodifiableList(new ArrayList<>(builder.dates));
+		this.tag = builder.tag;
 		this.filterRegions = builder.filterRegions;
 		this.pipelineSettings = new PipelineSettings(builder);
 		this.vehicleConfig = new VehicleConfig(builder);
-		this.deliveryWindows = Collections.unmodifiableMap(new LinkedHashMap<>(builder.deliveryWindows));
+		this.dispatchWindows = Collections.unmodifiableMap(new LinkedHashMap<>(builder.dispatchWindows));
+		this.deliveryTimeWindowStartHour = builder.deliveryTimeWindowStartHour;
+		this.deliveryTimeWindowEndHour = builder.deliveryTimeWindowEndHour;
 	}
 
 	/**
@@ -109,6 +118,13 @@ public final class ScenarioConfig {
 	}
 
 	/**
+	 * @return the optional version tag (empty string if not set)
+	 */
+	public String getTag() {
+		return tag;
+	}
+
+	/**
 	 * @return the filter regions string
 	 */
 	public String getFilterRegions() {
@@ -117,13 +133,16 @@ public final class ScenarioConfig {
 
 	/**
 	 * Generates a run ID for a given concept and date.
+	 * If a tag is configured, the tag is appended: {@code CONCEPT_ddMMyyyy_TAG}.
+	 * Otherwise: {@code CONCEPT_ddMMyyyy}.
 	 *
 	 * @param concept the concept name
 	 * @param date    the simulation date
 	 * @return the run ID string
 	 */
 	public String createRunId(String concept, LocalDate date) {
-		return concept.toUpperCase() + "_" + date.format(RUN_ID_FORMAT);
+		String base = concept.toUpperCase() + "_" + date.format(RUN_ID_FORMAT);
+		return tag.isEmpty() ? base : base + "_" + tag;
 	}
 
 	// -------------------------------------------------------------------------
@@ -143,16 +162,30 @@ public final class ScenarioConfig {
 	}
 
 	// -------------------------------------------------------------------------
-	// Delivery Window Accessors
+	// Dispatch Window Accessors (when LMD vehicles can START tours)
 	// -------------------------------------------------------------------------
 
-	public Map<String, DeliveryWindow> getDeliveryWindows() {
-		return deliveryWindows;
+	public Map<String, DispatchWindow> getDispatchWindows() {
+		return dispatchWindows;
 	}
 
-	public DeliveryWindow getDeliveryWindow(String provider) {
+	public DispatchWindow getDispatchWindow(String provider) {
 		String key = normalizeProviderKey(provider);
-		return deliveryWindows.getOrDefault(key, deliveryWindows.get("default"));
+		return dispatchWindows.getOrDefault(key, dispatchWindows.get("default"));
+	}
+
+	// -------------------------------------------------------------------------
+	// Delivery Time Window Accessors (real TW for scoring penalties)
+	// -------------------------------------------------------------------------
+
+	/** Start hour of the delivery time window (default 8). Services before this → no penalty. */
+	public int getDeliveryTimeWindowStartHour() {
+		return deliveryTimeWindowStartHour;
+	}
+
+	/** End hour of the delivery time window (default 20). Services after this → TW penalty. */
+	public int getDeliveryTimeWindowEndHour() {
+		return deliveryTimeWindowEndHour;
 	}
 
 	// -------------------------------------------------------------------------
@@ -280,14 +313,14 @@ public final class ScenarioConfig {
 		/**
 		 * Computes the effective dispatch hours for a provider, considering:
 		 * 1. Custom dispatch hours (if set)
-		 * 2. Schedule preset + delivery window
+		 * 2. Schedule preset + dispatch window
 		 * 3. Time shift adjustment
 		 *
 		 * @param provider       the provider name
-		 * @param deliveryWindow the delivery window for this provider
+		 * @param dispatchWindow the dispatch window for this provider
 		 * @return list of dispatch hours
 		 */
-		public List<Integer> computeDispatchHours(String provider, DeliveryWindow deliveryWindow) {
+		public List<Integer> computeDispatchHours(String provider, DispatchWindow dispatchWindow) {
 			String key = normalizeProviderKey(provider);
 			int timeShift = getTimeShift(provider);
 
@@ -305,8 +338,8 @@ public final class ScenarioConfig {
 			// Use schedule preset
 			VehicleSchedule schedule = getScheduleForProvider(provider);
 			List<Integer> hours = schedule.computeDispatchHours(
-					deliveryWindow.getStartHour(),
-					deliveryWindow.getEndHour());
+					dispatchWindow.getStartHour(),
+					dispatchWindow.getEndHour());
 
 			// Apply time shift
 			if (timeShift != 0) {
@@ -442,24 +475,26 @@ public final class ScenarioConfig {
 	}
 
 	// =========================================================================
-	// Delivery Window Record
+	// Dispatch Window Record
 	// =========================================================================
 
 	/**
-	 * Represents a time window for deliveries.
+	 * Represents a dispatch window — the time range during which LMD vehicles
+	 * can be dispatched (start their tours). This is NOT the delivery time
+	 * window used for TW penalty scoring.
 	 */
-	public static final class DeliveryWindow {
+	public static final class DispatchWindow {
 
 		private final int startHour;
 		private final int endHour;
 
 		/**
-		 * Creates a delivery window.
+		 * Creates a dispatch window.
 		 *
 		 * @param startHour start hour (0-23)
 		 * @param endHour   end hour (0-23)
 		 */
-		public DeliveryWindow(int startHour, int endHour) {
+		public DispatchWindow(int startHour, int endHour) {
 			if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) {
 				throw new IllegalArgumentException("Hours must be within [0, 23]");
 			}
@@ -496,6 +531,7 @@ public final class ScenarioConfig {
 		// Core settings
 		private final List<String> concepts = new ArrayList<>();
 		private final List<LocalDate> dates = new ArrayList<>();
+		private String tag = "";
 		private String filterRegions = "Hannover";
 
 		// Pipeline settings
@@ -512,8 +548,12 @@ public final class ScenarioConfig {
 		private final Map<String, List<Integer>> providerCustomDispatchHours = new LinkedHashMap<>();
 		private final Map<String, Integer> providerTimeShifts = new LinkedHashMap<>();
 
-		// Delivery windows
-		private final Map<String, DeliveryWindow> deliveryWindows = new LinkedHashMap<>();
+		// Dispatch windows (when LMD vehicles can START tours)
+		private final Map<String, DispatchWindow> dispatchWindows = new LinkedHashMap<>();
+
+		// Delivery time window (real TW for scoring penalties)
+		private int deliveryTimeWindowStartHour = 8;
+		private int deliveryTimeWindowEndHour = 20;
 
 		private Builder() {
 			// Set defaults
@@ -521,7 +561,7 @@ public final class ScenarioConfig {
 			dates.add(LocalDate.of(2025, 5, 13));
 			vehicleSizes.add("m");
 			vehicleSizes.add("l");
-			deliveryWindows.put("default", new DeliveryWindow(7, 14));
+			dispatchWindows.put("default", new DispatchWindow(7, 14));
 		}
 
 		// ---------------------------------------------------------------------
@@ -580,6 +620,21 @@ public final class ScenarioConfig {
 			}
 			this.dates.clear();
 			dates.forEach(d -> this.dates.add(Objects.requireNonNull(d, "date")));
+			return this;
+		}
+
+		/**
+		 * Sets an optional version tag appended to the run ID.
+		 * <p>
+		 * Example: tag "V1" with concept "basecase" and date 2025-05-13
+		 * produces runId {@code BASECASE_13052025_V1}.
+		 * </p>
+		 *
+		 * @param tag version tag (e.g. "V1"), or {@code null}/empty to disable
+		 * @return this builder
+		 */
+		public Builder tag(String tag) {
+			this.tag = tag == null ? "" : tag.trim();
 			return this;
 		}
 
@@ -814,31 +869,60 @@ public final class ScenarioConfig {
 		}
 
 		// ---------------------------------------------------------------------
-		// Delivery Window Configuration
+		// Dispatch Window Configuration (when LMD vehicles can START tours)
 		// ---------------------------------------------------------------------
 
 		/**
-		 * Sets the default delivery window.
+		 * Sets the default dispatch window (when vehicles can be dispatched).
+		 * This is NOT the delivery time window for TW penalty scoring.
 		 *
 		 * @param startHour window start (0-23)
 		 * @param endHour   window end (0-23)
 		 * @return this builder
 		 */
-		public Builder deliveryWindow(int startHour, int endHour) {
-			return deliveryWindow("default", startHour, endHour);
+		public Builder dispatchWindow(int startHour, int endHour) {
+			return dispatchWindow("default", startHour, endHour);
 		}
 
 		/**
-		 * Sets a delivery window for a specific provider.
+		 * Sets a dispatch window for a specific provider.
 		 *
 		 * @param provider  the provider name
 		 * @param startHour window start (0-23)
 		 * @param endHour   window end (0-23)
 		 * @return this builder
 		 */
-		public Builder deliveryWindow(String provider, int startHour, int endHour) {
+		public Builder dispatchWindow(String provider, int startHour, int endHour) {
 			String key = normalizeProviderKey(provider);
-			deliveryWindows.put(key, new DeliveryWindow(startHour, endHour));
+			dispatchWindows.put(key, new DispatchWindow(startHour, endHour));
+			return this;
+		}
+
+		// ---------------------------------------------------------------------
+		// Delivery Time Window (real TW for scoring penalties)
+		// ---------------------------------------------------------------------
+
+		/**
+		 * Sets the delivery time window — the real time window during which
+		 * deliveries should occur. Services outside this window incur a
+		 * TW penalty in MATSim scoring.
+		 * <p>
+		 * Default: 08:00–20:00.
+		 * </p>
+		 *
+		 * @param startHour start hour (0-23), e.g. 8 for 08:00
+		 * @param endHour   end hour (0-23), e.g. 20 for 20:00
+		 * @return this builder
+		 */
+		public Builder deliveryTimeWindow(int startHour, int endHour) {
+			if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) {
+				throw new IllegalArgumentException("Hours must be within [0, 23]");
+			}
+			if (endHour < startHour) {
+				throw new IllegalArgumentException("End hour must be >= start hour");
+			}
+			this.deliveryTimeWindowStartHour = startHour;
+			this.deliveryTimeWindowEndHour = endHour;
 			return this;
 		}
 
@@ -866,8 +950,8 @@ public final class ScenarioConfig {
 			if (vehicleSizes.isEmpty()) {
 				throw new IllegalStateException("No vehicle sizes configured");
 			}
-			if (!deliveryWindows.containsKey("default")) {
-				deliveryWindows.put("default", new DeliveryWindow(7, 14));
+			if (!dispatchWindows.containsKey("default")) {
+				dispatchWindows.put("default", new DispatchWindow(7, 14));
 			}
 		}
 

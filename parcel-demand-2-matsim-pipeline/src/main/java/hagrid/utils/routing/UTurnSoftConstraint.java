@@ -52,8 +52,7 @@ public class UTurnSoftConstraint implements SoftActivityConstraint {
      * Creates a U-turn soft constraint.
      *
      * @param network     the MATSim network (for resolving link topology)
-     * @param penaltyCost the penalty added per detected U-turn (in JSprit cost units,
-     *                    typically equivalent to seconds of travel time)
+     * @param penaltyCost the score penalty added per detected U-turn (in JSprit cost units)
      */
     public UTurnSoftConstraint(Network network, double penaltyCost) {
         this.network = network;

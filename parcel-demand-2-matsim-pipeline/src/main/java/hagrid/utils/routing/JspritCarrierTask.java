@@ -24,7 +24,7 @@ public class JspritCarrierTask implements PrioritizedRunnable {
     private final AtomicInteger startedVRPCounter;
     private final int taskCount;
     private final Network network;
-    private final double uTurnPenaltySeconds;
+    private final double uTurnPenaltyCost;
 
     /**
      * Constructs a new JspritCarrierTask.
@@ -35,17 +35,17 @@ public class JspritCarrierTask implements PrioritizedRunnable {
      * @param startedVRPCounter      The counter for started VRP tasks.
      * @param taskCount              The total number of tasks.
      * @param network                The network.
-     * @param uTurnPenaltySeconds    Soft penalty per U-turn (0 to disable).
+     * @param uTurnPenaltyCost       Soft score penalty per U-turn (0 to disable).
      */
     public JspritCarrierTask(Carrier carrier, VRPTransportCosts netBasedCosts,
                              AtomicInteger startedVRPCounter, int taskCount, Network network,
-                             double uTurnPenaltySeconds) {
+                             double uTurnPenaltyCost) {
         this.carrier = carrier;
         this.netBasedCosts = netBasedCosts;
         this.startedVRPCounter = startedVRPCounter;
         this.taskCount = taskCount;
         this.network = network;
-        this.uTurnPenaltySeconds = uTurnPenaltySeconds;
+        this.uTurnPenaltyCost = uTurnPenaltyCost;
     }
 
     /** Backward-compatible constructor (no U-turn penalty). */
@@ -70,7 +70,7 @@ public class JspritCarrierTask implements PrioritizedRunnable {
 
         VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
         VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
-                vrp, serviceCount, 1, network, uTurnPenaltySeconds);
+                vrp, serviceCount, 1, network, uTurnPenaltyCost);
 
         VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
         CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
