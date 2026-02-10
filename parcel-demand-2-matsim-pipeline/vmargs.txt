@@ -3,13 +3,14 @@
 -Xss512k
 -XX:MaxDirectMemorySize=4g
 -XX:ActiveProcessorCount=16
+-Dhagrid.log.dir=hagrid-output/logs
 -XX:+HeapDumpOnOutOfMemoryError
 -XX:+ExitOnOutOfMemoryError
--XX:HeapDumpPath=logs\heapdump.hprof
--XX:ErrorFile=logs\hs_err_%p.log
+-XX:HeapDumpPath=hagrid-output\logs\jvm\heapdump.hprof
+-XX:ErrorFile=hagrid-output\logs\jvm\hs_err_%p.log
 -XX:NativeMemoryTracking=summary
 -Xlog:nmt=info
--Xlog:gc*,safepoint,class+load,class+unload:file=logs\jvm_gc.log:utctime,uptime,level,tags,tid
+-Xlog:gc*,safepoint,class+load,class+unload:file=hagrid-output\logs\jvm\jvm_gc.log:utctime,uptime,level,tags,tid
 -XX:+UseZGC
 -XX:+AlwaysPreTouch
 --add-opens
