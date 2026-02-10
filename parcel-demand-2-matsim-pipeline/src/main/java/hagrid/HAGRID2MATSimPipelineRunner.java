@@ -94,7 +94,8 @@ public final class HAGRID2MATSimPipelineRunner {
 	private static final ScenarioConfig[] SCENARIOS = {
 
 			// Scenario 1: Standard Basecase mit M und L
-			scenario("basecase", LocalDate.of(2025, 5, 13), "m", "l"),
+			scenario("basecase", "80", LocalDate.of(2025, 5, 13), "80_l"),
+			scenario("basecase", "300", LocalDate.of(2025, 5, 13), "300_l"),
 
 			// Scenario 2: Basecase V1 mit 100er Fahrzeugen (gleicher Tag, neuer Name)
 			// scenario("basecase", "V1", LocalDate.of(2025, 5, 13), "100_l"),

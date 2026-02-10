@@ -75,7 +75,7 @@ public final class ScenarioRunner {
 	 * @param scenarioConfig the scenario configuration
 	 */
 	public ScenarioRunner(ScenarioConfig scenarioConfig) {
-		this(scenarioConfig, Paths.get("parcel-demand-2-matsim-pipeline"));
+		this(scenarioConfig, new HagridPaths().getPipelineRoot());
 	}
 
 	/**

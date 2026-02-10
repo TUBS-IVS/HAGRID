@@ -73,8 +73,16 @@ public class HagridPaths {
     // CONSTRUCTORS
     // =========================================================================
 
+    /**
+     * Auto-detecting constructor.
+     * <p>If the current working directory already IS the pipeline root
+     * (i.e. {@code hagrid-input/} exists here), paths are resolved relative
+     * to {@code "."}.  Otherwise the hardcoded {@code PIPELINE_ROOT} is
+     * prepended — this matches the IDE case where the workspace root sits
+     * one level above.</p>
+     */
     public HagridPaths() {
-        this(Paths.get(PIPELINE_ROOT));
+        this(detectPipelineRoot());
     }
 
     public HagridPaths(Path pipelineRoot) {
@@ -82,6 +90,31 @@ public class HagridPaths {
         this.inputBase = pipelineRoot.resolve("hagrid-input");
         this.outputBase = pipelineRoot.resolve("hagrid-output");
         this.matsimOutputBase = pipelineRoot.resolve("hagrid-matsim-output");
+    }
+
+    /**
+     * Detects whether CWD is already inside the pipeline directory.
+     * Checks for the presence of {@code hagrid-input/} (or {@code hagrid-output/})
+     * in the current directory — if found, returns {@code "."}, otherwise
+     * returns the default {@code PIPELINE_ROOT} prefix.
+     */
+    private static Path detectPipelineRoot() {
+        Path cwd = Paths.get("").toAbsolutePath();
+        // If hagrid-input/ exists in CWD, we're already inside the pipeline dir
+        if (Files.isDirectory(cwd.resolve("hagrid-input"))
+                || Files.isDirectory(cwd.resolve("hagrid-output"))) {
+            LOGGER.debug("CWD is pipeline root: {}", cwd);
+            return Paths.get(".");
+        }
+        // Otherwise prepend the pipeline subfolder (IDE / workspace-root case)
+        Path sub = Paths.get(PIPELINE_ROOT);
+        if (Files.isDirectory(cwd.resolve(sub).resolve("hagrid-input"))) {
+            LOGGER.debug("Pipeline root detected at: {}", sub);
+            return sub;
+        }
+        // Fallback — use PIPELINE_ROOT and hope for the best
+        LOGGER.warn("Could not auto-detect pipeline root (CWD={}), falling back to '{}'", cwd, PIPELINE_ROOT);
+        return sub;
     }
 
     /**
