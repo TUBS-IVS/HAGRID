@@ -35,6 +35,9 @@ import java.util.List;
  */
 public class HAGRIDSimulationRunner {
 
+    // Must run before any Logger is created → routes bootstrap logs to hagrid-matsim-output/
+    static { SimulationRunnerUtils.initLogging(); }
+
     private static final Logger LOG = LogManager.getLogger(HAGRIDSimulationRunner.class);
 
     public static void main(String[] args) throws Exception {
@@ -43,24 +46,15 @@ public class HAGRIDSimulationRunner {
             return;
         }
 
-        LOG.info("═══════════════════════════════════════════════");
-        LOG.info("  HAGRID Simulation Runner");
-        LOG.info("═══════════════════════════════════════════════");
+        SimulationRunnerUtils.printStartBanner();
 
-        // 1) Parse & validate
         List<HAGRIDSimulationConfig> scenarios = SimulationRunnerUtils.parseScenarios(args);
         SimulationRunnerUtils.validateAll(scenarios);
 
-        // 2) Detect writeDashboard flag per scenario from raw args
-        boolean[] dashFlags = new boolean[args.length];
-        for (int i = 0; i < args.length; i++) {
-            dashFlags[i] = extractDashboardFlag(args[i]);
-        }
+        boolean[] dashFlags = SimulationRunnerUtils.extractDashboardFlags(args);
 
-        // 3) Run each scenario
         for (int i = 0; i < scenarios.size(); i++) {
             HAGRIDSimulationConfig cfg = scenarios.get(i);
-
             SimulationRunnerUtils.runSimulation(cfg);
 
             if (dashFlags[i]) {
@@ -69,19 +63,6 @@ public class HAGRIDSimulationRunner {
             }
         }
 
-        LOG.info("═══════════════════════════════════════════════");
-        LOG.info("  All done.");
-        LOG.info("═══════════════════════════════════════════════");
-    }
-
-    /** Extracts the writeDashboard flag from a raw scenario spec string. */
-    private static boolean extractDashboardFlag(String spec) {
-        for (String token : spec.split(",")) {
-            String[] kv = token.split("=", 2);
-            if (kv.length == 2 && kv[0].trim().equalsIgnoreCase("writeDashboard")) {
-                return SimulationRunnerUtils.parseBool(kv[1]);
-            }
-        }
-        return false;
+        SimulationRunnerUtils.printEndBanner();
     }
 }
