@@ -20,6 +20,7 @@ Orchestrates the full pipeline for one or many MATSim runs:
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import logging
 import os
@@ -72,6 +73,7 @@ from hagrid_output_analysis.parsers import (
     parse_vehicle_types,
 )
 from hagrid_output_analysis.reference import ReferenceData
+from hagrid_output_analysis.run_discovery import build_vehicle_size_mapping_from_xml
 from hagrid_output_analysis.utils import format_runtime
 
 logger = logging.getLogger(__name__)
@@ -245,6 +247,14 @@ def process_single_run(
         vtypes = parse_vehicle_types(_vtf)
         print(f"         {len(vtypes)} vehicle types from {os.path.basename(_vtf)}")
 
+        # Auto-build vehicle-size mapping from XML if not manually set
+        if cfg.vehicle_size_mapping is None:
+            auto_map = build_vehicle_size_mapping_from_xml(_vtf)
+            cfg = dataclasses.replace(cfg, vehicle_size_mapping=auto_map)
+            _extra = set(auto_map) - {"m", "l", "truck", "truck_light", "supply_light_van"}
+            if _extra:
+                print(f"         Auto-mapped size codes: {sorted(_extra)}")
+
     result = add_vehicle_demand_to_result(carriers, result, vtypes=vtypes)
     result = attach_service_times(result, startG, endG)
 
@@ -273,7 +283,7 @@ def process_single_run(
     _step_start = time.time()
     print(f"\n▸ [8/9]  EV model (fleet target {cfg.ev_target:.0%}) …")
     ev_plan = compute_ev_counts(result, cfg=cfg)
-    result = assign_ev_flags(result, ev_plan)
+    result = assign_ev_flags(result, ev_plan, cfg=cfg)
     eff_map = build_effective_class_map(result, cfg=cfg)
     base_map = build_base_class_map(result, cfg=cfg)
     is_ev_map = result.set_index("vehicle_id")["is_ev"].to_dict()

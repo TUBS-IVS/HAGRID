@@ -32,10 +32,27 @@ from hagrid_output_analysis.utils import extract_provider
 # Internal helpers
 # ====================================================================
 
-def _is_van_row(row: pd.Series) -> bool:
-    """Check whether a result row represents a van."""
+def _is_van_row(row: pd.Series, size_mapping: dict[str, str] | None = None) -> bool:
+    """Check whether a result row represents a van.
+
+    Uses the vehicle-size mapping (which may contain numeric codes like
+    ``"80"``) to resolve the emission class.  If the class contains
+    ``"van"`` (but not ``"van_e"``), the vehicle counts as a van.
+    Falls back to the hardcoded set for backward compatibility.
+    """
     vs = str(row.get("veh_size", "")).lower()
-    return vs in {"m", "l", "supply_light_van"}
+
+    # Direct match (original behaviour)
+    if vs in {"m", "l", "supply_light_van"}:
+        return True
+
+    # Resolve via mapping → check if the emission class is a van
+    if size_mapping:
+        em_class = size_mapping.get(vs, "")
+        if "van" in em_class and "van_e" not in em_class:
+            return True
+
+    return False
 
 
 def _ev_class_from_base(base_class: str) -> str:
@@ -96,10 +113,11 @@ def compute_ev_counts(
     _fixed = cfg.get_fixed_ev_shares()
     _mins = cfg.get_min_ev_shares()
     _flex = cfg.get_flexible_providers()
+    _size_map = cfg.get_vehicle_size_mapping()
 
     tmp = df.copy()
     tmp["provider"] = tmp["vehicle_id"].apply(extract_provider)
-    tmp["is_van"] = tmp.apply(_is_van_row, axis=1)
+    tmp["is_van"] = tmp.apply(lambda r: _is_van_row(r, _size_map), axis=1)
 
     fleet = tmp.groupby("provider")["vehicle_id"].count().rename("n_vehicles").reset_index()
     vans = tmp[tmp["is_van"]].groupby("provider")["vehicle_id"].count().rename("n_vans").reset_index()
@@ -272,14 +290,18 @@ def _exactness_pass(stats: pd.DataFrame, target_total: int) -> None:
 def assign_ev_flags(
     df: pd.DataFrame,
     ev_counts: pd.DataFrame,
+    cfg: RunConfig | None = None,
 ) -> pd.DataFrame:
     """Flag the shortest-tour vans as EV within each provider.
 
     Adds columns ``provider``, ``is_van``, ``is_ev`` to *df*.
     """
+    _cfg = cfg or RunConfig()
+    _size_map = _cfg.get_vehicle_size_mapping()
+
     out = df.copy()
     out["provider"] = out["vehicle_id"].apply(extract_provider)
-    out["is_van"] = out.apply(_is_van_row, axis=1)
+    out["is_van"] = out.apply(lambda r: _is_van_row(r, _size_map), axis=1)
     out["is_ev"] = 0
 
     dists = _distance_series(out)

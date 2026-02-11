@@ -476,28 +476,70 @@ def parse_vehicle_types(
 def resolve_vehicle_type(vehicle_id: str, vtypes: dict[str, dict]) -> dict | None:
     """Find the vehicle-type entry for a full vehicle ID.
 
-    The carrier XML vehicle IDs look like ``cep_size_m_12`` and the
-    type IDs are ``ct_cep_size_m``.  We strip the trailing numeric
-    suffix and prepend ``ct_`` to build the type key.
+    Handles two naming conventions:
+
+    1. **Standard** – vehicle ``cep_size_m_8_1`` → type ``ct_cep_size_m``
+    2. **Numeric size** – vehicle ``cep_size_80_l_14`` → type ``ct_cep_80_l``
+       (the ``size_`` prefix only exists in the vehicle ID, not the type ID).
+
+    Falls back to substring matching against all known type IDs.
     """
     # freight_dpd_30419_veh_cep_size_m_8_1 → extract "cep_size_m_8_1"
     parts = vehicle_id.split("_veh_", 1)
     if len(parts) < 2:
-        return None
-    veh_part = parts[1]  # e.g. "cep_size_m_8_1"
-    # Remove last two numeric segments (fleet-id + tour-index)
+        # No "_veh_" separator – try the full ID
+        veh_part = vehicle_id
+    else:
+        veh_part = parts[1]  # e.g. "cep_size_80_l_14"
+
     tokens = veh_part.split("_")
-    # Find where the size code is: "cep_size_<code>_..."
+
+    # ── Strategy 1: standard "cep_size_<code>" pattern ────────────
     try:
         size_idx = tokens.index("size") + 1
         base = "_".join(tokens[: size_idx + 1])  # "cep_size_m"
-    except ValueError:
-        # Fallback: try prefix match
-        for tid in vtypes:
-            if tid.startswith("ct_") and tid[3:] in veh_part:
-                return vtypes[tid]
-        return None
+        type_key = f"ct_{base}"
+        if type_key in vtypes:
+            return vtypes[type_key]
 
-    type_key = f"ct_{base}"
-    return vtypes.get(type_key)
+        # ── Strategy 2: numeric size – type ID omits "size_" ──────
+        # vehicle: cep_size_80_l_14 → try ct_cep_80_l
+        # Build candidate by dropping "size_" and appending remaining
+        # non-numeric tokens after the size code.
+        size_code = tokens[size_idx]  # e.g. "80"
+        prefix_tokens = tokens[: size_idx - 1]  # ["cep"]
+        # Collect suffix tokens that are not pure fleet/tour indices
+        # (i.e. stop after hitting two consecutive numeric tokens)
+        suffix_tokens: list[str] = []
+        remaining = tokens[size_idx + 1 :]
+        numeric_run = 0
+        for t in remaining:
+            if t.isdigit():
+                numeric_run += 1
+                if numeric_run >= 2:
+                    break
+                # Could still be part of the type (e.g. "80")
+                suffix_tokens.append(t)
+            else:
+                numeric_run = 0
+                suffix_tokens.append(t)
+
+        # Try progressively shorter suffixes
+        for end in range(len(suffix_tokens), -1, -1):
+            candidate_parts = prefix_tokens + [size_code] + suffix_tokens[:end]
+            candidate = f"ct_{'_'.join(candidate_parts)}"
+            if candidate in vtypes:
+                return vtypes[candidate]
+
+    except ValueError:
+        pass
+
+    # ── Strategy 3: substring fallback against all type IDs ───────
+    for tid, info in vtypes.items():
+        if tid.startswith("ct_"):
+            bare = tid[3:]  # "cep_80_l"
+            if bare in veh_part:
+                return info
+
+    return None
 
