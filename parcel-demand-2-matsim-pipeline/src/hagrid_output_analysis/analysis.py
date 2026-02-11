@@ -168,21 +168,24 @@ def _vehicle_capacity_from_id(
 def _match_cost_params(
     vehicle_id: str,
     vtypes: dict | None = None,
-) -> tuple[int, float, float]:
-    """Return ``(capacity, fix_cost, km_cost)`` for a vehicle ID.
+) -> tuple[int, float, float, float]:
+    """Return ``(capacity, fix_cost, km_cost, cost_per_sec)`` for a vehicle ID.
 
     If *vtypes* is given, read from the parsed vehicle-type XML.
+    The fourth element ``cost_per_sec`` is the time-dependent cost
+    (€/s) from the vehicleType definition (``costsPerSecond``).
     """
     if vtypes:
         from hagrid_output_analysis.parsers import resolve_vehicle_type
         vt = resolve_vehicle_type(vehicle_id, vtypes)
         if vt is not None:
-            return vt["capacity"], vt["fixed_cost"], vt["cost_per_km"]
+            return (vt["capacity"], vt["fixed_cost"], vt["cost_per_km"],
+                    vt.get("cost_per_sec", 0.0))
 
     for key in ("size_l", "size_m", "supply_light_van", "light"):
         if key in vehicle_id:
-            return COST_PARAMS_BY_SIZE[key]
-    return COST_PARAMS_BY_SIZE["default"]
+            return (*COST_PARAMS_BY_SIZE[key], 0.0)
+    return (*COST_PARAMS_BY_SIZE["default"], 0.0)
 
 
 def calculate_costs(
@@ -212,17 +215,26 @@ def calculate_costs(
 
     out = df.copy()
     params = out["vehicle_id"].apply(lambda vid: _match_cost_params(vid, vtypes))
-    caps, fixes, km_costs = zip(*params)
+    caps, fixes, km_costs, sec_costs = zip(*params)
 
     out["vehicle_capacity"] = list(caps)
     out["vehicle_fix_cost"] = list(fixes)
     out["vehicle_km_cost"] = out["tour_km"] * pd.Series(km_costs, index=out.index)
-    out["vehicle_time_cost"] = out["Tour Duration"] * tc
+
+    # Time cost from vehicleType XML (costsPerSecond × travel duration).
+    # Usually 0 in current scenarios, but included for consistency with
+    # the Java dashboard which sums distance + time + fixed + overtime.
+    out["vehicle_time_cost"] = (
+        out["Tour Duration"] * pd.Series(sec_costs, index=out.index)
+    )
 
     overtime = (out["Tour Duration"] - 7.5 * 3600).clip(lower=0)
     out["overtime_cost"] = overtime * tc
     out["vehicle_cost"] = (
-        out["vehicle_fix_cost"] + out["vehicle_km_cost"] + out["overtime_cost"]
+        out["vehicle_fix_cost"]
+        + out["vehicle_km_cost"]
+        + out["vehicle_time_cost"]
+        + out["overtime_cost"]
     )
     return out
 
@@ -578,6 +590,15 @@ def compute_derived_kpis(df: pd.DataFrame) -> pd.DataFrame:
     out["avg_speed_kmh"] = np.where(
         trav > 0, out["tour_km"] / (trav / 3600), np.nan,
     ) if trav is not None else np.nan
+    # Fleet-level distance-weighted average speed (consistent with Java
+    # dashboard: total_km / total_travel_hours).
+    if trav is not None:
+        _mask = trav > 0
+        _total_km = out.loc[_mask, "tour_km"].sum()
+        _total_h = (trav[_mask] / 3600).sum()
+        out["avg_speed_kmh_fleet"] = _total_km / _total_h if _total_h > 0 else np.nan
+    else:
+        out["avg_speed_kmh_fleet"] = np.nan
     out["time_per_stop_min"] = np.where(
         snum > 0, (svc_d / snum) / 60, np.nan,
     ) if svc_d is not None else np.nan
