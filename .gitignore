@@ -31,7 +31,16 @@ log/
 
 # Exclude specific large files
 parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
-parcel-demand-estimation/Project USEfUL XT//Verflechtungsprognose2030/ketten-2030.csv
+parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
+parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
+parcel-demand-estimation/input/
+parcel-demand-estimation/output/
+
+# parcel-demand-estimation-batch: only track notebooks (.ipynb) and folder structure of input/output (via .gitkeep)
+parcel-demand-estimation-batch/**
+!parcel-demand-estimation-batch/**/
+!parcel-demand-estimation-batch/**/*.ipynb
+!parcel-demand-estimation-batch/**/.gitkeep
 
 parcel-analysis-batch
 
@@ -89,12 +98,7 @@ parcel-analysis/*
 *.shp.xml
 *.fix
 
-parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
-parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
 
-
-parcel-demand-estimation/input/
-parcel-demand-estimation/output/
 
 # Temporary helper / analysis scripts
 analysis_cp.txt
