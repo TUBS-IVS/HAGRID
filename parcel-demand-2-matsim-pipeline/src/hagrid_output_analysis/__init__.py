@@ -127,6 +127,14 @@ from hagrid_output_analysis.batch import (
     run_batch,
 )
 
+# -- run discovery ---------------------------------------------------
+from hagrid_output_analysis.run_discovery import (
+    BASE_COST_SIGNATURES,
+    build_vehicle_size_mapping_from_xml,
+    list_available_runs,
+    resolve_run,
+)
+
 
 __all__ = [
     # Config
@@ -167,4 +175,7 @@ __all__ = [
     "emissions_by_area_type", "build_vehicle_emissions_column",
     # Batch
     "discover_runs", "process_single_run", "run_batch",
+    # Run discovery
+    "resolve_run", "list_available_runs",
+    "build_vehicle_size_mapping_from_xml", "BASE_COST_SIGNATURES",
 ]

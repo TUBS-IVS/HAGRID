@@ -127,8 +127,8 @@ public final class SimulationBatGenerator {
 		bat.append("\"%JAVA_EXE%\" -version\r\n");
 		bat.append("\r\n");
 		bat.append("rem effektive VM Settings vor dem Start loggen\r\n");
-		bat.append("if not exist \"hagrid-output\\logs\\jvm\" mkdir \"hagrid-output\\logs\\jvm\"\r\n");
-		bat.append("\"%JAVA_EXE%\" -XshowSettings:vm -version 2> \"hagrid-output\\logs\\jvm\\vm_settings_before.txt\"\r\n");
+		bat.append("if not exist \"hagrid-matsim-output\\logs\\jvm\" mkdir \"hagrid-matsim-output\\logs\\jvm\"\r\n");
+		bat.append("\"%JAVA_EXE%\" -XshowSettings:vm -version 2> \"hagrid-matsim-output\\logs\\jvm\\vm_settings_before.txt\"\r\n");
 		bat.append("\r\n");
 		bat.append("rem JAR pruefen\r\n");
 		bat.append("set \"JAR=target\\parcel-demand-2-matsim-pipeline-1.0-SNAPSHOT.jar\"\r\n");

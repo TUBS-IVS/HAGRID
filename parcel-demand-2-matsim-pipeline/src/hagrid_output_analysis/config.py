@@ -309,7 +309,7 @@ LOW_UTIL_THRESHOLD: float = 0.05
 # Per-run configuration (frozen dataclass)
 # ====================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RunConfig:
     """Immutable per-run settings – the single source of truth.
 

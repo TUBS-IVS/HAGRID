@@ -7,8 +7,8 @@ plan / service XML structure.
 
 Design decisions
 ----------------
-* **``@dataclass(slots=True)``** – memory-efficient, thousands of
-  instances per run.
+* Plain ``@dataclass`` – compatible with Python 3.9+.
+  (``slots=True`` requires 3.10.)
 * **No Java-style getters/setters** – attributes are accessed directly.
 * All ``__repr__`` outputs are concise and useful for debugging.
 """
@@ -26,7 +26,7 @@ from hagrid_output_analysis.utils import extract_provider
 # ====================================================================
 
 
-@dataclass(slots=True)
+@dataclass
 class Service:
     """A single delivery or pick-up service.
 
@@ -91,7 +91,7 @@ class Service:
 # ====================================================================
 
 
-@dataclass(slots=True)
+@dataclass
 class Vehicle:
     """A MATSim freight vehicle.
 
@@ -121,7 +121,7 @@ class Vehicle:
 # ====================================================================
 
 
-@dataclass(slots=True)
+@dataclass
 class Plan:
     """Ordered sequence of activities and legs making up a tour.
 
@@ -173,7 +173,7 @@ class Plan:
 # ====================================================================
 
 
-@dataclass(slots=True)
+@dataclass
 class Carrier:
     """Logistics carrier (DHL, DPD, ...) with vehicles and services.
 

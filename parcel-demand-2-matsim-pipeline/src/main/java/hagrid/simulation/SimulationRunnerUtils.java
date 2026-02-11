@@ -45,6 +45,48 @@ public final class SimulationRunnerUtils {
     private SimulationRunnerUtils() {} // utility class
 
     // ====================================================================
+    // Bootstrap & logging
+    // ====================================================================
+
+    /**
+     * Sets {@code hagrid.log.dir} to {@code hagrid-matsim-output/logs/} so that
+     * Log4j2 bootstrap logs land inside the MATSim output tree instead of
+     * creating a stale top-level {@code hagrid-output/} folder.
+     * <p>
+     * <b>Must be called before any Log4j2 Logger is obtained</b> (i.e. from a
+     * {@code static} initializer in the main class).
+     */
+    public static void initLogging() {
+        if (System.getProperty("hagrid.log.dir") == null) {
+            try {
+                Path logDir = Path.of("hagrid-matsim-output", "logs");
+                Files.createDirectories(logDir);
+                System.setProperty("hagrid.log.dir", logDir.toAbsolutePath().toString());
+            } catch (Exception ignored) {
+                // fallback: let log4j2.xml default handle it
+            }
+        }
+    }
+
+    // ====================================================================
+    // Console banners
+    // ====================================================================
+
+    /** Prints the startup banner to the log. */
+    public static void printStartBanner() {
+        LOG.info("═══════════════════════════════════════════════");
+        LOG.info("  HAGRID Simulation Runner");
+        LOG.info("═══════════════════════════════════════════════");
+    }
+
+    /** Prints the completion banner to the log. */
+    public static void printEndBanner() {
+        LOG.info("═══════════════════════════════════════════════");
+        LOG.info("  All done.");
+        LOG.info("═══════════════════════════════════════════════");
+    }
+
+    // ====================================================================
     // Argument parsing
     // ====================================================================
 
@@ -306,6 +348,26 @@ public final class SimulationRunnerUtils {
             case "true", "1", "yes" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * Extracts the {@code writeDashboard} flag from each raw scenario spec.
+     *
+     * @param args raw CLI arguments (one spec per element)
+     * @return boolean array aligned with {@code args}
+     */
+    public static boolean[] extractDashboardFlags(String[] args) {
+        boolean[] flags = new boolean[args.length];
+        for (int i = 0; i < args.length; i++) {
+            for (String token : args[i].split(",")) {
+                String[] kv = token.split("=", 2);
+                if (kv.length == 2 && kv[0].trim().equalsIgnoreCase("writeDashboard")) {
+                    flags[i] = parseBool(kv[1]);
+                    break;
+                }
+            }
+        }
+        return flags;
     }
 
     private static double nonNegDouble(String s, String name) {
