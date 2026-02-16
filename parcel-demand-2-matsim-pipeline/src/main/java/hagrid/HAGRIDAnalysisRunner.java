@@ -176,7 +176,8 @@ public class HAGRIDAnalysisRunner {
         String dashRunId = runId + "_iter" + maxIter + "_jsprit" + jspritIter;
         Path dashboardDir = matsimDir.resolve("analysis");
         DashboardGenerator generator = new DashboardGenerator(
-                dashRunId, network, handler, carriers, vehicleTypeCapacities, vehicleTypeFixedCosts, vehicleTypeCostsPerKm, dashboardDir);
+                dashRunId, network, handler, carriers, vehicleTypeCapacities, vehicleTypeFixedCosts, vehicleTypeCostsPerKm, dashboardDir)
+                .setLowUtilThreshold(0.05);
         Path htmlFile = generator.generate();
 
         Duration elapsed = Duration.between(start, Instant.now());

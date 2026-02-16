@@ -49,6 +49,12 @@ public class DashboardGenerator {
     private final Map<String, Double> vehicleTypeCostsPerKm;
     private final Path outputDir;
 
+    // ── Low-utilisation filter ────────────────────────────────────────
+    /** Vehicles with load factor below this threshold are excluded from analysis (default 5 %). */
+    private double lowUtilThreshold = 0.05;
+    /** Event-vehicle-IDs that were excluded due to low utilisation. */
+    private Set<String> excludedLowUtilVehicles = Set.of();
+
     // ── Pre-computed event-based maps (filled once at generate() start) ──
     /** eventVehicleId → total tour km (sum of network link lengths for all link-leave events) */
     private Map<String, Double> evtTourKm;
@@ -76,6 +82,19 @@ public class DashboardGenerator {
         this.vehicleTypeFixedCosts = vehicleTypeFixedCosts != null ? vehicleTypeFixedCosts : Map.of();
         this.vehicleTypeCostsPerKm = vehicleTypeCostsPerKm != null ? vehicleTypeCostsPerKm : Map.of();
         this.outputDir = outputDir;
+    }
+
+    /**
+     * Set the low-utilisation threshold.  Vehicles whose load factor (parcels / capacity)
+     * is strictly below this value are excluded from all analysis charts and KPIs.
+     * A notice is appended to the dashboard listing how many vehicles were excluded.
+     *
+     * @param threshold fraction, e.g. 0.05 for 5 %.  Use 0 to disable the filter.
+     * @return this instance (for chaining)
+     */
+    public DashboardGenerator setLowUtilThreshold(double threshold) {
+        this.lowUtilThreshold = threshold;
+        return this;
     }
 
     /**
@@ -126,6 +145,45 @@ public class DashboardGenerator {
                 evtTourKm.size(), evtDepSec.size(), evtSvcDurSec.size());
     }
 
+    /**
+     * Identify delivery vehicles whose load factor is strictly below
+     * {@link #lowUtilThreshold} and store their event-vehicle-IDs in
+     * {@link #excludedLowUtilVehicles} so every builder method can skip them.
+     */
+    private void precomputeExcludedVehicles() {
+        if (lowUtilThreshold <= 0) {
+            excludedLowUtilVehicles = Set.of();
+            return;
+        }
+        Set<String> excluded = new HashSet<>();
+        for (ParsedCarrier c : carriers) {
+            if (c.isSupply()) continue;
+            Map<String, ParsedService> svcMap = new HashMap<>();
+            for (ParsedService s : c.services()) svcMap.put(s.serviceId(), s);
+
+            for (ParsedTour t : c.tours()) {
+                int parcels = 0;
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        ParsedService svc = svcMap.get(a.serviceId());
+                        parcels += svc != null ? svc.capacityDemand() : 1;
+                    }
+                }
+                if (parcels == 0) continue;
+                int cap = lookupCapacity(c, t.vehicleId());
+                double lf = Math.min(1.0, (double) parcels / cap);
+                if (lf < lowUtilThreshold) {
+                    excluded.add(t.eventVehicleId());
+                }
+            }
+        }
+        excludedLowUtilVehicles = Collections.unmodifiableSet(excluded);
+        if (!excluded.isEmpty()) {
+            LOG.info("Low-utilisation filter (< {} %): excluded {} vehicles",
+                    String.format(Locale.US, "%.0f", lowUtilThreshold * 100), excluded.size());
+        }
+    }
+
     // ====================================================================
     // GENERATE
     // ====================================================================
@@ -135,6 +193,9 @@ public class DashboardGenerator {
 
         // 0) Pre-compute shared event-based maps (ground truth)
         precomputeEventMaps();
+
+        // 0b) Identify vehicles below low-utilisation threshold
+        precomputeExcludedVehicles();
 
         // 1) Build all data payloads
         String kpiJson        = buildKpiJson();
@@ -211,7 +272,7 @@ public class DashboardGenerator {
                         vehParcels += svc != null ? svc.capacityDemand() : 1;
                     }
                 }
-                if (vehParcels > 0) {
+                if (vehParcels > 0 && !excludedLowUtilVehicles.contains(t.eventVehicleId())) {
                     int cap = lookupCapacity(c, t.vehicleId());
                     loadFactors.add(Math.min(1.0, (double) vehParcels / cap));
                     totalDeliveryVehicles++;
@@ -251,7 +312,8 @@ public class DashboardGenerator {
             double travelSec = tourDur - svc;
             if (travelSec > 0) totalTravelTSec += travelSec;
         }
-        int totalStops = evtStopCount.values().stream().mapToInt(Integer::intValue).sum();
+        int totalStops = deliveryEventVehIds.stream()
+                .mapToInt(vid -> evtStopCount.getOrDefault(vid, 0)).sum();
 
         // Additional KPIs
         int totalMissed = delivery.stream().mapToInt(ParsedCarrier::numMissed).sum();
@@ -323,6 +385,7 @@ public class DashboardGenerator {
                     }
                 }
                 if (parcels == 0) continue;
+                if (excludedLowUtilVehicles.contains(vehId)) continue;
 
                 int cap = lookupCapacity(c, t.vehicleId());
                 double loadFactor = Math.min(1.0, (double) parcels / cap);
@@ -1196,6 +1259,7 @@ public class DashboardGenerator {
                     }
                 }
                 if (parcels == 0) continue;
+                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
                 int cap = lookupCapacity(c, t.vehicleId());
                 double lf = Math.min(1.0, (double) parcels / cap);
                 byProv.computeIfAbsent(p, k -> new double[3]);
@@ -1338,6 +1402,7 @@ public class DashboardGenerator {
                     }
                 }
                 if (parcels == 0) continue;
+                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
                 int cap = lookupCapacity(c, t.vehicleId());
                 double lf = Math.min(1.0, (double) parcels / cap);
                 String typeId = c.vehicleTypeMap() != null ? c.vehicleTypeMap().get(t.vehicleId()) : null;
@@ -1386,7 +1451,7 @@ public class DashboardGenerator {
             vehByProv.computeIfAbsent(p, k -> new ArrayList<>());
             double[] row = stats.get(p);
             row[0]++;
-            row[1] += c.tours().size();
+            // row[1] (vehicle count) is incremented per non-excluded tour below
             int carrierParcels = c.numberOfParcels() > 0 ? c.numberOfParcels() : c.numServices();
             row[2] += carrierParcels;
             row[3] += c.numMissed();
@@ -1402,6 +1467,8 @@ public class DashboardGenerator {
             // Event-based distance + travel time aggregated from tours
             for (ParsedTour t : c.tours()) {
                 String vid = t.eventVehicleId();
+                if (excludedLowUtilVehicles.contains(vid)) continue;
+                row[1]++; // count only non-excluded vehicles
                 double distKm = evtTourKm.getOrDefault(vid, 0.0);
                 row[4] += distKm;
                 double dep = evtDepSec.getOrDefault(vid, 0.0);
@@ -1505,6 +1572,7 @@ public class DashboardGenerator {
                     }
                 }
                 if (parcels == 0) continue;
+                if (excludedLowUtilVehicles.contains(vehId)) continue;
 
                 int cap = lookupCapacity(c, t.vehicleId());
 
@@ -1607,7 +1675,7 @@ public class DashboardGenerator {
     /** Look up actual vehicle capacity from vehicle types data. Falls back to heuristic. */
     private int lookupCapacity(ParsedCarrier carrier, String vehicleId) {
         // Try exact lookup via carrier's vehicle→typeId mapping
-        String typeId = carrier.vehicleTypeMap().get(vehicleId);
+        String typeId = carrier.vehicleTypeMap() != null ? carrier.vehicleTypeMap().get(vehicleId) : null;
         if (typeId != null) {
             Double cap = vehicleTypeCapacities.get(typeId);
             if (cap != null && cap > 0) return (int) Math.round(cap);
@@ -1658,6 +1726,23 @@ public class DashboardGenerator {
     private static String fmtHMS(double sec) {
         int s = Math.max(0, (int) Math.round(sec));
         return String.format("%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60);
+    }
+
+    /**
+     * Returns an HTML snippet shown at the bottom of the dashboard when
+     * vehicles have been excluded due to low utilisation.
+     * Returns an empty string when no vehicles were excluded.
+     */
+    private String buildLowUtilNoticeHtml() {
+        if (excludedLowUtilVehicles.isEmpty()) return "";
+        return String.format(Locale.US,
+            "<div style=\"margin:18px 22px;padding:14px 18px;background:rgba(251,191,36,.12);"
+            + "border:1px solid rgba(251,191,36,.35);border-radius:10px;color:#fbbf24;"
+            + "font-size:.85rem;line-height:1.5\">"
+            + "<strong>&#9888; Low-utilisation filter:</strong> "
+            + "%d vehicle(s) with a load factor below %.0f&thinsp;%% were excluded from this analysis."
+            + "</div>",
+            excludedLowUtilVehicles.size(), lowUtilThreshold * 100);
     }
 
     // ====================================================================
@@ -1789,7 +1874,8 @@ public class DashboardGenerator {
                 /* 29 */ hourlySvcJson,
                 /* 30 */ activeVehJson,
                 /* 31 */ depotTripsJson,
-                /* 32 */ carrierDetailJson
+                /* 32 */ carrierDetailJson,
+                /* 33 */ buildLowUtilNoticeHtml()
         };
         return String.format(Locale.US, HTML_PART1, fmtArgs)
              + String.format(Locale.US, HTML_PART2, fmtArgs)
@@ -3847,6 +3933,7 @@ if(SCORING.iterations.length>0){
       plugins:{legend:{display:false}}}});
 })();
 </script>
+%33$s
 </body>
 </html>
 """;

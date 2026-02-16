@@ -274,7 +274,8 @@ public final class SimulationRunnerUtils {
         // Generate
         String dashRunId = prefix + "_iter" + cfg.getMaxIterations() + "_jsprit" + cfg.getJspritIterations();
         Path outDir = matsimDir.resolve("analysis");
-        DashboardGenerator gen = new DashboardGenerator(dashRunId, network, handler, carriers, caps, fixes, cpkm, outDir);
+        DashboardGenerator gen = new DashboardGenerator(dashRunId, network, handler, carriers, caps, fixes, cpkm, outDir)
+                .setLowUtilThreshold(0.05);
         Path html = gen.generate();
 
         logDuration("Dashboard '" + html.getFileName() + "'", t0);
