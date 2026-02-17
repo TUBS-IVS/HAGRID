@@ -248,13 +248,10 @@ public class DashboardGenerator {
         List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
         List<ParsedCarrier> supply   = carriers.stream().filter(ParsedCarrier::isSupply).toList();
 
-        int totalVehicles    = eventHandler.getVehicleTours().size();
+        int totalVehicles    = (int) eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> !excludedLowUtilVehicles.contains(v)).count();
         int deliveryCarriers = delivery.size();
         int supplyCarriers   = supply.size();
-        int totalServices    = delivery.stream().mapToInt(ParsedCarrier::numServices).sum();
-        int totalDemand      = delivery.stream().mapToInt(ParsedCarrier::totalDemand).sum();
-        int totalParcels     = delivery.stream().mapToInt(ParsedCarrier::numberOfParcels).sum();
-        int parcelBase       = totalParcels > 0 ? totalParcels : totalServices;
 
         // Per-vehicle utilisation via carrier services + collect delivery event vehicle IDs
         List<Double> loadFactors = new ArrayList<>();
@@ -282,21 +279,33 @@ public class DashboardGenerator {
         }
         double avgLoadFactor = loadFactors.stream().mapToDouble(Double::doubleValue).average().orElse(0);
 
-        // Vehicle type counts
+        // Vehicle type counts (exclude low-util)
         long vanCount   = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> !excludedLowUtilVehicles.contains(v))
                 .filter(v -> classifyForKpi(v) == VehicleType.VAN).count();
         long bikeCount  = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> !excludedLowUtilVehicles.contains(v))
                 .filter(v -> classifyForKpi(v) == VehicleType.CARGOBIKE).count();
         long truckCount = eventHandler.getVehicleTours().keySet().stream()
+                .filter(v -> !excludedLowUtilVehicles.contains(v))
                 .filter(v -> { var t = classifyForKpi(v);
                     return t == VehicleType.TRUCK || t == VehicleType.TRUCK_LIGHT || t == VehicleType.SUPPLY_VAN; }).count();
 
-        // Totals
-        // Total costs: distance + time + overtime + real fixed costs from vehicle types
-        double totalCostBase  = delivery.stream().mapToDouble(c -> c.costDistance() + c.costTime() + c.costOvertime()).sum();
-        double totalFixCost   = 0;
+        // Totals (only non-excluded vehicles)
+        // Carrier variable costs are proportionally allocated to non-excluded tours.
+        double totalCostBase = 0;
+        double totalFixCost  = 0;
         for (ParsedCarrier c : delivery) {
-            for (ParsedTour t : c.tours()) totalFixCost += lookupFixedCost(c, t.vehicleId());
+            int allTours = c.tours().size();
+            int nonExcl  = (int) c.tours().stream()
+                    .filter(t -> !excludedLowUtilVehicles.contains(t.eventVehicleId())).count();
+            totalCostBase += allTours > 0
+                    ? (c.costDistance() + c.costTime() + c.costOvertime()) * nonExcl / allTours : 0;
+            for (ParsedTour t : c.tours()) {
+                if (!excludedLowUtilVehicles.contains(t.eventVehicleId())) {
+                    totalFixCost += lookupFixedCost(c, t.vehicleId());
+                }
+            }
         }
         double totalCost      = totalCostBase + totalFixCost;
 
@@ -314,6 +323,25 @@ public class DashboardGenerator {
         }
         int totalStops = deliveryEventVehIds.stream()
                 .mapToInt(vid -> evtStopCount.getOrDefault(vid, 0)).sum();
+
+        // Parcel/service counts from non-excluded vehicles only
+        int totalServices = 0, totalDemand = 0, totalParcels = 0;
+        for (ParsedCarrier c : delivery) {
+            Map<String, ParsedService> sm = new HashMap<>();
+            for (ParsedService s : c.services()) sm.put(s.serviceId(), s);
+            for (ParsedTour t : c.tours()) {
+                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        totalServices++;
+                        ParsedService svc = sm.get(a.serviceId());
+                        totalDemand += svc != null ? svc.capacityDemand() : 1;
+                        totalParcels += svc != null ? svc.capacityDemand() : 1;
+                    }
+                }
+            }
+        }
+        int parcelBase = totalParcels > 0 ? totalParcels : totalServices;
 
         // Additional KPIs
         int totalMissed = delivery.stream().mapToInt(ParsedCarrier::numMissed).sum();
@@ -623,8 +651,19 @@ public class DashboardGenerator {
             String p = c.provider().isEmpty() ? "other" : c.provider();
             byProv.computeIfAbsent(p, k -> new int[3]);
             byProv.get(p)[0]++;
-            byProv.get(p)[1] += c.numberOfParcels() > 0 ? c.numberOfParcels() : c.numServices();
-            byProv.get(p)[2] += c.tours().size();
+            // Count parcels and vehicles from non-excluded tours only
+            Map<String, ParsedService> sm = new HashMap<>();
+            for (ParsedService s : c.services()) sm.put(s.serviceId(), s);
+            for (ParsedTour t : c.tours()) {
+                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
+                byProv.get(p)[2]++;
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        ParsedService svc = sm.get(a.serviceId());
+                        byProv.get(p)[1] += svc != null ? svc.capacityDemand() : 1;
+                    }
+                }
+            }
         }
         String[] colors = {"#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#6b7280"};
         StringBuilder labels = new StringBuilder("[");
@@ -657,12 +696,21 @@ public class DashboardGenerator {
             String p = c.provider().isEmpty() ? "other" : c.provider();
             byProv.computeIfAbsent(p, k -> new double[7]);
             double[] v = byProv.get(p);
-            v[1] += c.costDistance(); v[2] += c.costTime();
-            v[4] += c.costActivity();
-            v[5] += c.costOvertime(); v[6] += c.costTimeWindowPenalty();
-            // Compute real fixed costs from vehicle type definitions
+            // Proportionally allocate carrier variable costs to non-excluded tours
+            int allTours = c.tours().size();
+            int nonExcl  = (int) c.tours().stream()
+                    .filter(t -> !excludedLowUtilVehicles.contains(t.eventVehicleId())).count();
+            double ratio = allTours > 0 ? (double) nonExcl / allTours : 0;
+            v[1] += c.costDistance() * ratio;
+            v[2] += c.costTime() * ratio;
+            v[4] += c.costActivity() * ratio;
+            v[5] += c.costOvertime() * ratio;
+            v[6] += c.costTimeWindowPenalty() * ratio;
+            // Fixed costs only for non-excluded vehicles
             for (ParsedTour t : c.tours()) {
-                v[3] += lookupFixedCost(c, t.vehicleId());
+                if (!excludedLowUtilVehicles.contains(t.eventVehicleId())) {
+                    v[3] += lookupFixedCost(c, t.vehicleId());
+                }
             }
             v[0] = v[1] + v[2] + v[3] + v[5]; // total = distance + time + fixed + overtime
         }
@@ -734,11 +782,13 @@ public class DashboardGenerator {
         int[] departures    = new int[25];
         int[] serviceStarts = new int[25];
         for (TourBoundaryEvent ts : eventHandler.getTourStarts()) {
+            if (excludedLowUtilVehicles.contains(ts.vehicleId())) continue;
             int h = Math.min(24, (int) (ts.timeSec() / 3600));
             departures[h]++;
         }
-        for (var events : eventHandler.getServiceEvents().values()) {
-            for (ServiceEvent ev : events) {
+        for (var events : eventHandler.getServiceEvents().entrySet()) {
+            if (excludedLowUtilVehicles.contains(events.getKey())) continue;
+            for (ServiceEvent ev : events.getValue()) {
                 if (ev.isStart()) {
                     int h = Math.min(24, (int) (ev.timeSec() / 3600));
                     serviceStarts[h]++;
@@ -796,6 +846,7 @@ public class DashboardGenerator {
         }
         for (var entry : eventHandler.getServiceEvents().entrySet()) {
             String vehId = entry.getKey();
+            if (excludedLowUtilVehicles.contains(vehId)) continue;
             String prov = vehToProvider.get(vehId);
             if (prov == null) continue; // skip supply vehicles
             int[] svc = svcByProv.get(prov);
@@ -879,6 +930,7 @@ public class DashboardGenerator {
 
         for (var entry : vehToProvider.entrySet()) {
             String vehId = entry.getKey();
+            if (excludedLowUtilVehicles.contains(vehId)) continue;
             String prov = entry.getValue();
             Double dep = depTimes.get(vehId);
             Double arr = arrTimes.get(vehId);
@@ -960,6 +1012,7 @@ public class DashboardGenerator {
         }
 
         for (TourBoundaryEvent e : eventHandler.getTourStarts()) {
+            if (excludedLowUtilVehicles.contains(e.vehicleId())) continue;
             String prov = vehToProvider.get(e.vehicleId());
             if (prov == null) continue;
             int min = (int) Math.floor(e.timeSec() / 60.0);
@@ -970,6 +1023,7 @@ public class DashboardGenerator {
             }
         }
         for (TourBoundaryEvent e : eventHandler.getTourEnds()) {
+            if (excludedLowUtilVehicles.contains(e.vehicleId())) continue;
             String prov = vehToProvider.get(e.vehicleId());
             if (prov == null) continue;
             int min = (int) Math.floor(e.timeSec() / 60.0);
@@ -1047,21 +1101,28 @@ public class DashboardGenerator {
             }
             vehArr.append("]");
 
-            // Build tour summary array — dep/arr/stops from events
+            // Build tour summary array — dep/arr/stops from events (non-excluded only)
             StringBuilder tourArr = new StringBuilder("[");
             boolean tFirst = true;
+            int nonExclTourCount = 0;
+            int nonExclParcels = 0;
+            int nonExclServices = 0;
             for (ParsedTour t : c.tours()) {
+                String evtVid = t.eventVehicleId();
+                if (excludedLowUtilVehicles.contains(evtVid)) continue;
+                nonExclTourCount++;
                 if (!tFirst) tourArr.append(",");
                 tFirst = false;
                 String vId = t.vehicleId();
-                String evtVid = t.eventVehicleId();
                 String vType = c.vehicleTypeMap().getOrDefault(vId, "?");
 
                 // Stops + parcels from carrier XML (parcel demand assignment)
                 int stops = evtStopCount.getOrDefault(evtVid, 0);
                 int parcels = 0;
+                int svcCount = 0;
                 for (TourAct a : t.acts()) {
                     if ("service".equals(a.type()) && a.serviceId() != null) {
+                        svcCount++;
                         for (ParsedService svc : c.services()) {
                             if (svc.serviceId().equals(a.serviceId())) {
                                 parcels += svc.capacityDemand();
@@ -1070,6 +1131,8 @@ public class DashboardGenerator {
                         }
                     }
                 }
+                nonExclParcels += parcels;
+                nonExclServices += svcCount;
 
                 // Dep/Arr from events (ground truth)
                 double depTimeSec = evtDepSec.getOrDefault(evtVid, 0.0);
@@ -1081,15 +1144,19 @@ public class DashboardGenerator {
             }
             tourArr.append("]");
 
-            // Compute fix cost total from actual tours
+            // Compute fix cost total from non-excluded tours only
             double fixTotal = 0;
-            for (ParsedTour t : c.tours()) fixTotal += lookupFixedCost(c, t.vehicleId());
+            for (ParsedTour t : c.tours()) {
+                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
+                fixTotal += lookupFixedCost(c, t.vehicleId());
+            }
 
-            // Event-based distance + travel time for this carrier
+            // Event-based distance + travel time for this carrier (non-excluded only)
             double carrierDistKm = 0;
             double carrierTravelH = 0;
             for (ParsedTour t : c.tours()) {
                 String vid = t.eventVehicleId();
+                if (excludedLowUtilVehicles.contains(vid)) continue;
                 carrierDistKm += evtTourKm.getOrDefault(vid, 0.0);
                 double dep = evtDepSec.getOrDefault(vid, 0.0);
                 double arr = evtArrSec.getOrDefault(vid, 0.0);
@@ -1097,6 +1164,22 @@ public class DashboardGenerator {
                 double tourDur = arr > dep ? arr - dep : 0;
                 carrierTravelH += Math.max(0, tourDur - svc) / 3600.0;
             }
+
+            // Proportional variable cost allocation for non-excluded tours
+            int allTours = c.tours().size();
+            double ratio = allTours > 0 ? (double) nonExclTourCount / allTours : 0;
+            double costDist = c.costDistance() * ratio;
+            double costTime = c.costTime() * ratio;
+            double costAct  = c.costActivity() * ratio;
+            double costOT   = c.costOvertime() * ratio;
+            double costTW   = c.costTimeWindowPenalty() * ratio;
+            double costTotal = costDist + costTime + fixTotal + costOT;
+
+            // Missed parcels proportional
+            int nonExclMissed = allTours > 0 ? (int) Math.round(c.numMissed() * ratio) : 0;
+            double successRate = nonExclParcels > 0
+                ? (1.0 - (double) nonExclMissed / nonExclParcels) * 100.0
+                : 100.0;
 
             sb.append(String.format(Locale.US,
                 "{\"id\":\"%s\",\"prov\":\"%s\",\"plz\":\"%s\"," +
@@ -1106,13 +1189,12 @@ public class DashboardGenerator {
                 "\"distKm\":%.1f,\"travelH\":%.2f,\"successRate\":%.1f," +
                 "\"vehicles\":%s,\"tourDetails\":%s}",
                 escJson(c.carrierId()), escJson(provider), escJson(c.plz()),
-                c.numServices(), c.numberOfParcels() > 0 ? c.numberOfParcels() : c.totalDemand(),
-                c.numMissed(), c.tours().size(),
-                c.costDistance() + c.costTime() + fixTotal + c.costOvertime(),
-                c.costDistance(), c.costTime(),
-                fixTotal, c.costActivity(), c.costOvertime(), c.costTimeWindowPenalty(),
+                nonExclServices, nonExclParcels,
+                nonExclMissed, nonExclTourCount,
+                costTotal, costDist, costTime,
+                fixTotal, costAct, costOT, costTW,
                 carrierDistKm, carrierTravelH,
-                c.successRate(),
+                successRate,
                 vehArr, tourArr));
         }
         sb.append("]");
@@ -1145,6 +1227,7 @@ public class DashboardGenerator {
 
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (String vehId : eventHandler.getVehicleTours().keySet()) {
+            if (excludedLowUtilVehicles.contains(vehId)) continue;
             String label = globalVehTypeMap.getOrDefault(vehId, null);
             if (label == null) {
                 VehicleType vt = classifyForKpi(vehId);
@@ -1175,6 +1258,7 @@ public class DashboardGenerator {
         Map<String, Double> vehKm = new HashMap<>();
         for (var entry : eventHandler.getVehicleTours().entrySet()) {
             String vehId = entry.getKey();
+            if (excludedLowUtilVehicles.contains(vehId)) continue;
             if (classifyForKpi(vehId) != VehicleType.VAN && classifyForKpi(vehId) != VehicleType.CARGOBIKE) continue;
             double km = 0;
             for (LinkVisit lv : entry.getValue()) {
@@ -1219,6 +1303,7 @@ public class DashboardGenerator {
         int[] counts = new int[numBins];
         for (var entry : depotDep.entrySet()) {
             String vehId = entry.getKey();
+            if (excludedLowUtilVehicles.contains(vehId)) continue;
             VehicleType vt = classifyForKpi(vehId);
             if (vt != VehicleType.VAN && vt != VehicleType.CARGOBIKE) continue;
             Double arr = depotArr.get(vehId);
@@ -1439,7 +1524,8 @@ public class DashboardGenerator {
     private String buildSummaryTableJson() {
         List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
         Map<String, double[]> stats = new LinkedHashMap<>();
-        // [carriers, vehicles, parcels, missed, totalKm, totalDurH, totalCost, sumLf, lfCount]
+        // [carriers, vehicles, parcels, missed, totalKm, totalDurH, totalCost, sumLf, lfCount,
+        //  nonExclParcels, nonExclCost]
 
         // Collect per-vehicle rows grouped by provider
         // Each vehicle row: {carrier, vid, vtype, parcels, stops, distKm, durH, cap, loadFactor, fixCost, missed}
@@ -1447,7 +1533,7 @@ public class DashboardGenerator {
 
         for (ParsedCarrier c : delivery) {
             String p = c.provider().isEmpty() ? "other" : c.provider();
-            stats.computeIfAbsent(p, k -> new double[9]);
+            stats.computeIfAbsent(p, k -> new double[11]);
             vehByProv.computeIfAbsent(p, k -> new ArrayList<>());
             double[] row = stats.get(p);
             row[0]++;
@@ -1492,6 +1578,7 @@ public class DashboardGenerator {
                 if (parcels > 0) {
                     row[7] += Math.min(1.0, (double) parcels / cap);
                     row[8]++;
+                    row[9] += parcels; // non-excluded parcels
                 }
                 double fixCost = lookupFixedCost(c, t.vehicleId());
                 double cpk = lookupCostPerKm(c, t.vehicleId());
@@ -1513,6 +1600,21 @@ public class DashboardGenerator {
             double carrierCost = c.costDistance() + c.costTime() + c.costOvertime();
             for (ParsedTour t : c.tours()) carrierCost += lookupFixedCost(c, t.vehicleId());
             row[6] += carrierCost;
+
+            // Non-excluded cost: carrier variable cost proportionally allocated
+            // to non-excluded tours only, plus their fixed costs
+            int totalTours = c.tours().size();
+            int nonExclTours = (int) c.tours().stream()
+                    .filter(t -> !excludedLowUtilVehicles.contains(t.eventVehicleId())).count();
+            double carrierVarCost = c.costDistance() + c.costTime() + c.costOvertime();
+            double nonExclVarCost = totalTours > 0 ? carrierVarCost * nonExclTours / totalTours : 0;
+            double nonExclFixCost = 0;
+            for (ParsedTour t : c.tours()) {
+                if (!excludedLowUtilVehicles.contains(t.eventVehicleId())) {
+                    nonExclFixCost += lookupFixedCost(c, t.vehicleId());
+                }
+            }
+            row[10] += nonExclVarCost + nonExclFixCost;
         }
 
         StringBuilder sb = new StringBuilder("[");
@@ -1522,10 +1624,10 @@ public class DashboardGenerator {
             first = false;
             double[] r = e.getValue();
             double avgLf = r[8] > 0 ? r[7] / r[8] * 100 : 0;
-            double successRate = r[2] > 0 ? (r[2] - r[3]) / r[2] * 100 : 100;
-            double avgPpv = r[1] > 0 ? r[2] / r[1] : 0;
+            double successRate = r[9] > 0 ? (r[9] - r[3]) / r[9] * 100 : 100;
+            double avgPpv = r[1] > 0 ? r[9] / r[1] : 0;
             double avgKmPv = r[1] > 0 ? r[4] / r[1] : 0;
-            double costPerParcel = r[2] > 0 ? r[6] / r[2] : 0;
+            double costPerParcel = r[9] > 0 ? r[10] / r[9] : 0;
 
             // Build vehicle detail array
             List<String> vehs = vehByProv.getOrDefault(e.getKey(), List.of());
@@ -1535,7 +1637,7 @@ public class DashboardGenerator {
                 "{\"provider\":\"%s\",\"carriers\":%.0f,\"vehicles\":%.0f,\"parcels\":%.0f,\"missed\":%.0f," +
                 "\"successRate\":%.1f,\"distKm\":%.0f,\"durH\":%.1f,\"cost\":%.0f,\"avgLoadFactor\":%.1f," +
                 "\"avgParcelsPerVeh\":%.0f,\"avgKmPerVeh\":%.1f,\"costPerParcel\":%.2f,\"vehDetails\":%s}",
-                escJson(e.getKey()), r[0], r[1], r[2], r[3], successRate, r[4], r[5], r[6], avgLf,
+                escJson(e.getKey()), r[0], r[1], r[9], r[3], successRate, r[4], r[5], r[10], avgLf,
                 avgPpv, avgKmPv, costPerParcel, vehJson));
         }
         sb.append("]");
@@ -1605,7 +1707,12 @@ public class DashboardGenerator {
                 row[6] += stemKm;
                 row[7] += 1; // count
                 // Real cost per tour: share of carrier's dist+time+overtime cost + vehicle fixed cost
-                double carrierShareCost = (c.costDistance() + c.costTime() + c.costOvertime()) / Math.max(1, c.tours().size());
+                // Divide carrier variable cost by non-excluded tour count (not total)
+                // so that cost allocated to included tours is not diluted by excluded ones.
+                long nonExclCount = c.tours().stream()
+                        .filter(tt -> !excludedLowUtilVehicles.contains(tt.eventVehicleId())
+                                && countTourParcels(c, tt) > 0).count();
+                double carrierShareCost = (c.costDistance() + c.costTime() + c.costOvertime()) / Math.max(1, nonExclCount);
                 double vehicleFixCost = lookupFixedCost(c, t.vehicleId());
                 row[8] += carrierShareCost + vehicleFixCost;
                 row[9] += cap;
@@ -1670,6 +1777,20 @@ public class DashboardGenerator {
         if (lower.contains("light_van") || lower.contains("supply_light")) return 80;
         if (lower.contains("supply"))  return 350;
         return 230; // default CEP van
+    }
+
+    /** Count the number of parcels on a tour by summing service capacity demands. */
+    private int countTourParcels(ParsedCarrier carrier, ParsedTour tour) {
+        Map<String, ParsedService> svcMap = new HashMap<>();
+        for (ParsedService s : carrier.services()) svcMap.put(s.serviceId(), s);
+        int parcels = 0;
+        for (TourAct a : tour.acts()) {
+            if ("service".equals(a.type()) && a.serviceId() != null) {
+                ParsedService svc = svcMap.get(a.serviceId());
+                parcels += svc != null ? svc.capacityDemand() : 1;
+            }
+        }
+        return parcels;
     }
 
     /** Look up actual vehicle capacity from vehicle types data. Falls back to heuristic. */
