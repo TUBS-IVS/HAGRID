@@ -1729,20 +1729,115 @@ public class DashboardGenerator {
     }
 
     /**
-     * Returns an HTML snippet shown at the bottom of the dashboard when
+     * Returns an HTML section shown at the bottom of the dashboard when
      * vehicles have been excluded due to low utilisation.
+     * Lists every excluded vehicle with carrier, type, parcels, capacity,
+     * load factor, distance, and duration so that the exclusion is transparent.
      * Returns an empty string when no vehicles were excluded.
      */
     private String buildLowUtilNoticeHtml() {
         if (excludedLowUtilVehicles.isEmpty()) return "";
-        return String.format(Locale.US,
-            "<div style=\"margin:18px 22px;padding:14px 18px;background:rgba(251,191,36,.12);"
-            + "border:1px solid rgba(251,191,36,.35);border-radius:10px;color:#fbbf24;"
-            + "font-size:.85rem;line-height:1.5\">"
-            + "<strong>&#9888; Low-utilisation filter:</strong> "
-            + "%d vehicle(s) with a load factor below %.0f&thinsp;%% were excluded from this analysis."
+
+        // Collect detail rows for every excluded vehicle
+        // Each row: carrier, provider, vehicleId, vehicleType, parcels, capacity, loadFactor%, distKm, durH
+        List<String> rows = new ArrayList<>();
+        for (ParsedCarrier c : carriers) {
+            if (c.isSupply()) continue;
+            Map<String, ParsedService> svcMap = new HashMap<>();
+            for (ParsedService s : c.services()) svcMap.put(s.serviceId(), s);
+
+            for (ParsedTour t : c.tours()) {
+                String evtId = t.eventVehicleId();
+                if (!excludedLowUtilVehicles.contains(evtId)) continue;
+
+                int parcels = 0;
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        ParsedService sv = svcMap.get(a.serviceId());
+                        parcels += sv != null ? sv.capacityDemand() : 1;
+                    }
+                }
+                int cap = lookupCapacity(c, t.vehicleId());
+                double lf = cap > 0 ? Math.min(100.0, (double) parcels / cap * 100) : 0;
+                double distKm = evtTourKm.getOrDefault(evtId, 0.0);
+                double depSec = evtDepSec.getOrDefault(evtId, 0.0);
+                double arrSec = evtArrSec.getOrDefault(evtId, 0.0);
+                double durH = arrSec > depSec ? (arrSec - depSec) / 3600.0 : 0;
+                int stops = evtStopCount.getOrDefault(evtId, 0);
+                String vType = c.vehicleTypeMap() != null
+                        ? c.vehicleTypeMap().getOrDefault(t.vehicleId(), "?") : "?";
+
+                rows.add(String.format(Locale.US,
+                    "<tr style=\"border-bottom:1px solid rgba(148,163,184,.06)\">"
+                    + "<td style=\"padding:4px 8px;color:var(--dim);font-size:.7rem;white-space:nowrap\">%s</td>"
+                    + "<td style=\"padding:4px 8px;font-weight:600;color:%s\">%s</td>"
+                    + "<td style=\"padding:4px 8px;white-space:nowrap\">%s</td>"
+                    + "<td style=\"padding:4px 8px;color:var(--dim)\">%s</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right\">%d</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right\">%d</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right\">%d</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right;color:#f87171;font-weight:700\">%.1f</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right\">%.1f</td>"
+                    + "<td style=\"padding:4px 8px;text-align:right\">%.2f</td>"
+                    + "</tr>",
+                    escHtml(c.carrierId()),
+                    providerColor(c.provider()),
+                    escHtml(c.provider().isEmpty() ? "other" : c.provider()),
+                    escHtml(t.vehicleId()),
+                    escHtml(vType.replace("ct_", "")),
+                    parcels, cap, stops, lf, distKm, durH));
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        // Section title
+        sb.append("<div class=\"stit\">Excluded Low-Utilisation Vehicles</div>");
+        // Info box
+        sb.append(String.format(Locale.US,
+            "<div style=\"margin:0 22px 10px;padding:14px 18px;background:rgba(251,191,36,.10);"
+            + "border:1px solid rgba(251,191,36,.30);border-radius:10px;color:#fbbf24;"
+            + "font-size:.82rem;line-height:1.6\">"
+            + "<strong>&#9888; Low-utilisation filter (threshold: &lt;&thinsp;%.0f&thinsp;%%):</strong> "
+            + "%d vehicle(s) were excluded from all efficiency KPIs, charts, and the Provider Summary above. "
+            + "These vehicles carried too few parcels relative to their capacity and would distort "
+            + "the fleet-level utilisation and cost-efficiency metrics. "
+            + "They are listed below for full transparency."
             + "</div>",
-            excludedLowUtilVehicles.size(), lowUtilThreshold * 100);
+            lowUtilThreshold * 100, excludedLowUtilVehicles.size()));
+        // Table
+        sb.append("<div style=\"padding:0 22px 18px\"><div class=\"cc\" style=\"padding:0;overflow:hidden\">");
+        sb.append("<table class=\"rtbl\" style=\"width:100%%;border-collapse:collapse;font-size:.76rem\">");
+        sb.append("<thead><tr style=\"border-bottom:2px solid rgba(148,163,184,.15)\">"
+            + "<th style=\"padding:6px 8px;text-align:left\">Carrier</th>"
+            + "<th style=\"padding:6px 8px;text-align:left\">Provider</th>"
+            + "<th style=\"padding:6px 8px;text-align:left\">Vehicle ID</th>"
+            + "<th style=\"padding:6px 8px;text-align:left\">Type</th>"
+            + "<th style=\"padding:6px 8px;text-align:right\">Parcels</th>"
+            + "<th style=\"padding:6px 8px;text-align:right\">Capacity</th>"
+            + "<th style=\"padding:6px 8px;text-align:right\">Stops</th>"
+            + "<th style=\"padding:6px 8px;text-align:right;color:#f87171;font-weight:700\">Load&thinsp;%%</th>"
+            + "<th style=\"padding:6px 8px;text-align:right\">Dist&thinsp;(km)</th>"
+            + "<th style=\"padding:6px 8px;text-align:right\">Dur&thinsp;(h)</th>"
+            + "</tr></thead><tbody>");
+        for (String row : rows) sb.append(row);
+        sb.append("</tbody></table></div></div>");
+
+        return sb.toString();
+    }
+
+    /** Return a CSS colour string for a provider name (consistent with PROV_COLORS in JS). */
+    private static String providerColor(String provider) {
+        if (provider == null || provider.isEmpty()) return "#6b7280";
+        return switch (provider.toLowerCase(Locale.ROOT)) {
+            case "dhl"     -> "#ffcc00";
+            case "hermes"  -> "#3b82f6";
+            case "dpd"     -> "#ef4444";
+            case "ups"     -> "#7c3a12";
+            case "gls"     -> "#10b981";
+            case "fedex"   -> "#8b5cf6";
+            case "amazon"  -> "#f59e0b";
+            default        -> "#6b7280";
+        };
     }
 
     // ====================================================================
