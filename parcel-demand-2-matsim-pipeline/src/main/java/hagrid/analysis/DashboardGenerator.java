@@ -3071,22 +3071,22 @@ rebuildMap();
   var tPphCls=tPph>=20?'good':tPph>=10?'mid':'bad';
   var tLfCls=tAvgLoadPct>=70?'good':tAvgLoadPct>=40?'mid':'bad';
   tb.innerHTML+='<tr style="font-weight:700;border-top:2px solid var(--accent)"><td>TOTAL</td>'+
-    '<td class="num" data-tip="Sum of all provider tours">'+fm(tTours)+'</td>'+
-    '<td class="num" data-tip="Weighted avg: \u03A3(avgStops \u00D7 tours) / \u03A3(tours) = '+tStops.toFixed(0)+' / '+tTours+' = '+tAvgStops.toFixed(1)+'">'+tAvgStops.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="Weighted avg: \u03A3(avgKm \u00D7 tours) / \u03A3(tours) = '+tKm.toFixed(0)+' km / '+tTours+' = '+tAvgKm.toFixed(1)+' km">'+tAvgKm.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="Weighted avg: \u03A3(avgDur \u00D7 tours) / \u03A3(tours) = '+tDurH.toFixed(1)+'h / '+tTours+' = '+tAvgDurH.toFixed(2)+'h">'+tAvgDurH.toFixed(2)+'</td>'+
-    '<td class="num '+tSpCls+'" data-tip="\u03A3(stops) / \u03A3(tour duration) = '+tStops.toFixed(0)+' / '+tDurH.toFixed(1)+'h = '+tStopsPerHour.toFixed(1)+'">'+tStopsPerHour.toFixed(1)+'</td>'+
-    '<td class="num '+tSkmCls+'" data-tip="\u03A3(stops) / \u03A3(km) = '+tStops.toFixed(0)+' / '+tKm.toFixed(0)+'km = '+tStopsKm.toFixed(2)+'">'+tStopsKm.toFixed(2)+'</td>'+
-    '<td class="num '+tPpkCls+'" data-tip="\u03A3(parcels) / \u03A3(km) = '+tParcels.toFixed(0)+' / '+tKm.toFixed(0)+'km = '+tParcelsPerKm.toFixed(2)+'">'+tParcelsPerKm.toFixed(2)+'</td>'+
-    '<td class="num '+tPphCls+'" data-tip="\u03A3(parcels) / \u03A3(tour duration) = '+tParcels.toFixed(0)+' / '+tDurH.toFixed(1)+'h = '+tPph.toFixed(1)+'">'+tPph.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(km) / \u03A3(parcels) = '+tKm.toFixed(0)+'km / '+tParcels.toFixed(0)+' = '+tKmPerParcel.toFixed(2)+'">'+tKmPerParcel.toFixed(2)+'</td>'+
-    '<td class="num" data-tip="\u03A3(km) / \u03A3(travel hours) = '+tKm.toFixed(0)+'km / '+tTravelH.toFixed(1)+'h = '+tSpd.toFixed(1)+' km/h">'+tSpd.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(travel hours) / \u03A3(tour duration) \u00D7 100 = '+tTravelH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tTravelPct.toFixed(1)+'%%">'+tTravelPct.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(service hours) / \u03A3(tour duration) \u00D7 100 = '+tSvcH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tSvcPct.toFixed(1)+'%%">'+tSvcPct.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(stem km) / \u03A3(km) \u00D7 100 = '+tStemKm.toFixed(1)+'km / '+tKm.toFixed(0)+'km = '+tStemPct.toFixed(1)+'%%">'+tStemPct.toFixed(1)+'</td>'+
-    '<td class="num '+tLfCls+'" data-tip="\u03A3(parcels) / \u03A3(capacity) \u00D7 100 = '+tParcels.toFixed(0)+' / '+tCap.toFixed(0)+' = '+tAvgLoadPct.toFixed(1)+'%%">'+tAvgLoadPct.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(cost) / \u03A3(tours) = '+tCost.toFixed(0)+'\u20AC / '+tTours+' = '+tAvgCostPerTour.toFixed(1)+'\u20AC">'+tAvgCostPerTour.toFixed(1)+'</td>'+
-    '<td class="num" data-tip="\u03A3(cost) / \u03A3(parcels) = '+tCost.toFixed(0)+'\u20AC / '+tParcels.toFixed(0)+' = '+tCostPerParcel.toFixed(2)+'\u20AC">'+tCostPerParcel.toFixed(2)+'</td></tr>';
+    '<td class="num" title="Sum of all provider tours">'+fm(tTours)+'</td>'+
+    '<td class="num" title="Weighted avg: \u03A3(avgStops \u00D7 tours) / \u03A3(tours) = '+tStops.toFixed(0)+' / '+tTours+' = '+tAvgStops.toFixed(1)+'">'+tAvgStops.toFixed(1)+'</td>'+
+    '<td class="num" title="Weighted avg: \u03A3(avgKm \u00D7 tours) / \u03A3(tours) = '+tKm.toFixed(0)+' km / '+tTours+' = '+tAvgKm.toFixed(1)+' km">'+tAvgKm.toFixed(1)+'</td>'+
+    '<td class="num" title="Weighted avg: \u03A3(avgDur \u00D7 tours) / \u03A3(tours) = '+tDurH.toFixed(1)+'h / '+tTours+' = '+tAvgDurH.toFixed(2)+'h">'+tAvgDurH.toFixed(2)+'</td>'+
+    '<td class="num '+tSpCls+'" title="\u03A3(stops) / \u03A3(tour duration) = '+tStops.toFixed(0)+' / '+tDurH.toFixed(1)+'h = '+tStopsPerHour.toFixed(1)+'">'+tStopsPerHour.toFixed(1)+'</td>'+
+    '<td class="num '+tSkmCls+'" title="\u03A3(stops) / \u03A3(km) = '+tStops.toFixed(0)+' / '+tKm.toFixed(0)+'km = '+tStopsKm.toFixed(2)+'">'+tStopsKm.toFixed(2)+'</td>'+
+    '<td class="num '+tPpkCls+'" title="\u03A3(parcels) / \u03A3(km) = '+tParcels.toFixed(0)+' / '+tKm.toFixed(0)+'km = '+tParcelsPerKm.toFixed(2)+'">'+tParcelsPerKm.toFixed(2)+'</td>'+
+    '<td class="num '+tPphCls+'" title="\u03A3(parcels) / \u03A3(tour duration) = '+tParcels.toFixed(0)+' / '+tDurH.toFixed(1)+'h = '+tPph.toFixed(1)+'">'+tPph.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(km) / \u03A3(parcels) = '+tKm.toFixed(0)+'km / '+tParcels.toFixed(0)+' = '+tKmPerParcel.toFixed(2)+'">'+tKmPerParcel.toFixed(2)+'</td>'+
+    '<td class="num" title="\u03A3(km) / \u03A3(travel hours) = '+tKm.toFixed(0)+'km / '+tTravelH.toFixed(1)+'h = '+tSpd.toFixed(1)+' km/h">'+tSpd.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(travel hours) / \u03A3(tour duration) \u00D7 100 = '+tTravelH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tTravelPct.toFixed(1)+'%%">'+tTravelPct.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(service hours) / \u03A3(tour duration) \u00D7 100 = '+tSvcH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tSvcPct.toFixed(1)+'%%">'+tSvcPct.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(stem km) / \u03A3(km) \u00D7 100 = '+tStemKm.toFixed(1)+'km / '+tKm.toFixed(0)+'km = '+tStemPct.toFixed(1)+'%%">'+tStemPct.toFixed(1)+'</td>'+
+    '<td class="num '+tLfCls+'" title="\u03A3(parcels) / \u03A3(capacity) \u00D7 100 = '+tParcels.toFixed(0)+' / '+tCap.toFixed(0)+' = '+tAvgLoadPct.toFixed(1)+'%%">'+tAvgLoadPct.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(cost) / \u03A3(tours) = '+tCost.toFixed(0)+'\u20AC / '+tTours+' = '+tAvgCostPerTour.toFixed(1)+'\u20AC">'+tAvgCostPerTour.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(cost) / \u03A3(parcels) = '+tCost.toFixed(0)+'\u20AC / '+tParcels.toFixed(0)+' = '+tCostPerParcel.toFixed(2)+'\u20AC">'+tCostPerParcel.toFixed(2)+'</td></tr>';
 })();
 
 // === SUMMARY TABLE ===
@@ -3160,21 +3160,21 @@ rebuildMap();
     // TOTAL row
     var ts=totals;var sp=ts.parcels>0?100*(ts.parcels-ts.missed)/ts.parcels:100;
     html+='<tr style="font-weight:700;border-top:2px solid var(--accent)"><td></td><td>TOTAL</td>'+
-      '<td class="num" data-tip="Sum of all provider carriers">'+fm(ts.carriers)+'</td>'+
-      '<td class="num" data-tip="Sum of all provider vehicles (tours)">'+fm(ts.vehicles)+'</td>'+
-      '<td class="num" data-tip="Sum of all provider parcels">'+fm(ts.parcels)+'</td>'+
-      '<td class="num" data-tip="Sum of all missed parcels">'+fm(ts.missed)+'</td>'+
-      '<td class="num" data-tip="(Parcels \u2212 Missed) / Parcels \u00D7 100 = ('+ts.parcels+' \u2212 '+ts.missed+') / '+ts.parcels+' = '+sp.toFixed(1)+'%%">'+sp.toFixed(1)+'</td>'+
-      '<td class="num" data-tip="Sum of all provider distances">'+fm(Math.round(ts.distKm))+'</td>'+
-      '<td class="num" data-tip="Sum of all tour durations (depot departure to return)">'+ts.tourDurH.toFixed(1)+'</td>'+
-      '<td class="num" data-tip="Sum of all driving hours (excl. service time)">'+ts.drivingH.toFixed(1)+'</td>'+
-      '<td class="num" data-tip="Sum of all provider costs (dist + time + overtime + fixed)">'+fm(Math.round(ts.cost))+'</td>'+
-      '<td class="num" data-tip="Not applicable for total (per-provider weighted avg)">-</td>'+
-      '<td class="num" data-tip="Total Parcels / Total Vehicles = '+ts.parcels+' / '+ts.vehicles+' = '+(ts.vehicles>0?Math.round(ts.parcels/ts.vehicles):'-')+'">'+
+      '<td class="num" title="Sum of all provider carriers">'+fm(ts.carriers)+'</td>'+
+      '<td class="num" title="Sum of all provider vehicles (tours)">'+fm(ts.vehicles)+'</td>'+
+      '<td class="num" title="Sum of all provider parcels">'+fm(ts.parcels)+'</td>'+
+      '<td class="num" title="Sum of all missed parcels">'+fm(ts.missed)+'</td>'+
+      '<td class="num" title="(Parcels \u2212 Missed) / Parcels \u00D7 100 = ('+ts.parcels+' \u2212 '+ts.missed+') / '+ts.parcels+' = '+sp.toFixed(1)+'%%">'+sp.toFixed(1)+'</td>'+
+      '<td class="num" title="Sum of all provider distances">'+fm(Math.round(ts.distKm))+'</td>'+
+      '<td class="num" title="Sum of all tour durations (depot departure to return)">'+ts.tourDurH.toFixed(1)+'</td>'+
+      '<td class="num" title="Sum of all driving hours (excl. service time)">'+ts.drivingH.toFixed(1)+'</td>'+
+      '<td class="num" title="Sum of all provider costs (dist + time + overtime + fixed)">'+fm(Math.round(ts.cost))+'</td>'+
+      '<td class="num" title="Not applicable for total (per-provider weighted avg)">-</td>'+
+      '<td class="num" title="Total Parcels / Total Vehicles = '+ts.parcels+' / '+ts.vehicles+' = '+(ts.vehicles>0?Math.round(ts.parcels/ts.vehicles):'-')+'">'+
       (ts.vehicles>0?fm(Math.round(ts.parcels/ts.vehicles)):'-')+'</td>'+
-      '<td class="num" data-tip="Total Dist / Total Vehicles = '+Math.round(ts.distKm)+'km / '+ts.vehicles+' = '+(ts.vehicles>0?(ts.distKm/ts.vehicles).toFixed(1):'-')+'km">'+
+      '<td class="num" title="Total Dist / Total Vehicles = '+Math.round(ts.distKm)+'km / '+ts.vehicles+' = '+(ts.vehicles>0?(ts.distKm/ts.vehicles).toFixed(1):'-')+'km">'+
       (ts.vehicles>0?(ts.distKm/ts.vehicles).toFixed(1):'-')+'</td>'+
-      '<td class="num" data-tip="Total Cost / Total Parcels = '+Math.round(ts.cost)+'\u20AC / '+ts.parcels+' = '+(ts.parcels>0?(ts.cost/ts.parcels).toFixed(2):'-')+'\u20AC">'+
+      '<td class="num" title="Total Cost / Total Parcels = '+Math.round(ts.cost)+'\u20AC / '+ts.parcels+' = '+(ts.parcels>0?(ts.cost/ts.parcels).toFixed(2):'-')+'\u20AC">'+
       (ts.parcels>0?(ts.cost/ts.parcels).toFixed(2):'-')+'</td></tr>';
     tb.innerHTML=html;
     // re-attach click listeners
