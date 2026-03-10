@@ -169,9 +169,8 @@ public class DashboardGenerator {
                         parcels += svc != null ? svc.capacityDemand() : 1;
                     }
                 }
-                if (parcels == 0) continue;
                 int cap = lookupCapacity(c, t.vehicleId());
-                double lf = Math.min(1.0, (double) parcels / cap);
+                double lf = (parcels == 0 || cap <= 0) ? 0.0 : Math.min(1.0, (double) parcels / cap);
                 if (lf < lowUtilThreshold) {
                     excluded.add(t.eventVehicleId());
                 }
@@ -312,12 +311,14 @@ public class DashboardGenerator {
         // Event-based totals: distance + travel time from actual simulation events
         double totalDistanceKm = 0;
         double totalTravelTSec = 0;
+        double totalTourDurSec = 0;
         for (String vid : deliveryEventVehIds) {
             totalDistanceKm += evtTourKm.getOrDefault(vid, 0.0);
             double dep = evtDepSec.getOrDefault(vid, 0.0);
             double arr = evtArrSec.getOrDefault(vid, 0.0);
             double svc = evtSvcDurSec.getOrDefault(vid, 0.0);
             double tourDur = arr > dep ? arr - dep : 0;
+            totalTourDurSec += tourDur;
             double travelSec = tourDur - svc;
             if (travelSec > 0) totalTravelTSec += travelSec;
         }
@@ -343,8 +344,15 @@ public class DashboardGenerator {
         }
         int parcelBase = totalParcels > 0 ? totalParcels : totalServices;
 
-        // Additional KPIs
-        int totalMissed = delivery.stream().mapToInt(ParsedCarrier::numMissed).sum();
+        // Additional KPIs — proportionally allocate missed parcels to non-excluded tours
+        int totalMissed = 0;
+        for (ParsedCarrier c : delivery) {
+            int allTours = c.tours().size();
+            int nonExcl = (int) c.tours().stream()
+                    .filter(t -> !excludedLowUtilVehicles.contains(t.eventVehicleId())).count();
+            double ratio = allTours > 0 ? (double) nonExcl / allTours : 1.0;
+            totalMissed += (int) Math.round(c.numMissed() * ratio);
+        }
         double successRate = parcelBase > 0 ? 100.0 * (parcelBase - totalMissed) / parcelBase : 100.0;
         double avgTourLengthKm = totalDeliveryVehicles > 0 ? totalDistanceKm / totalDeliveryVehicles : 0;
         double avgSpeedKmh = totalTravelTSec > 0 ? totalDistanceKm / (totalTravelTSec / 3600.0) : 0;
@@ -366,7 +374,8 @@ public class DashboardGenerator {
                   "vanCount":%d,"bikeCount":%d,"truckCount":%d,
                   "deliveryVehicleCount":%d,"avgLoadFactor":%.3f,
                   "eventsProcessed":%d,
-                  "totalCost":%.0f,"totalDistanceKm":%.1f,"totalTravelTimeH":%.1f,
+                  "totalCost":%.0f,"totalDistanceKm":%.1f,"totalDrivingTimeH":%.1f,
+                  "totalTourDurationH":%.1f,
                   "totalMissed":%d,"successRate":%.1f,"avgTourLengthKm":%.1f,
                   "numVehicleTypes":%d,"avgSpeedKmh":%.1f
                 }""",
@@ -377,6 +386,7 @@ public class DashboardGenerator {
                 totalDeliveryVehicles, avgLoadFactor,
                 eventHandler.getTotalEventsProcessed(),
                 totalCost, totalDistanceKm, totalTravelTSec / 3600.0,
+                totalTourDurSec / 3600.0,
                 totalMissed, successRate, avgTourLengthKm,
                 numVehicleTypes, avgSpeedKmh
         );
@@ -1524,8 +1534,8 @@ public class DashboardGenerator {
     private String buildSummaryTableJson() {
         List<ParsedCarrier> delivery = carriers.stream().filter(ParsedCarrier::isDelivery).toList();
         Map<String, double[]> stats = new LinkedHashMap<>();
-        // [carriers, vehicles, parcels, missed, totalKm, totalDurH, totalCost, sumLf, lfCount,
-        //  nonExclParcels, nonExclCost]
+        // [carriers, vehicles, parcels, missed, totalKm, totalDrivingH, totalCost, sumLf, lfCount,
+        //  nonExclParcels, nonExclCost, totalTourDurH]
 
         // Collect per-vehicle rows grouped by provider
         // Each vehicle row: {carrier, vid, vtype, parcels, stops, distKm, durH, cap, loadFactor, fixCost, missed}
@@ -1533,14 +1543,19 @@ public class DashboardGenerator {
 
         for (ParsedCarrier c : delivery) {
             String p = c.provider().isEmpty() ? "other" : c.provider();
-            stats.computeIfAbsent(p, k -> new double[11]);
+            stats.computeIfAbsent(p, k -> new double[12]);
             vehByProv.computeIfAbsent(p, k -> new ArrayList<>());
             double[] row = stats.get(p);
             row[0]++;
-            // row[1] (vehicle count) is incremented per non-excluded tour below
+            // row[1] (vehicle count) is incremented per non-excluded tour with parcels > 0 below
             int carrierParcels = c.numberOfParcels() > 0 ? c.numberOfParcels() : c.numServices();
             row[2] += carrierParcels;
-            row[3] += c.numMissed();
+            // Proportionally allocate missed parcels to non-excluded tours (consistent with KPI)
+            int allTours = c.tours().size();
+            int nonExclToursCnt = (int) c.tours().stream()
+                    .filter(t -> !excludedLowUtilVehicles.contains(t.eventVehicleId())).count();
+            double missedRatio = allTours > 0 ? (double) nonExclToursCnt / allTours : 1.0;
+            row[3] += (int) Math.round(c.numMissed() * missedRatio);
 
             // Build service map for parcel counting
             Map<String, ParsedService> svcMap = new HashMap<>();
@@ -1554,7 +1569,7 @@ public class DashboardGenerator {
             for (ParsedTour t : c.tours()) {
                 String vid = t.eventVehicleId();
                 if (excludedLowUtilVehicles.contains(vid)) continue;
-                row[1]++; // count only non-excluded vehicles
+                // row[1] incremented below only if parcels > 0 (consistent with KPI deliveryVehicleCount)
                 double distKm = evtTourKm.getOrDefault(vid, 0.0);
                 row[4] += distKm;
                 double dep = evtDepSec.getOrDefault(vid, 0.0);
@@ -1563,6 +1578,7 @@ public class DashboardGenerator {
                 double tourDur = arr > dep ? arr - dep : 0;
                 double travelH = Math.max(0, tourDur - svc) / 3600.0;
                 row[5] += travelH;
+                row[11] += tourDur / 3600.0;
 
                 // Per-vehicle: parcels, stops, load factor
                 int stops = evtStopCount.getOrDefault(vid, 0);
@@ -1576,6 +1592,7 @@ public class DashboardGenerator {
                 int cap = lookupCapacity(c, t.vehicleId());
                 double lf = cap > 0 ? Math.min(100.0, (double) parcels / cap * 100) : 0;
                 if (parcels > 0) {
+                    row[1]++; // count only non-excluded vehicles with parcels (consistent with KPI)
                     row[7] += Math.min(1.0, (double) parcels / cap);
                     row[8]++;
                     row[9] += parcels; // non-excluded parcels
@@ -1635,9 +1652,9 @@ public class DashboardGenerator {
 
             sb.append(String.format(Locale.US,
                 "{\"provider\":\"%s\",\"carriers\":%.0f,\"vehicles\":%.0f,\"parcels\":%.0f,\"missed\":%.0f," +
-                "\"successRate\":%.1f,\"distKm\":%.0f,\"durH\":%.1f,\"cost\":%.0f,\"avgLoadFactor\":%.1f," +
+                "\"successRate\":%.1f,\"distKm\":%.0f,\"drivingH\":%.1f,\"tourDurH\":%.1f,\"cost\":%.0f,\"avgLoadFactor\":%.1f," +
                 "\"avgParcelsPerVeh\":%.0f,\"avgKmPerVeh\":%.1f,\"costPerParcel\":%.2f,\"vehDetails\":%s}",
-                escJson(e.getKey()), r[0], r[1], r[9], r[3], successRate, r[4], r[5], r[10], avgLf,
+                escJson(e.getKey()), r[0], r[1], r[9], r[3], successRate, r[4], r[5], r[11], r[10], avgLf,
                 avgPpv, avgKmPv, costPerParcel, vehJson));
         }
         sb.append("]");
@@ -1919,10 +1936,16 @@ public class DashboardGenerator {
             + "border:1px solid rgba(251,191,36,.30);border-radius:10px;color:#fbbf24;"
             + "font-size:.82rem;line-height:1.6\">"
             + "<strong>&#9888; Low-utilisation filter (threshold: &lt;&thinsp;%.0f&thinsp;%%):</strong> "
-            + "%d vehicle(s) were excluded from all efficiency KPIs, charts, and the Provider Summary above. "
-            + "These vehicles carried too few parcels relative to their capacity and would distort "
-            + "the fleet-level utilisation and cost-efficiency metrics. "
-            + "They are listed below for full transparency."
+            + "%d vehicle(s) were excluded because their load factor (parcels&thinsp;/&thinsp;capacity) "
+            + "fell below the threshold. "
+            + "<br><br><b>Affected sections:</b> All KPI indicators at the top of this page "
+            + "(vehicle counts, parcels, stops, utilisation, costs, distances, delivery rate), "
+            + "Provider Summary table, Cost Analysis, VRP Routing Efficiency, "
+            + "Tour Structure histograms, Departure &amp; Service Timing charts, "
+            + "Active Vehicles timeline, Depot Trips, Vehicle Type breakdown, "
+            + "Utilisation by Provider, Utilisation by Type, and Carrier Scoring Explorer. "
+            + "<br><b>Not affected:</b> Tour map layers (all routes remain visible), "
+            + "Link Traffic heatmaps, Scoring Convergence, and the carrier/supply carrier counts."
             + "</div>",
             lowUtilThreshold * 100, excludedLowUtilVehicles.size()));
         // Table
@@ -1936,7 +1959,7 @@ public class DashboardGenerator {
             + "<th style=\"padding:6px 8px;text-align:right\">Parcels</th>"
             + "<th style=\"padding:6px 8px;text-align:right\">Capacity</th>"
             + "<th style=\"padding:6px 8px;text-align:right\">Stops</th>"
-            + "<th style=\"padding:6px 8px;text-align:right;color:#f87171;font-weight:700\">Load&thinsp;%%</th>"
+            + "<th style=\"padding:6px 8px;text-align:right;color:#f87171;font-weight:700\">Load&thinsp;%</th>"
             + "<th style=\"padding:6px 8px;text-align:right\">Dist&thinsp;(km)</th>"
             + "<th style=\"padding:6px 8px;text-align:right\">Dur&thinsp;(h)</th>"
             + "</tr></thead><tbody>");
@@ -2306,7 +2329,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div style="padding:6px 22px 12px;overflow-x:auto">
 <div class="cc" style="padding:0;overflow:hidden">
 <table class="rtbl" id="summaryTable">
-<thead><tr><th style="width:20px"></th><th title="Logistics service provider (CEP carrier group)">Provider</th><th class="num" title="Number of delivery carriers belonging to this provider">Carriers</th><th class="num" title="Total delivery vehicles (tours) operated by this provider">Vehicles</th><th class="num" title="Total parcel demand assigned to this provider (from carrier XML numberOfParcels)">Parcels</th><th class="num" title="Parcels where the recipient was not available (failed delivery attempt)">Missed</th><th class="num" title="Delivery Rate = (Parcels \u2212 Missed) / Parcels \u00D7 100. Share of parcels successfully delivered.">Delivery Rate %%</th><th class="num" title="Total distance driven by all delivery vehicles of this provider (km)">Dist (km)</th><th class="num" title="Total travel time of all delivery vehicles (hours, from MATSim events)">Dur (h)</th><th class="num" title="Total cost = distance cost + time cost + overtime penalty + vehicle fixed costs (from vehicle type fixedCostsPerDay)">Cost (\u20AC)</th><th class="num" title="Average vehicle utilisation = parcels / vehicle capacity, averaged across all tours">Utilisation %%</th><th class="num" title="Average parcels delivered per vehicle = Parcels / Vehicles">Parcels/Veh</th><th class="num" title="Average km driven per vehicle = Dist / Vehicles">km/Veh</th><th class="num" title="Cost efficiency = Total Cost / Parcels">\u20AC/Parcel</th></tr></thead>
+<thead><tr><th style="width:20px"></th><th title="Logistics service provider (CEP carrier group)">Provider</th><th class="num" title="Number of delivery carriers belonging to this provider">Carriers</th><th class="num" title="Total delivery vehicles (tours) operated by this provider">Vehicles</th><th class="num" title="Total parcel demand assigned to this provider (from carrier XML numberOfParcels)">Parcels</th><th class="num" title="Parcels where the recipient was not available (failed delivery attempt)">Missed</th><th class="num" title="Delivery Rate = (Parcels \u2212 Missed) / Parcels \u00D7 100. Share of parcels successfully delivered.">Delivery Rate %%</th><th class="num" title="Total distance driven by all delivery vehicles of this provider (km)">Dist (km)</th><th class="num" title="Total tour duration of all vehicles (depot departure to depot return, hours). Includes driving + service time at stops.">Tour (h)</th><th class="num" title="Pure driving time of all vehicles (hours). Excludes service time at delivery stops.">Drive (h)</th><th class="num" title="Total cost = distance cost + time cost + overtime penalty + vehicle fixed costs (from vehicle type fixedCostsPerDay)">Cost (\u20AC)</th><th class="num" title="Average vehicle utilisation = parcels / vehicle capacity, averaged across all tours">Utilisation %%</th><th class="num" title="Average parcels delivered per vehicle = Parcels / Vehicles">Parcels/Veh</th><th class="num" title="Average km driven per vehicle = Dist / Vehicles">km/Veh</th><th class="num" title="Cost efficiency = Total Cost / Parcels">\u20AC/Parcel</th></tr></thead>
 <tbody id="summaryBody"></tbody>
 </table>
 </div>
@@ -2592,7 +2615,7 @@ var showStopsOnTours=true;
     {v:KPI.vanCount,l:'CEP Vans',t:'Vehicles classified as CEP delivery vans (ct_cep_size_m, ct_cep_size_l)'},
     {v:KPI.bikeCount,l:'Cargobikes',t:'Vehicles classified as cargo bikes for last-mile delivery'},
     {v:KPI.truckCount,l:'Trucks/Supply',t:'Heavy trucks, light trucks, and supply vehicles'},
-    {v:KPI.totalParcels,l:'Total Parcels',t:'Total parcel demand across all delivery carriers (from carrier XML numberOfParcels)'},
+    {v:KPI.totalParcels,l:'Total Parcels',t:'Total parcel demand (sum of capacityDemand from all scheduled services of non-excluded delivery vehicles)'},
     {v:KPI.totalStops,l:'Total Stops',t:'Total service-start events observed in the MATSim event stream'},
     {v:KPI.deliveryVehicleCount,l:'Delivery Vehicles',t:'Vehicles in delivery carriers with at least one parcel assigned'},
     {v:KPI.numVehicleTypes,l:'Vehicle Types',t:'Distinct vehicle type IDs used across all delivery carriers'},
@@ -2602,7 +2625,8 @@ var showStopsOnTours=true;
     {v:KPI.avgSpeedKmh.toFixed(1)+' km/h',l:'Avg Speed',t:'Total km / total travel hours (excluding service time at stops)'},
     {v:'\\u20AC '+Math.round(KPI.totalCost).toLocaleString('en-US'),l:'Total Cost',t:'Sum of distance + time + fixed (per vehicle type) + overtime costs across all delivery carriers'},
     {v:Math.round(KPI.totalDistanceKm).toLocaleString('en-US')+' km',l:'Total Distance',t:'Sum of all delivery vehicle travel distances in km'},
-    {v:KPI.totalTravelTimeH.toFixed(0)+' h',l:'Total Travel',t:'Sum of all delivery vehicle travel time in hours'},
+    {v:KPI.totalTourDurationH.toFixed(0)+' h',l:'Tour Duration',t:'Sum of all delivery vehicle tour durations (depot departure to depot return, includes driving + service time)'},
+    {v:KPI.totalDrivingTimeH.toFixed(0)+' h',l:'Driving Time',t:'Sum of all delivery vehicle pure driving time (excludes service time at delivery stops)'},
     {v:KPI.eventsProcessed.toLocaleString('en-US'),l:'Events Processed',t:'Total MATSim events parsed (link leaves, activity starts/ends)'}
   ];
   items.forEach(function(it){var d=document.createElement('div');d.className='kpi'+(it.cls?' '+it.cls:'');if(it.t)d.title=it.t;d.innerHTML='<div class="v">'+fm(it.v)+'</div><div class="l">'+it.l+'</div>';s.appendChild(d)});
@@ -3010,6 +3034,55 @@ rebuildMap();
       '</td><td class="num">'+r.avgCostPerTour.toFixed(1)+
       '</td><td class="num">'+r.costPerParcel.toFixed(2)+'</td></tr>';
   });
+  // --- TOTAL row ---
+  var tTours=0,tStops=0,tKm=0,tDurH=0,tTravelH=0,tSvcH=0,tParcels=0,tStemKm=0,tCost=0,tCap=0;
+  ROUT_EFF.forEach(function(r){
+    tTours+=r.tours;
+    tStops+=r.avgStops*r.tours;
+    tKm+=r.avgKm*r.tours;
+    tDurH+=r.avgDurH*r.tours;
+    tTravelH+=r.avgTravelH*r.tours;
+    tSvcH+=r.avgSvcH*r.tours;
+    tParcels+=r.avgParcels*r.tours;
+    tStemKm+=(r.stemPct/100)*r.avgKm*r.tours;
+    tCost+=r.avgCostPerTour*r.tours;
+    tCap+=r.avgCap*r.tours;
+  });
+  var tAvgStops=tTours>0?tStops/tTours:0;
+  var tAvgKm=tTours>0?tKm/tTours:0;
+  var tAvgDurH=tTours>0?tDurH/tTours:0;
+  var tStopsPerHour=tDurH>0?tStops/tDurH:0;
+  var tStopsKm=tKm>0?tStops/tKm:0;
+  var tParcelsPerKm=tKm>0?tParcels/tKm:0;
+  var tPph=tDurH>0?tParcels/tDurH:0;
+  var tKmPerParcel=tParcels>0?tKm/tParcels:0;
+  var tSpd=tTravelH>0?tKm/tTravelH:0;
+  var tTravelPct=tDurH>0?tTravelH/tDurH*100:0;
+  var tSvcPct=tDurH>0?tSvcH/tDurH*100:0;
+  var tStemPct=tKm>0?tStemKm/tKm*100:0;
+  var tAvgLoadPct=tCap>0?tParcels/tCap*100:0;
+  var tAvgCostPerTour=tTours>0?tCost/tTours:0;
+  var tCostPerParcel=tParcels>0?tCost/tParcels:0;
+  var tSpCls=tStopsPerHour>=15?'good':tStopsPerHour>=8?'mid':'bad';
+  var tSkmCls=tStopsKm>=0.8?'good':tStopsKm>=0.3?'mid':'bad';
+  var tPpkCls=tParcelsPerKm>=1.5?'good':tParcelsPerKm>=0.5?'mid':'bad';
+  var tPphCls=tPph>=20?'good':tPph>=10?'mid':'bad';
+  var tLfCls=tAvgLoadPct>=70?'good':tAvgLoadPct>=40?'mid':'bad';
+  tb.innerHTML+='<tr style="font-weight:700;border-top:2px solid var(--accent)"><td>TOTAL</td>'+
+    '<td class="num">'+fm(tTours)+'</td><td class="num">'+tAvgStops.toFixed(1)+
+    '</td><td class="num">'+tAvgKm.toFixed(1)+'</td><td class="num">'+tAvgDurH.toFixed(2)+
+    '</td><td class="num '+tSpCls+'">'+tStopsPerHour.toFixed(1)+
+    '</td><td class="num '+tSkmCls+'">'+tStopsKm.toFixed(2)+
+    '</td><td class="num '+tPpkCls+'">'+tParcelsPerKm.toFixed(2)+
+    '</td><td class="num '+tPphCls+'">'+tPph.toFixed(1)+
+    '</td><td class="num">'+tKmPerParcel.toFixed(2)+
+    '</td><td class="num">'+tSpd.toFixed(1)+
+    '</td><td class="num">'+tTravelPct.toFixed(1)+
+    '</td><td class="num">'+tSvcPct.toFixed(1)+
+    '</td><td class="num">'+tStemPct.toFixed(1)+
+    '</td><td class="num '+tLfCls+'">'+tAvgLoadPct.toFixed(1)+
+    '</td><td class="num">'+tAvgCostPerTour.toFixed(1)+
+    '</td><td class="num">'+tCostPerParcel.toFixed(2)+'</td></tr>';
 })();
 
 // === SUMMARY TABLE ===
@@ -3017,9 +3090,9 @@ rebuildMap();
   var tb=document.getElementById('summaryBody');
   var fm=function(n){return typeof n==='number'?n.toLocaleString('en-US'):n};
   var fmtSec=function(s){var h=Math.floor(s/3600);var m=Math.floor((s%%3600)/60);return (h<10?'0':'')+h+':'+(m<10?'0':'')+m};
-  var totals={carriers:0,vehicles:0,parcels:0,missed:0,distKm:0,durH:0,cost:0};
+  var totals={carriers:0,vehicles:0,parcels:0,missed:0,distKm:0,tourDurH:0,drivingH:0,cost:0};
   var expanded={};
-  var NCOLS=14;
+  var NCOLS=15;
 
   function render(){
     var html='';
@@ -3033,7 +3106,7 @@ rebuildMap();
         '</td><td class="num">'+fm(r.carriers)+'</td><td class="num">'+fm(r.vehicles)+
         '</td><td class="num">'+fm(r.parcels)+'</td><td class="num">'+fm(r.missed)+
         '</td><td class="num '+cls+'">'+r.successRate.toFixed(1)+'</td><td class="num">'+fm(Math.round(r.distKm))+
-        '</td><td class="num">'+r.durH.toFixed(1)+'</td><td class="num">'+fm(Math.round(r.cost))+
+        '</td><td class="num">'+r.tourDurH.toFixed(1)+'</td><td class="num">'+r.drivingH.toFixed(1)+'</td><td class="num">'+fm(Math.round(r.cost))+
         '</td><td class="num '+lfCls+'">'+r.avgLoadFactor.toFixed(1)+'</td><td class="num">'+fm(Math.round(r.avgParcelsPerVeh))+
         '</td><td class="num">'+r.avgKmPerVeh.toFixed(1)+'</td><td class="num">'+r.costPerParcel.toFixed(2)+'</td></tr>';
       if(isExp&&r.vehDetails&&r.vehDetails.length>0){
@@ -3048,8 +3121,8 @@ rebuildMap();
         html+='<th style="text-align:right;padding:3px 6px">Stops</th>';
         html+='<th style="text-align:right;padding:3px 6px">Load %%</th>';
         html+='<th style="text-align:right;padding:3px 6px">Dist (km)</th>';
-        html+='<th style="text-align:right;padding:3px 6px">Dur (h)</th>';
-        html+='<th style="text-align:right;padding:3px 6px">Travel (h)</th>';
+        html+='<th style="text-align:right;padding:3px 6px">Tour (h)</th>';
+        html+='<th style="text-align:right;padding:3px 6px">Drive (h)</th>';
         html+='<th style="text-align:right;padding:3px 6px">Fix \u20AC</th>';
         html+='<th style="text-align:right;padding:3px 6px">\u20AC/km</th>';
         html+='<th style="text-align:right;padding:3px 6px">Del Rate %%</th>';
@@ -3084,8 +3157,8 @@ rebuildMap();
     var ts=totals;var sp=ts.parcels>0?100*(ts.parcels-ts.missed)/ts.parcels:100;
     html+='<tr style="font-weight:700;border-top:2px solid var(--accent)"><td></td><td>TOTAL</td><td class="num">'+fm(ts.carriers)+
       '</td><td class="num">'+fm(ts.vehicles)+'</td><td class="num">'+fm(ts.parcels)+'</td><td class="num">'+fm(ts.missed)+
-      '</td><td class="num">'+sp.toFixed(1)+'</td><td class="num">'+fm(Math.round(ts.distKm))+'</td><td class="num">'+ts.durH.toFixed(1)+
-      '</td><td class="num">'+fm(Math.round(ts.cost))+'</td><td class="num">-</td><td class="num">'+
+      '</td><td class="num">'+sp.toFixed(1)+'</td><td class="num">'+fm(Math.round(ts.distKm))+'</td><td class="num">'+ts.tourDurH.toFixed(1)+
+      '</td><td class="num">'+ts.drivingH.toFixed(1)+'</td><td class="num">'+fm(Math.round(ts.cost))+'</td><td class="num">-</td><td class="num">'+
       (ts.vehicles>0?fm(Math.round(ts.parcels/ts.vehicles)):'-')+'</td><td class="num">'+
       (ts.vehicles>0?(ts.distKm/ts.vehicles).toFixed(1):'-')+'</td><td class="num">'+
       (ts.parcels>0?(ts.cost/ts.parcels).toFixed(2):'-')+'</td></tr>';
@@ -3102,7 +3175,7 @@ rebuildMap();
   // compute totals once
   SUMMARY.forEach(function(r){
     totals.carriers+=r.carriers;totals.vehicles+=r.vehicles;totals.parcels+=r.parcels;totals.missed+=r.missed;
-    totals.distKm+=r.distKm;totals.durH+=r.durH;totals.cost+=r.cost;
+    totals.distKm+=r.distKm;totals.tourDurH+=r.tourDurH;totals.drivingH+=r.drivingH;totals.cost+=r.cost;
   });
   render();
 })();
