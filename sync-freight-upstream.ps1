@@ -60,7 +60,13 @@ if ($javaCount -lt 100) {
 
 Write-Host "Replacing freight/src ($javaCount .java files staged)..."
 Remove-Item -Recurse -Force freight\src
-Move-Item $StagingDir freight\src
+try {
+    Move-Item $StagingDir freight\src
+} catch {
+    # Restore staging dir to its original location so freight\src is not lost
+    if (Test-Path $StagingDir) { Move-Item $StagingDir freight\src }
+    throw "Failed to move staging dir to freight\src: $_"
+}
 
 # Remove non-Java files that sneak in from upstream
 $nonJavaFiles = @(
