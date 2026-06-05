@@ -8,7 +8,9 @@ param(
     [string]$Tag = "main"
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue" so native commands writing to stderr don't throw NativeCommandError.
+# Invoke-Git checks $LASTEXITCODE explicitly for git failures.
+$ErrorActionPreference = "Continue"
 $TempDir = "_matsim-sync-tmp"
 $StagingDir = "_freight-staging"
 
@@ -35,7 +37,7 @@ Invoke-Git clone --no-checkout --depth=1 --filter=blob:none --branch $Tag `
 # Run sparse-checkout inside the cloned repo; always restore location
 Push-Location $TempDir
 try {
-    Invoke-Git sparse-checkout set contribs/freight/src
+    Invoke-Git sparse-checkout set contribs/freight/src contribs/freight/test/input
     Invoke-Git checkout
 } finally {
     Pop-Location
@@ -47,7 +49,7 @@ if (-not (Test-Path "$TempDir\contribs\freight\src")) {
     throw "contribs/freight/src not found in upstream at tag '$Tag' - aborting"
 }
 
-# Copy to a staging directory first so that freight\src is never removed unless
+# Copy src to a staging directory first so that freight\src is never removed unless
 # the copy succeeds and contains a plausible number of Java files.
 if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
 Copy-Item -Recurse "$TempDir\contribs\freight\src" $StagingDir
@@ -68,6 +70,16 @@ try {
     throw "Failed to move staging dir to freight\src: $_"
 }
 
+# Sync test/input fixtures if present in upstream
+if (Test-Path "$TempDir\contribs\freight\test\input") {
+    Write-Host "Syncing test/input fixtures..."
+    if (Test-Path "freight\test\input") { Remove-Item -Recurse -Force "freight\test\input" }
+    if (-not (Test-Path "freight\test")) { New-Item -ItemType Directory "freight\test" | Out-Null }
+    Copy-Item -Recurse "$TempDir\contribs\freight\test\input" "freight\test\input"
+} else {
+    Write-Host "Note: no test/input directory found in upstream at tag '$Tag' - skipping."
+}
+
 # Remove non-Java files that sneak in from upstream
 $nonJavaFiles = @(
     "freight\src\test\java\org\matsim\freight\logistics\Doxyfile",
@@ -81,8 +93,17 @@ Remove-Item -Recurse -Force $TempDir
 
 Write-Host ""
 Write-Host "Sync complete. Changed files:"
-Invoke-Git status freight/src --short
+Invoke-Git status freight/src freight/test/input --short
 
 Write-Host ""
-Write-Host "Review changes: git diff freight/src"
-Write-Host "Commit when ready: git add freight/src && git commit -m 'sync: freight from matsim-libs $Tag'"
+Write-Host "IMPORTANT: HAGRID-specific API fixes in these files were overwritten by the sync:"
+Write-Host "  freight/src/main/java/org/matsim/freight/carriers/jsprit/NetworkBasedTransportCosts.java"
+Write-Host "  freight/src/main/java/org/matsim/freight/carriers/controller/CarrierTimeAndSpaceTourRouter.java"
+Write-Host "  freight/src/main/java/org/matsim/freight/carriers/usecases/chessboard/PassengerScenarioCreator.java"
+Write-Host "Restore them from git before committing:"
+Write-Host "  git restore freight/src/main/java/org/matsim/freight/carriers/jsprit/NetworkBasedTransportCosts.java"
+Write-Host "  git restore freight/src/main/java/org/matsim/freight/carriers/controller/CarrierTimeAndSpaceTourRouter.java"
+Write-Host "  git restore freight/src/main/java/org/matsim/freight/carriers/usecases/chessboard/PassengerScenarioCreator.java"
+Write-Host ""
+Write-Host "Review upstream changes: git diff freight/src freight/test/input"
+Write-Host "After restoring fixes, commit: git add freight/src freight/test/input && git commit -m 'sync: freight from matsim-libs $Tag'"
