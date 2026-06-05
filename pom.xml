@@ -46,10 +46,6 @@
       <snapshots><enabled>false</enabled></snapshots>
       <releases><enabled>true</enabled></releases>
     </repository>
-    <repository>
-      <id>pt2matsim</id>
-      <url>https://repo.matsim.org/repository/matsim/</url>
-    </repository>
   </repositories>
 
 </project>
