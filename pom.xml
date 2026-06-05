@@ -40,10 +40,6 @@
       <url>https://repo.matsim.org/repository/matsim</url>
     </repository>
     <repository>
-      <id>jsprit-releases</id>
-      <url>https://github.com/jsprit/mvn-rep/raw/master/releases</url>
-    </repository>
-    <repository>
       <id>osgeo</id>
       <name>OSGeo Release Repository</name>
       <url>https://repo.osgeo.org/repository/release/</url>
@@ -51,5 +47,15 @@
       <releases><enabled>true</enabled></releases>
     </repository>
   </repositories>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>jakarta.validation</groupId>
+        <artifactId>jakarta.validation-api</artifactId>
+        <version>3.0.2</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
 </project>
