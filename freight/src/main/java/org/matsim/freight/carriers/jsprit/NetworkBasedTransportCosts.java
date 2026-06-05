@@ -566,35 +566,38 @@ public class NetworkBasedTransportCosts implements VRPTransportCosts {
 			transportTime = data.transportTime;
 		} else {
 			informStartCalc();
-			Id<Link> fromLinkId = Id.create(fromId.getId(), Link.class);
-			Id<Link> toLinkId = Id.create(toId.getId(), Link.class);
-			Link fromLink = network.getLinks().get(fromLinkId);
-			Link toLink = network.getLinks().get(toLinkId);
-			// because path not includes in&out Link
+			try {
+				Id<Link> fromLinkId = Id.create(fromId.getId(), Link.class);
+				Id<Link> toLinkId = Id.create(toId.getId(), Link.class);
+				Link fromLink = network.getLinks().get(fromLinkId);
+				Link toLink = network.getLinks().get(toLinkId);
+				// because path not includes in&out Link
 
-			org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
-			LeastCostPathCalculator router = createLeastCostPathCalculator();
-			Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
-					matsimVehicle);
-			if(path == null) return Double.MAX_VALUE;
-			double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
-					null, matsimVehicle);
-			double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
-					matsimVehicle);
+				org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
+				LeastCostPathCalculator router = createLeastCostPathCalculator();
+				Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
+						matsimVehicle);
+				if (path == null) return Double.MAX_VALUE;
+				double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
+						null, matsimVehicle);
+				double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
+						matsimVehicle);
 
-			double travelDistance = fromLink.getLength();
-			for (Link link : path.links) {
-				travelDistance = travelDistance + link.getLength();
+				double travelDistance = fromLink.getLength();
+				for (Link link : path.links) {
+					travelDistance = travelDistance + link.getLength();
+				}
+				TransportData newData = new TransportData(path.travelCost + additionalCostTo,
+						path.travelTime + additionalTimeTo, travelDistance);
+				TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
+				ttMemorizedCounter.incCounter();
+				if (existingData == null) {
+					existingData = newData;
+				}
+				transportTime = existingData.transportTime;
+			} finally {
+				informEndCalc();
 			}
-			TransportData newData = new TransportData(path.travelCost + additionalCostTo,
-					path.travelTime + additionalTimeTo, travelDistance);
-			TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
-			ttMemorizedCounter.incCounter();
-			if (existingData == null) {
-				existingData = newData;
-			}
-			transportTime = existingData.transportTime;
-			informEndCalc();
 		}
 		return transportTime;
 	}
@@ -656,29 +659,32 @@ public class NetworkBasedTransportCosts implements VRPTransportCosts {
 			transportCost = data.transportCosts;
 		} else {
 			informStartCalc();
-			org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
-			Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
-					matsimVehicle);
-			if(path == null) return Double.MAX_VALUE;
-			double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
-					null, matsimVehicle);
-			double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
-					matsimVehicle);
-			double travelDistance = fromLink.getLength();
-			for (Link link : path.links) {
-				travelDistance = travelDistance + link.getLength();
-			}
+			try {
+				org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
+				Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
+						matsimVehicle);
+				if (path == null) return Double.MAX_VALUE;
+				double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
+						null, matsimVehicle);
+				double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
+						matsimVehicle);
+				double travelDistance = fromLink.getLength();
+				for (Link link : path.links) {
+					travelDistance = travelDistance + link.getLength();
+				}
 
-			TransportData newData = new TransportData(path.travelCost + additionalCostTo,
-					path.travelTime + additionalTimeTo, travelDistance);
-			TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
-			ttMemorizedCounter.incCounter();
-			if (existingData == null) {
-				// succeeded
-				existingData = newData;
+				TransportData newData = new TransportData(path.travelCost + additionalCostTo,
+						path.travelTime + additionalTimeTo, travelDistance);
+				TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
+				ttMemorizedCounter.incCounter();
+				if (existingData == null) {
+					// succeeded
+					existingData = newData;
+				}
+				transportCost = existingData.transportCosts;
+			} finally {
+				informEndCalc();
 			}
-			transportCost = existingData.transportCosts;
-			informEndCalc();
 		}
 		return transportCost;
 	}
@@ -713,32 +719,35 @@ public class NetworkBasedTransportCosts implements VRPTransportCosts {
 			travelDistance = data.transportDistance;
 		} else {
 			informStartCalc();
-			Id<Link> fromLinkId = Id.create(fromId.getId(), Link.class);
-			Id<Link> toLinkId = Id.create(toId.getId(), Link.class);
-			Link fromLink = network.getLinks().get(fromLinkId);
-			Link toLink = network.getLinks().get(toLinkId);
-			travelDistance = fromLink.getLength();
-			org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
-			LeastCostPathCalculator router = createLeastCostPathCalculator();
-			Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
-					matsimVehicle);
-			if(path == null) return Double.MAX_VALUE;
-			double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
-					null, matsimVehicle);
-			double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
-					matsimVehicle);
-			for (Link link : path.links) {
-				travelDistance = travelDistance + link.getLength();
+			try {
+				Id<Link> fromLinkId = Id.create(fromId.getId(), Link.class);
+				Id<Link> toLinkId = Id.create(toId.getId(), Link.class);
+				Link fromLink = network.getLinks().get(fromLinkId);
+				Link toLink = network.getLinks().get(toLinkId);
+				travelDistance = fromLink.getLength();
+				org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
+				LeastCostPathCalculator router = createLeastCostPathCalculator();
+				Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
+						matsimVehicle);
+				if (path == null) return Double.MAX_VALUE;
+				double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
+						null, matsimVehicle);
+				double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
+						matsimVehicle);
+				for (Link link : path.links) {
+					travelDistance = travelDistance + link.getLength();
+				}
+				TransportData newData = new TransportData(path.travelCost + additionalCostTo,
+						path.travelTime + additionalTimeTo, travelDistance);
+				TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
+				ttMemorizedCounter.incCounter();
+				if (existingData == null) {
+					existingData = newData;
+				}
+				travelDistance = existingData.transportDistance;
+			} finally {
+				informEndCalc();
 			}
-			TransportData newData = new TransportData(path.travelCost + additionalCostTo,
-					path.travelTime + additionalTimeTo, travelDistance);
-			TransportData existingData = costCache.putIfAbsent(transportDataKey, newData);
-			ttMemorizedCounter.incCounter();
-			if (existingData == null) {
-				existingData = newData;
-			}
-			travelDistance = existingData.transportDistance;
-			informEndCalc();
 		}
 		return travelDistance;
 	}
