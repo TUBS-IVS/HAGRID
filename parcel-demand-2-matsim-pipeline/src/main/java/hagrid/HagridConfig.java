@@ -83,13 +83,24 @@ public class HagridConfig {
         deriveInputPaths();
     }
 
-    /** (Re)derive all input file paths from the current {@link HagridPaths}. */
+    /** (Re)derive all input file paths from the current {@link HagridPaths}.
+     * Also re-derives the freight-demand path when a simulation date is already set,
+     * so that calling {@link #setStudyArea(StudyArea)} after {@link #setSimulationDate(LocalDate)}
+     * (or vice-versa) always produces a correctly scoped demand path regardless of call order. */
     private void deriveInputPaths() {
         inputPaths.setNetwork(hagridPaths.networkFile());
         inputPaths.setVehicleTypes(hagridPaths.vehicleTypesFile());
         inputPaths.setHubData(hagridPaths.hubDataFile());
         inputPaths.setShippingPoints(hagridPaths.shippingPointsDir());
         inputPaths.setParcelLockers(hagridPaths.parcelLockersFile());
+        if (simulationDate != null) {
+            // Demand uses baseRunId (shared per concept+date, tag doesn't affect it)
+            String baseRunId = scenario.name() + "_" + simulationDate.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+            String formattedDate = simulationDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+            String dayOfWeek = simulationDate.getDayOfWeek().toString().substring(0, 1).toUpperCase() +
+                    simulationDate.getDayOfWeek().toString().substring(1).toLowerCase();
+            inputPaths.setFreightDemand(hagridPaths.demandShapefile(baseRunId, formattedDate, dayOfWeek));
+        }
     }
 
     // =========================================================================
@@ -592,15 +603,11 @@ public class HagridConfig {
         this.simulationDate = date;
         String baseRunId = scenario.name() + "_" + date.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
         this.runId = tag.isEmpty() ? baseRunId : baseRunId + "_" + tag;
-        
-        // Initialize paths for this run
+
+        // Initialize paths for this run, then re-derive all input paths
+        // (deriveInputPaths will set freightDemand now that simulationDate != null)
         hagridPaths.initializeRun(runId);
-        
-        // Demand uses baseRunId (demand is shared per concept+date, tag doesn't affect it)
-        String formattedDate = date.format(DateTimeFormatter.ISO_LOCAL_DATE);
-        String dayOfWeek = date.getDayOfWeek().toString().substring(0, 1).toUpperCase() +
-                date.getDayOfWeek().toString().substring(1).toLowerCase();
-        inputPaths.setFreightDemand(hagridPaths.demandShapefile(baseRunId, formattedDate, dayOfWeek));
+        deriveInputPaths();
     }
 
     public String getRunId() { return runId; }

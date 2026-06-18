@@ -577,5 +577,34 @@ class HagridConfigTest {
             assertThat(config.getDeliveryCarrierOutputFile()).contains(expectedRunId);
             assertThat(config.getCarrierOutputDirectory()).contains(expectedRunId);
         }
+
+        @Test
+        @DisplayName("freight-demand path is scoped to study area regardless of call order (date then area)")
+        void freightDemandScopedToStudyAreaDateThenArea() {
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+            config.setStudyArea(StudyArea.LAUSITZ_HOYERSWERDA);
+
+            String demandPath = config.paths().getFreightDemand();
+            assertThat(demandPath).containsIgnoringCase("lausitz");
+        }
+
+        @Test
+        @DisplayName("freight-demand path is scoped to study area regardless of call order (area then date)")
+        void freightDemandScopedToStudyAreaAreaThenDate() {
+            config.setStudyArea(StudyArea.LAUSITZ_HOYERSWERDA);
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+
+            String demandPath = config.paths().getFreightDemand();
+            assertThat(demandPath).containsIgnoringCase("lausitz");
+        }
+
+        @Test
+        @DisplayName("default HANNOVER config demand path does NOT contain lausitz segment")
+        void defaultHannoverDemandPathNotLausitz() {
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+
+            String demandPath = config.paths().getFreightDemand();
+            assertThat(demandPath).doesNotContainIgnoringCase("lausitz");
+        }
     }
 }
