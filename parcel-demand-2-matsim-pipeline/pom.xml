@@ -42,6 +42,22 @@
       <artifactId>freight</artifactId>
       <version>1.0-SNAPSHOT</version>
     </dependency>
+    <!-- DRT/DVRP contribs + matsim-lausitz (native DRT scenario; built locally + mvn install, see docs spec §5.1) -->
+    <dependency>
+      <groupId>org.matsim.contrib</groupId>
+      <artifactId>drt</artifactId>
+      <version>${matsim.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.matsim.contrib</groupId>
+      <artifactId>dvrp</artifactId>
+      <version>${matsim.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.matsim-scenarios</groupId>
+      <artifactId>matsim-lausitz</artifactId>
+      <version>2.0</version>
+    </dependency>
     <dependency>
       <groupId>org.matsim</groupId>
       <artifactId>pt2matsim</artifactId>
