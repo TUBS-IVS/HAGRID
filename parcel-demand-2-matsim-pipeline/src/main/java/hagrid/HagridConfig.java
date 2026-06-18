@@ -811,10 +811,16 @@ public class HagridConfig {
     // --- Study area ---
     public StudyArea getStudyArea() { return studyArea; }
 
-    /** Sets the study area, rebuilds the path resolver, and re-derives input paths. */
+    /** Sets the study area, rebuilds the path resolver, and re-derives input paths.
+     * If a run was already initialized (i.e. {@link #setSimulationDate(LocalDate)} was called),
+     * the existing run id is re-applied to the new path resolver so that output-path getters
+     * keep returning valid, run-scoped paths. */
     public void setStudyArea(StudyArea studyArea) {
         this.studyArea = studyArea;
         this.hagridPaths = new HagridPaths(studyArea);
+        if (this.runId != null) {
+            this.hagridPaths.initializeRun(this.runId);
+        }
         deriveInputPaths();
     }
 
