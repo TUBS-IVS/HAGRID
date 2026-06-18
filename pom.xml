@@ -19,7 +19,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
-    <matsim.version>2025.0-2025w13</matsim.version>
+    <matsim.version>2025.0-PR3552</matsim.version>
     <geotools.version>31.1</geotools.version>
     <jsprit.version>1.8</jsprit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -45,6 +45,19 @@
       <url>https://repo.osgeo.org/repository/release/</url>
       <snapshots><enabled>false</enabled></snapshots>
       <releases><enabled>true</enabled></releases>
+    </repository>
+    <!-- Required to resolve matsim-lausitz transitive deps (osm-network-reader, pt-extensions, gtfs2matsim) -->
+    <repository>
+      <id>topobyte</id>
+      <url>https://mvn.topobyte.de</url>
+    </repository>
+    <repository>
+      <id>slimjars</id>
+      <url>https://mvn.slimjars.com</url>
+    </repository>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
     </repository>
   </repositories>
 
