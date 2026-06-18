@@ -104,7 +104,7 @@ public final class IntegratedScenarioConfig {
         public Builder vehicleTimeCostPerHour(double v) { this.vehicleTimeCostPerHour = v; return this; }
         public Builder deliveryDwellFactorAutonomous(double v) { this.deliveryDwellFactorAutonomous = v; return this; }
         public Builder autonomousMaxSpeedKmh(double v) { this.autonomousMaxSpeedKmh = v; return this; }
-        public Builder excludedRoadTypes(List<String> v) { this.excludedRoadTypes = v; return this; }
+        public Builder excludedRoadTypes(List<String> v) { this.excludedRoadTypes = List.copyOf(v); return this; }
         public Builder retoolingTimeSeconds(double v) { this.retoolingTimeSeconds = v; return this; }
         public Builder freightLookAheadSeconds(double v) { this.freightLookAheadSeconds = v; return this; }
         public Builder idleThreshold(double v) { this.idleThreshold = v; return this; }

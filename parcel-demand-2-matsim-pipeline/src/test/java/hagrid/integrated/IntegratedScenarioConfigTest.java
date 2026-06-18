@@ -76,5 +76,45 @@ class IntegratedScenarioConfigTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("depotCount");
         }
+
+        @Test
+        @DisplayName("b2cLockerShare must be within [0,1]")
+        void b2cLockerShareRange() {
+            assertThatThrownBy(() -> IntegratedScenarioConfig.builder().b2cLockerShare(1.5).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("b2cLockerShare");
+        }
+
+        @Test
+        @DisplayName("fleetSize must be >= 1")
+        void fleetSizePositive() {
+            assertThatThrownBy(() -> IntegratedScenarioConfig.builder().fleetSize(0).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("fleetSize");
+        }
+
+        @Test
+        @DisplayName("retoolingTimeSeconds must be >= 0")
+        void retoolingNonNegative() {
+            assertThatThrownBy(() -> IntegratedScenarioConfig.builder().retoolingTimeSeconds(-1.0).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("retoolingTimeSeconds");
+        }
+
+        @Test
+        @DisplayName("deliveryDwellFactorAutonomous must be >= 1.0")
+        void dwellFactorMinimum() {
+            assertThatThrownBy(() -> IntegratedScenarioConfig.builder().deliveryDwellFactorAutonomous(0.5).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("deliveryDwellFactorAutonomous");
+        }
+
+        @Test
+        @DisplayName("autonomousMaxSpeedKmh must be > 0")
+        void maxSpeedPositive() {
+            assertThatThrownBy(() -> IntegratedScenarioConfig.builder().autonomousMaxSpeedKmh(0.0).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("autonomousMaxSpeedKmh");
+        }
     }
 }
