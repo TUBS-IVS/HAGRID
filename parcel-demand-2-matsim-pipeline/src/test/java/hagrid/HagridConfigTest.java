@@ -562,5 +562,20 @@ class HagridConfigTest {
             config.setStudyAreaAsString("lausitz_hoyerswerda");
             assertThat(config.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
         }
+
+        @Test
+        @DisplayName("setStudyArea after setSimulationDate preserves runId in output paths")
+        void setStudyAreaPreservesRunIdInOutputPaths() {
+            // Initialize a run first (same path as setSimulationDate uses internally)
+            config.setSimulationDate(LocalDate.of(2025, 5, 13));
+            String expectedRunId = config.getRunId(); // "BASECASE_13052025"
+
+            // Rebuilding HagridPaths via setStudyArea must re-apply the run id
+            config.setStudyArea(StudyArea.LAUSITZ_HOYERSWERDA);
+
+            // Output paths that depend on runId must still contain the run id
+            assertThat(config.getDeliveryCarrierOutputFile()).contains(expectedRunId);
+            assertThat(config.getCarrierOutputDirectory()).contains(expectedRunId);
+        }
     }
 }
