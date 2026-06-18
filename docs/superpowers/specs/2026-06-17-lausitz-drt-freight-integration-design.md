@@ -126,9 +126,18 @@ HAGRID's existing `DemandProcessor` / `DeliveryGenerator` / `CarrierGenerator` i
 ### 4.2 Shared-Use (Scenario 1) — Cargo Hitching, passenger-primary, online
 Single operator, shared minibus fleet with **split 2D capacity** `(seatsOccupied, parcelsOnboard)`.
 
+**Default operation:** conventional **minibus with a driver** who also performs the deliveries
+(labour on, normal dwell). An **autonomous operation mode** (driver wage removed, robot-actuated
+delivery → stretched dwell) is available as an orthogonal switch — see §4.4.
+
 **Operational logic:**
-1. HAGRID extracts a **parcel-request list** from the demand — **no jsprit tours**. Each parcel is a
-   request: **pickup at nearest depot → delivery via its channel** (below), with its time window.
+1. HAGRID aggregates parcels to **street segments (between intersections)** — the same demand-
+   aggregation / dwell computation it uses today, but **without jsprit tour optimisation** — and
+   extracts **one delivery request per segment**. Each request is: **pickup at nearest depot →
+   delivery via its channel** (below), with a **stretched dwell** that represents serving all parcels
+   along the segment plus the in-segment travel (HAGRID's existing delivery-time model), and the
+   segment's time window. The **online-insertion unit is therefore the segment stop, not the
+   individual parcel** — this keeps HAGRID's delivery realism and cuts the number of insertion requests.
 2. **Passengers** are inserted online as they arrive (native DRT insertion).
 3. **Parcels** are inserted online into the same fleet (cargo hitching), subject to the 2D capacity.
    **Step C acceptance:** a **static rule** — accept the parcel insertion if its marginal insertion
@@ -154,16 +163,92 @@ Single operator, shared minibus fleet with **split 2D capacity** `(seatsOccupied
 
 ### 4.3 Modular (Scenario 2) — U-Shift capsule swap, passenger-priority, hybrid
 Single operator, shared fleet, **one capsule at a time** (passenger capsule **or** cargo capsule).
+The operation mode is the §4.4 switch: in **fully-autonomous** operation the capsules carry **no driver**
+(wage removed, speed cap + motorway exclusion apply — §6.3); in **accompanied** operation a human is
+aboard and the vehicle drives conventionally (full speed, motorways, labour on). How the **last metres
+of the parcel are actuated** is an explicit variant, because that is where labour cost and service
+quality diverge:
 
-**Operational logic (Step C):**
+| Variant | Delivery actuation | Labour | Dwell | Capacity | Phase |
+|---|---|---|---|---|---|
+| **Opt 2 — accompanied** | Door-to-door, **delivery attendant on board** | on | ×1 | full (216) | 1 |
+| **Opt 3 — robot D2D** | Door-to-door via **delivery robot** | off | **× robotFactor** (longer) | full (216) | 1 |
+| **Opt 1 — mobile Packstation** | Vehicle **positions as a rolling locker**; recipient collects (no D2D routing) | off | Packstation-style | **reduced** | 2 |
+
+Opt 2 and Opt 3 are **the same code path** (offline jsprit tours, door-to-door) differing only in the
+**§4.4 operation mode** — Opt 2 = accompanied (labour on, human dwell, **full speed, motorways permitted**),
+Opt 3 = fully autonomous (labour off, robot dwell, **speed cap, motorway exclusion**) — so Phase 1 ships
+**both** and they **bracket** the answer on all four axes: Opt 2 = "today's German regulation, what does
+it cost?" (labour-heavy, time-light, full mobility), Opt 3 = "full autonomy, what is achievable?"
+(labour-free, but longer dwell + speed cap + no motorways → more vehicle-hours / larger fleet). The truth sits between the two bounds, so no single future has to be
+assumed. **Opt 1 is a different service pole** (collect-yourself instead of deliver-to-door); it reuses
+the Shared-Use Packstation channel resolver but needs reduced capacity and reload cycles → **Phase 2**.
+
+**Operational logic (Step C, Opt 2 / Opt 3):**
 1. HAGRID's jsprit plans **freight tours offline** (as today) → `CarrierPlan`s.
 2. `FreightTourRequestCreator` converts each plan into a `FreightTourRequest` with
-   `submissionTime = plannedTourStart − retoolingTime`.
+   `submissionTime = plannedTourStart − (travelToDepot + retoolingTime)` — the vehicle must reach the
+   swap point **and** swap before the planned start, so the look-ahead covers **both**, not the swap
+   alone (§6.1).
 3. The dispatch logic handles **passengers first**; a freight request is dispatched only if
    `idleVehicleShare > idleThreshold` (default 0.50, configurable).
-4. Dispatched freight → vehicle drives to depot, **swaps capsule** (depot Activity, duration
-   `retoolingTime`, default 7 min), executes the tour (door-to-door, ~2 min/stop), returns, swaps back.
+4. Dispatched freight → vehicle **drives to depot** (a **routed network leg**, endogenous, *not* part
+   of `retoolingTime`), **swaps capsule** (depot Activity, duration `retoolingTime` = **pure swap
+   only**, default 7 min), executes the tour (door-to-door, dwell = HAGRID base × `deliveryDwellFactor`),
+   returns (routed leg), swaps back. So each freight dispatch incurs **2 × pure swap + the routed
+   to-depot / from-depot legs**.
 5. Rejected freight requests are **not replanned** (logged as failed) — Step C limitation.
+
+> **Opt 1 (Phase 2) note:** model reload **when the locker is empty** (capacity-limited), *not* a depot
+> return after every positioning — otherwise deadhead dominates. One positioning serves many parcels at
+> once; capacity is reduced vs. the 216-package capsule (lockers cost volume).
+
+### 4.4 Operation mode (autonomy) — orthogonal switch (calibration lever)
+
+Whether a delivering vehicle is **conventional (driver/attendant present)** or **autonomous
+(driver wage removed, robot-actuated last metres → stretched dwell, capped top speed)** is modelled as
+**orthogonal parameters that apply to both integrated scenarios**, so the concept stays consistent and
+the realistic operating point can be explored during calibration *before* the headline evaluation:
+
+| Parameter | Conventional | Autonomous |
+|---|---|---|
+| `cargoLabour` (delivery labour cost) | on (€/h) | **off** |
+| `deliveryDwellFactor` (per-stop dwell multiplier) | 1.0 (human) | **> 1.0** (robot, slower) |
+| `autonomousMaxSpeed` (vehicle **max-speed cap** `maximumVelocity`; mean speed is **emergent**) | network / road limits | **30 km/h** (default; sensitivity → 50 km/h, §6.1) |
+| `autonomousExcludedRoadTypes` (**network access**, not speed) | full network | **no motorways** (mode-restricted links — see note below) |
+| Passenger-side driver wage (native DRT rate) | included | **removed** |
+
+The autonomy state is a **switch for both scenarios**, and the four effects above (labour, dwell, speed
+cap, motorway access) are all consequences of it — **speed cap and motorway exclusion apply *only* in
+autonomous operation**; with a human aboard the vehicle drives conventionally (full speed, motorways
+permitted).
+
+- **Shared-Use:** default = conventional (driver-minibus, the driver delivers; §4.2). Switching to
+  autonomous removes **both** the passenger-driving and the parcel-delivery labour at once (one driver
+  did both), applies the robot dwell, **and** activates the speed cap + motorway exclusion.
+- **Modular:** **switchable too** — **Opt 2 = accompanied** (a Begleiter/Paketbote is aboard → full
+  speed, motorways permitted, labour on, human dwell) vs. **Opt 3 = fully autonomous** (no human → speed
+  cap, motorway exclusion, labour off, robot dwell). The "AV by definition" ideal is Opt 3; Opt 2 is the
+  regulatory-realistic mode that **trades the autonomy advantage for legality** — incl. a Begleiter even
+  in the **passenger** capsule, so pax-side labour returns too.
+
+**Motorway exclusion (network access ≠ speed cap).** Autonomous vehicles are barred from motorways
+(Autobahn). This is **not** achieved by the speed cap — a capped vehicle would merely crawl on a motorway
+link and the router might still pick it. It is enforced the correct MATSim way: the autonomous DRT fleet
+uses a **dedicated network mode whose allowed links exclude `motorway` / `motorway_link`**
+(`autonomousExcludedRoadTypes`, optionally `trunk`), so DVRP/DRT routing never traverses them. Implemented
+as a network-preprocessing step (HAGRID already filters the network) and cleaned with
+`MultimodalNetworkCleaner` to keep the restricted sub-network connected. **To verify:** the zone and all
+depots must stay reachable without motorways, else routing fails (§11). Speed cap and network access are
+**two orthogonal autonomy effects** (how fast on allowed links vs. which links are allowed).
+
+**Why this is not a free lunch (the honest trade-off):** autonomy lowers labour cost but **raises
+vehicle-hours per task** — *primarily* through the longer robot door-dwell (Opt 3), and only
+*secondarily* through the speed cap, which bites solely on links whose road limit exceeds the U-Shift
+max (≥ 30 km/h ≈ the conventional rural cruising speed, so the cap is **not** the dominant effect). The
+same demand therefore needs a **larger fleet and yields worse passenger waiting times**. Labour saving
+and productivity loss pull in opposite directions; finding where the net lands is exactly what the
+calibration sweep is for, and why Opt 2 / Opt 3 are reported as a **bracket**, not a single point.
 
 ---
 
@@ -201,7 +286,7 @@ active. New Maven dependencies: `org.matsim.contrib:drt`, `org.matsim.contrib:dv
 ```
 parcel-demand-2-matsim-pipeline/src/main/java/hagrid/
 └── integrated/                          ← NEW (only loaded for DRT_* scenarios)
-    ├── IntegratedScenarioConfig.java     ← params: zone shape, fleet, depots, channel shares, thresholds
+    ├── IntegratedScenarioConfig.java     ← params: zone shape, fleet, depots, channel shares, thresholds, operation mode (cargoLabour, deliveryDwellFactor)
     ├── DepotNetwork.java                  ← 2–3 parameterised depots, nearest-depot assignment
     ├── modular/
     │   ├── FreightTourRequest.java        ← wraps a CarrierPlan tour as a request
@@ -288,10 +373,14 @@ with a sensitivity plan.
 | Modular cargo capsule | 216 packages | Paper 1 / DLR U-Shift |
 | Modular passenger capsule | 8 seats | DLR U-Shift (to confirm) |
 | Shared-Use capacity | ~10 seats + ~20 parcels (2D) | Paper 2, adapted; parcel-count unit consistent with HAGRID |
-| Retooling time (capsule swap) | 7 min | Own assumption; sensitivity 2–15 min |
+| Retooling time (capsule swap) | 7 min | Own assumption; **pure swap only** (drive to/from the swap point is a separate routed leg); sensitivity 2–15 min |
 | Idle-fleet threshold (Modular) | 0.50 | Paper 1 starting point; calibrate for Hoyerswerda |
-| Freight submission look-ahead | 7 min | Paper 1; sensitivity 3–15 min |
-| Vehicle cruising speed | 30 km/h (rural); consider 35 km/h | Paper 2 / Paper 3 |
+| Freight submission look-ahead | **travelToDepot + retoolingTime** | must cover the approach leg **and** the swap, not the swap alone; sensitivity 3–15 min |
+| Delivery dwell factor (robot / autonomous) | 1.0 conv. / > 1.0 robot | own assumption; calibration lever (§4.4) |
+| Modular mobile-Packstation capacity (Opt 1) | reduced vs. 216 | lockers cost volume; Phase 2 |
+| Vehicle cruising speed (conventional) | 30 km/h (rural); consider 35 km/h | Paper 2 / Paper 3 |
+| Autonomous **max** speed (`autonomousMaxSpeed` = vehicle `maximumVelocity`) | **30 km/h default**, sensitivity **→ 50 km/h** (perspective; no further U-Shift source) | own assumption (U-Shift floor); **max-speed cap, not a mean — effective speed emerges from the network**; sensitivity lever (§4.4); **autonomous mode only** (not accompanied) |
+| Autonomous road-class access (`autonomousExcludedRoadTypes`) | exclude `motorway` + `motorway_link` (optionally `trunk`) | AVs barred from the Autobahn; enforced via **mode-restricted network links, not the speed cap** (§4.4); **autonomous mode only** (not accompanied) |
 | Fleet | fully electric | range ~200 km ≫ expected ~80–150 km/day → not binding; monitor |
 | Operating hours | align with native DRT / S-Bahn hours | to confirm |
 
@@ -304,16 +393,29 @@ with a sensitivity plan.
 | Capsule swap (Modular) | 7 min | own assumption |
 
 ### 6.3 Cost rates (initial; calibrate later)
+
+**Labour is a separate, switchable component** (not baked into the vehicle-hour), so the autonomy
+switch (§4.4) can turn it off per vehicle/capsule and the Shared-Use ↔ Modular cost contrast stays
+explicit. The split is **anchored on the Rudolph LMD cost breakdown** (Ref. R), where the **driver is
+~80 % of the per-parcel cost** across delivery configs — i.e. labour, not the vehicle, dominates.
+
 | Component | Rate | Source |
 |---|---|---|
-| DRT vehicle time | 25 €/h | Paper 2 / BVWP |
+| DRT vehicle time — **technical only** (energy, capital, maintenance; **no wage**) | ~5 €/h (≈ 20 % of the 25 €/h gross) | Rudolph share (Ref. R); calibrate |
+| Driver / delivery labour — **switchable** (off when autonomous) | ~20 €/h (≈ 80 % of the 25 €/h gross) | Rudolph driver share (Ref. R); BVWP |
 | DRT vehicle distance | 0.30 €/km (electric) | Paper 2 |
 | Conventional freight reference | 35 €/h + 0.20 €/km | BVWP |
-| Passenger fare | native Lausitz DRT fare | reuse scenario |
+| Passenger fare / native DRT operating cost | native Lausitz DRT (driver wage **removed** for autonomous capsules) | reuse scenario, adjust for autonomy |
+
+> The ~80 / 20 labour / vehicle split is an **order-of-magnitude anchor** from Rudolph's per-parcel
+> breakdown (no DOI → treat as working/unpublished; per-parcel → per-hour is a valid proxy because both
+> driver and vehicle accrue with tour duration). It gives the autonomy switch a defensible default and
+> remains a **calibration parameter**, not a fixed claim.
 
 ### 6.4 Delivery channels (Shared-Use)
 B2B → door-to-door (always). B2C → Packstation/Filiale-first → door-to-door fallback. Channel shares
-are config parameters and KPIs. Ride-and-Collect deferred to Phase 2.
+are config parameters and KPIs. Ride-and-Collect deferred to Phase 2. The **operation mode**
+(conventional vs. autonomous: `cargoLabour` / `deliveryDwellFactor`, §4.4) is orthogonal to the channel.
 
 ---
 
@@ -326,10 +428,21 @@ Computed by `IntegratedKPIHandler`, exported per scenario.
 | **System** | Total fleet size; vehicle-km; empty/deadhead vehicle-km; utilisation %; CO₂-eq (km × emission factor) |
 | **Passenger** | Acceptance rate φ; mean & P95 waiting time; mean in-vehicle time; travel-time stretch σ |
 | **Freight** | **Delivery rate δ (1 − undelivered)**; tour completion rate (Modular); mean delivery delay; parcels per vehicle-km |
-| **Economic** | Unit cost per parcel; unit cost per ride; combined unit cost |
+| **Economic** | Unit cost per parcel; unit cost per ride; combined unit cost; **labour share of unit cost** (makes the autonomy effect explicit, comparable to Rudolph's breakdown) |
 | **Channel (new, Shared-Use)** | Share delivered via door / Packstation; **undelivered rate** |
 
 P95 passenger waiting time is the fleet-sizing criterion (≤ 7 min target).
+
+**KPI CSV export (canonical, for cross-tool scenario comparison).** `IntegratedKPIReport` writes a
+stable, tidy **long-format** CSV per run so scenarios diff cleanly across apps/scripts:
+
+```
+run_id, study_area, scenario, operation_mode, kpi_group, kpi_name, value, unit
+```
+
+One row per (scenario × KPI). Column names and units are stable across runs; new KPIs add rows, not
+columns. A **wide variant** (one row per scenario, KPIs as columns) is emitted alongside for quick
+spreadsheet pivots. Both land in `hagrid-output/{RUN_ID}/` next to the dashboard input.
 
 ---
 
@@ -357,22 +470,30 @@ P95 passenger waiting time is the fleet-sizing criterion (≤ 7 min target).
 2. Add the `StudyArea` dimension + refactor `HagridPaths` to a study-area-scoped input root
    (default `HANNOVER` preserves all existing runs); add the Lausitz input set (network, clipped
    matsim-lausitz plans, service-area shape, native DRT config) (§5.5).
-3. `IntegratedScenarioConfig` + `DepotNetwork` (parameterised zone + 2–3 depots).
-4. HAGRID preprocessing: parcel-request list (Shared-Use) and FreightTourRequest path (Modular).
+3. `IntegratedScenarioConfig` + `DepotNetwork` (parameterised zone + 2–3 depots) — including the
+   **operation-mode switches** `cargoLabour` + `deliveryDwellFactor` (§4.4), shared by both scenarios.
+4. HAGRID preprocessing: **segment-aggregated** parcel-request list (Shared-Use) and FreightTourRequest
+   path (Modular).
 5. `DeliveryChannelResolver` (B2B door; B2C Packstation→door).
-6. `SplitCapacityVehicle` + `SharedUseDispatchLogic` (online insertion, static acceptance).
-7. `FreightTourRequestCreator` + `ModularDispatchLogic` + `CapsuleSwapActivity`.
-8. `IntegratedKPIHandler` + dashboard extension.
+6. `SplitCapacityVehicle` + `SharedUseDispatchLogic` (online insertion of **segment stops**, static
+   acceptance; conventional **or** autonomous via §4.4).
+7. `FreightTourRequestCreator` + `ModularDispatchLogic` + `CapsuleSwapActivity` — door-to-door **Opt 2
+   (attendant) and Opt 3 (robot)** from one path via `cargoLabour` / `deliveryDwellFactor`; `retoolingTime`
+   = pure swap, look-ahead = approach + swap.
+8. `IntegratedKPIHandler` + **canonical KPI CSV (long + wide, §7)** + dashboard extension.
 9. Wire `DRT_BASELINE / DRT_SHAREDUSE / DRT_MODULAR` into HAGRID's runner (compose native DRT config).
-10. Calibrate: fleet size (P95 ≤ 7 min), idle threshold, retooling time, channel shares.
+10. Calibrate: fleet size (P95 ≤ 7 min), idle threshold, retooling time, channel shares, **operation
+    mode (labour/dwell) — find the realistic operating point before the headline evaluation**.
 11. Run the 3-way comparison; produce the KPI report/dashboard.
 
 **Phase 2 — Step B + extensions:**
 - Online re-optimisation of rejected freight tours; dynamic idle threshold.
+- **Modular Opt 1 — mobile Packstation** (rolling locker: positioning instead of D2D routing, reduced
+  capacity, reload-when-empty) reusing the Packstation channel resolver.
 - **Ride-and-Collect (Mitnahme)** for Shared-Use.
 - **Consolidated-operator Baseline variant** (decompose consolidation vs. integration effect).
 - Sensitivities: retooling time, idle threshold, fleet size, depot count (1 / 2–3 / multi),
-  channel shares, freight look-ahead, door-to-door vs. locker for B2C.
+  channel shares, freight look-ahead, door-to-door vs. locker for B2C, **operation mode (labour/dwell)**.
 
 ---
 
@@ -396,6 +517,16 @@ P95 passenger waiting time is the fleet-sizing criterion (≤ 7 min target).
 5. **Modular passenger capsule capacity** (8 seats) — confirm against DLR U-Shift documentation.
 6. **Operating hours** — align with native DRT / S-Bahn service hours.
 7. **Sustainability framing** — Planetary-Boundaries operationalisation (derivative study).
+8. **Freight look-ahead** = approach leg + swap (not the bare 7 min) — confirm the routed approach-time
+   estimate used at submission (§4.3, §6.1).
+9. **Robot delivery dwell factor & labour split** (§4.4, §6.3) — provisional; pin down in the first
+   calibration round (the operating point that yields realistic results).
+10. **Autonomous max speed** (§4.4, §6.1) — vehicle max-speed cap (30 km/h default, sensitivity → 50 km/h;
+    mean speed is emergent, not an input); its effect on fleet size / passenger waiting; sensitivity lever
+    (always active for Modular, switchable for Shared-Use).
+11. **Autonomous motorway exclusion** (§4.4, §6.1) — confirm the motorway link tagging in the
+    matsim-lausitz network (road-type attribute) and that the zone + depots stay connected once
+    motorway / `trunk` links are removed from the AV mode (`MultimodalNetworkCleaner`).
 
 ---
 
@@ -409,3 +540,7 @@ P95 passenger waiting time is the fleet-sizing criterion (≤ 7 min target).
    (9 pax, 22 pkg, 35 km/h, 30 s unloading, 14 s boarding), rebalancing, fleet sizing reference.
 4. **Paper 4** — Cargo Hitching (SimMobility, Singapore): variant taxonomy (SHR / SHR+IDL); our
    Shared-Use corresponds to SHR+IDL (idle vehicles also serve parcels).
+- **Ref. R** — Rudolph, *Last-mile delivery cost comparison* (Van / Utility / Tricycle / Bicycle, DC vs.
+  UCC): per-parcel cost split into driver / vehicle / fuel / UCC; **driver ≈ 80 %** of per-parcel cost
+  across configs. Published **without DOI** — cite as working/unpublished; used here as an
+  order-of-magnitude anchor for the labour / vehicle cost split (§6.3).
