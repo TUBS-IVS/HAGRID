@@ -272,9 +272,25 @@ HAGRID  (frontend + orchestration)
   4. Generate analysis dashboard  (HAGRIDAnalysisRunner / DashboardGenerator, extended)
 ```
 
-> ⚠️ **Feasibility to verify in the planning phase:** whether matsim-lausitz is cleanly consumable as
-> a Maven dependency, or whether its run/config classes must be **vendored**. This changes only the
-> wiring, not the workflow logic.
+> **Feasibility (build-tested 2026-06-18):**
+> - **DRT/DVRP** (`org.matsim.contrib:drt`, `:dvrp`) resolve cleanly at HAGRID's current MATSim
+>   `2025.0-2025w13` — ✅ no issue.
+> - **matsim-lausitz via JitPack ❌ does NOT work out of the box.** `2.0` is not pre-built; JitPack
+>   builds on demand but **fails** because it defaults to **JDK 8** while the project's plugins need
+>   Java 11+ (`git-commit-id-maven-plugin` → "class file version 55.0 … up to 52.0"). Not fixable from
+>   HAGRID (it's matsim-lausitz's repo + JitPack's JDK default).
+> - **Native DRT setup confirmed:** run class `org.matsim.run.RunLausitzDrtScenario`, options
+>   `DrtAndIntermodalityOptions`, service area under `input/drt-area`.
+>
+> **Consumption path (decide in planning):** (A) **build matsim-lausitz locally + `mvn install`** to the
+> local repo, depend on its real coordinates [fastest to unblock]; (B) **fork + add `jitpack.yml`
+> (`jdk: openjdk21`)**, consume the fork via JitPack [reproducible, low-maintenance]; (C) team Nexus /
+> GitHub-Packages deploy; (D) **reuse only its config + `drt-area` data** and assemble the DRT config in
+> HAGRID via the standard drt/dvrp API (data-not-code dependency).
+>
+> ⚠️ **Then: MATSim version alignment** — matsim-lausitz targets MATSim **2025.0-PR3552** (parent
+> `org.matsim:matsim-all`); HAGRID targets **2025.0-2025w13** (`org.matsim:matsim`). Whichever path,
+> align `matsim.version` and confirm the freight code still compiles.
 
 ### 5.2 Backward compatibility
 The integrated module is **fully optional**. All existing HAGRID scenarios (`BASECASE`, `WHITE_LABEL`,
@@ -509,8 +525,12 @@ spreadsheet pivots. Both land in `hagrid-output/{RUN_ID}/` next to the dashboard
 
 ## 11. Open Questions / To Verify
 
-1. **Dependency vs. vendoring** of matsim-lausitz run/config classes (§5.1).
-2. **Native DRT zone extent** for Hoyerswerda — confirm exact geometry when wiring; keep parameterised.
+1. **How to consume matsim-lausitz** (build-tested 2026-06-18): JitPack ❌ fails (builds with JDK 8,
+   project needs 11+). Options: (A) local build + `mvn install`; (B) fork + `jitpack.yml` (jdk 21);
+   (C) team Nexus; (D) reuse only its config + `drt-area` data via the standard drt/dvrp API. **Then
+   align MATSim version** (lausitz `2025.0-PR3552` vs HAGRID `2025.0-2025w13`). See §5.1.
+2. **Native DRT zone extent** for Hoyerswerda — confirmed it exists (`input/drt-area` +
+   `RunLausitzDrtScenario`); confirm exact geometry/extent when wiring; keep parameterised.
 3. **Depot count & placement** (default 2–3; real sites vs. routing-optimised) — calibration decision.
 4. **Operator-effect decomposition logic** — exact comparison design to separate consolidation from
    integration (consolidated-operator Baseline variant); to be sharpened with the user.
