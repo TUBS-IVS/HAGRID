@@ -1,5 +1,6 @@
 package hagrid;
 
+import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -295,5 +296,46 @@ class HagridPathsTest {
             .contains("hagrid-input")
             .contains("hagrid-output")
             .contains("hagrid-matsim-output");
+    }
+
+    // =========================================================================
+    // STUDY-AREA SCOPING
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Study-area scoping")
+    class StudyAreaScoping {
+
+        @Test
+        @DisplayName("default constructor uses HANNOVER and legacy hagrid-input layout")
+        void defaultIsHannoverLegacyLayout() {
+            HagridPaths p = new HagridPaths();
+            assertThat(p.getStudyArea()).isEqualTo(StudyArea.HANNOVER);
+            assertThat(p.inputBase().toString()).endsWith("hagrid-input");
+        }
+
+        @Test
+        @DisplayName("HANNOVER input base has no extra subfolder")
+        void hannoverNoSubfolder(@TempDir Path tempDir) {
+            HagridPaths p = new HagridPaths(tempDir, StudyArea.HANNOVER);
+            assertThat(p.inputBase()).isEqualTo(tempDir.resolve("hagrid-input"));
+        }
+
+        @Test
+        @DisplayName("LAUSITZ_HOYERSWERDA input base is scoped under hagrid-input/lausitz")
+        void lausitzScoped(@TempDir Path tempDir) {
+            HagridPaths p = new HagridPaths(tempDir, StudyArea.LAUSITZ_HOYERSWERDA);
+            assertThat(p.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
+            assertThat(p.inputBase()).isEqualTo(tempDir.resolve("hagrid-input").resolve("lausitz"));
+            // network input file is scoped too
+            assertThat(p.networkFile()).contains("lausitz");
+        }
+
+        @Test
+        @DisplayName("output bases are NOT study-area-scoped (RUN_ID disambiguates outputs)")
+        void outputsNotScoped(@TempDir Path tempDir) {
+            HagridPaths p = new HagridPaths(tempDir, StudyArea.LAUSITZ_HOYERSWERDA);
+            assertThat(p.matsimOutputBase()).isEqualTo(tempDir.resolve("hagrid-matsim-output"));
+        }
     }
 }
