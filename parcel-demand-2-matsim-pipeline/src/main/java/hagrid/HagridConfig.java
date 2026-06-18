@@ -1,6 +1,7 @@
 package hagrid;
 
 import hagrid.utils.general.Region;
+import hagrid.utils.general.StudyArea;
 import org.matsim.freight.carriers.TimeWindow;
 
 import java.time.LocalDate;
@@ -38,12 +39,13 @@ public class HagridConfig {
     private String tag = "";
     private String runId;
     private Set<Region> filterRegions = new LinkedHashSet<>(Set.of(Region.ALL));
+    private StudyArea studyArea = StudyArea.HANNOVER;
 
     // =========================================================================
     // CONFIGURATION SECTIONS
     // =========================================================================
-    
-    private final HagridPaths hagridPaths = new HagridPaths();
+
+    private HagridPaths hagridPaths = new HagridPaths(StudyArea.HANNOVER);
     private final InputPaths inputPaths = new InputPaths();
     private final ProviderConfig providers = new ProviderConfig();
     private final VehicleConfig vehicles = new VehicleConfig();
@@ -78,9 +80,11 @@ public class HagridConfig {
     private void initializeDefaults() {
         providers.initializeDefaultRates(scenario);
         vehicles.initializeDefaultDispatchHours();
+        deriveInputPaths();
+    }
 
-        // Derive all input paths from centralized HagridPaths
-        // (handles CWD auto-detection for IDE vs simulation server)
+    /** (Re)derive all input file paths from the current {@link HagridPaths}. */
+    private void deriveInputPaths() {
         inputPaths.setNetwork(hagridPaths.networkFile());
         inputPaths.setVehicleTypes(hagridPaths.vehicleTypesFile());
         inputPaths.setHubData(hagridPaths.hubDataFile());
@@ -803,6 +807,21 @@ public class HagridConfig {
     public double getMinLinkLength() { return network.getMinLinkLengthMeters(); }
     public double getMinFreeSpeed() { return network.getMinFreeSpeedMps(); }
     public double getFreeSpeedThreshold() { return network.getFreeSpeedThresholdMps(); }
+
+    // --- Study area ---
+    public StudyArea getStudyArea() { return studyArea; }
+
+    /** Sets the study area, rebuilds the path resolver, and re-derives input paths. */
+    public void setStudyArea(StudyArea studyArea) {
+        this.studyArea = studyArea;
+        this.hagridPaths = new HagridPaths(studyArea);
+        deriveInputPaths();
+    }
+
+    /** ScenarioRunner entry point: parse a study-area name (case-insensitive). */
+    public void setStudyAreaAsString(String studyArea) {
+        setStudyArea(StudyArea.valueOf(studyArea.trim().toUpperCase()));
+    }
 
     // --- Scenario setters for ScenarioRunner ---
     public void setConcept(String concept) {

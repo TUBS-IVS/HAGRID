@@ -2,6 +2,7 @@ package hagrid;
 
 import hagrid.HagridConfig.*;
 import hagrid.utils.general.Region;
+import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -532,5 +533,34 @@ class HagridConfigTest {
         assertThat(config.toString())
             .contains("BASECASE")
             .contains("[m, l]");
+    }
+
+    // =========================================================================
+    // STUDY AREA SETTINGS
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Study Area")
+    class StudyAreaSettings {
+
+        @Test
+        @DisplayName("default study area is HANNOVER")
+        void defaultStudyArea() {
+            assertThat(config.getStudyArea()).isEqualTo(StudyArea.HANNOVER);
+        }
+
+        @Test
+        @DisplayName("setStudyArea updates the value")
+        void setStudyAreaEnum() {
+            config.setStudyArea(StudyArea.LAUSITZ_HOYERSWERDA);
+            assertThat(config.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
+        }
+
+        @Test
+        @DisplayName("setStudyAreaAsString is case-insensitive")
+        void setStudyAreaString() {
+            config.setStudyAreaAsString("lausitz_hoyerswerda");
+            assertThat(config.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
+        }
     }
 }
