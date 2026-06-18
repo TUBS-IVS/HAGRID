@@ -1,5 +1,6 @@
 package hagrid;
 
+import hagrid.utils.general.StudyArea;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -58,9 +59,10 @@ public class HagridPaths {
     // =========================================================================
 
     private final Path pipelineRoot;
-    private final Path inputBase;       // hagrid-input/
+    private final Path inputBase;       // hagrid-input/[<area>/]
     private final Path outputBase;      // hagrid-output/
     private final Path matsimOutputBase; // hagrid-matsim-output/
+    private final StudyArea studyArea;
 
     // =========================================================================
     // RUN-SPECIFIC STATE
@@ -73,21 +75,29 @@ public class HagridPaths {
     // CONSTRUCTORS
     // =========================================================================
 
-    /**
-     * Auto-detecting constructor.
-     * <p>If the current working directory already IS the pipeline root
-     * (i.e. {@code hagrid-input/} exists here), paths are resolved relative
-     * to {@code "."}.  Otherwise the hardcoded {@code PIPELINE_ROOT} is
-     * prepended — this matches the IDE case where the workspace root sits
-     * one level above.</p>
-     */
+    /** Auto-detecting root, default study area (HANNOVER). */
     public HagridPaths() {
-        this(detectPipelineRoot());
+        this(detectPipelineRoot(), StudyArea.HANNOVER);
     }
 
+    /** Auto-detecting root, explicit study area. */
+    public HagridPaths(StudyArea studyArea) {
+        this(detectPipelineRoot(), studyArea);
+    }
+
+    /** Explicit root, default study area (HANNOVER). */
     public HagridPaths(Path pipelineRoot) {
+        this(pipelineRoot, StudyArea.HANNOVER);
+    }
+
+    /** Explicit root and study area. */
+    public HagridPaths(Path pipelineRoot, StudyArea studyArea) {
         this.pipelineRoot = pipelineRoot;
-        this.inputBase = pipelineRoot.resolve("hagrid-input");
+        this.studyArea = studyArea;
+        Path hagridInput = pipelineRoot.resolve("hagrid-input");
+        this.inputBase = studyArea.folder().isEmpty()
+                ? hagridInput
+                : hagridInput.resolve(studyArea.folder());
         this.outputBase = pipelineRoot.resolve("hagrid-output");
         this.matsimOutputBase = pipelineRoot.resolve("hagrid-matsim-output");
     }
@@ -399,6 +409,7 @@ public class HagridPaths {
 
     public String getRunId() { return runId; }
     public Path getPipelineRoot() { return pipelineRoot; }
+    public StudyArea getStudyArea() { return studyArea; }
 
     // =========================================================================
     // INTERNAL
