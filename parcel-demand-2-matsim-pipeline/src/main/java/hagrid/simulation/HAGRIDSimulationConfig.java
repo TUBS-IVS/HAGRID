@@ -11,7 +11,9 @@ import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import hagrid.HagridConfig;
 import hagrid.HagridPaths;
+import hagrid.utils.general.StudyArea;
 
 /**
  * Container for configuration parameters of a single HAGRID simulation scenario.
@@ -85,7 +87,17 @@ public class HAGRIDSimulationConfig {
     private final String runId;
 
     /**
-     * Creates a new scenario configuration.
+     * Geographic study area for this scenario.
+     */
+    private final StudyArea studyArea;
+
+    /**
+     * DRT fleet size (number of vehicles). Only meaningful for DRT scenarios.
+     */
+    private final int fleetSize;
+
+    /**
+     * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
      * @param date             simulation date
@@ -98,6 +110,27 @@ public class HAGRIDSimulationConfig {
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
                           double uTurnPenaltyCost, String tag) {
+        this(concept, date, maxIterations, jspritIterations,
+                zoneBasedCachingEnabled, zoneBasedCachingThresholdMeters,
+                uTurnPenaltyCost, tag, StudyArea.HANNOVER, 50);
+    }
+
+    /**
+     * Creates a new scenario configuration with explicit study area and DRT fleet size.
+     *
+     * @param concept          scenario concept name
+     * @param date             simulation date
+     * @param maxIterations    maximum number of MATSim iterations
+     * @param jspritIterations maximum number of jsprit iterations
+     * @param tag              optional version tag (null or empty to disable)
+     * @param studyArea        geographic study area
+     * @param fleetSize        DRT fleet size (number of vehicles)
+     * @throws NullPointerException     if concept, date, or studyArea is null
+     * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations <= 0) {
@@ -115,9 +148,11 @@ public class HAGRIDSimulationConfig {
         this.zoneBasedCachingThresholdMeters = zoneBasedCachingThresholdMeters;
         this.uTurnPenaltyCost = Math.max(0.0, uTurnPenaltyCost);
         this.tag = tag != null ? tag.trim() : "";
+        this.studyArea = Objects.requireNonNull(studyArea, "studyArea must not be null");
+        this.fleetSize = fleetSize;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
-        this.paths = new HagridPaths();
+        this.paths = new HagridPaths(studyArea);
         this.paths.initializeRun(runId);
 
         // Ensure shared simulation inputs are available in hagrid-output/shared/
@@ -319,6 +354,96 @@ public class HAGRIDSimulationConfig {
         return getOutputDirectory().toString();
     }
 
+    // === DRT / STUDY AREA GETTERS ===
+
+    /**
+     * Returns the geographic study area for this scenario.
+     *
+     * @return study area
+     */
+    public StudyArea getStudyArea() {
+        return studyArea;
+    }
+
+    /**
+     * Returns the DRT fleet size (number of vehicles).
+     * Only meaningful for DRT scenarios.
+     *
+     * @return fleet size
+     */
+    public int getFleetSize() {
+        return fleetSize;
+    }
+
+    /**
+     * Returns {@code true} when the concept maps to a DRT scenario
+     * ({@link HagridConfig.Scenario#isDrt()} returns true).
+     * Returns {@code false} for unknown concept strings.
+     *
+     * @return true if this is a DRT scenario
+     */
+    public boolean isDrtScenario() {
+        try {
+            return HagridConfig.Scenario.valueOf(concept.toUpperCase()).isDrt();
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns the path to the DRT service-area shapefile.
+     *
+     * @return DRT service area shapefile path
+     */
+    public String getDrtServiceAreaShapefile() {
+        return paths.drtServiceAreaShapefile();
+    }
+
+    /**
+     * Returns the path to the raw Lausitz network file.
+     *
+     * @return raw Lausitz network path
+     */
+    public String getLausitzNetworkRaw() {
+        return paths.lausitzNetworkRaw();
+    }
+
+    /**
+     * Returns the path to the raw passenger plans file.
+     *
+     * @return raw passenger plans path
+     */
+    public String getPassengerPlansRaw() {
+        return paths.passengerPlansRaw();
+    }
+
+    /**
+     * Returns the path to the clipped DRT network file.
+     *
+     * @return clipped DRT network path
+     */
+    public String getDrtNetworkClipped() {
+        return paths.drtNetworkClipped();
+    }
+
+    /**
+     * Returns the path to the clipped passenger plans file.
+     *
+     * @return clipped passenger plans path
+     */
+    public String getPassengerPlansClipped() {
+        return paths.passengerPlansClipped();
+    }
+
+    /**
+     * Returns the path to the DRT fleet file.
+     *
+     * @return DRT fleet file path
+     */
+    public String getDrtFleetFile() {
+        return paths.drtFleetFile();
+    }
+
     // === VALIDATION ===
 
     /**
@@ -337,6 +462,12 @@ public class HAGRIDSimulationConfig {
         checkFile(getFreightZonePath(), "Freight zone shapefile", missing);
         checkFile(getDeliveryCarrierPath(), "Delivery carriers", missing);
         checkFile(getSupplyCarrierPath(), "Supply carriers", missing);
+
+        if (isDrtScenario()) {
+            checkFile(Path.of(getDrtNetworkClipped()), "DRT network (clipped)", missing);
+            checkFile(Path.of(getPassengerPlansClipped()), "Passenger plans (clipped)", missing);
+            checkFile(Path.of(getDrtFleetFile()), "DRT fleet file", missing);
+        }
 
         if (!missing.isEmpty()) {
             throw new IllegalStateException("Missing required input files:\n" + String.join("\n", missing));

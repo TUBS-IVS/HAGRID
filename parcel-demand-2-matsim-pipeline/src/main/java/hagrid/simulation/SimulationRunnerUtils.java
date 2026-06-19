@@ -1,6 +1,7 @@
 package hagrid.simulation;
 
 import hagrid.HagridPaths;
+import hagrid.utils.general.StudyArea;
 import hagrid.analysis.CarrierXmlParser;
 import hagrid.analysis.CarrierXmlParser.ParsedCarrier;
 import hagrid.analysis.DashboardGenerator;
@@ -128,11 +129,27 @@ public final class SimulationRunnerUtils {
         double uTurnPenaltyCost = nonNegDouble(map.getOrDefault("uTurnPenalty", "1.0"), "uTurnPenalty");
         String tag = map.getOrDefault("tag", "").trim();
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost);
+        StudyArea studyArea = StudyArea.valueOf(
+                map.getOrDefault("studyArea", "HANNOVER").trim().toUpperCase());
+        int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
+
+        // DRT concept requires the Lausitz study area
+        boolean isDrt;
+        try {
+            isDrt = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase()).isDrt();
+        } catch (IllegalArgumentException ex) {
+            isDrt = false;
+        }
+        if (isDrt && studyArea != StudyArea.LAUSITZ_HOYERSWERDA) {
+            throw new IllegalArgumentException(
+                    "DRT concept '" + concept + "' requires studyArea=LAUSITZ_HOYERSWERDA, got " + studyArea);
+        }
+
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
-                zoneCaching, zoneThreshold, uTurnPenaltyCost, tag);
+                zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize);
     }
 
     /**
@@ -298,7 +315,7 @@ public final class SimulationRunnerUtils {
         LOG.info("""
             Usage:
               java hagrid.HAGRIDSimulationRunner <scenario> [<scenario> ...]
-            
+
             Each <scenario> is comma-separated key=value:
               concept        (required) scenario concept name
               date           (required) yyyy-MM-dd
@@ -308,10 +325,14 @@ public final class SimulationRunnerUtils {
               zoneCaching    true/false (default false)
               zoneThreshold  metres (default 1500 when zoneCaching=true)
               uTurnPenalty   score penalty per U-turn (default 1.0)
+              studyArea      HANNOVER or LAUSITZ_HOYERSWERDA (default HANNOVER)
+              fleetSize      DRT fleet size in vehicles (default 50; only used for DRT concepts)
               writeDashboard true/false (default false) \u2014 generate dashboard after sim
-            
-            Example:
+
+            Example (freight):
               concept=basecase,date=2025-05-13,tag=V1,maxIter=150,jspritIter=10000,writeDashboard=true
+            Example (DRT):
+              concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fleetSize=20
             """);
     }
 
