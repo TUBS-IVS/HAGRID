@@ -103,3 +103,17 @@ parcel-analysis/*
 # Temporary helper / analysis scripts
 analysis_cp.txt
 analyze_tw*.ps1
+
+# Freight module generated output (sim + MATSim test output)
+freight/output/
+freight/test/output/
+
+# MATSim integration-test output (MatsimTestUtils writes to <module>/test/output)
+parcel-demand-2-matsim-pipeline/test/output/
+
+# Root-level generated analysis artifacts
+/Analyse_*.png
+/HAGRID_Dashboard_*.html
+/kneedle_breakpoint_analysis.png
+/plots/
+/Pictures/
