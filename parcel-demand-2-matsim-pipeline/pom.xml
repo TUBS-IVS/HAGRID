@@ -80,6 +80,14 @@
       <version>5.11.4</version>
       <scope>test</scope>
     </dependency>
+    <!-- MatsimTestUtils (MatsimTestUtils, rule extensions) -->
+    <dependency>
+      <groupId>org.matsim</groupId>
+      <artifactId>matsim</artifactId>
+      <version>${matsim.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
