@@ -14,6 +14,7 @@ import org.matsim.contrib.dvrp.run.DvrpQSimComponents;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.QSimConfigGroup;
+import org.matsim.core.config.groups.ScoringConfigGroup;
 import org.matsim.core.controler.Controler;
 
 import java.util.ArrayList;
@@ -36,6 +37,11 @@ public final class DrtConfigComposer {
 
     private DrtConfigComposer() {}
 
+    /**
+     * Composes DRT config groups into {@code config} and also registers a
+     * {@link ScoringConfigGroup.ModeParams} for the {@code drt} leg mode so that
+     * CharyparNagel scoring does not crash on the first scored DRT leg.
+     */
     public static void composeConfig(Config config, String serviceAreaShp, String fleetFile) {
         DvrpConfigGroup dvrp = ConfigUtils.addOrGetModule(config, DvrpConfigGroup.class);
         dvrp.networkModes = Set.of(TransportMode.drt);
@@ -63,6 +69,20 @@ public final class DrtConfigComposer {
 
         // DynAgents need only the start time.
         config.qsim().setSimStarttimeInterpretation(QSimConfigGroup.StarttimeInterpretation.onlyUseStarttime);
+
+        // Register drt leg-mode scoring params so CharyparNagel scorer does not crash.
+        // DrtConfigs.adjustMultiModeDrtConfig only adds the staging-activity entry, not the leg mode.
+        // Guard: pt params may not exist in a DRT-only setup.
+        ScoringConfigGroup scoring = config.scoring();
+        if (!scoring.getModes().containsKey(TransportMode.drt)) {
+            ScoringConfigGroup.ModeParams drtParams = new ScoringConfigGroup.ModeParams(TransportMode.drt);
+            ScoringConfigGroup.ModeParams ptParams = scoring.getModes().get(TransportMode.pt);
+            if (ptParams != null) {
+                drtParams.setConstant(ptParams.getConstant()); // align drt ASC with pt when present
+            }
+            drtParams.setMarginalUtilityOfTraveling(-0.0);
+            scoring.addModeParams(drtParams);
+        }
 
         // Staging activity + drt scoring/routing params (core helper, not Lausitz-specific).
         DrtConfigs.adjustMultiModeDrtConfig(multi, config.scoring(), config.routing());
