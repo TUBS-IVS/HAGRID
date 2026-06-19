@@ -153,6 +153,15 @@ public class HAGRIDScenarioBuilder {
         config.scoring().setFractionOfIterationsToStartScoreMSA(0.8);
 
         copyScoringMode(config, "car", "cargobike");
+
+        if (simConfig.isDrtScenario()) {
+            // Clipped DRT network + 100% population clipped to the service zone
+            config.network().setInputFile(simConfig.getDrtNetworkClipped());
+            config.plans().setInputFile(simConfig.getPassengerPlansClipped());
+            // Compose native DRT params (full DVRP, service-area, DRT-only)
+            hagrid.integrated.drt.DrtConfigComposer.composeConfig(
+                    config, simConfig.getDrtServiceAreaShapefile(), simConfig.getDrtFleetFile());
+        }
     }
 
     /**
