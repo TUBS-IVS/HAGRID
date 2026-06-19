@@ -223,6 +223,11 @@ public final class SimulationRunnerUtils {
                 cfg.getZoneBasedCachingThresholdMeters(),
                 cfg.getUTurnPenaltyCost()));
 
+        if (cfg.isDrtScenario()) {
+            hagrid.integrated.drt.DrtConfigComposer.installModules(controler);
+            LOG.info("DRT modules installed (fleet size {}).", cfg.getFleetSize());
+        }
+
         // Run
         LOG.info("Output: {}", cfg.getOutputDirectoryAsString());
         controler.run();
