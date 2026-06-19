@@ -334,6 +334,10 @@ public final class SimulationRunnerUtils {
               fleetSize      DRT fleet size in vehicles (default 50; only used for DRT concepts)
               writeDashboard true/false (default false) \u2014 generate dashboard after sim
 
+            Note (DRT scenarios): the clipped network, clipped population, and fleet file must be
+              pre-generated (by DrtNetworkPreparer / PopulationClipper / DrtFleetGenerator) before
+              running a DRT concept; validateInputFiles() will report them missing otherwise.
+
             Example (freight):
               concept=basecase,date=2025-05-13,tag=V1,maxIter=150,jspritIter=10000,writeDashboard=true
             Example (DRT):
