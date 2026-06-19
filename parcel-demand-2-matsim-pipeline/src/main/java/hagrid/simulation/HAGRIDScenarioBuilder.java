@@ -77,7 +77,20 @@ public class HAGRIDScenarioBuilder {
         freightConfig.setCarriersVehicleTypesFile(simConfig.getVehicleTypePath().toAbsolutePath().toString());
 
     LOGGER.info("[6/8] Loading MATSim scenario graph and population");
-        Scenario scenario = ScenarioUtils.loadScenario(config);
+        Scenario scenario;
+        if (simConfig.isDrtScenario()) {
+            // Two-step load: register DrtRouteFactory BEFORE plans are read so that
+            // MATSim can deserialise/create DrtRoute legs correctly. The one-shot
+            // ScenarioUtils.loadScenario(config) gives no hook for this registration.
+            scenario = ScenarioUtils.createScenario(config);
+            scenario.getPopulation().getFactory().getRouteFactories()
+                    .setRouteFactory(
+                            org.matsim.contrib.drt.routing.DrtRoute.class,
+                            new org.matsim.contrib.drt.routing.DrtRouteFactory());
+            ScenarioUtils.loadScenario(scenario);
+        } else {
+            scenario = ScenarioUtils.loadScenario(config);
+        }
     LOGGER.info("Scenario network contains {} links and {} nodes", scenario.getNetwork().getLinks().size(),
         scenario.getNetwork().getNodes().size());
 
@@ -139,6 +152,9 @@ public class HAGRIDScenarioBuilder {
         modes.add("car");
         modes.add("cargobike");
 
+        // NOTE: "drt" is intentionally NOT in mainModes. DRT agents are handled by
+        // the DVRP PassengerEngine (installed by DvrpModule), not by qsim.mainModes.
+        // "drt" is added to dvrp.networkModes by DrtConfigComposer for DRT scenarios.
         config.qsim().setMainModes(modes);
         config.qsim().setUsingTravelTimeCheckInTeleportation(true);
         config.qsim().setInflowCapacitySetting(
