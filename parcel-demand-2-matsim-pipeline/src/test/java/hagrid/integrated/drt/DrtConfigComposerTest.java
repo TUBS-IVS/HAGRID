@@ -57,4 +57,14 @@ class DrtConfigComposerTest {
         // SwissRailRaptor module must not have been added with intermodal access/egress
         assertThat(config.getModules()).doesNotContainKey("swissRailRaptor");
     }
+
+    @Test
+    @DisplayName("registers drt leg-mode scoring params so CharyparNagel can score DRT legs")
+    void drtLegModeScoringParams() {
+        Config config = ConfigUtils.createConfig();
+        DrtConfigComposer.composeConfig(config, "a.shp", "f.xml");
+        assertThat(config.scoring().getModes())
+                .as("drt leg mode must have a ModeParams entry after composeConfig")
+                .containsKey(TransportMode.drt);
+    }
 }

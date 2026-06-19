@@ -75,10 +75,6 @@ class DrtBaselineIntegrationTest {
         work.setTypicalDuration(8 * 3600);
         config.scoring().addActivityParams(work);
 
-        // drt leg scoring params (needed by CharyparNagel scorer; DrtConfigs adds staging activity but not the leg mode)
-        ScoringConfigGroup.ModeParams drtMode = new ScoringConfigGroup.ModeParams(TransportMode.drt);
-        config.scoring().addModeParams(drtMode);
-
         DrtConfigComposer.composeConfig(config, "UNUSED_for_door2door.shp", fleet.toString());
         // For the smoke test, override to door2door so no real shapefile is needed.
         org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(config).getModalElements()
