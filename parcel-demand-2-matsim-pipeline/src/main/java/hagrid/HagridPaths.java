@@ -280,6 +280,40 @@ public class HagridPaths {
     public Path logDir() { return runDir().resolve("logs"); }
     public String runnerLog() { return logDir().resolve("runner.log").toString(); }
 
+    // --- Lausitz DRT inputs (study-area-scoped under inputBase) ---
+
+    /** DRT service-area shapefile (parameterised; defines the Hoyerswerda DRT zone). */
+    public String drtServiceAreaShapefile() {
+        return inputBase.resolve("drt").resolve("drt-service-area.shp").toString();
+    }
+
+    /** Raw Lausitz car network (before clipping to the DRT service area). */
+    public String lausitzNetworkRaw() {
+        return inputBase.resolve("network").resolve("lausitz-network.xml.gz").toString();
+    }
+
+    /** Raw 100 % matsim-lausitz passenger plans (before clipping to the service area). */
+    public String passengerPlansRaw() {
+        return inputBase.resolve("population").resolve("lausitz-100pct.plans.xml.gz").toString();
+    }
+
+    // --- Lausitz DRT run-scoped outputs (require initializeRun) ---
+
+    /** Network clipped to the DRT service area with drt added as an allowed mode. */
+    public String drtNetworkClipped() {
+        return runDir().resolve(p() + "drt_network.xml.gz").toString();
+    }
+
+    /** Passenger plans clipped to the DRT service area. */
+    public String passengerPlansClipped() {
+        return runDir().resolve(p() + "drt_population.xml.gz").toString();
+    }
+
+    /** Generated DVRP fleet vehicles file for the DRT fleet. */
+    public String drtFleetFile() {
+        return runDir().resolve(p() + "drt_fleet.xml.gz").toString();
+    }
+
     // =========================================================================
     // MATSIM OUTPUT  (hagrid-matsim-output/{RUN_ID}/)
     // =========================================================================

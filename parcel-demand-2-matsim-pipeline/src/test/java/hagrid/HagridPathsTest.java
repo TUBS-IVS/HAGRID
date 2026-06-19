@@ -299,6 +299,34 @@ class HagridPathsTest {
     }
 
     // =========================================================================
+    // LAUSITZ DRT PATHS
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Lausitz DRT paths")
+    class LausitzDrtPaths {
+
+        @Test
+        @DisplayName("input getters resolve under the lausitz input folder")
+        void inputsScopedToLausitz(@TempDir Path tempDir) {
+            HagridPaths p = new HagridPaths(tempDir, StudyArea.LAUSITZ_HOYERSWERDA);
+            assertThat(p.drtServiceAreaShapefile()).contains("lausitz").endsWith("drt-service-area.shp");
+            assertThat(p.lausitzNetworkRaw()).contains("lausitz").endsWith("lausitz-network.xml.gz");
+            assertThat(p.passengerPlansRaw()).contains("lausitz").endsWith("lausitz-100pct.plans.xml.gz");
+        }
+
+        @Test
+        @DisplayName("run-scoped DRT outputs embed the runId")
+        void outputsCarryRunId(@TempDir Path tempDir) {
+            HagridPaths p = new HagridPaths(tempDir, StudyArea.LAUSITZ_HOYERSWERDA);
+            p.initializeRun("DRT_BASELINE_13052025");
+            assertThat(p.drtNetworkClipped()).contains("DRT_BASELINE_13052025").endsWith("_drt_network.xml.gz");
+            assertThat(p.passengerPlansClipped()).contains("DRT_BASELINE_13052025").endsWith("_drt_population.xml.gz");
+            assertThat(p.drtFleetFile()).contains("DRT_BASELINE_13052025").endsWith("_drt_fleet.xml.gz");
+        }
+    }
+
+    // =========================================================================
     // STUDY-AREA SCOPING
     // =========================================================================
 
