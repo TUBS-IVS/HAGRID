@@ -66,7 +66,15 @@ public class HagridConfig {
         BATCHMODERATE,
         BATCHMEDIUM,
         BATCHHIGH,
-        BATCHFULL
+        BATCHFULL,
+        DRT_BASELINE,    // multi-LSP freight + native DRT (two independent fleets)
+        DRT_SHAREDUSE,   // cargo hitching, 2D split capacity (Phase 1c)
+        DRT_MODULAR;     // capsule swap (Phase 1d)
+
+        /** True for the integrated passenger+freight DRT scenarios (require StudyArea.LAUSITZ_HOYERSWERDA). */
+        public boolean isDrt() {
+            return this == DRT_BASELINE || this == DRT_SHAREDUSE || this == DRT_MODULAR;
+        }
     }
 
     // =========================================================================
@@ -823,6 +831,10 @@ public class HagridConfig {
      * the existing run id is re-applied to the new path resolver so that output-path getters
      * keep returning valid, run-scoped paths. */
     public void setStudyArea(StudyArea studyArea) {
+        if (scenario != null && scenario.isDrt() && studyArea != StudyArea.LAUSITZ_HOYERSWERDA) {
+            throw new IllegalArgumentException(
+                    "DRT scenario " + scenario + " requires StudyArea.LAUSITZ_HOYERSWERDA, got " + studyArea);
+        }
         this.studyArea = studyArea;
         this.hagridPaths = new HagridPaths(studyArea);
         if (this.runId != null) {

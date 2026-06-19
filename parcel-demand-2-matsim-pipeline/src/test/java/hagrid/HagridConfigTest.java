@@ -536,6 +536,54 @@ class HagridConfigTest {
     }
 
     // =========================================================================
+    // DRT SCENARIOS
+    // =========================================================================
+
+    @Nested
+    @DisplayName("DRT scenarios")
+    class DrtScenarios {
+
+        @Test
+        @DisplayName("isDrt() true only for DRT_* values")
+        void isDrtFlag() {
+            assertThat(HagridConfig.Scenario.DRT_BASELINE.isDrt()).isTrue();
+            assertThat(HagridConfig.Scenario.DRT_SHAREDUSE.isDrt()).isTrue();
+            assertThat(HagridConfig.Scenario.DRT_MODULAR.isDrt()).isTrue();
+            assertThat(HagridConfig.Scenario.BASECASE.isDrt()).isFalse();
+            assertThat(HagridConfig.Scenario.UCC.isDrt()).isFalse();
+        }
+
+        @Test
+        @DisplayName("DRT scenario + HANNOVER is rejected")
+        void drtRequiresLausitz() {
+            HagridConfig cfg = new HagridConfig();
+            cfg.setScenario(HagridConfig.Scenario.DRT_BASELINE);
+            assertThatThrownBy(() -> cfg.setStudyArea(StudyArea.HANNOVER))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("DRT")
+                    .hasMessageContaining("LAUSITZ_HOYERSWERDA");
+        }
+
+        @Test
+        @DisplayName("DRT scenario + LAUSITZ_HOYERSWERDA is accepted")
+        void drtWithLausitzOk() {
+            HagridConfig cfg = new HagridConfig();
+            cfg.setScenario(HagridConfig.Scenario.DRT_BASELINE);
+            assertThatCode(() -> cfg.setStudyArea(StudyArea.LAUSITZ_HOYERSWERDA))
+                    .doesNotThrowAnyException();
+            assertThat(cfg.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
+        }
+
+        @Test
+        @DisplayName("non-DRT scenario keeps HANNOVER default behaviour")
+        void nonDrtUnchanged() {
+            HagridConfig cfg = new HagridConfig();
+            assertThatCode(() -> cfg.setStudyArea(StudyArea.HANNOVER)).doesNotThrowAnyException();
+            assertThat(cfg.getStudyArea()).isEqualTo(StudyArea.HANNOVER);
+        }
+    }
+
+    // =========================================================================
     // STUDY AREA SETTINGS
     // =========================================================================
 
