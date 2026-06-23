@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">
+<!--
+  Trimmed, native-LIKE matsim-lausitz config FIXTURE for LausitzDrtConfiguratorTest.
+
+  Mirrors the structure of the git-ignored staged native config
+  (hagrid-input/lausitz/config/lausitz-v2024.2-100pct.config.xml) so the
+  production test exercises the strip/redirect/score path PORTABLY (without the
+  machine-specific staged file). It deliberately contains:
+    - a transit module with useTransit=true + remote-looking schedule/vehicles refs
+    - a counts module with an input file
+    - a subtourModeChoice module whose modes include pt
+    - a scoring block with car + pt modeParams (composeConfig derives the drt ASC from pt)
+    - qsim/routing/travelTimeCalculator carrying longDistanceFreight (to be dropped)
+  network/plans inputFile are dummy http paths; build() overrides them anyway.
+-->
+<config>
+	<module name="global">
+		<param name="coordinateSystem" value="EPSG:25832"/>
+	</module>
+
+	<module name="network">
+		<param name="inputNetworkFile" value="https://example.invalid/lausitz-network-with-pt.xml.gz"/>
+	</module>
+
+	<module name="plans">
+		<param name="inputPlansFile" value="https://example.invalid/lausitz-100pct.plans-initial.xml.gz"/>
+	</module>
+
+	<module name="transit">
+		<param name="transitScheduleFile" value="https://example.invalid/lausitz-transitSchedule.xml.gz"/>
+		<param name="vehiclesFile" value="https://example.invalid/lausitz-transitVehicles.xml.gz"/>
+		<param name="useTransit" value="true"/>
+	</module>
+
+	<module name="counts">
+		<param name="inputCountsFile" value="https://example.invalid/lausitz-counts-bast.xml.gz"/>
+	</module>
+
+	<module name="routing">
+		<param name="networkModes" value="car,ride,bike,longDistanceFreight"/>
+	</module>
+
+	<module name="qsim">
+		<param name="mainMode" value="car,bike,longDistanceFreight"/>
+	</module>
+
+	<module name="travelTimeCalculator">
+		<param name="analyzedModes" value="car,longDistanceFreight"/>
+		<param name="separateModes" value="true"/>
+	</module>
+
+	<module name="subtourModeChoice">
+		<param name="chainBasedModes" value="car,bike"/>
+		<param name="modes" value="car,ride,pt,bike,walk"/>
+	</module>
+
+	<module name="scoring">
+		<parameterset type="scoringParameters">
+			<parameterset type="modeParams">
+				<param name="constant" value="0.47421385937829563"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="car"/>
+				<param name="monetaryDistanceRate" value="-0.00025"/>
+				<param name="dailyMonetaryConstant" value="-13.22"/>
+			</parameterset>
+			<parameterset type="modeParams">
+				<param name="constant" value="-1.298710085933025"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="pt"/>
+				<param name="dailyMonetaryConstant" value="0.0"/>
+			</parameterset>
+		</parameterset>
+	</module>
+</config>
