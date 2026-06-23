@@ -117,3 +117,6 @@ parcel-demand-2-matsim-pipeline/test/output/
 /kneedle_breakpoint_analysis.png
 /plots/
 /Pictures/
+
+# Root-level run output (DRT_BASELINE etc.) — reproducible, not versioned
+/hagrid-output/
