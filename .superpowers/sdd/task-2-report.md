@@ -90,4 +90,48 @@ SHA: (see commit below)
 
 1. **JTS version conflict (pre-existing):** The project declares `jts-core:1.16.1` but GeoTools 31.1 was compiled against JTS ≥1.18. This is a latent binary incompatibility that only manifests when writing shapefiles via GeoTools (e.g. if production code ever writes a shapefile with a Polygon geometry, it will get `NoSuchMethodError`). Reading shapefiles works fine. Consider upgrading `jts-core` to `1.20.0` (jar is already in the local Maven repo) in a follow-up task.
 
-2. **Fleet uses the full (drt-annotated) network for vehicle anchoring:** `DrtFleetGenerator.write` anchors vehicles on all network links (sorted by ID, round-robin). With the full network, this includes the rail link outside the service area. In production the Lausitz network will only have car links in the service area tagged with `drt`, and the `MultimodalNetworkCleaner` ensures the drt subgraph is connected — but vehicles may be anchored on non-drt links. This matches the existing `DrtFleetGenerator` contract (it uses all links in the passed network). If only DRT-capable links should host vehicles, the call site should filter the network — out of scope for this task.
+2. **Fleet uses the full (drt-annotated) network for vehicle anchoring (resolved in round-1 fix):** See "Fix (review round 1)" section below.
+
+---
+
+## Fix (review round 1)
+
+### What was changed
+
+**Correctness fix — `LausitzDrtPreprocessor.java`**
+
+Step 6 previously passed the full post-`prepareDrtNetwork` network to `DrtFleetGenerator.write`. That network contains non-`drt` links (rail, bus, car links outside the service area). `DrtFleetGenerator` sorts link IDs alphabetically and assigns vehicles round-robin, so any non-drt link whose ID sorts early enough would receive a vehicle — invalid for DVRP's drt sub-network.
+
+Fix: build a drt-only subnetwork view via `TransportModeNetworkFilter` and pass that to `DrtFleetGenerator.write`. The full network is still written to `drtNetworkOut` unchanged (D3 preserved).
+
+```java
+// Before (buggy):
+DrtFleetGenerator.write(net, fleetSize, capacity, serviceBegin, serviceEnd, Path.of(fleetOut));
+
+// After (fixed):
+Network drtSubNet = NetworkUtils.createNetwork();
+new TransportModeNetworkFilter(net).filter(drtSubNet, Set.of(TransportMode.drt));
+DrtFleetGenerator.write(drtSubNet, fleetSize, capacity, serviceBegin, serviceEnd, Path.of(fleetOut));
+```
+
+New imports added: `org.matsim.api.core.v01.TransportMode`, `org.matsim.api.core.v01.network.Network`, `org.matsim.core.network.algorithms.TransportModeNetworkFilter`, `java.util.Set`.
+
+**Test hardening — `LausitzDrtPreprocessorTest.java`**
+
+- Added a second non-drt link `"apt_bus_0"` (mode `"bus"`) to the fixture network. Its ID sorts alphabetically before all `"car_*"` IDs (`"a" < "c"`), so with `fleetSize=3` the OLD code would have anchored vehicle 0 on it — a non-drt link.
+- Added assertion (c2): for every vehicle in the fleet XML, extract the `startLink` attribute, look it up in the drt-annotated network, and assert its `allowedModes` contains `"drt"`.
+- Assertion (a) extended to also assert `apt_bus_0` does not carry `drt`.
+- Full-link-count assertion still passes: fixture now has 10 links (8 car + rail + bus), all preserved in the written drt-network.
+
+**Why the new assertion would fail against the old code:**
+Old code passes the full 10-link network (sorted: `apt_bus_0`, `car_0`, `car_0r`, ...). With `fleetSize=3`, vehicle 0 gets `startLink="apt_bus_0"`. `apt_bus_0` is in the drt-annotated network (full network preserved), but its `allowedModes` is `{"bus"}` — does not contain `"drt"`. The assertion `assertThat(modes).contains("drt")` fails. After the fix, only the 8 `car_*` links are in `drtSubNet`, so all three vehicles land on `car_*` links which carry `drt`.
+
+### Test run
+
+```
+mvn -pl parcel-demand-2-matsim-pipeline test -Dtest=hagrid.integrated.drt.LausitzDrtPreprocessorTest
+```
+
+```
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0  BUILD SUCCESS
+```

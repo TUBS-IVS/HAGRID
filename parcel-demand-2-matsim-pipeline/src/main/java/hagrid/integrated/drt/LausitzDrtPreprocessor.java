@@ -3,9 +3,12 @@ package hagrid.integrated.drt;
 import hagrid.integrated.PopulationClipper;
 import hagrid.simulation.HAGRIDSimulationConfig;
 import hagrid.utils.GeoUtils;
+import org.matsim.api.core.v01.TransportMode;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Population;
 import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.NetworkWriter;
 import org.matsim.core.population.PopulationUtils;
 import org.matsim.core.utils.gis.GeoFileReader;
@@ -16,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Produces the three run-scoped DRT input files for a passenger-only Lausitz DRT run:
@@ -81,8 +85,11 @@ public final class LausitzDrtPreprocessor {
         toRemove.forEach(p -> clipped.removePerson(p.getId()));
         PopulationUtils.writePopulation(clipped, plansOut);
 
-        // 6. Generate the DVRP fleet (anchored on the full, drt-annotated network).
-        DrtFleetGenerator.write(net, fleetSize, capacity, serviceBegin, serviceEnd, Path.of(fleetOut));
+        // 6. Build a drt-only subnetwork view so vehicles are anchored only on drt-mode links.
+        //    The full network is already written to drtNetworkOut above (D3 — no clip).
+        Network drtSubNet = NetworkUtils.createNetwork();
+        new TransportModeNetworkFilter(net).filter(drtSubNet, Set.of(TransportMode.drt));
+        DrtFleetGenerator.write(drtSubNet, fleetSize, capacity, serviceBegin, serviceEnd, Path.of(fleetOut));
     }
 
     /**
