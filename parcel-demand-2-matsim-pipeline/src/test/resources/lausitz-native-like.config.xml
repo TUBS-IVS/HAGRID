@@ -71,6 +71,17 @@
 		<param name="modes" value="car,ride,pt,bike,walk"/>
 	</module>
 
+	<!-- The real native config ships a simwrapper module (analytics dashboards).  The
+	     configurator must DROP it before constructing the Controler because no
+	     SimWrapperConfigGroup is registered, leaving it unmaterialised — MATSim's
+	     UnmaterializedConfigGroupChecker aborts on that.  Adding it here makes
+	     config.getModules().remove("simwrapper") a real-work operation in tests, not a no-op. -->
+	<module name="simwrapper">
+		<parameterset type="params">
+			<param name="defaultColorScheme" value="light"/>
+		</parameterset>
+	</module>
+
 	<module name="scoring">
 		<parameterset type="scoringParameters">
 			<parameterset type="modeParams">
