@@ -65,6 +65,17 @@ public final class LausitzDrtConfigurator {
         //    remote SVN file refs (verified in the spike).
         Config config = ConfigUtils.loadConfig(baseConfigPath);
 
+        // Absolutise the run-scoped inputs. The native base config is loaded from a FILE
+        // path, so MATSim sets its context to the config file's parent directory and
+        // resolves RELATIVE network/plans/shp/fleet paths against THAT directory — not the
+        // CWD the preprocessor wrote them under (HagridPaths uses a relative pipeline root).
+        // That mismatch yields a doubled, non-existent path (…/config/…/hagrid-output/…).
+        // Absolute paths bypass context resolution entirely (cf. DrtBaselineEndToEndTest).
+        drtNetworkFile = absolutise(drtNetworkFile);
+        plansFile = absolutise(plansFile);
+        serviceAreaShp = absolutise(serviceAreaShp);
+        fleetFile = absolutise(fleetFile);
+
         // 2) Redirect IO to the clipped DRT inputs.
         config.network().setInputFile(drtNetworkFile);
         config.plans().setInputFile(plansFile);
@@ -83,6 +94,13 @@ public final class LausitzDrtConfigurator {
         config.transit().setVehiclesFile(null);
         // counts is a remote file — clearing it prevents a remote fetch at scenario load.
         config.counts().setInputFile(null);
+        // The native config carries a `simwrapper` module, but we do NOT register the
+        // SimWrapper contrib (no SimWrapperConfigGroup / no dashboards in this milestone).
+        // It therefore stays an UNMATERIALIZED generic group, and MATSim's
+        // UnmaterializedConfigGroupChecker aborts the Controler at startup
+        // ("Unmaterialized config group: simwrapper"). Drop it — it is analysis-only and
+        // plays no role in the passenger DRT mobsim.
+        config.getModules().remove("simwrapper");
         // The native config's `vehicles` module points vehiclesFile at a remote SVN URL and
         // sets qsim.vehiclesSource=modeVehicleTypesFromVehiclesData (which REQUIRES that file).
         // A real DRT-only run must be self-contained and must NOT fetch from SVN: null the
@@ -110,6 +128,23 @@ public final class LausitzDrtConfigurator {
         }
         config.subtourModeChoice().setModes(choiceModes.toArray(new String[0]));
 
+        // 4b) Register a TELEPORTED router for pt. PT is removed as a CHOICE mode and transit is
+        //     off, but the REAL clipped population still carries pre-existing `pt` legs in its
+        //     initial plans (~12k in the Hoyerswerda clip). PersonPrepareForSim re-routes every
+        //     plan at iteration start and would throw TripRouter$UnknownModeException
+        //     ("unregistered main mode |pt|") because no pt routing module exists once transit is
+        //     disabled. A teleported pt router lets those legs route by beeline (no transit
+        //     schedule needed), keeping the milestone DRT-only while not crashing on legacy pt
+        //     trips. (The fixtures only had drt legs, so this only surfaces on real data.)
+        //     Speed 50 km/h + beeline factor 1.3 are standard VSP teleported-pt values.
+        if (!config.routing().getTeleportedModeParams().containsKey(TransportMode.pt)) {
+            org.matsim.core.config.groups.RoutingConfigGroup.TeleportedModeParams ptTeleport =
+                    new org.matsim.core.config.groups.RoutingConfigGroup.TeleportedModeParams(TransportMode.pt);
+            ptTeleport.setTeleportedModeSpeed(50.0 / 3.6);
+            ptTeleport.setBeelineDistanceFactor(1.3);
+            config.routing().addTeleportedModeParams(ptTeleport);
+        }
+
         // 5) Drop the longDistanceFreight network mode (no freight agents in this milestone).
         //    Leave any longDistanceFreight strategysettings untouched — harmless with no such agents.
         config.qsim().setMainModes(withoutFreight(config.qsim().getMainModes()));
@@ -129,6 +164,18 @@ public final class LausitzDrtConfigurator {
         DrtConfigComposer.composeConfig(config, serviceAreaShp, fleetFile);
 
         return config;
+    }
+
+    /**
+     * Returns an absolute path string for {@code path}. Null/blank is returned unchanged
+     * (so an intentionally-cleared file ref stays cleared). Absolute inputs avoid MATSim
+     * resolving them against the loaded config file's directory.
+     */
+    private static String absolutise(String path) {
+        if (path == null || path.isBlank()) {
+            return path;
+        }
+        return java.nio.file.Paths.get(path).toAbsolutePath().normalize().toString();
     }
 
     /** The freight subpopulation network mode dropped in this milestone. */
