@@ -53,11 +53,16 @@ public final class DrtScenarioBuilder {
     }
 
     // ===================================================================
-    // Package-private path-based overload — used directly in tests
+    // Path-based overload — used directly in tests (temp-dir fixtures)
     // ===================================================================
 
     /**
      * Builds a passenger-only DRT scenario from explicit file paths.
+     *
+     * <p>Public so it can be driven directly by tests with temp-dir fixtures (e.g. the
+     * end-to-end run test in {@code hagrid.integrated.drt}), without needing a fully wired
+     * {@link HAGRIDSimulationConfig}. This is the exact path the public
+     * {@link #build(HAGRIDSimulationConfig)} overload delegates to.</p>
      *
      * @param baseConfigPath  native Lausitz base config (scoring/mode-choice source)
      * @param drtNetworkFile  network clipped to the DRT service area with drt mode added
@@ -69,7 +74,7 @@ public final class DrtScenarioBuilder {
      * @param lastIteration   last MATSim iteration
      * @return the loaded MATSim scenario ready for a {@link org.matsim.core.controler.Controler}
      */
-    static Scenario build(String baseConfigPath, String drtNetworkFile, String plansFile,
+    public static Scenario build(String baseConfigPath, String drtNetworkFile, String plansFile,
                           String serviceAreaShp, String fleetFile,
                           String outputDir, String runId, int lastIteration) {
 

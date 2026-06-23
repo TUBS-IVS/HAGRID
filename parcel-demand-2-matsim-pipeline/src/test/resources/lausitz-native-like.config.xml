@@ -27,6 +27,13 @@
 		<param name="inputPlansFile" value="https://example.invalid/lausitz-100pct.plans-initial.xml.gz"/>
 	</module>
 
+	<!-- Native config points vehiclesFile at a remote SVN URL and sets qsim.vehiclesSource
+	     to modeVehicleTypesFromVehiclesData (which REQUIRES that remote file). The configurator
+	     must null this ref and fall back to defaultVehicle so a real run is self-contained. -->
+	<module name="vehicles">
+		<param name="vehiclesFile" value="https://example.invalid/lausitz-vehicle-types.xml"/>
+	</module>
+
 	<module name="transit">
 		<param name="transitScheduleFile" value="https://example.invalid/lausitz-transitSchedule.xml.gz"/>
 		<param name="vehiclesFile" value="https://example.invalid/lausitz-transitVehicles.xml.gz"/>
@@ -38,11 +45,20 @@
 	</module>
 
 	<module name="routing">
+		<!-- Native config clears the default teleported params for walk/bike (otherwise bike is
+		     both teleported AND a network mode -> config-consistency abort). Mirror that here. -->
+		<param name="clearDefaultTeleportedModeParams" value="true"/>
 		<param name="networkModes" value="car,ride,bike,longDistanceFreight"/>
+		<parameterset type="teleportedModeParameters">
+			<param name="beelineDistanceFactor" value="1.3"/>
+			<param name="mode" value="walk"/>
+			<param name="teleportedModeSpeed" value="1.0555556"/>
+		</parameterset>
 	</module>
 
 	<module name="qsim">
 		<param name="mainMode" value="car,bike,longDistanceFreight"/>
+		<param name="vehiclesSource" value="modeVehicleTypesFromVehiclesData"/>
 	</module>
 
 	<module name="travelTimeCalculator">
@@ -69,6 +85,18 @@
 				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
 				<param name="mode" value="pt"/>
 				<param name="dailyMonetaryConstant" value="0.0"/>
+			</parameterset>
+			<!-- bike + walk modeParams mirror the native config: they remain CHOICE modes
+			     (subtourModeChoice keeps car,ride,bike,walk after pt is stripped), so the
+			     CharyparNagel scorer needs params for them or it NPEs on a bike/walk leg. -->
+			<parameterset type="modeParams">
+				<param name="constant" value="-2.8689722982647563"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="-4.0"/>
+				<param name="mode" value="bike"/>
+			</parameterset>
+			<parameterset type="modeParams">
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="walk"/>
 			</parameterset>
 		</parameterset>
 	</module>

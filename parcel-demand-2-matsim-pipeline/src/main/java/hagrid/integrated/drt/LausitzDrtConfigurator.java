@@ -83,6 +83,22 @@ public final class LausitzDrtConfigurator {
         config.transit().setVehiclesFile(null);
         // counts is a remote file — clearing it prevents a remote fetch at scenario load.
         config.counts().setInputFile(null);
+        // The native config's `vehicles` module points vehiclesFile at a remote SVN URL and
+        // sets qsim.vehiclesSource=modeVehicleTypesFromVehiclesData (which REQUIRES that file).
+        // A real DRT-only run must be self-contained and must NOT fetch from SVN: null the
+        // vehicle-types file and fall back to the built-in `defaultVehicle` source (MATSim
+        // synthesises a default car vehicle type from config). The DRT fleet vehicles come
+        // from the DVRP fleet file (composeConfig), independent of this passenger-mode source.
+        org.matsim.core.config.groups.VehiclesConfigGroup vehicles =
+                ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.VehiclesConfigGroup.class);
+        vehicles.setVehiclesFile(null);
+        if (config.qsim().getVehiclesSource()
+                == org.matsim.core.config.groups.QSimConfigGroup.VehiclesSource.modeVehicleTypesFromVehiclesData
+                || config.qsim().getVehiclesSource()
+                == org.matsim.core.config.groups.QSimConfigGroup.VehiclesSource.fromVehiclesData) {
+            config.qsim().setVehiclesSource(
+                    org.matsim.core.config.groups.QSimConfigGroup.VehiclesSource.defaultVehicle);
+        }
         // Remove pt as a CHOICE mode (keep walk/bike/ride/car). drt is added later by composeConfig.
         // NB: the pt SCORING modeParams stays — composeConfig derives the drt ASC from it.
         String[] modes = config.subtourModeChoice().getModes();
