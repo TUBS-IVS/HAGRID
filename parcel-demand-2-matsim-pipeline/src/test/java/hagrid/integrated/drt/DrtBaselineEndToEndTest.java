@@ -166,12 +166,21 @@ class DrtBaselineEndToEndTest {
     }
 
     /**
-     * Five {@code person}-subpopulation agents whose home is inside the area, each making
-     * a drt trip to work. Activity types use the VSP typed convention
+     * Five {@code person}-subpopulation agents making a drt trip to work, plus ONE agent
+     * whose plan contains a {@code pt} leg (home → pt → work).
+     *
+     * <p>The pt-leg agent exercises the teleported-pt-router boot fix: when
+     * {@code transit} is disabled, {@code PersonPrepareForSim} still re-routes every
+     * initial leg at iteration-0 start, and without a registered teleported-pt routing
+     * module MATSim would throw {@code TripRouter$UnknownModeException}.  Adding this agent
+     * to the fixture population ensures the fix is load-tested in the e2e run; if
+     * {@code addTeleportedModeParams(pt)} were removed from the configurator the run would
+     * crash here rather than silently passing.</p>
+     *
+     * <p>Activity types use the VSP typed convention
      * ({@code home_<sec>} / {@code work_<sec>}, durations a multiple of 600s within
      * 600..97200) so {@link org.matsim.contrib.vsp.scenario.SnzActivities#addScoringParams}
-     * (called by the configurator) registers matching scoring params — otherwise MATSim
-     * would abort with no scoring params for the activity type.
+     * (called by the configurator) registers matching scoring params.</p>
      */
     private Population buildDemand() {
         Population pop = PopulationUtils.createPopulation(ConfigUtils.createConfig());
@@ -189,6 +198,22 @@ class DrtBaselineEndToEndTest {
             p.setSelectedPlan(plan);
             pop.addPerson(p);
         }
+        // ONE agent with a pt leg — exercises the teleported-pt-router boot fix
+        // (boot fix: addTeleportedModeParams(pt) in LausitzDrtConfigurator.build()).
+        // PersonPrepareForSim re-routes this leg at iteration-0 start through the
+        // beeline teleported router.  Without the fix the Controler would throw
+        // TripRouter$UnknownModeException("unregistered main mode |pt|") here.
+        Person ptAgent = pf.createPerson(Id.createPersonId("pt_legacy_agent"));
+        PopulationUtils.putSubpopulation(ptAgent, "person");
+        Plan ptPlan = pf.createPlan();
+        Activity ptHome = pf.createActivityFromCoord("home_57600", new Coord(150, 150));
+        ptHome.setEndTime(9 * 3600);
+        ptPlan.addActivity(ptHome);
+        ptPlan.addLeg(pf.createLeg(TransportMode.pt));
+        ptPlan.addActivity(pf.createActivityFromCoord("work_28800", new Coord(950, 950)));
+        ptAgent.addPlan(ptPlan);
+        ptAgent.setSelectedPlan(ptPlan);
+        pop.addPerson(ptAgent);
         return pop;
     }
 
