@@ -297,6 +297,11 @@ public class HagridPaths {
         return inputBase.resolve("population").resolve("lausitz-100pct.plans.xml.gz").toString();
     }
 
+    /** Native matsim-lausitz base config (scoring/activity-param source for DRT runs). */
+    public String lausitzBaseConfig() {
+        return inputBase.resolve("config").resolve("lausitz-v2024.2-100pct.config.xml").toString();
+    }
+
     // --- Lausitz DRT run-scoped outputs (require initializeRun) ---
 
     /** Network clipped to the DRT service area with drt added as an allowed mode. */
