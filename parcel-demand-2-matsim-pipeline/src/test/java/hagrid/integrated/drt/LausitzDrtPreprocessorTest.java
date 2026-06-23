@@ -35,7 +35,8 @@ class LausitzDrtPreprocessorTest {
 
         // ---- fixture network ------------------------------------------------
         // Car square (4 nodes, 8 directed links) — all inside the service area.
-        // Plus one isolated rail/pt link outside the area (node coords at 3000).
+        // Plus one rail link ("rail_0") and one bus link ("apt_bus_0") outside the area.
+        // "apt_bus_0" sorts before all "car_*" IDs — regression trap for the fleet-anchor fix.
         Network fullNet = buildFixtureNetwork();
         Path rawNetFile = tmp.resolve("raw_network.xml.gz");
         new NetworkWriter(fullNet).write(rawNetFile.toString());
@@ -77,14 +78,15 @@ class LausitzDrtPreprocessorTest {
         // Inside car links must carry "drt".
         for (Link link : drtNet.getLinks().values()) {
             String id = link.getId().toString();
+            Set<String> modes = link.getAllowedModes();
             if (id.startsWith("car_")) {
-                assertThat(link.getAllowedModes())
+                assertThat(modes)
                         .as("car link %s inside area must have drt mode", id)
                         .contains(TransportMode.drt);
-            } else if (id.equals("rail_0")) {
-                // The rail link must NOT get the drt mode.
-                assertThat(link.getAllowedModes())
-                        .as("rail link must NOT have drt mode")
+            } else if (id.equals("rail_0") || id.equals("apt_bus_0")) {
+                // Non-car links outside the area must NOT get the drt mode.
+                assertThat(modes)
+                        .as("non-car link %s must NOT have drt mode", id)
                         .doesNotContain(TransportMode.drt);
             }
         }
@@ -110,6 +112,28 @@ class LausitzDrtPreprocessorTest {
         assertThat(vehicleCount)
                 .as("fleet file must contain exactly %d vehicles", fleetSize)
                 .isEqualTo(fleetSize);
+
+        // Every vehicle's startLinkId must reference a link in the drt network
+        // whose allowed modes contain "drt".
+        // NOTE: the fixture adds "apt_bus_0" (a non-drt link whose ID sorts before all
+        // "car_*" IDs alphabetically). With fleetSize=3 the OLD code (passing the full
+        // network to DrtFleetGenerator) would have anchored vehicle 0 on "apt_bus_0",
+        // which carries no drt mode — this assertion catches exactly that defect.
+        for (String line : fleetXml.lines().toList()) {
+            if (!line.contains("startLink")) continue;
+            // Extract startLink value — FleetWriter emits e.g. startLink="car_0" or startLinkId="car_0"
+            String val = line.replaceAll(".*startLink(?:Id)?=\"([^\"]+)\".*", "$1");
+            if (val.equals(line)) continue; // no match on this line
+            Id<Link> linkId = Id.createLinkId(val);
+            Link startLink = drtNet.getLinks().get(linkId);
+            assertThat(startLink)
+                    .as("fleet vehicle startLink '%s' must exist in the drt-annotated network", val)
+                    .isNotNull();
+            if (startLink == null) continue; // unreachable — satisfies null-checker
+            assertThat(startLink.getAllowedModes())
+                    .as("fleet vehicle startLink '%s' must carry drt mode", val)
+                    .contains(TransportMode.drt);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -120,7 +144,12 @@ class LausitzDrtPreprocessorTest {
      * Builds a network with:
      * <ul>
      *   <li>A 4-node car square (8 directed car links) — all nodes at 100..1000, inside the area.</li>
-     *   <li>One rail link between two nodes at coord 3000 (outside the area).</li>
+     *   <li>One rail link ("rail_0") between two nodes at coord 3000 (outside the area).</li>
+     *   <li>One bus/pt link ("apt_bus_0") between nodes at coord 3000 (outside the area),
+     *       with mode "bus" only (no "drt"). Its ID sorts <em>before</em> all "car_*" IDs
+     *       alphabetically ("a" &lt; "c"), so with fleetSize=3 the OLD code (passing the full
+     *       network to DrtFleetGenerator) would have anchored vehicle 0 on this non-drt link —
+     *       the fleet-startLink assertion in the test is designed to catch exactly that.</li>
      * </ul>
      */
     private Network buildFixtureNetwork() {
@@ -151,6 +180,23 @@ class LausitzDrtPreprocessorTest {
         rail.setNumberOfLanes(1);
         rail.setAllowedModes(Set.of("rail"));
         net.addLink(rail);
+
+        // Bus/pt link — ID "apt_bus_0" sorts before all "car_*" links ("a" < "c").
+        // This is the regression-trap link: the old code passed the full network to
+        // DrtFleetGenerator, which sorts links by ID and assigns round-robin. With
+        // fleetSize=3, vehicle 0 would land on "apt_bus_0" (no drt mode) — invalid.
+        // After the fix, only the drt-subnetwork is passed, so this link is excluded.
+        Node bn0 = f.createNode(Id.createNodeId("bn0"), new Coord(3000, 4000));
+        Node bn1 = f.createNode(Id.createNodeId("bn1"), new Coord(4000, 4000));
+        net.addNode(bn0);
+        net.addNode(bn1);
+        Link bus = f.createLink(Id.createLinkId("apt_bus_0"), bn0, bn1);
+        bus.setLength(1000);
+        bus.setFreespeed(10.0);
+        bus.setCapacity(500);
+        bus.setNumberOfLanes(1);
+        bus.setAllowedModes(Set.of("bus"));
+        net.addLink(bus);
 
         return net;
     }
