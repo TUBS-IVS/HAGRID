@@ -400,6 +400,16 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
+     * Returns the path to the native Lausitz base config
+     * (scoring/activity-param source for DRT runs).
+     *
+     * @return Lausitz base config path
+     */
+    public String getLausitzBaseConfig() {
+        return paths.lausitzBaseConfig();
+    }
+
+    /**
      * Returns the path to the raw Lausitz network file.
      *
      * @return raw Lausitz network path
@@ -454,19 +464,23 @@ public class HAGRIDSimulationConfig {
     public void validateInputFiles() {
         List<String> missing = new ArrayList<>();
 
-        checkFile(getConfigPath(), "Simulation config", missing);
-        checkFile(getVehicleTypePath(), "Vehicle types", missing);
-        checkFile(getCarNetworkPath(), "Car network", missing);
-        checkFile(getBikeNetworkPath(), "Bike network", missing);
-        checkFile(getNetworkChangeEventPath(), "Network change events", missing);
-        checkFile(getFreightZonePath(), "Freight zone shapefile", missing);
-        checkFile(getDeliveryCarrierPath(), "Delivery carriers", missing);
-        checkFile(getSupplyCarrierPath(), "Supply carriers", missing);
+        if (!isDrtScenario()) {
+            checkFile(getConfigPath(), "Simulation config", missing);
+            checkFile(getVehicleTypePath(), "Vehicle types", missing);
+            checkFile(getCarNetworkPath(), "Car network", missing);
+            checkFile(getBikeNetworkPath(), "Bike network", missing);
+            checkFile(getNetworkChangeEventPath(), "Network change events", missing);
+            checkFile(getFreightZonePath(), "Freight zone shapefile", missing);
+            checkFile(getDeliveryCarrierPath(), "Delivery carriers", missing);
+            checkFile(getSupplyCarrierPath(), "Supply carriers", missing);
+        }
 
         if (isDrtScenario()) {
             checkFile(Path.of(getDrtNetworkClipped()), "DRT network (clipped)", missing);
             checkFile(Path.of(getPassengerPlansClipped()), "Passenger plans (clipped)", missing);
             checkFile(Path.of(getDrtFleetFile()), "DRT fleet file", missing);
+            checkFile(Path.of(getDrtServiceAreaShapefile()), "DRT service area", missing);
+            checkFile(Path.of(getLausitzBaseConfig()), "Lausitz base config", missing);
         }
 
         if (!missing.isEmpty()) {

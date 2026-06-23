@@ -205,6 +205,19 @@ public final class SimulationRunnerUtils {
 
         LOG.info("─── Simulation '{}' ───", cfg.getRunId());
 
+        // DRT-only path: skip all freight (zone load, CarrierModule, HAGRIDSimulationModule).
+        if (cfg.isDrtScenario()) {
+            Scenario scenario = DrtScenarioBuilder.build(cfg);
+            Controler controler = new Controler(scenario);
+            hagrid.integrated.drt.DrtConfigComposer.installModules(controler);
+            LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
+            controler.run();
+            logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+            return;
+        }
+
+        // --- Freight / Hannover path (unchanged) ---
+
         // Load freight zones
         Collection<SimpleFeature> zones =
                 GeoFileReader.getAllFeatures(cfg.getFreightZonePath().toString());
@@ -222,11 +235,6 @@ public final class SimulationRunnerUtils {
                 cfg.isZoneBasedCachingEnabled(),
                 cfg.getZoneBasedCachingThresholdMeters(),
                 cfg.getUTurnPenaltyCost()));
-
-        if (cfg.isDrtScenario()) {
-            hagrid.integrated.drt.DrtConfigComposer.installModules(controler);
-            LOG.info("DRT modules installed (fleet size {}).", cfg.getFleetSize());
-        }
 
         // Run
         LOG.info("Output: {}", cfg.getOutputDirectoryAsString());
