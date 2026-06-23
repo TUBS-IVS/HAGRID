@@ -100,7 +100,16 @@ public final class LausitzDrtPreprocessor {
      * @throws IOException if the run directory cannot be created
      */
     public static void run(HAGRIDSimulationConfig cfg) throws IOException {
-        Files.createDirectories(cfg.getOutputDirectory());
+        // The three DRT inputs are written under the run directory
+        // (hagrid-output/{RUN_ID}/), which is the PARENT of getDrtNetworkClipped() —
+        // NOT cfg.getOutputDirectory() (that is the deeper hagrid-matsim-output/
+        // {RUN_ID}_iter.._jsprit.. dir, created later by the Controler). Create the
+        // directory that actually holds the output files, or NetworkWriter fails with
+        // FileNotFoundException ("path not found").
+        Path runDir = Path.of(cfg.getDrtNetworkClipped()).getParent();
+        if (runDir != null) {
+            Files.createDirectories(runDir);
+        }
         run(
                 cfg.getLausitzNetworkRaw(),
                 cfg.getPassengerPlansRaw(),

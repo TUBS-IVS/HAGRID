@@ -359,7 +359,11 @@
             </execution>
           </executions>
           <configuration>
-            <mainClass>hagrid.App</mainClass>
+            <!-- Defer to the -Dexec.mainClass CLI property (run_analysis.bat /
+                 run_drt_baseline.bat pass it). A hard-coded value here would win
+                 over the CLI override; the previous literal (hagrid.App) was a
+                 stale, non-existent class that broke every exec:java invocation. -->
+            <mainClass>${exec.mainClass}</mainClass>
             <arguments>
               <argument>-Xmx4096m</argument>
               <argument>-Xms4096m</argument>
