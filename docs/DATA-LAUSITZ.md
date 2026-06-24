@@ -13,6 +13,9 @@ files consumed by the `parcel-demand-2-matsim-pipeline` HAGRID scenarios. All st
 | `population/lausitz-100pct.plans.xml.gz` | `~/Downloads/lausitz-v2024.2-100pct.plans-initial.xml.gz` |
 | `drt/drt-service-area.shp` (+ `.dbf/.shx/.prj/.cpg`) | `~/Documents/GitHub/matsim-lausitz/input/drt-area/hoyerswerda-ruhland_Bhf-utm32N.*` |
 | `config/lausitz-v2024.2-100pct.config.xml` | `~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-100pct.config.xml` |
+| `transit/lausitz-transitSchedule.xml.gz` | `~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-transitSchedule.xml.gz` |
+| `transit/lausitz-transitVehicles.xml.gz` | `~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-transitVehicles.xml.gz` |
+| `vehicles/lausitz-vehicle-types.xml` | `~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-vehicle-types.xml` |
 
 ## Copy Commands (Git Bash)
 
@@ -23,6 +26,10 @@ cp ~/Documents/GitHub/PANDA/DatenPaketmengen/Lausitz/network/lausitz-v2024.2-net
 cp ~/Downloads/lausitz-v2024.2-100pct.plans-initial.xml.gz "$HI/population/lausitz-100pct.plans.xml.gz"
 for e in shp dbf shx prj cpg; do cp ~/Documents/GitHub/matsim-lausitz/input/drt-area/hoyerswerda-ruhland_Bhf-utm32N.$e "$HI/drt/drt-service-area.$e"; done
 cp ~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-100pct.config.xml "$HI/config/lausitz-v2024.2-100pct.config.xml"
+mkdir -p "$HI"/{transit,vehicles}
+cp ~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-transitSchedule.xml.gz "$HI/transit/lausitz-transitSchedule.xml.gz"
+cp ~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-transitVehicles.xml.gz "$HI/transit/lausitz-transitVehicles.xml.gz"
+cp ~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-vehicle-types.xml "$HI/vehicles/lausitz-vehicle-types.xml"
 ```
 
 ## Notes

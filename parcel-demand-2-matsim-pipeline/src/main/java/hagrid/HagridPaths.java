@@ -302,6 +302,21 @@ public class HagridPaths {
         return inputBase.resolve("config").resolve("lausitz-v2024.2-100pct.config.xml").toString();
     }
 
+    /** Staged native transit schedule (full: rail+bus+tram) before rail-filtering. */
+    public String lausitzTransitScheduleRaw() {
+        return inputBase.resolve("transit").resolve("lausitz-transitSchedule.xml.gz").toString();
+    }
+
+    /** Staged native transit vehicles (full) before rail-filtering. */
+    public String lausitzTransitVehiclesRaw() {
+        return inputBase.resolve("transit").resolve("lausitz-transitVehicles.xml.gz").toString();
+    }
+
+    /** Staged native passenger vehicle-types (car etc.) — enables modeVehicleTypesFromVehiclesData. */
+    public String lausitzVehicleTypes() {
+        return inputBase.resolve("vehicles").resolve("lausitz-vehicle-types.xml").toString();
+    }
+
     // --- Lausitz DRT run-scoped outputs (require initializeRun) ---
 
     /** Network clipped to the DRT service area with drt added as an allowed mode. */
@@ -317,6 +332,16 @@ public class HagridPaths {
     /** Generated DVRP fleet vehicles file for the DRT fleet. */
     public String drtFleetFile() {
         return runDir().resolve(p() + "drt_fleet.xml.gz").toString();
+    }
+
+    /** Rail-only transit schedule for this run (bus + tram filtered out). */
+    public String railScheduleFiltered() {
+        return runDir().resolve(p() + "rail-transitSchedule.xml.gz").toString();
+    }
+
+    /** Transit vehicles referenced by the rail-only schedule. */
+    public String railTransitVehiclesFiltered() {
+        return runDir().resolve(p() + "rail-transitVehicles.xml.gz").toString();
     }
 
     // =========================================================================
