@@ -16,6 +16,8 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.io.NetworkWriter;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.population.routes.NetworkRoute;
+import org.matsim.core.population.routes.RouteUtils;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.pt.transitSchedule.api.*;
 import org.matsim.vehicles.*;
@@ -119,10 +121,14 @@ public final class RailScenarioFixture {
         rawSchedule.addStopFacility(stop2);
 
         // One rail transit line + route + departure.
+        // SwissRailRaptor requires a non-null NetworkRoute (it calls getStartLinkId()/getEndLinkId()
+        // when building its routing data). Provide a minimal route from stop1's link to stop2's link.
+        NetworkRoute railNetRoute = RouteUtils.createLinkNetworkRouteImpl(
+                Id.createLinkId("l0"), java.util.List.of(), Id.createLinkId("l2"));
         TransitLine line = sf.createTransitLine(Id.create("rail_line_1", TransitLine.class));
         TransitRoute route = sf.createTransitRoute(
                 Id.create("rail_route_1", TransitRoute.class),
-                null,
+                railNetRoute,
                 java.util.List.of(
                         sf.createTransitRouteStop(stop1, 0.0, 60.0),
                         sf.createTransitRouteStop(stop2, 3600.0, 3660.0)),
@@ -139,6 +145,9 @@ public final class RailScenarioFixture {
         VehicleType vt = vf.createVehicleType(Id.create("rail_type", VehicleType.class));
         // MATSim requires networkMode to be set explicitly for non-car vehicle types.
         vt.setNetworkMode("rail");
+        // TransitQVehicle requires seats capacity to be set (NPE otherwise at mobsim startup).
+        vt.getCapacity().setSeats(100);
+        vt.getCapacity().setStandingRoom(0);
         rawVehicles.addVehicleType(vt);
         Vehicle railVeh = vf.createVehicle(Id.createVehicleId("rail_veh_1"), vt);
         rawVehicles.addVehicle(railVeh);
