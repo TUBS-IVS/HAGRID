@@ -454,6 +454,31 @@ public class HAGRIDSimulationConfig {
         return paths.drtFleetFile();
     }
 
+    /** Staged native transit schedule (full) before rail-filtering. */
+    public String getLausitzTransitScheduleRaw() {
+        return paths.lausitzTransitScheduleRaw();
+    }
+
+    /** Staged native transit vehicles (full) before rail-filtering. */
+    public String getLausitzTransitVehiclesRaw() {
+        return paths.lausitzTransitVehiclesRaw();
+    }
+
+    /** Staged native passenger vehicle-types (enables modeVehicleTypesFromVehiclesData). */
+    public String getLausitzVehicleTypes() {
+        return paths.lausitzVehicleTypes();
+    }
+
+    /** Rail-only transit schedule for this run. */
+    public String getRailScheduleFiltered() {
+        return paths.railScheduleFiltered();
+    }
+
+    /** Transit vehicles referenced by the rail-only schedule. */
+    public String getRailTransitVehiclesFiltered() {
+        return paths.railTransitVehiclesFiltered();
+    }
+
     // === VALIDATION ===
 
     /**
@@ -481,6 +506,9 @@ public class HAGRIDSimulationConfig {
             checkFile(Path.of(getDrtFleetFile()), "DRT fleet file", missing);
             checkFile(Path.of(getDrtServiceAreaShapefile()), "DRT service area", missing);
             checkFile(Path.of(getLausitzBaseConfig()), "Lausitz base config", missing);
+            checkFile(Path.of(getLausitzTransitScheduleRaw()), "Lausitz transit schedule (raw)", missing);
+            checkFile(Path.of(getLausitzTransitVehiclesRaw()), "Lausitz transit vehicles (raw)", missing);
+            checkFile(Path.of(getLausitzVehicleTypes()), "Lausitz vehicle-types", missing);
         }
 
         if (!missing.isEmpty()) {
