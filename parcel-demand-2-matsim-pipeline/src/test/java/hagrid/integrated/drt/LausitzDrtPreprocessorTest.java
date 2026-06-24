@@ -136,6 +136,53 @@ class LausitzDrtPreprocessorTest {
         }
     }
 
+    @Test
+    @DisplayName("run() writes a rail-only filtered schedule + transit vehicles")
+    void writesRailFilteredSchedule(@TempDir Path tmp) throws Exception {
+        // ---- same DRT fixtures as the main test --------------------------------
+        Network fullNet = buildFixtureNetwork();
+        Path rawNetFile = tmp.resolve("raw_network.xml.gz");
+        new NetworkWriter(fullNet).write(rawNetFile.toString());
+
+        Path rawPlansFile = tmp.resolve("raw_plans.xml.gz");
+        PopulationUtils.writePopulation(buildFixturePopulation(), rawPlansFile.toString());
+
+        Path shpFile = tmp.resolve("service-area.shp");
+        writeSquareShapefile(shpFile, AREA_SIZE);
+
+        Path drtNet      = tmp.resolve("drt_network.xml.gz");
+        Path clippedPlans = tmp.resolve("clipped_plans.xml.gz");
+        Path fleet        = tmp.resolve("fleet.xml");
+
+        // ---- raw schedule with one rail + one bus line --------------------------
+        Path rawSchedule   = tmp.resolve("schedule.xml.gz");
+        Path rawTransitVeh = tmp.resolve("transitVehicles.xml.gz");
+        RailScheduleFixtures.writeRailAndBus(rawSchedule, rawTransitVeh);
+
+        Path railSchedule = tmp.resolve("rail-schedule.xml.gz");
+        Path railVeh      = tmp.resolve("rail-transitVehicles.xml.gz");
+
+        // ---- invoke the extended 14-arg overload --------------------------------
+        LausitzDrtPreprocessor.run(
+                rawNetFile.toString(), rawPlansFile.toString(), shpFile.toString(),
+                drtNet.toString(), clippedPlans.toString(), fleet.toString(),
+                rawSchedule.toString(), rawTransitVeh.toString(),
+                railSchedule.toString(), railVeh.toString(),
+                /*fleetSize*/ 2, /*capacity*/ 8, 0.0, 86400.0);
+
+        // ---- the filtered schedule must exist and contain only rail routes ------
+        var c = org.matsim.core.config.ConfigUtils.createConfig();
+        c.global().setCoordinateSystem("EPSG:25832");
+        c.transit().setTransitScheduleFile(railSchedule.toString());
+        c.transit().setVehiclesFile(railVeh.toString());
+        c.transit().setUseTransit(true);
+        var sc = org.matsim.core.scenario.ScenarioUtils.loadScenario(c);
+        assertThat(sc.getTransitSchedule().getTransitLines().values().stream()
+                .flatMap(l -> l.getRoutes().values().stream())
+                .allMatch(r -> "rail".equals(r.getTransportMode()))).isTrue();
+        assertThat(sc.getTransitSchedule().getTransitLines()).hasSize(1);
+    }
+
     // -------------------------------------------------------------------------
     // Fixture builders
     // -------------------------------------------------------------------------
