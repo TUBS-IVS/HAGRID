@@ -238,6 +238,8 @@ public final class LausitzDrtConfigurator {
 
         // 8) Intermodality: SwissRailRaptor walk + drt access/egress to rail stops (rail-on only).
         if (railEnabled) {
+            // Must run AFTER DrtConfigComposer.composeConfig above: configureRailIntermodality reads
+            // MultiModeDrtConfigGroup.getModalElements() to set maxWalkDistance on the DRT constraints set.
             configureRailIntermodality(config);
         }
 
