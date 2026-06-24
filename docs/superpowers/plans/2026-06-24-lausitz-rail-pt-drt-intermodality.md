@@ -685,6 +685,7 @@ git commit -m "feat(drt): re-enable rail PT + SwissRailRaptor DRT intermodal acc
 
 **Files:**
 - Modify: `parcel-demand-2-matsim-pipeline/src/main/java/hagrid/simulation/DrtScenarioBuilder.java`
+- Create: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/RailScenarioFixture.java` (shared test helper — introduced here, reused by Task 6)
 - Test: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtScenarioBuilderRailTest.java` (new)
 
 **Interfaces:**
@@ -738,7 +739,19 @@ class DrtScenarioBuilderRailTest {
 }
 ```
 
-> NOTE: `RailScenarioFixture` is a small shared test helper introduced in Task 6 (a static `stage(dir)` that builds the raw network/plans/service-area shp + a tiny rail schedule, runs the preprocessor, and returns the produced paths + the rail fixture config URL). If implementing Task 4 before Task 6, inline the fixture here and extract it in Task 6.
+> `RailScenarioFixture` is a small shared test helper (a static `stage(dir)` returning a holder with `baseConfigUrl, drtNetwork, clippedPlans, serviceAreaShp, fleet, railSchedule, railVehicles`). It is **self-contained** — it depends only on Task 1's `RailScheduleFilter` and the existing 10-arg `LausitzDrtPreprocessor.run(...)`, NOT on the 11-arg preprocessor overload from Task 5 — so it works at Task-4 time and is reused unchanged by Task 6.
+
+- [ ] **Step 1b: Create `RailScenarioFixture` (shared test helper)**
+
+Build it by lifting the network/plans/shapefile helpers from `DrtBaselineEndToEndTest` (copy `buildGrid`, `addLink`, `buildDemand`, `writeSquareShapefile` + the `writeIntLE`/`writeDoubleLE` helpers — they already exist there; this matches the established test pattern in the codebase, which already duplicates them across two test classes). Then add an in-code rail line whose **two stops are inside the 0..2000 service-area square** (e.g. at (200,200) and (1800,1800)), each `linkId` on a real network link, with one rail departure + one rail transit vehicle; write the schedule + transit vehicles with `TransitScheduleWriter` / `MatsimVehicleWriter`. `stage(dir)`:
+1. writes `raw_network.xml.gz`, `raw_plans.xml.gz`, `service-area.shp` (square, size 2000);
+2. writes a raw schedule (the rail line above) + raw transit vehicles;
+3. runs `RailScheduleFilter.run(rawSchedule, rawVeh, railSchedule, railVehicles)` (Task 1);
+4. runs the existing 10-arg `LausitzDrtPreprocessor.run(rawNet, rawPlans, shp, drtNetwork, clippedPlans, fleet, /*fleetSize*/4, /*capacity*/8, 0.0, 86400.0)`;
+5. resolves `baseConfigUrl` from the `lausitz-rail-native-like.config.xml` classpath resource;
+6. returns the holder with all produced paths.
+
+Expose the fields as `public` (record or plain holder).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -815,6 +828,7 @@ Expected: PASS.
 
 ```bash
 git add parcel-demand-2-matsim-pipeline/src/main/java/hagrid/simulation/DrtScenarioBuilder.java \
+        parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/RailScenarioFixture.java \
         parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtScenarioBuilderRailTest.java
 git commit -m "feat(drt): tag intermodal rail stops via service-area shp in DrtScenarioBuilder"
 ```
@@ -937,12 +951,12 @@ git commit -m "feat(drt): preprocessor produces rail-filtered schedule + transit
 This is the capstone that de-risks the integration of SwissRailRaptor intermodality inside HAGRID's hand-rolled (non-`MATSimApplication`) builder. It mirrors `DrtBaselineEndToEndTest` but with transit ON.
 
 **Files:**
-- Create: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/RailScenarioFixture.java` (shared test helper)
+- Reuse: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/RailScenarioFixture.java` (created in Task 4 — no new helper needed)
 - Create: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtRailIntermodalEndToEndTest.java`
 - Modify: `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtBaselineEndToEndTest.java` (the legacy DRT-only e2e stays as-is — it still exercises the null-rail path and the teleported-pt boot fix).
 
 **Interfaces:**
-- `RailScenarioFixture.stage(Path dir)` → returns a record/holder with `baseConfigUrl, drtNetwork, clippedPlans, serviceAreaShp, fleet, railSchedule, railVehicles`. Builds the raw 4-node car grid + a rail line whose two stops sit INSIDE the service-area square + agents (one with a `pt` leg home→work), then runs `LausitzDrtPreprocessor.run(...11-arg...)`.
+- Consumes: `RailScenarioFixture.stage(Path dir)` from Task 4 (raw 4-node car grid + a rail line whose two stops sit INSIDE the service-area square + agents incl. one `pt` leg; produces drt network / clipped plans / fleet / rail schedule + vehicles + the rail fixture config URL).
 
 - [ ] **Step 1: Write the failing e2e test**
 
@@ -1008,9 +1022,9 @@ class DrtRailIntermodalEndToEndTest {
 Run: `mvn -pl parcel-demand-2-matsim-pipeline test -Dtest=DrtRailIntermodalEndToEndTest`
 Expected: FAIL — `RailScenarioFixture` missing / integration not complete.
 
-- [ ] **Step 3: Implement `RailScenarioFixture`**
+- [ ] **Step 3: (no new helper) — reuse `RailScenarioFixture` from Task 4**
 
-Build it by lifting the network/plans/shapefile helpers from `DrtBaselineEndToEndTest` (copy the `buildGrid`, `addLink`, `buildDemand`, and `writeSquareShapefile` + LE writers verbatim — they already exist there) and adding an in-code rail schedule whose two stops are inside the 0..2000 service-area square (e.g. at (200,200) and (1800,1800)), each on a real network link, with one rail departure + one rail transit vehicle. Write schedule + transit vehicles with `TransitScheduleWriter` / `MatsimVehicleWriter`, then call the 11-arg `LausitzDrtPreprocessor.run(...)`. Expose the produced paths + the `lausitz-rail-native-like.config.xml` classpath URL as public fields.
+`RailScenarioFixture` already exists (Task 4) and produces the drt network, clipped plans, fleet, rail-filtered schedule + vehicles, and the rail fixture config URL. This e2e reuses it as-is. The full-production 11-arg `LausitzDrtPreprocessor.run(...)` wrapper is covered separately (Task 5 unit test + Task 7 real-data run); this test exercises the config + builder + intermodal-tagging + Controler run path, which is the integration risk being de-risked here.
 
 - [ ] **Step 4: Run test; fix VSP-defaults `abort` violations as they surface**
 
@@ -1025,11 +1039,11 @@ Expected: all green (DRT-only e2e + config + preprocessor + filter + rail e2e).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/RailScenarioFixture.java \
-        parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtRailIntermodalEndToEndTest.java \
+git add parcel-demand-2-matsim-pipeline/src/test/java/hagrid/integrated/drt/DrtRailIntermodalEndToEndTest.java \
         parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/drt/LausitzDrtConfigurator.java
 git commit -m "test(drt): end-to-end rail-PT + DRT intermodality run on the production path"
 ```
+(If fixing VSP-defaults surfaced edits to `LausitzDrtConfigurator.java` in Step 4, they are included; otherwise drop it from the `git add`.)
 
 ---
 
