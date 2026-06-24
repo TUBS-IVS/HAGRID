@@ -1,6 +1,7 @@
 package hagrid.simulation;
 
 import hagrid.integrated.drt.LausitzDrtConfigurator;
+import java.nio.file.Paths;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.application.options.ShpOptions;
 import org.matsim.contrib.drt.routing.DrtRoute;
@@ -138,7 +139,7 @@ public final class DrtScenarioBuilder {
         //    rail stop inside the DRT zone (incl. Hoyerswerda + Ruhland Bahnhof) becomes
         //    DRT-feedable, and expanding the service area later auto-expands intermodal coverage.
         if (railScheduleFile != null && !railScheduleFile.isBlank()) {
-            String shp = java.nio.file.Paths.get(serviceAreaShp).toAbsolutePath().normalize().toString();
+            String shp = Paths.get(serviceAreaShp).toAbsolutePath().normalize().toString();
             PrepareTransitSchedule.tagIntermodalStops(
                     scenario.getTransitSchedule(),
                     new ShpOptions(shp, null, null));
