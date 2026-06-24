@@ -2,6 +2,7 @@ package hagrid.integrated.drt;
 
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
+import org.matsim.core.population.routes.NetworkRoute;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.pt.transitSchedule.api.*;
@@ -89,8 +90,10 @@ final class RailScheduleFixtures {
         List<TransitRouteStop> stops = List.of(
                 sf.createTransitRouteStop(a, 0, 0),
                 sf.createTransitRouteStop(b, 600, 600));
+        NetworkRoute nr = org.matsim.core.population.routes.RouteUtils.createLinkNetworkRouteImpl(
+                a.getLinkId(), java.util.List.of(), b.getLinkId());
         TransitRoute route = sf.createTransitRoute(
-                Id.create(lineId + "_r", TransitRoute.class), null, stops, mode);
+                Id.create(lineId + "_r", TransitRoute.class), nr, stops, mode);
 
         Vehicle v = vf.createVehicle(Id.createVehicleId(vehId), vt);
         vehicles.addVehicle(v);
