@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">
+<!--
+  Trimmed, native-LIKE matsim-lausitz config FIXTURE for LausitzDrtConfiguratorTest.
+
+  Mirrors the structure of the git-ignored staged native config
+  (hagrid-input/lausitz/config/lausitz-v2024.2-100pct.config.xml) so the
+  production test exercises the strip/redirect/score path PORTABLY (without the
+  machine-specific staged file). It deliberately contains:
+    - a transit module with useTransit=true + remote-looking schedule/vehicles refs
+    - a counts module with an input file
+    - a subtourModeChoice module whose modes include pt
+    - a scoring block with car + pt modeParams (composeConfig derives the drt ASC from pt)
+    - qsim/routing/travelTimeCalculator carrying longDistanceFreight (to be dropped)
+  network/plans inputFile are dummy http paths; build() overrides them anyway.
+-->
+<config>
+	<module name="global">
+		<param name="coordinateSystem" value="EPSG:25832"/>
+	</module>
+
+	<module name="network">
+		<param name="inputNetworkFile" value="https://example.invalid/lausitz-network-with-pt.xml.gz"/>
+	</module>
+
+	<module name="plans">
+		<param name="inputPlansFile" value="https://example.invalid/lausitz-100pct.plans-initial.xml.gz"/>
+	</module>
+
+	<!-- Native config points vehiclesFile at a remote SVN URL and sets qsim.vehiclesSource
+	     to modeVehicleTypesFromVehiclesData (which REQUIRES that remote file). The configurator
+	     must null this ref and fall back to defaultVehicle so a real run is self-contained. -->
+	<module name="vehicles">
+		<param name="vehiclesFile" value="https://example.invalid/lausitz-vehicle-types.xml"/>
+	</module>
+
+	<module name="transit">
+		<param name="transitScheduleFile" value="https://example.invalid/lausitz-transitSchedule.xml.gz"/>
+		<param name="vehiclesFile" value="https://example.invalid/lausitz-transitVehicles.xml.gz"/>
+		<param name="useTransit" value="true"/>
+	</module>
+
+	<module name="counts">
+		<param name="inputCountsFile" value="https://example.invalid/lausitz-counts-bast.xml.gz"/>
+	</module>
+
+	<module name="routing">
+		<!-- Native config clears the default teleported params for walk/bike (otherwise bike is
+		     both teleported AND a network mode -> config-consistency abort). Mirror that here. -->
+		<param name="clearDefaultTeleportedModeParams" value="true"/>
+		<param name="networkModes" value="car,ride,bike,longDistanceFreight"/>
+		<parameterset type="teleportedModeParameters">
+			<param name="beelineDistanceFactor" value="1.3"/>
+			<param name="mode" value="walk"/>
+			<param name="teleportedModeSpeed" value="1.0555556"/>
+		</parameterset>
+	</module>
+
+	<module name="qsim">
+		<param name="mainMode" value="car,bike,longDistanceFreight"/>
+		<param name="vehiclesSource" value="modeVehicleTypesFromVehiclesData"/>
+	</module>
+
+	<module name="travelTimeCalculator">
+		<param name="analyzedModes" value="car,longDistanceFreight"/>
+		<param name="separateModes" value="true"/>
+	</module>
+
+	<module name="subtourModeChoice">
+		<param name="chainBasedModes" value="car,bike"/>
+		<param name="modes" value="car,ride,pt,bike,walk"/>
+	</module>
+
+	<!-- The real native config ships a simwrapper module (analytics dashboards).  The
+	     configurator must DROP it before constructing the Controler because no
+	     SimWrapperConfigGroup is registered, leaving it unmaterialised — MATSim's
+	     UnmaterializedConfigGroupChecker aborts on that.  Adding it here makes
+	     config.getModules().remove("simwrapper") a real-work operation in tests, not a no-op. -->
+	<module name="simwrapper">
+		<parameterset type="params">
+			<param name="defaultColorScheme" value="light"/>
+		</parameterset>
+	</module>
+
+	<module name="scoring">
+		<parameterset type="scoringParameters">
+			<parameterset type="modeParams">
+				<param name="constant" value="0.47421385937829563"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="car"/>
+				<param name="monetaryDistanceRate" value="-0.00025"/>
+				<param name="dailyMonetaryConstant" value="-13.22"/>
+			</parameterset>
+			<parameterset type="modeParams">
+				<param name="constant" value="-1.298710085933025"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="pt"/>
+				<param name="dailyMonetaryConstant" value="0.0"/>
+			</parameterset>
+			<!-- bike + walk modeParams mirror the native config: they remain CHOICE modes
+			     (subtourModeChoice keeps car,ride,bike,walk after pt is stripped), so the
+			     CharyparNagel scorer needs params for them or it NPEs on a bike/walk leg. -->
+			<parameterset type="modeParams">
+				<param name="constant" value="-2.8689722982647563"/>
+				<param name="marginalUtilityOfTraveling_util_hr" value="-4.0"/>
+				<param name="mode" value="bike"/>
+			</parameterset>
+			<parameterset type="modeParams">
+				<param name="marginalUtilityOfTraveling_util_hr" value="0.0"/>
+				<param name="mode" value="walk"/>
+			</parameterset>
+		</parameterset>
+	</module>
+</config>
