@@ -93,6 +93,47 @@ public final class LausitzDrtPreprocessor {
     }
 
     /**
+     * Extended entry point: produces drt-network, clipped plans and fleet (via the 10-arg
+     * overload), and additionally writes the rail-only filtered transit schedule + transit
+     * vehicles when a raw schedule path is supplied.
+     *
+     * <p>Callers that do not need the rail artifacts can pass {@code null} (or a blank string)
+     * for {@code rawSchedule}; in that case the schedule-filtering step is skipped and the
+     * existing 10-arg {@code run(...)} behaviour is preserved.</p>
+     *
+     * @param rawNetwork        path to the full (un-clipped) MATSim network XML
+     * @param rawPlans          path to the full passenger plans XML
+     * @param serviceAreaShp    path to the DRT service-area shapefile
+     * @param drtNetworkOut     output path for the drt-augmented network
+     * @param plansOut          output path for the clipped person plans
+     * @param fleetOut          output path for the DVRP fleet file
+     * @param rawSchedule       path to the raw (unfiltered) MATSim transit schedule XML,
+     *                          or {@code null} / blank to skip rail filtering
+     * @param rawTransitVehicles path to the raw transit vehicles XML
+     * @param railScheduleOut   output path for the rail-only filtered transit schedule
+     * @param railVehiclesOut   output path for the rail-only filtered transit vehicles
+     * @param fleetSize         number of DRT vehicles
+     * @param capacity          seating capacity per vehicle
+     * @param serviceBegin      service-window start (seconds from midnight)
+     * @param serviceEnd        service-window end   (seconds from midnight)
+     */
+    public static void run(String rawNetwork, String rawPlans, String serviceAreaShp,
+                           String drtNetworkOut, String plansOut, String fleetOut,
+                           String rawSchedule, String rawTransitVehicles,
+                           String railScheduleOut, String railVehiclesOut,
+                           int fleetSize, int capacity, double serviceBegin, double serviceEnd) {
+
+        // network + population + fleet exactly as before
+        run(rawNetwork, rawPlans, serviceAreaShp, drtNetworkOut, plansOut, fleetOut,
+                fleetSize, capacity, serviceBegin, serviceEnd);
+
+        // rail-only transit artifacts (skip if no schedule supplied — DRT-only path)
+        if (rawSchedule != null && !rawSchedule.isBlank()) {
+            RailScheduleFilter.run(rawSchedule, rawTransitVehicles, railScheduleOut, railVehiclesOut);
+        }
+    }
+
+    /**
      * Convenience overload: binds all paths and parameters from a {@link HAGRIDSimulationConfig}.
      * Creates the run output directory before writing.
      *
@@ -117,6 +158,10 @@ public final class LausitzDrtPreprocessor {
                 cfg.getDrtNetworkClipped(),
                 cfg.getPassengerPlansClipped(),
                 cfg.getDrtFleetFile(),
+                cfg.getLausitzTransitScheduleRaw(),
+                cfg.getLausitzTransitVehiclesRaw(),
+                cfg.getRailScheduleFiltered(),
+                cfg.getRailTransitVehiclesFiltered(),
                 cfg.getFleetSize(),
                 8,
                 0.0,
