@@ -41,16 +41,19 @@ class HAGRIDSimulationConfigTest {
                     StudyArea.LAUSITZ_HOYERSWERDA,
                     20);
 
-            // Create the 5 DRT-only required files as stubs.
+            // Create the 8 DRT-required files as stubs (5 DRT-specific + 3 rail PT).
             createStub(tempDir, cfg.getDrtNetworkClipped());
             createStub(tempDir, cfg.getPassengerPlansClipped());
             createStub(tempDir, cfg.getDrtFleetFile());
             createStub(tempDir, cfg.getDrtServiceAreaShapefile());
             createStub(tempDir, cfg.getLausitzBaseConfig());
+            createStub(tempDir, cfg.getLausitzTransitScheduleRaw());
+            createStub(tempDir, cfg.getLausitzTransitVehiclesRaw());
+            createStub(tempDir, cfg.getLausitzVehicleTypes());
 
             // No freight files exist — must not throw.
             assertThatCode(cfg::validateInputFiles)
-                    .as("DRT validation must skip freight checks; only the 5 DRT stub files are present")
+                    .as("DRT validation must skip freight checks; only the 8 DRT stub files are present")
                     .doesNotThrowAnyException();
 
         } finally {

@@ -390,6 +390,16 @@ public class HAGRIDSimulationConfig {
         }
     }
 
+    /** True iff the concept maps to the dedicated Lausitz LMD baseline. */
+    public boolean isLmdBaseline() {
+        try {
+            return HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                    == HagridConfig.Scenario.LMD_BASELINE;
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     /**
      * Returns the path to the DRT service-area shapefile.
      *
