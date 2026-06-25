@@ -105,7 +105,7 @@ public class HAGRIDSimulationConfig {
      * @param jspritIterations maximum number of jsprit iterations
      * @param tag              optional version tag (null or empty to disable)
      * @throws NullPointerException     if concept or date is null
-     * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
+     * @throws IllegalArgumentException if maxIterations is negative or jspritIterations is not positive (>= 1)
      */
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
@@ -126,7 +126,7 @@ public class HAGRIDSimulationConfig {
      * @param studyArea        geographic study area
      * @param fleetSize        DRT fleet size (number of vehicles)
      * @throws NullPointerException     if concept, date, or studyArea is null
-     * @throws IllegalArgumentException if maxIterations or jspritIterations are not positive
+     * @throws IllegalArgumentException if maxIterations is negative (&lt; 0) or jspritIterations is not positive (&gt;= 1)
      */
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,

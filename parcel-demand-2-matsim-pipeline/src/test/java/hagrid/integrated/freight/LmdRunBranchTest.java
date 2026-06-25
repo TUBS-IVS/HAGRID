@@ -23,7 +23,9 @@ class LmdRunBranchTest {
         // invariant is that we never see a "Supply carriers" message for an LMD concept.
         try {
             cfg.validateInputFiles();
-            // validation passed — staged data is present; nothing to assert about the message
+            // validation passed — staged data is present; assert invariants that hold regardless of data
+            assertThat(cfg.isLmdBaseline()).isTrue();
+            assertThat(cfg.getOutputDirectoryAsString()).contains("LMD_BASELINE");
         } catch (IllegalStateException ex) {
             // validation failed — must mention an LMD-specific file, not Hannover freight
             assertThat(ex.getMessage())

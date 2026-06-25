@@ -28,4 +28,23 @@ class ParseScenarioLmdTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("LAUSITZ_HOYERSWERDA");
     }
+
+    @Test
+    @DisplayName("LMD_BASELINE with maxIter=0 parses successfully and reports 0 iterations")
+    void lmdMaxIterZeroAllowed() {
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
+                "concept=LMD_BASELINE,date=2025-05-13,maxIter=0");
+        assertThat(cfg.getMaxIterations()).isEqualTo(0);
+        assertThat(cfg.isLmdBaseline()).isTrue();
+    }
+
+    @Test
+    @DisplayName("BASECASE with maxIter=0 is rejected")
+    void basecaseMaxIterZeroRejected() {
+        assertThatThrownBy(() -> SimulationRunnerUtils.parseScenario(
+                "concept=BASECASE,date=2025-05-13,maxIter=0"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxIter=0 is only allowed for LMD_BASELINE")
+                .hasMessageContaining("BASECASE");
+    }
 }

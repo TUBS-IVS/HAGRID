@@ -155,6 +155,23 @@ public final class SimulationRunnerUtils {
             }
         }
 
+        // maxIter=0 is a routing-only shortcut exclusively for LMD_BASELINE.
+        // All other concepts (including DRT and BASECASE) require at least one MATSim iteration.
+        if (maxIter == 0) {
+            boolean isLmd;
+            try {
+                isLmd = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                        == hagrid.HagridConfig.Scenario.LMD_BASELINE;
+            } catch (IllegalArgumentException ex) {
+                isLmd = false;
+            }
+            if (!isLmd) {
+                throw new IllegalArgumentException(
+                        "maxIter=0 is only allowed for LMD_BASELINE; concept '"
+                                + concept + "' requires maxIter > 0");
+            }
+        }
+
         LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={}",
                 concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize);
 
