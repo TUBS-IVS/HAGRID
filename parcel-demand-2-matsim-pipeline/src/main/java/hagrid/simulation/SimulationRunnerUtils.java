@@ -18,6 +18,12 @@ import org.matsim.core.events.MatsimEventsReader;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import org.matsim.core.utils.gis.GeoFileReader;
+import org.matsim.core.config.Config;
+import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.controler.OutputDirectoryHierarchy;
+import org.matsim.core.scenario.ScenarioUtils;
+import org.matsim.freight.carriers.CarriersUtils;
+import org.matsim.freight.carriers.FreightCarriersConfigGroup;
 import org.matsim.freight.carriers.controller.CarrierModule;
 
 import java.io.IOException;
@@ -215,6 +221,38 @@ public final class SimulationRunnerUtils {
             Controler controler = new Controler(scenario);
             hagrid.integrated.drt.DrtConfigComposer.installModules(controler);
             LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
+            controler.run();
+            logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+            return;
+        }
+
+        // LMD baseline: dedicated conventional multi-LSP delivery on the Lausitz network.
+        if (cfg.isLmdBaseline()) {
+            // 1. preprocess: produce the routed carrier XML
+            hagrid.integrated.freight.LausitzFreightPreprocessor.run(
+                    cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
+                    cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
+                    cfg.getLmdCarriersRouted(), cfg.getJspritIterations());
+
+            // 2. build the run scenario on the Lausitz network with the routed carriers
+            Config config = ConfigUtils.createConfig();
+            config.network().setInputFile(cfg.getLausitzNetworkRaw());
+            config.controller().setOutputDirectory(cfg.getOutputDirectoryAsString());
+            config.controller().setRunId(cfg.getRunId());
+            config.controller().setLastIteration(cfg.getMaxIterations());
+            config.controller().setOverwriteFileSetting(
+                    OutputDirectoryHierarchy.OverwriteFileSetting.deleteDirectoryIfExists);
+            FreightCarriersConfigGroup freightConfig =
+                    ConfigUtils.addOrGetModule(config, FreightCarriersConfigGroup.class);
+            freightConfig.setCarriersFile(cfg.getLmdCarriersRouted());
+            freightConfig.setCarriersVehicleTypesFile(cfg.getLmdVehicleTypes());
+
+            Scenario scenario = ScenarioUtils.loadScenario(config);
+            CarriersUtils.loadCarriersAccordingToFreightConfig(scenario);
+
+            Controler controler = new Controler(scenario);
+            controler.addOverridingModule(new CarrierModule());
+            LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
             return;
