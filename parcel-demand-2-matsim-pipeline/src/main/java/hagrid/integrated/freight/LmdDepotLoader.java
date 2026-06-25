@@ -34,10 +34,15 @@ public final class LmdDepotLoader {
         }
 
         Map<String, Id<Link>> depots = new LinkedHashMap<>();
+        boolean headerSkipped = false;
         for (String raw : lines) {
             String line = raw.trim();
-            if (line.isEmpty() || line.toLowerCase().startsWith("provider")) {
-                continue; // skip header + blank lines
+            if (line.isEmpty()) {
+                continue; // skip blank lines
+            }
+            if (!headerSkipped) {
+                headerSkipped = true;
+                continue; // skip first non-blank line (header)
             }
             String[] parts = line.split(";");
             if (parts.length < 3) {
@@ -47,8 +52,14 @@ public final class LmdDepotLoader {
             if (!PROVIDERS.contains(provider)) {
                 throw new IllegalStateException("Unknown LMD provider in depot CSV: " + provider);
             }
-            double x = Double.parseDouble(parts[1].trim());
-            double y = Double.parseDouble(parts[2].trim());
+            double x;
+            double y;
+            try {
+                x = Double.parseDouble(parts[1].trim());
+                y = Double.parseDouble(parts[2].trim());
+            } catch (NumberFormatException e) {
+                throw new IllegalStateException("Non-numeric coordinate for provider " + provider + ": " + line, e);
+            }
             Link link = NetworkUtils.getNearestLinkExactly(network, new Coord(x, y));
             if (link == null) {
                 throw new IllegalStateException("No network link near depot for " + provider);
