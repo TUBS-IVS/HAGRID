@@ -961,7 +961,7 @@ public final class LmdCarrierBuilder {
                     .newInstance(Id.create(provider + "_" + n++, CarrierService.class), link.getId())
                     .setCapacityDemand(d.getAmount())
                     .setServiceDuration(duration)
-                    .setServiceStartingTimeWindow(TimeWindow.newInstance(DAY_START, DAY_END))
+                    .setServiceStartTimeWindow(TimeWindow.newInstance(DAY_START, DAY_END))
                     .build();
             CarriersUtils.addService(carrier, service);
         }
@@ -1236,10 +1236,17 @@ public final class LausitzFreightPreprocessor {
         for (VehicleType vt : vans) {
             CarriersUtils.getCarrierVehicleTypes(scenario).getVehicleTypes().put(vt.getId(), vt);
         }
-        CarriersUtils.runJsprit(scenario);
+        try {
+            CarriersUtils.runJsprit(scenario); // throws ExecutionException + InterruptedException (confirmed in spike)
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IllegalStateException("jsprit routing failed for LMD carriers", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("jsprit routing interrupted for LMD carriers", e);
+        }
 
         // 6. write the routed carriers
-        new CarrierPlanWriter(CarriersUtils.getCarriers(scenario)).write(carriersOut);
+        CarriersUtils.writeCarriers(CarriersUtils.getCarriers(scenario), carriersOut);
     }
 
     public static void main(String[] args) {
@@ -1252,7 +1259,7 @@ public final class LausitzFreightPreprocessor {
 }
 ```
 
-> NOTE: the exact `CarriersUtils` helpers (`addOrGetCarriers`, `getCarrierVehicleTypes`, `getCarriers`, `runJsprit`, `setJspritIterations`) must match the javap from Task 1 Step 4. The verbatim names there win; adjust this block to the recorded signatures (e.g. some MATSim versions use `CarriersUtils.getCarriers(scenario)` returning the scenario `Carriers`, and load types via `CarriersUtils.getCarrierVehicleTypes(scenario)`). Do not invent — copy from the spike note.
+> NOTE: all `CarriersUtils` helpers used above are **confirmed present** in `freight-2025.0-PR3552.jar` per the Task-1 spike note (`docs/superpowers/notes/2026-06-25-lmd-spike-findings.md`): `addOrGetCarriers(Scenario)`, `getCarriers(Scenario)`, `getCarrierVehicleTypes(Scenario)`, `setJspritIterations(Carrier,int)`, `writeCarriers(Carriers,String)`, and `runJsprit(Scenario)` (which **throws `ExecutionException` + `InterruptedException`** — hence the try/catch above).
 
 - [ ] **Step 4: Run test to verify it passes**
 
