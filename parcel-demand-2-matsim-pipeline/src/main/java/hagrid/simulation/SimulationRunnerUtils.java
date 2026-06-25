@@ -133,16 +133,20 @@ public final class SimulationRunnerUtils {
                 map.getOrDefault("studyArea", "HANNOVER").trim().toUpperCase());
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
 
-        // DRT concept requires the Lausitz study area
-        boolean isDrt;
+        // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
+        boolean requiresLausitz;
         try {
-            isDrt = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase()).isDrt();
+            requiresLausitz = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase()).requiresLausitz();
         } catch (IllegalArgumentException ex) {
-            isDrt = false;
+            requiresLausitz = false;
         }
-        if (isDrt && studyArea != StudyArea.LAUSITZ_HOYERSWERDA) {
-            throw new IllegalArgumentException(
-                    "DRT concept '" + concept + "' requires studyArea=LAUSITZ_HOYERSWERDA, got " + studyArea);
+        if (requiresLausitz) {
+            if (!map.containsKey("studyArea")) {
+                studyArea = StudyArea.LAUSITZ_HOYERSWERDA;   // default it for the user
+            } else if (studyArea != StudyArea.LAUSITZ_HOYERSWERDA) {
+                throw new IllegalArgumentException(
+                        "concept '" + concept + "' requires studyArea=LAUSITZ_HOYERSWERDA, got " + studyArea);
+            }
         }
 
         LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={}",

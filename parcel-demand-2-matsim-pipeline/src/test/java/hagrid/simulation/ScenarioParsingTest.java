@@ -29,10 +29,19 @@ class ScenarioParsingTest {
     }
 
     @Test
-    @DisplayName("DRT scenario without Lausitz is rejected")
-    void drtWithoutLausitzRejected() {
+    @DisplayName("DRT scenario without studyArea defaults to LAUSITZ")
+    void drtDefaultsToLausitz() {
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
+                "concept=drt_baseline,date=2025-05-13");
+        assertThat(cfg.getStudyArea()).isEqualTo(StudyArea.LAUSITZ_HOYERSWERDA);
+        assertThat(cfg.isDrtScenario()).isTrue();
+    }
+
+    @Test
+    @DisplayName("DRT scenario with studyArea=HANNOVER is rejected")
+    void drtWithHannoverRejected() {
         assertThatThrownBy(() -> SimulationRunnerUtils.parseScenario(
-                "concept=drt_baseline,date=2025-05-13"))
+                "concept=drt_baseline,date=2025-05-13,studyArea=HANNOVER"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("LAUSITZ_HOYERSWERDA");
     }
