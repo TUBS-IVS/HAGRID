@@ -249,6 +249,11 @@ public class HagridPaths {
 
     public String carrierPlansCombined()     { return carrierDir().resolve(p() + "carrier_plans_combined.xml").toString(); }
 
+    /** Routed LMD carrier plans for this run (jsprit output). */
+    public String lmdCarriersRouted() {
+        return carrierDir().resolve(p() + "lmd_carriers_routed.xml").toString();
+    }
+
     // --- Vehicles ---
     public Path vehicleOutputDir() { return runDir().resolve("vehicles"); }
     public String vehicleTypesOutput() { return vehicleOutputDir().resolve(p() + "vehicle_types.xml").toString(); }
@@ -315,6 +320,22 @@ public class HagridPaths {
     /** Staged native passenger vehicle-types (car etc.) — enables modeVehicleTypesFromVehiclesData. */
     public String lausitzVehicleTypes() {
         return inputBase.resolve("vehicles").resolve("lausitz-vehicle-types.xml").toString();
+    }
+
+    /** Provider-tagged synthetic LMD depot CSV (one row per LSP). */
+    public String lmdDepotCsv() {
+        return inputBase.resolve("hubs").resolve("lmd-depots.csv").toString();
+    }
+
+    /** PANDA parcel-demand shapefile staged for the LMD baseline (date-named as exported). */
+    public String lmdDemandShapefile() {
+        return inputBase.resolve("demand")
+                .resolve("hagrid_parcel_demand_2025-05-13_(Tuesday).shp").toString();
+    }
+
+    /** Lausitz freight van vehicle-types (ct_cep_size_m / _l only). */
+    public String lmdVehicleTypes() {
+        return inputBase.resolve("vehicles").resolve("lmd-vehicle-types.xml").toString();
     }
 
     // --- Lausitz DRT run-scoped outputs (require initializeRun) ---

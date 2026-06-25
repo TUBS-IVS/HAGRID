@@ -489,6 +489,26 @@ public class HAGRIDSimulationConfig {
         return paths.railTransitVehiclesFiltered();
     }
 
+    /** Provider-tagged synthetic LMD depot CSV (one row per LSP). */
+    public String getLmdDepotCsv() {
+        return paths.lmdDepotCsv();
+    }
+
+    /** PANDA parcel-demand shapefile staged for the LMD baseline (date-named as exported). */
+    public String getLmdDemandShapefile() {
+        return paths.lmdDemandShapefile();
+    }
+
+    /** Lausitz freight van vehicle-types (ct_cep_size_m / _l only). */
+    public String getLmdVehicleTypes() {
+        return paths.lmdVehicleTypes();
+    }
+
+    /** Routed LMD carrier plans for this run (jsprit output). */
+    public String getLmdCarriersRouted() {
+        return paths.lmdCarriersRouted();
+    }
+
     // === VALIDATION ===
 
     /**
