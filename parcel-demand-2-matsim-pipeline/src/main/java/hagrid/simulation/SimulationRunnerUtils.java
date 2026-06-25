@@ -126,7 +126,7 @@ public final class SimulationRunnerUtils {
             throw new IllegalArgumentException("Invalid date (use yyyy-MM-dd): " + map.get("date"), ex);
         }
 
-        int maxIter      = positiveInt(map.getOrDefault("maxIter", "150"), "maxIter");
+        int maxIter      = nonNegInt(map.getOrDefault("maxIter", "150"), "maxIter");
         int jspritIter   = positiveInt(map.getOrDefault("jspritIter", "100"), "jspritIter");
         boolean zoneCaching = bool(map.getOrDefault("zoneCaching", "false"), "zoneCaching");
         double zoneThreshold = map.containsKey("zoneThreshold")
@@ -252,6 +252,20 @@ public final class SimulationRunnerUtils {
 
             Controler controler = new Controler(scenario);
             controler.addOverridingModule(new CarrierModule());
+            // Provide the minimum Guice bindings CarrierModule requires (scoring + strategy).
+            // For a maxIter=0 / routing-only run neither factory is ever called at runtime, but
+            // Guice verifies all non-nullable injections at startup, so we must bind them.
+            controler.addOverridingModule(new org.matsim.core.controler.AbstractModule() {
+                @Override public void install() {
+                    bind(org.matsim.freight.carriers.controller.CarrierScoringFunctionFactory.class)
+                            .toInstance(new hagrid.simulation.ScoringFunctions(
+                                    scenario.getNetwork(), 0.0));
+                    // No-op strategy manager: routing already done offline by jsprit.
+                    bind(org.matsim.freight.carriers.controller.CarrierStrategyManager.class)
+                            .toInstance(org.matsim.freight.carriers.controller.CarrierControllerUtils
+                                    .createDefaultCarrierStrategyManager());
+                }
+            });
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
@@ -409,6 +423,16 @@ public final class SimulationRunnerUtils {
         try {
             int v = Integer.parseInt(s.trim());
             if (v <= 0) throw new IllegalArgumentException(name + " must be positive: " + v);
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid integer for " + name + ": " + s, ex);
+        }
+    }
+
+    private static int nonNegInt(String s, String name) {
+        try {
+            int v = Integer.parseInt(s.trim());
+            if (v < 0) throw new IllegalArgumentException(name + " must be >= 0: " + v);
             return v;
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid integer for " + name + ": " + s, ex);

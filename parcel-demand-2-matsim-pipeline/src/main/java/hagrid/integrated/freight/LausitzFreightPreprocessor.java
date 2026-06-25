@@ -79,7 +79,12 @@ public final class LausitzFreightPreprocessor {
             throw new IllegalStateException("jsprit routing interrupted for LMD carriers", e);
         }
 
-        // 6. write the routed carriers
+        // 6. write the routed carriers (ensure the parent directory exists first)
+        try {
+            java.nio.file.Files.createDirectories(java.nio.file.Path.of(carriersOut).getParent());
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Cannot create output directory for LMD carriers: " + carriersOut, e);
+        }
         CarriersUtils.writeCarriers(CarriersUtils.getCarriers(scenario), carriersOut);
     }
 
