@@ -69,11 +69,17 @@ public class HagridConfig {
         BATCHFULL,
         DRT_BASELINE,    // multi-LSP freight + native DRT (two independent fleets)
         DRT_SHAREDUSE,   // cargo hitching, 2D split capacity (Phase 1c)
-        DRT_MODULAR;     // capsule swap (Phase 1d)
+        DRT_MODULAR,     // capsule swap (Phase 1d)
+        LMD_BASELINE;    // dedicated conventional multi-LSP last-mile delivery, Lausitz (freight, non-DRT)
 
         /** True for the integrated passenger+freight DRT scenarios (require StudyArea.LAUSITZ_HOYERSWERDA). */
         public boolean isDrt() {
             return this == DRT_BASELINE || this == DRT_SHAREDUSE || this == DRT_MODULAR;
+        }
+
+        /** True for every Lausitz-bound scenario (all DRT scenarios + the dedicated LMD baseline). */
+        public boolean requiresLausitz() {
+            return isDrt() || this == LMD_BASELINE;
         }
     }
 
