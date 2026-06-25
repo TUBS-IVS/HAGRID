@@ -105,7 +105,8 @@ public class HAGRIDSimulationConfig {
      * @param jspritIterations maximum number of jsprit iterations
      * @param tag              optional version tag (null or empty to disable)
      * @throws NullPointerException     if concept or date is null
-     * @throws IllegalArgumentException if maxIterations is negative or jspritIterations is not positive (>= 1)
+     * @throws IllegalArgumentException if maxIterations &lt; 0; if maxIterations == 0 and the concept is not
+     *                                  {@code LMD_BASELINE}; or if jspritIterations is not positive (&gt;= 1)
      */
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
@@ -126,7 +127,8 @@ public class HAGRIDSimulationConfig {
      * @param studyArea        geographic study area
      * @param fleetSize        DRT fleet size (number of vehicles)
      * @throws NullPointerException     if concept, date, or studyArea is null
-     * @throws IllegalArgumentException if maxIterations is negative (&lt; 0) or jspritIterations is not positive (&gt;= 1)
+     * @throws IllegalArgumentException if maxIterations &lt; 0; if maxIterations == 0 and the concept is not
+     *                                  {@code LMD_BASELINE}; or if jspritIterations is not positive (&gt;= 1)
      */
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
@@ -135,6 +137,20 @@ public class HAGRIDSimulationConfig {
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
             throw new IllegalArgumentException("maxIterations must be >= 0");
+        }
+        if (maxIterations == 0) {
+            boolean isLmd;
+            try {
+                isLmd = HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                        == HagridConfig.Scenario.LMD_BASELINE;
+            } catch (IllegalArgumentException ex) {
+                isLmd = false;
+            }
+            if (!isLmd) {
+                throw new IllegalArgumentException(
+                        "maxIterations=0 is only valid for LMD_BASELINE; concept '"
+                                + concept + "' requires maxIterations > 0");
+            }
         }
         if (jspritIterations <= 0) {
             throw new IllegalArgumentException("jspritIterations must be positive");
