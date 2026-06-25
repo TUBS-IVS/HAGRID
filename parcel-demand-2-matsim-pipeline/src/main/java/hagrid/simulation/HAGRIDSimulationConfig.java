@@ -519,7 +519,7 @@ public class HAGRIDSimulationConfig {
     public void validateInputFiles() {
         List<String> missing = new ArrayList<>();
 
-        if (!isDrtScenario()) {
+        if (!isDrtScenario() && !isLmdBaseline()) {
             checkFile(getConfigPath(), "Simulation config", missing);
             checkFile(getVehicleTypePath(), "Vehicle types", missing);
             checkFile(getCarNetworkPath(), "Car network", missing);
@@ -528,6 +528,13 @@ public class HAGRIDSimulationConfig {
             checkFile(getFreightZonePath(), "Freight zone shapefile", missing);
             checkFile(getDeliveryCarrierPath(), "Delivery carriers", missing);
             checkFile(getSupplyCarrierPath(), "Supply carriers", missing);
+        }
+
+        if (isLmdBaseline()) {
+            checkFile(Path.of(getLmdDemandShapefile()), "LMD demand shapefile", missing);
+            checkFile(Path.of(getLmdDepotCsv()), "LMD depot CSV", missing);
+            checkFile(Path.of(getLmdVehicleTypes()), "LMD vehicle types", missing);
+            checkFile(Path.of(getLausitzNetworkRaw()), "Lausitz network", missing);
         }
 
         if (isDrtScenario()) {
