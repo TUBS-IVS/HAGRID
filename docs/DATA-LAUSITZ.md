@@ -27,9 +27,9 @@ HI="parcel-demand-2-matsim-pipeline/hagrid-input/lausitz"
 mkdir -p "$HI"/{network,population,drt,config,demand,hubs,vehicles}
 # PANDA parcel demand (LMD baseline)
 cp ~/Documents/GitHub/PANDA/output/lausitz/hagrid_parcel_demand_2025-05-13_\(Tuesday\).{shp,dbf,shx,prj,cpg} "$HI/demand/"
-# LMD depots CSV and van vehicle-types (tracked in git via force-add exception)
-# lmd-depots.csv: PROVISIONAL coords — replace with finalized Gewerbegebiet/Autobahn depot locations
-# lmd-vehicle-types.xml: subset of BASECASE_13052025_vehicle_types.xml (ct_cep_size_m / _l only)
+# LMD depots CSV and van vehicle-types — git-ignored, authored/generated locally, must be staged before a run
+# lmd-depots.csv: PROVISIONAL depot coords — replace with finalized Gewerbegebiet/Autobahn locations before any headline run
+# lmd-vehicle-types.xml: vans-only subset of BASECASE_13052025_vehicle_types.xml (ct_cep_size_m / _l only)
 cp ~/Documents/GitHub/PANDA/DatenPaketmengen/Lausitz/network/lausitz-v2024.2-network-with-pt.xml.gz "$HI/network/lausitz-network.xml.gz"
 cp ~/Downloads/lausitz-v2024.2-100pct.plans-initial.xml.gz "$HI/population/lausitz-100pct.plans.xml.gz"
 for e in shp dbf shx prj cpg; do cp ~/Documents/GitHub/matsim-lausitz/input/drt-area/hoyerswerda-ruhland_Bhf-utm32N.$e "$HI/drt/drt-service-area.$e"; done
