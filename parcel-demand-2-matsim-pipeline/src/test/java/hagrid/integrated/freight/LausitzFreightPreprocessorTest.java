@@ -83,5 +83,7 @@ class LausitzFreightPreprocessorTest {
                 Id.create("dhl", Carrier.class), Id.create("hermes", Carrier.class));
         assertThat(carriers.getCarriers().get(Id.create("dhl", Carrier.class)).getSelectedPlan())
                 .as("dhl carrier must have a routed (selected) plan").isNotNull();
+        assertThat(carriers.getCarriers().get(Id.create("hermes", Carrier.class)).getSelectedPlan())
+                .as("hermes carrier must have a routed (selected) plan").isNotNull();
     }
 }
