@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("LmdDepotLoader")
 class LmdDepotLoaderTest {
@@ -47,8 +48,30 @@ class LmdDepotLoaderTest {
     void rejectsEmpty(@TempDir Path tmp) throws Exception {
         Path csv = tmp.resolve("empty.csv");
         Files.writeString(csv, "provider;x;y\n");
-        org.assertj.core.api.Assertions.assertThatThrownBy(
+        assertThatThrownBy(
                 () -> LmdDepotLoader.load(csv.toString(), twoLinkNetwork()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("load() rejects unknown provider")
+    void rejectsUnknownProvider(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("unknown-provider.csv");
+        Files.writeString(csv, "provider;x;y\nunknown;100;10\n");
+        assertThatThrownBy(
+                () -> LmdDepotLoader.load(csv.toString(), twoLinkNetwork()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unknown LMD provider");
+    }
+
+    @Test
+    @DisplayName("load() rejects non-numeric coordinate")
+    void rejectsNonNumericCoordinate(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("malformed.csv");
+        Files.writeString(csv, "provider;x;y\ndhl;abc;10\n");
+        assertThatThrownBy(
+                () -> LmdDepotLoader.load(csv.toString(), twoLinkNetwork()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Non-numeric coordinate");
     }
 }
