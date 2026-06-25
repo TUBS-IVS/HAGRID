@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +45,13 @@ class LmdDemandReaderTest {
         fb.add(herB2c);
         fb.add(0L);
         return fb.buildFeature(String.valueOf(id));
+    }
+
+    @Test
+    @DisplayName("LmdDemandReader.PROVIDERS and LmdDepotLoader.PROVIDERS are identical sets")
+    void providersAreConsistent() {
+        assertThat(Arrays.asList(LmdDemandReader.PROVIDERS))
+                .containsExactlyInAnyOrderElementsOf(LmdDepotLoader.PROVIDERS);
     }
 
     @Test
