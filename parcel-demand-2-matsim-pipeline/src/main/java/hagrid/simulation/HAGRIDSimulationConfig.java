@@ -133,8 +133,8 @@ public class HAGRIDSimulationConfig {
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
-        if (maxIterations <= 0) {
-            throw new IllegalArgumentException("maxIterations must be positive");
+        if (maxIterations < 0) {
+            throw new IllegalArgumentException("maxIterations must be >= 0");
         }
         if (jspritIterations <= 0) {
             throw new IllegalArgumentException("jspritIterations must be positive");
