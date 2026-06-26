@@ -135,4 +135,26 @@ public final class DrtConfigComposer {
         controler.configureQSimComponents(
                 DvrpQSimComponents.activateAllModes(MultiModeDrtConfigGroup.get(config)));
     }
+
+    /**
+     * Installs DRT modules AND a {@link ReturnToDepotRebalancingModule} that
+     * overrides the rebalancing target calculator with a time-switched one:
+     * demand-based before {@code returnStart}, depot-targeting thereafter.
+     *
+     * @param depotCoords          depot coordinates in the network CRS
+     * @param returnStart          simulation time (seconds) at which vehicles start homing
+     * @param targetPerDepotZone   uniform return-pull per depot zone (a high value spreads
+     *                             idle vehicles toward depot links; MinCostFlow normalises)
+     * @param demandEstimationPeriod  length of the demand-estimation window (seconds)
+     */
+    public static void installModules(Controler controler,
+                                      java.util.List<org.matsim.api.core.v01.Coord> depotCoords,
+                                      double returnStart,
+                                      double targetPerDepotZone,
+                                      double demandEstimationPeriod) {
+        installModules(controler);
+        controler.addOverridingModule(new ReturnToDepotRebalancingModule(
+                org.matsim.api.core.v01.TransportMode.drt,
+                depotCoords, returnStart, targetPerDepotZone, demandEstimationPeriod));
+    }
 }

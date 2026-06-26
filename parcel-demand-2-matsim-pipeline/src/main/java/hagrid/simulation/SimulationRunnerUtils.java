@@ -236,7 +236,12 @@ public final class SimulationRunnerUtils {
         if (cfg.isDrtScenario()) {
             Scenario scenario = DrtScenarioBuilder.build(cfg);
             Controler controler = new Controler(scenario);
-            hagrid.integrated.drt.DrtConfigComposer.installModules(controler);
+            java.util.List<org.matsim.api.core.v01.Coord> depots =
+                    hagrid.integrated.drt.DrtDepotReader.readCoords(java.nio.file.Path.of(cfg.getLmdDepotCsv()));
+            double serviceEnd = 86400.0;       // matches LausitzDrtPreprocessor default
+            double returnWindow = 5400.0;       // last 90 min target depots (uniform return-pull; MinCostFlow normalises)
+            hagrid.integrated.drt.DrtConfigComposer.installModules(controler, depots,
+                    serviceEnd - returnWindow, cfg.getFleetSize(), 1800.0);
             LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
