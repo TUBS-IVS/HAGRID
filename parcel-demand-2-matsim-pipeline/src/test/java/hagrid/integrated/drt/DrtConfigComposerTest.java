@@ -3,6 +3,7 @@ package hagrid.integrated.drt;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.matsim.api.core.v01.TransportMode;
+import org.matsim.contrib.drt.optimizer.rebalancing.mincostflow.MinCostFlowRebalancingStrategyParams;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
@@ -66,5 +67,28 @@ class DrtConfigComposerTest {
         assertThat(config.scoring().getModes())
                 .as("drt leg mode must have a ModeParams entry after composeConfig")
                 .containsKey(TransportMode.drt);
+    }
+
+    @Test
+    @DisplayName("configures demand-based MinCostFlow rebalancing with a square-grid zone system")
+    void rebalancingAndZones() {
+        Config config = ConfigUtils.createConfig();
+        DrtConfigComposer.composeConfig(config, "a.shp", "f.xml");
+        DrtConfigGroup drt = MultiModeDrtConfigGroup.get(config).getModalElements().iterator().next();
+
+        var rebal = drt.getRebalancingParams();
+        assertThat(rebal).isPresent();
+        assertThat(rebal.get().interval).isEqualTo(1800);
+
+        var strategy = rebal.get().getRebalancingStrategyParams();
+        assertThat(strategy).isInstanceOf(MinCostFlowRebalancingStrategyParams.class);
+        var mcf = (MinCostFlowRebalancingStrategyParams) strategy;
+        assertThat(mcf.rebalancingTargetCalculatorType)
+                .isEqualTo(MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand);
+        assertThat(mcf.zonalDemandEstimatorType)
+                .isEqualTo(MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand);
+
+        var zones = drt.getZonalSystemParams();
+        assertThat(zones).isPresent();
     }
 }

@@ -1,9 +1,13 @@
 package hagrid.integrated.drt;
 
 import org.matsim.api.core.v01.TransportMode;
+import org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams;
+import org.matsim.contrib.drt.analysis.zonal.DrtZoneSystemParams;
 import org.matsim.contrib.drt.optimizer.constraints.DefaultDrtOptimizationConstraintsSet;
 import org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsParams;
 import org.matsim.contrib.drt.optimizer.insertion.extensive.ExtensiveInsertionSearchParams;
+import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingParams;
+import org.matsim.contrib.drt.optimizer.rebalancing.mincostflow.MinCostFlowRebalancingStrategyParams;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.run.DrtConfigs;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
@@ -35,6 +39,11 @@ public final class DrtConfigComposer {
     private static final double MAX_TRAVEL_TIME_ALPHA = 1.5;
     private static final double MAX_TRAVEL_TIME_BETA_S = 1200.0;
 
+    // Depot-dispatching rebalancing (PoC defaults).
+    private static final double ZONE_CELL_SIZE_M = 2000.0;
+    private static final int REBALANCE_INTERVAL_S = 1800;
+    private static final int DEMAND_ESTIMATION_PERIOD_S = 1800;
+
     private DrtConfigComposer() {}
 
     /**
@@ -64,6 +73,30 @@ public final class DrtConfigComposer {
             set.maxTravelTimeBeta = MAX_TRAVEL_TIME_BETA_S;
 
             drt.setDrtInsertionSearchParams(new ExtensiveInsertionSearchParams());
+
+            // Rebalancing zones: square grid over the service area.
+            DrtZoneSystemParams zoneParams = new DrtZoneSystemParams();
+            zoneParams.targetLinkSelection = DrtZoneSystemParams.TargetLinkSelection.mostCentral;
+            SquareGridZoneSystemParams gridParams = new SquareGridZoneSystemParams();
+            gridParams.cellSize = ZONE_CELL_SIZE_M;
+            zoneParams.addParameterSet(gridParams);
+            drt.addParameterSet(zoneParams);
+
+            // Demand-based MinCostFlow rebalancing (idle vehicles flow toward demand;
+            // balanced zones keep their vehicles -> "stay put" emerges naturally).
+            RebalancingParams rebalancing = new RebalancingParams();
+            rebalancing.interval = REBALANCE_INTERVAL_S;
+            MinCostFlowRebalancingStrategyParams mcf = new MinCostFlowRebalancingStrategyParams();
+            mcf.rebalancingTargetCalculatorType =
+                    MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand;
+            mcf.zonalDemandEstimatorType =
+                    MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand;
+            mcf.demandEstimationPeriod = DEMAND_ESTIMATION_PERIOD_S;
+            mcf.targetAlpha = 0.5;
+            mcf.targetBeta = 0.5;
+            rebalancing.addParameterSet(mcf);
+            drt.addParameterSet(rebalancing);
+
             multi.addParameterSet(drt);
         }
 
