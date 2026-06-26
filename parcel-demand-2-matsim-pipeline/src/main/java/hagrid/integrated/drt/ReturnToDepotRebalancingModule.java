@@ -10,6 +10,7 @@ import org.matsim.contrib.drt.optimizer.rebalancing.demandestimator.ZonalDemandE
 import org.matsim.contrib.drt.optimizer.rebalancing.targetcalculator.DemandEstimatorAsTargetCalculator;
 import org.matsim.contrib.drt.optimizer.rebalancing.targetcalculator.RebalancingTargetCalculator;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeModule;
+import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.core.utils.geometry.CoordUtils;
 
 import java.util.LinkedHashSet;
@@ -42,18 +43,28 @@ public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule
 
     @Override
     public void install() {
-        bindModal(RebalancingTargetCalculator.class).toProvider(modalProvider(getter -> {
-            ZoneSystem zones = getter.getModal(ZoneSystem.class);
-            ZonalDemandEstimator estimator = getter.getModal(ZonalDemandEstimator.class);
-            GeometryFactory gf = new GeometryFactory();
-            Set<Zone> depotZones = new LinkedHashSet<>();
-            for (Coord c : depotCoords) {
-                zoneForCoord(zones, c, gf).ifPresent(depotZones::add);
+        // RebalancingTargetCalculator is bound inside a QSim child injector by
+        // DrtModeMinCostFlowRebalancingModule (AbstractDvrpModeQSimModule scope).
+        // To override it we must also bind inside the QSim scope via
+        // installOverridingQSimModule — a controller-scope bindModal would create
+        // a second, conflicting binding (BindingAlreadySet).
+        installOverridingQSimModule(new AbstractDvrpModeQSimModule(getMode()) {
+            @Override
+            protected void configureQSim() {
+                bindModal(RebalancingTargetCalculator.class).toProvider(modalProvider(getter -> {
+                    ZoneSystem zones = getter.getModal(ZoneSystem.class);
+                    ZonalDemandEstimator estimator = getter.getModal(ZonalDemandEstimator.class);
+                    GeometryFactory gf = new GeometryFactory();
+                    Set<Zone> depotZones = new LinkedHashSet<>();
+                    for (Coord c : depotCoords) {
+                        zoneForCoord(zones, c, gf).ifPresent(depotZones::add);
+                    }
+                    RebalancingTargetCalculator daytime =
+                            new DemandEstimatorAsTargetCalculator(estimator, demandEstimationPeriod);
+                    return new ReturnToDepotTargetCalculator(daytime, depotZones, returnStart, targetPerDepotZone);
+                })).asEagerSingleton();
             }
-            RebalancingTargetCalculator daytime =
-                    new DemandEstimatorAsTargetCalculator(estimator, demandEstimationPeriod);
-            return new ReturnToDepotTargetCalculator(daytime, depotZones, returnStart, targetPerDepotZone);
-        })).asEagerSingleton();
+        });
     }
 
     /**

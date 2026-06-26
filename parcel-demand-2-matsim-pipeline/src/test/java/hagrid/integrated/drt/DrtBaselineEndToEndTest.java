@@ -21,6 +21,7 @@ import java.io.DataOutputStream;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -133,6 +134,96 @@ class DrtBaselineEndToEndTest {
                     .filter(Files::isRegularFile)
                     .anyMatch(p -> p.getFileName().toString().toLowerCase().contains("drt")))
                     .as("expected at least one drt_* output file produced by a real DRT iteration")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("returnToDepotModuleBootsViaProductionWiring — 5-arg installModules resolves ReturnToDepotRebalancingModule modal bindings (ZoneSystem + ZonalDemandEstimator) without Guice error")
+    void returnToDepotModuleBootsViaProductionWiring() throws Exception {
+        // Use a separate output sub-directory so both tests can coexist under the same @RegisterExtension.
+        Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath().resolve("rtd");
+        Files.createDirectories(dir);
+
+        // ---- raw fixtures (same as runsDrtBaselineOneIteration) ----
+        Network rawNet = buildGrid();
+        Path rawNetFile = dir.resolve("raw_network.xml.gz");
+        new NetworkWriter(rawNet).write(rawNetFile.toString());
+
+        Path rawPlansFile = dir.resolve("raw_plans.xml.gz");
+        PopulationUtils.writePopulation(buildDemand(), rawPlansFile.toString());
+
+        Path shpFile = dir.resolve("service-area.shp");
+        writeSquareShapefile(shpFile, AREA_SIZE);
+
+        // ---- depot CSV (same single depot at 500,500 inside the service area) ----
+        Path depotCsv = dir.resolve("depots.csv");
+        Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
+
+        // ---- production preprocessor ----
+        Path drtNetFile = dir.resolve("drt_network.xml.gz");
+        Path clippedPlans = dir.resolve("clipped_plans.xml.gz");
+        Path fleetFile = dir.resolve("fleet.xml.gz");
+        LausitzDrtPreprocessor.run(
+                rawNetFile.toString(),
+                rawPlansFile.toString(),
+                shpFile.toString(),
+                depotCsv.toString(),
+                drtNetFile.toString(),
+                clippedPlans.toString(),
+                fleetFile.toString(),
+                /*fleetSize*/ 4, /*capacity*/ 8, /*serviceBegin*/ 0.0, /*serviceEnd*/ 86400.0);
+
+        // ---- base config ----
+        URL cfgUrl = getClass().getClassLoader().getResource("lausitz-native-like.config.xml");
+        assertThat(cfgUrl)
+                .as("test fixture lausitz-native-like.config.xml must be on the test classpath")
+                .isNotNull();
+
+        Path matsimOut = dir.resolve("matsim");
+
+        // ---- build scenario (same production builder) ----
+        Scenario scenario = DrtScenarioBuilder.build(
+                cfgUrl.toString(),
+                drtNetFile.toString(),
+                clippedPlans.toString(),
+                shpFile.toString(),
+                fleetFile.toString(),
+                matsimOut.toString(),
+                "DRT_BASELINE_RTD_E2E",
+                /*lastIteration*/ 0);
+
+        assertThat(scenario.getPopulation().getPersons())
+                .as("clipped person population must be non-empty").isNotEmpty();
+        assertThat(scenario.getNetwork().getLinks().values().stream()
+                .anyMatch(l -> l.getAllowedModes().contains(TransportMode.drt)))
+                .as("network must carry drt-mode links").isTrue();
+
+        // ---- read depot coords via production DrtDepotReader ----
+        List<Coord> depotCoords = DrtDepotReader.readCoords(depotCsv);
+        assertThat(depotCoords).as("depot CSV must yield at least one coord").isNotEmpty();
+
+        // ---- 5-arg installModules: this wires ReturnToDepotRebalancingModule;
+        //      eager-singleton provider calls getModal(ZoneSystem) + getModal(ZonalDemandEstimator)
+        //      at injector creation — a Guice ProvisionException/CreationException here means
+        //      the modal binding is broken. ----
+        Controler controler = new Controler(scenario);
+        DrtConfigComposer.installModules(
+                controler,
+                depotCoords,
+                /*returnStart*/ 81000.0,
+                /*targetPerDepotZone*/ 4.0,
+                /*demandEstimationPeriod*/ 1800.0);
+        controler.run();
+
+        // ---- assert genuine drt_* output (and implicitly: no Guice error on boot) ----
+        assertThat(Files.isDirectory(matsimOut))
+                .as("MATSim output directory must exist after the return-to-depot run").isTrue();
+        try (var stream = Files.walk(matsimOut)) {
+            assertThat(stream
+                    .filter(Files::isRegularFile)
+                    .anyMatch(p -> p.getFileName().toString().toLowerCase().contains("drt")))
+                    .as("expected at least one drt_* output file from the return-to-depot run")
                     .isTrue();
         }
     }
