@@ -107,4 +107,21 @@ class DrtFleetGeneratorTest {
                 List.of(), 3, 8, 0.0, 86400.0, tmp.resolve("f.xml")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("rejects fleetSize < 1")
+    void rejectsFleetSizeZero(@TempDir Path tmp) {
+        assertThatThrownBy(() -> DrtFleetGenerator.writeFromDepots(twoLinkNet(),
+                List.of(new Coord(40, 0)), 0, 8, 0.0, 86400.0, tmp.resolve("f.xml")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("rejects a network with no links (writeFromDepots)")
+    void rejectsEmptyNetworkFromDepots(@TempDir Path tmp) {
+        org.matsim.api.core.v01.network.Network empty = NetworkUtils.createNetwork();
+        assertThatThrownBy(() -> DrtFleetGenerator.writeFromDepots(empty,
+                List.of(new Coord(40, 0)), 3, 8, 0.0, 86400.0, tmp.resolve("f.xml")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }
