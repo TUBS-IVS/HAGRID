@@ -3,6 +3,7 @@ package hagrid.integrated.drt;
 import hagrid.integrated.PopulationClipper;
 import hagrid.simulation.HAGRIDSimulationConfig;
 import hagrid.utils.GeoUtils;
+import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Person;
@@ -45,6 +46,7 @@ public final class LausitzDrtPreprocessor {
      * @param rawNetwork     path to the full (un-clipped) MATSim network XML
      * @param rawPlans       path to the full passenger plans XML
      * @param serviceAreaShp path to the DRT service-area shapefile
+     * @param depotCsv       path to the LMD depot CSV ({@code provider;x;y} header, one depot per row)
      * @param drtNetworkOut  output path for the drt-augmented network
      * @param plansOut       output path for the clipped person plans
      * @param fleetOut       output path for the DVRP fleet file
@@ -53,7 +55,7 @@ public final class LausitzDrtPreprocessor {
      * @param serviceBegin   service-window start (seconds from midnight)
      * @param serviceEnd     service-window end   (seconds from midnight)
      */
-    public static void run(String rawNetwork, String rawPlans, String serviceAreaShp,
+    public static void run(String rawNetwork, String rawPlans, String serviceAreaShp, String depotCsv,
                            String drtNetworkOut, String plansOut, String fleetOut,
                            int fleetSize, int capacity, double serviceBegin, double serviceEnd) {
 
@@ -89,7 +91,9 @@ public final class LausitzDrtPreprocessor {
         //    The full network is already written to drtNetworkOut above (D3 — no clip).
         Network drtSubNet = NetworkUtils.createNetwork();
         new TransportModeNetworkFilter(net).filter(drtSubNet, Set.of(TransportMode.drt));
-        DrtFleetGenerator.write(drtSubNet, fleetSize, capacity, serviceBegin, serviceEnd, Path.of(fleetOut));
+        List<Coord> depots = DrtDepotReader.readCoords(Path.of(depotCsv));
+        DrtFleetGenerator.writeFromDepots(drtSubNet, depots, fleetSize, capacity,
+                serviceBegin, serviceEnd, Path.of(fleetOut));
     }
 
     /**
@@ -104,6 +108,7 @@ public final class LausitzDrtPreprocessor {
      * @param rawNetwork        path to the full (un-clipped) MATSim network XML
      * @param rawPlans          path to the full passenger plans XML
      * @param serviceAreaShp    path to the DRT service-area shapefile
+     * @param depotCsv          path to the LMD depot CSV ({@code provider;x;y} header)
      * @param drtNetworkOut     output path for the drt-augmented network
      * @param plansOut          output path for the clipped person plans
      * @param fleetOut          output path for the DVRP fleet file
@@ -117,14 +122,14 @@ public final class LausitzDrtPreprocessor {
      * @param serviceBegin      service-window start (seconds from midnight)
      * @param serviceEnd        service-window end   (seconds from midnight)
      */
-    public static void run(String rawNetwork, String rawPlans, String serviceAreaShp,
+    public static void run(String rawNetwork, String rawPlans, String serviceAreaShp, String depotCsv,
                            String drtNetworkOut, String plansOut, String fleetOut,
                            String rawSchedule, String rawTransitVehicles,
                            String railScheduleOut, String railVehiclesOut,
                            int fleetSize, int capacity, double serviceBegin, double serviceEnd) {
 
         // network + population + fleet exactly as before
-        run(rawNetwork, rawPlans, serviceAreaShp, drtNetworkOut, plansOut, fleetOut,
+        run(rawNetwork, rawPlans, serviceAreaShp, depotCsv, drtNetworkOut, plansOut, fleetOut,
                 fleetSize, capacity, serviceBegin, serviceEnd);
 
         // rail-only transit artifacts (skip if no schedule supplied — DRT-only path)
@@ -155,6 +160,7 @@ public final class LausitzDrtPreprocessor {
                 cfg.getLausitzNetworkRaw(),
                 cfg.getPassengerPlansRaw(),
                 cfg.getDrtServiceAreaShapefile(),
+                cfg.getLmdDepotCsv(),
                 cfg.getDrtNetworkClipped(),
                 cfg.getPassengerPlansClipped(),
                 cfg.getDrtFleetFile(),

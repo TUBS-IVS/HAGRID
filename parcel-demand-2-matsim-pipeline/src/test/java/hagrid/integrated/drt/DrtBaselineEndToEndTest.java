@@ -82,10 +82,13 @@ class DrtBaselineEndToEndTest {
         Path drtNetFile = dir.resolve("drt_network.xml.gz");
         Path clippedPlans = dir.resolve("clipped_plans.xml.gz");
         Path fleetFile = dir.resolve("fleet.xml.gz");
+        Path depotCsv = dir.resolve("depots.csv");
+        Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
         LausitzDrtPreprocessor.run(
                 rawNetFile.toString(),
                 rawPlansFile.toString(),
                 shpFile.toString(),
+                depotCsv.toString(),
                 drtNetFile.toString(),
                 clippedPlans.toString(),
                 fleetFile.toString(),
