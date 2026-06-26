@@ -34,7 +34,11 @@ public final class DrtDepotReader {
                 if (p.length < 3) {
                     throw new IllegalArgumentException("malformed depot row: " + line);
                 }
-                coords.add(new Coord(Double.parseDouble(p[1].trim()), Double.parseDouble(p[2].trim())));
+                try {
+                    coords.add(new Coord(Double.parseDouble(p[1].trim()), Double.parseDouble(p[2].trim())));
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("malformed depot row (non-numeric coord): " + line, e);
+                }
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);

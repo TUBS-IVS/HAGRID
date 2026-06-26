@@ -33,4 +33,13 @@ class DrtDepotReaderTest {
         assertThatThrownBy(() -> DrtDepotReader.readCoords(csv))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("rejects a file with a non-numeric coordinate")
+    void rejectsMalformedRow(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("bad.csv");
+        Files.writeString(csv, "provider;x;y\ndhl;notanumber;200.0\n");
+        assertThatThrownBy(() -> DrtDepotReader.readCoords(csv))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }
