@@ -21,7 +21,7 @@ class HAGRIDSimulationConfigTest {
      * For a DRT scenario the freight-input checks (config, vehicle types, car network,
      * bike network, change events, freight zone, delivery carriers, supply carriers) must
      * be SKIPPED. Only the 3 clipped-DRT files + the service-area shp + Lausitz base
-     * config are required. This test creates stub files at only those 5 paths and asserts
+     * config + depot CSV are required. This test creates stub files at only those 6 paths and asserts
      * that validateInputFiles() does NOT throw, even though the 8 freight files are absent.
      */
     @Test
@@ -41,19 +41,20 @@ class HAGRIDSimulationConfigTest {
                     StudyArea.LAUSITZ_HOYERSWERDA,
                     20);
 
-            // Create the 8 DRT-required files as stubs (5 DRT-specific + 3 rail PT).
+            // Create the 9 DRT-required files as stubs (5 DRT-specific + 3 rail PT + 1 depot CSV).
             createStub(tempDir, cfg.getDrtNetworkClipped());
             createStub(tempDir, cfg.getPassengerPlansClipped());
             createStub(tempDir, cfg.getDrtFleetFile());
             createStub(tempDir, cfg.getDrtServiceAreaShapefile());
             createStub(tempDir, cfg.getLausitzBaseConfig());
+            createStub(tempDir, cfg.getLmdDepotCsv());
             createStub(tempDir, cfg.getLausitzTransitScheduleRaw());
             createStub(tempDir, cfg.getLausitzTransitVehiclesRaw());
             createStub(tempDir, cfg.getLausitzVehicleTypes());
 
             // No freight files exist — must not throw.
             assertThatCode(cfg::validateInputFiles)
-                    .as("DRT validation must skip freight checks; only the 8 DRT stub files are present")
+                    .as("DRT validation must skip freight checks; only the 9 DRT stub files are present")
                     .doesNotThrowAnyException();
 
         } finally {

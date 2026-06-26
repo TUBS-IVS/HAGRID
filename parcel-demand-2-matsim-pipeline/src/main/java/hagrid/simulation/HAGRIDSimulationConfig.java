@@ -559,6 +559,7 @@ public class HAGRIDSimulationConfig {
             checkFile(Path.of(getDrtFleetFile()), "DRT fleet file", missing);
             checkFile(Path.of(getDrtServiceAreaShapefile()), "DRT service area", missing);
             checkFile(Path.of(getLausitzBaseConfig()), "Lausitz base config", missing);
+            checkFile(Path.of(getLmdDepotCsv()), "LMD depot CSV", missing);
             // Rail PT is the standard layer for every Lausitz DRT scenario (run(cfg) always supplies
             // the rail/vehicle-types getters), so these raw inputs are required for a real run. The
             // null-rail DRT-only path is exercised only by unit tests, which bypass validateInputFiles().
