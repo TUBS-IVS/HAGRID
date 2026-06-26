@@ -166,14 +166,17 @@ public final class RailScenarioFixture {
                 railScheduleFile.toString(),
                 railVehiclesFile.toString());
 
-        // ---- DRT inputs via the existing 10-arg LausitzDrtPreprocessor ----
+        // ---- DRT inputs via the production 10-arg LausitzDrtPreprocessor ----
         Path drtNetFile = dir.resolve("drt_network.xml.gz");
         Path clippedPlansFile = dir.resolve("clipped_plans.xml.gz");
         Path fleetFile = dir.resolve("fleet.xml.gz");
+        Path depotCsvFile = dir.resolve("depots.csv");
+        Files.writeString(depotCsvFile, "provider;x;y\ndhl;500.0;500.0\n");
         LausitzDrtPreprocessor.run(
                 rawNetFile.toString(),
                 rawPlansFile.toString(),
                 shpFile.toString(),
+                depotCsvFile.toString(),
                 drtNetFile.toString(),
                 clippedPlansFile.toString(),
                 fleetFile.toString(),

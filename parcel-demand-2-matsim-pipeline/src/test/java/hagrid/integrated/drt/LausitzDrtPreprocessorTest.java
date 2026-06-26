@@ -56,11 +56,16 @@ class LausitzDrtPreprocessorTest {
         Path fleetOut    = tmp.resolve("fleet.xml");   // plain XML so we can grep without decompressing
         int  fleetSize   = 3;
 
+        // ---- depot CSV (single depot inside the service area) ----------------
+        Path depotCsv = tmp.resolve("depots.csv");
+        java.nio.file.Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
+
         // ---- invoke -----------------------------------------------------------
         LausitzDrtPreprocessor.run(
                 rawNetFile.toString(),
                 rawPlansFile.toString(),
                 shpFile.toString(),
+                depotCsv.toString(),
                 drtNetOut.toString(),
                 plansOut.toString(),
                 fleetOut.toString(),
@@ -113,16 +118,16 @@ class LausitzDrtPreprocessorTest {
                 .as("fleet file must contain exactly %d vehicles", fleetSize)
                 .isEqualTo(fleetSize);
 
-        // Every vehicle's startLinkId must reference a link in the drt network
+        // Every vehicle's start_link must reference a link in the drt network
         // whose allowed modes contain "drt".
         // NOTE: the fixture adds "apt_bus_0" (a non-drt link whose ID sorts before all
         // "car_*" IDs alphabetically). With fleetSize=3 the OLD code (passing the full
         // network to DrtFleetGenerator) would have anchored vehicle 0 on "apt_bus_0",
         // which carries no drt mode — this assertion catches exactly that defect.
         for (String line : fleetXml.lines().toList()) {
-            if (!line.contains("startLink")) continue;
-            // Extract startLink value — FleetWriter emits e.g. startLink="car_0" or startLinkId="car_0"
-            String val = line.replaceAll(".*startLink(?:Id)?=\"([^\"]+)\".*", "$1");
+            if (!line.contains("start_link")) continue;
+            // Extract start_link value — FleetWriter emits e.g. start_link="car_0"
+            String val = line.replaceAll(".*start_link=\"([^\"]+)\".*", "$1");
             if (val.equals(line)) continue; // no match on this line
             Id<Link> linkId = Id.createLinkId(val);
             Link startLink = drtNet.getLinks().get(linkId);
@@ -162,9 +167,14 @@ class LausitzDrtPreprocessorTest {
         Path railSchedule = tmp.resolve("rail-schedule.xml.gz");
         Path railVeh      = tmp.resolve("rail-transitVehicles.xml.gz");
 
+        // ---- depot CSV for the 14-arg overload ----------------------------------
+        Path depotCsv14 = tmp.resolve("depots.csv");
+        java.nio.file.Files.writeString(depotCsv14, "provider;x;y\ndhl;500.0;500.0\n");
+
         // ---- invoke the extended 14-arg overload --------------------------------
         LausitzDrtPreprocessor.run(
                 rawNetFile.toString(), rawPlansFile.toString(), shpFile.toString(),
+                depotCsv14.toString(),
                 drtNet.toString(), clippedPlans.toString(), fleet.toString(),
                 rawSchedule.toString(), rawTransitVeh.toString(),
                 railSchedule.toString(), railVeh.toString(),
@@ -181,6 +191,37 @@ class LausitzDrtPreprocessorTest {
                 .flatMap(l -> l.getRoutes().values().stream())
                 .allMatch(r -> "rail".equals(r.getTransportMode()))).isTrue();
         assertThat(sc.getTransitSchedule().getTransitLines()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("fleet vehicles are anchored on the depot-nearest drt links")
+    void fleetAnchoredAtDepots(@TempDir Path tmp) throws Exception {
+        Network fullNet = buildFixtureNetwork();
+        Path rawNetFile = tmp.resolve("raw_network.xml.gz");
+        new NetworkWriter(fullNet).write(rawNetFile.toString());
+        Path rawPlansFile = tmp.resolve("raw_plans.xml.gz");
+        PopulationUtils.writePopulation(buildFixturePopulation(), rawPlansFile.toString());
+        Path shpFile = tmp.resolve("service-area.shp");
+        writeSquareShapefile(shpFile, AREA_SIZE);
+        Path depotCsv = tmp.resolve("depots.csv");
+        java.nio.file.Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
+        Path drtNetOut = tmp.resolve("drt_network.xml.gz");
+        Path plansOut = tmp.resolve("clipped_plans.xml.gz");
+        Path fleetOut = tmp.resolve("fleet.xml");
+
+        LausitzDrtPreprocessor.run(rawNetFile.toString(), rawPlansFile.toString(), shpFile.toString(),
+                depotCsv.toString(), drtNetOut.toString(), plansOut.toString(), fleetOut.toString(),
+                3, 8, 0.0, 86400.0);
+
+        String xml = java.nio.file.Files.readString(fleetOut);
+        java.util.List<String> startLinks = xml.lines()
+                .filter(l -> l.contains("start_link="))
+                .map(l -> l.replaceAll(".*start_link=\"([^\"]+)\".*", "$1"))
+                .toList();
+        assertThat(startLinks).as("3 vehicles spawned").hasSize(3);
+        assertThat(startLinks).as("one depot -> all vehicles share its snapped link")
+                .containsOnly(startLinks.get(0));
+        assertThat(startLinks.get(0)).as("anchored on a drt (car_*) link").startsWith("car_");
     }
 
     // -------------------------------------------------------------------------
