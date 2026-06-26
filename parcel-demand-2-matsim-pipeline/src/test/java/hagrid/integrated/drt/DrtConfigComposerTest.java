@@ -87,8 +87,13 @@ class DrtConfigComposerTest {
                 .isEqualTo(MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand);
         assertThat(mcf.zonalDemandEstimatorType)
                 .isEqualTo(MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand);
+        assertThat(mcf.demandEstimationPeriod).isEqualTo(1800);
 
         var zones = drt.getZonalSystemParams();
         assertThat(zones).isPresent();
+        assertThat(zones.get().getZoneSystemParams())
+                .isInstanceOf(org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams.class);
+        assertThat(((org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams)
+                zones.get().getZoneSystemParams()).cellSize).isEqualTo(2000.0);
     }
 }
