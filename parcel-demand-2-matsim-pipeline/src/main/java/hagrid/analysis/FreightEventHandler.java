@@ -31,7 +31,8 @@ public class FreightEventHandler implements
         "_Supply_Vehicle_", "_veh_supply_",
         "_CEP_Vehicle_", "_veh_cep_",
         "_egrocery_van_",
-        "_cargoBike_", "_cargobike_"
+        "_cargoBike_", "_cargobike_",
+        "freight_"   // MATSim freight-contrib driver prefix (Lausitz dedicated LMD baseline)
     };
 
     // ── results ──
@@ -131,6 +132,9 @@ public class FreightEventHandler implements
             return VehicleType.TRUCK;
         }
         if (vehicle.contains("_CEP_Vehicle_") || vehicle.contains("_veh_cep_") || vehicle.contains("_egrocery_van_"))
+            return VehicleType.VAN;
+        // Lausitz dedicated-LMD vans (vehicle types ct_cep_size_l / ct_cep_size_m)
+        if (vehicle.contains("ct_cep_size"))
             return VehicleType.VAN;
         if (vehicle.contains("_cargoBike_") || vehicle.contains("_cargobike_"))
             return VehicleType.CARGOBIKE;
