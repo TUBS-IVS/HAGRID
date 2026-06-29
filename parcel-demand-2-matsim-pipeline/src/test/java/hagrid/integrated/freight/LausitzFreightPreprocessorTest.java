@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.network.NetworkUtils;
@@ -21,6 +23,7 @@ import org.matsim.vehicles.VehicleUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -85,5 +88,50 @@ class LausitzFreightPreprocessorTest {
                 .as("dhl carrier must have a routed (selected) plan").isNotNull();
         assertThat(carriers.getCarriers().get(Id.create("hermes", Carrier.class)).getSelectedPlan())
                 .as("hermes carrier must have a routed (selected) plan").isNotNull();
+    }
+
+    @Test
+    @DisplayName("carNetwork() keeps only the connected car sub-network (drops PT-only links + islands)")
+    void carNetworkExcludesPtLinksAndDisconnectedComponents() {
+        // A network-with-pt analogue: one connected car square + a PT-only link + a detached car island.
+        Network full = NetworkUtils.createNetwork();
+
+        // connected car square (8 directed links, strongly connected) — the keep set
+        Node a = NetworkUtils.createAndAddNode(full, Id.createNodeId("a"), new Coord(0, 0));
+        Node b = NetworkUtils.createAndAddNode(full, Id.createNodeId("b"), new Coord(1000, 0));
+        Node c = NetworkUtils.createAndAddNode(full, Id.createNodeId("c"), new Coord(1000, 1000));
+        Node d = NetworkUtils.createAndAddNode(full, Id.createNodeId("d"), new Coord(0, 1000));
+        for (var e : new Node[][]{{a, b}, {b, c}, {c, d}, {d, a}, {b, a}, {c, b}, {d, c}, {a, d}}) {
+            NetworkUtils.createAndAddLink(full, Id.createLinkId(e[0].getId() + "_" + e[1].getId()),
+                    e[0], e[1], 1000, 13.9, 1800, 1);
+        }
+
+        // PT-only link (allowedModes = {pt}) — must be excluded entirely (services snap here in the raw net)
+        Node pt1 = NetworkUtils.createAndAddNode(full, Id.createNodeId("pt_regio_1"), new Coord(100, 100));
+        Node pt2 = NetworkUtils.createAndAddNode(full, Id.createNodeId("pt_regio_2"), new Coord(200, 100));
+        Link ptLink = NetworkUtils.createAndAddLink(full, Id.createLinkId("pt_0"), pt1, pt2, 100, 13.9, 1800, 1);
+        ptLink.setAllowedModes(Set.of("pt"));
+
+        // detached car island (strongly connected pair, but smaller than the square) — NetworkCleaner drops it
+        Node e1 = NetworkUtils.createAndAddNode(full, Id.createNodeId("island1"), new Coord(50000, 50000));
+        Node e2 = NetworkUtils.createAndAddNode(full, Id.createNodeId("island2"), new Coord(51000, 50000));
+        NetworkUtils.createAndAddLink(full, Id.createLinkId("island_fwd"), e1, e2, 1000, 13.9, 1800, 1);
+        NetworkUtils.createAndAddLink(full, Id.createLinkId("island_bwd"), e2, e1, 1000, 13.9, 1800, 1);
+
+        Network car = LausitzFreightPreprocessor.carNetwork(full);
+
+        assertThat(car.getLinks().keySet())
+                .as("keeps the connected car square")
+                .contains(Id.createLinkId("a_b"), Id.createLinkId("b_c"),
+                        Id.createLinkId("c_d"), Id.createLinkId("d_a"));
+        assertThat(car.getLinks().keySet())
+                .as("PT-only links are excluded (no pt_* in the routing graph)")
+                .doesNotContain(Id.createLinkId("pt_0"));
+        assertThat(car.getLinks().keySet())
+                .as("disconnected island is removed by NetworkCleaner")
+                .doesNotContain(Id.createLinkId("island_fwd"), Id.createLinkId("island_bwd"));
+        assertThat(car.getNodes().keySet())
+                .as("no PT pseudo-nodes survive (the source of the pt_regio 'no route' wedge)")
+                .doesNotContain(Id.createNodeId("pt_regio_1"), Id.createNodeId("pt_regio_2"));
     }
 }

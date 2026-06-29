@@ -3,10 +3,15 @@ package hagrid.integrated.freight;
 import hagrid.utils.demand.Delivery;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
+import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.network.algorithms.NetworkCleaner;
+import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
+import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.freight.carriers.*;
 import org.matsim.vehicles.VehicleType;
@@ -28,13 +33,34 @@ public final class LausitzFreightPreprocessor {
 
     private LausitzFreightPreprocessor() {}
 
+    /**
+     * Derives the routable car sub-network from a (possibly network-with-pt) full network:
+     * keeps only links allowing {@link TransportMode#car}, then runs {@link NetworkCleaner}
+     * so only the largest strongly-connected car component survives.
+     *
+     * <p>Without this, depots and delivery points snap (via {@code getNearestLinkExactly}) onto
+     * {@code pt_*}/{@code pt_regio_*} PT-only links, and every jsprit routing to/from them runs a
+     * full failing SpeedyALT search → thousands of {@code "no route found"} warnings and a multi-hour
+     * grind at higher jsprit iteration counts. Mirrors what {@code LausitzDrtPreprocessor} does for
+     * the {@code drt} mode.
+     */
+    public static Network carNetwork(Network full) {
+        Network car = NetworkUtils.createNetwork();
+        new TransportModeNetworkFilter(full).filter(car, java.util.Set.of(TransportMode.car));
+        new NetworkCleaner().run(car);
+        return car;
+    }
+
     public static void run(String demandShp, String depotCsv, String networkFile,
                            String vehicleTypesFile, String carriersOut, int jspritIterations) {
-        // 1. network
+        // 1. network — route only on the connected car sub-network. The raw Lausitz network is a
+        //    network-with-pt; leaving pt_*/pt_regio_* links in traps depot/service snapping and makes
+        //    jsprit grind for hours on failing routes (see carNetwork()).
         Config config = ConfigUtils.createConfig();
         config.network().setInputFile(networkFile);
         Scenario scenario = ScenarioUtils.loadScenario(config);
-        Network network = scenario.getNetwork();
+        Network network = carNetwork(scenario.getNetwork());
+        ((MutableScenario) scenario).setNetwork(network);
 
         // 2. van vehicle types
         CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
