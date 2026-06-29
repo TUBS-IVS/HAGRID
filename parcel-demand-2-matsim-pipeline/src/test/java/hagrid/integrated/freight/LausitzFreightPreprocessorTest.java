@@ -1,5 +1,6 @@
 package hagrid.integrated.freight;
 
+import hagrid.utils.demand.Delivery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -23,6 +24,8 @@ import org.matsim.vehicles.VehicleUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -133,5 +136,67 @@ class LausitzFreightPreprocessorTest {
         assertThat(car.getNodes().keySet())
                 .as("no PT pseudo-nodes survive (the source of the pt_regio 'no route' wedge)")
                 .doesNotContain(Id.createNodeId("pt_regio_1"), Id.createNodeId("pt_regio_2"));
+    }
+
+    @Test
+    @DisplayName("routeWithDurationCap splits an over-7h workload into multiple tours (Hannover MaxRouteDuration)")
+    void durationCapForcesTourSplit() {
+        // Star network centred on a depot, two ~6h arms (east + west). Each arm alone fits the 7h cap;
+        // visiting BOTH in one tour is ~12h and cannot. With capacity deliberately non-binding, only the
+        // ~7h route-duration cap can force a split -> >=2 tours proves the constraint is applied.
+        // (Stock CarriersUtils.runJsprit would pack everything into a single ~12h tour within the 12h window.)
+        Network net = NetworkUtils.createNetwork();
+        Node c = NetworkUtils.createAndAddNode(net, Id.createNodeId("C"), new Coord(0, 0));
+        Node depotNode = NetworkUtils.createAndAddNode(net, Id.createNodeId("D"), new Coord(0, -1));
+        // SHORT depot link (1m) so it adds ~no travel; the vehicle effectively starts at the centre C.
+        NetworkUtils.createAndAddLink(net, Id.createLinkId("D_C"), depotNode, c, 1.0, 13.9, 1800, 1);
+        NetworkUtils.createAndAddLink(net, Id.createLinkId("C_D"), c, depotNode, 1.0, 13.9, 1800, 1);
+
+        Node prevE = c, prevW = c;
+        for (int i = 1; i <= 2; i++) {
+            Node e = NetworkUtils.createAndAddNode(net, Id.createNodeId("E" + i), new Coord(50000.0 * i, 0));
+            Node w = NetworkUtils.createAndAddNode(net, Id.createNodeId("W" + i), new Coord(-50000.0 * i, 0));
+            link(net, prevE, e); link(net, e, prevE);   // 50km links @ 13.9 m/s ~= 1h each
+            link(net, prevW, w); link(net, w, prevW);
+            prevE = e; prevW = w;
+        }
+
+        VehicleType van = VehicleUtils.createVehicleType(Id.create("ct_cep_size_l", VehicleType.class));
+        van.getCapacity().setOther(230);             // >> 6 parcels -> capacity is NOT the splitter
+        van.setNetworkMode("car");
+        van.getCostInformation().setCostsPerMeter(0.0004).setCostsPerSecond(0.0).setFixedCost(170.0);
+        CarrierVehicleTypes types = new CarrierVehicleTypes();
+        types.getVehicleTypes().put(van.getId(), van);
+
+        java.util.List<Delivery> deliveries = new java.util.ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            deliveries.add(Delivery.builder().id("e" + i).coordinate(new Coord(50000.0 * i, 0)).provider("dhl")
+                    .parcelType(Delivery.ParcelType.B2B).amount(1)
+                    .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+            deliveries.add(Delivery.builder().id("w" + i).coordinate(new Coord(-50000.0 * i, 0)).provider("dhl")
+                    .parcelType(Delivery.ParcelType.B2B).amount(1)
+                    .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+        }
+
+        Carrier carrier = LmdCarrierBuilder.build("dhl", deliveries, Id.createLinkId("D_C"),
+                net, new VehicleType[]{van}, 2, 15, new Random(1));
+        Carriers carriers = new Carriers();
+        carriers.addCarrier(carrier);
+
+        LausitzFreightPreprocessor.routeWithDurationCap(carriers, net, types, /*jsprit*/ 50);
+
+        assertThat(carrier.getSelectedPlan()).isNotNull();
+        // The decisive proof that the Hannover MaxRouteDurationConstraint is applied: a workload that an
+        // unconstrained jsprit would pack into ONE ~8h tour (within the 12h vehicle window) is forced into
+        // >=2 tours by the ~7h route-duration cap. Stock CarriersUtils.runJsprit produces a single tour here.
+        assertThat(carrier.getSelectedPlan().getScheduledTours())
+                .as("the ~7h route-duration cap must split the ~8h two-arm workload into >=2 tours")
+                .hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    /** Adds a 50km, 13.9 m/s directed link (~1h travel) named {@code <from>_<to>}. */
+    private static void link(Network net, Node from, Node to) {
+        NetworkUtils.createAndAddLink(net, Id.createLinkId(from.getId() + "_" + to.getId()),
+                from, to, 50000, 13.9, 1800, 1);
     }
 }
