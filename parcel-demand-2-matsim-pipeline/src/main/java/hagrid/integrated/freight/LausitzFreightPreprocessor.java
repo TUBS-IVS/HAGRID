@@ -1,6 +1,12 @@
 package hagrid.integrated.freight;
 
+import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
+import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
+import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
+import com.graphhopper.jsprit.core.util.Solutions;
+
 import hagrid.utils.demand.Delivery;
+import hagrid.utils.routing.HAGRIDRouterUtils;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
@@ -14,10 +20,14 @@ import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.freight.carriers.*;
+import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
+import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
+import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.vehicles.VehicleType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 /**
  * Lausitz dedicated-LMD preprocessor: PANDA demand + per-LSP synthetic depots -> one carrier per LSP
@@ -30,6 +40,9 @@ public final class LausitzFreightPreprocessor {
     /** HAGRID defaults (minutes), reused for comparability with the Hannover LMD. */
     private static final int DURATION_PER_PARCEL_MIN = 2;
     private static final int MAX_DURATION_PER_STOP_MIN = 15;
+
+    /** Base seed for the per-provider missed-delivery RNG (deterministic, reproducible across runs). */
+    private static final long MISSED_DELIVERY_SEED = 4711L;
 
     private LausitzFreightPreprocessor() {}
 
@@ -82,28 +95,17 @@ public final class LausitzFreightPreprocessor {
             if (depot == null) {
                 throw new IllegalStateException("No depot for provider with demand: " + provider);
             }
+            // Per-provider deterministic RNG so the missed-delivery overlay is reproducible
+            // independent of the (unordered) byProvider iteration order.
+            Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
             Carrier carrier = LmdCarrierBuilder.build(provider, e.getValue(), depot, network, vans,
-                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN);
+                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, missedRng);
             CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
             carriers.addCarrier(carrier);
         }
 
-        // 5. load freight config + carriers into the scenario, then route offline with jsprit
-        // NOTE: the local hagrid:freight jar's getCarrierVehicleTypes() throws if the element is
-        // not already registered (unlike the contrib jar which auto-creates). We must register
-        // the vehicle types ourselves first via addScenarioElement.
-        ConfigUtils.addOrGetModule(config, FreightCarriersConfigGroup.class);
-        CarriersUtils.addOrGetCarriers(scenario).getCarriers().putAll(carriers.getCarriers());
-        scenario.addScenarioElement("carrierVehicleTypes", vehicleTypes);
-        // vehicleTypes is already populated — no need to iterate and put again
-        try {
-            CarriersUtils.runJsprit(scenario); // throws ExecutionException + InterruptedException (confirmed in spike)
-        } catch (java.util.concurrent.ExecutionException e) {
-            throw new IllegalStateException("jsprit routing failed for LMD carriers", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("jsprit routing interrupted for LMD carriers", e);
-        }
+        // 5. route each carrier offline with HAGRID's custom jsprit algorithm (see routeWithDurationCap)
+        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations);
 
         // 6. write the routed carriers (ensure the parent directory exists first)
         try {
@@ -111,7 +113,37 @@ public final class LausitzFreightPreprocessor {
         } catch (java.io.IOException e) {
             throw new IllegalStateException("Cannot create output directory for LMD carriers: " + carriersOut, e);
         }
-        CarriersUtils.writeCarriers(CarriersUtils.getCarriers(scenario), carriersOut);
+        CarriersUtils.writeCarriers(carriers, carriersOut);
+    }
+
+    /**
+     * Routes every carrier offline with HAGRID's custom jsprit algorithm
+     * ({@link HAGRIDRouterUtils#configureAlgorithm}), mirroring {@code hagrid.demand.Router#routeCarrier}.
+     *
+     * <p>This is the decisive difference from the stock {@code CarriersUtils.runJsprit}: the custom
+     * algorithm installs the {@link hagrid.simulation.MaxRouteDurationConstraint} (~7h hard cap on route
+     * duration, {@code Priority.CRITICAL}) plus the driver-time time-window constraint. Without it the
+     * only limit on a tour is the vehicle's operating window (08:00-20:00), so jsprit packs delivery
+     * tours to ~12.5h — the unrealistic "12h shift" seen in the dashboard. With the cap, tours cluster
+     * around the Hannover ~7.5-8h shift and jsprit adds vehicles (INFINITE fleet) instead of overlong tours.
+     */
+    static void routeWithDurationCap(Carriers carriers, Network network,
+                                     CarrierVehicleTypes vehicleTypes, int jspritIterations) {
+        NetworkBasedTransportCosts netBasedCosts = NetworkBasedTransportCosts.Builder
+                .newInstance(network, vehicleTypes.getVehicleTypes().values())
+                .setTimeSliceWidth(1800)
+                .build();
+        int iters = Math.max(1, jspritIterations);
+        for (Carrier carrier : carriers.getCarriers().values()) {
+            int serviceCount = carrier.getServices().size();
+            VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
+            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount, iters);
+            VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
+            CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
+            NetworkRouter.routePlan(plan, netBasedCosts);
+            carrier.addPlan(plan);
+            carrier.setSelectedPlan(plan);
+        }
     }
 
     public static void main(String[] args) {
