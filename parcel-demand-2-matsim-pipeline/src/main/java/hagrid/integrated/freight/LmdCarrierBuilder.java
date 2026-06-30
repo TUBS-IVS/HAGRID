@@ -33,9 +33,15 @@ import java.util.Random;
  */
 public final class LmdCarrierBuilder {
 
-    /** Whole-day operating window for the delivery vehicles + services (08:00-20:00). */
+    /** Whole-day operating window for the delivery services (08:00-20:00). */
     private static final double DAY_START = 8 * 3600;
     private static final double DAY_END = 20 * 3600;
+
+    /**
+     * Default dispatch waves when no explicit list is supplied (mirrors HAGRID CEP
+     * {@code VehicleSchedule.SIMPLE_STAGGERED}: morning + afternoon wave).
+     */
+    static final List<Integer> DEFAULT_DISPATCH_HOURS = List.of(8, 14);
 
     /**
      * Per-provider overall delivery success rates (percent), reused from the Hannover
@@ -51,10 +57,15 @@ public final class LmdCarrierBuilder {
 
     private LmdCarrierBuilder() {}
 
+    /**
+     * Builds a carrier with one vehicle per van type <em>per dispatch hour</em>,
+     * staggering departures across the supplied {@code dispatchHours} (e.g. {@code [8, 14]}
+     * creates a morning and an afternoon wave, matching the HAGRID CEP strategy).
+     */
     public static Carrier build(String provider, List<Delivery> deliveries, Id<Link> depotLink,
                                 Network network, VehicleType[] vanTypes,
                                 int durationPerParcelMin, int maxDurationPerStopMin,
-                                Random random) {
+                                List<Integer> dispatchHours, Random random) {
         Carrier carrier = CarriersUtils.createCarrier(Id.create(provider, Carrier.class));
         CarriersUtils.setCarrierMode(carrier, "car");
         carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
@@ -102,14 +113,19 @@ public final class LmdCarrierBuilder {
         carrier.getAttributes().putAttribute("missedParcelsAsList", new ArrayList<>(missedParcels));
         carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedParcels.toString());
 
-        for (VehicleType vanType : vanTypes) {
-            CarrierVehicle vehicle = CarrierVehicle.Builder
-                    .newInstance(Id.createVehicleId(provider + "_" + vanType.getId().toString()),
-                            depotLink, vanType)
-                    .setEarliestStart(DAY_START)
-                    .setLatestEnd(DAY_END)
-                    .build();
-            CarriersUtils.addCarrierVehicle(carrier, vehicle);
+        List<Integer> hours = (dispatchHours == null || dispatchHours.isEmpty())
+                ? DEFAULT_DISPATCH_HOURS : dispatchHours;
+        for (int hour : hours) {
+            double earliestStart = hour * 3600.0;
+            for (VehicleType vanType : vanTypes) {
+                String vehId = provider + "_" + vanType.getId().toString() + "_h" + hour;
+                CarrierVehicle vehicle = CarrierVehicle.Builder
+                        .newInstance(Id.createVehicleId(vehId), depotLink, vanType)
+                        .setEarliestStart(earliestStart)
+                        .setLatestEnd(DAY_END)
+                        .build();
+                CarriersUtils.addCarrierVehicle(carrier, vehicle);
+            }
         }
 
         return carrier;

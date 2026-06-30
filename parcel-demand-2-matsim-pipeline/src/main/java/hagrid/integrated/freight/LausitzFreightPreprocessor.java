@@ -5,8 +5,15 @@ import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.util.Solutions;
 
+import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.routing.HAGRIDRouterUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
@@ -19,12 +26,15 @@ import org.matsim.core.network.algorithms.NetworkCleaner;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
+import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.freight.carriers.*;
 import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
 import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.vehicles.VehicleType;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -37,12 +47,24 @@ import java.util.Random;
  */
 public final class LausitzFreightPreprocessor {
 
+    private static final Logger LOG = LogManager.getLogger(LausitzFreightPreprocessor.class);
+
+    /** Reused for the service-area point-in-polygon clip (mirrors {@code DrtNetworkPreparer}). */
+    private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory();
+
     /** HAGRID defaults (minutes), reused for comparability with the Hannover LMD. */
     private static final int DURATION_PER_PARCEL_MIN = 2;
     private static final int MAX_DURATION_PER_STOP_MIN = 15;
 
     /** Base seed for the per-provider missed-delivery RNG (deterministic, reproducible across runs). */
     private static final long MISSED_DELIVERY_SEED = 4711L;
+
+    /**
+     * Dispatch waves: mirrors HAGRID CEP {@code VehicleSchedule.SIMPLE_STAGGERED}.
+     * One vehicle per van type is created at each hour so jsprit can assign morning
+     * and afternoon demand to the appropriate wave instead of all starting at 08:00.
+     */
+    private static final List<Integer> DISPATCH_HOURS = List.of(8, 14);
 
     private LausitzFreightPreprocessor() {}
 
@@ -64,8 +86,25 @@ public final class LausitzFreightPreprocessor {
         return car;
     }
 
+    /** Backwards-compatible entry point: no service-area clip (delivers every PANDA segment). */
     public static void run(String demandShp, String depotCsv, String networkFile,
                            String vehicleTypesFile, String carriersOut, int jspritIterations) {
+        run(demandShp, depotCsv, networkFile, vehicleTypesFile, carriersOut, jspritIterations, null);
+    }
+
+    /**
+     * Routes the LMD carriers, optionally clipping the parcel demand to a service-area shapefile.
+     *
+     * <p>When {@code serviceAreaShp} is non-blank, deliveries whose drop point lies OUTSIDE the area
+     * are dropped before routing, so the LMD delivery footprint matches the DRT service area exactly
+     * (single source of truth — same shapefile both concepts use). Without it LMD delivers to every
+     * PANDA segment incl. outliers (e.g. Ruhland) that the clipped DRT network cannot reach, which
+     * makes the two baselines cover different geography. Pass {@code null}/blank to keep the legacy
+     * "deliver everywhere" behaviour (e.g. standalone freight runs / tests).
+     */
+    public static void run(String demandShp, String depotCsv, String networkFile,
+                           String vehicleTypesFile, String carriersOut, int jspritIterations,
+                           String serviceAreaShp) {
         // 1. network — route only on the connected car sub-network. The raw Lausitz network is a
         //    network-with-pt; leaving pt_*/pt_regio_* links in traps depot/service snapping and makes
         //    jsprit grind for hours on failing routes (see carNetwork()).
@@ -85,6 +124,9 @@ public final class LausitzFreightPreprocessor {
 
         // 3. demand -> per-LSP deliveries ; depots -> per-LSP link
         Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(demandShp));
+        if (serviceAreaShp != null && !serviceAreaShp.isBlank()) {
+            byProvider = clipToServiceArea(byProvider, serviceAreaShp);
+        }
         Map<String, Id<Link>> depots = LmdDepotLoader.load(depotCsv, network);
 
         // 4. one carrier per demanded LSP, anchored at its depot
@@ -99,7 +141,7 @@ public final class LausitzFreightPreprocessor {
             // independent of the (unordered) byProvider iteration order.
             Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
             Carrier carrier = LmdCarrierBuilder.build(provider, e.getValue(), depot, network, vans,
-                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, missedRng);
+                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, DISPATCH_HOURS, missedRng);
             CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
             carriers.addCarrier(carrier);
         }
@@ -114,6 +156,42 @@ public final class LausitzFreightPreprocessor {
             throw new IllegalStateException("Cannot create output directory for LMD carriers: " + carriersOut, e);
         }
         CarriersUtils.writeCarriers(carriers, carriersOut);
+    }
+
+    /**
+     * Keeps only deliveries whose drop point lies inside the service-area geometry, mirroring
+     * {@code PopulationClipper} / {@code DrtNetworkPreparer} so the LMD delivery footprint matches the
+     * DRT service area exactly. Providers left with no in-area demand are dropped so no empty carrier
+     * is built downstream.
+     */
+    static Map<String, List<Delivery>> clipToServiceArea(Map<String, List<Delivery>> byProvider,
+                                                         String serviceAreaShp) {
+        Geometry area = GeoUtils.getBoundaryGeometry(GeoFileReader.getAllFeatures(serviceAreaShp));
+        return clipToArea(byProvider, area);
+    }
+
+    /** Geometry-level clip (no file I/O) — see {@link #clipToServiceArea(Map, String)}. */
+    static Map<String, List<Delivery>> clipToArea(Map<String, List<Delivery>> byProvider, Geometry area) {
+        Map<String, List<Delivery>> clipped = new LinkedHashMap<>();
+        int before = 0;
+        int after = 0;
+        for (Map.Entry<String, List<Delivery>> e : byProvider.entrySet()) {
+            List<Delivery> kept = new ArrayList<>();
+            for (Delivery d : e.getValue()) {
+                before++;
+                Coord c = d.getCoordinate();
+                if (area.contains(GEOMETRY_FACTORY.createPoint(new Coordinate(c.getX(), c.getY())))) {
+                    kept.add(d);
+                    after++;
+                }
+            }
+            if (!kept.isEmpty()) {
+                clipped.put(e.getKey(), kept);
+            }
+        }
+        LOG.info("LMD demand clipped to service area: {} -> {} deliveries ({} dropped outside area).",
+                before, after, before - after);
+        return clipped;
     }
 
     /**

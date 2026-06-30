@@ -179,7 +179,7 @@ class LausitzFreightPreprocessorTest {
         }
 
         Carrier carrier = LmdCarrierBuilder.build("dhl", deliveries, Id.createLinkId("D_C"),
-                net, new VehicleType[]{van}, 2, 15, new Random(1));
+                net, new VehicleType[]{van}, 2, 15, List.of(8), new Random(1));
         Carriers carriers = new Carriers();
         carriers.addCarrier(carrier);
 
@@ -192,6 +192,39 @@ class LausitzFreightPreprocessorTest {
         assertThat(carrier.getSelectedPlan().getScheduledTours())
                 .as("the ~7h route-duration cap must split the ~8h two-arm workload into >=2 tours")
                 .hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("clipToArea drops deliveries outside the area and removes emptied providers")
+    void clipToServiceAreaDropsOutOfAreaDeliveries() {
+        // Service area = rectangle [0,0]..[1000,1000]. dhl has one in-area + one far-out delivery;
+        // hermes has ONLY a far-out delivery -> provider must be dropped entirely.
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Geometry area = gf.createPolygon(new org.locationtech.jts.geom.Coordinate[]{
+                new org.locationtech.jts.geom.Coordinate(0, 0),
+                new org.locationtech.jts.geom.Coordinate(1000, 0),
+                new org.locationtech.jts.geom.Coordinate(1000, 1000),
+                new org.locationtech.jts.geom.Coordinate(0, 1000),
+                new org.locationtech.jts.geom.Coordinate(0, 0)});
+
+        Delivery dhlIn = Delivery.builder().id("in").coordinate(new Coord(500, 500)).provider("dhl")
+                .parcelType(Delivery.ParcelType.B2C).amount(3)
+                .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build();
+        Delivery dhlOut = Delivery.builder().id("out").coordinate(new Coord(50000, 50000)).provider("dhl")
+                .parcelType(Delivery.ParcelType.B2C).amount(2)
+                .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build();
+        Delivery hermesOut = Delivery.builder().id("hout").coordinate(new Coord(-9000, -9000)).provider("hermes")
+                .parcelType(Delivery.ParcelType.B2C).amount(5)
+                .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build();
+
+        java.util.Map<String, List<Delivery>> byProvider = new java.util.LinkedHashMap<>();
+        byProvider.put("dhl", new java.util.ArrayList<>(List.of(dhlIn, dhlOut)));
+        byProvider.put("hermes", new java.util.ArrayList<>(List.of(hermesOut)));
+
+        var clipped = LausitzFreightPreprocessor.clipToArea(byProvider, area);
+
+        assertThat(clipped).as("hermes had only out-of-area demand -> provider dropped").containsOnlyKeys("dhl");
+        assertThat(clipped.get("dhl")).as("only the in-area dhl delivery survives").containsExactly(dhlIn);
     }
 
     /** Adds a 50km, 13.9 m/s directed link (~1h travel) named {@code <from>_<to>}. */

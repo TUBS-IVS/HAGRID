@@ -39,7 +39,7 @@ class LmdCarrierBuilderTest {
     }
 
     @Test
-    @DisplayName("builds a carrier with one service per delivery + a van per type at the depot")
+    @DisplayName("builds a carrier with one service per delivery + a van per type per dispatch hour at the depot")
     void buildsCarrier() {
         Network n = net();
         List<Delivery> deliveries = List.of(
@@ -51,9 +51,11 @@ class LmdCarrierBuilderTest {
                         .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
         VehicleType[] vans = {van("ct_cep_size_m", 165), van("ct_cep_size_l", 230)};
 
+        // two dispatch waves: 08:00 and 14:00 -> 2 types × 2 hours = 4 vehicles
         Carrier carrier = LmdCarrierBuilder.build(
                 "dhl", deliveries, Id.createLinkId("ab"), n, vans,
-                /*durationPerParcelMin*/ 2, /*maxDurationPerStopMin*/ 15, new Random(42));
+                /*durationPerParcelMin*/ 2, /*maxDurationPerStopMin*/ 15,
+                List.of(8, 14), new Random(42));
 
         assertThat(carrier.getId().toString()).isEqualTo("dhl");
         assertThat(carrier.getServices()).hasSize(2);
@@ -61,10 +63,13 @@ class LmdCarrierBuilderTest {
         assertThat(carrier.getServices().values())
                 .extracting(CarrierService::getServiceDuration)
                 .containsExactlyInAnyOrder(900.0, 360.0);
-        // one vehicle per van type, both at the depot link
-        assertThat(carrier.getCarrierCapabilities().getCarrierVehicles()).hasSize(2);
-        assertThat(carrier.getCarrierCapabilities().getCarrierVehicles().values())
-                .allMatch(v -> v.getLinkId().equals(Id.createLinkId("ab")));
+        // one vehicle per van type per dispatch hour: 2 types × 2 hours = 4
+        var vehicles = carrier.getCarrierCapabilities().getCarrierVehicles();
+        assertThat(vehicles).hasSize(4);
+        assertThat(vehicles.values()).allMatch(v -> v.getLinkId().equals(Id.createLinkId("ab")));
+        // morning wave at 08:00, afternoon wave at 14:00
+        assertThat(vehicles.values()).anyMatch(v -> v.getEarliestStartTime() == 8 * 3600.0);
+        assertThat(vehicles.values()).anyMatch(v -> v.getEarliestStartTime() == 14 * 3600.0);
     }
 
     @Test
@@ -79,7 +84,7 @@ class LmdCarrierBuilderTest {
         VehicleType[] vans = {van("ct_cep_size_m", 165)};
 
         Carrier carrier = LmdCarrierBuilder.build(
-                "dhl", deliveries, Id.createLinkId("ab"), n, vans, 2, 15, new Random(42));
+                "dhl", deliveries, Id.createLinkId("ab"), n, vans, 2, 15, List.of(8), new Random(42));
 
         int numberOfParcels = (int) carrier.getAttributes().getAttribute("numberOfParcels");
         int missedParcels = (int) carrier.getAttributes().getAttribute("missedParcels");
@@ -108,12 +113,12 @@ class LmdCarrierBuilderTest {
                 Delivery.builder().id("x_B2C").coordinate(stop).provider("dhl")
                         .parcelType(Delivery.ParcelType.B2C).amount(1000)
                         .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build()),
-                Id.createLinkId("ab"), n, vans, 2, 15, new Random(7));
+                Id.createLinkId("ab"), n, vans, 2, 15, List.of(8), new Random(7));
         Carrier b2b = LmdCarrierBuilder.build("dhl", List.of(
                 Delivery.builder().id("x_B2B").coordinate(stop).provider("dhl")
                         .parcelType(Delivery.ParcelType.B2B).amount(1000)
                         .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build()),
-                Id.createLinkId("ab"), n, vans, 2, 15, new Random(7));
+                Id.createLinkId("ab"), n, vans, 2, 15, List.of(8), new Random(7));
 
         assertThat((int) b2b.getAttributes().getAttribute("missedParcels"))
                 .isLessThan((int) b2c.getAttributes().getAttribute("missedParcels"));
