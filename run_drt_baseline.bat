@@ -9,10 +9,15 @@ rem Lausitz passenger-only DRT_BASELINE: preprocessing then the MATSim DRT sim.
 rem Both invocations use IDENTICAL scenario args so the runId (and therefore the
 rem clipped-input + output paths) matches between the two steps.
 
-rem 1) Preprocess: produce the clipped DRT network, person-only plans and DVRP fleet.
-mvn -pl parcel-demand-2-matsim-pipeline exec:java ^
+rem Scenario args shared by both steps (runId must match).
+set "ARGS=concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fleetSize=80,maxIter=150,jspritIter=100,tag=fleet80_depot_railpt"
+
+rem 1) Preprocess: clipped DRT network, person-only plans, DVRP fleet + rail schedule.
+rem NOTE: call is REQUIRED -- mvn is mvn.cmd; without call, control transfers to it and
+rem never returns, so the second mvn step (the actual simulation) would silently never run.
+call mvn -pl parcel-demand-2-matsim-pipeline exec:java ^
   -Dexec.mainClass="hagrid.integrated.drt.PrepareLausitzDrtInputs" ^
-  -Dexec.args="concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fleetSize=20,maxIter=1"
+  -Dexec.args="%ARGS%"
 
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
@@ -21,10 +26,10 @@ if not "%RC%"=="0" (
   exit /b %RC%
 )
 
-rem 2) Run the passenger DRT simulation on the just-produced inputs.
-mvn -pl parcel-demand-2-matsim-pipeline exec:java ^
+rem 2) Run integrated passenger-DRT + freight simulation.
+call mvn -pl parcel-demand-2-matsim-pipeline exec:java ^
   -Dexec.mainClass="hagrid.HAGRIDSimulationRunner" ^
-  -Dexec.args="concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fleetSize=20,maxIter=1"
+  -Dexec.args="%ARGS%"
 
 set "RC=%ERRORLEVEL%"
 echo EXIT_CODE=%RC%

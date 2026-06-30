@@ -251,10 +251,13 @@ public final class SimulationRunnerUtils {
         // LMD baseline: dedicated conventional multi-LSP delivery on the Lausitz network.
         if (cfg.isLmdBaseline()) {
             // 1. preprocess: produce the routed carrier XML
+            // Clip LMD demand to the SAME service-area shapefile the DRT uses, so both baselines
+            // cover identical geography (no out-of-area outliers like Ruhland that DRT can't reach).
             hagrid.integrated.freight.LausitzFreightPreprocessor.run(
                     cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
                     cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
-                    cfg.getLmdCarriersRouted(), cfg.getJspritIterations());
+                    cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
+                    cfg.getDrtServiceAreaShapefile());
 
             // 2. build the run scenario on the Lausitz network with the routed carriers
             Config config = ConfigUtils.createConfig();
