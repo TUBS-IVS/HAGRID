@@ -3,15 +3,15 @@
 DRT Dashboard (depot-dispatching headline) — Lausitz / Hoyerswerda
 ==================================================================
 One self-contained HTML for the passenger-DRT run:
-  • Headline KPI cards incl. the requested SERVICE-TIME ratio (pax-aboard / operating-time)
-    for the whole fleet against THREE denominators (active / shift / sim).
-  • Convergence over the 151 iterations (rides, rejection, wait, mode shares).
-  • Service-time per vehicle (sorted bar, hover = all three denominators) + fleet time split.
-  • Per-vehicle tour MAP: every DRT vehicle individually selectable (occupied vs empty
-    deadhead), labelled with its rides + active service-time ratio.
+  • Headline KPI cards (all with tooltip), incl. placeholder COST KPI + mean pax aboard.
+  • Per-vehicle tour MAP (CARTO dark, pastel per-vehicle colors, numbered stops,
+    depot markers, heatmap toggle for pickups/dropoffs).
+  • Tagesverlauf: demand, rejections, mean wait, PT-feeder (abs/share toggle).
+  • Verteilungen: wait, tour distance, tour duration.
+  • Besetzungs-Decomposition, final modal split (pie), convergence, service-time detail.
 
 Run:  PYTHONIOENCODING=utf-8 python -u build_drt_dashboard.py
-Out:  drt_dashboard.html   (self-contained; OSM tiles need internet)
+Out:  drt_dashboard.html   (self-contained; CARTO tiles need internet)
 """
 import os, re, gzip, math
 import xml.etree.ElementTree as ET
@@ -42,20 +42,45 @@ TRIPS = BASE + ".output_trips.csv.gz"
 FLEET = os.path.join(HO, PREFIX + "_drt_fleet.xml.gz")
 RAIL_SCHED = os.path.join(HO, PREFIX + "_rail-transitSchedule.xml.gz")
 SHP = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-input", "lausitz", "drt", "drt-service-area.shp")
+DEPOT_CSV = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-input", "lausitz", "hubs", "lmd-depots.csv")
 
-SCRATCH = ("C:/Users/HENDRI~1/AppData/Local/Temp/claude/"
-           "c--Users-Hendrik-Bimmermann-Documents-GitHub-HAGRID/"
-           "75a7750e-f061-47a5-81d9-77b9fc22c86d/scratchpad")
-EV = os.path.join(SCRATCH, "drt_events_depot.txt")     # pre-filtered (grep 'drt_'); fallback below
+# Pre-filtered drt event cache. Lives INSIDE this run's output directory so it is physically
+# keyed to the run — a stale copy from another run can never be picked up (the old hardcoded
+# scratchpad path mixed fleet80_depot events into the railpt dashboard). Built once on first run.
+EV = os.path.join(MM, PREFIX + ".drt_events_filtered.txt")
+RAW_EVENTS = BASE + ".output_events.xml.gz"
 
 FLEET_SIZE = 80
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
 BG = "#0F1117"; CARD = "#1A1D27"; BORDER = "#2A2D3A"; TEXT = "#E0E0E0"; DIM = "#8A93A6"; ACC = "#38BDF8"
-COL_OCC = "#2ECC71"; COL_EMPTY = "#FF5A36"; COL_PU = "#FFD400"; COL_DO = "#00BFFF"
+COL_OCC = "#4ADE80"; COL_EMPTY = "#94A3B8"; COL_PU = "#FDE68A"; COL_DO = "#7DD3FC"
+COL_DEPOT = "#F472B6"
 
-# fall back to streaming the gz if the pre-filtered file is absent
+# Legacy-HAGRID pastel tour palette (DashboardGenerator TOUR_COLORS) — per-vehicle colors
+TOUR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4",
+               "#84cc16", "#fb923c", "#14b8a6", "#f472b6", "#a78bfa", "#fbbf24", "#22d3ee",
+               "#e879f9", "#4ade80", "#f97316", "#2dd4bf", "#c084fc", "#facc15"]
+
+# ------------------------------------------------------------ PLACEHOLDER cost function
+# Zeitbasiert nach Rudolph-Ankern (~80/20 Personal/Fahrzeug): 20 €/h Personal + 5 €/h Fahrzeug,
+# Preisbasis Fahrzeug-SCHICHTstunde (Idle zählt mit). !! PLATZHALTER — Kostenfunktion ist noch
+# zu präzisieren (Beschluss 2026-07-02); Zahl nur als Größenordnung interpretieren. !!
+COST_LABOUR_EUR_H = 20.0
+COST_VEHICLE_EUR_H = 5.0
+# Literatur-Benchmark (Currie & Fournier 2020, Transport Policy: DRT operating cost per
+# vehicle-hour, AU$ 2019): 3. Ära (2009-2019) Median ~110 AU$ ≈ 68 €; 2. Ära ~60 AU$ ≈ 37 €.
+# Vollkosten inkl. Overhead — brackets das Bottom-up-Modell (das nur Personal+Fahrzeug enthält).
+COST_LIT_EUR_H = 68.0
+COST_LIT_LOW_EUR_H = 37.0
+
+# build the per-run event cache on first use (same filter as the old manual grep 'drt_')
 if not os.path.exists(EV):
-    EV = BASE + ".output_events.xml.gz"
+    print(f"Filtering drt events from {RAW_EVENTS} (one-time per run) ...")
+    with gzip.open(RAW_EVENTS, "rt", encoding="utf-8") as src, \
+            open(EV, "w", encoding="utf-8") as dst:
+        for line in src:
+            if "drt_" in line:
+                dst.write(line)
 
 # ------------------------------------------------------------------ 1. service time (validated core)
 print("Reconstructing service time ...")
@@ -63,11 +88,13 @@ svc = reconstruct(EV, FLEET)
 fleet = svc["fleet"]; per_veh = svc["per_veh"]; sim_h = svc["sim_horizon"]
 print(f"  fleet active={fleet['ratio_active']*100:.1f}%  shift={fleet['ratio_shift']*100:.1f}%  sim={fleet['ratio_sim']*100:.1f}%")
 
-# ------------------------------------------------------------------ 2. map pass: per-vehicle link path + occupancy
+# ------------------------------------------------------------------ 2. map pass: per-vehicle link path + occupancy + rejections
 print("Reconstructing per-vehicle tours (map) ...")
 re_type = re.compile(r'type="([^"]+)"'); re_link = re.compile(r'link="([^"]+)"')
 re_veh = re.compile(r'\bvehicle="([^"]+)"'); re_pers = re.compile(r'person="([^"]+)"')
+re_time = re.compile(r'time="([0-9.]+)"')
 occ = {}; veh_path = {}; used_links = set()
+rej_times = []          # simulation times of rejected drt requests (final iteration)
 
 def _ev_lines(path):
     op = gzip.open(path, "rt", encoding="utf-8") if path.endswith(".gz") else open(path, "r", encoding="utf-8")
@@ -93,7 +120,11 @@ for line in _ev_lines(EV):
         mv = re_veh.search(line); mp = re_pers.search(line)
         if mv and mp and mv.group(1).startswith("drt_") and mp.group(1) != mv.group(1):
             occ[mv.group(1)] = max(0, occ.get(mv.group(1), 0) - 1)
-print(f"  vehicles with path={len(veh_path)}  distinct links={len(used_links):,}")
+    elif et == "PassengerRequest rejected" and 'mode="drt"' in line:
+        mtm = re_time.search(line)
+        if mtm:
+            rej_times.append(float(mtm.group(1)))
+print(f"  vehicles with path={len(veh_path)}  distinct links={len(used_links):,}  rejections={len(rej_times)}")
 
 # ------------------------------------------------------------------ 3. network geometry (only used links)
 print("Parsing network geometry ...")
@@ -170,20 +201,42 @@ veh_km_empty = float(vstats["totalEmptyDistance"]) / 1000.0
 deadhead_pct = float(vstats["emptyRatio"]) * 100.0
 veh_km_occ = veh_km_total - veh_km_empty
 pax_km_matsim = float(vstats["totalPassengerDistanceTraveled"]) / 1000.0
+# cross-check the legs-derived person-km against MATSim's own aggregate (guards event/CSV mixing)
+_pkm_dev = abs(person_km - pax_km_matsim) / pax_km_matsim * 100.0 if pax_km_matsim else 0.0
+print(f"  person-km cross-check: legs={person_km:,.0f} vs MATSim={pax_km_matsim:,.0f}  (dev {_pkm_dev:.2f}%)")
+if _pkm_dev > 1.0:
+    print("  WARNUNG: person-km weicht >1% von MATSim totalPassengerDistanceTraveled ab — Datenquellen pruefen!")
 fc = cust.iloc[-1]
 drt_rides = int(fc["rides"]); rej = float(fc["rejectionRate"]) * 100
 wait_mean = float(fc["wait_average"]); wait_p95 = float(fc["wait_p95"])
+wait_median = float(legs["waitTime"].median())
 drt_share = float(modestats.iloc[-1]["drt"]) * 100
 pt_share = float(modestats.iloc[-1]["pt"]) * 100
 with gzip.open(TRIPS, "rt", encoding="utf-8") as f:
     trips = pd.read_csv(f, sep=";")
-drt_trips = trips[trips["modes"].str.contains("drt", na=False)]
-n_feeder = int(drt_trips["modes"].str.contains("pt", na=False).sum())
+drt_trips = trips[trips["modes"].str.contains("drt", na=False)].copy()
+feeder_mask = drt_trips["modes"].str.contains("pt", na=False)
+n_feeder = int(feeder_mask.sum())
 n_standalone = len(drt_trips) - n_feeder
 pt_trips = trips[trips["main_mode"] == "pt"]
 pct_rail_drtfed = (n_feeder / len(pt_trips) * 100) if len(pt_trips) else 0.0
 
-# ------------------------------------------------------------------ 7. service-area + intermodal stops (map overlay)
+# mean pax aboard over the active tour time (time-weighted, incl. empty driving) = util_by_time * CAP
+CAP = fleet.get("capacity", 8)
+_seg_time = fleet.get("seg_time", {})
+_tot_seg_time = sum(_seg_time.values())
+pax_aboard_mean = (sum(lv * s for lv, s in _seg_time.items()) / _tot_seg_time) if _tot_seg_time else 0.0
+
+# PLACEHOLDER cost: fleet shift hours x (labour + vehicle) per hour + literature benchmark
+fleet_shift_h = fleet.get("sum_shift_s", 0.0) / 3600.0
+cost_total = fleet_shift_h * (COST_LABOUR_EUR_H + COST_VEHICLE_EUR_H)
+cost_per_ride = cost_total / drt_rides if drt_rides else 0.0
+cost_labour_share = COST_LABOUR_EUR_H / (COST_LABOUR_EUR_H + COST_VEHICLE_EUR_H) * 100.0
+cost_lit_total = fleet_shift_h * COST_LIT_EUR_H
+cost_lit_per_ride = cost_lit_total / drt_rides if drt_rides else 0.0
+cost_lit_low_per_ride = (fleet_shift_h * COST_LIT_LOW_EUR_H / drt_rides) if drt_rides else 0.0
+
+# ------------------------------------------------------------------ 7. service-area + intermodal stops + depots
 sa_lon, sa_lat, service_poly = [], [], None
 try:
     import geopandas as gpd
@@ -227,6 +280,34 @@ try:
 except Exception as e:
     print(f"  intermodal stops FAILED: {e}")
 
+# depots (shared LMD depots = DRT spawn/return depots)
+dep_lon, dep_lat, dep_name = [], [], []
+try:
+    dep = pd.read_csv(DEPOT_CSV, sep=";")
+    _dlon, _dlat = TF.transform(dep["x"].values, dep["y"].values)
+    dep_lon = list(_dlon); dep_lat = list(_dlat); dep_name = [p.upper() for p in dep["provider"]]
+    print(f"  depots on map = {len(dep_lon)}")
+except Exception as e:
+    print(f"  depots FAILED: {e}")
+
+# ------------------------------------------------------------------ 7b. orphan diagnostic (points off the lines)
+# User observation: single pickup/dropoff dots visually detached from tour lines. Check for the
+# busiest vehicle how far each PU/DO dot is from its OWN path polyline vertices.
+try:
+    _dv = max(vehicles, key=lambda v: rides_per_veh.get(v, 0))
+    _pl = [(lo, la) for lo, la in zip(veh_geo[_dv][0] + veh_geo[_dv][2], veh_geo[_dv][1] + veh_geo[_dv][3])
+           if lo is not None]
+    _lv = legs[legs["vehicleId"] == _dv]
+    def _min_d(lon, lat):
+        return min(math.hypot((lon - plo) * 68000, (lat - pla) * 111000) for plo, pla in _pl)
+    _dists = [_min_d(lo, la) for lo, la in zip(_lv["pu_lon"], _lv["pu_lat"])] + \
+             [_min_d(lo, la) for lo, la in zip(_lv["do_lon"], _lv["do_lat"])]
+    _far = sum(1 for d in _dists if d > 250)
+    print(f"  orphan check ({_dv}): max dot-to-path {max(_dists):.0f} m, "
+          f"{_far}/{len(_dists)} dots >250m off the polyline")
+except Exception as e:
+    print(f"  orphan check FAILED: {e}")
+
 # ================================================================== FIGURES
 print("Building figures ...")
 PLOT_BG = "rgba(0,0,0,0)"
@@ -236,20 +317,106 @@ def _style(fig, h=300):
     fig.update_xaxes(gridcolor="#23262F", zeroline=False); fig.update_yaxes(gridcolor="#23262F", zeroline=False)
     return fig
 
-# --- (A) convergence: rides + rejection
+HOURS = list(range(24))
+def _by_hour(series_sec):
+    h = (pd.Series(series_sec) // 3600).astype(int).clip(0, 23)
+    cnt = h.value_counts().reindex(HOURS, fill_value=0).sort_index()
+    return cnt
+
+# --- (T1) demand / rides over the day  (WICHTIG)
+dep_h = (legs["departureTime"] // 3600).astype(int).clip(0, 23)
+rides_h = dep_h.value_counts().reindex(HOURS, fill_value=0).sort_index()
+sub_h = (legs["submissionTime"] // 3600).astype(int).clip(0, 23)
+subs_h = sub_h.value_counts().reindex(HOURS, fill_value=0).sort_index()
+figT1 = go.Figure()
+figT1.add_trace(go.Bar(x=HOURS, y=rides_h.values, name="Abfahrten (bedient)", marker_color=ACC))
+figT1.add_trace(go.Scatter(x=HOURS, y=subs_h.values, name="Anfragen (submission)", mode="lines+markers",
+                           line=dict(color="#FBBF24", width=2), marker=dict(size=5)))
+figT1.update_xaxes(title_text="Stunde", dtick=2); figT1.update_yaxes(title_text="Anzahl"); _style(figT1)
+
+# --- (T2) rejections over the day
+rej_h = _by_hour(rej_times) if rej_times else pd.Series([0]*24, index=HOURS)
+figT2 = go.Figure()
+figT2.add_trace(go.Bar(x=HOURS, y=rej_h.values, name="Rejections", marker_color="#F87171"))
+figT2.update_xaxes(title_text="Stunde", dtick=2); figT2.update_yaxes(title_text="abgelehnte Anfragen"); _style(figT2)
+
+# --- (T3) mean wait over the day
+wait_by_h = legs.groupby(dep_h)["waitTime"].mean().reindex(HOURS)
+figT3 = go.Figure()
+figT3.add_trace(go.Scatter(x=HOURS, y=wait_by_h.values, mode="lines+markers", name="Ø Wartezeit",
+                           line=dict(color="#A78BFA", width=2), marker=dict(size=5)))
+figT3.add_hline(y=wait_mean, line_dash="dot", line_color=DIM,
+                annotation_text=f"Tagesmittel {wait_mean:.0f}s", annotation_font_color=DIM)
+figT3.update_xaxes(title_text="Stunde", dtick=2); figT3.update_yaxes(title_text="Ø Wartezeit [s]"); _style(figT3)
+
+# --- (T4) PT feeder over the day (absolute / share, toggle)
+def _trip_hour(s):
+    return s.astype(str).str.slice(0, 2).astype(int).clip(0, 23)
+drt_trips = drt_trips.assign(dep_h=_trip_hour(drt_trips["dep_time"]))
+all_trips_h = _trip_hour(trips["dep_time"]).value_counts().reindex(HOURS, fill_value=0).sort_index()
+feeder_h = drt_trips[feeder_mask.values]["dep_h"].value_counts().reindex(HOURS, fill_value=0).sort_index()
+feeder_share_h = (feeder_h / all_trips_h.astype(float).replace(0.0, float("nan")) * 100).fillna(0.0)
+figT4 = go.Figure()
+figT4.add_trace(go.Bar(x=HOURS, y=feeder_h.values, name="DRT+Bahn-Feeder", marker_color="#F472B6", visible=True))
+figT4.add_trace(go.Bar(x=HOURS, y=feeder_share_h.values, name="Anteil an allen Wegen [%]",
+                       marker_color="#F472B6", visible=False))
+figT4.update_layout(updatemenus=[dict(type="buttons", direction="right", x=1.0, xanchor="right", y=1.18,
+    bgcolor=CARD, font=dict(color=TEXT, size=11),
+    buttons=[dict(label="absolut", method="update",
+                  args=[{"visible": [True, False]}, {"yaxis.title.text": "Feeder-Wege"}]),
+             dict(label="Anteil %", method="update",
+                  args=[{"visible": [False, True]}, {"yaxis.title.text": "Anteil an allen Wegen [%]"}])])])
+figT4.update_xaxes(title_text="Stunde", dtick=2); figT4.update_yaxes(title_text="Feeder-Wege"); _style(figT4)
+
+# --- (H1) wait distribution (absolute)
+figH1 = go.Figure()
+figH1.add_trace(go.Histogram(x=legs["waitTime"], xbins=dict(start=0, size=60), marker_color="#A78BFA",
+                             name="Wartezeit"))
+for val, nm in [(wait_median, f"Median {wait_median:.0f}s"), (wait_mean, f"Ø {wait_mean:.0f}s"),
+                (wait_p95, f"P95 {wait_p95:.0f}s")]:
+    figH1.add_vline(x=val, line_dash="dot", line_color=DIM, annotation_text=nm,
+                    annotation_font_color=DIM, annotation_font_size=10)
+figH1.update_xaxes(title_text="Wartezeit [s] (60s-Bins)"); figH1.update_yaxes(title_text="Fahrten"); _style(figH1)
+
+# --- (H2/H3) tour distance & duration distribution (per vehicle-tour = one vehicle day)
+tour_km = [veh_km[v][0] + veh_km[v][1] for v in vehicles]
+tour_h = [per_veh.get(v, {}).get("active_s", 0) / 3600.0 for v in vehicles]
+figH2 = go.Figure()
+figH2.add_trace(go.Histogram(x=tour_km, nbinsx=16, marker_color=ACC, name="Tour-km"))
+figH2.update_xaxes(title_text="Tour-Distanz je Fahrzeug [km] (Event-Rekonstruktion)")
+figH2.update_yaxes(title_text="Fahrzeuge"); _style(figH2)
+figH3 = go.Figure()
+figH3.add_trace(go.Histogram(x=tour_h, nbinsx=16, marker_color="#34D399", name="Tour-Dauer"))
+figH3.update_xaxes(title_text="aktive Tour-Dauer je Fahrzeug [h]"); figH3.update_yaxes(title_text="Fahrzeuge")
+_style(figH3)
+
+# --- (P) final modal split (last iteration, pie)
+_mode_cols = [c for c in modestats.columns if c not in ("iteration",)]
+_last = modestats.iloc[-1]
+_shares = [(m, float(_last[m]) * 100) for m in _mode_cols if float(_last[m]) > 0.0001]
+_shares.sort(key=lambda t: -t[1])
+MODE_COLORS = {"car": "#FBBF24", "ride": "#34D399", "walk": "#9CA3AF", "bike": "#60A5FA",
+               "pt": "#F472B6", "drt": ACC, "freight": "#6B7280"}
+figP = go.Figure(go.Pie(labels=[m for m, _ in _shares], values=[s for _, s in _shares],
+                        marker=dict(colors=[MODE_COLORS.get(m, "#8B5CF6") for m, _ in _shares]),
+                        hole=0.45, textinfo="label+percent", textfont=dict(size=11),
+                        hovertemplate="%{label}: %{value:.2f}%<extra></extra>"))
+figP.update_layout(showlegend=False, annotations=[dict(text="letzte<br>Iteration", showarrow=False,
+                                                       font=dict(size=11, color=DIM))])
+_style(figP, 320)
+
+# --- (A/B/C) convergence
 figC1 = make_subplots(specs=[[{"secondary_y": True}]])
 figC1.add_trace(go.Scatter(x=cust["iteration"], y=cust["rides"], name="Fahrten", line=dict(color=ACC, width=2)), secondary_y=False)
-figC1.add_trace(go.Scatter(x=cust["iteration"], y=cust["rejectionRate"]*100, name="Rejection %", line=dict(color=COL_EMPTY, width=2)), secondary_y=True)
+figC1.add_trace(go.Scatter(x=cust["iteration"], y=cust["rejectionRate"]*100, name="Rejection %", line=dict(color="#F87171", width=2)), secondary_y=True)
 figC1.update_yaxes(title_text="Fahrten", secondary_y=False); figC1.update_yaxes(title_text="Rejection %", secondary_y=True)
 figC1.update_xaxes(title_text="Iteration"); _style(figC1)
 
-# --- (B) convergence: wait
 figC2 = go.Figure()
 figC2.add_trace(go.Scatter(x=cust["iteration"], y=cust["wait_average"], name="Ø Wartezeit", line=dict(color="#A78BFA", width=2)))
 figC2.add_trace(go.Scatter(x=cust["iteration"], y=cust["wait_p95"], name="P95 Wartezeit", line=dict(color="#F472B6", width=2)))
 figC2.update_xaxes(title_text="Iteration"); figC2.update_yaxes(title_text="Sekunden"); _style(figC2)
 
-# --- (C) mode shares over iters
 figC3 = go.Figure()
 for m, c in [("drt", ACC), ("pt", "#F472B6"), ("car", "#FBBF24"), ("ride", "#34D399"), ("walk", "#9CA3AF"), ("bike", "#60A5FA")]:
     if m in modestats.columns:
@@ -268,81 +435,114 @@ figD.add_trace(go.Bar(x=list(range(len(sv))), y=ra, marker_color=ACC, name="akti
               hovertemplate="%{customdata[0]}<br>aktiv %{y:.0f}%<br>Schicht %{customdata[1]:.0f}%<br>Sim %{customdata[2]:.0f}%<br>belegt %{customdata[3]:.0f} min<extra></extra>"))
 figD.update_xaxes(title_text="Fahrzeuge (nach aktiver Belegt-Quote sortiert)", showticklabels=False)
 figD.update_yaxes(title_text="Belegt-Zeit / aktive Dienstzeit  [%]"); _style(figD, 320)
+# NOTE: the former "Flotten-Zeitbudget" tile (figE) was DROPPED (2026-07-02): its stacked
+# Stehen/Fahren/Halt content duplicates the Betriebszeit row of the occupancy chart plus the
+# Total-Duration KPI cards, and the "davon belegt" overlay was easily misread as a 4th category.
 
-# --- (E) fleet time composition (STAY/DRIVE/STOP) + occupied overlay
-figE = go.Figure()
-comp = [("Stehen (idle)", fleet["stay_s"]/3600, "#475569"), ("Fahren", fleet["drive_s"]/3600, "#FBBF24"), ("Halt/Service", fleet["stop_s"]/3600, COL_DO)]
-figE.add_trace(go.Bar(y=["Flotte"], x=[fleet["stay_s"]/3600], name="Stehen (idle)", orientation="h", marker_color="#475569"))
-figE.add_trace(go.Bar(y=["Flotte"], x=[fleet["drive_s"]/3600], name="Fahren", orientation="h", marker_color="#FBBF24"))
-figE.add_trace(go.Bar(y=["Flotte"], x=[fleet["stop_s"]/3600], name="Halt/Service", orientation="h", marker_color=COL_DO))
-figE.add_trace(go.Bar(y=["davon: mit Personen"], x=[fleet["occupied_s"]/3600], name="belegt (Pax an Bord)", orientation="h", marker_color=COL_OCC))
-figE.update_layout(barmode="stack"); figE.update_xaxes(title_text="Fahrzeug-Stunden (Flotte)"); _style(figE, 200)
-
-# --- (O) occupancy decomposition: ONE 100%-stacked bar chart, 3 labelled rows
-#         (Fahrten / Zeit / km), each split by passengers-in-vehicle 0..CAP.
-CAP = fleet.get("capacity", 8)
-# level 0 = empty/deadhead (grey), 1..CAP a graduated fill colour
-OCC_COLORS = ["#475569", "#1E4D6B", "#2A6F97", "#3993B5", "#56B4C9", "#7EC8C0",
-              "#A9D8A0", "#D4E07C", "#FFD400"][:CAP + 1]
+# --- (O) occupancy decomposition: ONE 100%-stacked bar chart, 3 labelled rows (cleaner look)
+OCC_COLORS = ["#334155", "#155E75", "#0E7490", "#0891B2", "#06B6D4", "#22D3EE",
+              "#67E8F9", "#A5F3FC", "#FDE68A"][:CAP + 1]
 seg_count = fleet.get("seg_count", {}); seg_time = fleet.get("seg_time", {})
-# rows (bottom-to-top in plotly h-bars): km, Zeit, Fahrten
 ROWS = [("Gefahrene km", dist_by_occ, "km", lambda v: f"{v:,.0f}".replace(",", ".")),
         ("Betriebszeit", {lv: s / 3600.0 for lv, s in seg_time.items()}, "h", lambda v: f"{v:,.0f}".replace(",", ".")),
         ("Fahrten (Segmente)", seg_count, "Segm.", lambda v: f"{int(v):,}".replace(",", "."))]
 row_labels = [r[0] for r in ROWS]
 figO = go.Figure()
 for lv in range(CAP + 1):
-    nm = "0 (Leerfahrt)" if lv == 0 else f"{lv} Pax"
+    nm = "leer" if lv == 0 else f"{lv} Pax"
     xs = [r[1].get(lv, 0.0) for r in ROWS]
     cd = [[nm, r[3](r[1].get(lv, 0.0)), r[2]] for r in ROWS]
     figO.add_trace(go.Bar(
-        y=row_labels, x=xs, name=nm, orientation="h", marker_color=OCC_COLORS[lv],
-        customdata=cd,
+        y=row_labels, x=xs, name=nm, orientation="h", marker=dict(color=OCC_COLORS[lv],
+        line=dict(color=BG, width=1)), width=0.55, customdata=cd,
         hovertemplate="%{y} — %{customdata[0]}<br>%{customdata[1]} %{customdata[2]}<br>%{x:.1f}%<extra></extra>"))
-figO.update_layout(barmode="stack", barnorm="percent",
-                   legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(size=10)))
+figO.update_layout(barmode="stack", barnorm="percent", bargap=0.35,
+                   legend=dict(orientation="h", y=-0.28, x=0.5, xanchor="center", font=dict(size=10),
+                               traceorder="normal"))
 figO.update_xaxes(title_text="Anteil [%]", range=[0, 100])
 figO.update_yaxes(automargin=True)
-_style(figO, 260)
+_style(figO, 250)
 
-# --- (F) per-vehicle map
+# --- (F) per-vehicle map — CARTO dark, pastel per-vehicle colors, depots, numbered stops, heatmap
 figM = go.Figure()
 base_traces = 0
 if sa_lon:
-    figM.add_trace(go.Scattermap(lon=sa_lon, lat=sa_lat, mode="lines", line=dict(color="#00E5FF", width=2),
+    figM.add_trace(go.Scattermap(lon=sa_lon, lat=sa_lat, mode="lines", line=dict(color="#22D3EE", width=1.5),
                   name="Servicegebiet", hoverinfo="name")); base_traces += 1
 if im_lon:
-    # split served (>=1 DRT feeder) vs unserved rail stops for clear contrast
     srv = [i for i, c in enumerate(im_feed) if c > 0]
     uns = [i for i, c in enumerate(im_feed) if c == 0]
-    if uns:   # unfed rail stops: small dim hollow markers
+    if uns:
         figM.add_trace(go.Scattermap(
             lon=[im_lon[i] for i in uns], lat=[im_lat[i] for i in uns], mode="markers",
             marker=dict(size=8, color="#6B7280"),
             name="Bahnhalt (ohne DRT-Feeder)", text=[im_name[i] for i in uns],
             hovertemplate="%{text}<br>0 DRT-Feeder<extra>Bahnhalt</extra>")); base_traces += 1
-    if srv:   # fed rail stops: size scales with feeder count (sqrt for area-fairness)
-        fc = [im_feed[i] for i in srv]; fmax = max(fc)
-        sizes = [14 + 30 * (c / fmax) ** 0.5 for c in fc]
+    if srv:
+        fcnt = [im_feed[i] for i in srv]; fmax = max(fcnt)
+        sizes = [14 + 30 * (c / fmax) ** 0.5 for c in fcnt]
         figM.add_trace(go.Scattermap(
             lon=[im_lon[i] for i in srv], lat=[im_lat[i] for i in srv], mode="markers",
             marker=dict(size=sizes, color="#FFE66D"),
             name="Bahnhalt (DRT-gespeist)", text=[im_name[i] for i in srv],
-            customdata=fc,
+            customdata=fcnt,
             hovertemplate="%{text}<br>%{customdata} DRT-Feeder<extra>Bahnhalt</extra>")); base_traces += 1
-for v in vehicles:
-    ol, ola, el, ela = veh_geo[v]; lv = legs[legs["vehicleId"] == v]
-    figM.add_trace(go.Scattermap(lon=el, lat=ela, mode="lines", line=dict(color=COL_EMPTY, width=2), name="Leerfahrt", hoverinfo="skip", visible=False))
-    figM.add_trace(go.Scattermap(lon=ol, lat=ola, mode="lines", line=dict(color=COL_OCC, width=3), name="Belegt", hoverinfo="skip", visible=False))
-    figM.add_trace(go.Scattermap(lon=lv["pu_lon"], lat=lv["pu_lat"], mode="markers", marker=dict(size=8, color=COL_PU), name="Pickup", hoverinfo="skip", visible=False))
-    figM.add_trace(go.Scattermap(lon=lv["do_lon"], lat=lv["do_lat"], mode="markers", marker=dict(size=8, color=COL_DO), name="Dropoff", hoverinfo="skip", visible=False))
-TPV = 4
+if dep_lon:
+    figM.add_trace(go.Scattermap(
+        lon=dep_lon, lat=dep_lat, mode="markers+text",
+        marker=dict(size=15, color=COL_DEPOT), text=dep_name, textposition="top center",
+        textfont=dict(size=10, color=COL_DEPOT),
+        name="Depot (Spawn/Return)",
+        hovertemplate="Depot %{text}<extra></extra>")); base_traces += 1
 
-def vis(sel):
-    out = [True]*base_traces
+# per-vehicle traces (4 each): empty line, occupied line (pastel per vehicle), PU, DO (numbered)
+for i, v in enumerate(vehicles):
+    vcol = TOUR_COLORS[i % len(TOUR_COLORS)]
+    ol, ola, el, ela = veh_geo[v]
+    lv = legs[legs["vehicleId"] == v].sort_values("departureTime").reset_index()
+    stop_no = [str(n + 1) for n in range(len(lv))]
+    hh = lambda s: f"{int(s)//3600:02d}:{(int(s)%3600)//60:02d}"
+    pu_cd = [[n + 1, str(p), hh(t), f"{w:.0f}"] for n, (p, t, w) in
+             enumerate(zip(lv["personId"], lv["departureTime"], lv["waitTime"]))]
+    do_cd = [[n + 1, str(p), hh(t), f"{d:.1f}"] for n, (p, t, d) in
+             enumerate(zip(lv["personId"], lv["arrivalTime"], lv["leg_km"]))]
+    figM.add_trace(go.Scattermap(lon=el, lat=ela, mode="lines", line=dict(color=COL_EMPTY, width=1.2),
+                                 name="Leerfahrt", opacity=0.55, hoverinfo="skip", visible=False))
+    figM.add_trace(go.Scattermap(lon=ol, lat=ola, mode="lines", line=dict(color=vcol, width=3),
+                                 name="Belegt", hoverinfo="skip", visible=False))
+    figM.add_trace(go.Scattermap(lon=lv["pu_lon"], lat=lv["pu_lat"], mode="markers+text",
+                                 marker=dict(size=13, color=COL_PU), text=stop_no,
+                                 textfont=dict(size=9, color="#1A1D27"), name="Pickup #",
+                                 customdata=pu_cd, visible=False,
+                                 hovertemplate="Pickup #%{customdata[0]} — %{customdata[2]} Uhr<br>"
+                                               "Fahrgast %{customdata[1]}<br>Wartezeit %{customdata[3]} s<extra></extra>"))
+    figM.add_trace(go.Scattermap(lon=lv["do_lon"], lat=lv["do_lat"], mode="markers+text",
+                                 marker=dict(size=13, color=COL_DO), text=stop_no,
+                                 textfont=dict(size=9, color="#1A1D27"), name="Dropoff #",
+                                 customdata=do_cd, visible=False,
+                                 hovertemplate="Dropoff #%{customdata[0]} — %{customdata[2]} Uhr<br>"
+                                               "Fahrgast %{customdata[1]}<br>Fahrt %{customdata[3]} km<extra></extra>"))
+TPV = 4
+# heatmap traces (appended AFTER vehicle traces): pickup + dropoff density (legacy leaflet.heat analog)
+figM.add_trace(go.Densitymap(lon=legs["pu_lon"], lat=legs["pu_lat"], radius=14,
+                             colorscale=[[0, "rgba(30,58,95,0)"], [0.3, "#3B82F6"], [0.6, "#38BDF8"], [1, "#22D3EE"]],
+                             name="Pickups", showscale=False, visible=False))
+figM.add_trace(go.Densitymap(lon=legs["do_lon"], lat=legs["do_lat"], radius=14,
+                             colorscale=[[0, "rgba(45,27,78,0)"], [0.3, "#8B5CF6"], [0.6, "#C084FC"], [1, "#E879F9"]],
+                             name="Dropoffs", showscale=False, visible=False))
+N_HEAT = 2
+
+def vis(sel, heat=None):
+    """Visibility vector: sel=-1 all occupied, sel=i single vehicle, heat='pu'/'do'/'both'."""
+    out = [True] * base_traces
+    if heat:
+        out += [False, False, False, False] * len(vehicles)
+        out += [heat in ("pu", "both"), heat in ("do", "both")]
+        return out
     for i in range(len(vehicles)):
         out += ([False, True, False, False] if sel == -1 else
                 ([True, True, True, True] if i == sel else [False, False, False, False]))
+    out += [False, False]
     return out
 
 def mtitle(sel):
@@ -352,11 +552,21 @@ def mtitle(sel):
     return (f"{v} • {rides_per_veh.get(v,0)} Fahrgäste • belegt {veh_km[v][0]:.0f} km / leer {veh_km[v][1]:.0f} km "
             f"• Belegt-Zeit (aktiv) {p.get('ratio_active',0)*100:.0f}%")
 
-btns = [dict(label=f"Alle Fahrzeuge ({len(vehicles)})", method="update", args=[{"visible": vis(-1)}, {"title.text": mtitle(-1)}])]
+btns = [dict(label=f"Alle Fahrzeuge ({len(vehicles)})", method="update",
+             args=[{"visible": vis(-1)}, {"title.text": mtitle(-1)}])]
 for i, v in enumerate(vehicles):
     p = per_veh.get(v, {})
     btns.append(dict(label=f"{v} — {rides_per_veh.get(v,0)} F, {p.get('ratio_active',0)*100:.0f}% belegt",
                      method="update", args=[{"visible": vis(i)}, {"title.text": mtitle(i)}]))
+heat_btns = [
+    dict(label="Touren", method="update", args=[{"visible": vis(-1)}, {"title.text": mtitle(-1)}]),
+    dict(label="Heatmap Pickups", method="update",
+         args=[{"visible": vis(0, heat="pu")}, {"title.text": f"Heatmap: {len(legs):,} Pickups".replace(",", ".")}]),
+    dict(label="Heatmap Dropoffs", method="update",
+         args=[{"visible": vis(0, heat="do")}, {"title.text": f"Heatmap: {len(legs):,} Dropoffs".replace(",", ".")}]),
+    dict(label="Heatmap beide", method="update",
+         args=[{"visible": vis(0, heat="both")}, {"title.text": "Heatmap: Pickups + Dropoffs"}]),
+]
 di = vehicles.index(max(vehicles, key=lambda v: rides_per_veh.get(v, 0)))
 for i, vv in enumerate(vis(di)):
     figM.data[i].visible = vv
@@ -365,17 +575,21 @@ clat = (sum(im_lat)/len(im_lat)) if im_lat else 51.44
 figM.update_layout(paper_bgcolor=BG, font=dict(color=TEXT, size=12), margin=dict(l=0, r=0, t=54, b=0),
                    legend=dict(bgcolor="rgba(0,0,0,0.5)", font=dict(size=10)),
                    title=dict(text=mtitle(di), font=dict(size=14), x=0.01),
-                   map=dict(style="open-street-map", center=dict(lon=clon, lat=clat), zoom=10), height=720,
-                   updatemenus=[dict(buttons=btns, direction="down", showactive=True, x=0.01, xanchor="left",
-                                     y=0.99, yanchor="top", bgcolor="#1A1D27", font=dict(color=TEXT, size=11), active=di+1)])
+                   map=dict(style="carto-darkmatter", center=dict(lon=clon, lat=clat), zoom=10), height=720,
+                   updatemenus=[
+                       dict(buttons=btns, direction="down", showactive=True, x=0.01, xanchor="left",
+                            y=0.99, yanchor="top", bgcolor="#1A1D27", font=dict(color=TEXT, size=11), active=di+1),
+                       dict(type="buttons", buttons=heat_btns, direction="right", x=0.99, xanchor="right",
+                            y=0.99, yanchor="top", bgcolor="#1A1D27", font=dict(color=TEXT, size=11))])
 
 # ================================================================== HTML
 print("Assembling HTML ...")
-def card(label, value, sub="", big=False, tip=""):
+def card(label, value, sub="", big=False, tip="", badge=""):
     vs = "font-size:2.0rem" if big else "font-size:1.5rem"
     t = f' title="{tip}"' if tip else ""
     cur = ' style="cursor:help"' if tip else ""
-    return (f'<div class="kpi"{t}{cur}><div class="kl">{label}</div>'
+    b = f'<span class="badge">{badge}</span>' if badge else ""
+    return (f'<div class="kpi"{t}{cur}><div class="kl">{label}{b}</div>'
             f'<div class="kv" style="{vs}">{value}</div><div class="ks">{sub}</div></div>')
 
 avg_trip_km = (person_km / drt_rides) if drt_rides else 0.0
@@ -385,33 +599,62 @@ _util_tip = ("Mittel von (Passagiere/Kapazitaet) ueber ALLE Konstant-Besetzungs-
              "inkl. Leerfahrt-Level 0 (Annahme a). Fahrten: jedes Segment gleich gewichtet; "
              "Zeit: nach Segmentdauer gewichtet.")
 _tour_tip = ("Aktive Tour: erste Abfahrt bis letzte Aufgabe je Fzg; naechtliches Depot-Parken "
-             "ausgeklammert (Annahme b). Tour = Fahren + Service + Warten. Auf Stunden gerundet.")
-_trip_tip = ("Personenkm / Fahrgaeste. Personenkm = Σ travelDistance_m = tatsaechlich gefahrene "
-             "In-Vehicle-Distanz inkl. Pooling-Umweg (deckt sich mit MATSim totalPassengerDistanceTraveled).")
+             "ausgeklammert (Annahme b). Tour = Fahren + Dwell + Warten. Auf Stunden gerundet.")
+_trip_tip = ("Personenkm / Fahrgaeste. Personenkm = Summe travelDistance_m = tatsaechlich gefahrene "
+             "In-Vehicle-Distanz inkl. Pooling-Umweg (Cross-Check gegen MATSim "
+             "totalPassengerDistanceTraveled: Abweichung {:.2f}%).".format(_pkm_dev))
 _vkm_tip = ("Fahrzeugkm aus MATSim drt_vehicle_stats (totalDistance, autoritativ). Die Karten-Touren "
             "werden separat aus dem Eventstream rekonstruiert und liegen dort ~3% niedriger "
             "(Luftlinie zwischen Link-Knoten statt echter Linklaenge).")
 _detour_tip = ("Tatsaechlich gefahrene In-Vehicle-Distanz / direkte Netz-Distanz "
-               "(Σ travelDistance_m / Σ directTravelDistance_m aus drt_legs). 1.0 = umwegfrei.")
+               "(Summe travelDistance_m / Summe directTravelDistance_m aus drt_legs). 1.0 = umwegfrei.")
+_cost_tip = ("PLATZHALTER-Kostenfunktion (Beschluss 2026-07-02, noch zu praezisieren!): "
+             f"Flotten-Schichtstunden ({_de(fleet_shift_h)} h) x ({COST_LABOUR_EUR_H:.0f} EUR/h Personal "
+             f"+ {COST_VEHICLE_EUR_H:.0f} EUR/h Fahrzeug) nach Rudolph ~80/20. Nur direkte Kosten, "
+             "KEIN Overhead. Idle-Zeit zaehlt mit (Fahrzeug-Stunde ist die Preisbasis).")
+_cost_lit_tip = ("Literatur-Benchmark: Currie & Fournier (2020, Transport Policy), DRT-Vollkosten je "
+                 f"Fahrzeug-Stunde. 3. Aera (2009-2019) Median ~110 AU$2019 = {COST_LIT_EUR_H:.0f} EUR/h "
+                 f"(2. Aera ~60 AU$ = {COST_LIT_LOW_EUR_H:.0f} EUR/h -> {cost_lit_low_per_ride:.2f} EUR/Fahrt). "
+                 "Vollkosten inkl. Overhead/Verwaltung — Obergrenze zum Bottom-up-Platzhalter. "
+                 "Studie: hohe Kosten je Fzg-h korrelieren signifikant mit DRT-Einstellung.")
+_pax_tip = ("Zeitgewichtetes Mittel der Fahrgaeste an Bord ueber die AKTIVE Tourzeit inkl. "
+            f"Leerfahrten (= Utilization (Zeit) x Kapazitaet {CAP}). Mass fuer den Pooling-Grad.")
+_feeder_tip = ("DRT-Fahrt in einem Weg mit Bahn-Anschluss (modes enthaelt pt; Fahrplan ist rail-only, "
+               "Busse existieren im Szenario nicht). Kein Kettennachweis am Bahnsteig — Naehe-Proxy.")
+_solo_tip = "DRT-Fahrten ohne pt-Leg im selben Weg: reine Punkt-zu-Punkt-Bedienung."
+_dwell_tip = "Summe der STOP-Task-Zeiten (Ein-/Ausstieg an Pickup/Dropoff) ueber die Flotte."
+_svc_tip = ("Zeit mit >=1 Fahrgast an Bord / Bezugszeitraum. aktiv = erste Abfahrt bis letzte "
+            "Aufgabe; Schicht = Dienstfenster aus der Flottendatei (hier 0-24h).")
+_wait_tip = "Fahrgast-Wartezeit von Anfrage-Submission bis Einstieg (drt_legs waitTime)."
 
 kpi_cards = "".join([
-    card("Anzahl Fahrzeuge", f"{fleet['n_vehicles']}", f"Kapazitaet {fleet['capacity']} Sitze"),
-    card("Gesamtpassagiere", _de(drt_rides), "befoerderte Fahrgaeste"),
+    card("Anzahl Fahrzeuge", f"{fleet['n_vehicles']}", f"Kapazitaet {fleet['capacity']} Sitze",
+         tip="DVRP-Flotte aus der Flottendatei; alle Fahrzeuge mit Events im letzten Iteration."),
+    card("Gesamtpassagiere", _de(drt_rides), "befoerderte Fahrgaeste",
+         tip="rides aus drt_customer_stats (letzte Iteration) = bediente DRT-Legs."),
+    card("Kosten Bottom-up", f"{_de(cost_total)} €", f"{cost_per_ride:.2f} € je Fahrt  •  {cost_labour_share:.0f}% Personalanteil",
+         tip=_cost_tip, badge="PLATZHALTER"),
+    card("Kosten Literatur-Benchmark", f"{_de(cost_lit_total)} €", f"{cost_lit_per_ride:.2f} € je Fahrt  •  {COST_LIT_EUR_H:.0f} €/Fzg-h (Currie/Fournier)",
+         tip=_cost_lit_tip, badge="BENCHMARK"),
+    card("Ø Fahrgaeste an Bord", f"{pax_aboard_mean:.2f}", f"zeitgewichtet, aktive Tour (max {CAP})", tip=_pax_tip),
     card("Avg. Utilization (Fahrten)", f"{fleet['util_by_trips']*100:.1f}%", "Ø Besetzung/Kapazitaet je Segment", tip=_util_tip),
     card("Avg. Utilization (Zeit)", f"{fleet['util_by_time']*100:.1f}%", "zeitgewichtet (Pooling-Effekt)", tip=_util_tip),
     card("Avg. Trip Length", f"{avg_trip_km:.1f} km", "Ø Fahrgast-Wegelaenge", tip=_trip_tip),
     card("Avg. DRT-Detour-Factor", f"{detour_factor:.2f}", "gefahren / direkt", tip=_detour_tip),
     card("Total Tour Duration", _fmt_h(fleet['tour_s']), "Σ aktive Touren (Flotte)", tip=_tour_tip),
-    card("Total Driving Time", _fmt_h(fleet['drive_s']), "Σ DRIVE (Flotte)"),
+    card("Total Driving Time", _fmt_h(fleet['drive_s']), "Σ DRIVE (Flotte)",
+         tip="Summe der DRIVE-Task-Zeiten (Fahrzeug bewegt sich, mit oder ohne Fahrgast)."),
     card("Total Waiting Time", _fmt_h(fleet['waiting_s']), "Leerlauf zwischen Auftraegen", tip=_tour_tip),
-    card("Total Service Time", _fmt_h(fleet['stop_s']), "Σ STOP-Dwell Pickup/Dropoff"),
-    card("Service-Zeit (aktiv)", f"{fleet['ratio_active']*100:.1f}%", "belegt / aktive Dienstzeit", big=True),
-    card("Service-Zeit (Schicht)", f"{fleet['ratio_shift']*100:.1f}%", "belegt / Schichtfenster 0–24h", big=True),
-    card("Service-Zeit (Sim)", f"{fleet['ratio_sim']*100:.1f}%", f"belegt / Sim-Horizont {_fmt_h(sim_h)}", big=True),
-    card("DRT Modal Share", f"{drt_share:.2f}%", f"pt {pt_share:.2f}%"),
-    card("Rejection", f"{rej:.1f}%", "abgelehnte Anfragen"),
-    card("Wartezeit Ø / P95", f"{wait_mean:.0f} / {wait_p95:.0f}s", "Pax-Wartezeit"),
-    card("DRT solo / DRT+PT", f"{_de(n_standalone)} / {_de(n_feeder)}", f"DRT+PT inkl. Busanschluss  •  {pct_rail_drtfed:.0f}% der PT-Fahrten DRT-gespeist"),
+    card("Total Dwell Time", _fmt_h(fleet['stop_s']), "Σ STOP an Pickup/Dropoff", tip=_dwell_tip),
+    card("Service-Zeit (aktiv)", f"{fleet['ratio_active']*100:.1f}%", "belegt / aktive Dienstzeit", big=True, tip=_svc_tip),
+    card("Service-Zeit (Schicht)", f"{fleet['ratio_shift']*100:.1f}%", "belegt / Schichtfenster 0-24h", big=True, tip=_svc_tip),
+    card("DRT Modal Share", f"{drt_share:.2f}%", f"pt {pt_share:.2f}%",
+         tip="Anteil DRT an allen Wegen (modestats, letzte Iteration)."),
+    card("Rejection", f"{rej:.1f}%", "abgelehnte Anfragen",
+         tip="rejectionRate aus drt_customer_stats: Anfragen ohne machbare Einfuegung (no_insertion_found)."),
+    card("Wartezeit Ø / Median / P95", f"{wait_mean:.0f} / {wait_median:.0f} / {wait_p95:.0f}s", "Pax-Wartezeit", tip=_wait_tip),
+    card("DRT solo", _de(n_standalone), "Punkt-zu-Punkt ohne Bahnanschluss", tip=_solo_tip),
+    card("DRT+Bahn (Feeder)", _de(n_feeder), f"{pct_rail_drtfed:.0f}% der Bahn-Wege DRT-gespeist", tip=_feeder_tip),
     card("Fahrzeugkm (gesamt)", f"{_de(veh_km_total)} km", f"belegt {_de(veh_km_occ)} / leer {_de(veh_km_empty)} km  •  Leerfahrt {deadhead_pct:.1f}%", tip=_vkm_tip),
     card("Personenkm", f"{_de(person_km)} km", "Σ gefahrene In-Vehicle-Distanz (mit Umweg)", tip=_trip_tip),
 ])
@@ -447,10 +690,12 @@ h2{{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:{ACC};mar
 .kpi{{background:{CARD};border:1px solid {BORDER};border-radius:10px;padding:13px 15px}}
 .kl{{font-size:.72rem;color:{DIM};text-transform:uppercase;letter-spacing:.5px}}
 .kv{{font-weight:800;color:#fff;margin:3px 0;line-height:1.1}} .ks{{font-size:.72rem;color:{DIM}}}
+.badge{{background:#7C2D12;color:#FDBA74;border-radius:4px;padding:1px 5px;font-size:.62rem;margin-left:6px;letter-spacing:.5px}}
 .hero .kpi{{border-color:#1e5e7a;background:linear-gradient(135deg,#15303d,#1A1D27)}}
 .hero .kv{{color:{COL_OCC}}}
 .row{{display:grid;gap:12px;grid-template-columns:1fr 1fr 1fr}}
-@media(max-width:1100px){{.row{{grid-template-columns:1fr}}}}
+.row2{{display:grid;gap:12px;grid-template-columns:1fr 1fr}}
+@media(max-width:1100px){{.row,.row2{{grid-template-columns:1fr}}}}
 .card{{background:{CARD};border:1px solid {BORDER};border-radius:10px;padding:10px 12px}}
 .card h3{{font-size:.82rem;color:{TEXT};margin:2px 0 6px}}
 .note{{font-size:11px;color:{DIM};margin-top:8px;border-top:1px solid {BORDER};padding-top:8px;line-height:1.5}}
@@ -463,16 +708,38 @@ h2{{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:{ACC};mar
 
 <h2>Pro-Fahrzeug-Touren &mdash; jedes DRT-Fahrzeug einzeln wählbar</h2>
 <div class="card" style="padding:0;overflow:hidden">{div(figM,'mapdiv')}</div>
-<div class="note"><b>Touren</b> aus dem MATSim-Eventstream rekonstruiert: grün = belegt,
-orange-rot = Leerfahrt, gelb = Pickup, blau = Dropoff. Dropdown links oben wählt ein Fahrzeug (oder „Alle").
-Gelbe Sterne = Bahnhalte, Größe ∝ Anzahl DRT-Feeder (Dropoffs &lt;{int(FEED_RADIUS_M)} m); graue = ohne Feeder.
-OSM-Kacheln brauchen Internet.<br><b>DRT-Feeder je Bahnhof:</b> {feeder_breakdown}</div>
+<div class="note"><b>Touren</b> aus dem MATSim-Eventstream rekonstruiert: farbige Linie = belegt (Pastellfarbe je Fahrzeug),
+grau = Leerfahrt, nummerierte gelbe/blaue Punkte = Pickup/Dropoff in Tour-Reihenfolge (Hover: Fahrgast, Zeit, Wartezeit/Distanz).
+Pink = die 7 Depots (Spawn/Return). Dropdown links wählt ein Fahrzeug; Buttons rechts schalten auf Heatmap
+(Pickup-/Dropoff-Dichte, analog HAGRID-Legacy). Gelbe Kreise = Bahnhalte, Größe ∝ DRT-Feeder (Dropoffs &lt;{int(FEED_RADIUS_M)} m).
+<b>Hinweis Geometrie:</b> Linien sind Luftlinien-Segmente zwischen Link-Knoten (nicht die echte Straßengeometrie) —
+Punkte können daher wenige hundert Meter neben der Linie liegen; in der Ansicht „Alle Fahrzeuge" sind Leerfahrten
+ausgeblendet, einzelne Punkte „ohne Linie" gehören zu verdeckten Leerfahrt-Anfahrten.
+CARTO-Kacheln brauchen Internet.<br><b>DRT-Feeder je Bahnhof:</b> {feeder_breakdown}</div>
 
-<h2>Aufteilung nach Besetzung (Passagiere im Fahrzeug)</h2>
-<div class="card"><h3>Fahrten (Segmente) · Betriebszeit · gefahrene km — je 100%-gestapelt nach Besetzung</h3>{div(figO,'o1')}</div>
-<div class="note">Aufteilung nach Anzahl Passagiere im Fzg (0 = Leerfahrt/Deadhead … {CAP} = voll), je Zeile auf 100% normiert.
-Eine <b>Fahrt</b> = Konstant-Besetzungs-Segment (Intervall zwischen zwei Ein-/Ausstiegen) im aktiven
-Tour-Fenster; nächtliches Depot-Parken ausgeklammert (Annahme b). Hover zeigt absolute Werte + Anteil.</div>
+<h2>Tagesverlauf</h2>
+<div class="row2">
+  <div class="card"><h3>Nachfrage: Anfragen &amp; bediente Abfahrten je Stunde</h3>{div(figT1,'t1')}</div>
+  <div class="card"><h3>Rejections je Stunde</h3>{div(figT2,'t2')}</div>
+  <div class="card"><h3>Ø Wartezeit je Stunde</h3>{div(figT3,'t3')}</div>
+  <div class="card"><h3>DRT+Bahn-Feeder je Stunde (absolut / Anteil umschaltbar)</h3>{div(figT4,'t4')}</div>
+</div>
+
+<h2>Verteilungen</h2>
+<div class="row">
+  <div class="card"><h3>Wartezeit-Verteilung</h3>{div(figH1,'h1')}</div>
+  <div class="card"><h3>Tour-Distanz je Fahrzeug</h3>{div(figH2,'h2')}</div>
+  <div class="card"><h3>Tour-Dauer je Fahrzeug</h3>{div(figH3,'h3')}</div>
+</div>
+
+<h2>Besetzung &amp; Modal Split</h2>
+<div class="row2">
+  <div class="card"><h3>Fahrten (Segmente) · Betriebszeit · gefahrene km — je 100%-gestapelt nach Besetzung</h3>{div(figO,'o1')}
+  <div class="note">0 = Leerfahrt/Deadhead … {CAP} = voll; je Zeile auf 100% normiert. Eine <b>Fahrt</b> =
+  Konstant-Besetzungs-Segment im aktiven Tour-Fenster (Annahme b). Die km-Zeile nutzt die
+  Event-Rekonstruktion (~3% niedriger als MATSim, s. Fahrzeugkm-Tooltip).</div></div>
+  <div class="card"><h3>Finaler Modal Split (letzte Iteration)</h3>{div(figP,'p1')}</div>
+</div>
 
 <h2>Konvergenz über 151 Iterationen</h2>
 <div class="row">
@@ -482,12 +749,10 @@ Tour-Fenster; nächtliches Depot-Parken ausgeklammert (Annahme b). Hover zeigt a
 </div>
 
 <h2>Service-Zeit im Detail</h2>
-<div class="row" style="grid-template-columns:2fr 1fr">
-  <div class="card"><h3>Belegt-Zeit je Fahrzeug (aktive Dienstzeit)</h3>{div(figD,'d1')}</div>
-  <div class="card"><h3>Flotten-Zeitbudget</h3>{div(figE,'e1')}</div>
-</div>
-<div class="note"><b>Service-Zeit</b> = Zeit mit ≥1 Fahrgast an Bord, geteilt durch (aktiv) erste Abfahrt→letzte Aufgabe,
-(Schicht) 0–24h, (Sim) 0–{_fmt_hms(sim_h)}.</div>
+<div class="card"><h3>Belegt-Zeit je Fahrzeug (aktive Dienstzeit)</h3>{div(figD,'d1')}</div>
+<div class="note"><b>Service-Zeit</b> = Zeit mit ≥1 Fahrgast an Bord, geteilt durch (aktiv) erste Abfahrt→letzte Aufgabe
+bzw. (Schicht) Dienstfenster 0–24h. Die frühere „Flotten-Zeitbudget"-Kachel wurde entfernt: ihr Inhalt steckt
+vollständig in der Betriebszeit-Zeile der Besetzungs-Grafik + den Total-Dauer-KPIs.</div>
 </body></html>"""
 
 with open(HTML_OUT, "w", encoding="utf-8") as f:
