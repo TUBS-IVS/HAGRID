@@ -46,7 +46,13 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 public class HAGRIDRouterUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDRouterUtils.class);
-    private static final int MAXROUTEDURATION = 25200; // example value, adjust as needed
+    /**
+     * Hard cap on jsprit route duration (7h driver shift), enforced via
+     * {@code MaxRouteDurationConstraint} for BOTH the Hannover legacy path and the Lausitz LMD path.
+     * Also referenced by {@code LmdCarrierBuilder} to derive per-wave vehicle operating windows
+     * (Hannover parity) — do not change casually: it alters legacy Hannover routing results.
+     */
+    public static final int MAXROUTEDURATION = 25200;
 
     /**
      * Configures the routing algorithm (no U-turn penalty).
