@@ -1,6 +1,7 @@
 package hagrid.integrated.freight;
 
 import hagrid.utils.demand.Delivery;
+import hagrid.utils.routing.HAGRIDRouterUtils;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
@@ -33,9 +34,20 @@ import java.util.Random;
  */
 public final class LmdCarrierBuilder {
 
-    /** Whole-day operating window for the delivery services (08:00-20:00). */
+    /** Whole-day service time window for the delivery stops (08:00-20:00). */
     private static final double DAY_START = 8 * 3600;
     private static final double DAY_END = 20 * 3600;
+
+    /** Absolute cap on any vehicle's operating end (Hannover parity: 21:00). */
+    private static final double LATEST_VEHICLE_END = 21 * 3600;
+
+    /**
+     * Jittered vehicle copies per van type per dispatch wave. With {@code FleetSize.INFINITE}
+     * jsprit clones a single template, so ONE jittered start would still stack every tour of a
+     * wave on the same minute — several copies give jsprit distinct departure times to pick from,
+     * spreading real tour starts (legacy Hannover creates one template per dispatch HOUR instead).
+     */
+    static final int VEHICLES_PER_TYPE_PER_WAVE = 4;
 
     /**
      * Default dispatch waves when no explicit list is supplied (mirrors HAGRID CEP
@@ -116,18 +128,37 @@ public final class LmdCarrierBuilder {
         List<Integer> hours = (dispatchHours == null || dispatchHours.isEmpty())
                 ? DEFAULT_DISPATCH_HOURS : dispatchHours;
         for (int hour : hours) {
-            double earliestStart = hour * 3600.0;
             for (VehicleType vanType : vanTypes) {
-                String vehId = provider + "_" + vanType.getId().toString() + "_h" + hour;
-                CarrierVehicle vehicle = CarrierVehicle.Builder
-                        .newInstance(Id.createVehicleId(vehId), depotLink, vanType)
-                        .setEarliestStart(earliestStart)
-                        .setLatestEnd(DAY_END)
-                        .build();
-                CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                for (int copy = 0; copy < VEHICLES_PER_TYPE_PER_WAVE; copy++) {
+                    // Legacy-parity Gaussian departure jitter (CarrierVehicleFactory.getTimeShift):
+                    // sigma 15 min for size m, 5 min for size l — depot departures spread realistically
+                    // instead of all vans leaving hard on the hour.
+                    double jitterSec = random.nextGaussian() * jitterSigmaMinutes(vanType) * 60.0;
+                    double earliestStart = hour * 3600.0 + jitterSec;
+                    // Hannover parity (CarrierVehicleFactory.calculateEndTime): the operating window
+                    // is WAVE-RELATIVE — start + 7h route cap + 1h buffer, capped at 21:00. This is
+                    // what gives the 14:00 wave a real role: an 08:00 van may only operate until
+                    // ~16:00, so late-afternoon workload can only go to the afternoon wave.
+                    double latestEnd = Math.min(
+                            earliestStart + HAGRIDRouterUtils.MAXROUTEDURATION + 3600.0,
+                            LATEST_VEHICLE_END);
+                    String vehId = provider + "_" + vanType.getId().toString() + "_h" + hour + "_v" + copy;
+                    CarrierVehicle vehicle = CarrierVehicle.Builder
+                            .newInstance(Id.createVehicleId(vehId), depotLink, vanType)
+                            .setEarliestStart(earliestStart)
+                            .setLatestEnd(latestEnd)
+                            .build();
+                    CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                }
             }
         }
 
         return carrier;
+    }
+
+    /** Legacy Hannover jitter widths ({@code CarrierVehicleFactory.getTimeShift}), in minutes. */
+    private static double jitterSigmaMinutes(VehicleType vanType) {
+        String id = vanType.getId().toString().toLowerCase();
+        return id.endsWith("_l") ? 5.0 : 15.0;
     }
 }

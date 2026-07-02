@@ -63,13 +63,78 @@ class LmdCarrierBuilderTest {
         assertThat(carrier.getServices().values())
                 .extracting(CarrierService::getServiceDuration)
                 .containsExactlyInAnyOrder(900.0, 360.0);
-        // one vehicle per van type per dispatch hour: 2 types × 2 hours = 4
+        // jittered copies per van type per dispatch hour: 2 types × 2 hours × copies
         var vehicles = carrier.getCarrierCapabilities().getCarrierVehicles();
-        assertThat(vehicles).hasSize(4);
+        assertThat(vehicles).hasSize(2 * 2 * LmdCarrierBuilder.VEHICLES_PER_TYPE_PER_WAVE);
         assertThat(vehicles.values()).allMatch(v -> v.getLinkId().equals(Id.createLinkId("ab")));
-        // morning wave at 08:00, afternoon wave at 14:00
-        assertThat(vehicles.values()).anyMatch(v -> v.getEarliestStartTime() == 8 * 3600.0);
-        assertThat(vehicles.values()).anyMatch(v -> v.getEarliestStartTime() == 14 * 3600.0);
+        // morning wave clusters around 08:00, afternoon wave around 14:00 (Gaussian minute jitter)
+        assertThat(vehicles.values()).anyMatch(v -> Math.abs(v.getEarliestStartTime() - 8 * 3600.0) < 3600.0);
+        assertThat(vehicles.values()).anyMatch(v -> Math.abs(v.getEarliestStartTime() - 14 * 3600.0) < 3600.0);
+    }
+
+    @Test
+    @DisplayName("depot departures are stochastically jittered (legacy parity), not all hard on the hour")
+    void jitteredDepotDepartures() {
+        // Hannover CarrierVehicleFactory.getTimeShift: Gaussian minute jitter per vehicle
+        // (sigma 15 min for size m, 5 min for size l). With INFINITE fleet jsprit clones one
+        // template, so realistic per-tour spread needs SEVERAL jittered copies per type+wave.
+        Network n = net();
+        List<Delivery> deliveries = List.of(
+                Delivery.builder().id("d1").coordinate(new Coord(100, 0)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2C).amount(1)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+
+        Carrier carrier = LmdCarrierBuilder.build(
+                "dhl", deliveries, Id.createLinkId("ab"), n, new VehicleType[]{van("ct_cep_size_m", 165)},
+                2, 15, List.of(8), new Random(42));
+
+        var vehicles = carrier.getCarrierCapabilities().getCarrierVehicles().values();
+        assertThat(vehicles).hasSize(LmdCarrierBuilder.VEHICLES_PER_TYPE_PER_WAVE);
+        var starts = vehicles.stream().map(CarrierVehicle::getEarliestStartTime).distinct().toList();
+        assertThat(starts).as("jitter must spread the copies, not stack them on one start")
+                .hasSizeGreaterThan(1);
+        // sigma 15 min: all starts stay near the wave hour (+-1h is > 3 sigma)
+        assertThat(vehicles).allMatch(v -> Math.abs(v.getEarliestStartTime() - 8 * 3600.0) < 3600.0);
+        // wave-relative window survives the jitter: end = start + 7h cap + 1h buffer (cap 21:00)
+        assertThat(vehicles).allMatch(v ->
+                v.getLatestEndTime() == Math.min(v.getEarliestStartTime() + 8 * 3600.0, 21 * 3600.0));
+        // deterministic: same seed -> identical departure times (reproducible runs)
+        Carrier again = LmdCarrierBuilder.build(
+                "dhl", deliveries, Id.createLinkId("ab"), n, new VehicleType[]{van("ct_cep_size_m", 165)},
+                2, 15, List.of(8), new Random(42));
+        assertThat(again.getCarrierCapabilities().getCarrierVehicles().values()
+                .stream().map(CarrierVehicle::getEarliestStartTime).toList())
+                .containsExactlyInAnyOrderElementsOf(
+                        vehicles.stream().map(CarrierVehicle::getEarliestStartTime).toList());
+    }
+
+    @Test
+    @DisplayName("vehicle operating window is wave-relative (Hannover parity): start + 7h cap + 1h buffer, capped 21:00")
+    void waveRelativeVehicleWindows() {
+        // Hannover CarrierVehicleFactory.calculateEndTime: latestEnd = start + maxRouteDuration + 1h,
+        // capped at 21:00. This is what makes the 14:00 wave REAL: an 08:00 van may only operate until
+        // 16:00, so late-afternoon workload can only be served by the 14:00 wave. A fixed latestEnd of
+        // 20:00 for both waves (the old Lausitz port) makes wave choice cost-neutral and arbitrary.
+        Network n = net();
+        List<Delivery> deliveries = List.of(
+                Delivery.builder().id("d1").coordinate(new Coord(100, 0)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2C).amount(1)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+
+        Carrier carrier = LmdCarrierBuilder.build(
+                "dhl", deliveries, Id.createLinkId("ab"), n, new VehicleType[]{van("ct_cep_size_m", 165)},
+                2, 15, List.of(8, 14), new Random(42));
+
+        var vehicles = carrier.getCarrierCapabilities().getCarrierVehicles().values();
+        assertThat(vehicles).hasSize(2 * LmdCarrierBuilder.VEHICLES_PER_TYPE_PER_WAVE);
+        // 08:00 wave (jittered): window is start + 7h + 1h, well below the 21:00 cap
+        assertThat(vehicles).anyMatch(v ->
+                Math.abs(v.getEarliestStartTime() - 8 * 3600.0) < 3600.0
+                        && v.getLatestEndTime() == v.getEarliestStartTime() + 8 * 3600.0);
+        // 14:00 wave (jittered): start + 8h > 21:00 -> capped at 21:00
+        assertThat(vehicles).anyMatch(v ->
+                Math.abs(v.getEarliestStartTime() - 14 * 3600.0) < 3600.0
+                        && v.getLatestEndTime() == 21 * 3600.0);
     }
 
     @Test
