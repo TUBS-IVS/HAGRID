@@ -227,6 +227,67 @@ class LausitzFreightPreprocessorTest {
         assertThat(clipped.get("dhl")).as("only the in-area dhl delivery survives").containsExactly(dhlIn);
     }
 
+    @Test
+    @DisplayName("routeWithDurationCap records jobs jsprit cannot assign as carrier attributes")
+    void tracksUnassignedJobs() {
+        // Square car network, depot on a_b. dhl gets one routable stop (2 parcels) plus one stop whose
+        // 500 parcels exceed every van capacity (230) -> jsprit can never insert it and must leave it
+        // unassigned. hermes is fully assignable -> must carry explicit zero attributes.
+        Network net = NetworkUtils.createNetwork();
+        Node a = NetworkUtils.createAndAddNode(net, Id.createNodeId("a"), new Coord(0, 0));
+        Node b = NetworkUtils.createAndAddNode(net, Id.createNodeId("b"), new Coord(1000, 0));
+        Node c = NetworkUtils.createAndAddNode(net, Id.createNodeId("c"), new Coord(1000, 1000));
+        Node d = NetworkUtils.createAndAddNode(net, Id.createNodeId("d"), new Coord(0, 1000));
+        for (var e : new Node[][]{{a, b}, {b, c}, {c, d}, {d, a}, {b, a}, {c, b}, {d, c}, {a, d}}) {
+            NetworkUtils.createAndAddLink(net, Id.createLinkId(e[0].getId() + "_" + e[1].getId()),
+                    e[0], e[1], 1000, 13.9, 1800, 1);
+        }
+
+        VehicleType van = VehicleUtils.createVehicleType(Id.create("ct_cep_size_l", VehicleType.class));
+        van.getCapacity().setOther(230);
+        van.setNetworkMode("car");
+        van.getCostInformation().setCostsPerMeter(0.0004).setCostsPerSecond(0.0).setFixedCost(170.0);
+        CarrierVehicleTypes types = new CarrierVehicleTypes();
+        types.getVehicleTypes().put(van.getId(), van);
+
+        List<Delivery> dhlDeliveries = List.of(
+                Delivery.builder().id("ok").coordinate(new Coord(500, 100)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2B).amount(2)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build(),
+                Delivery.builder().id("huge").coordinate(new Coord(900, 900)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2B).amount(500)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+        List<Delivery> hermesDeliveries = List.of(
+                Delivery.builder().id("fine").coordinate(new Coord(100, 900)).provider("hermes")
+                        .parcelType(Delivery.ParcelType.B2B).amount(3)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+
+        Carrier dhl = LmdCarrierBuilder.build("dhl", dhlDeliveries, Id.createLinkId("a_b"),
+                net, new VehicleType[]{van}, 2, 15, List.of(8), new Random(1));
+        Carrier hermes = LmdCarrierBuilder.build("hermes", hermesDeliveries, Id.createLinkId("a_b"),
+                net, new VehicleType[]{van}, 2, 15, List.of(8), new Random(1));
+        Carriers carriers = new Carriers();
+        carriers.addCarrier(dhl);
+        carriers.addCarrier(hermes);
+
+        LausitzFreightPreprocessor.routeWithDurationCap(carriers, net, types, /*jsprit*/ 10);
+
+        // dhl: the oversized stop (service id dhl_1) is unassigned; the routable one is still scheduled
+        assertThat(dhl.getAttributes().getAttribute("unassignedJobs"))
+                .as("dhl must report exactly the oversized stop as unassigned").isEqualTo(1);
+        assertThat(dhl.getAttributes().getAttribute("unassignedParcels"))
+                .as("parcel-level count of the unassigned stop").isEqualTo(500);
+        assertThat((String) dhl.getAttributes().getAttribute("unassignedJobsAsString"))
+                .as("unassigned service ids are persisted for the dashboard").contains("dhl_1");
+        assertThat(dhl.getSelectedPlan().getScheduledTours())
+                .as("the routable dhl stop must still be driven").isNotEmpty();
+
+        // hermes: fully assignable -> explicit zeros (dashboard reads the attribute unconditionally)
+        assertThat(hermes.getAttributes().getAttribute("unassignedJobs")).isEqualTo(0);
+        assertThat(hermes.getAttributes().getAttribute("unassignedParcels")).isEqualTo(0);
+        assertThat((String) hermes.getAttributes().getAttribute("unassignedJobsAsString")).isEqualTo("[]");
+    }
+
     /** Adds a 50km, 13.9 m/s directed link (~1h travel) named {@code <from>_<to>}. */
     private static void link(Network net, Node from, Node to) {
         NetworkUtils.createAndAddLink(net, Id.createLinkId(from.getId() + "_" + to.getId()),

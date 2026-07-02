@@ -217,10 +217,36 @@ public final class LausitzFreightPreprocessor {
             VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
             VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount, iters);
             VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
+            recordUnassignedJobs(carrier, solution);
             CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
             NetworkRouter.routePlan(plan, netBasedCosts);
             carrier.addPlan(plan);
             carrier.setSelectedPlan(plan);
+        }
+    }
+
+    /**
+     * Persists the jobs the best jsprit solution could NOT insert (e.g. infeasible under the 7h
+     * {@code MaxRouteDurationConstraint}, the 20:00 vehicle end, or a stop demand exceeding every van
+     * capacity) as carrier attributes, so they surface as a dashboard KPI instead of silently
+     * disappearing from the tours while {@code numberOfParcels} still counts them as attempted.
+     * Mirrors the legacy {@code Router} which logs {@code getUnassignedJobs()} per iteration.
+     */
+    private static void recordUnassignedJobs(Carrier carrier, VehicleRoutingProblemSolution solution) {
+        List<String> unassignedIds = new ArrayList<>();
+        int unassignedParcels = 0;
+        for (com.graphhopper.jsprit.core.problem.job.Job job : solution.getUnassignedJobs()) {
+            unassignedIds.add(job.getId());
+            CarrierService service = carrier.getServices().get(Id.create(job.getId(), CarrierService.class));
+            unassignedParcels += service != null ? service.getCapacityDemand() : 1;
+        }
+        carrier.getAttributes().putAttribute("unassignedJobs", unassignedIds.size());
+        carrier.getAttributes().putAttribute("unassignedParcels", unassignedParcels);
+        carrier.getAttributes().putAttribute("unassignedJobsAsString", unassignedIds.toString());
+        if (!unassignedIds.isEmpty()) {
+            LOG.warn("Carrier {}: jsprit left {} of {} stops UNASSIGNED ({} parcels) - not driven by any tour: {}",
+                    carrier.getId(), unassignedIds.size(), carrier.getServices().size(),
+                    unassignedParcels, unassignedIds);
         }
     }
 

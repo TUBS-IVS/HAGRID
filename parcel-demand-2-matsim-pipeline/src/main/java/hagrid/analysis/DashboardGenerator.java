@@ -354,6 +354,10 @@ public class DashboardGenerator {
             totalMissed += (int) Math.round(c.numMissed() * ratio);
         }
         double successRate = parcelBase > 0 ? 100.0 * (parcelBase - totalMissed) / parcelBase : 100.0;
+        // Stops jsprit could not insert into any tour (7h route-duration cap / vehicle window / capacity)
+        // — written by LausitzFreightPreprocessor.recordUnassignedJobs; 0 for the Hannover legacy path.
+        int totalUnassignedParcels = sumIntAttr(delivery, "unassignedParcels");
+        int totalUnassignedJobs = sumIntAttr(delivery, "unassignedJobs");
         double avgTourLengthKm = totalDeliveryVehicles > 0 ? totalDistanceKm / totalDeliveryVehicles : 0;
         double avgSpeedKmh = totalTravelTSec > 0 ? totalDistanceKm / (totalTravelTSec / 3600.0) : 0;
         Set<String> distinctTypes = new HashSet<>();
@@ -377,6 +381,7 @@ public class DashboardGenerator {
                   "totalCost":%.0f,"totalDistanceKm":%.1f,"totalDrivingTimeH":%.1f,
                   "totalTourDurationH":%.1f,
                   "totalMissed":%d,"successRate":%.1f,"avgTourLengthKm":%.1f,
+                  "totalUnassignedParcels":%d,"totalUnassignedJobs":%d,
                   "numVehicleTypes":%d,"avgSpeedKmh":%.1f
                 }""",
                 totalVehicles, deliveryCarriers, supplyCarriers,
@@ -388,8 +393,26 @@ public class DashboardGenerator {
                 totalCost, totalDistanceKm, totalTravelTSec / 3600.0,
                 totalTourDurSec / 3600.0,
                 totalMissed, successRate, avgTourLengthKm,
+                totalUnassignedParcels, totalUnassignedJobs,
                 numVehicleTypes, avgSpeedKmh
         );
+    }
+
+    /**
+     * Sums an integer-valued carrier attribute across carriers; missing or non-numeric
+     * values count as 0 (attributes arrive as strings from {@link CarrierXmlParser}).
+     */
+    static int sumIntAttr(List<CarrierXmlParser.ParsedCarrier> carriers, String key) {
+        int sum = 0;
+        for (CarrierXmlParser.ParsedCarrier c : carriers) {
+            String v = c.carrierAttributes().getOrDefault(key, "0");
+            try {
+                sum += Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignored) {
+                // non-numeric attribute -> treated as 0
+            }
+        }
+        return sum;
     }
 
     // ====================================================================
@@ -2623,6 +2646,7 @@ var showStopsOnTours=true;
     {v:KPI.numVehicleTypes,l:'Vehicle Types',t:'Distinct vehicle type IDs used across all delivery carriers'},
     {v:(KPI.avgLoadFactor*100).toFixed(1)+'%%',l:'Avg Utilisation',cls:KPI.avgLoadFactor>=.8?'ok':KPI.avgLoadFactor>=.5?'':'warn',t:'Mean load factor = parcels / vehicle capacity across all delivery vehicles'},
     {v:KPI.successRate.toFixed(1)+'%%',l:'Delivery Rate',cls:KPI.successRate>=95?'ok':KPI.successRate>=85?'':'warn',t:'Delivery Rate = (Parcels \\u2212 Missed) / Parcels \\u00D7 100. Share of parcels successfully delivered.'},
+    {v:KPI.totalUnassignedParcels||0,l:'Unassigned Parcels',cls:(KPI.totalUnassignedParcels||0)>0?'warn':'ok',t:'Parcels at stops jsprit could NOT insert into any tour (7h route-duration cap, vehicle end window, or capacity) \\u2014 these stops are never driven. Distinct from Missed (statistical not-at-home overlay). Stops affected: '+(KPI.totalUnassignedJobs||0)},
     {v:KPI.avgTourLengthKm.toFixed(1)+' km',l:'Avg Tour Length',t:'Total delivery distance / number of delivery vehicles'},
     {v:KPI.avgSpeedKmh.toFixed(1)+' km/h',l:'Avg Speed',t:'Total km / total travel hours (excluding service time at stops)'},
     {v:'\\u20AC '+Math.round(KPI.totalCost).toLocaleString('en-US'),l:'Total Cost',t:'Sum of distance + time + fixed (per vehicle type) + overtime costs across all delivery carriers'},
