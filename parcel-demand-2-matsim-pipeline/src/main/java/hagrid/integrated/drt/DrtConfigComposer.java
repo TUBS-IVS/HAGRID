@@ -92,8 +92,13 @@ public final class DrtConfigComposer {
             mcf.zonalDemandEstimatorType =
                     MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand;
             mcf.demandEstimationPeriod = DEMAND_ESTIMATION_PERIOD_S;
-            mcf.targetAlpha = 0.5;
-            mcf.targetBeta = 0.5;
+            // alpha=1, beta=0 documents what actually runs: ReturnToDepotRebalancingModule
+            // overrides the RebalancingTargetCalculator with a plain
+            // DemandEstimatorAsTargetCalculator (target = 1.0 * estimated demand + 0), so any
+            // other alpha/beta here would be dead config misleading output_config readers.
+            // (The fields are bean-validated >= 0, they cannot simply be omitted.)
+            mcf.targetAlpha = 1.0;
+            mcf.targetBeta = 0.0;
             rebalancing.addParameterSet(mcf);
             drt.addParameterSet(rebalancing);
 
@@ -134,6 +139,22 @@ public final class DrtConfigComposer {
         controler.addOverridingModule(new MultiModeDrtModule());
         controler.configureQSimComponents(
                 DvrpQSimComponents.activateAllModes(MultiModeDrtConfigGroup.get(config)));
+
+        // PT/DRT fares: the native PtAndDrtFareModule prices DRT exactly like PT (VVO zone /
+        // Deutschlandtarif from the ptFare config, composed in LausitzDrtConfigurator) and caps
+        // chained DRT+PT rides via the fare upper bound — without it pt AND drt ride monetarily
+        // free while car pays per km, making drt structurally over-attractive in mode choice.
+        // Guarded: the module touches the pt scoring ModeParams at install time, so only add it
+        // when fares are composed AND pt params exist (both true on the Lausitz paths).
+        // NOTE: check module PRESENCE without addOrGetModule — materialising an EMPTY
+        // PtFareConfigGroup fails MATSim's consistency check ("No parameter sets found").
+        org.matsim.core.config.ConfigGroup ptFare = config.getModules()
+                .get(org.matsim.contrib.vsp.pt.fare.PtFareConfigGroup.MODULE_NAME);
+        boolean faresComposed = ptFare != null && !ptFare.getParameterSets(
+                org.matsim.contrib.vsp.pt.fare.FareZoneBasedPtFareParams.SET_TYPE).isEmpty();
+        if (faresComposed && config.scoring().getModes().containsKey(TransportMode.pt)) {
+            controler.addOverridingModule(new org.matsim.drt.PtAndDrtFareModule());
+        }
     }
 
     /**
@@ -143,18 +164,19 @@ public final class DrtConfigComposer {
      *
      * @param depotCoords          depot coordinates in the network CRS
      * @param returnStart          simulation time (seconds) at which vehicles start homing
-     * @param targetPerDepotZone   uniform return-pull per depot zone (a high value spreads
-     *                             idle vehicles toward depot links; MinCostFlow normalises)
+     * @param perDepotCapacity     parking capacity per depot: each depot zone pulls at most
+     *                             this many vehicles, so MinCostFlow fills the nearest depot
+     *                             and overflows to the next once full
      * @param demandEstimationPeriod  length of the demand-estimation window (seconds)
      */
     public static void installModules(Controler controler,
                                       java.util.List<org.matsim.api.core.v01.Coord> depotCoords,
                                       double returnStart,
-                                      double targetPerDepotZone,
+                                      double perDepotCapacity,
                                       double demandEstimationPeriod) {
         installModules(controler);
         controler.addOverridingModule(new ReturnToDepotRebalancingModule(
                 org.matsim.api.core.v01.TransportMode.drt,
-                depotCoords, returnStart, targetPerDepotZone, demandEstimationPeriod));
+                depotCoords, returnStart, perDepotCapacity, demandEstimationPeriod));
     }
 }
