@@ -4,8 +4,8 @@ DRT Dashboard (depot-dispatching headline) — Lausitz / Hoyerswerda
 ==================================================================
 One self-contained HTML for the passenger-DRT run:
   • Headline KPI cards (all with tooltip), incl. placeholder COST KPI + mean pax aboard.
-  • Per-vehicle tour MAP (CARTO dark, pastel per-vehicle colors, numbered stops,
-    depot markers, heatmap toggle for pickups/dropoffs).
+  • Per-vehicle tour MAP (CARTO dark, line color = passengers aboard (occupancy scale),
+    numbered stops, fleet-wide PUDO dots, depot markers, heatmap toggle for pickups/dropoffs).
   • Tagesverlauf: demand, rejections, mean wait, PT-feeder (abs/share toggle).
   • Verteilungen: wait, tour distance, tour duration.
   • Besetzungs-Decomposition, final modal split (pie), convergence, service-time detail.
@@ -56,10 +56,8 @@ BG = "#0F1117"; CARD = "#1A1D27"; BORDER = "#2A2D3A"; TEXT = "#E0E0E0"; DIM = "#
 COL_OCC = "#4ADE80"; COL_EMPTY = "#94A3B8"; COL_PU = "#FDE68A"; COL_DO = "#7DD3FC"
 COL_DEPOT = "#F472B6"
 
-# Legacy-HAGRID pastel tour palette (DashboardGenerator TOUR_COLORS) — per-vehicle colors
-TOUR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4",
-               "#84cc16", "#fb923c", "#14b8a6", "#f472b6", "#a78bfa", "#fbbf24", "#22d3ee",
-               "#e879f9", "#4ade80", "#f97316", "#2dd4bf", "#c084fc", "#facc15"]
+# NOTE: the legacy pastel per-vehicle palette (TOUR_COLORS) was dropped 2026-07-02 — tour lines
+# are now colored by OCCUPANCY LEVEL (OCC_COLORS, same scale as the occupancy chart).
 
 # ------------------------------------------------------------ PLACEHOLDER cost function
 # Zeitbasiert nach Rudolph-Ankern (~80/20 Personal/Fahrzeug): 20 €/h Personal + 5 €/h Fahrzeug,
@@ -160,22 +158,28 @@ legs = legs.assign(pu_lon=pu_lon, pu_lat=pu_lat, do_lon=do_lon, do_lat=do_lat)
 rides_per_veh = legs.groupby("vehicleId").size().to_dict()
 
 # ------------------------------------------------------------------ 5. per-vehicle map geometry + km
+# Geometry is bucketed by OCCUPANCY LEVEL (0 = leer, 1..CAP Pax): the map colors every traversed
+# link by how many passengers were aboard — same OCC_COLORS scale as the occupancy chart —
+# instead of one arbitrary pastel color per vehicle (user fix 2026-07-02).
 vehicles = sorted(veh_path.keys(), key=lambda v: int(v.split("_")[1]))
-veh_geo = {}; veh_km = {}
+veh_geo_lv = {}   # vehicle -> {occupancy level -> ([lons], [lats]) with None separators}
+veh_km = {}
 dist_by_occ = {}            # occupancy level -> fleet driven km on that level (deadhead = level 0)
 for v in vehicles:
-    ol, ola, el, ela = [], [], [], []; om = em = 0.0
+    geo = {}; om = em = 0.0
     for lid, o in veh_path[v]:
         w = link_wgs.get(lid)
         if w is None:
             continue
         flon, flat, tlon, tlat = w
         dist_by_occ[o] = dist_by_occ.get(o, 0.0) + link_len_m(lid) / 1000.0
+        lons, lats = geo.setdefault(o, ([], []))
+        lons += [flon, tlon, None]; lats += [flat, tlat, None]
         if o >= 1:
-            ol += [flon, tlon, None]; ola += [flat, tlat, None]; om += link_len_m(lid)
+            om += link_len_m(lid)
         else:
-            el += [flon, tlon, None]; ela += [flat, tlat, None]; em += link_len_m(lid)
-    veh_geo[v] = (ol, ola, el, ela)
+            em += link_len_m(lid)
+    veh_geo_lv[v] = geo
     veh_km[v] = (om / 1000.0, em / 1000.0)
 fleet_occ_km = sum(k[0] for k in veh_km.values()); fleet_emp_km = sum(k[1] for k in veh_km.values())
 fleet_total_km = fleet_occ_km + fleet_emp_km
@@ -295,8 +299,8 @@ except Exception as e:
 # busiest vehicle how far each PU/DO dot is from its OWN path polyline vertices.
 try:
     _dv = max(vehicles, key=lambda v: rides_per_veh.get(v, 0))
-    _pl = [(lo, la) for lo, la in zip(veh_geo[_dv][0] + veh_geo[_dv][2], veh_geo[_dv][1] + veh_geo[_dv][3])
-           if lo is not None]
+    _pl = [(lo, la) for lons, lats in veh_geo_lv[_dv].values()
+           for lo, la in zip(lons, lats) if lo is not None]
     _lv = legs[legs["vehicleId"] == _dv]
     def _min_d(lon, lat):
         return min(math.hypot((lon - plo) * 68000, (lat - pla) * 111000) for plo, pla in _pl)
@@ -463,7 +467,7 @@ figO.update_xaxes(title_text="Anteil [%]", range=[0, 100])
 figO.update_yaxes(automargin=True)
 _style(figO, 250)
 
-# --- (F) per-vehicle map — CARTO dark, pastel per-vehicle colors, depots, numbered stops, heatmap
+# --- (F) per-vehicle map — CARTO dark, occupancy-colored tours, depots, numbered stops, PUDO dots, heatmap
 figM = go.Figure()
 base_traces = 0
 if sa_lon:
@@ -495,62 +499,115 @@ if dep_lon:
         name="Depot (Spawn/Return)",
         hovertemplate="Depot %{text}<extra></extra>")); base_traces += 1
 
-# per-vehicle traces (4 each): empty line, occupied line (pastel per vehicle), PU, DO (numbered)
-for i, v in enumerate(vehicles):
-    vcol = TOUR_COLORS[i % len(TOUR_COLORS)]
-    ol, ola, el, ela = veh_geo[v]
+# per-vehicle traces: ONE line trace PER OCCUPANCY LEVEL (color = OCC_COLORS, same scale as the
+# occupancy chart: leer, 1 Pax, 2 Pax, ...) + numbered PU/DO markers. Trace counts vary per
+# vehicle (only levels it actually reached), so visibility uses an explicit index map.
+occ_name = lambda o: "leer" if o == 0 else f"{o} Pax"
+hh = lambda s: f"{int(s)//3600:02d}:{(int(s)%3600)//60:02d}"
+levels_present = sorted({o for v in vehicles for o in veh_geo_lv[v]})
+
+# legend proxies: one zero-data trace per occupancy level so the legend is identical in every
+# tour view (real level traces keep showlegend=False — 80 vehicles would duplicate entries).
+# legendgroup ties proxy + real traces together, so a legend click toggles the whole level.
+proxy_idx = []
+for o in levels_present:
+    proxy_idx.append(len(figM.data))
+    figM.add_trace(go.Scattermap(lon=[None], lat=[None], mode="lines",
+                                 line=dict(color=OCC_COLORS[min(o, len(OCC_COLORS) - 1)], width=3),
+                                 name=occ_name(o), legendgroup=f"occ{o}",
+                                 visible=False, hoverinfo="skip"))
+
+veh_trace_idx = {}   # vehicle -> [level-line indices..., PU idx, DO idx]
+for v in vehicles:
+    idxs = []
     lv = legs[legs["vehicleId"] == v].sort_values("departureTime").reset_index()
     stop_no = [str(n + 1) for n in range(len(lv))]
-    hh = lambda s: f"{int(s)//3600:02d}:{(int(s)%3600)//60:02d}"
     pu_cd = [[n + 1, str(p), hh(t), f"{w:.0f}"] for n, (p, t, w) in
              enumerate(zip(lv["personId"], lv["departureTime"], lv["waitTime"]))]
     do_cd = [[n + 1, str(p), hh(t), f"{d:.1f}"] for n, (p, t, d) in
              enumerate(zip(lv["personId"], lv["arrivalTime"], lv["leg_km"]))]
-    figM.add_trace(go.Scattermap(lon=el, lat=ela, mode="lines", line=dict(color=COL_EMPTY, width=1.2),
-                                 name="Leerfahrt", opacity=0.55, hoverinfo="skip", visible=False))
-    figM.add_trace(go.Scattermap(lon=ol, lat=ola, mode="lines", line=dict(color=vcol, width=3),
-                                 name="Belegt", hoverinfo="skip", visible=False))
+    for o in sorted(veh_geo_lv[v]):
+        lons, lats = veh_geo_lv[v][o]
+        idxs.append(len(figM.data))
+        figM.add_trace(go.Scattermap(lon=lons, lat=lats, mode="lines",
+                                     line=dict(color=OCC_COLORS[min(o, len(OCC_COLORS) - 1)],
+                                               width=1.2 if o == 0 else 3),
+                                     opacity=0.55 if o == 0 else 0.9,
+                                     name=occ_name(o), legendgroup=f"occ{o}", showlegend=False,
+                                     hoverinfo="skip", visible=False))
+    idxs.append(len(figM.data))
     figM.add_trace(go.Scattermap(lon=lv["pu_lon"], lat=lv["pu_lat"], mode="markers+text",
                                  marker=dict(size=13, color=COL_PU), text=stop_no,
                                  textfont=dict(size=9, color="#1A1D27"), name="Pickup #",
                                  customdata=pu_cd, visible=False,
                                  hovertemplate="Pickup #%{customdata[0]} — %{customdata[2]} Uhr<br>"
                                                "Fahrgast %{customdata[1]}<br>Wartezeit %{customdata[3]} s<extra></extra>"))
+    idxs.append(len(figM.data))
     figM.add_trace(go.Scattermap(lon=lv["do_lon"], lat=lv["do_lat"], mode="markers+text",
                                  marker=dict(size=13, color=COL_DO), text=stop_no,
                                  textfont=dict(size=9, color="#1A1D27"), name="Dropoff #",
                                  customdata=do_cd, visible=False,
                                  hovertemplate="Dropoff #%{customdata[0]} — %{customdata[2]} Uhr<br>"
                                                "Fahrgast %{customdata[1]}<br>Fahrt %{customdata[3]} km<extra></extra>"))
-TPV = 4
-# heatmap traces (appended AFTER vehicle traces): pickup + dropoff density (legacy leaflet.heat analog)
+    veh_trace_idx[v] = idxs
+
+# fleet-wide PUDO dot layers for the all-vehicles tour view (small, unnumbered — user fix
+# 2026-07-02: pickups/dropoffs were invisible in the Touren mode)
+agg_pu_cd = [[str(p), hh(t), f"{w:.0f}", str(v)] for p, t, w, v in
+             zip(legs["personId"], legs["departureTime"], legs["waitTime"], legs["vehicleId"])]
+agg_do_cd = [[str(p), hh(t), f"{d:.1f}", str(v)] for p, t, d, v in
+             zip(legs["personId"], legs["arrivalTime"], legs["leg_km"], legs["vehicleId"])]
+agg_pu_idx = len(figM.data)
+figM.add_trace(go.Scattermap(lon=legs["pu_lon"], lat=legs["pu_lat"], mode="markers",
+                             marker=dict(size=5, color=COL_PU), name="Pickups", opacity=0.85,
+                             customdata=agg_pu_cd, visible=False,
+                             hovertemplate="Pickup — %{customdata[1]} Uhr<br>Fahrgast %{customdata[0]}<br>"
+                                           "Fahrzeug %{customdata[3]}<br>Wartezeit %{customdata[2]} s<extra></extra>"))
+agg_do_idx = len(figM.data)
+figM.add_trace(go.Scattermap(lon=legs["do_lon"], lat=legs["do_lat"], mode="markers",
+                             marker=dict(size=5, color=COL_DO), name="Dropoffs", opacity=0.85,
+                             customdata=agg_do_cd, visible=False,
+                             hovertemplate="Dropoff — %{customdata[1]} Uhr<br>Fahrgast %{customdata[0]}<br>"
+                                           "Fahrzeug %{customdata[3]}<br>Fahrt %{customdata[2]} km<extra></extra>"))
+# heatmap traces (appended LAST): pickup + dropoff density (legacy leaflet.heat analog)
+heat_pu_idx = len(figM.data)
 figM.add_trace(go.Densitymap(lon=legs["pu_lon"], lat=legs["pu_lat"], radius=14,
                              colorscale=[[0, "rgba(30,58,95,0)"], [0.3, "#3B82F6"], [0.6, "#38BDF8"], [1, "#22D3EE"]],
                              name="Pickups", showscale=False, visible=False))
+heat_do_idx = len(figM.data)
 figM.add_trace(go.Densitymap(lon=legs["do_lon"], lat=legs["do_lat"], radius=14,
                              colorscale=[[0, "rgba(45,27,78,0)"], [0.3, "#8B5CF6"], [0.6, "#C084FC"], [1, "#E879F9"]],
                              name="Dropoffs", showscale=False, visible=False))
-N_HEAT = 2
 
 def vis(sel, heat=None):
-    """Visibility vector: sel=-1 all occupied, sel=i single vehicle, heat='pu'/'do'/'both'."""
-    out = [True] * base_traces
+    """Visibility vector: sel=-1 all tours (occupancy colors + PUDO dots), sel=i single
+    vehicle (occupancy colors + numbered PU/DO), heat='pu'/'do'/'both' heatmap-only."""
+    out = [False] * len(figM.data)
+    for j in range(base_traces):
+        out[j] = True
     if heat:
-        out += [False, False, False, False] * len(vehicles)
-        out += [heat in ("pu", "both"), heat in ("do", "both")]
+        out[heat_pu_idx] = heat in ("pu", "both")
+        out[heat_do_idx] = heat in ("do", "both")
         return out
-    for i in range(len(vehicles)):
-        out += ([False, True, False, False] if sel == -1 else
-                ([True, True, True, True] if i == sel else [False, False, False, False]))
-    out += [False, False]
+    for j in proxy_idx:
+        out[j] = True
+    if sel == -1:
+        for v in vehicles:
+            for j in veh_trace_idx[v][:-2]:      # level lines only, no numbered stops
+                out[j] = True
+        out[agg_pu_idx] = out[agg_do_idx] = True
+    else:
+        for j in veh_trace_idx[vehicles[sel]]:   # level lines + numbered PU/DO
+            out[j] = True
     return out
 
 def mtitle(sel):
     if sel == -1:
-        return f"Alle {len(vehicles)} DRT-Fahrzeuge (nur belegte Fahrten) • Flotten-Leerfahrtanteil {fleet_deadhead:.0f}%"
+        return (f"Alle {len(vehicles)} DRT-Fahrzeuge • Linienfarbe = Personen an Bord "
+                f"• Flotten-Leerfahrtanteil {fleet_deadhead:.0f}%")
     v = vehicles[sel]; p = per_veh.get(v, {})
     return (f"{v} • {rides_per_veh.get(v,0)} Fahrgäste • belegt {veh_km[v][0]:.0f} km / leer {veh_km[v][1]:.0f} km "
-            f"• Belegt-Zeit (aktiv) {p.get('ratio_active',0)*100:.0f}%")
+            f"• Belegt-Zeit (aktiv) {p.get('ratio_active',0)*100:.0f}% • Linienfarbe = Personen an Bord")
 
 btns = [dict(label=f"Alle Fahrzeuge ({len(vehicles)})", method="update",
              args=[{"visible": vis(-1)}, {"title.text": mtitle(-1)}])]
