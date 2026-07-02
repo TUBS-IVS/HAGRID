@@ -13,10 +13,10 @@ import org.matsim.contrib.dvrp.run.AbstractDvrpModeModule;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.core.utils.geometry.CoordUtils;
 
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Rebinds the DRT mode's {@link RebalancingTargetCalculator} to a
@@ -28,16 +28,16 @@ public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule
 
     private final List<Coord> depotCoords;
     private final double returnStart;
-    private final double targetPerDepotZone;
+    private final double perDepotCapacity;
     private final double demandEstimationPeriod;
 
     public ReturnToDepotRebalancingModule(String mode, List<Coord> depotCoords,
-                                          double returnStart, double targetPerDepotZone,
+                                          double returnStart, double perDepotCapacity,
                                           double demandEstimationPeriod) {
         super(mode);
         this.depotCoords = depotCoords;
         this.returnStart = returnStart;
-        this.targetPerDepotZone = targetPerDepotZone;
+        this.perDepotCapacity = perDepotCapacity;
         this.demandEstimationPeriod = demandEstimationPeriod;
     }
 
@@ -54,17 +54,29 @@ public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule
                 bindModal(RebalancingTargetCalculator.class).toProvider(modalProvider(getter -> {
                     ZoneSystem zones = getter.getModal(ZoneSystem.class);
                     ZonalDemandEstimator estimator = getter.getModal(ZonalDemandEstimator.class);
-                    GeometryFactory gf = new GeometryFactory();
-                    Set<Zone> depotZones = new LinkedHashSet<>();
-                    for (Coord c : depotCoords) {
-                        zoneForCoord(zones, c, gf).ifPresent(depotZones::add);
-                    }
                     RebalancingTargetCalculator daytime =
                             new DemandEstimatorAsTargetCalculator(estimator, demandEstimationPeriod);
-                    return new ReturnToDepotTargetCalculator(daytime, depotZones, returnStart, targetPerDepotZone);
+                    return new ReturnToDepotTargetCalculator(daytime,
+                            buildDepotCapacities(zones, depotCoords, perDepotCapacity), returnStart);
                 })).asEagerSingleton();
             }
         });
+    }
+
+    /**
+     * Maps each depot to its zone and accumulates capacities: two depots sharing a 2km grid
+     * cell yield one zone entry with 2x the per-depot capacity (a plain Set would silently
+     * halve the return pull toward that depot pair).
+     */
+    static Map<Zone, Double> buildDepotCapacities(ZoneSystem zones, List<Coord> depotCoords,
+                                                  double perDepotCapacity) {
+        GeometryFactory gf = new GeometryFactory();
+        Map<Zone, Double> capacities = new LinkedHashMap<>();
+        for (Coord c : depotCoords) {
+            zoneForCoord(zones, c, gf).ifPresent(z ->
+                    capacities.merge(z, perDepotCapacity, Double::sum));
+        }
+        return capacities;
     }
 
     /**

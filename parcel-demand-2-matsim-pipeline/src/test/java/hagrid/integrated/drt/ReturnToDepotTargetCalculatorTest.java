@@ -8,7 +8,6 @@ import org.matsim.contrib.common.zones.Zone;
 import org.matsim.contrib.drt.optimizer.rebalancing.targetcalculator.RebalancingTargetCalculator;
 
 import java.util.Map;
-import java.util.Set;
 import java.util.function.ToDoubleFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,18 +35,24 @@ class ReturnToDepotTargetCalculatorTest {
     void daytimeDelegates() {
         ToDoubleFunction<Zone> sentinel = z -> 42.0;
         RebalancingTargetCalculator daytime = (t, vbz) -> sentinel;
-        var calc = new ReturnToDepotTargetCalculator(daytime, Set.of(depotZone), 80000.0, 100.0);
+        var calc = new ReturnToDepotTargetCalculator(daytime, Map.of(depotZone, 12.0), 80000.0);
         ToDoubleFunction<Zone> f = calc.calculate(70000.0, Map.of());
         assertThat(f.applyAsDouble(otherZone)).isEqualTo(42.0);
     }
 
     @Test
-    @DisplayName("targets depot zones in the return window")
-    void returnWindowTargetsDepots() {
+    @DisplayName("return window: each depot zone pulls exactly its CAPACITY, non-depot zones 0")
+    void returnWindowTargetsDepotCapacities() {
+        // Capacity semantics: a depot zone absorbs at most its capacity, so MinCostFlow fills the
+        // nearest depot first and overflows to the next once full — instead of one uncapped pull
+        // (the old fleet-size-per-zone target) that legally parks the whole fleet at one depot.
+        Zone smallDepot = new StubZone("small");
         RebalancingTargetCalculator daytime = (t, vbz) -> (z -> 42.0);
-        var calc = new ReturnToDepotTargetCalculator(daytime, Set.of(depotZone), 80000.0, 100.0);
+        var calc = new ReturnToDepotTargetCalculator(daytime,
+                Map.of(depotZone, 12.0, smallDepot, 3.0), 80000.0);
         ToDoubleFunction<Zone> f = calc.calculate(85000.0, Map.of());
-        assertThat(f.applyAsDouble(depotZone)).isEqualTo(100.0);
+        assertThat(f.applyAsDouble(depotZone)).isEqualTo(12.0);
+        assertThat(f.applyAsDouble(smallDepot)).isEqualTo(3.0);
         assertThat(f.applyAsDouble(otherZone)).isEqualTo(0.0);
     }
 }
