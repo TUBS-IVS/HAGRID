@@ -239,9 +239,13 @@ public final class SimulationRunnerUtils {
             java.util.List<org.matsim.api.core.v01.Coord> depots =
                     hagrid.integrated.drt.DrtDepotReader.readCoords(java.nio.file.Path.of(cfg.getLmdDepotCsv()));
             double serviceEnd = 86400.0;       // matches LausitzDrtPreprocessor default
-            double returnWindow = 5400.0;       // last 90 min target depots (uniform return-pull; MinCostFlow normalises)
+            double returnWindow = 5400.0;       // last 90 min target depots
+            // Depot parking capacity = even fleet split (matches the spawn distribution): each depot
+            // zone absorbs at most ceil(fleet/depots) returning vehicles, so the end-of-day return
+            // fills the nearest depot first and overflows to the next once full.
+            double perDepotCapacity = Math.ceil((double) cfg.getFleetSize() / Math.max(1, depots.size()));
             hagrid.integrated.drt.DrtConfigComposer.installModules(controler, depots,
-                    serviceEnd - returnWindow, cfg.getFleetSize(), 1800.0);
+                    serviceEnd - returnWindow, perDepotCapacity, 1800.0);
             LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);

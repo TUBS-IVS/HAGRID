@@ -6,29 +6,28 @@ import org.matsim.contrib.dvrp.fleet.DvrpVehicle;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.ToDoubleFunction;
 
 /**
  * Time-switched rebalancing target: before {@code returnStart}, delegates to a
  * demand-based calculator (idle vehicles flow toward demand). From
- * {@code returnStart} onward, targets the depot zones so idle vehicles drive
- * home over the network (end-of-day return). Vehicles still serving at sim end
- * stop at their last stop and are handled by the KPI fallback (Task 6).
+ * {@code returnStart} onward, each depot zone pulls exactly its CAPACITY, so the
+ * MinCostFlow relocator fills the nearest depot first and overflows to the next
+ * once it is full — instead of an uncapped pull that legally parks the whole
+ * fleet at one depot. Vehicles still serving at sim end stop at their last stop
+ * and are handled by the KPI fallback (Task 6).
  */
 public final class ReturnToDepotTargetCalculator implements RebalancingTargetCalculator {
 
     private final RebalancingTargetCalculator daytime;
-    private final Set<Zone> depotZones;
+    private final Map<Zone, Double> depotCapacities;
     private final double returnStart;
-    private final double targetPerDepotZone;
 
-    public ReturnToDepotTargetCalculator(RebalancingTargetCalculator daytime, Set<Zone> depotZones,
-                                         double returnStart, double targetPerDepotZone) {
+    public ReturnToDepotTargetCalculator(RebalancingTargetCalculator daytime,
+                                         Map<Zone, Double> depotCapacities, double returnStart) {
         this.daytime = daytime;
-        this.depotZones = depotZones;
+        this.depotCapacities = depotCapacities;
         this.returnStart = returnStart;
-        this.targetPerDepotZone = targetPerDepotZone;
     }
 
     @Override
@@ -36,6 +35,6 @@ public final class ReturnToDepotTargetCalculator implements RebalancingTargetCal
         if (timeStep < returnStart) {
             return daytime.calculate(timeStep, vehiclesByZone);
         }
-        return zone -> depotZones.contains(zone) ? targetPerDepotZone : 0.0;
+        return zone -> depotCapacities.getOrDefault(zone, 0.0);
     }
 }
