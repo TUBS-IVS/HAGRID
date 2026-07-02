@@ -27,6 +27,45 @@ class LausitzDrtConfiguratorTest {
     }
 
     @Test
+    @DisplayName("build() composes the native PtFare config (VVO Tarifzone 20 + deflated Deutschlandtarif)")
+    void buildComposesPtFareConfig(@TempDir Path tmp) {
+        String baseConfig = fixtureConfig();
+        java.util.function.Supplier<Config> build = () -> LausitzDrtConfigurator.build(
+                baseConfig, tmp.resolve("net.xml.gz").toString(), tmp.resolve("plans.xml.gz").toString(),
+                tmp.resolve("area.shp").toString(), tmp.resolve("fleet.xml.gz").toString(),
+                tmp.resolve("matsim").toString(), "DRT_TEST", 0);
+
+        Config cfg = build.get();
+        var fare = org.matsim.core.config.ConfigUtils.addOrGetModule(cfg,
+                org.matsim.contrib.vsp.pt.fare.PtFareConfigGroup.class);
+        var zoneSets = fare.getParameterSets(org.matsim.contrib.vsp.pt.fare.FareZoneBasedPtFareParams.SET_TYPE);
+        var distSets = fare.getParameterSets(org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams.SET_TYPE);
+        assertThat(zoneSets).as("VVO Tarifzone 20 fare-zone params").hasSize(1);
+        assertThat(distSets).as("Deutschlandtarif distance-based params").hasSize(1);
+        var vvo = (org.matsim.contrib.vsp.pt.fare.FareZoneBasedPtFareParams) zoneSets.iterator().next();
+        assertThat(vvo.getFareZoneShp()).contains("vvo_tarifzone20");
+        var dt = (org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams) distSets.iterator().next();
+        double slopeFirst = dt.getOrCreateDistanceClassFareParams(100_000.).getFareSlope();
+        assertThat(slopeFirst).isGreaterThan(0.0);
+        // deflated 2024 -> 2021: strictly below the shared static's published 2024 slope
+        double slope2024 = org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams
+                .GERMAN_WIDE_FARE_2024.getOrCreateDistanceClassFareParams(100_000.).getFareSlope();
+        assertThat(slopeFirst).isLessThan(slope2024);
+
+        // GUARD against double deflation: the native code mutates the SHARED static
+        // GERMAN_WIDE_FARE_2024 in place — building twice in one JVM (tests!) must NOT
+        // deflate twice. build() has to copy the values instead of mutating the static.
+        Config cfg2 = build.get();
+        var dt2 = (org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams) org.matsim.core.config.ConfigUtils
+                .addOrGetModule(cfg2, org.matsim.contrib.vsp.pt.fare.PtFareConfigGroup.class)
+                .getParameterSets(org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams.SET_TYPE)
+                .iterator().next();
+        assertThat(dt2.getOrCreateDistanceClassFareParams(100_000.).getFareSlope())
+                .as("second build must yield the SAME deflated slope (no double deflation)")
+                .isEqualTo(slopeFirst);
+    }
+
+    @Test
     @DisplayName("build() produces a runnable full-DVRP DRT config (PT stripped, scoring composed)")
     void buildProducesRunnableDrtConfig(@TempDir Path tmp) {
         String baseConfig = fixtureConfig();

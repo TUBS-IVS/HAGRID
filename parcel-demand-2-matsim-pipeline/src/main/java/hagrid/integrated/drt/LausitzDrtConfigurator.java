@@ -1,6 +1,9 @@
 package hagrid.integrated.drt;
 
 import org.matsim.api.core.v01.TransportMode;
+import org.matsim.contrib.vsp.pt.fare.DistanceBasedPtFareParams;
+import org.matsim.contrib.vsp.pt.fare.FareZoneBasedPtFareParams;
+import org.matsim.contrib.vsp.pt.fare.PtFareConfigGroup;
 import org.matsim.contrib.vsp.scenario.SnzActivities;
 import org.matsim.contrib.vsp.scoring.RideScoringParamsFromCarParams;
 import org.matsim.core.config.Config;
@@ -155,6 +158,12 @@ public final class LausitzDrtConfigurator {
         }
         // counts is a remote file — clearing it prevents a remote fetch at scenario load.
         config.counts().setInputFile(null);
+
+        // 4b) PT/DRT fares — replicate the native LausitzScenario fare composition so pt and
+        // drt are NOT monetarily free while car pays per km (that asymmetry made drt
+        // structurally over-attractive). Consumed by PtAndDrtFareModule (installed in
+        // DrtConfigComposer): DRT is fared exactly like PT, chained rides pay once (upper bound).
+        composePtFareConfig(config);
         // The native config carries a `simwrapper` module, but we do NOT register the
         // SimWrapper contrib (no SimWrapperConfigGroup / no dashboards in this milestone).
         // It therefore stays an UNMATERIALIZED generic group, and MATSim's
@@ -256,6 +265,50 @@ public final class LausitzDrtConfigurator {
      * proper rail feeder (mirrors {@code DrtAndIntermodalityOptions.configureDrtConfig} lines
      * 140–158 verbatim).</p>
      */
+    /** Consumer-price deflation 2024→2021 (Destatis VPI 119.3/103.1), as in the native scenario. */
+    private static final double PT_FARE_DEFLATION_2024_TO_2021 = 1.16;
+
+    /** VVO Tarifzone 20 (Hoyerswerda) fare shapefile, relative to the config directory. */
+    private static final String VVO_FARE_ZONE_SHP =
+            "./vvo_tarifzone20/v2.0_vvo_tarifzone20_hoyerswerda_utm32n.shp";
+
+    /**
+     * Replicates the native {@code LausitzScenario.prepareConfig} fare block: trips inside VVO
+     * Tarifzone 20 (Hoyerswerda) pay the zone fare (prices in the shapefile), every other trip
+     * pays the Deutschlandtarif 2024 deflated to 2021 prices (factor {@value #PT_FARE_DEFLATION_2024_TO_2021}).
+     *
+     * <p>Unlike the native code, the Deutschlandtarif values are COPIED from the shared static
+     * {@code GERMAN_WIDE_FARE_2024} instead of mutated in place — mutating the static deflates
+     * a second time when {@code build()} runs twice in one JVM (tests).</p>
+     */
+    private static void composePtFareConfig(Config config) {
+        PtFareConfigGroup ptFare = ConfigUtils.addOrGetModule(config, PtFareConfigGroup.class);
+        if (!ptFare.getParameterSets(FareZoneBasedPtFareParams.SET_TYPE).isEmpty()) {
+            return;   // already composed (idempotent)
+        }
+        FareZoneBasedPtFareParams vvo20 = new FareZoneBasedPtFareParams();
+        vvo20.setTransactionPartner("VVO Tarifzone 20");
+        vvo20.setDescription("VVO Tarifzone 20");
+        vvo20.setOrder(1);
+        vvo20.setFareZoneShp(VVO_FARE_ZONE_SHP);
+
+        DistanceBasedPtFareParams germany = new DistanceBasedPtFareParams();
+        germany.setTransactionPartner("Deutschlandtarif");
+        germany.setDescription("Deutschlandtarif");
+        germany.setOrder(2);
+        germany.setMinFare(DistanceBasedPtFareParams.GERMAN_WIDE_FARE_2024.getMinFare());
+        DistanceBasedPtFareParams.GERMAN_WIDE_FARE_2024.getDistanceClassFareParams()
+                .forEach((maxDist, cls) -> {
+                    DistanceBasedPtFareParams.DistanceClassLinearFareFunctionParams copy =
+                            germany.getOrCreateDistanceClassFareParams(maxDist);
+                    copy.setFareSlope(cls.getFareSlope() / PT_FARE_DEFLATION_2024_TO_2021);
+                    copy.setFareIntercept(cls.getFareIntercept() / PT_FARE_DEFLATION_2024_TO_2021);
+                });
+
+        ptFare.addParameterSet(vvo20);
+        ptFare.addParameterSet(germany);
+    }
+
     private static void configureRailIntermodality(Config config) {
         ch.sbb.matsim.config.SwissRailRaptorConfigGroup srr =
                 ConfigUtils.addOrGetModule(config, ch.sbb.matsim.config.SwissRailRaptorConfigGroup.class);
