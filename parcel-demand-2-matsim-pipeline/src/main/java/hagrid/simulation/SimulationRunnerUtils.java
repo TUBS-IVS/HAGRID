@@ -232,9 +232,24 @@ public final class SimulationRunnerUtils {
 
         LOG.info("─── Simulation '{}' ───", cfg.getRunId());
 
-        // DRT-only path: skip all freight (zone load, CarrierModule, HAGRIDSimulationModule).
+        // DRT path: passenger DRT; married baseline additionally carries the LMD carriers.
         if (cfg.isDrtScenario()) {
+            if (cfg.isDrtWithFreight()) {
+                // 1. offline jsprit routing - the exact same call the LMD_BASELINE uses,
+                //    clipped to the SAME service-area shapefile (identical geography).
+                hagrid.integrated.freight.LausitzFreightPreprocessor.run(
+                        cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
+                        cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
+                        cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
+                        cfg.getDrtServiceAreaShapefile());
+            }
+
             Scenario scenario = DrtScenarioBuilder.build(cfg);
+            if (cfg.isDrtWithFreight()) {
+                hagrid.integrated.freight.FreightRunComposer.addCarriers(
+                        scenario, cfg.getLmdCarriersRouted(), cfg.getLmdVehicleTypes());
+            }
+
             Controler controler = new Controler(scenario);
             java.util.List<org.matsim.api.core.v01.Coord> depots =
                     hagrid.integrated.drt.DrtDepotReader.readCoords(java.nio.file.Path.of(cfg.getLmdDepotCsv()));
@@ -246,7 +261,13 @@ public final class SimulationRunnerUtils {
             double perDepotCapacity = Math.ceil((double) cfg.getFleetSize() / Math.max(1, depots.size()));
             hagrid.integrated.drt.DrtConfigComposer.installModules(controler, depots,
                     serviceEnd - returnWindow, perDepotCapacity, 1800.0);
-            LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
+            if (cfg.isDrtWithFreight()) {
+                hagrid.integrated.freight.FreightRunComposer.installCarrierModules(controler, scenario);
+                LOG.info("MARRIED baseline run '{}' (DRT fleet {} + LMD carriers).",
+                        cfg.getRunId(), cfg.getFleetSize());
+            } else {
+                LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
+            }
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
             return;

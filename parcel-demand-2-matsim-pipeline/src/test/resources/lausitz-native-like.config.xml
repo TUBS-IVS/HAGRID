@@ -71,6 +71,25 @@
 		<param name="modes" value="car,ride,pt,bike,walk"/>
 	</module>
 
+	<!-- Mirrors the native config's person replanning strategies (see
+	     hagrid-input/lausitz/config/lausitz-v2024.2-100pct.config.xml). Needed so that any
+	     e2e test running a real replanning iteration (lastIteration greater than or equal to 1)
+	     does not hit "No strategy found! ... Current subpopulation = person". Tests that stay
+	     at lastIteration=0 never exercise this module, but it must be present for the ones
+	     that do (e.g. MarriedBaselineEndToEndTest). -->
+	<module name="replanning">
+		<parameterset type="strategysettings">
+			<param name="strategyName" value="ChangeExpBeta"/>
+			<param name="subpopulation" value="person"/>
+			<param name="weight" value="0.85"/>
+		</parameterset>
+		<parameterset type="strategysettings">
+			<param name="strategyName" value="ReRoute"/>
+			<param name="subpopulation" value="person"/>
+			<param name="weight" value="0.15"/>
+		</parameterset>
+	</module>
+
 	<!-- The real native config ships a simwrapper module (analytics dashboards).  The
 	     configurator must DROP it before constructing the Controler because no
 	     SimWrapperConfigGroup is registered, leaving it unmaterialised — MATSim's
