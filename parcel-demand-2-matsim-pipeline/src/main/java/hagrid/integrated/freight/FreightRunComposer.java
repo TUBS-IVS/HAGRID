@@ -22,7 +22,7 @@ import org.matsim.freight.carriers.controller.CarrierStrategyManager;
  * NOT innovated during the run: the strategy manager carries exactly one
  * {@code KeepSelected} strategy. An empty manager
  * ({@code createDefaultCarrierStrategyManager()} alone) throws
- * {@code RuntimeException} at the first replanning event — which only maxIter=0 runs survive.</p>
+ * {@code RuntimeException} at the first replanning event - which only maxIter=0 runs survive.</p>
  */
 public final class FreightRunComposer {
 
