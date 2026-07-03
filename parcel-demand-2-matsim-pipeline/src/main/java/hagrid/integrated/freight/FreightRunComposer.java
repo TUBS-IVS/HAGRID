@@ -32,8 +32,13 @@ public final class FreightRunComposer {
     public static void addCarriers(Scenario scenario, String carriersFile, String vehicleTypesFile) {
         FreightCarriersConfigGroup freight =
                 ConfigUtils.addOrGetModule(scenario.getConfig(), FreightCarriersConfigGroup.class);
-        freight.setCarriersFile(carriersFile);
-        freight.setCarriersVehicleTypesFile(vehicleTypesFile);
+        // Absolutise so MATSim does NOT resolve these against the config context. The married DRT
+        // scenario loads a base config from hagrid-input/lausitz/config/, which sets a config
+        // context; a relative carriers/vehicle-types path would otherwise be doubled against that
+        // directory (context + path). LMD_BASELINE uses a context-free createConfig(), so it was
+        // never exposed there.
+        freight.setCarriersFile(java.nio.file.Path.of(carriersFile).toAbsolutePath().toString());
+        freight.setCarriersVehicleTypesFile(java.nio.file.Path.of(vehicleTypesFile).toAbsolutePath().toString());
         CarriersUtils.loadCarriersAccordingToFreightConfig(scenario);
     }
 
