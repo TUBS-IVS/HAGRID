@@ -97,6 +97,12 @@ public class HAGRIDSimulationConfig {
     private final int fleetSize;
 
     /**
+     * Whether a DRT run also carries the offline-routed LMD carriers in the SAME Controler
+     * (the "married" Baseline). Only meaningful when {@link #isDrtScenario()} is true.
+     */
+    private final boolean drtWithFreight;
+
+    /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
@@ -133,6 +139,32 @@ public class HAGRIDSimulationConfig {
     public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize) {
+        this(concept, date, maxIterations, jspritIterations,
+                zoneBasedCachingEnabled, zoneBasedCachingThresholdMeters,
+                uTurnPenaltyCost, tag, studyArea, fleetSize, /*drtWithFreight*/ true);
+    }
+
+    /**
+     * Creates a new scenario configuration with explicit study area, DRT fleet size, and
+     * married-freight flag.
+     *
+     * @param concept          scenario concept name
+     * @param date             simulation date
+     * @param maxIterations    maximum number of MATSim iterations
+     * @param jspritIterations maximum number of jsprit iterations
+     * @param tag              optional version tag (null or empty to disable)
+     * @param studyArea        geographic study area
+     * @param fleetSize        DRT fleet size (number of vehicles)
+     * @param drtWithFreight   whether a DRT run also carries the offline-routed LMD carriers
+     *                         (married Baseline); ignored for non-DRT concepts
+     * @throws NullPointerException     if concept, date, or studyArea is null
+     * @throws IllegalArgumentException if maxIterations &lt; 0; if maxIterations == 0 and the concept is not
+     *                                  {@code LMD_BASELINE}; or if jspritIterations is not positive (&gt;= 1)
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -166,6 +198,7 @@ public class HAGRIDSimulationConfig {
         this.tag = tag != null ? tag.trim() : "";
         this.studyArea = Objects.requireNonNull(studyArea, "studyArea must not be null");
         this.fleetSize = fleetSize;
+        this.drtWithFreight = drtWithFreight;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -416,6 +449,11 @@ public class HAGRIDSimulationConfig {
         }
     }
 
+    /** True iff this is a DRT scenario that also carries the LMD carriers (married Baseline). */
+    public boolean isDrtWithFreight() {
+        return isDrtScenario() && drtWithFreight;
+    }
+
     /**
      * Returns the path to the DRT service-area shapefile.
      *
@@ -566,6 +604,13 @@ public class HAGRIDSimulationConfig {
             checkFile(Path.of(getLausitzTransitScheduleRaw()), "Lausitz transit schedule (raw)", missing);
             checkFile(Path.of(getLausitzTransitVehiclesRaw()), "Lausitz transit vehicles (raw)", missing);
             checkFile(Path.of(getLausitzVehicleTypes()), "Lausitz vehicle-types", missing);
+
+            if (isDrtWithFreight()) {
+                // Married baseline additionally needs the LMD preprocessing inputs.
+                checkFile(Path.of(getLmdDemandShapefile()), "LMD demand shapefile", missing);
+                checkFile(Path.of(getLmdVehicleTypes()), "LMD vehicle types", missing);
+                checkFile(Path.of(getLausitzNetworkRaw()), "Lausitz network (raw, jsprit routing)", missing);
+            }
         }
 
         if (!missing.isEmpty()) {

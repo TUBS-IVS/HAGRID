@@ -18,18 +18,21 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class HAGRIDSimulationConfigTest {
 
     /**
-     * For a DRT scenario the freight-input checks (config, vehicle types, car network,
-     * bike network, change events, freight zone, delivery carriers, supply carriers) must
-     * be SKIPPED. Only the 3 clipped-DRT files + the service-area shp + Lausitz base
-     * config + depot CSV are required. This test creates stub files at only those 6 paths and asserts
-     * that validateInputFiles() does NOT throw, even though the 8 freight files are absent.
+     * For a passenger-only DRT run ({@code drtWithFreight=false}) the freight-input checks
+     * (config, vehicle types, car network, bike network, change events, freight zone, delivery
+     * carriers, supply carriers) AND the married-only LMD preprocessing inputs (demand shapefile,
+     * LMD vehicle types, raw Lausitz network) must be SKIPPED. Only the 3 clipped-DRT files + the
+     * service-area shp + Lausitz base config + depot CSV are required. This test creates stub
+     * files at only those 9 paths and asserts that validateInputFiles() does NOT throw, even
+     * though the freight files are absent.
      */
     @Test
-    @DisplayName("validateSkipsFreightForDrt — freight files absent, DRT stubs present → no exception")
+    @DisplayName("validateSkipsFreightForDrt — freight files absent, DRT stubs present, freight=false → no exception")
     void validateSkipsFreightForDrt(@TempDir Path tempDir) throws Exception {
 
-        // Build a DRT HAGRIDSimulationConfig rooted at the temp dir so all paths are writable.
-        // We override the pipeline root via the system property used by HagridPaths.detectPipelineRoot().
+        // Build a passenger-only DRT HAGRIDSimulationConfig rooted at the temp dir so all paths
+        // are writable. We override the pipeline root via the system property used by
+        // HagridPaths.detectPipelineRoot().
         System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
         try {
             HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(
@@ -39,7 +42,8 @@ class HAGRIDSimulationConfigTest {
                     1,  // jspritIterations
                     false, 0.0, 0.0, "",
                     StudyArea.LAUSITZ_HOYERSWERDA,
-                    20);
+                    20,
+                    false);  // drtWithFreight=false: passenger-only DRT run
 
             // Create the 9 DRT-required files as stubs (5 DRT-specific + 3 rail PT + 1 depot CSV).
             createStub(tempDir, cfg.getDrtNetworkClipped());
