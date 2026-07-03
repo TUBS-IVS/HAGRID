@@ -14,10 +14,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Writes tiny point demand shapefiles for LMD tests (columns match the PANDA schema subset). */
-final class LmdTestShapefiles {
+public final class LmdTestShapefiles {
     private LmdTestShapefiles() {}
 
-    static void writeDemand(Path shp, double[][] xy, long[] dhlTag, long[] dhlType, long[] hermesTag) {
+    public static void writeDemand(Path shp, double[][] xy, long[] dhlTag, long[] dhlType, long[] hermesTag) {
         SimpleFeatureTypeBuilder tb = new SimpleFeatureTypeBuilder();
         tb.setName("demand");
         try {
