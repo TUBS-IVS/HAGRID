@@ -93,7 +93,7 @@ public class FreightEventHandler implements
             vehicleTours.computeIfAbsent(person, k -> new ArrayList<>())
                     .add(new LinkVisit(linkId, event.getTime()));
             tourEnds.add(new TourBoundaryEvent(person, linkId, event.getTime()));
-        } else if ("service".equals(actType)) {
+        } else if ("service".equals(actType) && isFreight(person)) {
             serviceEvents.computeIfAbsent(person, k -> new ArrayList<>())
                     .add(new ServiceEvent(person, linkId, event.getTime(), true));
         }
@@ -110,7 +110,7 @@ public class FreightEventHandler implements
 
         if ("start".equals(actType) && isFreight(person)) {
             tourStarts.add(new TourBoundaryEvent(person, linkId, event.getTime()));
-        } else if ("service".equals(actType)) {
+        } else if ("service".equals(actType) && isFreight(person)) {
             serviceEvents.computeIfAbsent(person, k -> new ArrayList<>())
                     .add(new ServiceEvent(person, linkId, event.getTime(), false));
         }
