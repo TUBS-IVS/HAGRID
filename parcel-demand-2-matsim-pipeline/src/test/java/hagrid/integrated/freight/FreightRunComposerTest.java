@@ -7,6 +7,7 @@ import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
+import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.freight.carriers.*;
@@ -70,5 +71,54 @@ class FreightRunComposerTest {
                 .containsKey(Id.create("dhl", Carrier.class));
         assertThat(CarriersUtils.getCarrierVehicleTypes(scenario).getVehicleTypes())
                 .containsKey(Id.create("ct_cep_size_m", VehicleType.class));
+    }
+
+    @Test
+    @DisplayName("addCarriers resolves RELATIVE paths against the CWD, not the config context (married DRT loads a base config)")
+    void addCarriersResolvesRelativePathsAgainstCwdNotConfigContext() throws Exception {
+        Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
+
+        CarrierVehicleTypes types = new CarrierVehicleTypes();
+        VehicleType van = VehicleUtils.createVehicleType(Id.create("ct_cep_size_m", VehicleType.class));
+        van.getCapacity().setOther(165);
+        van.setNetworkMode("car");
+        van.getCostInformation().setCostsPerMeter(0.0004).setCostsPerSecond(0.0).setFixedCost(170.0);
+        types.getVehicleTypes().put(van.getId(), van);
+        Path typesFile = dir.resolve("vans.xml");
+        new CarrierVehicleTypeWriter(types).write(typesFile.toString());
+
+        Carrier carrier = CarriersUtils.createCarrier(Id.create("dhl", Carrier.class));
+        carrier.getCarrierCapabilities().setFleetSize(CarrierCapabilities.FleetSize.INFINITE);
+        CarriersUtils.addCarrierVehicle(carrier, CarrierVehicle.Builder
+                .newInstance(Id.createVehicleId("dhl_van_1"), Id.createLinkId("l0"), van)
+                .setEarliestStart(8 * 3600).setLatestEnd(16 * 3600).build());
+        CarriersUtils.addService(carrier, CarrierService.Builder
+                .newInstance(Id.create("dhl_1", CarrierService.class), Id.createLinkId("l1"))
+                .setCapacityDemand(3).build());
+        Carriers carriers = new Carriers();
+        carriers.addCarrier(carrier);
+        Path carriersFile = dir.resolve("carriers.xml");
+        CarriersUtils.writeCarriers(carriers, carriersFile.toString());
+
+        // Married DRT scenario: the config was loaded from a base config in a subdirectory, so it
+        // carries a CONTEXT. MATSim resolves relative freight paths against that context, which would
+        // double a relative carriers/vehicle-types path (context dir + path). The LMD_BASELINE path
+        // uses a context-free createConfig(), which is why this was never exposed there.
+        Config config = ConfigUtils.createConfig();
+        config.setContext(dir.resolve("cfgctx").toUri().toURL());
+        Scenario scenario = ScenarioUtils.createScenario(config);
+
+        // Pass paths RELATIVE to the working dir, exactly as production does via cfg.getLmd*().
+        Path cwd = Path.of("").toAbsolutePath();
+        String relTypes = cwd.relativize(typesFile).toString();
+        String relCarriers = cwd.relativize(carriersFile).toString();
+
+        FreightRunComposer.addCarriers(scenario, relCarriers, relTypes);
+
+        assertThat(CarriersUtils.getCarrierVehicleTypes(scenario).getVehicleTypes())
+                .as("relative vehicle-types path must resolve despite the config context")
+                .containsKey(Id.create("ct_cep_size_m", VehicleType.class));
+        assertThat(CarriersUtils.getCarriers(scenario).getCarriers())
+                .containsKey(Id.create("dhl", Carrier.class));
     }
 }
