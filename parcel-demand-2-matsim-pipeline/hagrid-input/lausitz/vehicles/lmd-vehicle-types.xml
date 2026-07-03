@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<vehicleDefinitions xmlns="http://www.matsim.org/files/dtd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd">
+
+	<vehicleType id="ct_cep_size_l">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="230.0">
+
+		</capacity>
+		<length meter="6.0"/>
+		<width meter="2.25"/>
+		<maximumVelocity meterPerSecond="38.888888888888886"/>
+		<costInformation fixedCostsPerDay="189.15" costsPerMeter="3.86430173292559E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.5"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+	<vehicleType id="ct_cep_size_m">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="165.0">
+
+		</capacity>
+		<length meter="5.0"/>
+		<width meter="2.0"/>
+		<maximumVelocity meterPerSecond="44.44444444444444"/>
+		<costInformation fixedCostsPerDay="171.78" costsPerMeter="3.71826707441386E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.45"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+	<vehicleType id="ct_cep_size_s">
+		<attributes>
+			<attribute name="skills" class="java.lang.String">conventional</attribute>
+		</attributes>
+		<capacity seats="0" standingRoomInPersons="0" other="100.0">
+
+		</capacity>
+		<length meter="4.0"/>
+		<width meter="1.75"/>
+		<maximumVelocity meterPerSecond="44.44444444444444"/>
+		<!-- Cost rates linearly interpolated from ct_cep_size_m (c=165) and ct_cep_size_l (c=230):
+		     slope over 65 capacity units => fixed 2*171.78-189.15=154.41, perMeter 2*3.71827e-4-3.86430e-4=3.57223e-4.
+		     Smaller/cheaper van; realistic for low-density (rural) delivery clusters. -->
+		<costInformation fixedCostsPerDay="154.41" costsPerMeter="3.57223241590213E-4" costsPerSecond="0.0">
+			<attributes>
+				<attribute name="costsPerSecondInService" class="java.lang.Double">0.0</attribute>
+				<attribute name="costsPerSecondWaiting" class="java.lang.Double">10.0</attribute>
+			</attributes>
+		</costInformation>
+		<passengerCarEquivalents pce="1.4"/>
+		<networkMode networkMode="car"/>
+		<flowEfficiencyFactor factor="0.9"/>
+	</vehicleType>
+
+</vehicleDefinitions>

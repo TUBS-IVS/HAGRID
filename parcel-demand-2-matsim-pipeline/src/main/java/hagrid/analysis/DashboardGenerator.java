@@ -221,6 +221,7 @@ public class DashboardGenerator {
         String activeVehJson  = buildActiveVehiclesJson();
         String depotTripsJson = buildDepotTripsJson();
         String carrierDetailJson = buildCarrierScoringDetailJson();
+        String parcelsPerHourJson = buildParcelsPerHourByProviderJson();
 
         // 2) Assemble HTML
         String html = assembleHtml(kpiJson, vehiclesJson, tourGeoJson, stopGeoJson,
@@ -229,7 +230,7 @@ public class DashboardGenerator {
                 distHistoJson, durHistoJson, utilizationJson,
                 linkVolumeJson, utilByTypeJson, summaryTableJson,
                 routingEffJson, networkBgJson, scoringJson, hourlySvcJson,
-                activeVehJson, depotTripsJson, carrierDetailJson);
+                activeVehJson, depotTripsJson, carrierDetailJson, parcelsPerHourJson);
 
         // 3) Write
         Files.createDirectories(outputDir);
@@ -921,6 +922,99 @@ public class DashboardGenerator {
         int twEndMin  = (TW_END_SEC % 3600) / 60;
         return String.format("{\"hours\":%s,\"providers\":%s],\"services\":%s},\"late\":%s},\"twEndHour\":%d,\"twEndLabel\":\"%02d:%02d\"}",
                 hours, provJson, svcJson, lateJson, twEndHour, twEndHour, twEndMin);
+    }
+
+    // ====================================================================
+    // Delivered parcels per hour (per provider)
+    // ====================================================================
+
+    /**
+     * Builds JSON with delivered parcels per clock hour, grouped by provider, for a
+     * stacked bar chart. Delivery time comes from the mobsim service-start events (same
+     * time basis as the "Hourly Service Activity" chart); parcel counts come from each
+     * stop's {@code capacityDemand} (the routed carrier plan carries no per-act times, so
+     * event time and parcel count must be joined). Per vehicle the ordered service-start
+     * events are zipped with the ordered service acts of its tour; if the two counts
+     * disagree the tour's total demand is spread evenly across its stops so parcel totals
+     * are conserved. Excluded low-utilisation vehicles are skipped for consistency with
+     * the service-activity chart.
+     * Output: {hours:["04:00",...], providers:["dhl",...], parcels:{"dhl":[..],...}}
+     */
+    private String buildParcelsPerHourByProviderJson() {
+        List<String> provList = carriers.stream().filter(ParsedCarrier::isDelivery)
+                .map(c -> c.provider().isEmpty() ? "other" : c.provider()).distinct().sorted().toList();
+        Map<String, double[]> parcelsByProv = new LinkedHashMap<>();
+        for (String p : provList) parcelsByProv.put(p, new double[25]);
+
+        var svcEvents = eventHandler.getServiceEvents();
+        for (ParsedCarrier c : carriers) {
+            if (!c.isDelivery()) continue;
+            String prov = c.provider().isEmpty() ? "other" : c.provider();
+            double[] bins = parcelsByProv.get(prov);
+            if (bins == null) continue;
+            Map<String, Integer> demand = new HashMap<>();
+            for (ParsedService s : c.services()) demand.put(s.serviceId(), s.capacityDemand());
+            for (ParsedTour t : c.tours()) {
+                String vehId = t.eventVehicleId();
+                if (excludedLowUtilVehicles.contains(vehId)) continue;
+                // ordered per-stop parcel demands from the tour's service acts
+                List<Integer> stopDemands = new ArrayList<>();
+                for (TourAct a : t.acts()) {
+                    if ("service".equals(a.type())) {
+                        Integer d = demand.get(a.serviceId());
+                        stopDemands.add(d != null ? d : 1);
+                    }
+                }
+                if (stopDemands.isEmpty()) continue;
+                // ordered service-start event times (real mobsim delivery times)
+                List<Double> startTimes = new ArrayList<>();
+                List<ServiceEvent> evs = svcEvents.get(vehId);
+                if (evs != null) {
+                    for (ServiceEvent ev : evs) if (ev.isStart()) startTimes.add(ev.timeSec());
+                }
+                if (startTimes.isEmpty()) continue;
+                startTimes.sort(null);
+                if (startTimes.size() == stopDemands.size()) {
+                    for (int i = 0; i < startTimes.size(); i++) {
+                        int h = Math.min(24, (int) (startTimes.get(i) / 3600));
+                        bins[h] += stopDemands.get(i);
+                    }
+                } else {
+                    // count mismatch: conserve totals by spreading demand evenly over stops
+                    double total = 0; for (int d : stopDemands) total += d;
+                    double per = total / startTimes.size();
+                    for (double st : startTimes) {
+                        int h = Math.min(24, (int) (st / 3600));
+                        bins[h] += per;
+                    }
+                }
+            }
+        }
+
+        StringBuilder hours = new StringBuilder("[");
+        for (int h = 4; h <= 23; h++) {
+            if (h > 4) hours.append(",");
+            hours.append(String.format("\"%02d:00\"", h));
+        }
+        hours.append("]");
+        StringBuilder provJson = new StringBuilder("[");
+        StringBuilder parcelsJson = new StringBuilder("{");
+        boolean first = true;
+        for (String p : provList) {
+            if (!first) { provJson.append(","); parcelsJson.append(","); }
+            first = false;
+            provJson.append("\"").append(escJson(p)).append("\"");
+            parcelsJson.append("\"").append(escJson(p)).append("\":[");
+            double[] bins = parcelsByProv.get(p);
+            for (int h = 4; h <= 23; h++) {
+                if (h > 4) parcelsJson.append(",");
+                parcelsJson.append(Math.round(bins[h]));
+            }
+            parcelsJson.append("]");
+        }
+        provJson.append("]");
+        parcelsJson.append("}");
+        return String.format("{\"hours\":%s,\"providers\":%s,\"parcels\":%s}", hours, provJson, parcelsJson);
     }
 
     // ====================================================================
@@ -1811,9 +1905,10 @@ public class DashboardGenerator {
     private static int estimateCapacity(String vehicleId) {
         String lower = vehicleId.toLowerCase();
         if (lower.contains("cargobike") || lower.contains("cargo_bike")) return 30;
-        if (lower.contains("size_m"))  return 80;
+        // Lausitz LMD vans (fallback only; lookupCapacity reads the real capacity from the type first).
+        if (lower.contains("size_m"))  return 165;
         if (lower.contains("size_l"))  return 230;
-        if (lower.contains("size_s"))  return 50;
+        if (lower.contains("size_s"))  return 100;
         if (lower.contains("light_van") || lower.contains("supply_light")) return 80;
         if (lower.contains("supply"))  return 350;
         return 230; // default CEP van
@@ -2054,7 +2149,8 @@ public class DashboardGenerator {
                                 String hourlySvcJson,
                 String activeVehJson,
                 String depotTripsJson,
-                String carrierDetailJson) {
+                String carrierDetailJson,
+                String parcelsPerHourJson) {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
 
         double minLat = Double.MAX_VALUE, maxLat = -Double.MAX_VALUE;
@@ -2137,7 +2233,8 @@ public class DashboardGenerator {
                 /* 30 */ activeVehJson,
                 /* 31 */ depotTripsJson,
                 /* 32 */ carrierDetailJson,
-                /* 33 */ buildLowUtilNoticeHtml()
+                /* 33 */ buildLowUtilNoticeHtml(),
+                /* 34 */ parcelsPerHourJson
         };
         return String.format(Locale.US, HTML_PART1, fmtArgs)
              + String.format(Locale.US, HTML_PART2, fmtArgs)
@@ -2441,6 +2538,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <span id="chartProvCbs" style="display:flex;gap:8px;flex-wrap:wrap"></span>
 </div>
 <div style="padding:0 22px 10px"><div class="cc"><h4>Hourly Service Activity by Provider</h4><canvas id="hourlySvcChart" style="max-height:320px"></canvas></div></div>
+<div style="padding:0 22px 10px"><div class="cc"><h4>Delivered Parcels per Hour by Provider</h4><canvas id="parcelsPerHourChart" style="max-height:320px"></canvas></div></div>
 <div style="padding:0 22px 10px"><div class="cc"><h4>Active Vehicles Over Time by Provider</h4><canvas id="activeVehChart" style="max-height:320px"></canvas></div></div>
 <div style="padding:0 22px 10px"><div class="cc"><h4>Depot Departures &amp; Arrivals by Provider</h4><canvas id="depotTripsChart" style="max-height:640px"></canvas></div></div>
 
@@ -2589,6 +2687,7 @@ var HOURLY_SVC=%29$s;
 var ACTIVE_VEH=%30$s;
 var DEPOT_TRIPS=%31$s;
 var CARRIER_DETAIL=%32$s;
+var PARCELS_PER_HOUR=%34$s;
 
 // === CONSTANTS ===
 var PROV_COLORS={};
@@ -2637,7 +2736,7 @@ var showStopsOnTours=true;
     {v:KPI.totalVehicles,l:'Active Vehicles',t:'Total vehicles with at least one link visit event during simulation'},
     {v:KPI.deliveryCarriers,l:'Delivery Carriers',t:'Number of carriers handling last-mile parcel delivery'},
     {v:KPI.supplyCarriers,l:'Supply Carriers',t:'Number of carriers handling hub-to-hub or long-haul supply'},
-    {v:KPI.vanCount,l:'CEP Vans',t:'Vehicles classified as CEP delivery vans (ct_cep_size_m, ct_cep_size_l)'},
+    {v:KPI.vanCount,l:'CEP Vans',t:'Vehicles classified as CEP delivery vans (ct_cep_size_s, ct_cep_size_m, ct_cep_size_l)'},
     {v:KPI.bikeCount,l:'Cargobikes',t:'Vehicles classified as cargo bikes for last-mile delivery'},
     {v:KPI.truckCount,l:'Trucks/Supply',t:'Heavy trucks, light trucks, and supply vehicles'},
     {v:KPI.totalParcels,l:'Total Parcels',t:'Total parcel demand (sum of capacityDemand from all scheduled services of non-excluded delivery vehicles)'},
@@ -3925,6 +4024,29 @@ if(SCORING.iterations.length>0){
         ctx.restore();
       }
     }}]
+  });
+})();
+
+// === DELIVERED PARCELS PER HOUR BY PROVIDER ===
+(function(){
+  if(!PARCELS_PER_HOUR||!PARCELS_PER_HOUR.providers||PARCELS_PER_HOUR.providers.length===0)return;
+  var datasets=PARCELS_PER_HOUR.providers.map(function(p){
+    var col=PROV_COLORS[p]||'#6b7280';
+    return {label:p,data:PARCELS_PER_HOUR.parcels[p],backgroundColor:col+'88',stack:'parcels',
+      borderColor:col,borderWidth:1,borderRadius:2};
+  });
+  new Chart(document.getElementById('parcelsPerHourChart'),{type:'bar',
+    data:{labels:PARCELS_PER_HOUR.hours,datasets:datasets},
+    options:{responsive:true,interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{stacked:true,grid:{color:'rgba(148,163,184,.08)'},ticks:{font:{size:10}}},
+        y:{stacked:true,grid:{color:'rgba(148,163,184,.08)'},title:{display:true,text:'Delivered parcels',color:'#94a3b8',font:{size:9}}}
+      },
+      plugins:{
+        legend:{position:'bottom',labels:{padding:8,usePointStyle:true,pointStyleWidth:10,font:{size:10}}},
+        tooltip:{mode:'index',callbacks:{label:function(c){return c.dataset.label+': '+c.parsed.y}}}
+      }
+    }
   });
 })();
 
