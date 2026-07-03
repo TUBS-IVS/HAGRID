@@ -22,8 +22,6 @@ import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.gis.GeoFileReader;
-import org.matsim.freight.carriers.CarriersUtils;
-import org.matsim.freight.carriers.FreightCarriersConfigGroup;
 import org.matsim.freight.carriers.controller.CarrierModule;
 
 import java.io.IOException;
@@ -273,30 +271,12 @@ public final class SimulationRunnerUtils {
             config.controller().setLastIteration(cfg.getMaxIterations());
             config.controller().setOverwriteFileSetting(
                     OutputDirectoryHierarchy.OverwriteFileSetting.deleteDirectoryIfExists);
-            FreightCarriersConfigGroup freightConfig =
-                    ConfigUtils.addOrGetModule(config, FreightCarriersConfigGroup.class);
-            freightConfig.setCarriersFile(cfg.getLmdCarriersRouted());
-            freightConfig.setCarriersVehicleTypesFile(cfg.getLmdVehicleTypes());
-
             Scenario scenario = ScenarioUtils.loadScenario(config);
-            CarriersUtils.loadCarriersAccordingToFreightConfig(scenario);
+            hagrid.integrated.freight.FreightRunComposer.addCarriers(
+                    scenario, cfg.getLmdCarriersRouted(), cfg.getLmdVehicleTypes());
 
             Controler controler = new Controler(scenario);
-            controler.addOverridingModule(new CarrierModule());
-            // Provide the minimum Guice bindings CarrierModule requires (scoring + strategy).
-            // For a maxIter=0 / routing-only run neither factory is ever called at runtime, but
-            // Guice verifies all non-nullable injections at startup, so we must bind them.
-            controler.addOverridingModule(new org.matsim.core.controler.AbstractModule() {
-                @Override public void install() {
-                    bind(org.matsim.freight.carriers.controller.CarrierScoringFunctionFactory.class)
-                            .toInstance(new hagrid.simulation.ScoringFunctions(
-                                    scenario.getNetwork(), 0.0));
-                    // No-op strategy manager: routing already done offline by jsprit.
-                    bind(org.matsim.freight.carriers.controller.CarrierStrategyManager.class)
-                            .toInstance(org.matsim.freight.carriers.controller.CarrierControllerUtils
-                                    .createDefaultCarrierStrategyManager());
-                }
-            });
+            hagrid.integrated.freight.FreightRunComposer.installCarrierModules(controler, scenario);
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
