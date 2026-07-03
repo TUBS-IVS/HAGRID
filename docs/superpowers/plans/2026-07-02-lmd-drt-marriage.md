@@ -795,7 +795,13 @@ git commit -m "fix(analysis): FreightEventHandler ignores non-freight agents in 
   full 41,937-agent scenario + real PANDA demand before burning a night:
 
 ```
-mvn -q compile exec:java "-Dexec.mainClass=hagrid.simulation.HAGRIDSimulationRunner" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=1,jspritIter=5,fleetSize=80,tag=marriedsmoke"
+# DRT runs are TWO steps. Step A preprocesses (writes run-scoped drt_network/drt_population/drt_fleet
+# into the run dir); Step B is the married run. The runner main class is hagrid.HAGRIDSimulationRunner
+# (package `hagrid`, NOT `hagrid.simulation`). Run both from parcel-demand-2-matsim-pipeline/ with -Xmx16g.
+# Step A:
+mvn -q compile exec:java "-Dexec.mainClass=hagrid.integrated.drt.PrepareLausitzDrtInputs" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=1,jspritIter=5,fleetSize=80,tag=marriedsmoke"
+# Step B:
+mvn -q exec:java "-Dexec.mainClass=hagrid.HAGRIDSimulationRunner" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=1,jspritIter=5,fleetSize=80,tag=marriedsmoke"
 ```
 
 Expected: exit 0; output dir `DRT_BASELINE_13052025_marriedsmoke_iter1_jsprit5` contains BOTH
@@ -807,7 +813,11 @@ real data.
   fleet-120 DRT re-run and the married Baseline into one run (Decision D4):
 
 ```
-mvn -q compile exec:java "-Dexec.mainClass=hagrid.simulation.HAGRIDSimulationRunner" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=150,jspritIter=100,fleetSize=120,writeDashboard=true,tag=married120"
+# Two steps (see Step 1). Step A preprocessing, then Step B the married run. -Xmx16g, from parcel-demand-2-matsim-pipeline/.
+# Step A:
+mvn -q compile exec:java "-Dexec.mainClass=hagrid.integrated.drt.PrepareLausitzDrtInputs" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=150,jspritIter=100,fleetSize=120,writeDashboard=true,tag=married120"
+# Step B:
+mvn -q exec:java "-Dexec.mainClass=hagrid.HAGRIDSimulationRunner" "-Dexec.args=concept=DRT_BASELINE,date=2025-05-13,maxIter=150,jspritIter=100,fleetSize=120,writeDashboard=true,tag=married120"
 ```
 
 Laptop: plugged in, sleep disabled (runs die on sleep — feedback_drt_runs_operational).
