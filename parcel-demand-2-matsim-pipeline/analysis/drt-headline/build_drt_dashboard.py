@@ -211,7 +211,11 @@ print(f"  person-km cross-check: legs={person_km:,.0f} vs MATSim={pax_km_matsim:
 if _pkm_dev > 1.0:
     print("  WARNUNG: person-km weicht >1% von MATSim totalPassengerDistanceTraveled ab — Datenquellen pruefen!")
 fc = cust.iloc[-1]
-drt_rides = int(fc["rides"]); rej = float(fc["rejectionRate"]) * 100
+drt_rides = int(fc["rides"]); n_rej = int(fc["rejections"])
+# NB: the CSV column `rejectionRate` is a FRACTION rounded to 2 decimals -> any rate <0.5%
+# collapses to 0.00 ("0%"). Compute from the exact integer counts instead so the headline
+# matches the per-hour rejection chart (which counts raw events).
+rej = n_rej / (drt_rides + n_rej) * 100 if (drt_rides + n_rej) else 0.0
 wait_mean = float(fc["wait_average"]); wait_p95 = float(fc["wait_p95"])
 wait_median = float(legs["waitTime"].median())
 drt_share = float(modestats.iloc[-1]["drt"]) * 100
@@ -707,8 +711,10 @@ kpi_cards = "".join([
     card("Service-Zeit (Schicht)", f"{fleet['ratio_shift']*100:.1f}%", "belegt / Schichtfenster 0-24h", big=True, tip=_svc_tip),
     card("DRT Modal Share", f"{drt_share:.2f}%", f"pt {pt_share:.2f}%",
          tip="Anteil DRT an allen Wegen (modestats, letzte Iteration)."),
-    card("Rejection", f"{rej:.1f}%", "abgelehnte Anfragen",
-         tip="rejectionRate aus drt_customer_stats: Anfragen ohne machbare Einfuegung (no_insertion_found)."),
+    card("Rejection", f"{rej:.2f}%", f"{_de(n_rej)} abgelehnte Anfragen",
+         tip="Ablehnungsquote = rejections/(rides+rejections) aus den Ganzzahl-Spalten von drt_customer_stats "
+             "(Anfragen ohne machbare Einfuegung, no_insertion_found). Die CSV-Spalte rejectionRate ist auf "
+             "2 Nachkommastellen gerundet und faellt bei <0.5% faelschlich auf 0 - daher hier aus Zaehlern berechnet."),
     card("Wartezeit Ø / Median / P95", f"{wait_mean:.0f} / {wait_median:.0f} / {wait_p95:.0f}s", "Pax-Wartezeit", tip=_wait_tip),
     card("DRT solo", _de(n_standalone), "Punkt-zu-Punkt ohne Bahnanschluss", tip=_solo_tip),
     card("DRT+Bahn (Feeder)", _de(n_feeder), f"{pct_rail_drtfed:.0f}% der Bahn-Wege DRT-gespeist", tip=_feeder_tip),
