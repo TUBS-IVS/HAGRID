@@ -25,8 +25,8 @@ from drt_service_time import reconstruct, _fmt_hms   # validated service-time co
 
 # ------------------------------------------------------------------ paths
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-RUN = "DRT_BASELINE_13052025_fleet120_depot_railpt_iter150_jsprit100"
-PREFIX = "DRT_BASELINE_13052025_fleet120_depot_railpt"
+RUN = "DRT_BASELINE_13052025_married120_iter150_jsprit100"
+PREFIX = "DRT_BASELINE_13052025_married120"
 MM = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-matsim-output", RUN)
 HO = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-output", PREFIX)
 BASE = os.path.join(MM, PREFIX)
@@ -742,7 +742,7 @@ with open(os.path.join(os.path.dirname(plotly.__file__), "package_data", "plotly
 
 html = f"""<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>DRT Dashboard — fleet80 depot-dispatching — Lausitz/Hoyerswerda</title>
+<title>DRT Dashboard — married fleet120 (DRT + LMD) — Lausitz/Hoyerswerda</title>
 <script>{pjs}</script>
 <style>
 *,*::before,*::after{{box-sizing:border-box}}
@@ -764,7 +764,7 @@ h2{{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:{ACC};mar
 .note{{font-size:11px;color:{DIM};margin-top:8px;border-top:1px solid {BORDER};padding-top:8px;line-height:1.5}}
 </style></head><body>
 <h1>DRT-Dashboard &mdash; Lausitz / Hoyerswerda</h1>
-<div class="sub">fleet80 &bull; Depot-Dispatching (Spawn + Rebalancing + Return-to-Depot) &bull; 151 Iterationen &bull; reale 100%-Nachfrage</div>
+<div class="sub">married fleet120 (pax DRT + LMD carriers, ein Controler) &bull; Depot-Dispatching (Spawn + Rebalancing + Return-to-Depot) &bull; 151 Iterationen &bull; reale 100%-Nachfrage</div>
 
 <h2>Headline-KPIs</h2>
 <div class="grid hero">{kpi_cards}</div>
