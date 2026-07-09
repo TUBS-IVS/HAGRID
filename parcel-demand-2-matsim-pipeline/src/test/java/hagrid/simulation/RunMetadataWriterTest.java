@@ -59,4 +59,12 @@ class RunMetadataWriterTest {
         Path file = RunMetadataWriter.writeMap(m, tmp);
         assertTrue(Files.readString(file).contains("\"tag\": \"we\\\"ird\\\\tag\""));
     }
+
+    @Test
+    void escapesControlCharsInStrings() throws Exception {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("tag", "line1\nline2\rtabbed\tend");
+        Path file = RunMetadataWriter.writeMap(m, tmp);
+        assertTrue(Files.readString(file).contains("\"tag\": \"line1\\nline2\\rtabbed\\tend\""));
+    }
 }

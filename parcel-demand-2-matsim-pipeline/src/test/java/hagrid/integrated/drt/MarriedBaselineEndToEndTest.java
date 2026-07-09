@@ -142,8 +142,9 @@ class MarriedBaselineEndToEndTest {
         // so we invoke the same production writer the runner calls, against the real output dir.
         // Route HagridPaths at a temp root so config construction does not touch the project tree.
         System.setProperty("hagrid.pipeline.root", dir.toAbsolutePath().toString());
+        HAGRIDSimulationConfig cfg;
         try {
-            HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(
+            cfg = new HAGRIDSimulationConfig(
                     "DRT_BASELINE", LocalDate.of(2025, 5, 13),
                     /*maxIterations*/ 1, /*jspritIterations*/ 1,
                     false, 0.0, 0.0, "married_e2e",
@@ -153,7 +154,46 @@ class MarriedBaselineEndToEndTest {
         } finally {
             System.clearProperty("hagrid.pipeline.root");
         }
-        assertThat(Files.exists(matsimOut.resolve("run_metadata.json")))
+        Path metadataFile = matsimOut.resolve("run_metadata.json");
+        assertThat(Files.exists(metadataFile))
                 .as("run_metadata.json missing from MATSim output dir").isTrue();
+
+        // ---- content assertions: this is the part that would have caught a format bug ----
+        String json = Files.readString(metadataFile);
+        for (String key : new String[]{
+                "run_id", "run_dir_name", "scenario", "study_area", "operation_mode",
+                "tag", "sim_date", "matsim_iterations", "jsprit_iterations",
+                "fleet_size", "drt_with_freight", "created"}) {
+            assertThat(json).as("missing key in run_metadata.json: " + key).contains("\"" + key + "\":");
+        }
+        assertThat(unquote(extractJsonValue(json, "operation_mode"))).isEqualTo("conventional");
+        assertThat(unquote(extractJsonValue(json, "scenario"))).isEqualTo(cfg.getConcept().toUpperCase());
+        assertThat(unquote(extractJsonValue(json, "study_area"))).isEqualTo(cfg.getStudyArea().name().toLowerCase());
+        assertThat(extractJsonValue(json, "drt_with_freight")).isEqualTo(String.valueOf(cfg.isDrtWithFreight()));
+        assertThat(extractJsonValue(json, "fleet_size")).isEqualTo(String.valueOf(cfg.getFleetSize()));
+        // sim_date is deliberately ISO (yyyy-MM-dd) from getFormattedDate() - this locks the
+        // shipped format intentionally; the value is not consumed downstream, ISO is correct.
+        assertThat(unquote(extractJsonValue(json, "sim_date"))).isEqualTo(cfg.getFormattedDate());
+    }
+
+    /** Extracts the raw (still-JSON-encoded) value string for {@code key} from a flat run_metadata.json. */
+    private static String extractJsonValue(String json, String key) {
+        String needle = "\"" + key + "\": ";
+        int start = json.indexOf(needle);
+        assertThat(start).as("key not found in run_metadata.json: " + key).isGreaterThanOrEqualTo(0);
+        start += needle.length();
+        int end = start;
+        while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '\n' && json.charAt(end) != '\r') {
+            end++;
+        }
+        return json.substring(start, end).trim();
+    }
+
+    /** Strips one layer of surrounding double quotes, if present. */
+    private static String unquote(String raw) {
+        if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
+            return raw.substring(1, raw.length() - 1);
+        }
+        return raw;
     }
 }
