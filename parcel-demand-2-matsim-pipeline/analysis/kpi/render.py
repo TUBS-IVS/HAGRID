@@ -76,13 +76,13 @@ function showTab(i) {
 HEADLINE_KPIS = [
     ("modal_share_drt", "DRT-Modal-Share", 100.0, "%"),
     ("drt_rides", "DRT-Fahrten", 1.0, ""),
-    ("wait_median", "Wartezeit Median [s]", 1.0, "s"),
+    ("wait_median", "Wartezeit Median", 1.0, "s"),
     ("drt_rejection_rate", "Ablehnungsquote", 100.0, "%"),
     ("service_ratio_shift", "Service-Zeit (Schicht)", 100.0, "%"),
     ("drt_vehicle_km", "DRT-Fahrzeug-km", 1.0, "km"),
     ("delivery_rate", "Zustellquote", 100.0, "%"),
     ("freight_vehicle_km", "Freight-km", 1.0, "km"),
-    ("freight_cost_per_parcel", "Kosten je Paket [EUR]", 1.0, "EUR"),
+    ("freight_cost_per_parcel", "Kosten je Paket", 1.0, "EUR"),
 ]
 
 
