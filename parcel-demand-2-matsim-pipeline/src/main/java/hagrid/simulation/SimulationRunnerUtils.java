@@ -270,6 +270,12 @@ public final class SimulationRunnerUtils {
             }
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+            try {
+                RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
+                LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
+            } catch (IOException e) {
+                LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
+            }
             return;
         }
 
@@ -301,6 +307,12 @@ public final class SimulationRunnerUtils {
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+            try {
+                RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
+                LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
+            } catch (IOException e) {
+                LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
+            }
             return;
         }
 
@@ -329,6 +341,12 @@ public final class SimulationRunnerUtils {
         controler.run();
 
         logDuration("Simulation '" + cfg.getRunId() + "'", t0);
+        try {
+            RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
+            LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
+        } catch (IOException e) {
+            LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
+        }
 
         // GC hint between scenarios
         System.gc();
