@@ -1,0 +1,2 @@
+runId;iteration;vehicles;totalServiceDuration;totalDistance;totalEmptyDistance;emptyRatio;totalPassengerDistanceTraveled;averageDrivenDistance;averageEmptyDistance;averagePassengerDistanceTraveled;d_p/d_t;l_det;minShareIdleVehicles;minCountIdleVehicles
+DRT_TEST;150;120;10368000;48885489.8;5723917.05;0.12;100584927.64;407379.08;47699.31;838207.73;2.06;0.7;0.07;8.16
