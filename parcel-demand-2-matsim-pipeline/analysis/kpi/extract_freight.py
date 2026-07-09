@@ -54,13 +54,26 @@ def extract(run_dir, prefix):
             float(td["totalCosts[EUR]"].sum()), "EUR", "TimeDistance_perCarrier"),
     ]
 
+    # Load_perVehicle.tsv is only populated by MATSim's CarrierLoadAnalysis for
+    # SHIPMENT pickup/delivery events (CarrierShipmentPickupStartEvent /
+    # CarrierShipmentDeliveryStartEvent). HAGRID's LMD/DRT-freight carriers are
+    # modelled as SERVICES (Carriers_stats.tsv shows nuOfShipments_input == 0,
+    # nuOfServices_input > 0 for every real run), so on real runs this file is
+    # always header-only (0 data rows) -- fall back to the per-vehicle tour
+    # table, which is populated regardless of service/shipment modelling.
     lv = pd.read_csv(fr / "Load_perVehicle.tsv", sep="\t")
-    rows += [
-        row("freight", "freight_vehicles", len(lv), "vehicles", "Load_perVehicle"),
-        row("freight", "avg_max_load",
-            float(lv["maxLoadPercentage"].mean()) / 100.0, "share", "Load_perVehicle"),
-        row("freight", "parcels_handled", int(lv["handledDemand"].sum()), "parcels", "Load_perVehicle"),
-    ]
+    parcels_handled_lv = None
+    if len(lv):
+        rows += [
+            row("freight", "freight_vehicles", len(lv), "vehicles", "Load_perVehicle"),
+            row("freight", "avg_max_load",
+                float(lv["maxLoadPercentage"].mean()) / 100.0, "share", "Load_perVehicle"),
+        ]
+        parcels_handled_lv = int(lv["handledDemand"].sum())
+    else:
+        tv = pd.read_csv(fr / "TimeDistance_perVehicle.tsv", sep="\t")
+        rows.append(row("freight", "freight_vehicles", int(tv["vehicleId"].nunique()),
+                        "vehicles", "TimeDistance_perVehicle"))
 
     attrs = _carrier_attrs(run_dir / (prefix + ".output_carriers.xml.gz"))
     total = sum(_int_attr(a, "numberOfParcels") for a in attrs.values())
@@ -68,6 +81,10 @@ def extract(run_dir, prefix):
     unassigned = sum(_int_attr(a, "unassignedParcels") for a in attrs.values())
     delivered = total - missed - unassigned
     rows += [
+        row("freight", "parcels_handled",
+            parcels_handled_lv if parcels_handled_lv is not None else delivered,
+            "parcels", "Load_perVehicle" if parcels_handled_lv is not None
+            else "carrier attributes (fallback: Load_perVehicle empty for service-based carriers)"),
         row("freight", "parcels_total", total, "parcels", "carrier attributes"),
         row("freight", "parcels_missed", missed, "parcels", "carrier attributes"),
         row("freight", "parcels_unassigned", unassigned, "parcels", "carrier attributes"),
