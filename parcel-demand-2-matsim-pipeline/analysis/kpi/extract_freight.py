@@ -71,9 +71,11 @@ def extract(run_dir, prefix):
         ]
         parcels_handled_lv = int(lv["handledDemand"].sum())
     else:
-        tv = pd.read_csv(fr / "TimeDistance_perVehicle.tsv", sep="\t")
-        rows.append(row("freight", "freight_vehicles", int(tv["vehicleId"].nunique()),
-                        "vehicles", "TimeDistance_perVehicle"))
+        tv_f = fr / "TimeDistance_perVehicle.tsv"
+        if tv_f.exists():
+            tv = pd.read_csv(tv_f, sep="\t")
+            rows.append(row("freight", "freight_vehicles", int(tv["vehicleId"].nunique()),
+                            "vehicles", "TimeDistance_perVehicle"))
 
     attrs = _carrier_attrs(run_dir / (prefix + ".output_carriers.xml.gz"))
     total = sum(_int_attr(a, "numberOfParcels") for a in attrs.values())
