@@ -244,7 +244,7 @@ def render_run_sections(kpis, ts, uid):
         charts.append(("Freight-Servicestopps je Stunde", "c_frt_" + uid, {
             "type": "bar",
             "data": {"labels": hrs, "datasets": [{
-                "label": "Stopps/h", "data": stops, "__slot": 1,
+                "label": "Stopps/h", "data": stops, "__seq": True,
                 "borderRadius": 4, "maxBarThickness": 18}]},
             "options": {"responsive": True, "maintainAspectRatio": False,
                         "plugins": {"legend": {"display": False}}},
