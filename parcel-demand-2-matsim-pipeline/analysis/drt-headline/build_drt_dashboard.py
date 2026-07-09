@@ -25,8 +25,8 @@ from drt_service_time import reconstruct, _fmt_hms   # validated service-time co
 
 # ------------------------------------------------------------------ paths
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-RUN = "DRT_BASELINE_13052025_married120_iter150_jsprit100"
-PREFIX = "DRT_BASELINE_13052025_married120"
+RUN = "DRT_BASELINE_13052025_married250_iter300_jsprit1000"
+PREFIX = "DRT_BASELINE_13052025_married250"
 MM = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-matsim-output", RUN)
 HO = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-output", PREFIX)
 BASE = os.path.join(MM, PREFIX)
@@ -50,7 +50,7 @@ DEPOT_CSV = os.path.join(REPO, "parcel-demand-2-matsim-pipeline", "hagrid-input"
 EV = os.path.join(MM, PREFIX + ".drt_events_filtered.txt")
 RAW_EVENTS = BASE + ".output_events.xml.gz"
 
-FLEET_SIZE = 80
+FLEET_SIZE = 250
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
 BG = "#0F1117"; CARD = "#1A1D27"; BORDER = "#2A2D3A"; TEXT = "#E0E0E0"; DIM = "#8A93A6"; ACC = "#38BDF8"
 COL_OCC = "#4ADE80"; COL_EMPTY = "#94A3B8"; COL_PU = "#FDE68A"; COL_DO = "#7DD3FC"
@@ -742,7 +742,7 @@ with open(os.path.join(os.path.dirname(plotly.__file__), "package_data", "plotly
 
 html = f"""<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>DRT Dashboard — married fleet120 (DRT + LMD) — Lausitz/Hoyerswerda</title>
+<title>DRT Dashboard — married fleet250 (DRT + LMD) — Lausitz/Hoyerswerda</title>
 <script>{pjs}</script>
 <style>
 *,*::before,*::after{{box-sizing:border-box}}
@@ -764,7 +764,7 @@ h2{{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:{ACC};mar
 .note{{font-size:11px;color:{DIM};margin-top:8px;border-top:1px solid {BORDER};padding-top:8px;line-height:1.5}}
 </style></head><body>
 <h1>DRT-Dashboard &mdash; Lausitz / Hoyerswerda</h1>
-<div class="sub">married fleet120 (pax DRT + LMD carriers, ein Controler) &bull; Depot-Dispatching (Spawn + Rebalancing + Return-to-Depot) &bull; 151 Iterationen &bull; reale 100%-Nachfrage</div>
+<div class="sub">married fleet250 (pax DRT + LMD carriers, ein Controler) &bull; Depot-Dispatching (Spawn + Rebalancing + Return-to-Depot) &bull; 301 Iterationen &bull; jsprit1000 &bull; reale 100%-Nachfrage</div>
 
 <h2>Headline-KPIs</h2>
 <div class="grid hero">{kpi_cards}</div>
