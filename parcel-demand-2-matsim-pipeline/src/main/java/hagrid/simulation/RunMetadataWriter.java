@@ -67,6 +67,12 @@ public final class RunMetadataWriter {
         if (v instanceof Number || v instanceof Boolean) {
             return v.toString();
         }
-        return '"' + v.toString().replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+        return '"' + v.toString()
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                + '"';
     }
 }

@@ -270,12 +270,7 @@ public final class SimulationRunnerUtils {
             }
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-            try {
-                RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
-                LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
-            } catch (IOException e) {
-                LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
-            }
+            writeRunMetadataSafely(cfg);
             return;
         }
 
@@ -307,12 +302,7 @@ public final class SimulationRunnerUtils {
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-            try {
-                RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
-                LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
-            } catch (IOException e) {
-                LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
-            }
+            writeRunMetadataSafely(cfg);
             return;
         }
 
@@ -341,17 +331,27 @@ public final class SimulationRunnerUtils {
         controler.run();
 
         logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-        try {
-            RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
-            LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
-        } catch (IOException e) {
-            LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
-        }
+        writeRunMetadataSafely(cfg);
 
         // GC hint between scenarios
         System.gc();
         try { Thread.sleep(5000); } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Writes {@code run_metadata.json} for a completed run, never throwing: a bug in the
+     * metadata writer must not kill a multi-hour MATSim run. Catches {@code Exception} (not just
+     * {@code IOException}) so that any future unchecked failure inside {@code RunMetadataWriter}
+     * is swallowed the same way.
+     */
+    private static void writeRunMetadataSafely(HAGRIDSimulationConfig cfg) {
+        try {
+            RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
+            LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
+        } catch (Exception e) {
+            LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);
         }
     }
 
