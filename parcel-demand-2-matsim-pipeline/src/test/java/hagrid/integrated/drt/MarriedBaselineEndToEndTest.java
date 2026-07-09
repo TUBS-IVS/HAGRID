@@ -4,6 +4,9 @@ import hagrid.integrated.freight.FreightRunComposer;
 import hagrid.integrated.freight.LausitzFreightPreprocessor;
 import hagrid.integrated.freight.LmdTestShapefiles;
 import hagrid.simulation.DrtScenarioBuilder;
+import hagrid.simulation.HAGRIDSimulationConfig;
+import hagrid.simulation.RunMetadataWriter;
+import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -23,6 +26,7 @@ import org.matsim.vehicles.VehicleUtils;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -132,5 +136,24 @@ class MarriedBaselineEndToEndTest {
                     .anyMatch(p -> p.getFileName().toString().endsWith("output_carriers.xml.gz")))
                     .as("expected output_carriers.xml.gz (CarrierModule ran)").isTrue();
         }
+
+        // ---- run_metadata.json is emitted for the married run (1e Task 1) ----
+        // This e2e builds the Controler directly (not via SimulationRunnerUtils.runSimulation),
+        // so we invoke the same production writer the runner calls, against the real output dir.
+        // Route HagridPaths at a temp root so config construction does not touch the project tree.
+        System.setProperty("hagrid.pipeline.root", dir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(
+                    "DRT_BASELINE", LocalDate.of(2025, 5, 13),
+                    /*maxIterations*/ 1, /*jspritIterations*/ 1,
+                    false, 0.0, 0.0, "married_e2e",
+                    StudyArea.LAUSITZ_HOYERSWERDA, /*fleetSize*/ 4,
+                    /*drtWithFreight*/ true);
+            RunMetadataWriter.write(cfg, matsimOut);
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+        assertThat(Files.exists(matsimOut.resolve("run_metadata.json")))
+                .as("run_metadata.json missing from MATSim output dir").isTrue();
     }
 }
