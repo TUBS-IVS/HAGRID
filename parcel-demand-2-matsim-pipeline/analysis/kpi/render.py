@@ -55,6 +55,41 @@ table.kpis th { color:var(--muted); font-weight:600; }
 .tablewrap { overflow-x:auto; }
 """
 
+TAB_CSS = """
+.tabbar { display:flex; gap:6px; margin:14px 0; flex-wrap:wrap; }
+.tabbar button { border:1px solid var(--border); background:var(--surface);
+  color:var(--ink2); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; }
+.tabbar button.on { color:var(--ink); font-weight:600; border-color:var(--axis); }
+.tab { display:none; } .tab.on { display:block; }
+"""
+
+CSS = CSS + TAB_CSS
+
+TAB_JS = """
+function showTab(i) {
+  document.querySelectorAll('.tab').forEach((t, j) => t.classList.toggle('on', i === j));
+  document.querySelectorAll('.tabbar button').forEach((b, j) => b.classList.toggle('on', i === j));
+  window.dispatchEvent(new Event('resize'));
+}
+"""
+
+HEADLINE_KPIS = [
+    ("modal_share_drt", "DRT-Modal-Share", 100.0, "%"),
+    ("drt_rides", "DRT-Fahrten", 1.0, ""),
+    ("wait_median", "Wartezeit Median [s]", 1.0, "s"),
+    ("drt_rejection_rate", "Ablehnungsquote", 100.0, "%"),
+    ("service_ratio_shift", "Service-Zeit (Schicht)", 100.0, "%"),
+    ("drt_vehicle_km", "DRT-Fahrzeug-km", 1.0, "km"),
+    ("delivery_rate", "Zustellquote", 100.0, "%"),
+    ("freight_vehicle_km", "Freight-km", 1.0, "km"),
+    ("freight_cost_per_parcel", "Kosten je Paket [EUR]", 1.0, "EUR"),
+]
+
+
+def _scenario_slot(scenario, fallback_index):
+    return SCENARIO_SLOTS.get(scenario, 4 + (fallback_index % 4))
+
+
 JS_SETUP = """
 const css = getComputedStyle(document.querySelector('.viz-root'));
 const V = n => css.getPropertyValue(n).trim();
@@ -243,7 +278,11 @@ function resolveColors(cfg) {
       ds.backgroundColor = CAT[ds.__slot %% CAT.length];
       ds.borderColor = ds.backgroundColor;
     }
-    delete ds.__seq; delete ds.__slot;
+    else if (ds.__slots !== undefined) {
+      ds.backgroundColor = ds.__slots.map(s => CAT[s %% CAT.length]);
+      ds.borderColor = ds.backgroundColor;
+    }
+    delete ds.__seq; delete ds.__slot; delete ds.__slots;
   }
   return cfg;
 }
@@ -264,3 +303,93 @@ def render_page(title, body_html, body_js):
 def render_run_page(kpis, ts, title):
     body, js = render_run_sections(kpis, ts, uid="r0")
     return render_page(title, body, js)
+
+
+def render_comparison_page(runs, title):
+    """runs: list of dicts {label, scenario, kpis (DataFrame), ts (DataFrame)}."""
+    charts, js = [], []
+
+    # headline grouped horizontal bars: one chart per KPI, one bar per run
+    for idx, (name, label, scale, unit) in enumerate(HEADLINE_KPIS):
+        labels, values, slots = [], [], []
+        for i, r in enumerate(runs):
+            v = _kpi(r["kpis"], name)
+            if v is None:
+                continue
+            labels.append(r["label"])
+            values.append(round(v * scale, 3))
+            slots.append(_scenario_slot(r["scenario"], i))
+        if not values:
+            continue
+        cid = "cmp_" + str(idx)
+        charts.append(_panel(label + ((" [" + unit + "]") if unit and unit != "%" else
+                                      (" [%]" if unit == "%" else "")), cid,
+                             height=60 + 34 * len(values)))
+        js.append("mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps({
+            "type": "bar",
+            "data": {"labels": labels, "datasets": [{
+                "label": label, "data": values,
+                "__slots": slots, "borderRadius": 4, "maxBarThickness": 22}]},
+            "options": {"indexAxis": "y", "responsive": True,
+                        "maintainAspectRatio": False,
+                        "plugins": {"legend": {"display": False}}},
+        }) + "));")
+
+    # timeseries overlays: one line per run (color = scenario slot)
+    for sname, slabel in [("drt_rides", "DRT-Fahrten je Stunde"),
+                          ("drt_wait_mean", "Mittlere Wartezeit je Stunde [s]"),
+                          ("freight_service_stops", "Freight-Stopps je Stunde")]:
+        datasets = []
+        for i, r in enumerate(runs):
+            hrs, vals = _series(r["ts"], sname)
+            if hrs:
+                datasets.append({"label": r["label"],
+                                 "data": [{"x": h, "y": v} for h, v in zip(hrs, vals)],
+                                 "__slot": _scenario_slot(r["scenario"], i),
+                                 "borderWidth": 2, "pointRadius": 0, "tension": 0.25})
+        if datasets:
+            cid = "cmpts_" + sname
+            charts.append(_panel(slabel, cid, height=230))
+            js.append("mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps({
+                "type": "line", "data": {"datasets": datasets},
+                "options": {"responsive": True, "maintainAspectRatio": False,
+                            "parsing": False,
+                            "scales": {"x": {"type": "linear", "min": 0, "max": 30}}},
+            }) + "));")
+
+    # full comparison table: KPI rows, runs as columns
+    all_names = []
+    for r in runs:
+        for _, k in r["kpis"].iterrows():
+            key = (k["kpi_group"], k["kpi_name"], k["unit"])
+            if key not in all_names:
+                all_names.append(key)
+    header = "<tr><th>Gruppe</th><th>KPI</th><th>Einheit</th>" + "".join(
+        "<th>" + r["label"] + "</th>" for r in runs) + "</tr>"
+    body_rows = []
+    for grp, name, unit in all_names:
+        cells = ""
+        for r in runs:
+            m = r["kpis"][(r["kpis"]["kpi_name"] == name) & (r["kpis"]["kpi_group"] == grp)]
+            cells += "<td>" + (str(m.iloc[0]["value"]) if len(m) else "-") + "</td>"
+        body_rows.append("<tr><td>" + grp + "</td><td>" + name + "</td><td>"
+                         + str(unit) + "</td>" + cells + "</tr>")
+    table = ('<h2>Alle KPIs im Vergleich</h2><div class="panel tablewrap">'
+             '<table class="kpis">' + header + "".join(body_rows) + "</table></div>")
+
+    cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table
+
+    # per-run tabs reuse the single-run sections
+    tabs_html = ['<div class="tab on">' + cmp_tab + "</div>"]
+    run_js = []
+    for i, r in enumerate(runs):
+        body, sec_js = render_run_sections(r["kpis"], r["ts"], uid="run" + str(i))
+        tabs_html.append('<div class="tab">' + body + "</div>")
+        run_js.append(sec_js)
+    tabbar = ('<div class="tabbar"><button class="on" onclick="showTab(0)">Vergleich</button>'
+              + "".join('<button onclick="showTab(' + str(i + 1) + ')">' + r["label"]
+                        + "</button>" for i, r in enumerate(runs)) + "</div>")
+
+    # __slots (per-bar colors) needs a tiny resolver extension:
+    body_js = TAB_JS + "\n" + "\n".join(js) + "\n" + "\n".join(run_js)
+    return render_page(title, tabbar + "".join(tabs_html), body_js)
