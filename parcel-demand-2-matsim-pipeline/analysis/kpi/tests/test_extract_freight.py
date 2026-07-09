@@ -87,3 +87,36 @@ def test_extract_freight_falls_back_when_load_per_vehicle_is_empty(tmp_path):
     assert k["freight_vehicles"]["source"] == "TimeDistance_perVehicle"
     assert "avg_max_load" not in k
     assert k["parcels_handled"]["value"] == 485  # delivered = 500 - 10 - 5 (fallback)
+
+
+def test_extract_freight_omits_vehicles_when_time_distance_per_vehicle_missing(tmp_path):
+    """Guard for the real-run path: Load_perVehicle.tsv is header-only on every
+    real HAGRID run (service-based carriers), so the else-branch read of
+    TimeDistance_perVehicle.tsv is the guaranteed path, not a rare fallback.
+    If that file is missing, extract() must omit the freight_vehicles KPI
+    entirely (never emit 0 or crash) while still emitting the carrier-attribute
+    rows (parcels_total, delivery_rate, ...)."""
+    fr = tmp_path / "analysis" / "freight"
+    fr.mkdir(parents=True)
+    (fr / "TimeDistance_perCarrier.tsv").write_text(
+        "carrierId\tnuOfTours\ttourDurations[s]\ttourDurations[h]\ttravelDistances[m]\t"
+        "travelDistances[km]\ttravelTimes[s]\ttravelTimes[h]\tfixedCosts[EUR]\t"
+        "varCostsTime[EUR]\tvarCostsDist[EUR]\ttotalCosts[EUR]\n"
+        "dhl\t25\t573730.0\t159.36944444444444\t3047687.000000002\t3047.6870000000017\t"
+        "296685.0\t82.4125\t4103.4299999999985\t0.0\t1113.0607007804679\t5216.490700780467\n"
+        "ups\t10\t200000.0\t55.55555555555556\t1000000.0\t1000.0\t100000.0\t"
+        "27.77777777777778\t1000.0\t0.0\t400.0\t1400.0\n",
+        encoding="utf-8")
+    (fr / "Load_perVehicle.tsv").write_text(
+        "vehicleId\tvehicleTypeId\tcapacity\tmaxLoad\tmaxLoadPercentage\thandledDemand\t"
+        "load state during tour\n", encoding="utf-8")
+    # No TimeDistance_perVehicle.tsv at all.
+    with gzip.open(tmp_path / "REAL_TEST.output_carriers.xml.gz", "wt", encoding="utf-8") as f:
+        f.write(_CARRIERS_XML)
+
+    rows = extract(tmp_path, "REAL_TEST")
+    k = {r["kpi_name"]: r for r in rows}
+
+    assert "freight_vehicles" not in k
+    assert "parcels_total" in k
+    assert "delivery_rate" in k
