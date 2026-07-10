@@ -35,3 +35,20 @@ def test_carrier_scores_absent_graceful(tmp_path):
     rows = ei.extract(tmp_path, "MINI")
     assert not any(r["series"].startswith("carrier_score_") for r in rows)
     assert any(r["series"] == "drt_rides" for r in rows)
+
+
+def test_write_schema(tmp_path):
+    # Test CSV schema and format constraints
+    rows = ei.extract(FIX, "MINI")
+    class M:
+        run_id = "MINI"
+    out = tmp_path / "kpi_iterations.csv"
+    ei.write(rows, M, out)
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "run_id;series;iteration;value;unit"
+    # every data row has exactly 5 semicolon-separated fields
+    assert all(len(l.split(";")) == 5 for l in lines[1:])
+    # all data rows start with run_id
+    assert all(l.split(";")[0] == "MINI" for l in lines[1:])
+    # iteration field (index 2) must be an integer string
+    assert all(l.split(";")[2].isdigit() for l in lines[1:])
