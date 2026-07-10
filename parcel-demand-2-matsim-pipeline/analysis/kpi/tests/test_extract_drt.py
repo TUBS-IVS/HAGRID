@@ -42,3 +42,30 @@ def test_extract_headline_kpis():
 def test_no_events_no_service_rows():
     rows = extract(FIX, "DRT_TEST")
     assert "service_ratio_shift" not in _by_name(rows)
+
+
+def test_recon_stub_used_without_touching_events_file():
+    stub_recon = {
+        "fleet": {
+            "ratio_active": 0.77,
+            "ratio_shift": 0.55,
+            "util_by_time": 0.42,
+            "sum_shift_s": 3600.0 * 10,
+            "seg_time": {0: 100.0, 1: 200.0, 2: 50.0},
+        }
+    }
+    bogus_events_path = FIX / "does_not_exist.output_events.xml.gz"
+    assert not bogus_events_path.exists()
+
+    rows = extract(FIX, "DRT_TEST", fleet_file=None,
+                    drt_events_cache=bogus_events_path, recon=stub_recon)
+    k = _by_name(rows)
+
+    assert k["service_ratio_active"]["value"] == pytest.approx(0.77)
+    assert k["service_ratio_shift"]["value"] == pytest.approx(0.55)
+    assert k["fleet_utilisation_by_time"]["value"] == pytest.approx(0.42)
+    assert k["fleet_shift_hours"]["value"] == pytest.approx(10.0)
+    seg_t = stub_recon["fleet"]["seg_time"]
+    tot_t = sum(seg_t.values())
+    expected_mean_pax = sum(lv * s for lv, s in seg_t.items()) / tot_t
+    assert k["mean_pax_aboard"]["value"] == pytest.approx(expected_mean_pax)

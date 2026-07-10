@@ -5,6 +5,7 @@ Usage (from analysis/kpi/):
     python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_BASELINE_13052025_married120_iter150_jsprit100
 """
 import argparse
+import sys
 from pathlib import Path
 
 import economics
@@ -14,6 +15,9 @@ import kpi_writer
 import timeseries
 from events_cache import ensure_caches
 from run_meta import load_run_meta
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "drt-headline"))
+import drt_service_time  # noqa: E402
 
 # 1c/1d register their scenario-specific extractors here:
 # each entry: (predicate(run_dir, meta) -> bool, extract(run_dir, prefix) -> rows)
@@ -41,10 +45,16 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
 
     fleet = Path(fleet_file) if fleet_file else _default_fleet_file(run_dir, meta)
 
+    # Reconstruct once (~minutes over the ~95 MB DRT event cache) and share the result
+    # with every consumer instead of each one re-scanning the events.
+    recon = (drt_service_time.reconstruct(str(drt_cache), str(fleet) if fleet else None)
+             if drt_cache else None)
+
     rows = []
     if is_drt:
         rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet,
-                                    drt_events_cache=drt_cache if is_drt else None)
+                                    drt_events_cache=drt_cache if is_drt else None,
+                                    recon=recon)
     if has_freight:
         rows += extract_freight.extract(run_dir, meta.prefix)
     for predicate, extract_fn in EXTRACTORS:
