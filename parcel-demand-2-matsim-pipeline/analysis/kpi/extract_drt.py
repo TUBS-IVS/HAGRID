@@ -13,7 +13,7 @@ import drt_service_time  # noqa: E402
 from common import row  # noqa: E402
 
 
-def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None):
+def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None):
     run_dir = Path(run_dir)
 
     def p(suffix):
@@ -74,8 +74,8 @@ def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None):
             (int(feeder.sum()) / len(pt_trips)) if len(pt_trips) else 0.0, "share", "computed"),
     ]
 
-    if drt_events_cache is not None:
-        r = drt_service_time.reconstruct(
+    if recon is not None or drt_events_cache is not None:
+        r = recon if recon is not None else drt_service_time.reconstruct(
             str(drt_events_cache), str(fleet_file) if fleet_file else None)
         fl = r["fleet"]
         seg_t = fl["seg_time"]
