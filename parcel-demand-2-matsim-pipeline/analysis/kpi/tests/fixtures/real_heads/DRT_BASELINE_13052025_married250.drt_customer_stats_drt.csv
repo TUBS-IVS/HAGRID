@@ -1,0 +1,5 @@
+runId;iteration;rides;rides_pax;groupSize_mean;wait_average;wait_max;wait_p95;wait_p75;wait_median;percentage_WT_below_10;percentage_WT_below_15;inVehicleTravelTime_mean;distance_m_mean;directDistance_m_mean;totalTravelTime_mean;fareAllReferences_mean;rejections;rejectionRate
+DRT_BASELINE_13052025_married250;0;898;898;1;1900.42;59331;10203;1002.75;316;64.25;72.27;6143.1;8367.37;5442.54;8043.52;-0;4;0
+DRT_BASELINE_13052025_married250;1;2611;2611;1;552.26;18921;1342.6;686;281;70.28;83.95;1212.47;7829.81;5165.01;1764.73;-0;52;0.02
+DRT_BASELINE_13052025_married250;2;3820;3820;1;503.6;11938;1127;726;326.5;68.25;84.08;992.77;7742.57;5029.81;1496.37;-0;80;0.02
+DRT_BASELINE_13052025_married250;3;4631;4631;1;466.11;5849;1131;710;324;68.73;84.04;957.83;7728.34;4957.33;1423.94;-0;112;0.02
