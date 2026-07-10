@@ -32,3 +32,22 @@ def test_occupancy_rows_from_recon():
     ot = {r["bin_lo"]: r["value"] for r in rows if r["series"] == "occ_time"}
     assert abs(ot[1] - 0.75) < 1e-9        # 300/(100+300)
     assert not any(r["series"] == "occ_km" for r in rows)   # deferred
+
+    # Zero-range duration: single vehicle active_s/3600 = 1.0 hour
+    # bin_equal_width detects zero range and returns single degenerate bin (1.0, 1.0)
+    dur = [r for r in rows if r["series"] == "drt_tour_duration"]
+    assert len(dur) == 1
+    assert dur[0]["value"] == 1
+    assert dur[0]["bin_lo"] == 1.0 and dur[0]["bin_hi"] == 1.0
+
+
+def test_write_schema(tmp_path):
+    rows = dist.extract(FIX, "MINI", recon=None)
+    class M:
+        run_id = "MINI"
+    out = tmp_path / "kpi_distributions.csv"
+    dist.write(rows, M, out)
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "run_id;series;bin_lo;bin_hi;value;unit"
+    assert all(len(l.split(";")) == 6 for l in lines[1:])
+    assert lines[1].split(";")[0] == "MINI"
