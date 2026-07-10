@@ -52,9 +52,7 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
 
     rows = []
     if is_drt:
-        rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet,
-                                    drt_events_cache=drt_cache if is_drt else None,
-                                    recon=recon)
+        rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet, recon=recon)
     if has_freight:
         rows += extract_freight.extract(run_dir, meta.prefix)
     for predicate, extract_fn in EXTRACTORS:
@@ -69,6 +67,19 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
 
     print("KPI CSVs written to " + str(out) + " (" + str(len(rows)) + " KPIs, "
           + str(len(ts)) + " timeseries points)")
+
+    import extract_iterations, distributions
+    it_rows = extract_iterations.extract(run_dir, meta.prefix)
+    extract_iterations.write(it_rows, meta, out / "kpi_iterations.csv")
+    dist_rows = distributions.extract(run_dir, meta.prefix, recon=recon)
+    distributions.write(dist_rows, meta, out / "kpi_distributions.csv")
+    prov_rows = []
+    if has_freight:
+        import extract_freight_provider as efp
+        prov_rows = efp.extract(run_dir, meta.prefix)
+        efp.write(prov_rows, meta, out / "kpis_provider.csv")
+    print("v2 CSVs: iterations={} distributions={} provider={}".format(
+        len(it_rows), len(dist_rows), len(prov_rows)))
 
     import render
     kpis_df, ts_df = render.load_run_csvs(out)
