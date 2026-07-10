@@ -1,0 +1,4 @@
+runId;iteration;rides;rides_pax;groupSize_mean;wait_average;wait_max;wait_p95;wait_p75;wait_median;percentage_WT_below_10;percentage_WT_below_15;inVehicleTravelTime_mean;distance_m_mean;directDistance_m_mean;totalTravelTime_mean;fareAllReferences_mean;rejections;rejectionRate
+MINI;0;100;100;1;900;5000;2000;1200;600;60;70;600;8000;5000;1500;-0;10;0.09
+MINI;1;200;200;1;500;3000;1300;700;300;70;84;900;7800;5100;1400;-0;5;0.02
+MINI;2;220;220;1;480;2800;1200;690;310;72;85;950;7700;5000;1430;-0;4;0.018
