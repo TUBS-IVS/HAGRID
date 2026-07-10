@@ -29,7 +29,7 @@ class VehicleDef:
 class TourDef:
     vehicle_id: str
     tour_id: str
-    service_ids: list = field(default_factory=list)
+    service_ids: list[str] = field(default_factory=list)
 
     def event_vehicle_id(self, carrier_id):
         return "freight_" + carrier_id + "_veh_" + self.vehicle_id + "_" + self.tour_id
@@ -38,10 +38,10 @@ class TourDef:
 @dataclass
 class CarrierDef:
     carrier_id: str
-    attrs: dict = field(default_factory=dict)
-    services: dict = field(default_factory=dict)
-    vehicles: dict = field(default_factory=dict)
-    tours: list = field(default_factory=list)
+    attrs: dict[str, str] = field(default_factory=dict)
+    services: dict[str, ServiceDef] = field(default_factory=dict)
+    vehicles: dict[str, VehicleDef] = field(default_factory=dict)
+    tours: list[TourDef] = field(default_factory=list)
 
 
 @dataclass
@@ -149,7 +149,7 @@ def _carrier_tours(carrier_el):
     return tours
 
 
-def parse_carriers(carriers_xml_gz):
+def parse_carriers(carriers_xml_gz: Path) -> list[CarrierDef]:
     """Stream-parse carriers.xml.gz -> list[CarrierDef]. Namespace-agnostic
     (tag-suffix matching); parses the selected <plan> only."""
     out = []
@@ -167,7 +167,7 @@ def parse_carriers(carriers_xml_gz):
     return out
 
 
-def parse_vehicle_types(vtypes_xml_gz):
+def parse_vehicle_types(vtypes_xml_gz: Path) -> dict[str, VehTypeDef]:
     """Stream-parse carriersVehicleTypes.xml.gz -> {type_id: VehTypeDef}."""
     out = {}
     with gzip.open(Path(vtypes_xml_gz), "rb") as f:
