@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import shutil
 import sys
 from pathlib import Path
 
@@ -43,3 +44,19 @@ def test_build_writes_all_csvs(tmp_path):
     # drt_wait instead (network-free, events-free -- works even with no_events=True,
     # where recon is None and occ_*/drt_tour_duration rows are absent as expected).
     assert ";drt_wait;" in dist_txt
+
+
+def test_build_survives_missing_vehicle_types_xml(tmp_path):
+    """v2 Plan A final-review: a bad/missing freight XML (here, the vehicle-types
+    gz) must NOT kill the whole build. The DRT path, kpi_iterations.csv, and
+    kpi_distributions.csv (all written before the provider block) must be
+    preserved; only kpis_provider.csv is allowed to be skipped."""
+    d = tmp_path / "drtrun_copy"
+    shutil.copytree(FIX, d)
+    (d / "DRT_TEST.output_carriersVehicleTypes.xml.gz").unlink()
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    assert (out / "kpi_iterations.csv").exists()
+    assert (out / "kpi_distributions.csv").exists()
+    assert not (out / "kpis_provider.csv").exists()

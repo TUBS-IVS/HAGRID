@@ -75,9 +75,12 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     distributions.write(dist_rows, meta, out / "kpi_distributions.csv")
     prov_rows = []
     if has_freight:
-        import extract_freight_provider as efp
-        prov_rows = efp.extract(run_dir, meta.prefix)
-        efp.write(prov_rows, meta, out / "kpis_provider.csv")
+        try:
+            import extract_freight_provider as efp
+            prov_rows = efp.extract(run_dir, meta.prefix)
+            efp.write(prov_rows, meta, out / "kpis_provider.csv")
+        except Exception as e:
+            print("[build] provider KPIs skipped: " + str(e))  # ASCII only
     print("v2 CSVs: iterations={} distributions={} provider={}".format(
         len(it_rows), len(dist_rows), len(prov_rows)))
 
