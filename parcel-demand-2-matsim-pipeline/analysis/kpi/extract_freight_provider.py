@@ -127,8 +127,12 @@ def extract(run_dir, prefix):
     # km/tours/tour_hours are NOT re-allocated -- straight sums from the TSV,
     # grouped carrierId -> provider.
     prov_km, prov_tours, prov_hours = {}, {}, {}
+    unmatched = []
     for _, r in tc.iterrows():
-        prov = carrier_provider.get(r["carrierId"], "other")
+        cid = r["carrierId"]
+        if cid not in carrier_provider:
+            unmatched.append(cid)
+        prov = carrier_provider.get(cid, "other")
         prov_km[prov] = prov_km.get(prov, 0.0) + float(r["travelDistances[km]"])
         prov_tours[prov] = prov_tours.get(prov, 0) + int(r["nuOfTours"])
         prov_hours[prov] = prov_hours.get(prov, 0.0) + float(r["tourDurations[h]"])
@@ -137,6 +141,11 @@ def extract(run_dir, prefix):
     # de-dup while keeping deterministic order
     seen = set()
     providers = [p for p in providers if not (p in seen or seen.add(p))]
+    # Observability: TSV carriers absent from the XML land in an unshown "other"
+    # bucket and their km is dropped silently -- warn so carrierId drift surfaces.
+    if unmatched and "other" not in providers:
+        print("[provider] WARN: {} TSV carrier(s) unmatched to XML, km dropped: {}".format(
+            len(unmatched), ", ".join(str(c) for c in unmatched)))
 
     rows = []
     for prov in providers:
