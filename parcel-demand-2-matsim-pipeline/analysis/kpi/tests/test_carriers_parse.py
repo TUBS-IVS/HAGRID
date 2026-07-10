@@ -12,6 +12,10 @@ def test_parse_vehicle_types():
     assert vt["ct_cep_size_s"].capacity == 100.0
     assert vt["ct_cep_size_s"].fixed_cost_per_day == 150.0
     assert vt["cargoBike_t"].capacity == 30.0
+    assert vt["supply_truck"].capacity == 350.0
+    assert vt["supply_truck"].fixed_cost_per_day == 400.0
+    assert vt["supply_truck"].costs_per_meter == 0.0009
+    assert vt["ct_cep_size_s"].costs_per_meter == 0.0003
 
 
 def test_parse_carriers_structure():
