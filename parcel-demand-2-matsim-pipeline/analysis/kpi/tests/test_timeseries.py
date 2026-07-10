@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -25,6 +26,34 @@ def test_hourly_series():
     assert waits[7] == pytest.approx(350.0)
     rej = _series(rows, "drt_rejections")
     assert rej == {9: 1, 10: 1}   # 35928->9, 36100->10
+
+
+def test_requests_submitted_series():
+    rows = extract(FIX, "DRT_TEST")
+    submitted = _series(rows, "drt_requests_submitted")
+    # submissionTime 25000->6, 25500->7, 29000->8, 36100->10
+    assert submitted == {6: 1, 7: 1, 8: 1, 10: 1}
+
+
+def test_feeder_trips_series():
+    rows = extract(FIX, "DRT_TEST")
+    feeder = _series(rows, "drt_feeder_trips")
+    # only trip 4 (modes walk-drt-walk-pt-walk) has both drt & pt; dep_time 08:20:00 -> hour 8
+    assert feeder == {8: 1}
+    units = {r["series"]: r["unit"] for r in rows}
+    assert units["drt_requests_submitted"] == "requests/h"
+    assert units["drt_feeder_trips"] == "trips/h"
+
+
+def test_requests_submitted_absent_column_skips_gracefully(tmp_path):
+    legs_src = FIX / "DRT_TEST.output_drt_legs_drt.csv"
+    legs = pd.read_csv(legs_src, sep=";")
+    legs = legs.drop(columns=["submissionTime"])
+    legs.to_csv(tmp_path / "NOSUB.output_drt_legs_drt.csv", sep=";", index=False)
+    rows = extract(tmp_path, "NOSUB")
+    assert _series(rows, "drt_requests_submitted") == {}
+    # other series from the same file still extracted
+    assert _series(rows, "drt_rides") != {}
 
 
 def test_freight_cache_series(tmp_path):

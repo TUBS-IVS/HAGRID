@@ -29,12 +29,31 @@ def extract(run_dir, prefix, freight_cache=None):
         for h, wm in g["waitTime"].mean().items():
             rows.append(_ts("drt_wait_mean", h, float(wm), "s"))
 
+        if "submissionTime" in legs.columns:
+            sub_hour = (legs["submissionTime"] // 3600).astype(int)
+            for h, n in sub_hour.value_counts().sort_index().items():
+                rows.append(_ts("drt_requests_submitted", h, int(n), "requests/h"))
+
     rej_f = run_dir / (prefix + ".output_drt_rejections_drt.csv")
     if rej_f.exists():
         rej = pd.read_csv(rej_f, sep=";")
         if len(rej):
             for h, n in (rej["time"] // 3600).astype(int).value_counts().sort_index().items():
                 rows.append(_ts("drt_rejections", h, int(n), "requests/h"))
+
+    trips_f = run_dir / (prefix + ".output_trips.csv.gz")
+    if trips_f.exists():
+        trips = pd.read_csv(trips_f, sep=";")
+        if "modes" in trips.columns and "dep_time" in trips.columns:
+            modes = trips["modes"].astype(str)
+            feeder = trips[modes.str.contains("drt", na=False) & modes.str.contains("pt", na=False)]
+            if len(feeder):
+                # dep_time is "HH:MM:SS" (possibly >24h) in MATSim's output_trips.csv, not raw
+                # seconds -- convert via to_timedelta before bucketing, same // 3600 as elsewhere.
+                dep_s = pd.to_timedelta(feeder["dep_time"], errors="coerce").dt.total_seconds()
+                feeder_hour = (dep_s // 3600).dropna().astype(int)
+                for h, n in feeder_hour.value_counts().sort_index().items():
+                    rows.append(_ts("drt_feeder_trips", h, int(n), "trips/h"))
 
     if freight_cache is not None and Path(freight_cache).exists():
         counts = {}
