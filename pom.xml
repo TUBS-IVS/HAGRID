@@ -35,6 +35,14 @@
   </properties>
 
   <repositories>
+    <!-- Project-local repo: matsim-lausitz jar (JitPack can't build it — no jitpack.yml upstream,
+         defaults to JDK 8; jar built from clean upstream tag v2.0.2). Fresh clones need no manual
+         mvn install. The .mvn/ marker dir anchors maven.multiModuleProjectDirectory to the repo root. -->
+    <repository>
+      <id>hagrid-local-libs</id>
+      <url>file:///${maven.multiModuleProjectDirectory}/libs</url>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
     <repository>
       <id>matsim</id>
       <url>https://repo.matsim.org/repository/matsim</url>
