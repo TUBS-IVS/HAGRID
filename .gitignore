@@ -120,3 +120,7 @@ parcel-demand-2-matsim-pipeline/test/output/
 
 # Root-level run output (DRT_BASELINE etc.) — reproducible, not versioned
 /hagrid-output/
+
+# local-only working files (untracked on purpose)
+SESSION_LOG.md
+parcel-demand-2-matsim-pipeline/analysis/paper-figures/
