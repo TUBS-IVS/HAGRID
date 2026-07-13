@@ -18,21 +18,34 @@ git-nativen Mechanismus: GitHub-Fork mit Patch-Branch, eingebunden als Git-Submo
   upstream `main` (das würde den Build fremdgesteuert brechen, weil upstream gegen neuere
   Core-APIs entwickelt als unsere gepinnte Version).
 
-## Verifizierte Fakten (2026-07-13)
+## Verifizierte Fakten (2026-07-13, Planungs-Grounding)
 
-- `refs/pull/3552/head` existiert upstream: Commit `3eecf93313a997dd4d749d5f306d42fa1e22276a`.
-  Damit kann der Patch-Branch auf **exakt den Source-Stand des Artefakts `2025.0-PR3552`**
-  gesetzt werden — Source und Binary erstmals deckungsgleich.
-- Echte HAGRID-Patches sind nur **zwei** Commits:
-  - `b91b948` — Null-Path-Guards in `jsprit/NetworkBasedTransportCosts.java` reinstated
-    (disconnected networks).
-  - `eef72dd` — `informEndCalc` immer aufrufen + Null-Path-Guard in
-    `controller/CarrierTimeAndSpaceTourRouter.java`; enthält zusätzlich Reformatierungs-Rauschen
-    in `NetworkBasedTransportCosts` (159 Zeilen), semantischer Kern ist klein.
-  - Der dritte "Patch" (`2625dc6`, `calcLeastCostPath`-Node-Args in 3 Dateien inkl.
-    `PassengerScenarioCreator`) war nur ein Kompilier-Fix gegen den API-Drift des alten
-    Snapshots — auf PR3552-Stand kompiliert upstream-freight per Konstruktion gegen den
-    PR3552-Core; entfällt voraussichtlich ersatzlos (bei Ausführung verifizieren).
+- **KORREKTUR gegenüber der Brainstorming-Annahme:** `refs/pull/3552/head` (`3eecf93`) ist von
+  **2024-11-13** und damit ÄLTER als unser Source (Package heißt dort noch `controler`; die
+  Pipeline importiert `org.matsim.freight.carriers.controller` in 6+ Dateien). PR-Head als
+  Branch-Basis würde die Pipeline brechen. **Richtige Basis = Tag `2025.0`** (der Tag heißt
+  upstream `2025.0`, nicht `matsim-2025.0`): Import-Commit `a81bb9e` sagt "extracted from
+  matsim-libs 2025.0", und der Diff Tag↔vendored bestätigt es — **nur die 3 bekannten
+  Patch-Dateien differieren** (plus beim Import weggelassene Dateien: deprecated
+  `controler/`-Package, `CarrierPlanXmlWriterV1/V2`, `CarrierVehicleTypeLoader`,
+  `CarrierVehicleTypeWriterV1`, 2 Writer-Tests, Doxyfile/doxyfilter.sh).
+- **Kompilier-Bruch gegen PR3552-Core sind exakt 2 Zeilen** (empirisch, `mvn -pl freight compile`):
+  `CarrierVehicleTypeReaderV1.java:76` (`VehicleUtils.setFuelConsumptionLitersPerMeter`) und
+  `jsprit/DistanceConstraint.java:86` (`getFuelConsumptionLitersPerMeter`) — die Helper gibt es
+  im Nov-2024-Core noch nicht. Ersatz: direkter Attribut-Zugriff mit Key
+  `"fuelConsumptionLitersPerMeter"` (identisch zu dem, was die 2025.0-Helper intern nutzen →
+  beim späteren Core-Bump verlustfrei rückbaubar).
+- Echte HAGRID-Patches (semantisch, gegen Tag `2025.0` verifiziert via `diff -w`):
+  - `jsprit/NetworkBasedTransportCosts.java`: 3 Methoden bekommen try/finally um die
+    Berechnung (`informEndCalc()` garantiert), `calcLeastCostPath`-Node-Args
+    (`fromLink.getToNode()/toLink.getFromNode()` statt Links), einkommentierte
+    `if (path == null) return Double.MAX_VALUE;`-Guards.
+  - `controller/CarrierTimeAndSpaceTourRouter.java`: Node-Args + Null-Check mit
+    RuntimeException ("Network may be disconnected").
+  - `usecases/chessboard/PassengerScenarioCreator.java`: nur Node-Args (2 Call-Sites).
+- Die Spec `2026-06-05-freight-submodule-design.md` ("Maven-Submodul", explizit "keine
+  Git-Submodule") wird durch diese Spec bewusst **superseded** — das dortige Copy-Vendoring ist
+  genau die Wartungslast, die hier abgelöst wird.
 
 ## Entscheidungen (User)
 
@@ -40,7 +53,7 @@ git-nativen Mechanismus: GitHub-Fork mit Patch-Branch, eingebunden als Git-Submo
 |---|---|---|
 | D1 | Update-Semantik | Git-nativ, bewusst gebumpt; Stand gepinnt auf Ref passend zur `matsim.version` |
 | D2 | Mechanismus | **A: Fork + Submodule** (statt gefiltertem Mirror-Repo oder Patch-Datei-Vendoring) |
-| D3 | Erst-Resync-Ziel | **PR3552-Stand jetzt** (nicht mit dem 2025.0-Bump aus 1c zusammenlegen) |
+| D3 | Erst-Resync-Ziel | **Jetzt, kompatibel zur gepinnten `matsim.version` `2025.0-PR3552`** (nicht mit dem 1c-Bump zusammenlegen). Planungs-Korrektur: Branch-Basis = Tag `2025.0` (= Herkunft des vendored Source, pipeline-API-kompatibel) + 2-Zeilen-Kompat-Patch für den PR3552-Core — NICHT der PR-Head (der ist von Nov 2024 und API-inkompatibel zur Pipeline, s.u.) |
 | D4 | Fork-Ort | `HBimmermann/matsim-libs` (User-Account; Org-Transfer später trivial, nur Submodule-URL ändert sich) |
 | D5 | Wer bumpt | Claude in einer Session; zusätzlich reproduzierbares Skript `resync-freight.ps1`. Fork-`main` aktualisiert sich NICHT automatisch (bewusst — Build hängt nur am Patch-Branch) |
 
@@ -49,12 +62,16 @@ git-nativen Mechanismus: GitHub-Fork mit Patch-Branch, eingebunden als Git-Submo
 ### 1. Fork & Branch-Layout
 
 - Fork `HBimmermann/matsim-libs` (via `gh repo fork matsim-org/matsim-libs`).
-- Branch **`hagrid/2025.0-PR3552`** = `3eecf93` (PR-Head) + 2 Patch-Commits.
-- Die Patches werden **semantisch neu aufgesetzt** (Guards + `informEndCalc` als minimale
-  Diffs gegen den PR3552-Stand), NICHT blind cherry-gepickt — `eef72dd` enthält
-  Reformatierungs-Rauschen, das Konflikte provozieren würde.
-- Beim späteren MATSim-Bump (z.B. 1c Task 1 → `2025.0`) entsteht analog `hagrid/2025.0`
-  per Rebase des Patch-Branches auf den Release-Tag `matsim-2025.0`.
+- Branch **`hagrid/2025.0-PR3552`** = Tag **`2025.0`** + 3 Patch-Commits:
+  1. Parity-Deletions (die beim Vendoring-Import weggelassenen deprecated Dateien:
+     `controler/`-Package, alte Writer, Doxyfile — identischer Klassen-Satz wie heute),
+  2. HAGRID-Fixes (Guards + try/finally-`informEndCalc` + Node-Args in den 3 Dateien —
+     inhaltlich = Datei-Kopie des heutigen vendored Stands, dadurch konfliktfrei exakt),
+  3. PR3552-Core-Kompat (2 Zeilen Fuel-Attribut-Zugriff statt der noch nicht existierenden
+     `VehicleUtils`-Helper).
+- Beim späteren MATSim-Bump (1c Task 1 → Core `2025.0`): Basis-Tag bleibt `2025.0`,
+  es entfällt nur Patch-Commit 3 (Branch `hagrid/2025.0` = Tag + Patches 1-2).
+  Bei größeren Bumps: neuen Branch vom neuen Tag, Patches cherry-picken (`resync-freight.ps1`).
 
 ### 2. Einbindung in HAGRID
 
@@ -102,10 +119,10 @@ Neues **`resync-freight.ps1 -Tag <upstream-ref>`**:
 - **Submodule auf Windows/Sim-PC**: Reibung möglich (Pfade, Bootstrap vergessen). Gegenmittel:
   Bootstrap-Skript + klare Fehlermeldung im Build, wenn das Submodule leer ist
   (z.B. maven-enforcer `requireFilesExist` auf eine Submodule-Datei).
-- **PR-Head vs. PR-Merge-Stand**: Das Artefakt wurde ggf. vom Merge-Commit (PR + damaliger
-  main) gebaut, nur `refs/pull/3552/head` ist verfügbar. Für `contribs/freight` ist die
-  Differenz mit hoher Wahrscheinlichkeit leer; falls der Build dagegen doch nicht kompiliert,
-  Fallback = nächstliegender Weekly-Tag, der gegen PR3552-Core kompiliert.
+- **Freight-Source (2025.0) ≠ Core-Artefakt (PR3552, Nov 2024)**: bewusste Diskrepanz — exakt
+  der Zustand, mit dem alle bisherigen Ergebnisse produziert wurden (der stale `.m2`-Jar wurde
+  aus 2025.0-Source gebaut und läuft seit Wochen gegen den PR3552-Core). Der Kompat-Patch
+  macht diesen Zustand nur endlich reproduzierbar kompilierbar.
 
 ## Out of Scope
 
