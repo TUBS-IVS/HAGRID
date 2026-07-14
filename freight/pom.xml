@@ -129,4 +129,52 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <sourceDirectory>${project.basedir}/../external/matsim-libs/contribs/freight/src/main/java</sourceDirectory>
+    <testSourceDirectory>${project.basedir}/../external/matsim-libs/contribs/freight/src/test/java</testSourceDirectory>
+    <testResources>
+      <!-- The logistics tests resolve this scenario via ExamplesUtils from the classpath
+           (test/scenarios/<name>/). The matsim-examples 2025.0-PR3552 artifact predates the
+           scenario, so we serve it from the pinned submodule tree instead. -->
+      <testResource>
+        <directory>${project.basedir}/../external/matsim-libs/examples/scenarios/logistics-2regions</directory>
+        <targetPath>test/scenarios/logistics-2regions</targetPath>
+      </testResource>
+    </testResources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- MatsimTestUtils resolves test/input relative to the working directory -->
+          <workingDirectory>${project.basedir}/../external/matsim-libs/contribs/freight</workingDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>require-freight-submodule</id>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <requireFilesExist>
+                  <files>
+                    <!-- No ".." in this path: enforcer's RequireFilesExist compares against the
+                         canonical path, so a non-canonical path always reports "missing". -->
+                    <file>${project.parent.basedir}/external/matsim-libs/contribs/freight/src/main/java/org/matsim/freight/carriers/CarriersUtils.java</file>
+                    <file>${project.parent.basedir}/external/matsim-libs/examples/scenarios/logistics-2regions/2regions-network.xml</file>
+                  </files>
+                  <message>freight submodule missing or empty. Run: git submodule update --init external/matsim-libs ; git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions</message>
+                </requireFilesExist>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>
