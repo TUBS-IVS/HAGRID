@@ -52,6 +52,19 @@ values and units use separate aligned columns. This preserves quantitative
 clarity while making the reference panel read as part of the figure rather than
 as a detached table.
 
+The horizontal guides in the benchmark panel terminate before the numeric value
+column so that no rule runs through text.
+
+### Variant E: 2 x 2 with Baseline operating profile
+
+Add a deliberately less tabular alternative while retaining all ten Baseline
+metrics. The panel uses three large weekly-scale indicators for tours, total
+distance, and total vehicle cost; a proportional stacked bar for fixed,
+distance, and overtime cost; and a compact 2 x 2 productivity block for distance
+per tour, cost per parcel, parcels per tour, and vehicle utilization. The other
+three scenario panels remain unchanged. Direct labels make the internal colors
+self-explanatory without expanding the shared figure legend.
+
 ## Files
 
 The notebook cell will save three PDF outputs and matching PNG previews:
@@ -60,6 +73,7 @@ The notebook cell will save three PDF outputs and matching PNG previews:
 - `journal_cost_extra_09_mechanism_index_2x2_legend.pdf`
 - `journal_cost_extra_09_mechanism_index_2x2_baseline.pdf`
 - `journal_cost_extra_09_mechanism_index_2x2_baseline_spine.pdf`
+- `journal_cost_extra_09_mechanism_index_2x2_baseline_profile.pdf`
 
 The existing Full-only output is replaced because all of its information is
 contained in the new comparison figures.
