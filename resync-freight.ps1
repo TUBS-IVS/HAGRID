@@ -19,12 +19,18 @@ function Invoke-Git {
     if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed (exit $LASTEXITCODE)" }
 }
 
-if ($NewBranch -notmatch '^[a-zA-Z0-9._/-]+$' -or $UpstreamRef -notmatch '^[a-zA-Z0-9._/-]+$') {
+# No leading dash (would parse as a git option), then the usual ref charset.
+$refPattern = '^[a-zA-Z0-9._/][a-zA-Z0-9._/-]*$'
+if ($NewBranch -notmatch $refPattern -or $UpstreamRef -notmatch $refPattern) {
     throw "Invalid ref/branch name"
 }
 if (-not $OldBranch) {
     $OldBranch = git config -f .gitmodules submodule.external/matsim-libs.branch
+    if ($LASTEXITCODE -ne 0) { throw "git config read of submodule branch from .gitmodules failed (exit $LASTEXITCODE)" }
     if (-not $OldBranch) { throw "Could not read current branch from .gitmodules" }
+}
+if ($OldBranch -notmatch $refPattern) {
+    throw "Invalid old branch name: $OldBranch"
 }
 
 git config --global core.longpaths true
@@ -37,16 +43,20 @@ Invoke-Git -C $work sparse-checkout set contribs/freight examples/scenarios/logi
 Write-Host "Fetching upstream ref '$UpstreamRef' and old patch branch '$OldBranch'..."
 Invoke-Git -C $work remote add upstream https://github.com/matsim-org/matsim-libs.git
 Invoke-Git -C $work fetch --depth=1 upstream $UpstreamRef
+# Capture the upstream tip NOW: the next fetch overwrites FETCH_HEAD.
+$upstreamSha = git -C $work rev-parse FETCH_HEAD
+if ($LASTEXITCODE -ne 0 -or -not $upstreamSha) { throw "Could not resolve upstream ref '$UpstreamRef' after fetch (exit $LASTEXITCODE)" }
 Invoke-Git -C $work fetch --depth=10 origin $OldBranch
 
 # collect [HAGRID] patch commits from the old branch, oldest first
-$patches = git -C $work log --reverse --format="%H %s" "origin/$OldBranch" |
-    Where-Object { $_ -match '\[HAGRID\]' }
+$logOutput = git -C $work log --reverse --format="%H %s" "origin/$OldBranch"
+if ($LASTEXITCODE -ne 0) { throw "git log on origin/$OldBranch failed (exit $LASTEXITCODE)" }
+$patches = $logOutput | Where-Object { $_ -match '\[HAGRID\]' }
 if (-not $patches) { throw "No [HAGRID] commits found on $OldBranch - aborting" }
 Write-Host "Patch commits to carry over:"
 $patches | ForEach-Object { Write-Host "  $_" }
 
-Invoke-Git -C $work checkout -b $NewBranch FETCH_HEAD
+Invoke-Git -C $work checkout -b $NewBranch $upstreamSha
 foreach ($p in $patches) {
     $sha = ($p -split ' ')[0]
     git -C $work cherry-pick $sha
@@ -65,9 +75,18 @@ Invoke-Git -C $work push origin $NewBranch
 
 Write-Host "Repointing submodule..."
 Invoke-Git config -f .gitmodules submodule.external/matsim-libs.branch $NewBranch
-Invoke-Git -C external/matsim-libs fetch origin $NewBranch
-Invoke-Git -C external/matsim-libs checkout FETCH_HEAD
-Invoke-Git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions
+try {
+    Invoke-Git -C external/matsim-libs fetch origin $NewBranch
+    Invoke-Git -C external/matsim-libs checkout FETCH_HEAD
+    Invoke-Git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions
+} catch {
+    Write-Host ""
+    Write-Host "WARNING: .gitmodules was already rewritten to branch '$NewBranch', but the" -ForegroundColor Yellow
+    Write-Host "submodule worktree update failed - the repo is in an inconsistent state." -ForegroundColor Yellow
+    Write-Host "Either retry the submodule fetch/checkout manually, or restore with:" -ForegroundColor Yellow
+    Write-Host "  git checkout -- .gitmodules" -ForegroundColor Yellow
+    throw
+}
 
 Write-Host ""
 Write-Host "Done. Now (manually, same commit):"
