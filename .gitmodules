@@ -1,0 +1,5 @@
+[submodule "external/matsim-libs"]
+	path = external/matsim-libs
+	url = https://github.com/TUBS-IVS/matsim-libs.git
+	branch = hagrid/2025.0-PR3552
+	shallow = true
