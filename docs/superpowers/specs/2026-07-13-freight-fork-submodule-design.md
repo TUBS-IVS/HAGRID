@@ -69,6 +69,9 @@ git-nativen Mechanismus: GitHub-Fork mit Patch-Branch, eingebunden als Git-Submo
      inhaltlich = Datei-Kopie des heutigen vendored Stands, dadurch konfliktfrei exakt),
   3. PR3552-Core-Kompat (2 Zeilen Fuel-Attribut-Zugriff statt der noch nicht existierenden
      `VehicleUtils`-Helper).
+  - Ausführungs-Update 2026-07-14: es sind 4 Patch-Commits geworden — der PR3552-Core-Kompat-Patch
+    brauchte einen zweiten Commit für 17 weitere Call-Sites in 8 Upstream-Testdateien (testCompile).
+    resync-freight.ps1 ist marker-basiert und zählt nicht.
 - Beim späteren MATSim-Bump (1c Task 1 → Core `2025.0`): Basis-Tag bleibt `2025.0`,
   es entfällt nur Patch-Commit 3 (Branch `hagrid/2025.0` = Tag + Patches 1-2).
   Bei größeren Bumps: neuen Branch vom neuen Tag, Patches cherry-picken (`resync-freight.ps1`).
