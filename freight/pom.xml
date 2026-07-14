@@ -145,6 +145,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
         <configuration>
           <!-- MatsimTestUtils resolves test/input relative to the working directory -->
           <workingDirectory>${project.basedir}/../external/matsim-libs/contribs/freight</workingDirectory>

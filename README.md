@@ -138,8 +138,10 @@ shadow the fresh build output and produce confusing failures. `mvn clean` clears
 Clone this repository:
 
 ```
-git clone https://github.com/YourUserName/ParcelDemandScenarioGenerator.git
+git clone --recurse-submodules https://github.com/TUBS-IVS/HAGRID.git
 ```
+
+See the `## Setup` section above for the full bootstrap (submodule sparse-checkout, Windows longpaths).
 
 Navigate into the project folder:
 
