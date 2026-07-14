@@ -28,6 +28,7 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
 1. [Overview & Key Features](#1-overview--key-features)  
 2. [Repository Structure](#2-repository-structure)  
 3. [Data Sources](#3-data-sources)  
+- [Setup](#setup) (freight submodule / clone & bootstrap)  
 4. [Installation](#4-installation)  
 5. [Notebook Workflow](#5-notebook-workflow)  
 6. [Supported Output Formats](#6-supported-output-formats)  
@@ -107,6 +108,30 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
     → Source: Bienzeisler, L., Lelke, T., Wage, O., Thiel, F., & Friedrich, B. (2020). *Development of an Agent-Based Transport Model for the City of Hanover Using Empirical Mobility Data and Data Fusion.* Transportation Research Procedia, 47, 99–106. https://doi.org/10.1016/j.trpro.2020.03.073. Extended these datasets from follow-up developments of the MATSim Hanover Region model  
   - Carrier-specific parcel demand data (e.g., DHL datasets – not publicly available)
 
+
+## Setup
+
+The freight module sources live in a git submodule (`external/matsim-libs`, a patched
+fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-submodule-design.md`).
+
+**Fresh clone:**
+
+    git config --global core.longpaths true   # Windows only, required once
+    git clone --recurse-submodules https://github.com/TUBS-IVS/HAGRID.git
+    cd HAGRID
+    git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions   # optional, trims ~1 GB of unrelated contribs
+    mvn install
+
+**Existing clone (after pulling this change):**
+
+    git submodule update --init external/matsim-libs
+    git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions
+
+**Bumping the MATSim/freight version:** see `resync-freight.ps1` (header comment).
+
+**IDE stale-build gotcha:** if Eclipse or VS Code's Java tooling has compiled a broken
+workspace (e.g. mid-refactor), stale `.class` stubs left behind in `target/classes` can
+shadow the fresh build output and produce confusing failures. `mvn clean` clears them out.
 
   ## 4. Installation
 
