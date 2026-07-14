@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the copy-vendored `freight/src` with a git-native setup: fork `HBimmermann/matsim-libs` carries branch `hagrid/2025.0-PR3552` (= upstream tag `2025.0` + 3 HAGRID patch commits), consumed as a shallow+sparse git submodule at `external/matsim-libs`; HAGRID's own `freight/pom.xml` redirects its source dirs into the submodule.
+**Goal:** Replace the copy-vendored `freight/src` with a git-native setup: fork `TUBS-IVS/matsim-libs` carries branch `hagrid/2025.0-PR3552` (= upstream tag `2025.0` + 3 HAGRID patch commits), consumed as a shallow+sparse git submodule at `external/matsim-libs`; HAGRID's own `freight/pom.xml` redirects its source dirs into the submodule.
 
 **Architecture:** See spec `docs/superpowers/specs/2026-07-13-freight-fork-submodule-design.md`. The Maven module `freight` keeps its artifact identity (`hagrid:freight:1.0-SNAPSHOT`) — only where its sources live changes. Future MATSim bumps become: new branch on the fork from the new tag + cherry-picked patches + submodule pointer bump (scripted in `resync-freight.ps1`).
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - `matsim.version` stays `2025.0-PR3552` — this plan does NOT bump MATSim.
-- Work on branch `hendrik`. Never push HAGRID to origin without the user asking; pushing the FORK (new repo `HBimmermann/matsim-libs`) is part of the plan and pre-approved.
+- Work on branch `hendrik`. Never push HAGRID to origin without the user asking; pushing the FORK (new repo `TUBS-IVS/matsim-libs`) is part of the plan and pre-approved.
 - Windows: `git config --global core.longpaths true` before any matsim-libs checkout (deep upstream paths exceed MAX_PATH otherwise — empirically hit during planning).
 - PowerShell 5.1: no `&&`/`||` chaining; `-Encoding utf8` when writing files other tools read. NEVER create/edit `.bat` files with Edit/Write tools.
 - All commands run from repo root `c:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID` unless stated.
@@ -23,7 +23,7 @@
 | Action | Path | Purpose |
 |---|---|---|
 | Create | `parcel-demand-2-matsim-pipeline/src/test/java/hagrid/freight/NetworkBasedTransportCostsGuardTest.java` | Pins the null-path guard behavior across the source switch |
-| Create (GitHub) | fork `HBimmermann/matsim-libs`, branch `hagrid/2025.0-PR3552` | Patched freight source of record |
+| Create (GitHub) | fork `TUBS-IVS/matsim-libs`, branch `hagrid/2025.0-PR3552` | Patched freight source of record |
 | Create | `.gitmodules` + gitlink `external/matsim-libs` | Submodule wiring |
 | Modify | `freight/pom.xml` | sourceDirectory/testSourceDirectory redirect, surefire workingDirectory, enforcer guard |
 | Delete | `freight/src/`, `freight/test/`, `sync-freight-upstream.ps1` | Vendored copy + old sync mechanism |
@@ -132,12 +132,12 @@ git commit -m "test(freight): pin null-path guard behavior before submodule swit
 Create the fork and build the patch branch: tag `2025.0` + 3 commits. Commit 2 is literally "copy the 3 files from HAGRID's vendored tree" — the vendored files ARE the desired end state (verified during planning: `diff -w` tag↔vendored shows only these 3 files differ). Commit 3 fixes the 2 fuel-helper lines for the PR3552 core.
 
 **Files:**
-- Create (GitHub): repo `HBimmermann/matsim-libs`, branch `hagrid/2025.0-PR3552`
+- Create (GitHub): repo `TUBS-IVS/matsim-libs`, branch `hagrid/2025.0-PR3552`
 - Working dir: `$env:TEMP`-scratchpad clone (short path!), NOT inside HAGRID
 
 **Interfaces:**
 - Consumes: HAGRID's current `freight/src` (as patch source for commit 2).
-- Produces: branch `hagrid/2025.0-PR3552` on `https://github.com/HBimmermann/matsim-libs.git` — Task 3 adds it as submodule. Patch commits carry the marker string `[HAGRID]` in their subject so `resync-freight.ps1` can find them mechanically.
+- Produces: branch `hagrid/2025.0-PR3552` on `https://github.com/TUBS-IVS/matsim-libs.git` — Task 3 adds it as submodule. Patch commits carry the marker string `[HAGRID]` in their subject so `resync-freight.ps1` can find them mechanically.
 
 - [ ] **Step 1: Create the fork (no clone)**
 
@@ -145,7 +145,7 @@ Create the fork and build the patch branch: tag `2025.0` + 3 commits. Commit 2 i
 gh repo fork matsim-org/matsim-libs --clone=false
 ```
 
-Expected: `✓ Created fork HBimmermann/matsim-libs` (or "already exists" — both fine).
+Expected: `✓ Created fork TUBS-IVS/matsim-libs` (or "already exists" — both fine).
 
 - [ ] **Step 2: Shallow-clone the fork at tag 2025.0, sparse to contribs/freight**
 
@@ -155,7 +155,7 @@ Use a SHORT work dir to stay clear of MAX_PATH even before longpaths kicks in:
 git config --global core.longpaths true
 $work = "$env:USERPROFILE\ml-fork-work"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
-git clone --no-checkout --filter=blob:none https://github.com/HBimmermann/matsim-libs.git $work
+git clone --no-checkout --filter=blob:none https://github.com/TUBS-IVS/matsim-libs.git $work
 git -C $work fetch --depth=1 origin tag 2025.0
 git -C $work sparse-checkout set contribs/freight
 git -C $work checkout -b hagrid/2025.0-PR3552 2025.0
@@ -249,7 +249,7 @@ Expected: exactly 2 files (`CarrierVehicleTypeReaderV1.java`, `DistanceConstrain
 git -C $work push origin hagrid/2025.0-PR3552
 ```
 
-Expected: branch visible at `https://github.com/HBimmermann/matsim-libs/tree/hagrid/2025.0-PR3552`. Keep `$work` around until Task 6 passes (cheap re-push if fixes needed).
+Expected: branch visible at `https://github.com/TUBS-IVS/matsim-libs/tree/hagrid/2025.0-PR3552`. Keep `$work` around until Task 6 passes (cheap re-push if fixes needed).
 
 ---
 
@@ -260,7 +260,7 @@ Expected: branch visible at `https://github.com/HBimmermann/matsim-libs/tree/hag
 - Create: gitlink entry `external/matsim-libs`
 
 **Interfaces:**
-- Produces: worktree path `external/matsim-libs/contribs/freight/` — Task 4's POM points there. `.gitmodules` entries: `path = external/matsim-libs`, `url = https://github.com/HBimmermann/matsim-libs.git`, `branch = hagrid/2025.0-PR3552`, `shallow = true`.
+- Produces: worktree path `external/matsim-libs/contribs/freight/` — Task 4's POM points there. `.gitmodules` entries: `path = external/matsim-libs`, `url = https://github.com/TUBS-IVS/matsim-libs.git`, `branch = hagrid/2025.0-PR3552`, `shallow = true`.
 
 - [ ] **Step 1: Pre-check ignore rules**
 
@@ -273,7 +273,7 @@ Expected: NO output (exit 1 = not ignored — good). If a `.gitignore` rule matc
 - [ ] **Step 2: Add submodule (shallow), then sparse-checkout inside it**
 
 ```powershell
-git submodule add -b hagrid/2025.0-PR3552 https://github.com/HBimmermann/matsim-libs.git external/matsim-libs
+git submodule add -b hagrid/2025.0-PR3552 https://github.com/TUBS-IVS/matsim-libs.git external/matsim-libs
 git config -f .gitmodules submodule.external/matsim-libs.shallow true
 git -C external/matsim-libs sparse-checkout set contribs/freight
 ```
@@ -412,7 +412,7 @@ git commit -m "build: freight module sources from external/matsim-libs submodule
 param(
     [Parameter(Mandatory)][string]$UpstreamRef,
     [Parameter(Mandatory)][string]$NewBranch,
-    [string]$Fork = "https://github.com/HBimmermann/matsim-libs.git",
+    [string]$Fork = "https://github.com/TUBS-IVS/matsim-libs.git",
     [string]$OldBranch = ""  # default: current submodule branch from .gitmodules
 )
 
