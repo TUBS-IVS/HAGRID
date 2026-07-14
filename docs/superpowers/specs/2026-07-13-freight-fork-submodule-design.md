@@ -54,14 +54,14 @@ git-nativen Mechanismus: GitHub-Fork mit Patch-Branch, eingebunden als Git-Submo
 | D1 | Update-Semantik | Git-nativ, bewusst gebumpt; Stand gepinnt auf Ref passend zur `matsim.version` |
 | D2 | Mechanismus | **A: Fork + Submodule** (statt gefiltertem Mirror-Repo oder Patch-Datei-Vendoring) |
 | D3 | Erst-Resync-Ziel | **Jetzt, kompatibel zur gepinnten `matsim.version` `2025.0-PR3552`** (nicht mit dem 1c-Bump zusammenlegen). Planungs-Korrektur: Branch-Basis = Tag `2025.0` (= Herkunft des vendored Source, pipeline-API-kompatibel) + 2-Zeilen-Kompat-Patch für den PR3552-Core — NICHT der PR-Head (der ist von Nov 2024 und API-inkompatibel zur Pipeline, s.u.) |
-| D4 | Fork-Ort | `HBimmermann/matsim-libs` (User-Account; Org-Transfer später trivial, nur Submodule-URL ändert sich) |
+| D4 | Fork-Ort | `TUBS-IVS/matsim-libs` (bestehender Org-Fork; User-Entscheidung 2026-07-14, ersetzt die ursprüngliche Wahl des persönlichen Accounts. Fork hat den Tag `2025.0` NICHT — egal, der Branch-Push vom Arbeitsclone lädt die Objekte hoch) |
 | D5 | Wer bumpt | Claude in einer Session; zusätzlich reproduzierbares Skript `resync-freight.ps1`. Fork-`main` aktualisiert sich NICHT automatisch (bewusst — Build hängt nur am Patch-Branch) |
 
 ## Design
 
 ### 1. Fork & Branch-Layout
 
-- Fork `HBimmermann/matsim-libs` (via `gh repo fork matsim-org/matsim-libs`).
+- Fork `TUBS-IVS/matsim-libs` (via `gh repo fork matsim-org/matsim-libs`).
 - Branch **`hagrid/2025.0-PR3552`** = Tag **`2025.0`** + 3 Patch-Commits:
   1. Parity-Deletions (die beim Vendoring-Import weggelassenen deprecated Dateien:
      `controler/`-Package, alte Writer, Doxyfile — identischer Klassen-Satz wie heute),
