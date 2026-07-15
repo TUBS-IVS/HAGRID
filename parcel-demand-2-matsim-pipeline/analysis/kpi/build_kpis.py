@@ -84,6 +84,12 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     print("v2 CSVs: iterations={} distributions={} provider={}".format(
         len(it_rows), len(dist_rows), len(prov_rows)))
 
+    import extract_vehicles
+    veh_rows = extract_vehicles.extract(run_dir, meta.prefix, recon=recon)
+    if veh_rows:
+        extract_vehicles.write(veh_rows, meta, out / "kpi_vehicles.csv")
+    print("kpi_vehicles: {} rows".format(len(veh_rows)))
+
     import render
     kpis_df, ts_df = render.load_run_csvs(out)
     html = render.render_run_page(kpis_df, ts_df, title=meta.run_id)
