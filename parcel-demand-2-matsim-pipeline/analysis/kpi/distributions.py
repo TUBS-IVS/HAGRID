@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import carriers_parse
+
 
 def _dist(series, bin_lo, bin_hi, value, unit):
     return {"series": series, "bin_lo": bin_lo, "bin_hi": bin_hi,
@@ -87,6 +89,14 @@ def extract(run_dir, prefix, recon=None):
             rows.append(_dist("lmd_tour_distance", lo, hi, int(n), "km"))
         for (lo, hi), n in bin_fixed(tv["tourDuration[h]"], 0.5).items():
             rows.append(_dist("lmd_tour_duration", lo, hi, int(n), "h"))
+
+    carriers_xml = run_dir / (prefix + ".output_carriers.xml.gz")
+    if carriers_xml.exists():
+        scores = [c.selected_plan_score for c in carriers_parse.parse_carriers(carriers_xml)
+                  if c.selected_plan_score is not None]
+        if scores:
+            for (lo, hi), n in bin_equal_width(scores, 12).items():
+                rows.append(_dist("lmd_carrier_score", lo, hi, int(n), "score"))
 
     print("[distributions] drt_tour_distance/occ_km deferred to Plan D (needs network km)")
     return rows

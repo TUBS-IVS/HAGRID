@@ -37,3 +37,9 @@ def test_carrier_attrs_not_polluted_by_service_attrs():
     # regression: carrier attrs must not accidentally include service-level names
     cs = {c.carrier_id: c for c in cp.parse_carriers(FIX / "MINI.output_carriers.xml.gz")}
     assert "capacityDemand" not in cs["dhl"].attrs
+
+
+def test_selected_plan_score():
+    cs = {c.carrier_id: c for c in cp.parse_carriers(FIX / "MINI.output_carriers.xml.gz")}
+    assert cs["dhl"].selected_plan_score == -100.0
+    assert cs["hermes"].selected_plan_score == -40.0

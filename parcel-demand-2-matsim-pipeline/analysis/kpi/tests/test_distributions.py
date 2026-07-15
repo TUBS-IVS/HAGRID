@@ -41,6 +41,14 @@ def test_occupancy_rows_from_recon():
     assert dur[0]["bin_lo"] == 1.0 and dur[0]["bin_hi"] == 1.0
 
 
+def test_lmd_carrier_score_bins():
+    rows = dist.extract(FIX, "MINI", recon=None)
+    sc = [r for r in rows if r["series"] == "lmd_carrier_score"]
+    assert sc, "expected lmd_carrier_score rows"
+    assert sum(r["value"] for r in sc) == 3          # 3 carriers with a score
+    assert min(r["bin_lo"] for r in sc) <= -500.0
+
+
 def test_write_schema(tmp_path):
     rows = dist.extract(FIX, "MINI", recon=None)
     class M:

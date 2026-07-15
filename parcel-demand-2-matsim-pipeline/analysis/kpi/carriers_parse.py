@@ -42,6 +42,7 @@ class CarrierDef:
     services: dict[str, ServiceDef] = field(default_factory=dict)
     vehicles: dict[str, VehicleDef] = field(default_factory=dict)
     tours: list[TourDef] = field(default_factory=list)
+    selected_plan_score: float | None = None
 
 
 @dataclass
@@ -128,6 +129,20 @@ def _selected_plan(carrier_el):
     return None
 
 
+def _selected_plan_score(carrier_el):
+    """Selected plan's `score` attr as float, or None when absent/unparseable."""
+    plan_el = _selected_plan(carrier_el)
+    if plan_el is None:
+        return None
+    v = plan_el.get("score")
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _carrier_tours(carrier_el):
     tours = []
     plan_el = _selected_plan(carrier_el)
@@ -162,6 +177,7 @@ def parse_carriers(carriers_xml_gz: Path) -> list[CarrierDef]:
                     services=_carrier_services(el),
                     vehicles=_carrier_vehicles(el),
                     tours=_carrier_tours(el),
+                    selected_plan_score=_selected_plan_score(el),
                 ))
                 el.clear()
     return out
