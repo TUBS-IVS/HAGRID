@@ -137,6 +137,7 @@ public final class SimulationRunnerUtils {
                 map.getOrDefault("studyArea", "HANNOVER").trim().toUpperCase());
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
         boolean drtWithFreight = bool(map.getOrDefault("freight", "true"), "freight");
+        boolean kpiDashboard = bool(map.getOrDefault("kpiDashboard", "true"), "kpiDashboard");
 
         // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
         boolean requiresLausitz;
@@ -171,12 +172,12 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
-                drtWithFreight);
+                drtWithFreight, kpiDashboard);
     }
 
     /**
