@@ -25,6 +25,17 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-14._
   unterbrochenen Grilling-Pass auf dem Plan fortsetzen.
   → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md), [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md)
   _(added 2026-07-14)_
+  - **Design-Input: Passenger-Parcel Compensation (PPC)** — Profit-Redistribution-Mechanismus
+    (Calabro et al. 2026): Fahrgäste, die paketbedingte Umwege tolerieren, werden aus dem
+    Netto-Gewinn der Paketintegration per Fahrpreis-Rabatt entschädigt
+    (PPC = (Netto-Gewinn − aggregierter Fahrgast-Diskomfort) / Fahrgastzahl). Adressiert
+    Nutzerakzeptanz — eine der zwei Standing-Barrieren für Passenger-Freight-Integration
+    (die andere: Regulierung). Synthetisches Fallbeispiel: PPC ≈ 0,11–0,24 €/Fahrgast bei
+    100 Paketen/Tag (500 Fahrgastanfragen/Tag); bei 200 Paketen/Tag steigt PPC auf
+    ≈ 0,21–0,28 €, aber Zustellerfolgsquote fällt auf 70–76 % (Zuverlässigkeitsproblem).
+    Autoren empfehlen öffentliche statt Operator-Finanzierung. HAGRIDs Shared-Use-Szenario
+    misst bislang nur operative Machbarkeit, keine Fahrgast-Kompensation — vor der
+    Evaluation als Erweiterung prüfen. _(added 2026-07-15)_
 
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
   **Plan noch nicht geschrieben** (soll nach dem 1c-Plan entstehen, erbt Infra-Entscheidungen von 1c).
