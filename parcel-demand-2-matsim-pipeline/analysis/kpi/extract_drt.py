@@ -41,6 +41,13 @@ def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None)
             float(cs["distance_m_mean"]) / float(cs["directDistance_m_mean"]),
             "ratio", "computed"),
     ]
+    if "rides_pax" in cs.index:
+        rows.append(row("passenger", "drt_passengers", int(cs["rides_pax"]),
+                         "pax", "drt_customer_stats"))
+    if "distance_m_mean" in cs.index:
+        rows.append(row("passenger", "drt_trip_distance_mean",
+                         float(cs["distance_m_mean"]) / 1000.0,
+                         "km", "drt_customer_stats"))
 
     vs = pd.read_csv(p(".drt_vehicle_stats_drt.csv"), sep=";").iloc[-1]
     rows += [
@@ -89,4 +96,19 @@ def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None)
                 (sum(lv * s for lv, s in seg_t.items()) / tot_t) if tot_t else 0.0,
                 "pax", "events"),
         ]
+        if "util_by_trips" in fl:
+            rows.append(row("system", "fleet_utilisation_by_trips",
+                             fl["util_by_trips"], "share", "events"))
+        if "tour_s" in fl:
+            rows.append(row("system", "drt_tour_hours_total",
+                             fl["tour_s"] / 3600.0, "h", "events"))
+        if "drive_s" in fl:
+            rows.append(row("system", "drt_drive_hours_total",
+                             fl["drive_s"] / 3600.0, "h", "events"))
+        if "waiting_s" in fl:
+            rows.append(row("system", "drt_wait_hours_total",
+                             fl["waiting_s"] / 3600.0, "h", "events"))
+        if "stop_s" in fl:
+            rows.append(row("system", "drt_service_hours_total",
+                             fl["stop_s"] / 3600.0, "h", "events"))
     return rows

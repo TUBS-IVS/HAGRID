@@ -52,6 +52,11 @@ def test_recon_stub_used_without_touching_events_file():
             "util_by_time": 0.42,
             "sum_shift_s": 3600.0 * 10,
             "seg_time": {0: 100.0, 1: 200.0, 2: 50.0},
+            "util_by_trips": 0.25,
+            "tour_s": 360000.0,
+            "drive_s": 200000.0,
+            "waiting_s": 100000.0,
+            "stop_s": 60000.0,
         }
     }
     bogus_events_path = FIX / "does_not_exist.output_events.xml.gz"
@@ -69,3 +74,17 @@ def test_recon_stub_used_without_touching_events_file():
     tot_t = sum(seg_t.values())
     expected_mean_pax = sum(lv * s for lv, s in seg_t.items()) / tot_t
     assert k["mean_pax_aboard"]["value"] == pytest.approx(expected_mean_pax)
+    assert k["fleet_utilisation_by_trips"]["value"] == pytest.approx(0.25)
+    assert k["drt_tour_hours_total"]["value"] == pytest.approx(100.0)
+    assert k["drt_drive_hours_total"]["value"] == pytest.approx(55.5556, abs=1e-4)
+    assert k["drt_wait_hours_total"]["value"] == pytest.approx(27.7778, abs=1e-4)
+    assert k["drt_service_hours_total"]["value"] == pytest.approx(16.6667, abs=1e-4)
+
+
+def test_customer_stats_tile_kpis_without_recon():
+    # Values hard-coded from tests/fixtures/drtrun/DRT_TEST.drt_customer_stats_drt.csv
+    # last (only) row: rides_pax=9171, distance_m_mean=10967.72
+    rows = extract(FIX, "DRT_TEST")
+    k = _by_name(rows)
+    assert k["drt_passengers"]["value"] == 9171
+    assert k["drt_trip_distance_mean"]["value"] == pytest.approx(10.96772)
