@@ -272,6 +272,7 @@ public final class SimulationRunnerUtils {
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
             writeRunMetadataSafely(cfg);
+            KpiDashboardTrigger.triggerSafely(cfg);
             return;
         }
 
@@ -304,6 +305,7 @@ public final class SimulationRunnerUtils {
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
             writeRunMetadataSafely(cfg);
+            KpiDashboardTrigger.triggerSafely(cfg);
             return;
         }
 
@@ -333,6 +335,7 @@ public final class SimulationRunnerUtils {
 
         logDuration("Simulation '" + cfg.getRunId() + "'", t0);
         writeRunMetadataSafely(cfg);
+        KpiDashboardTrigger.triggerSafely(cfg);
 
         // GC hint between scenarios
         System.gc();

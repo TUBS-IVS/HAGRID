@@ -1,6 +1,7 @@
 package hagrid.integrated.freight;
 
 import hagrid.simulation.HAGRIDSimulationConfig;
+import hagrid.simulation.KpiDashboardTrigger;
 import hagrid.simulation.SimulationRunnerUtils;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
@@ -39,5 +40,16 @@ class LmdBaselineEndToEndTest {
         assertThat(Files.exists(cfg.getOutputDirectory().resolve(
                 hagrid.simulation.RunMetadataWriter.FILE_NAME)))
                 .as("run_metadata.json missing from LMD baseline MATSim output dir").isTrue();
+
+        // v2 Plan B: the auto-trigger must have produced the Python KPI dashboard.
+        // Skip (not fail) on machines without python on PATH — the trigger itself is
+        // failure-tolerant, so only the assertion needs the guard.
+        boolean pythonAvailable = KpiDashboardTrigger.runProcess(
+                java.util.List.of("python", "--version"), null, 1);
+        org.junit.jupiter.api.Assumptions.assumeTrue(pythonAvailable, "python not on PATH");
+        assertThat(java.nio.file.Files.exists(
+                cfg.getOutputDirectory().resolve("analysis").resolve("kpi_dashboard.html")))
+                .as("kpiDashboard=true (default) must produce analysis/kpi_dashboard.html")
+                .isTrue();
     }
 }
