@@ -126,7 +126,7 @@ def extract(run_dir, prefix):
 
     # km/tours/tour_hours are NOT re-allocated -- straight sums from the TSV,
     # grouped carrierId -> provider.
-    prov_km, prov_tours, prov_hours = {}, {}, {}
+    prov_km, prov_tours, prov_hours, prov_travel_hours = {}, {}, {}, {}
     unmatched = []
     for _, r in tc.iterrows():
         cid = r["carrierId"]
@@ -136,6 +136,15 @@ def extract(run_dir, prefix):
         prov_km[prov] = prov_km.get(prov, 0.0) + float(r["travelDistances[km]"])
         prov_tours[prov] = prov_tours.get(prov, 0) + int(r["nuOfTours"])
         prov_hours[prov] = prov_hours.get(prov, 0.0) + float(r["tourDurations[h]"])
+        prov_travel_hours[prov] = prov_travel_hours.get(prov, 0.0) + float(r["travelTimes[h]"])
+
+    # score: sum of selected_plan_score per provider (skip carriers with no score)
+    prov_score = {}
+    for c in pf.carriers:
+        if c.selected_plan_score is None:
+            continue
+        prov = carrier_provider[c.carrier_id]
+        prov_score[prov] = prov_score.get(prov, 0.0) + c.selected_plan_score
 
     providers = sorted(carrier_provider.values())
     # de-dup while keeping deterministic order
@@ -214,6 +223,9 @@ def extract(run_dir, prefix):
             prow(prov, "tours", tours, "tours", "TimeDistance_perCarrier"),
             prow(prov, "km", km, "km", "TimeDistance_perCarrier"),
             prow(prov, "tour_hours", tour_hours, "h", "TimeDistance_perCarrier"),
+            prow(prov, "travel_hours", prov_travel_hours.get(prov, 0.0), "h",
+                 "TimeDistance_perCarrier"),
+            prow(prov, "score", prov_score.get(prov, 0.0), "score", "carrier plan score"),
             prow(prov, "cost_fixed", cost_fixed, "EUR", "carrier vehicle types (re-allocated)"),
             prow(prov, "cost_dist", cost_dist, "EUR", "carrier attributes (re-allocated)"),
             prow(prov, "cost_time", cost_time, "EUR", "carrier attributes (re-allocated)"),
@@ -227,11 +239,33 @@ def extract(run_dir, prefix):
             prow(prov, "excluded_vehicles", excluded_n, "vehicles", "computed"),
         ]
 
+    rows += _all_rows(pf, carrier_ctype, prov_travel_hours)
     rows += _vehicle_type_rows(pf, tv)
 
     print("[provider] {} providers, {} excluded delivery vehicles".format(
         len(providers), len(excluded)))
     return rows
+
+
+def _all_rows(pf, carrier_ctype, prov_travel_hours):
+    """provider="all" summary rows across every carrier/provider."""
+    carriers_delivery = sum(1 for ct in carrier_ctype.values() if ct == "delivery")
+    carriers_supply = sum(1 for ct in carrier_ctype.values() if ct == "supply")
+
+    surviving_delivery = [vr for vr in pf.vehrecords
+                          if not vr.excluded and vr.ctype == "delivery"]
+    stops_n = sum(vr.stops for vr in surviving_delivery)
+    avg_lf = ((sum(vr.load_factor for vr in surviving_delivery) / len(surviving_delivery))
+              if surviving_delivery else 0.0)
+    travel_hours = sum(prov_travel_hours.values())
+
+    return [
+        prow("all", "carriers_delivery", carriers_delivery, "carriers", "carrier attributes"),
+        prow("all", "carriers_supply", carriers_supply, "carriers", "carrier attributes"),
+        prow("all", "stops", stops_n, "stops", "computed"),
+        prow("all", "avg_load_factor", avg_lf, "share", "computed"),
+        prow("all", "travel_hours", travel_hours, "h", "TimeDistance_perCarrier"),
+    ]
 
 
 def _vehicle_type_rows(pf, tv):

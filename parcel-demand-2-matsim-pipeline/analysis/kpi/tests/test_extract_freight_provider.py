@@ -53,6 +53,22 @@ def test_supply_provider_present_but_not_double_counted():
     assert _by(rows, "amazon", "km") == 200.0
 
 
+def test_travel_hours_and_score_per_provider():
+    rows = efp.extract(FIX, "MINI")
+    assert _by(rows, "dhl", "travel_hours") == 8.333
+    assert _by(rows, "dhl", "score") == -100.0
+
+
+def test_all_rows():
+    rows = efp.extract(FIX, "MINI")
+    assert _by(rows, "all", "carriers_delivery") == 2
+    assert _by(rows, "all", "carriers_supply") == 1
+    # surviving delivery vehicles: dhl v0 (2 stops, lf 0.9) + hermes v0 (1 stop, lf 25/30)
+    assert _by(rows, "all", "stops") == 3
+    assert abs(_by(rows, "all", "avg_load_factor") - (0.9 + 25/30) / 2) < 1e-6
+    assert abs(_by(rows, "all", "travel_hours") - (8.333 + 1.667 + 4.167)) < 1e-6
+
+
 def test_write_schema(tmp_path):
     rows = efp.extract(FIX, "MINI")
     from run_meta import load_run_meta
