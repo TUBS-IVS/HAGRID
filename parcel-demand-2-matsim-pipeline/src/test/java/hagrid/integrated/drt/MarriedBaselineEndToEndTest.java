@@ -149,7 +149,7 @@ class MarriedBaselineEndToEndTest {
                     /*maxIterations*/ 1, /*jspritIterations*/ 1,
                     false, 0.0, 0.0, "married_e2e",
                     StudyArea.LAUSITZ_HOYERSWERDA, /*fleetSize*/ 4,
-                    /*drtWithFreight*/ true);
+                    /*drtWithFreight*/ true, /*kpiDashboard*/ false);
             RunMetadataWriter.write(cfg, matsimOut);
         } finally {
             System.clearProperty("hagrid.pipeline.root");

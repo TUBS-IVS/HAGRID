@@ -30,7 +30,7 @@ public final class KpiDashboardTrigger {
         return List.of("python", "-u", script.toString(), "--run-dir", runDir.toString());
     }
 
-    static boolean runProcess(List<String> command, Path workDir, long timeoutMinutes) {
+    public static boolean runProcess(List<String> command, Path workDir, long timeoutMinutes) {
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true);
