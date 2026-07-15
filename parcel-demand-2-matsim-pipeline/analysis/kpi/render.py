@@ -27,8 +27,8 @@ SCENARIO_SLOTS = {"DRT_BASELINE": 0, "DRT_SHAREDUSE": 1, "DRT_MODULAR": 2, "LMD_
 
 # fixed provider->slot assignment (color follows the entity); unknown/"other" -> None -> gray
 OTHER_COLOR = "#8a8f98"
-PROVIDER_SLOTS = {"dhl": 0, "dp/dhl": 0, "amazon": 1, "dpd": 2, "hermes": 3,
-                  "gls": 4, "ups": 5, "fedex": 6}
+PROVIDER_SLOTS = {"dhl": 0, "amazon": 1, "hermes": 2, "dpd": 3,
+                  "gls": 4, "ups": 5, "fedex": 6, "dp/dhl": 7}
 
 
 def provider_slot(name):
