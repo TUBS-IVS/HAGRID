@@ -6,6 +6,7 @@ geometry, no plotly — Chart.js 4 (vendored, ~205 KB) is the only script.
 Palette = validated dataviz reference palette (categorical slots fixed order;
 sequential blue; ink/grid tokens), light + dark via prefers-color-scheme."""
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,16 @@ SEQ_LIGHT, SEQ_DARK = "#2a78d6", "#3987e5"   # sequential blue (magnitude charts
 MODE_SLOTS = {"car": 0, "ride": 1, "walk": 2, "bike": 3, "drt": 4, "pt": 5}
 # fixed scenario->slot assignment for the comparison view (1c/1d extend here)
 SCENARIO_SLOTS = {"DRT_BASELINE": 0, "DRT_SHAREDUSE": 1, "DRT_MODULAR": 2, "LMD_BASELINE": 3}
+
+# fixed provider->slot assignment (color follows the entity); unknown/"other" -> None -> gray
+OTHER_COLOR = "#8a8f98"
+PROVIDER_SLOTS = {"dhl": 0, "dp/dhl": 0, "amazon": 1, "dpd": 2, "hermes": 3,
+                  "gls": 4, "ups": 5, "fedex": 6}
+
+
+def provider_slot(name):
+    """int slot for a known provider, else None (rendered gray via OTHER_COLOR)."""
+    return PROVIDER_SLOTS.get(name)
 
 CSS = """
 :root { color-scheme: light dark; }
@@ -61,6 +72,7 @@ TAB_CSS = """
   color:var(--ink2); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; }
 .tabbar button.on { color:var(--ink); font-weight:600; border-color:var(--axis); }
 .tab { display:none; } .tab.on { display:block; }
+tr.vehrow { display:none; } tr.vehrow.show { display:table-row; }
 """
 
 CSS = CSS + TAB_CSS
@@ -95,6 +107,7 @@ const css = getComputedStyle(document.querySelector('.viz-root'));
 const V = n => css.getPropertyValue(n).trim();
 const DARK = matchMedia('(prefers-color-scheme: dark)').matches;
 const CAT = DARK ? %s : %s;
+const OTHER = '#8a8f98';
 Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 Chart.defaults.color = V('--ink2');
 Chart.defaults.borderColor = V('--grid');
@@ -112,13 +125,59 @@ def load_run_csvs(analysis_dir):
     return kpis, ts
 
 
+# canonical empty-with-columns schemas (used when a CSV is missing) — keeps
+# downstream .empty checks and column indexing safe regardless of which of
+# the 6 canonical CSVs a given run actually produced.
+_KPIS_LONG_COLUMNS = ["run_id", "study_area", "scenario", "operation_mode",
+                      "kpi_group", "kpi_name", "value", "unit", "source"]
+_TS_COLUMNS = ["run_id", "series", "hour", "value", "unit"]
+_PROVIDER_COLUMNS = ["run_id", "provider", "kpi_name", "value", "unit", "source"]
+_ITERATIONS_COLUMNS = ["run_id", "series", "iteration", "value", "unit"]
+_DISTRIBUTIONS_COLUMNS = ["run_id", "series", "bin_lo", "bin_hi", "value", "unit"]
+_VEHICLES_COLUMNS = ["run_id", "role", "vehicle_id", "provider", "vehicle_type",
+                      "distance_km", "duration_h", "travel_h", "parcels", "stops",
+                      "load_factor", "excluded", "occupied_h", "active_h", "shift_h",
+                      "ratio_active"]
+
+
+def _read_csv_or_empty(path, columns):
+    return pd.read_csv(path, sep=";") if path.exists() else pd.DataFrame(columns=columns)
+
+
+@dataclass
+class RunData:
+    kpis: pd.DataFrame
+    ts: pd.DataFrame
+    provider: pd.DataFrame
+    iterations: pd.DataFrame
+    distributions: pd.DataFrame
+    vehicles: pd.DataFrame
+
+
+def load_run_data(analysis_dir):
+    """Read all 6 canonical KPI CSVs for one run directory. Each missing CSV
+    (including kpis_long.csv itself) falls back to an empty DataFrame with the
+    right columns, so callers can always do `.empty` checks and column access."""
+    analysis_dir = Path(analysis_dir)
+    return RunData(
+        kpis=_read_csv_or_empty(analysis_dir / "kpis_long.csv", _KPIS_LONG_COLUMNS),
+        ts=_read_csv_or_empty(analysis_dir / "kpi_timeseries.csv", _TS_COLUMNS),
+        provider=_read_csv_or_empty(analysis_dir / "kpis_provider.csv", _PROVIDER_COLUMNS),
+        iterations=_read_csv_or_empty(analysis_dir / "kpi_iterations.csv", _ITERATIONS_COLUMNS),
+        distributions=_read_csv_or_empty(
+            analysis_dir / "kpi_distributions.csv", _DISTRIBUTIONS_COLUMNS),
+        vehicles=_read_csv_or_empty(analysis_dir / "kpi_vehicles.csv", _VEHICLES_COLUMNS),
+    )
+
+
 def _kpi(kpis, name, default=None):
     m = kpis[kpis["kpi_name"] == name]
     return float(m.iloc[0]["value"]) if len(m) else default
 
 
-def _tile(value, label, sub=""):
-    return ('<div class="tile"><div class="v">' + value + '</div><div class="l">'
+def _tile(value, label, sub="", tip=""):
+    title_attr = (' title="' + tip.replace('"', "&quot;") + '"') if tip else ""
+    return ('<div class="tile"' + title_attr + '><div class="v">' + value + '</div><div class="l">'
             + label + '</div><div class="s">' + sub + '</div></div>')
 
 
@@ -140,6 +199,25 @@ def _panel(title, canvas_id, height=210):
 def _series(ts, name):
     m = ts[ts["series"] == name].sort_values("hour")
     return list(m["hour"].astype(int)), list(m["value"].astype(float))
+
+
+def chart_js(cid, cfg):
+    """One `mk(id, resolveColors(cfg));` statement for a chart config."""
+    return "mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps(cfg) + "));"
+
+
+def render_kpi_table(kpis):
+    """Full KPI table (grouped, tabular-nums) — the "table view" accessibility
+    fallback. Shared by the DRT/LMD tab pages (appended once, below the tabs)."""
+    rows_html = []
+    for grp in ["passenger", "system", "freight", "economic", "channel"]:
+        for _, r in kpis[kpis["kpi_group"] == grp].iterrows():
+            rows_html.append("<tr><td>" + grp + "</td><td>" + str(r["kpi_name"])
+                             + "</td><td>" + str(r["value"]) + "</td><td>"
+                             + str(r["unit"]) + "</td><td>" + str(r["source"]) + "</td></tr>")
+    return ('<h2>Alle KPIs</h2><div class="panel tablewrap"><table class="kpis">'
+            '<tr><th>Gruppe</th><th>KPI</th><th>Wert</th><th>Einheit</th><th>Quelle</th></tr>'
+            + "".join(rows_html) + "</table></div>")
 
 
 def render_run_sections(kpis, ts, uid):
@@ -255,22 +333,21 @@ def render_run_sections(kpis, ts, uid):
                 + "</div>")
 
     # full KPI table (grouped, tabular-nums) — the "table view" accessibility fallback
-    rows_html = []
-    for grp in ["passenger", "system", "freight", "economic", "channel"]:
-        for _, r in kpis[kpis["kpi_group"] == grp].iterrows():
-            rows_html.append("<tr><td>" + grp + "</td><td>" + str(r["kpi_name"])
-                             + "</td><td>" + str(r["value"]) + "</td><td>"
-                             + str(r["unit"]) + "</td><td>" + str(r["source"]) + "</td></tr>")
-    html.append('<h2>Alle KPIs</h2><div class="panel tablewrap"><table class="kpis">'
-                '<tr><th>Gruppe</th><th>KPI</th><th>Wert</th><th>Einheit</th><th>Quelle</th></tr>'
-                + "".join(rows_html) + "</table></div>")
+    html.append(render_kpi_table(kpis))
 
     for _, cid, cfg, _ in charts:
-        js.append("mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps(cfg) + "));")
+        js.append(chart_js(cid, cfg))
     return "".join(html), "\n".join(js)
 
 
 JS_RESOLVE = """
+function alphaSeq(a) {
+  const hex = V('--seq').replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
 function resolveColors(cfg) {
   for (const ds of cfg.data.datasets) {
     if (ds.__seq) { ds.backgroundColor = V('--seq'); ds.borderColor = V('--seq'); }
@@ -279,12 +356,54 @@ function resolveColors(cfg) {
       ds.borderColor = ds.backgroundColor;
     }
     else if (ds.__slots !== undefined) {
-      ds.backgroundColor = ds.__slots.map(s => CAT[s %% CAT.length]);
+      ds.backgroundColor = ds.__slots.map(s => s === null ? OTHER : CAT[s %% CAT.length]);
       ds.borderColor = ds.backgroundColor;
     }
-    delete ds.__seq; delete ds.__slot; delete ds.__slots;
+    else if (ds.__ramp !== undefined) {
+      const level = ds.__ramp[0], cap = ds.__ramp[1];
+      ds.backgroundColor = level === 0 ? OTHER : alphaSeq(0.25 + 0.75 * level / cap);
+      ds.borderColor = ds.backgroundColor;
+    }
+    delete ds.__seq; delete ds.__slot; delete ds.__slots; delete ds.__ramp;
   }
   return cfg;
+}
+"""
+
+VLINE_JS = """
+const vlinePlugin = { id: 'vlines',
+  afterDraw(chart, args, opts) {
+    if (!opts || !opts.lines) return;
+    const {ctx, chartArea, scales} = chart; const x = scales.x;
+    for (const ln of opts.lines) {
+      const px = x.getPixelForValue(ln.x);
+      if (px < chartArea.left || px > chartArea.right) continue;
+      ctx.save(); ctx.strokeStyle = V('--axis'); ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(px, chartArea.top); ctx.lineTo(px, chartArea.bottom); ctx.stroke();
+      ctx.fillStyle = V('--ink2'); ctx.font = '11px system-ui';
+      ctx.fillText(ln.label, px + 4, chartArea.top + 10); ctx.restore();
+    }
+  }};
+Chart.register(vlinePlugin);
+"""
+
+TOGGLE_JS = """
+function mkToggle(btnId, canvasId, cfgA, cfgB, labelA, labelB) {
+  const resolvedA = resolveColors(cfgA), resolvedB = resolveColors(cfgB);
+  const chart = new Chart(document.getElementById(canvasId), resolvedA);
+  let showingA = true;
+  document.getElementById(btnId).addEventListener('click', () => {
+    showingA = !showingA;
+    const cfg = showingA ? resolvedA : resolvedB;
+    chart.data = cfg.data; chart.options = cfg.options; chart.update();
+    document.getElementById(btnId).textContent = showingA ? labelA : labelB;
+  });
+}
+"""
+
+DRILL_JS = """
+function toggleVeh(key) {
+  document.querySelectorAll('tr[data-drill="' + key + '"]').forEach(r => r.classList.toggle('show'));
 }
 """
 
@@ -300,9 +419,72 @@ def render_page(title, body_html, body_js):
             + (JS_RESOLVE % ()) + body_js + "</script>")
 
 
-def render_run_page(kpis, ts, title):
-    body, js = render_run_sections(kpis, ts, uid="r0")
-    return render_page(title, body, js)
+def render_run_page(data, title, maps=None):
+    """Full run dashboard: DRT tab + LMD tab (as applicable) + KPI table.
+
+    `data`: RunData (see load_run_data). `maps`: optional {"drt": block,
+    "lmd": block} passed through to the tab builders as map_block.
+
+    render_drt.build_tab / render_lmd.build_tab (Tasks 5/7) are imported
+    lazily so this module has no import-time dependency on them; until those
+    modules exist, each tab falls back to the legacy render_run_sections
+    scaffold (removed again once Task 10 lands)."""
+    maps = maps or {}
+    kpis = data.kpis
+
+    has_drt = (not kpis.empty) and (kpis["kpi_group"] == "passenger").any()
+    has_lmd = (not data.provider.empty) or (
+        (not kpis.empty) and (kpis["kpi_group"] == "freight").any())
+
+    try:
+        from render_drt import build_tab as drt_build_tab
+    except ImportError:
+        drt_build_tab = None
+    try:
+        from render_lmd import build_tab as lmd_build_tab
+    except ImportError:
+        lmd_build_tab = None
+
+    tab_defs = []          # (label, html, js)
+    used_fallback = False   # fallback tab body already embeds its own KPI table
+
+    if has_drt:
+        if drt_build_tab is not None:
+            html, js = drt_build_tab(data, "rd", map_block=maps.get("drt"))
+        else:
+            html, js = render_run_sections(kpis, data.ts, "rd")
+            used_fallback = True
+        tab_defs.append(("DRT", html, js))
+
+    if has_lmd:
+        if lmd_build_tab is not None:
+            html, js = lmd_build_tab(data, "rl", map_block=maps.get("lmd"))
+            tab_defs.append(("LMD", html, js))
+        else:
+            # interim scaffold: no real LMD renderer yet (Task 7). Avoid
+            # re-emitting render_run_sections a second time (duplicate
+            # canvas ids + duplicate "Alle KPIs" table) -- just a placeholder.
+            tab_defs.append(("LMD", '<div class="panel">LMD-Dashboard folgt (Task 7).</div>', ""))
+
+    if not tab_defs:
+        body = render_kpi_table(kpis)
+        body_js = TAB_JS + VLINE_JS + TOGGLE_JS + DRILL_JS
+        return render_page(title, body, body_js)
+
+    tabbar = ('<div class="tabbar">' + "".join(
+        '<button class="' + ("on" if i == 0 else "") + '" onclick="showTab(' + str(i)
+        + ')">' + label + "</button>" for i, (label, _, _) in enumerate(tab_defs))
+        + "</div>")
+    tabs_html = "".join(
+        '<div class="tab' + (" on" if i == 0 else "") + '">' + html + "</div>"
+        for i, (_, html, _) in enumerate(tab_defs))
+    joined_js = "\n".join(js for _, _, js in tab_defs if js)
+
+    body = tabbar + tabs_html
+    if not used_fallback:
+        body += render_kpi_table(kpis)
+    body_js = TAB_JS + VLINE_JS + TOGGLE_JS + DRILL_JS + joined_js
+    return render_page(title, body, body_js)
 
 
 def render_comparison_page(runs, title):
