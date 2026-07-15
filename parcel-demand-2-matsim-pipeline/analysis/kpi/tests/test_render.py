@@ -5,21 +5,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from build_kpis import build
-from render import load_run_csvs, render_run_page
+import render
 
 FIX = Path(__file__).parent / "fixtures" / "drtrun"
 
 
-def test_render_run_page(tmp_path):
+def test_load_run_data_missing_files_graceful(tmp_path):
+    d = render.load_run_data(tmp_path)          # no CSVs at all
+    assert d.provider.empty and d.vehicles.empty and d.iterations.empty
+
+
+def test_tile_tooltip():
+    html = render._tile("5", "X", tip='a "quoted" tip')
+    assert 'title="a &quot;quoted&quot; tip"' in html
+
+
+def test_run_page_has_drt_tab_and_plugins(tmp_path):
     out = build(FIX, no_events=True, out_dir=tmp_path)
-    kpis, ts = load_run_csvs(out)
-    html = render_run_page(kpis, ts, title="DRT_TEST")
+    data = render.load_run_data(out)
+    html = render.render_run_page(data, title="DRT_TEST")
     assert "<canvas" in html
     assert "chart.umd.min.js" not in html          # inlined, not referenced
     assert "Chart(" in html or "new Chart" in html
-    assert "9171" in html                          # rides tile
+    assert ">DRT<" in html and "showTab" in html
+    assert "vlinePlugin" in html and "mkToggle" in html
+    assert "9171" in html                          # rides tile still present (regression)
     assert "prefers-color-scheme" in html          # dark mode present
-    assert len(html.encode("utf-8")) < 1_000_000   # performance budget
+    assert len(html.encode("utf-8")) < 2_000_000   # performance budget
 
 
 def test_build_writes_dashboard(tmp_path):

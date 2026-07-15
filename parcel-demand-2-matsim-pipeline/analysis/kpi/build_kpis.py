@@ -91,8 +91,8 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     print("kpi_vehicles: {} rows".format(len(veh_rows)))
 
     import render
-    kpis_df, ts_df = render.load_run_csvs(out)
-    html = render.render_run_page(kpis_df, ts_df, title=meta.run_id)
+    data = render.load_run_data(out)
+    html = render.render_run_page(data, title=meta.run_id)
     (out / "kpi_dashboard.html").write_text(html, encoding="utf-8")
     print("dashboard: " + str(out / "kpi_dashboard.html"))
     return out
