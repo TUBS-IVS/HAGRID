@@ -24,9 +24,11 @@ def test_run_page_has_drt_tab_and_plugins(tmp_path):
     out = build(FIX, no_events=True, out_dir=tmp_path)
     data = render.load_run_data(out)
     html = render.render_run_page(data, title="DRT_TEST")
-    assert "<canvas" in html
+    # NOTE: the DRT tab is now real render_drt.build_tab (v2 Plan C Task 5) --
+    # tiles only, no charts yet (charts land in Task 6, which should restore
+    # the "<canvas"/"Chart(" assertions dropped here). The vendored Chart.js
+    # script is still always inlined regardless of whether any chart uses it.
     assert "chart.umd.min.js" not in html          # inlined, not referenced
-    assert "Chart(" in html or "new Chart" in html
     assert ">DRT<" in html and "showTab" in html
     assert "vlinePlugin" in html and "mkToggle" in html
     assert "9171" in html                          # rides tile still present (regression)
