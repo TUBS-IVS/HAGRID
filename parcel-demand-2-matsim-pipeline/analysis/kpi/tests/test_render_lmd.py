@@ -199,9 +199,14 @@ def test_charts_full_set():
     cost_line = next(l for l in js.splitlines() if "c_p_cost_lmd" in l)
     assert cost_line.count('"label"') == 3
 
-    # charts 22/23: scatter -- type present, provider labels present
+    # charts 22/23: scatter -- type present, provider labels present ON the
+    # scatter's own mk() line (isolated -- provider names also appear in every
+    # bar chart's labels, so a bare `'"dhl"' in js` would pass even with zero
+    # scatter datasets)
     assert '"scatter"' in js
-    assert '"dhl"' in js and '"amazon"' in js
+    sc1_line = next(l for l in js.splitlines() if "c_sc1_lmd" in l)
+    assert '"scatter"' in sc1_line
+    assert '"dhl"' in sc1_line and '"amazon"' in sc1_line
 
     # charts 16-18: Plan-D hourly-provider series not emitted yet -> absent, no error
     assert "c_h_parcels_lmd" not in html
