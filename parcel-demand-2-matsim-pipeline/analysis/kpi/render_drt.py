@@ -17,7 +17,12 @@ series (drt_tour_distance/occ_km) simply render fewer tiles/charts."""
 import json
 
 from render import (_kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js,
-                     MODE_SLOTS)
+                     MODE_SLOTS, _donut)
+
+# German labels for the modal-split donut segments (chart 10); unknown mode
+# ids fall back to the raw kpi_name suffix.
+_MODE_LABELS_DE = {"car": "Pkw", "ride": "Mitfahrt", "walk": "Fuß",
+                    "bike": "Rad", "drt": "DRT", "pt": "ÖV"}
 
 # Bottom-up placeholder cost rate (kept in sync with economics.py: 20 EUR/h
 # labour + 5 EUR/h vehicle = 25 EUR/veh-shift-h, Rudolph ~80/20 split).
@@ -228,12 +233,25 @@ def _bin_label(lo, hi, div=1):
     return _fmt_num(lo / div) + "-" + _fmt_num(hi / div)
 
 
-def _ts_chart(ts, series, title, cid, kind, transform=None, height=210):
-    """Bar/line chart over `data.ts` hours for one series. `transform`, if
-    given, is applied to every value (e.g. seconds -> minutes)."""
+def _hours_0_23(ts, series):
+    """Reindex `_series(ts, series)` onto a fixed 0..23 hour axis so every
+    Tagesverlauf chart spans the full day regardless of which hours actually
+    have data; missing hours -> 0.0 (does not itself decide whether a chart
+    should render at all -- callers still guard on the raw `_series` result
+    being non-empty)."""
     hrs, vals = _series(ts, series)
+    by_hr = dict(zip(hrs, vals))
+    return list(range(24)), [by_hr.get(h, 0.0) for h in range(24)]
+
+
+def _ts_chart(ts, series, title, cid, kind, transform=None, height=210):
+    """Bar/line chart over `data.ts`, reindexed onto 0..23 (`_hours_0_23`).
+    `transform`, if given, is applied to every value (e.g. seconds ->
+    minutes) after the 0-fill."""
+    hrs, _vals = _series(ts, series)
     if not hrs:
         return None
+    hours, vals = _hours_0_23(ts, series)
     if transform is not None:
         vals = [transform(v) for v in vals]
     ds = {"label": title, "data": vals, "__seq": True}
@@ -244,28 +262,60 @@ def _ts_chart(ts, series, title, cid, kind, transform=None, height=210):
         ds["borderWidth"] = 2
         ds["pointRadius"] = 0
         ds["tension"] = 0.25
-    cfg = {"type": kind, "data": {"labels": hrs, "datasets": [ds]},
+    cfg = {"type": kind, "data": {"labels": hours, "datasets": [ds]},
            "options": {"responsive": True, "maintainAspectRatio": False,
                        "plugins": {"legend": {"display": False}}}}
     return (title, cid, cfg, height)
 
 
+def _requests_chart(ts, cid, title="Anfragen & bediente Abfahrten je Stunde",
+                     height=210):
+    """Combined Tagesverlauf chart (merges the former separate served/bedient
+    and submitted-requests charts, #4+#5): served rides (bar) and submitted
+    requests (line) on ONE shared y-axis -- both series are requests/h, the
+    same unit and scale, so a second axis would mislead rather than clarify.
+    Skipped only when NEITHER series has any data; each series is
+    independently reindexed onto 0..23 via `_hours_0_23` (missing hours -> 0).
+
+    Colors: the served-rides bar uses the standard `__seq` sequential blue.
+    The submitted-requests line uses `__ramp: [0, 1]`, which resolveColors
+    (render.py) resolves to the fixed neutral OTHER gray -- the same
+    muted/context color used elsewhere for unclassified series -- giving a
+    contrasting-but-recessive line without introducing a new color marker
+    (out of scope: only render_drt.py/tests are touched by this task)."""
+    hrs_r, _ = _series(ts, "drt_rides")
+    hrs_s, _ = _series(ts, "drt_requests_submitted")
+    if not hrs_r and not hrs_s:
+        return None
+    hours, rides = _hours_0_23(ts, "drt_rides")
+    _, submitted = _hours_0_23(ts, "drt_requests_submitted")
+    ds_rides = {"type": "bar", "label": "bediente Abfahrten", "data": rides,
+                "__seq": True, "borderRadius": 4, "maxBarThickness": 18}
+    ds_subm = {"type": "line", "label": "Anfragen", "data": submitted,
+               "__ramp": [0, 1], "borderWidth": 2, "pointRadius": 0,
+               "tension": 0.25, "fill": False}
+    cfg = {"type": "bar", "data": {"labels": hours, "datasets": [ds_rides, ds_subm]},
+           "options": {"responsive": True, "maintainAspectRatio": False,
+                       "plugins": {"legend": {"display": True}}}}
+    return (title, cid, cfg, height)
+
+
 def _feeder_toggle(ts, cid, btn_id, title="Feeder-Fahrten je Stunde", height=210):
     """Feeder-trips-per-hour bar chart with an Absolut/Anteil toggle (chart
-    5). cfgB's share is feeder/rides for that hour, 0 when rides is 0/absent."""
-    hrs_f, feed = _series(ts, "drt_feeder_trips")
+    5), reindexed onto 0..23 (`_hours_0_23`). cfgB's share is feeder/rides
+    for that hour, 0 when rides is 0/absent."""
+    hrs_f, _ = _series(ts, "drt_feeder_trips")
     if not hrs_f:
         return None
-    hrs_r, rides = _series(ts, "drt_rides")
-    rides_by_hr = dict(zip(hrs_r, rides))
-    shares = [round((f / rides_by_hr[h] * 100.0) if rides_by_hr.get(h) else 0.0, 2)
-              for h, f in zip(hrs_f, feed)]
-    cfgA = {"type": "bar", "data": {"labels": hrs_f, "datasets": [{
+    hours, feed = _hours_0_23(ts, "drt_feeder_trips")
+    _, rides = _hours_0_23(ts, "drt_rides")
+    shares = [round((f / r * 100.0) if r else 0.0, 2) for f, r in zip(feed, rides)]
+    cfgA = {"type": "bar", "data": {"labels": hours, "datasets": [{
                 "label": "Feeder-Fahrten", "data": feed, "__seq": True,
                 "borderRadius": 4, "maxBarThickness": 18}]},
             "options": {"responsive": True, "maintainAspectRatio": False,
                         "plugins": {"legend": {"display": False}}}}
-    cfgB = {"type": "bar", "data": {"labels": hrs_f, "datasets": [{
+    cfgB = {"type": "bar", "data": {"labels": hours, "datasets": [{
                 "label": "Feeder-Anteil [%]", "data": shares, "__seq": True,
                 "borderRadius": 4, "maxBarThickness": 18}]},
             "options": {"responsive": True, "maintainAspectRatio": False,
@@ -321,23 +371,20 @@ def _occ_chart(dist, cid, title="Besetzungs-Dekomposition", height=210):
     return (title, cid, cfg, height)
 
 
-def _modal_chart(kpis, cid, title="Modal Split", height=120):
-    """Single horizontal 100%-stacked bar (chart 10) -- the modal_share_*
-    block, fixed MODE_SLOTS colors (originally ported from the now-deleted
-    render.render_run_sections, removed in Task 10)."""
-    modes = kpis[kpis["kpi_name"].str.startswith("modal_share_")]
-    if not len(modes):
+def _modal_chart(kpis, cid, title="Modal Split", height=220):
+    """Modal-split donut (chart 10) via the shared `render._donut` helper --
+    one segment per modal_share_* mode, color follows the fixed MODE_SLOTS
+    assignment (`__slots`, null-safe), German labels, center total "100 %".
+    Pie/donut is allowed here per the 2026-07-16 user override."""
+    modes_df = kpis[kpis["kpi_name"].str.startswith("modal_share_")]
+    if not len(modes_df):
         return None
-    datasets = []
-    for _, r in modes.iterrows():
-        mode = r["kpi_name"].replace("modal_share_", "")
-        datasets.append({"label": mode, "data": [round(float(r["value"]) * 100, 2)], "stack": "s",
-                          "categoryPercentage": 0.5, "__slot": MODE_SLOTS.get(mode, 6)})
-    cfg = {"type": "bar", "data": {"labels": ["Modal Split"], "datasets": datasets},
-           "options": {"indexAxis": "y", "responsive": True, "maintainAspectRatio": False,
-                       "scales": {"x": {"stacked": True, "max": 100, "grid": {"display": False}},
-                                  "y": {"stacked": True, "display": False}}}}
-    return (title, cid, cfg, height)
+    modes = [r["kpi_name"].replace("modal_share_", "") for _, r in modes_df.iterrows()]
+    values = [round(float(r["value"]) * 100, 2) for _, r in modes_df.iterrows()]
+    labels = [_MODE_LABELS_DE.get(m, m) for m in modes]
+    color_marker = {"__slots": [MODE_SLOTS.get(m, 6) for m in modes]}
+    return _donut(cid, title, labels, values, color_marker, height=height,
+                  center_label="100 %")
 
 
 def _iter_series(it, name):
@@ -435,12 +482,12 @@ def build_tab(data, uid, compact=False, map_block=None):
 
     groups_html, groups_js = [], []
 
-    # --- Tagesverlauf (charts 1-5) ---
+    # --- Tagesverlauf (charts 1-5; #4+#5 merged into one combined chart) ---
     tag_charts = []
+    c = _requests_chart(ts, "c_req_" + uid)
+    if c:
+        tag_charts.append(c)
     for series, title, cid, kind, transform in [
-        ("drt_rides", "DRT-Fahrten je Stunde (bedient)", "c_rides_" + uid, "bar", None),
-        ("drt_requests_submitted", "DRT-Anfragen je Stunde (eingereicht)",
-         "c_subm_" + uid, "line", None),
         ("drt_rejections", "Ablehnungen je Stunde", "c_rej_" + uid, "bar", None),
         ("drt_wait_mean", "Mittlere Wartezeit je Stunde [min]", "c_wait_" + uid, "line",
          lambda v: round(v / 60.0, 2)),

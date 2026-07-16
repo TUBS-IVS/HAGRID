@@ -1,4 +1,5 @@
 # tests/test_render_drt.py
+import json
 import sys
 from pathlib import Path
 import pandas as pd
@@ -11,6 +12,24 @@ def _data(rows):
     empty = pd.DataFrame()
     return render.RunData(kpis=kpis, ts=pd.DataFrame(columns=["series", "hour", "value"]),
                           provider=empty, iterations=empty, distributions=empty, vehicles=empty)
+
+
+def _data_ts(ts):
+    """Like `_data` but with a caller-supplied `ts` (timeseries) frame and
+    empty (column-less) kpis -- for hourly-chart-only fixtures."""
+    kpis = pd.DataFrame(columns=["kpi_group", "kpi_name", "value", "unit", "source"])
+    empty = pd.DataFrame()
+    return render.RunData(kpis=kpis, ts=ts, provider=empty, iterations=empty,
+                          distributions=empty, vehicles=empty)
+
+
+def _cfg_from_line(line):
+    """Recover the JSON `cfg` dict from one `mk(id, resolveColors(cfg));`
+    line (the fixed shape emitted by render.chart_js)."""
+    marker = "resolveColors("
+    start = line.index(marker) + len(marker)
+    assert line.endswith("));")
+    return json.loads(line[start:-3])
 
 
 def test_tiles_full_set():
@@ -91,3 +110,83 @@ def test_charts_compact_excludes_distributions_and_convergence():
     html, js = render_drt.build_tab(data, uid="drt", compact=True)
     assert "c_it_" not in html            # no convergence canvases in compact mode
     assert "c_wdist" not in html          # no distribution canvases in compact mode
+
+
+def test_modal_split_is_donut():
+    data = _full_data()
+    html, js = render_drt.build_tab(data, uid="drt")
+    modal_line = next(l for l in js.splitlines() if "c_modal_drt" in l)
+    cfg = _cfg_from_line(modal_line)
+    assert cfg["type"] == "doughnut"
+    ds = cfg["data"]["datasets"][0]
+    assert "__slots" in ds
+    assert cfg["options"]["plugins"]["centerTotal"]["text"] == "100 %"
+
+
+def test_combined_requests_chart_single_axis_bar_and_line():
+    ts = pd.DataFrame([
+        {"series": "drt_rides", "hour": 8, "value": 12},
+        {"series": "drt_rides", "hour": 9, "value": 15},
+        {"series": "drt_requests_submitted", "hour": 8, "value": 14},
+        {"series": "drt_requests_submitted", "hour": 9, "value": 18},
+    ])
+    html, js = render_drt.build_tab(_data_ts(ts), uid="drt")
+    req_line = next(l for l in js.splitlines() if "c_req_drt" in l)
+    cfg = _cfg_from_line(req_line)
+    types = [ds["type"] for ds in cfg["data"]["datasets"]]
+    assert types.count("bar") == 1 and types.count("line") == 1
+    labels = [ds["label"] for ds in cfg["data"]["datasets"]]
+    assert "bediente Abfahrten" in labels
+    assert "Anfragen" in labels
+    # single shared y-axis: no second yAxisID / y1 scale anywhere in the cfg
+    assert "yAxisID" not in json.dumps(cfg)
+    assert cfg["options"].get("scales", {}).get("y1") is None
+    assert "eingereicht" not in html
+    assert "eingereicht" not in js
+
+
+def test_combined_requests_chart_renders_with_only_one_series_present():
+    # drt_requests_submitted entirely absent -- chart still renders (rides
+    # present), submitted series 0-filled across all 24 hours.
+    ts = pd.DataFrame([
+        {"series": "drt_rides", "hour": 8, "value": 12},
+    ])
+    html, js = render_drt.build_tab(_data_ts(ts), uid="drt")
+    req_line = next(l for l in js.splitlines() if "c_req_drt" in l)
+    cfg = _cfg_from_line(req_line)
+    submitted_ds = next(ds for ds in cfg["data"]["datasets"] if ds["type"] == "line")
+    assert submitted_ds["data"] == [0.0] * 24
+
+
+def test_hourly_charts_span_0_23_with_gap_fill():
+    ts = pd.DataFrame([
+        {"series": "drt_rejections", "hour": 0, "value": 1},
+        {"series": "drt_rejections", "hour": 5, "value": 2},
+        {"series": "drt_rejections", "hour": 21, "value": 3},
+        # note: hour 22 and 23 are absent -- must 0-fill, not be dropped.
+    ])
+    html, js = render_drt.build_tab(_data_ts(ts), uid="drt")
+    rej_line = next(l for l in js.splitlines() if "c_rej_drt" in l)
+    cfg = _cfg_from_line(rej_line)
+    assert cfg["data"]["labels"] == list(range(24))
+    vals = cfg["data"]["datasets"][0]["data"]
+    assert len(vals) == 24
+    assert vals[0] == 1.0 and vals[5] == 2.0 and vals[21] == 3.0
+    assert vals[22] == 0.0 and vals[23] == 0.0
+
+
+def test_feeder_toggle_spans_0_23():
+    ts = pd.DataFrame([
+        {"series": "drt_feeder_trips", "hour": 3, "value": 4},
+        {"series": "drt_rides", "hour": 3, "value": 8},
+    ])
+    html, js = render_drt.build_tab(_data_ts(ts), uid="drt")
+    toggle_line = next(l for l in js.splitlines() if "mkToggle" in l)
+    # mkToggle(btnId, canvasId, cfgA, cfgB, "Absolut", "Anteil") -- pull cfgA's
+    # labels out via the raw JSON args (positions 2/3 are the two configs).
+    args_start = toggle_line.index("(") + 1
+    assert toggle_line.endswith(");")
+    parts = json.loads("[" + toggle_line[args_start:-2] + "]")
+    cfg_a = parts[2]
+    assert cfg_a["data"]["labels"] == list(range(24))
+    assert len(cfg_a["data"]["datasets"][0]["data"]) == 24
