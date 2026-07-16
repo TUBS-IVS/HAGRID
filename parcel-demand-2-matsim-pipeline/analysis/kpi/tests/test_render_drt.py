@@ -62,6 +62,8 @@ def _full_data():
         {"series": "drt_rides", "iteration": 1, "value": 60},
         {"series": "modal_share_drt", "iteration": 0, "value": 0.08},
         {"series": "modal_share_drt", "iteration": 1, "value": 0.1},
+        {"series": "modal_share_car", "iteration": 0, "value": 0.6},   # >=2 series -> legend
+        {"series": "modal_share_car", "iteration": 1, "value": 0.55},
     ])
     vehicles = pd.DataFrame([
         {"role": "drt", "vehicle_id": "veh1", "occupied_h": 5.5},
@@ -79,6 +81,9 @@ def test_charts_full_set():
     assert "__ramp" in js                 # occupancy-decomposition dataset markers
     assert "c_it_rides_drt" in html       # convergence canvas present
     assert "veh1" in (html + js) and "veh2" in (html + js)  # per-vehicle labels
+    # chart 14 (modal shares over iterations) has >=2 series -> legend enabled
+    modal_line = next(l for l in js.splitlines() if "c_it_modal_drt" in l)
+    assert '"legend": {"display": true}' in modal_line
 
 
 def test_charts_compact_excludes_distributions_and_convergence():

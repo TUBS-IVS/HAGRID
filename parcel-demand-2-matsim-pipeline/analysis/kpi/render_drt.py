@@ -220,7 +220,8 @@ def _tiles(data):
 
 def _fmt_num(v):
     v = float(v)
-    return str(int(v)) if v == int(v) else str(round(v, 2))
+    s = str(int(v)) if v == int(v) else str(round(v, 2))
+    return s.replace(".", ",")   # German decimals (presentation-only); whole nums unaffected
 
 
 def _bin_label(lo, hi, div=1):
@@ -503,7 +504,8 @@ def build_tab(data, uid, compact=False, map_block=None):
         if c:
             conv_charts.append(c)
         c = _iter_chart(iters, [("drt_rejection_rate", "Ablehnungsquote")],
-                         "Ablehnungsquote über Iterationen", "c_it_rej_" + uid)
+                         "Ablehnungsquote über Iterationen [%]", "c_it_rej_" + uid,
+                         transform=lambda v: round(v * 100, 2))
         if c:
             conv_charts.append(c)
         c = _iter_chart(iters, [("wait_mean", "Ø"), ("wait_p95", "P95")],
@@ -513,8 +515,9 @@ def build_tab(data, uid, compact=False, map_block=None):
             conv_charts.append(c)
         modal_series = [("modal_share_" + m, m) for m in MODE_SLOTS]
         modal_slots = [MODE_SLOTS[m] for m in MODE_SLOTS]
-        c = _iter_chart(iters, modal_series, "Modal Shares über Iterationen",
-                         "c_it_modal_" + uid, slots=modal_slots)
+        c = _iter_chart(iters, modal_series, "Modal Shares über Iterationen [%]",
+                         "c_it_modal_" + uid, slots=modal_slots,
+                         transform=lambda v: round(v * 100, 2), legend=True)
         if c:
             conv_charts.append(c)
         h, j = _render_group("Konvergenz", conv_charts)
