@@ -271,7 +271,10 @@ def _fmt_num(v):
 
 
 def _bin_label(lo, hi, div=1):
-    return _fmt_num(lo / div) + "-" + _fmt_num(hi / div)
+    # en dash with surrounding spaces so negative ranges (chart 20, carrier
+    # scores) read cleanly, e.g. "-100 – -50" rather than the ambiguous
+    # bare-hyphen "-100--50".
+    return _fmt_num(lo / div) + " – " + _fmt_num(hi / div)
 
 
 def _prov_order(pv):
@@ -455,9 +458,11 @@ def _hourly_provider_stack(ts, prefix, title, cid, height=220):
                           "borderRadius": 4, "maxBarThickness": 18})
     if not datasets:
         return None
+    # legend on: x-axis is HOURS, so color is the only channel identifying
+    # which series is which provider (>=2 series once Plan D populates this).
     cfg = {"type": "bar", "data": {"labels": labels, "datasets": datasets},
            "options": {"responsive": True, "maintainAspectRatio": False,
-                       "plugins": {"legend": {"display": False}},
+                       "plugins": {"legend": {"display": True}},
                        "scales": {"x": {"stacked": True}, "y": {"stacked": True}}}}
     return (title, cid, cfg, height)
 
@@ -485,9 +490,10 @@ def _hourly_provider_lines(ts, prefix, title, cid, height=220):
                           "tension": 0.25, "__slots": [slot] * len(vals)})
     if not datasets:
         return None
+    # legend on: x-axis is HOURS, color is the only per-provider channel.
     cfg = {"type": "line", "data": {"labels": labels, "datasets": datasets},
            "options": {"responsive": True, "maintainAspectRatio": False,
-                       "plugins": {"legend": {"display": False}}}}
+                       "plugins": {"legend": {"display": True}}}}
     return (title, cid, cfg, height)
 
 
@@ -571,9 +577,11 @@ def _scatter(vehicles, xcol, ycol, title, cid, xlabel, ylabel, height=260):
                           "pointRadius": 4, "pointHoverRadius": 6})
     if not datasets:
         return None
+    # legend on: one dataset per provider, no per-point x label -> color is
+    # the only channel identifying the provider.
     cfg = {"type": "scatter", "data": {"datasets": datasets},
            "options": {"responsive": True, "maintainAspectRatio": False,
-                       "plugins": {"legend": {"display": False}},
+                       "plugins": {"legend": {"display": True}},
                        "scales": {"x": {"title": {"display": True, "text": xlabel}},
                                   "y": {"title": {"display": True, "text": ylabel}}}}}
     return (title, cid, cfg, height)
