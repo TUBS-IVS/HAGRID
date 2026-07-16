@@ -19,6 +19,7 @@ CAT_LIGHT = ["#2a78d6", "#1baf7a", "#eda100", "#008300",
 CAT_DARK = ["#3987e5", "#199e70", "#c98500", "#008300",
             "#9085e9", "#e66767", "#d55181", "#d95926"]
 SEQ_LIGHT, SEQ_DARK = "#2a78d6", "#3987e5"   # sequential blue (magnitude charts)
+SIZE_LIGHT, SIZE_DARK = "#0f8a86", "#17a39d"  # teal size ramp (S/M/L vtype bars + fleet donut)
 
 # fixed mode->slot assignment (color follows the entity)
 MODE_SLOTS = {"car": 0, "ride": 1, "walk": 2, "bike": 3, "drt": 4, "pt": 5}
@@ -35,6 +36,14 @@ def provider_slot(name):
     """int slot for a known provider, else None (rendered gray via OTHER_COLOR)."""
     return PROVIDER_SLOTS.get(name)
 
+
+def size_marker(indices):
+    """__sizes color marker: a list of size-rank ints (0=smallest .. n-1=largest)
+    aligned by index to a dataset's data[]. Consumed by resolveColors' teal size
+    ramp (alphaSize) -- the same marker/colors are used by D3's LMD vtype bars
+    and the fleet composition donut, so both paint with identical shades."""
+    return {"__sizes": list(indices)}
+
 CSS = """
 :root { color-scheme: light dark; }
 body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -42,14 +51,14 @@ body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 .viz-root {
   --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e;
   --muted:#898781; --grid:#e1e0d9; --axis:#c3c2b7;
-  --border:rgba(11,11,11,0.10); --seq:#2a78d6;
+  --border:rgba(11,11,11,0.10); --seq:#2a78d6; --size:#0f8a86;
 }
 @media (prefers-color-scheme: dark) { .viz-root {
   --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7;
   --muted:#898781; --grid:#2c2c2a; --axis:#383835;
-  --border:rgba(255,255,255,0.10); --seq:#3987e5;
+  --border:rgba(255,255,255,0.10); --seq:#3987e5; --size:#17a39d;
 }}
-.wrap { max-width: 1240px; margin: 0 auto; padding: 24px; }
+.wrap { max-width: min(1680px, 96vw); margin: 0 auto; padding: 24px; }
 h1 { font-size: 20px; } h2 { font-size: 15px; color: var(--ink2); margin: 28px 0 10px; }
 .tiles { display:grid; grid-template-columns: repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
 .tile { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
@@ -197,6 +206,40 @@ def chart_js(cid, cfg):
     return "mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps(cfg) + "));"
 
 
+def _donut(cid, title, labels, values, color_marker, height=200, center_label=None):
+    """Shared Chart.js doughnut chart for `_render_group` -- returns the same
+    `(title, cid, cfg, height)` tuple shape as `render_drt._modal_chart` /
+    `_iter_chart`, so D2/D3 can drop it straight into a `_render_group(...,
+    charts)` list (panel + `chart_js` wiring is unchanged).
+
+    Per the 2026-07-16 user override, pie/donut is allowed ONLY for the
+    modal-split (D2, colored via `{"__slots": [...]}`) and fleet-composition
+    (D3, colored via `size_marker([...])`) charts -- `color_marker` is a dict
+    merged into the single dataset so resolveColors assigns the fixed colors
+    plus the 2px `--surface` segment gap; legend is always shown at the
+    bottom; hover shows value + percentage (resolveColors injects the tooltip
+    callback for any `type: "doughnut"` cfg). `center_label`, if given,
+    overrides the hole text (default: the raw sum of `values`), drawn by the
+    `centerTotal` afterDraw plugin registered in DONUT_JS."""
+    ds = {"data": list(values), "borderWidth": 2}
+    ds.update(color_marker)
+    total_text = center_label if center_label is not None else str(sum(values))
+    options = {
+        "responsive": True,
+        "maintainAspectRatio": False,
+        "cutout": "62%",
+        "plugins": {
+            "legend": {"display": True, "position": "bottom"},
+            "centerTotal": {"text": total_text},
+        },
+    }
+    if title:
+        options["plugins"]["title"] = {"display": True, "text": title, "font": {"size": 12}}
+    cfg = {"type": "doughnut", "data": {"labels": list(labels), "datasets": [ds]},
+           "options": options}
+    return (title, cid, cfg, height)
+
+
 def render_kpi_table(kpis):
     """Full KPI table (grouped, tabular-nums) — the "table view" accessibility
     fallback. Shared by the DRT/LMD tab pages (appended once, below the tabs)."""
@@ -219,7 +262,15 @@ function alphaSeq(a) {
   const b = parseInt(hex.substring(4, 6), 16);
   return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
 }
+function alphaSize(a) {
+  const hex = V('--size').replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
 function resolveColors(cfg) {
+  const isDonut = cfg.type === 'doughnut';
   for (const ds of cfg.data.datasets) {
     if (ds.__seq) { ds.backgroundColor = V('--seq'); ds.borderColor = V('--seq'); }
     else if (ds.__slot !== undefined) {
@@ -230,12 +281,31 @@ function resolveColors(cfg) {
       ds.backgroundColor = ds.__slots.map(s => s === null ? OTHER : CAT[s %% CAT.length]);
       ds.borderColor = ds.backgroundColor;
     }
+    else if (ds.__sizes !== undefined) {
+      const maxIdx = Math.max(ds.__sizes.length - 1, 1);
+      ds.backgroundColor = ds.__sizes.map(i => alphaSize(0.4 + 0.6 * i / maxIdx));
+      ds.borderColor = ds.backgroundColor;
+    }
     else if (ds.__ramp !== undefined) {
       const level = ds.__ramp[0], cap = ds.__ramp[1];
       ds.backgroundColor = level === 0 ? OTHER : alphaSeq(0.25 + 0.75 * level / cap);
       ds.borderColor = ds.backgroundColor;
     }
-    delete ds.__seq; delete ds.__slot; delete ds.__slots; delete ds.__ramp;
+    if (isDonut) { ds.borderColor = V('--surface'); if (ds.borderWidth === undefined) ds.borderWidth = 2; }
+    delete ds.__seq; delete ds.__slot; delete ds.__slots; delete ds.__sizes; delete ds.__ramp;
+  }
+  if (isDonut) {
+    cfg.options = cfg.options || {};
+    cfg.options.plugins = cfg.options.plugins || {};
+    const tt = cfg.options.plugins.tooltip || {};
+    tt.callbacks = tt.callbacks || {};
+    tt.callbacks.label = function(ctx) {
+      const v = ctx.parsed;
+      const sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
+      const pct = sum ? Math.round(1000 * v / sum) / 10 : 0;
+      return ctx.label + ': ' + v + ' (' + pct + '%%)';
+    };
+    cfg.options.plugins.tooltip = tt;
   }
   return cfg;
 }
@@ -246,16 +316,46 @@ const vlinePlugin = { id: 'vlines',
   afterDraw(chart, args, opts) {
     if (!opts || !opts.lines) return;
     const {ctx, chartArea, scales} = chart; const x = scales.x;
-    for (const ln of opts.lines) {
+    opts.lines.forEach((ln, i) => {
       const px = x.getPixelForValue(ln.x);
-      if (px < chartArea.left || px > chartArea.right) continue;
+      if (px < chartArea.left || px > chartArea.right) return;
       ctx.save(); ctx.strokeStyle = V('--axis'); ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(px, chartArea.top); ctx.lineTo(px, chartArea.bottom); ctx.stroke();
-      ctx.fillStyle = V('--ink2'); ctx.font = '11px system-ui';
-      ctx.fillText(ln.label, px + 4, chartArea.top + 10); ctx.restore();
-    }
+      ctx.restore();
+      // stagger each line's label vertically so Median/O/P95 chips don't overlap,
+      // and draw on a small filled chip (high-contrast --ink, not faint --ink2)
+      ctx.save();
+      ctx.font = '11px system-ui';
+      const ty = chartArea.top + 10 + i * 15;
+      const tw = ctx.measureText(ln.label).width;
+      const padX = 4, bx = px + 4, by = ty - 10, bw = tw + padX * 2, bh = 14;
+      ctx.fillStyle = V('--surface'); ctx.strokeStyle = V('--border'); ctx.lineWidth = 1;
+      if (ctx.roundRect) {
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(bx, by, bw, bh); ctx.strokeRect(bx, by, bw, bh);
+      }
+      ctx.fillStyle = V('--ink');
+      ctx.fillText(ln.label, bx + padX, ty);
+      ctx.restore();
+    });
   }};
 Chart.register(vlinePlugin);
+"""
+
+DONUT_JS = """
+const centerTotalPlugin = { id: 'centerTotal',
+  afterDraw(chart, args, opts) {
+    if (!opts || opts.text === undefined) return;
+    const {ctx, chartArea} = chart;
+    ctx.save();
+    ctx.fillStyle = V('--ink'); ctx.font = '600 15px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(opts.text), (chartArea.left + chartArea.right) / 2,
+                 (chartArea.top + chartArea.bottom) / 2);
+    ctx.restore();
+  }};
+Chart.register(centerTotalPlugin);
 """
 
 TOGGLE_JS = """
@@ -322,7 +422,7 @@ def render_run_page(data, title, maps=None):
 
     if not tab_defs:
         body = render_kpi_table(kpis)
-        body_js = TAB_JS + VLINE_JS + TOGGLE_JS + DRILL_JS
+        body_js = TAB_JS + VLINE_JS + DONUT_JS + TOGGLE_JS + DRILL_JS
         return render_page(title, body, body_js)
 
     tabbar = ('<div class="tabbar">' + "".join(
@@ -335,7 +435,7 @@ def render_run_page(data, title, maps=None):
     joined_js = "\n".join(js for _, _, js in tab_defs if js)
 
     body = tabbar + tabs_html + render_kpi_table(kpis)
-    body_js = TAB_JS + VLINE_JS + TOGGLE_JS + DRILL_JS + joined_js
+    body_js = TAB_JS + VLINE_JS + DONUT_JS + TOGGLE_JS + DRILL_JS + joined_js
     return render_page(title, body, body_js)
 
 
