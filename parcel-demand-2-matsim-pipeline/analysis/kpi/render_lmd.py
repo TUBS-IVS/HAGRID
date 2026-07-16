@@ -252,7 +252,7 @@ def _tiles(data):
 #     and maps each None entry to OTHER (gray); this is the only null-safe
 #     path.
 #   - `__slot` (singular, one int for the whole dataset) does NOT handle
-#     None -- `null %% CAT.length` in JS is 0, so an unmapped/"other" entity
+#     None -- `null % CAT.length` in JS is 0, so an unmapped/"other" entity
 #     would silently render as CAT[0] (dhl-blue). `__slot` is therefore only
 #     ever used here for FIXED, non-entity series (cost components, the
 #     travel/service split, the two depot lines, the four scoring lines) --
@@ -551,7 +551,7 @@ def _scatter(vehicles, xcol, ycol, title, cid, xlabel, ylabel, height=260):
     via `__slots` with the same slot repeated for every point in that
     provider's dataset -- deliberately NOT `__slot` (singular): `__slot`
     doesn't null-check, so an unmapped/"other" provider's `None` slot would
-    resolve to `CAT[0]` (dhl-blue) via JS's `null %% len === 0`, rather than
+    resolve to `CAT[0]` (dhl-blue) via JS's `null % len === 0`, rather than
     gray. `__slots` already maps `None` -> OTHER (see resolveColors), so
     reusing it here keeps color resolution to the one existing rule."""
     need = ["role", "provider", "excluded", xcol, ycol]
