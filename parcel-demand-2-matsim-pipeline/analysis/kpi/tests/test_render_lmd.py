@@ -1,4 +1,5 @@
 # tests/test_render_lmd.py
+import re
 import sys
 from pathlib import Path
 import pandas as pd
@@ -47,6 +48,8 @@ def _full_provider():
         _prow("dhl", "travel_hours", 40), _prow("dhl", "stops_per_h", 5),
         _prow("dhl", "parcels_per_km", 20), _prow("dhl", "avg_load_factor", 0.82),
         _prow("dhl", "stops", 500), _prow("dhl", "score", 120.5),
+        _prow("dhl", "stops_per_km", 2.5), _prow("dhl", "cost_per_parcel", 0.31),
+        _prow("dhl", "parcels_missed", 30), _prow("dhl", "cost_total", 1250),
         _prow("amazon", "parcels_total", 2372), _prow("amazon", "cost_fixed", 700),
         _prow("amazon", "cost_dist", 200), _prow("amazon", "cost_time", 100),
         _prow("amazon", "excluded_vehicles", 1), _prow("amazon", "vehicles", 20),
@@ -54,6 +57,8 @@ def _full_provider():
         _prow("amazon", "travel_hours", 28), _prow("amazon", "stops_per_h", 4),
         _prow("amazon", "parcels_per_km", 15), _prow("amazon", "avg_load_factor", 0.78),
         _prow("amazon", "stops", 400), _prow("amazon", "score", 95.2),
+        _prow("amazon", "stops_per_km", 2.2), _prow("amazon", "cost_per_parcel", 0.34),
+        _prow("amazon", "parcels_missed", 20), _prow("amazon", "cost_total", 1000),
         _prow("type:VAN", "vehicles", 40),
         _prow("type:VAN", "distance_km", 800.0), _prow("type:VAN", "load_factor", 0.75),
         _prow("type:VAN", "km_per_tour", 20.0), _prow("type:VAN", "stops_per_tour", 8.0),
@@ -271,3 +276,93 @@ def test_scatter_unknown_provider_uses_null_safe_slots_not_bare_slot():
     assert '"regiopack"' in sc_line
     assert '"__slot": null' not in sc_line
     assert "__slots" in sc_line
+
+
+# ---------------------------------------------------------------------------
+# Task 9: tables
+# ---------------------------------------------------------------------------
+
+def test_table_vrp_efficiency_rows_and_header():
+    data = _data(_full_kpis(), _full_provider())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "VRP-Effizienz je Provider" in html
+    for col in ["Provider", "Touren", "km/Tour", "Stopps/h", "Stopps/km", "Pakete/km", "€/Paket"]:
+        assert col in html
+    # one row per real provider
+    assert "<td>dhl</td>" in html
+    assert "<td>amazon</td>" in html
+    # footnote row
+    assert "stem% folgt in Plan D" in html
+
+
+def test_table_vrp_efficiency_absent_when_no_provider_data():
+    data = _data(_full_kpis())   # no provider rows at all
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "VRP-Effizienz je Provider" not in html
+
+
+def test_table_provider_drilldown_rows_and_keys_match():
+    data = _data(_full_kpis(), _full_provider(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "Provider-Übersicht mit Fahrzeug-Drilldown" in html
+    assert 'class="vehrow"' in html
+    drill_keys = set(re.findall(r'data-drill="(p\d+)"', html))
+    onclick_keys = set(re.findall(r"toggleVeh\('(p\d+)'\)", html))
+    assert drill_keys  # at least one drilldown row rendered
+    assert drill_keys <= onclick_keys   # every vehrow key has a matching summary-row toggle
+
+
+def test_table_vehicle_id_stripped_of_freight_prefix():
+    vehicles = pd.DataFrame([
+        {"role": "freight", "vehicle_id": "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0",
+         "provider": "dhl", "vehicle_type": "VAN", "distance_km": 40.0, "duration_h": 5.0,
+         "travel_h": 4.0, "parcels": 80, "stops": 20, "load_factor": 0.8, "excluded": 0},
+    ])
+    data = _data(_full_kpis(), _full_provider(), vehicles=vehicles)
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "dhl_ct_cep_size_s_h8_v0_0" in html
+    assert "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0" not in html
+
+
+def test_table_excluded_vehicle_flag_marked():
+    vehicles = pd.DataFrame([
+        {"role": "freight", "vehicle_id": "v1", "provider": "dhl", "vehicle_type": "VAN",
+         "distance_km": 5.0, "duration_h": 1.0, "travel_h": 0.8, "parcels": 2, "stops": 1,
+         "load_factor": 0.03, "excluded": 1},
+        {"role": "freight", "vehicle_id": "v2", "provider": "dhl", "vehicle_type": "VAN",
+         "distance_km": 40.0, "duration_h": 5.0, "travel_h": 4.0, "parcels": 80, "stops": 20,
+         "load_factor": 0.8, "excluded": 0},
+    ])
+    data = _data(_full_kpis(), _full_provider(), vehicles=vehicles)
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    rows = re.findall(r'<tr class="vehrow"[^>]*>.*?</tr>', html)
+    assert len(rows) == 2
+    assert any("✓" in r for r in rows if "v1" in r)
+    assert not any("✓" in r for r in rows if "v2" in r)
+
+
+def test_low_util_notice_present_when_excluded():
+    # dhl excluded=2, amazon excluded=1 -> total 3
+    data = _data(_full_kpis(), _full_provider())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "reallokiert" in html
+    assert "3 Fahrzeuge" in html
+    assert "dhl: 2" in html and "amazon: 1" in html
+
+
+def test_low_util_notice_absent_when_no_excluded():
+    provider_rows = [r for r in _full_provider() if r["kpi_name"] != "excluded_vehicles"]
+    provider_rows += [_prow("dhl", "excluded_vehicles", 0), _prow("amazon", "excluded_vehicles", 0)]
+    data = _data(_full_kpis(), provider_rows)
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "reallokiert" not in html
+
+
+def test_tables_absent_in_compact_mode():
+    data = _data(_full_kpis(), _full_provider(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd", compact=True)
+    assert "VRP-Effizienz je Provider" not in html
+    assert "Provider-Übersicht mit Fahrzeug-Drilldown" not in html
+    assert "vehrow" not in html
+    assert "toggleVeh" not in html
+    assert "reallokiert" not in html

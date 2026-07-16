@@ -18,6 +18,8 @@ tiles."""
 from render import _kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js, provider_slot
 import freight_classify
 
+import re
+
 import pandas as pd
 
 # provider="type:<VT>" rows summed for tile 5 (Supply-Fahrzeuge)
@@ -600,6 +602,138 @@ def _render_group(title_h2, charts):
     return html, "\n".join(js)
 
 
+# ---------------------------------------------------------------------------
+# Tables (Task 9). Reuses `.panel tablewrap` / `table.kpis` CSS and the
+# `toggleVeh`/`tr.vehrow` drilldown JS+CSS already injected globally by
+# render.render_page (Task 4) -- neither is redefined here. Rendered only
+# when `not compact` (compact mode is charts-only, see build_tab).
+# ---------------------------------------------------------------------------
+
+# Strips the "freight_<carrier>_veh_" prefix off an event-vehicle-id (see
+# carriers_parse.CarrierTour.event_vehicle_id: "freight_" + carrier_id +
+# "_veh_" + vehicle_id + "_" + tour_id) -- non-greedy so it stops at the
+# FIRST "_veh_" regardless of how many underscores the carrier id itself
+# contains. IDs that don't match the pattern (e.g. plain test fixture ids)
+# pass through unchanged.
+_VEH_ID_RE = re.compile(r"^freight_.+?_veh_")
+
+
+def _short_veh_id(vid):
+    return _VEH_ID_RE.sub("", str(vid), count=1)
+
+
+def _cell(v, digits=0):
+    """German-formatted table cell, "-" for None/NaN (guards div-by-zero
+    callers that pass None, and pandas NaN from missing per-vehicle columns)."""
+    if v is None:
+        return "-"
+    try:
+        if pd.isna(v):
+            return "-"
+    except TypeError:
+        pass
+    return _fmt_de(float(v), digits)
+
+
+def _table_vrp(pv):
+    """Table 1: VRP-Effizienz je Provider -- one row per real provider
+    (parcels_total-desc order, matching the Provider-Analytik charts' own
+    `_prov_order`), a footnote row, "-" for absent/zero-guarded cells. Empty
+    string when `pv` has no real-provider rows."""
+    if pv is None or pv.empty:
+        return ""
+    order = _prov_order(pv)
+    rows = []
+    for p in order:
+        tours = float(pv.loc[p, "tours"]) if "tours" in pv.columns else None
+        km = float(pv.loc[p, "km"]) if "km" in pv.columns else None
+        km_per_tour = (km / tours) if (km is not None and tours) else None
+        cells = [
+            _cell(tours),
+            _cell(km, 1),
+            _cell(km_per_tour, 1),
+            _cell(pv.loc[p, "stops_per_h"] if "stops_per_h" in pv.columns else None, 1),
+            _cell(pv.loc[p, "stops_per_km"] if "stops_per_km" in pv.columns else None, 2),
+            _cell(pv.loc[p, "parcels_per_km"] if "parcels_per_km" in pv.columns else None, 2),
+            _cell(pv.loc[p, "cost_per_parcel"] if "cost_per_parcel" in pv.columns else None, 2),
+        ]
+        rows.append("<tr><td>" + p + "</td><td>" + "</td><td>".join(cells) + "</td></tr>")
+    header = ("<tr><th>Provider</th><th>Touren</th><th>km</th><th>km/Tour</th>"
+               "<th>Stopps/h</th><th>Stopps/km</th><th>Pakete/km</th><th>€/Paket</th></tr>")
+    footnote = '<tr><td colspan="8">stem% folgt in Plan D</td></tr>'
+    return ('<h2>VRP-Effizienz je Provider</h2><div class="panel tablewrap">'
+            '<table class="kpis">' + header + "".join(rows) + footnote + "</table></div>")
+
+
+def _table_provider_drilldown(pv, vehicles):
+    """Table 2: Provider-Übersicht mit Fahrzeug-Drilldown -- a clickable
+    summary row per real provider (`toggleVeh('p<i>')`, ▸ marker) followed
+    immediately by its hidden `tr.vehrow` rows (`data-drill="p<i>"`) built
+    from `data.vehicles` filtered to role=="freight" and matching provider.
+    The p<i> key is the provider's position in `_prov_order(pv)` -- IDENTICAL
+    between a summary row and its vehrows, by construction. Vehrows are
+    simply absent (summary row still renders) when `vehicles` carries no
+    matching rows for a provider. Empty string when `pv` has no real-
+    provider rows."""
+    if pv is None or pv.empty:
+        return ""
+    order = _prov_order(pv)
+    has_veh = (vehicles is not None and not vehicles.empty
+               and {"role", "provider"}.issubset(vehicles.columns))
+    rows = []
+    for i, p in enumerate(order):
+        key = "p" + str(i)
+        vehicles_n = pv.loc[p, "vehicles"] if "vehicles" in pv.columns else None
+        parcels_total = pv.loc[p, "parcels_total"] if "parcels_total" in pv.columns else None
+        parcels_missed = pv.loc[p, "parcels_missed"] if "parcels_missed" in pv.columns else None
+        cost_total = pv.loc[p, "cost_total"] if "cost_total" in pv.columns else None
+        avg_lf = pv.loc[p, "avg_load_factor"] if "avg_load_factor" in pv.columns else None
+        cost_cell = (_cell(cost_total) + " EUR") if cost_total is not None else "-"
+        lf_cell = _fmt_pct(float(avg_lf)) if avg_lf is not None and not pd.isna(avg_lf) else "-"
+        rows.append(
+            '<tr onclick="toggleVeh(\'' + key + '\')" style="cursor:pointer">'
+            "<td>▸ " + p + "</td><td>" + _cell(vehicles_n) + "</td><td>" + _cell(parcels_total)
+            + "</td><td>" + _cell(parcels_missed) + "</td><td>" + cost_cell + "</td><td>"
+            + lf_cell + "</td></tr>")
+        if has_veh:
+            sub = vehicles[(vehicles["role"] == "freight") & (vehicles["provider"] == p)]
+            for _, vr in sub.iterrows():
+                excluded = vr.get("excluded")
+                excl_mark = "✓" if excluded == 1 else ""
+                lf = vr.get("load_factor")
+                lf_v = _fmt_pct(float(lf)) if lf is not None and not pd.isna(lf) else "-"
+                rows.append(
+                    '<tr class="vehrow" data-drill="' + key + '">'
+                    "<td>" + _short_veh_id(vr.get("vehicle_id")) + "</td><td>"
+                    + str(vr.get("vehicle_type", "")) + "</td><td>"
+                    + _cell(vr.get("distance_km"), 1) + "</td><td>"
+                    + _cell(vr.get("duration_h"), 1) + "</td><td>"
+                    + _cell(vr.get("parcels")) + "</td><td>" + _cell(vr.get("stops"))
+                    + "</td><td>" + lf_v + "</td><td>" + excl_mark + "</td></tr>")
+    header = ("<tr><th>Provider</th><th>Fahrzeuge</th><th>Pakete</th><th>verpasst</th>"
+               "<th>Kosten</th><th>Ø Auslastung</th></tr>")
+    return ('<h2>Provider-Übersicht mit Fahrzeug-Drilldown</h2>'
+            '<div class="panel tablewrap"><table class="kpis">' + header + "".join(rows)
+            + "</table></div>")
+
+
+def _low_util_notice(pv):
+    """Table 3: Low-Util-Hinweis -- a plain `.panel` note, rendered only when
+    `sum(excluded_vehicles) > 0`, with per-provider counts inline. Empty
+    string (no notice) when the column is absent or the sum is 0."""
+    if pv is None or pv.empty or "excluded_vehicles" not in pv.columns:
+        return ""
+    total = _pv_sum(pv, "excluded_vehicles")
+    if not total:
+        return ""
+    parts = [p + ": " + _fmt_de(pv.loc[p, "excluded_vehicles"]) for p in _prov_order(pv)
+             if float(pv.loc[p, "excluded_vehicles"]) > 0]
+    detail = " (" + ", ".join(parts) + ")" if parts else ""
+    text = (_fmt_de(total) + " Fahrzeuge mit Auslastung < 5 % ausgeschlossen" + detail
+            + "; variable Kosten und verpasste Pakete wurden proportional reallokiert.")
+    return '<div class="panel">' + text + "</div>"
+
+
 def build_tab(data, uid, compact=False, map_block=None):
     """LMD tab body: 20-tile legacy headline set + 23 charts + optional map
     block. Tables (Task 9) remain an explicit seam below.
@@ -714,7 +848,11 @@ def build_tab(data, uid, compact=False, map_block=None):
 
     charts_html = "".join(groups_html)
     charts_js = "\n".join(g for g in groups_js if g)
-    tables_html = ""  # Task 9
+
+    tables_html = ""
+    if not compact:
+        tables_html = (_table_vrp(pv) + _table_provider_drilldown(pv, vehicles)
+                       + _low_util_notice(pv))
 
     html = '<div class="tiles">' + tiles + "</div>" + map_html + charts_html + tables_html
     js = charts_js + map_js
