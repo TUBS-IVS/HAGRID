@@ -15,7 +15,8 @@ accessors below. Every tile is guarded by its source being absent, so runs
 without freight (no LMD) simply produce no tiles at all, and runs whose
 provider extraction skipped a given vehicle type/summary row render fewer
 tiles."""
-from render import _kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js, provider_slot
+from render import (_kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js, provider_slot,
+                     _donut, size_marker)
 
 import re
 
@@ -409,29 +410,66 @@ def _typeid_label(type_id, cap):
     return label + " (Kap. " + _fmt_num(cap) + ")"
 
 
-def _vtype_bar(vtypes, kpi, title, cid, pct=False, height=210):
-    """Bar chart (charts 10,11,12): one bar per `vtype:<type_id>` row present
-    (fine vehicle-type granularity -- v2 Plan C Task 12), sorted by real
-    capacity ascending (so CEP sizes read s -> m -> l), sequential-blue
-    color (`__seq` -- types aren't a provider-colored entity)."""
-    if vtypes is None or not len(vtypes):
-        return None
+def _vtype_ordered(vtypes, kpi):
+    """Shared prep for the `vtype:` fine-row charts (v2 Plan C Task 12 / Plan
+    D Task D3): the `kpi` value per type_id plus its label, sorted by real
+    capacity ascending (so CEP sizes read s -> m -> l). Returns
+    `(order, labels, by_tid)` with `order` a list of type_ids -- empty
+    list/dict when `kpi` isn't present on any `vtype:` row. Used identically
+    by `_vtype_bar` (charts 10-12) and `_fleet_donut` (chart 8) so both share
+    the exact same size-ascending index order, and therefore the exact same
+    `size_marker` colors per size."""
     rows = vtypes[vtypes["kpi_name"] == kpi]
     if not len(rows):
-        return None
+        return [], [], {}
     by_tid = {r["provider"].split(":", 1)[1]: float(r["value"]) for _, r in rows.iterrows()}
     cap_rows = vtypes[vtypes["kpi_name"] == "capacity"]
     cap_by_tid = {r["provider"].split(":", 1)[1]: float(r["value"]) for _, r in cap_rows.iterrows()}
     order = sorted(by_tid, key=lambda tid: cap_by_tid.get(tid, 0.0))
+    labels = [_typeid_label(tid, cap_by_tid.get(tid, 0.0)) for tid in order]
+    return order, labels, by_tid
+
+
+def _vtype_bar(vtypes, kpi, title, cid, pct=False, height=210):
+    """Bar chart (charts 10,11,12): one bar per `vtype:<type_id>` row present
+    (fine vehicle-type granularity -- v2 Plan C Task 12), sorted by real
+    capacity ascending (so CEP sizes read s -> m -> l). Colored via the D1
+    size marker (`__sizes`, v2 Plan D Task D3) -- three distinct teal shades
+    by size, matching the fleet donut (chart 8) exactly, and distinct from
+    every provider hue (replaces the old sequential-blue `__seq`, which
+    collided with the dhl provider-blue slot)."""
+    if vtypes is None or not len(vtypes):
+        return None
+    order, labels, by_tid = _vtype_ordered(vtypes, kpi)
     if not order:
         return None
-    labels = [_typeid_label(tid, cap_by_tid.get(tid, 0.0)) for tid in order]
     vals = [round(by_tid[tid] * 100, 2) if pct else round(by_tid[tid], 3) for tid in order]
-    ds = {"label": title, "data": vals, "__seq": True, "borderRadius": 4, "maxBarThickness": 28}
+    ds = {"label": title, "data": vals, "borderRadius": 4, "maxBarThickness": 28}
+    ds.update(size_marker(range(len(order))))
     cfg = {"type": "bar", "data": {"labels": labels, "datasets": [ds]},
            "options": {"responsive": True, "maintainAspectRatio": False,
                        "plugins": {"legend": {"display": False}}}}
     return (title, cid, cfg, height)
+
+
+def _fleet_donut(vtypes, cid, title="Flottenzusammensetzung", height=200):
+    """Fleet-composition donut (chart 8, v2 Plan D Task D3), "auf einen
+    Blick" at the top of Fahrzeugtyp-Analytik: one segment per `vtype:
+    <type_id>` row's `vehicles` count, sorted by real capacity ascending --
+    the SAME order `_vtype_bar` uses for charts 10-12 (via `_vtype_ordered`)
+    -- so the size marker assigns segment i and bar i the identical teal
+    shade. Center hole shows the total vehicle count. Pie/donut is allowed
+    here per the 2026-07-16 user override (fleet composition, alongside
+    D2's modal split)."""
+    if vtypes is None or not len(vtypes):
+        return None
+    order, labels, by_tid = _vtype_ordered(vtypes, "vehicles")
+    if not order:
+        return None
+    values = [round(by_tid[tid], 2) for tid in order]
+    color_marker = size_marker(range(len(order)))
+    return _donut(cid, title, labels, values, color_marker, height=height,
+                  center_label=_fmt_de(sum(values)))
 
 
 def _dist_bar(dist, series, title, cid, unit_div=1, height=210):
@@ -765,14 +803,16 @@ def _low_util_notice(pv):
 
 
 def build_tab(data, uid, compact=False, map_block=None):
-    """LMD tab body: 20-tile legacy headline set + 23 charts + optional map
-    block. Tables (Task 9) remain an explicit seam below.
+    """LMD tab body: 20-tile legacy headline set + a fleet-composition donut
+    + 23 charts + optional map block. Tables (Task 9) render directly after
+    Provider-Analytik / before Fahrzeugtyp-Analytik (moved up in v2 Plan D
+    Task D3 -- previously trailed after all charts).
 
     `compact=True` renders only charts 1, 2, 4 (Provider-Analytik) and 13,
-    14 (Tour-Struktur) -- no vehicle-type, Tagesverlauf, Scoring, or Scatter
-    charts. Every chart is guarded individually by its source KPI/series/
-    rows being absent (e.g. no CARGOBIKE fleet, carrier_scores.txt not
-    written, or the Plan-D-only hourly-provider/depot series not emitted
+    14 (Tour-Struktur) -- no vehicle-type, Tagesverlauf, Scoring, Scatter
+    charts, or tables. Every chart is guarded individually by its source
+    KPI/series/rows being absent (e.g. no CARGOBIKE fleet, carrier_scores.txt
+    not written, or the Plan-D-only hourly-provider/depot series not emitted
     yet)."""
     tiles = _tiles(data)
 
@@ -813,10 +853,26 @@ def build_tab(data, uid, compact=False, map_block=None):
         groups_js.append(j)
 
     if not compact:
-        # --- Fahrzeugtyp-Analytik (charts 10-12) ---
-        # Fine vtype:<type_id> rows (v2 Plan C Task 12) -- e.g. one bar per
-        # ct_cep_size_s/m/l instead of the broad type:VAN row's average.
+        # --- Provider overview tables (v2 Plan D Task D3, #10) --- moved up
+        # from the trailing tables_html position to directly after Provider-
+        # Analytik / before Fahrzeugtyp-Analytik, so the "Provider-Übersicht
+        # mit Fahrzeug-Drilldown" (+ VRP-Effizienz) render near the top.
+        # Render ORDER only -- the toggleVeh keys / tr.vehrow rows / JS/CSS
+        # are unchanged (defined globally, not here).
+        tables_html = (_table_vrp(pv) + _table_provider_drilldown(pv, vehicles)
+                       + _low_util_notice(pv))
+        if tables_html:
+            groups_html.append(tables_html)
+
+        # --- Fahrzeugtyp-Analytik (charts 8-12) ---
+        # Chart 8: fleet-composition donut, "auf einen Blick" at the top of
+        # the section. Charts 9(bars)-12: fine vtype:<type_id> rows (v2 Plan
+        # C Task 12) -- e.g. one bar per ct_cep_size_s/m/l instead of the
+        # broad type:VAN row's average. Both the donut and the bars color by
+        # the D1 size marker (v2 Plan D Task D3) so S/M/L share the same
+        # three teal shades across donut and bars.
         type_charts = [
+            _fleet_donut(vtypes, "c_t_fleet_" + uid),
             _vtype_bar(vtypes, "distance_km", "Distanz je Fahrzeugtyp [km]", "c_t_km_" + uid),
             _vtype_bar(vtypes, "load_factor", "Auslastung je Fahrzeugtyp", "c_t_lf_" + uid, pct=True),
             _vtype_bar(vtypes, "km_per_tour", "km je Tour je Typ", "c_t_kmt_" + uid),
@@ -882,11 +938,6 @@ def build_tab(data, uid, compact=False, map_block=None):
     charts_html = "".join(groups_html)
     charts_js = "\n".join(g for g in groups_js if g)
 
-    tables_html = ""
-    if not compact:
-        tables_html = (_table_vrp(pv) + _table_provider_drilldown(pv, vehicles)
-                       + _low_util_notice(pv))
-
-    html = '<div class="tiles">' + tiles + "</div>" + map_html + charts_html + tables_html
+    html = '<div class="tiles">' + tiles + "</div>" + map_html + charts_html
     js = charts_js + map_js
     return html, js

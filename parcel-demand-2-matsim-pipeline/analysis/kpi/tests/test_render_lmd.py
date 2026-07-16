@@ -286,6 +286,47 @@ def test_vtype_charts_two_bars_per_cep_size():
     assert '"S (Kap. 100)"' in lf_line and '"M (Kap. 165)"' in lf_line
 
 
+def test_fleet_donut_present_with_size_segments():
+    # v2 Plan D Task D3, chart 8: fleet-composition donut built from the fine
+    # vtype: rows, sorted by capacity ascending (s=100 before m=165), center
+    # total = sum of vehicles (30 + 10 = 40).
+    data = _data(_full_kpis(), _full_provider(), ts=_full_ts(), iterations=_full_iterations(),
+                 distributions=_full_distributions(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "c_t_fleet_lmd" in html
+    fleet_line = next(l for l in js.splitlines() if "c_t_fleet_lmd" in l)
+    assert '"type": "doughnut"' in fleet_line
+    assert '"S (Kap. 100)"' in fleet_line and '"M (Kap. 165)"' in fleet_line
+    assert fleet_line.index('"S (Kap. 100)"') < fleet_line.index('"M (Kap. 165)"')
+    assert '"text": "40"' in fleet_line   # center total = 30 + 10 vehicles
+
+
+def test_vtype_bars_use_size_marker_not_seq():
+    # v2 Plan D Task D3: charts 10-12 must color via the D1 size marker
+    # (__sizes), not the old sequential-blue __seq (a provider-blue collision).
+    data = _data(_full_kpis(), _full_provider(), ts=_full_ts(), iterations=_full_iterations(),
+                 distributions=_full_distributions(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    for cid in ("c_t_km_lmd", "c_t_lf_lmd", "c_t_kmt_lmd", "c_t_st_lmd"):
+        line = next(l for l in js.splitlines() if cid in l)
+        assert '"__seq"' not in line
+        assert '"__sizes"' in line
+
+
+def test_fleet_donut_colors_match_vtype_bar_colors():
+    # v2 Plan D Task D3: the fleet donut (#8) and the vtype bars (#9) must
+    # share the SAME size marker (same indices, same order) so segment S/M/L
+    # and bar S/M/L paint with identical teal shades.
+    data = _data(_full_kpis(), _full_provider(), ts=_full_ts(), iterations=_full_iterations(),
+                 distributions=_full_distributions(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    fleet_line = next(l for l in js.splitlines() if "c_t_fleet_lmd" in l)
+    km_line = next(l for l in js.splitlines() if "c_t_km_lmd" in l)
+    fleet_sizes = re.search(r'"__sizes": (\[[^\]]*\])', fleet_line).group(1)
+    km_sizes = re.search(r'"__sizes": (\[[^\]]*\])', km_line).group(1)
+    assert fleet_sizes == km_sizes == "[0, 1]"
+
+
 def test_charts_missing_iterations_skip_chart19_gracefully():
     # carrier_scores.txt is optional -- no carrier_score_* series at all -> chart 19 absent,
     # no exception
@@ -349,6 +390,18 @@ def test_table_vrp_efficiency_rows_and_header():
     assert "<td>amazon</td>" in html
     # footnote row
     assert "stem% folgt in Plan D" in html
+
+
+def test_provider_tables_render_before_vtype_section():
+    # v2 Plan D Task D3 (#10): the provider tables move out of the trailing
+    # position to directly after Provider-Analytik / before Fahrzeugtyp-
+    # Analytik -- render ORDER only, drilldown keys/rows unchanged.
+    data = _data(_full_kpis(), _full_provider(), ts=_full_ts(), iterations=_full_iterations(),
+                 distributions=_full_distributions(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    drilldown_i = html.index("Provider-Übersicht mit Fahrzeug-Drilldown")
+    vtype_section_i = html.index("Fahrzeugtyp-Analytik")
+    assert drilldown_i < vtype_section_i
 
 
 def test_table_vrp_efficiency_absent_when_no_provider_data():
