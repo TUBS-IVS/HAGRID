@@ -116,15 +116,6 @@ function mk(id, cfg) { new Chart(document.getElementById(id), cfg); }
 """
 
 
-def load_run_csvs(analysis_dir):
-    analysis_dir = Path(analysis_dir)
-    kpis = pd.read_csv(analysis_dir / "kpis_long.csv", sep=";")
-    ts_f = analysis_dir / "kpi_timeseries.csv"
-    ts = pd.read_csv(ts_f, sep=";") if ts_f.exists() else pd.DataFrame(
-        columns=["run_id", "series", "hour", "value", "unit"])
-    return kpis, ts
-
-
 # canonical empty-with-columns schemas (used when a CSV is missing) — keeps
 # downstream .empty checks and column indexing safe regardless of which of
 # the 6 canonical CSVs a given run actually produced.
@@ -220,126 +211,6 @@ def render_kpi_table(kpis):
             + "".join(rows_html) + "</table></div>")
 
 
-def render_run_sections(kpis, ts, uid):
-    """Tiles + charts + table for ONE run. uid makes canvas ids unique so the
-    comparison page can embed several runs."""
-    html, js = [], []
-
-    tiles = []
-    v = _kpi(kpis, "modal_share_drt")
-    if v is not None:
-        tiles.append(_tile(_fmt_pct(v), "DRT-Modal-Share", "modestats, letzte Iteration"))
-    v = _kpi(kpis, "drt_rides")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v), "DRT-Fahrten", "bediente Requests"))
-    v = _kpi(kpis, "wait_median")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v / 60.0, 1) + " min", "Wartezeit (Median)",
-                           "P95: " + _fmt_de((_kpi(kpis, "wait_p95") or 0) / 60.0, 1) + " min"))
-    v = _kpi(kpis, "drt_rejection_rate")
-    if v is not None:
-        tiles.append(_tile(_fmt_pct(v, 2), "Ablehnungsquote", "aus Integer-Spalten"))
-    v = _kpi(kpis, "drt_vehicles")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v), "DRT-Flotte", "Fahrzeuge"))
-    v = _kpi(kpis, "service_ratio_shift")
-    if v is not None:
-        tiles.append(_tile(_fmt_pct(v), "Service-Zeit (Schicht)", "Zeit mit Pax / Schichtzeit"))
-    v = _kpi(kpis, "parcels_total")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v), "Pakete", "gesamt"))
-    v = _kpi(kpis, "delivery_rate")
-    if v is not None:
-        tiles.append(_tile(_fmt_pct(v), "Zustellquote", "ohne missed/unassigned"))
-    v = _kpi(kpis, "freight_vehicles")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v), "Lieferfahrzeuge",
-                           "Auslastung " + _fmt_pct(_kpi(kpis, "avg_max_load") or 0)))
-    v = _kpi(kpis, "freight_total_costs")
-    if v is not None:
-        tiles.append(_tile(_fmt_de(v) + " EUR", "Freight-Kosten (jsprit)",
-                           _fmt_de(_kpi(kpis, "freight_cost_per_parcel") or 0, 2) + " EUR/Paket"))
-    html.append('<div class="tiles">' + "".join(tiles) + "</div>")
-
-    charts = []
-
-    # modal split: part-to-whole -> ONE horizontal stacked bar, fixed mode slots
-    modes = kpis[kpis["kpi_name"].str.startswith("modal_share_")]
-    if len(modes):
-        labels, data, colors = [], [], []
-        for _, r in modes.iterrows():
-            mode = r["kpi_name"].replace("modal_share_", "")
-            labels.append(mode)
-            data.append(round(float(r["value"]) * 100, 2))
-            colors.append(MODE_SLOTS.get(mode, 6))
-        charts.append(("Modal Split [%]", "c_modal_" + uid, {
-            "type": "bar",
-            "data": {"labels": ["Modal Split"],
-                     "datasets": [{"label": l, "data": [d], "stack": "s",
-                                   "categoryPercentage": 0.5,
-                                   "__slot": c} for l, d, c in zip(labels, data, colors)]},
-            "options": {"indexAxis": "y", "responsive": True, "maintainAspectRatio": False,
-                        "scales": {"x": {"stacked": True, "max": 100,
-                                         "grid": {"display": False}},
-                                   "y": {"stacked": True, "display": False}}},
-        }, 120))
-
-    hrs, rides = _series(ts, "drt_rides")
-    if hrs:
-        charts.append(("DRT-Fahrten je Stunde", "c_rides_" + uid, {
-            "type": "bar",
-            "data": {"labels": hrs, "datasets": [{
-                "label": "Fahrten/h", "data": rides, "__seq": True,
-                "borderRadius": 4, "maxBarThickness": 18}]},
-            "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": False}}},
-        }, 210))
-
-    hrs, wm = _series(ts, "drt_wait_mean")
-    if hrs:
-        charts.append(("Mittlere Wartezeit je Stunde [s]", "c_wait_" + uid, {
-            "type": "line",
-            "data": {"labels": hrs, "datasets": [{
-                "label": "Wartezeit [s]", "data": wm, "__seq": True,
-                "borderWidth": 2, "pointRadius": 0, "tension": 0.25}]},
-            "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": False}}},
-        }, 210))
-
-    hrs, rej = _series(ts, "drt_rejections")
-    if hrs:
-        charts.append(("Abgelehnte Requests je Stunde", "c_rej_" + uid, {
-            "type": "bar",
-            "data": {"labels": hrs, "datasets": [{
-                "label": "Rejections/h", "data": rej, "__seq": True,
-                "borderRadius": 4, "maxBarThickness": 18}]},
-            "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": False}}},
-        }, 180))
-
-    hrs, stops = _series(ts, "freight_service_stops")
-    if hrs:
-        charts.append(("Freight-Servicestopps je Stunde", "c_frt_" + uid, {
-            "type": "bar",
-            "data": {"labels": hrs, "datasets": [{
-                "label": "Stopps/h", "data": stops, "__seq": True,
-                "borderRadius": 4, "maxBarThickness": 18}]},
-            "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": False}}},
-        }, 180))
-
-    html.append('<div class="grid2">'
-                + "".join(_panel(t, cid, h) for t, cid, _cfg, h in charts)
-                + "</div>")
-
-    # full KPI table (grouped, tabular-nums) — the "table view" accessibility fallback
-    html.append(render_kpi_table(kpis))
-
-    for _, cid, cfg, _ in charts:
-        js.append(chart_js(cid, cfg))
-    return "".join(html), "\n".join(js)
-
-
 JS_RESOLVE = """
 function alphaSeq(a) {
   const hex = V('--seq').replace('#', '');
@@ -425,10 +296,13 @@ def render_run_page(data, title, maps=None):
     `data`: RunData (see load_run_data). `maps`: optional {"drt": block,
     "lmd": block} passed through to the tab builders as map_block.
 
-    render_drt.build_tab / render_lmd.build_tab (Tasks 5/7) are imported
-    lazily so this module has no import-time dependency on them; until those
-    modules exist, each tab falls back to the legacy render_run_sections
-    scaffold (removed again once Task 10 lands)."""
+    render_drt.build_tab / render_lmd.build_tab (Tasks 5/7) are the real
+    renderers -- no fallback, no placeholder (v2 Plan C Task 10). Imported
+    here (not at module level) since both import names back out of this
+    module -- a module-level import would be circular."""
+    import render_drt
+    import render_lmd
+
     maps = maps or {}
     kpis = data.kpis
 
@@ -436,35 +310,15 @@ def render_run_page(data, title, maps=None):
     has_lmd = (not data.provider.empty) or (
         (not kpis.empty) and (kpis["kpi_group"] == "freight").any())
 
-    try:
-        from render_drt import build_tab as drt_build_tab
-    except ImportError:
-        drt_build_tab = None
-    try:
-        from render_lmd import build_tab as lmd_build_tab
-    except ImportError:
-        lmd_build_tab = None
-
     tab_defs = []          # (label, html, js)
-    used_fallback = False   # fallback tab body already embeds its own KPI table
 
     if has_drt:
-        if drt_build_tab is not None:
-            html, js = drt_build_tab(data, "rd", map_block=maps.get("drt"))
-        else:
-            html, js = render_run_sections(kpis, data.ts, "rd")
-            used_fallback = True
+        html, js = render_drt.build_tab(data, "rd", map_block=maps.get("drt"))
         tab_defs.append(("DRT", html, js))
 
     if has_lmd:
-        if lmd_build_tab is not None:
-            html, js = lmd_build_tab(data, "rl", map_block=maps.get("lmd"))
-            tab_defs.append(("LMD", html, js))
-        else:
-            # interim scaffold: no real LMD renderer yet (Task 7). Avoid
-            # re-emitting render_run_sections a second time (duplicate
-            # canvas ids + duplicate "Alle KPIs" table) -- just a placeholder.
-            tab_defs.append(("LMD", '<div class="panel">LMD-Dashboard folgt (Task 7).</div>', ""))
+        html, js = render_lmd.build_tab(data, "rl", map_block=maps.get("lmd"))
+        tab_defs.append(("LMD", html, js))
 
     if not tab_defs:
         body = render_kpi_table(kpis)
@@ -480,22 +334,29 @@ def render_run_page(data, title, maps=None):
         for i, (_, html, _) in enumerate(tab_defs))
     joined_js = "\n".join(js for _, _, js in tab_defs if js)
 
-    body = tabbar + tabs_html
-    if not used_fallback:
-        body += render_kpi_table(kpis)
+    body = tabbar + tabs_html + render_kpi_table(kpis)
     body_js = TAB_JS + VLINE_JS + TOGGLE_JS + DRILL_JS + joined_js
     return render_page(title, body, body_js)
 
 
 def render_comparison_page(runs, title):
-    """runs: list of dicts {label, scenario, kpis (DataFrame), ts (DataFrame)}."""
+    """runs: list of dicts {label, scenario, data (RunData)}.
+
+    Tab 0 (comparison: headline grouped bars + timeseries overlays + full
+    KPI comparison table) sources kpis/ts off `r["data"]` but is otherwise
+    byte-for-byte the same logic as before Task 10. Per-run tabs are the
+    real compact DRT/LMD tab builders (imported here, not at module level,
+    for the same circular-import reason as render_run_page)."""
+    import render_drt
+    import render_lmd
+
     charts, js = [], []
 
     # headline grouped horizontal bars: one chart per KPI, one bar per run
     for idx, (name, label, scale, unit) in enumerate(HEADLINE_KPIS):
         labels, values, slots = [], [], []
         for i, r in enumerate(runs):
-            v = _kpi(r["kpis"], name)
+            v = _kpi(r["data"].kpis, name)
             if v is None:
                 continue
             labels.append(r["label"])
@@ -523,7 +384,7 @@ def render_comparison_page(runs, title):
                           ("freight_service_stops", "Freight-Stopps je Stunde")]:
         datasets = []
         for i, r in enumerate(runs):
-            hrs, vals = _series(r["ts"], sname)
+            hrs, vals = _series(r["data"].ts, sname)
             if hrs:
                 datasets.append({"label": r["label"],
                                  "data": [{"x": h, "y": v} for h, v in zip(hrs, vals)],
@@ -542,7 +403,7 @@ def render_comparison_page(runs, title):
     # full comparison table: KPI rows, runs as columns
     all_names = []
     for r in runs:
-        for _, k in r["kpis"].iterrows():
+        for _, k in r["data"].kpis.iterrows():
             key = (k["kpi_group"], k["kpi_name"], k["unit"])
             if key not in all_names:
                 all_names.append(key)
@@ -552,7 +413,8 @@ def render_comparison_page(runs, title):
     for grp, name, unit in all_names:
         cells = ""
         for r in runs:
-            m = r["kpis"][(r["kpis"]["kpi_name"] == name) & (r["kpis"]["kpi_group"] == grp)]
+            kpis = r["data"].kpis
+            m = kpis[(kpis["kpi_name"] == name) & (kpis["kpi_group"] == grp)]
             cells += "<td>" + (str(m.iloc[0]["value"]) if len(m) else "-") + "</td>"
         body_rows.append("<tr><td>" + grp + "</td><td>" + name + "</td><td>"
                          + str(unit) + "</td>" + cells + "</tr>")
@@ -561,13 +423,30 @@ def render_comparison_page(runs, title):
 
     cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table
 
-    # per-run tabs reuse the single-run sections
+    # per-run tabs: real compact DRT/LMD tab builders, gated by presence
+    # exactly like render_run_page's has_drt/has_lmd.
     tabs_html = ['<div class="tab on">' + cmp_tab + "</div>"]
     run_js = []
     for i, r in enumerate(runs):
-        body, sec_js = render_run_sections(r["kpis"], r["ts"], uid="run" + str(i))
-        tabs_html.append('<div class="tab">' + body + "</div>")
-        run_js.append(sec_js)
+        data = r["data"]
+        kpis = data.kpis
+        uid = "run" + str(i)
+        has_drt = (not kpis.empty) and (kpis["kpi_group"] == "passenger").any()
+        has_lmd = (not data.provider.empty) or (
+            (not kpis.empty) and (kpis["kpi_group"] == "freight").any())
+
+        body_parts, js_parts = [], []
+        if has_drt:
+            h, j = render_drt.build_tab(data, uid, compact=True)
+            body_parts.append(h)
+            js_parts.append(j)
+        if has_lmd:
+            h, j = render_lmd.build_tab(data, uid, compact=True)
+            body_parts.append(h)
+            js_parts.append(j)
+
+        tabs_html.append('<div class="tab">' + "".join(body_parts) + "</div>")
+        run_js.append("\n".join(p for p in js_parts if p))
     tabbar = ('<div class="tabbar"><button class="on" onclick="showTab(0)">Vergleich</button>'
               + "".join('<button onclick="showTab(' + str(i + 1) + ')">' + r["label"]
                         + "</button>" for i, r in enumerate(runs)) + "</div>")

@@ -322,9 +322,9 @@ def _occ_chart(dist, cid, title="Besetzungs-Dekomposition", height=210):
 
 
 def _modal_chart(kpis, cid, title="Modal Split", height=120):
-    """Single horizontal 100%-stacked bar (chart 10) -- ported from
-    render.render_run_sections (the modal_share_* block), fixed MODE_SLOTS
-    colors. render_run_sections itself is not called (Task 10 deletes it)."""
+    """Single horizontal 100%-stacked bar (chart 10) -- the modal_share_*
+    block, fixed MODE_SLOTS colors (originally ported from the now-deleted
+    render.render_run_sections, removed in Task 10)."""
     modes = kpis[kpis["kpi_name"].str.startswith("modal_share_")]
     if not len(modes):
         return None
