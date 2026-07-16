@@ -13,7 +13,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt — aufgeschobene Punkte und neue Findings
 kommen mit Datum hier rein; Erledigtes wandert nach `## Erledigt` (kurzer Nachweis) oder wird
-gestrichen. _Zuletzt aktualisiert: 2026-07-14._
+gestrichen. _Zuletzt aktualisiert: 2026-07-16._
 
 ---
 
@@ -59,9 +59,37 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-14._
   kann den Test-Kompat-Patch-Commit fallen lassen. Risiko: matsim-lausitz-2.0-Binärkompatibilität
   (durch die e2e-Suite zu beweisen). _(added 2026-07-14)_
 
-- **`[M]` Run-Dashboard v2 — Pläne B → C → D ausführen** — B unabhängig, C vor D. Subagent-driven
-  empfohlen. → Pläne [B](superpowers/plans/2026-07-13-run-dashboard-v2-planB-java-trigger.md) / [C](superpowers/plans/2026-07-13-run-dashboard-v2-planC-rendering.md) / [D](superpowers/plans/2026-07-13-run-dashboard-v2-planD-maps.md)
-  _(added 2026-07-14)_
+- **`[M]` Run-Dashboard v2 — Plan D (Karten) + zwei zurückgestellte KPIs** — B ✅ (gepusht), C ✅ (lokal),
+  Plan-D **Visual-Polish** ✅ (lokal, 2026-07-16, Tasks D1–D3: Donuts/Größenfarben/0–23-Achse/volle Breite).
+  **Offen:** (a) Plan D **Karten** (depot-siting / vehicle-tours in die Tabs); (b) zwei bewusst auf Plan D
+  verschobene Datenschicht-KPIs (waren „Round 2", User-Entscheidung 2026-07-16 skippen):
+  **`occ_km`** = gefahrene km je Besetzungslevel (braucht Netzwerk-km-Rekonstruktion; Legacy `dist_by_occ`
+  aus `build_drt_dashboard.py` portieren — `_occ_chart` rendert die Serie bereits, sie wird nur nicht emittiert)
+  und **ausgelieferte Pakete/h** (Join Freight-Service-actstart-Event → Carrier-Plan-Demand; `_hourly_provider_stack`
+  hängt schon bereit). Subagent-driven empfohlen. → Pläne [B](superpowers/plans/2026-07-13-run-dashboard-v2-planB-java-trigger.md) / [C](superpowers/plans/2026-07-13-run-dashboard-v2-planC-rendering.md) / [D-Polish](superpowers/plans/2026-07-16-run-dashboard-v2-planD-visual-polish.md) / [D-Karten](superpowers/plans/2026-07-13-run-dashboard-v2-planD-maps.md)
+  _(added 2026-07-14, aktualisiert 2026-07-16)_
+
+- **`[M]` jsprit-Upgrade 1.8 → 2.x + modulare Operatorauswahl** — Freight-VRP läuft aktuell auf
+  `jsprit.version=1.8` (`pom.xml:24`), **Default-Algorithmus** (Algorithm-File im Config leer), aufgerufen
+  via `CarriersUtils.runJsprit` (Builder im geforkten freight-contrib, nicht in HAGRID). Idee (Kollege Chatty):
+  auf jsprit 2.0 heben — mehr Ruin-/Insertion-Operatoren + unabhängige Operatorauswahl pro Iteration —,
+  zunächst in eigenem Branch mit Regressionstests, statt direkt zu VROOM zu wechseln.
+  **Meine Einordnung:**
+  - **Richtung sinnvoll:** bessere VRP-Qualität wirkt direkt auf die Tourgeometrie — genau das, was die
+    Dashboards messen (Kosten/km/Stopps). Innerhalb jsprit zu bleiben statt VROOM ist der klar risikoärmere
+    Schritt. Zustimmung zum Vorgehen (Branch + Regression).
+  - ⚠️ **Vor Umsetzung verifizieren:** (1) ob „jsprit 2.0" als Release überhaupt existiert und welche Version
+    MATSims freight-contrib mitträgt (jsprit-Releases lagen zuletzt eher im 1.9er-Bereich — „2.0" ist unbestätigt);
+    (2) der Beispiel-Code (`addRuinOperator(w, Ruin.random(...))`, `Insertion.regretFast()`) entspricht **nicht**
+    der mir bekannten jsprit-API — die nutzt **property-basierte** Strategie-Gewichte über `Jsprit.Parameter`/
+    `Jsprit.Strategy`, kein Fluent-`addRuinOperator`. Als Pseudocode behandeln, gegen echte jsprit-Doku/Source prüfen.
+  - **HAGRID-Spezifika:** Bump berührt `pom.xml` + Fork-POM (`external/matsim-libs`, contribs/freight) und braucht
+    die freight-272-Regression **plus** einen Re-Run-Vergleich auf married250 (Kosten/Routen-KPIs verschieben sich
+    → alle Dashboards neu baseline). Custom-Operatoren am elegantesten über das **Algorithm-XML-Hook** im Config
+    (existiert bereits), nicht per Java-Patch im Fork. Determinismus: Operator-Gewichte + fixer Seed für
+    Reproduzierbarkeit klären.
+  - **Kopplung:** beim MATSim-Core-Bump `2025.0` (eigener Punkt) mitprüfen, ob der die jsprit-Version ohnehin mitzieht.
+  _(added 2026-07-16)_
 
 - **`[M]` Case-Study-Area erweitern** — konkret: Ruhland-Korridor-Entscheidung (aktuell dropped als
   Kurzfix wegen Orphan-Polygon). Tendenz: DRT-Service-Area zu einem zusammenhängenden
