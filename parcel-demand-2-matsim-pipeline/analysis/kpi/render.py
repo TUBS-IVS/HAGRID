@@ -552,6 +552,12 @@ def render_comparison_page(runs, title):
               + "".join('<button onclick="showTab(' + str(i + 1) + ')">' + r["label"]
                         + "</button>" for i, r in enumerate(runs)) + "</div>")
 
-    # __slots (per-bar colors) needs a tiny resolver extension:
-    body_js = TAB_JS + "\n" + "\n".join(js) + "\n" + "\n".join(run_js)
+    # __slots (per-bar colors) needs a tiny resolver extension.
+    # The per-run compact tabs are built by render_drt/render_lmd build_tab and
+    # can emit a modal donut (centerTotal), vlines, feeder toggles or drilldowns,
+    # so this page must DEFINE those plugins too -- same set render_run_page ships
+    # (otherwise e.g. the modal donut's centerTotal plugin is undefined here and
+    # its hole total silently never draws).
+    body_js = (TAB_JS + VLINE_JS + DONUT_JS + TOGGLE_JS + DRILL_JS
+               + "\n" + "\n".join(js) + "\n" + "\n".join(run_js))
     return render_page(title, tabbar + "".join(tabs_html), body_js)
