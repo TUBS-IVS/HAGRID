@@ -16,7 +16,6 @@ without freight (no LMD) simply produce no tiles at all, and runs whose
 provider extraction skipped a given vehicle type/summary row render fewer
 tiles."""
 from render import _kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js, provider_slot
-import freight_classify
 
 import re
 
@@ -33,26 +32,41 @@ _SUPPLY_VTYPES = ["TRUCK", "TRUCK_LIGHT", "SUPPLY_VAN"]
 # ---------------------------------------------------------------------------
 
 def _pv(provider_df):
-    """Pivot of real-provider rows only (excludes `provider=="all"` and
-    `provider.startswith("type:")`): rows = provider, columns = kpi_name,
-    values = value. Empty DataFrame when there is no provider data or no
-    real-provider rows."""
+    """Pivot of real-provider rows only (excludes `provider=="all"`,
+    `provider.startswith("type:")` and `provider.startswith("vtype:")`):
+    rows = provider, columns = kpi_name, values = value. Empty DataFrame
+    when there is no provider data or no real-provider rows."""
     if provider_df is None or provider_df.empty or "provider" not in provider_df.columns:
         return pd.DataFrame()
     prov = provider_df["provider"].astype(str)
-    real = provider_df[(prov != "all") & (~prov.str.startswith("type:"))]
+    real = provider_df[(prov != "all") & (~prov.str.startswith("type:"))
+                        & (~prov.str.startswith("vtype:"))]
     if not len(real):
         return pd.DataFrame()
     return real.pivot_table(index="provider", columns="kpi_name", values="value", aggfunc="first")
 
 
 def _types(provider_df):
-    """The `provider.startswith("type:")` rows (per-vehicle-type KPIs),
-    unchanged (long) shape -- columns `provider`, `kpi_name`, `value`, ..."""
+    """The `provider.startswith("type:")` rows (per-vehicle-type KPIs, the
+    BROAD bucket -- e.g. all CEP van sizes as one "VAN" row), unchanged
+    (long) shape -- columns `provider`, `kpi_name`, `value`, ... . Consumed
+    by the LMD tiles (3/4/5), which must NOT switch to the fine rows."""
     if provider_df is None or provider_df.empty or "provider" not in provider_df.columns:
         return pd.DataFrame(columns=["provider", "kpi_name", "value"])
     prov = provider_df["provider"].astype(str)
     return provider_df[prov.str.startswith("type:")]
+
+
+def _vtypes(provider_df):
+    """The `provider.startswith("vtype:")` rows (v2 Plan C Task 12) --
+    per-vehicle-TYPE-ID KPIs (fine granularity, e.g. one row per
+    ct_cep_size_s/m/l instead of one averaged "VAN" row). Same long shape
+    as `_types`. Consumed by the Fahrzeugtyp-Analytik charts (10-12) only --
+    the tiles keep reading `_types`."""
+    if provider_df is None or provider_df.empty or "provider" not in provider_df.columns:
+        return pd.DataFrame(columns=["provider", "kpi_name", "value"])
+    prov = provider_df["provider"].astype(str)
+    return provider_df[prov.str.startswith("vtype:")]
 
 
 def _all(provider_df, kpi):
@@ -379,24 +393,40 @@ def _time_split_chart(pv, cid, title="Zeitaufteilung Fahren vs. Service", height
                       title, cid, height=height)
 
 
-_VTYPE_ORDER = list(freight_classify.VEHICLE_TYPE_LABELS.keys())
+# Common prefix stripped for a shorter, legacy-flavored label on the CEP-van
+# size type_ids ("ct_cep_size_s" -> "S"); any type_id that doesn't match
+# falls back to the full id, so the label is always informative.
+_CEP_SIZE_PREFIX = "ct_cep_size_"
 
 
-def _type_bar(types, kpi, title, cid, pct=False, height=210):
-    """Bar chart (charts 10,11,12): one bar per vehicle type present in the
-    `type:` rows, labelled via VEHICLE_TYPE_LABELS, sequential-blue color
-    (`__seq` -- types aren't a provider-colored entity)."""
-    if types is None or not len(types):
+def _typeid_label(type_id, cap):
+    """Readable label for a `vtype:<type_id>` bar: strip the common CEP-size
+    prefix (if present) and append the real per-type capacity, e.g.
+    "ct_cep_size_s" + 100.0 -> "S (Kap. 100)"; other type_ids keep their
+    full id, e.g. "cargoBike_t (Kap. 30)"."""
+    label = (type_id[len(_CEP_SIZE_PREFIX):].upper() if type_id.startswith(_CEP_SIZE_PREFIX)
+             else type_id)
+    return label + " (Kap. " + _fmt_num(cap) + ")"
+
+
+def _vtype_bar(vtypes, kpi, title, cid, pct=False, height=210):
+    """Bar chart (charts 10,11,12): one bar per `vtype:<type_id>` row present
+    (fine vehicle-type granularity -- v2 Plan C Task 12), sorted by real
+    capacity ascending (so CEP sizes read s -> m -> l), sequential-blue
+    color (`__seq` -- types aren't a provider-colored entity)."""
+    if vtypes is None or not len(vtypes):
         return None
-    rows = types[types["kpi_name"] == kpi]
+    rows = vtypes[vtypes["kpi_name"] == kpi]
     if not len(rows):
         return None
-    by_vt = {r["provider"].split(":", 1)[1]: float(r["value"]) for _, r in rows.iterrows()}
-    order = [vt for vt in _VTYPE_ORDER if vt in by_vt]
+    by_tid = {r["provider"].split(":", 1)[1]: float(r["value"]) for _, r in rows.iterrows()}
+    cap_rows = vtypes[vtypes["kpi_name"] == "capacity"]
+    cap_by_tid = {r["provider"].split(":", 1)[1]: float(r["value"]) for _, r in cap_rows.iterrows()}
+    order = sorted(by_tid, key=lambda tid: cap_by_tid.get(tid, 0.0))
     if not order:
         return None
-    labels = [freight_classify.VEHICLE_TYPE_LABELS[vt] for vt in order]
-    vals = [round(by_vt[vt] * 100, 2) if pct else round(by_vt[vt], 3) for vt in order]
+    labels = [_typeid_label(tid, cap_by_tid.get(tid, 0.0)) for tid in order]
+    vals = [round(by_tid[tid] * 100, 2) if pct else round(by_tid[tid], 3) for tid in order]
     ds = {"label": title, "data": vals, "__seq": True, "borderRadius": 4, "maxBarThickness": 28}
     cfg = {"type": "bar", "data": {"labels": labels, "datasets": [ds]},
            "options": {"responsive": True, "maintainAspectRatio": False,
@@ -755,6 +785,7 @@ def build_tab(data, uid, compact=False, map_block=None):
     dist, iters, vehicles = data.distributions, data.iterations, data.vehicles
     pv = _pv(provider)
     types = _types(provider)
+    vtypes = _vtypes(provider)
 
     groups_html, groups_js = [], []
 
@@ -783,11 +814,13 @@ def build_tab(data, uid, compact=False, map_block=None):
 
     if not compact:
         # --- Fahrzeugtyp-Analytik (charts 10-12) ---
+        # Fine vtype:<type_id> rows (v2 Plan C Task 12) -- e.g. one bar per
+        # ct_cep_size_s/m/l instead of the broad type:VAN row's average.
         type_charts = [
-            _type_bar(types, "distance_km", "Distanz je Fahrzeugtyp [km]", "c_t_km_" + uid),
-            _type_bar(types, "load_factor", "Auslastung je Fahrzeugtyp", "c_t_lf_" + uid, pct=True),
-            _type_bar(types, "km_per_tour", "km je Tour je Typ", "c_t_kmt_" + uid),
-            _type_bar(types, "stops_per_tour", "Stopps je Tour je Typ", "c_t_st_" + uid),
+            _vtype_bar(vtypes, "distance_km", "Distanz je Fahrzeugtyp [km]", "c_t_km_" + uid),
+            _vtype_bar(vtypes, "load_factor", "Auslastung je Fahrzeugtyp", "c_t_lf_" + uid, pct=True),
+            _vtype_bar(vtypes, "km_per_tour", "km je Tour je Typ", "c_t_kmt_" + uid),
+            _vtype_bar(vtypes, "stops_per_tour", "Stopps je Tour je Typ", "c_t_st_" + uid),
         ]
         h, j = _render_group("Fahrzeugtyp-Analytik", type_charts)
         if h:

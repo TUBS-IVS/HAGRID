@@ -241,6 +241,7 @@ def extract(run_dir, prefix):
 
     rows += _all_rows(pf, carrier_ctype, prov_travel_hours)
     rows += _vehicle_type_rows(pf, tv)
+    rows += _vehicle_typeid_rows(pf, tv)
 
     print("[provider] {} providers, {} excluded delivery vehicles".format(
         len(providers), len(excluded)))
@@ -318,6 +319,74 @@ def _vehicle_type_rows(pf, tv):
                  "parcels", "carrier vehicle types"),
             prow(prov_name, "fixed_cost_per_day", (sum(fixed_costs) / len(fixed_costs))
                  if fixed_costs else 0.0, "EUR", "carrier vehicle types"),
+        ]
+    return rows
+
+
+def _vehicle_typeid_rows(pf, tv):
+    """Per-vehicle-TYPE-ID rows (provider='vtype:<type_id>'), ADDITIVE
+    fine-grained companion to `_vehicle_type_rows` above (which stays
+    unchanged -- the LMD tiles depend on its broad `type:<VT>` rows).
+
+    Grouped by the RAW `vr.type_id` (e.g. "ct_cep_size_s") instead of the
+    broad `classify_vehicle()` bucket, so vehicle types that collapse into
+    one broad bucket (e.g. all three ct_cep_size_s/m/l -> "VAN") are kept
+    distinct here -- this is what lets capacity (s~100/m~165/l~230) and the
+    Fahrzeugtyp-Analytik charts differentiate them instead of averaging.
+
+    Only SURVIVING vehicles count (same low-util exclusion as the broad
+    rows)."""
+    excluded = pf.excluded
+    vtypes = pf.vtypes
+
+    groups = {}
+    for vr in pf.vehrecords:
+        if vr.excluded or vr.type_id is None:
+            continue
+        groups.setdefault(vr.type_id, []).append(vr)
+
+    # distance_km per type_id: bucket the SAME TimeDistance_perVehicle rows
+    # the broad function reads, but keyed by the raw type_id (built from
+    # pf.vehrecords) instead of classify_vehicle(evid) -- one bucketing pass
+    # over the same rows, so no double counting vs the broad total.
+    evid_type = {vr.event_vehicle_id: vr.type_id for vr in pf.vehrecords
+                 if vr.type_id is not None}
+    dist_by_typeid = {}
+    if len(tv):
+        for _, r in tv.iterrows():
+            evid = r["vehicleId"]
+            if evid in excluded:
+                continue
+            tid = evid_type.get(evid)
+            if tid is None:
+                continue
+            dist_by_typeid[tid] = dist_by_typeid.get(tid, 0.0) + float(r["travelDistance[km]"])
+
+    rows = []
+    for tid in sorted(groups):
+        vrs = groups[tid]
+        n = len(vrs)
+        prov_name = "vtype:" + tid
+
+        lf_vals = [vr.load_factor for vr in vrs]
+        stops_vals = [vr.stops for vr in vrs]
+        # real per-type capacity/fixed cost (NOT a mean over vrs -- every vr
+        # in this group shares the same type_id, so there is exactly one
+        # true value per group).
+        cap = vtypes[tid].capacity if tid in vtypes else 0.0
+        fixed_cost = vtypes[tid].fixed_cost_per_day if tid in vtypes else 0.0
+
+        distance_km = dist_by_typeid.get(tid, 0.0)
+
+        rows += [
+            prow(prov_name, "distance_km", distance_km, "km", "TimeDistance_perVehicle"),
+            prow(prov_name, "vehicles", n, "vehicles", "computed"),
+            prow(prov_name, "load_factor", (sum(lf_vals) / n) if n else 0.0, "share", "computed"),
+            prow(prov_name, "km_per_tour", (distance_km / n) if n else 0.0, "km", "computed"),
+            prow(prov_name, "stops_per_tour", (sum(stops_vals) / n) if n else 0.0,
+                 "stops", "computed"),
+            prow(prov_name, "capacity", cap, "parcels", "carrier vehicle types"),
+            prow(prov_name, "fixed_cost_per_day", fixed_cost, "EUR", "carrier vehicle types"),
         ]
     return rows
 

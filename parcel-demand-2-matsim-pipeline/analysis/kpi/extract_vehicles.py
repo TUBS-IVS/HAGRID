@@ -48,7 +48,10 @@ def _freight_rows(run_dir, prefix, pf):
             "role": "freight",
             "vehicle_id": vr.event_vehicle_id,
             "provider": vr.provider,
-            "vehicle_type": vr.vtype if vr.vtype is not None else vr.type_id,
+            # Task 12: raw type_id (e.g. "ct_cep_size_s"), not the broad
+            # classify_vehicle() bucket ("VAN") -- so the Task-9 drilldown
+            # "Typ" column shows real per-size granularity.
+            "vehicle_type": vr.type_id,
             "distance_km": float(tv_row["travelDistance[km]"]) if tv_row is not None else None,
             "duration_h": float(tv_row["tourDuration[h]"]) if tv_row is not None else None,
             "travel_h": float(tv_row["travelTime[h]"]) if tv_row is not None else None,
