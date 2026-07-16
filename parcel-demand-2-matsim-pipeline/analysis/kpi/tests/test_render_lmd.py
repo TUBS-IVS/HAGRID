@@ -67,6 +67,20 @@ def _full_provider():
         _prow("type:TRUCK", "km_per_tour", 50.0), _prow("type:TRUCK", "stops_per_tour", 4.0),
         _prow("type:TRUCK_LIGHT", "vehicles", 5),
         _prow("type:SUPPLY_VAN", "vehicles", 2),
+        # Task 12: fine vtype:<type_id> rows -- two CEP sizes, additive
+        # alongside the broad type:VAN row above (which stays the mean).
+        _prow("vtype:ct_cep_size_s", "vehicles", 30),
+        _prow("vtype:ct_cep_size_s", "distance_km", 500.0),
+        _prow("vtype:ct_cep_size_s", "load_factor", 0.70),
+        _prow("vtype:ct_cep_size_s", "km_per_tour", 16.0),
+        _prow("vtype:ct_cep_size_s", "stops_per_tour", 7.0),
+        _prow("vtype:ct_cep_size_s", "capacity", 100.0),
+        _prow("vtype:ct_cep_size_m", "vehicles", 10),
+        _prow("vtype:ct_cep_size_m", "distance_km", 300.0),
+        _prow("vtype:ct_cep_size_m", "load_factor", 0.80),
+        _prow("vtype:ct_cep_size_m", "km_per_tour", 30.0),
+        _prow("vtype:ct_cep_size_m", "stops_per_tour", 9.0),
+        _prow("vtype:ct_cep_size_m", "capacity", 165.0),
         _prow("all", "carriers_delivery", 6),
         _prow("all", "carriers_supply", 1),
         _prow("all", "stops", 900),
@@ -138,6 +152,15 @@ def test_tiles_full_set():
     assert 'title="' in html   # tooltips present
 
 
+def test_tiles_unaffected_by_vtype_rows():
+    # Task 12: adding fine vtype: rows to the provider frame must not change
+    # the broad-bucket tiles (3/4/5), which read _types()/type: rows only.
+    data = _data(_full_kpis(), _full_provider())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "CEP-Vans" in html and "40" in html
+    assert "Supply-Fahrzeuge" in html and "17" in html
+
+
 def test_cargobikes_tile_absent_when_source_missing():
     # provider data has no type:CARGOBIKE rows -> tile 4 must simply be absent
     data = _data(_full_kpis(), _full_provider())
@@ -191,6 +214,21 @@ def test_pv_types_all_accessors():
     assert render_lmd._all(provider, "nonexistent") is None
 
 
+def test_pv_excludes_vtype_rows():
+    # Task 12: _pv must exclude vtype:<type_id> fine rows too (not just
+    # "all" and "type:") so real-provider pivots stay clean.
+    provider = pd.DataFrame(_full_provider())
+    pv = render_lmd._pv(provider)
+    assert "vtype:ct_cep_size_s" not in pv.index
+    assert "vtype:ct_cep_size_m" not in pv.index
+
+
+def test_vtypes_accessor():
+    provider = pd.DataFrame(_full_provider())
+    vtypes = render_lmd._vtypes(provider)
+    assert set(vtypes["provider"]) == {"vtype:ct_cep_size_s", "vtype:ct_cep_size_m"}
+
+
 # ---------------------------------------------------------------------------
 # Task 8: charts
 # ---------------------------------------------------------------------------
@@ -228,6 +266,24 @@ def test_charts_full_set():
     assert "c_t_km_lmd" in html and "c_t_lf_lmd" in html
     assert "c_t_kmt_lmd" in html and "c_t_st_lmd" in html
     assert "c_d_km_lmd" in html and "c_d_h_lmd" in html
+
+
+def test_vtype_charts_two_bars_per_cep_size():
+    # Task 12: charts 10-12 read the fine vtype: rows -- married250 has 3
+    # ct_cep_size_s/m/l types that used to collapse into ONE "VAN" bar; here
+    # the synthetic fixture carries 2 sizes and both must render as separate
+    # bars/labels, sorted by capacity ascending (s=100 before m=165).
+    data = _data(_full_kpis(), _full_provider(), ts=_full_ts(), iterations=_full_iterations(),
+                 distributions=_full_distributions(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    km_line = next(l for l in js.splitlines() if "c_t_km_lmd" in l)
+    assert km_line.count('"label"') == 1   # single dataset, 2 bars within it
+    assert '"S (Kap. 100)"' in km_line
+    assert '"M (Kap. 165)"' in km_line
+    assert km_line.index('"S (Kap. 100)"') < km_line.index('"M (Kap. 165)"')  # capacity-asc order
+
+    lf_line = next(l for l in js.splitlines() if "c_t_lf_lmd" in l)
+    assert '"S (Kap. 100)"' in lf_line and '"M (Kap. 165)"' in lf_line
 
 
 def test_charts_missing_iterations_skip_chart19_gracefully():

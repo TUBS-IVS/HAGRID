@@ -69,6 +69,43 @@ def test_all_rows():
     assert abs(_by(rows, "all", "travel_hours") - (8.333 + 1.667 + 4.167)) < 1e-6
 
 
+def test_vtype_rows_present_with_real_capacity():
+    # Task 12: fine vtype:<type_id> rows, additive alongside the broad type:
+    # rows -- capacity is the REAL per-type value (100/30/350), not a mean.
+    rows = efp.extract(FIX, "MINI")
+    assert _by(rows, "vtype:ct_cep_size_s", "capacity") == 100.0
+    assert _by(rows, "vtype:cargoBike_t", "capacity") == 30.0
+    assert _by(rows, "vtype:supply_truck", "capacity") == 350.0
+    # 1 surviving vehicle each (dhl v1 is the excluded low-util tour)
+    assert _by(rows, "vtype:ct_cep_size_s", "vehicles") == 1
+    assert _by(rows, "vtype:cargoBike_t", "vehicles") == 1
+    assert _by(rows, "vtype:supply_truck", "vehicles") == 1
+
+
+def test_vtype_rows_distance_km_no_double_count():
+    # distance_km per type_id, bucketed off the same TimeDistance_perVehicle
+    # rows as the broad type: rows -- must sum to the same grand total
+    # (excluded v1's 40km is skipped by both).
+    rows = efp.extract(FIX, "MINI")
+    assert _by(rows, "vtype:ct_cep_size_s", "distance_km") == 60.0
+    assert _by(rows, "vtype:cargoBike_t", "distance_km") == 20.0
+    assert _by(rows, "vtype:supply_truck", "distance_km") == 200.0
+
+    fine_total = sum(_by(rows, p, "distance_km") for p in
+                      ["vtype:ct_cep_size_s", "vtype:cargoBike_t", "vtype:supply_truck"])
+    broad_total = sum(_by(rows, p, "distance_km") for p in
+                       ["type:VAN", "type:CARGOBIKE", "type:TRUCK", "type:TRUCK_LIGHT",
+                        "type:SUPPLY_VAN"] if _by(rows, p, "distance_km") is not None)
+    assert fine_total == broad_total == 280.0
+
+
+def test_broad_type_rows_unaffected_by_vtype_addition():
+    # the pre-existing broad type: row assertions must still hold unchanged
+    rows = efp.extract(FIX, "MINI")
+    assert _by(rows, "type:VAN", "vehicles") == 1
+    assert _by(rows, "type:CARGOBIKE", "distance_km") == 20.0
+
+
 def test_write_schema(tmp_path):
     rows = efp.extract(FIX, "MINI")
     from run_meta import load_run_meta
