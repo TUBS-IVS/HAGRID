@@ -224,6 +224,9 @@ def _donut(cid, title, labels, values, color_marker, height=200, center_label=No
     ds = {"data": list(values), "borderWidth": 2}
     ds.update(color_marker)
     total_text = center_label if center_label is not None else str(sum(values))
+    # No in-canvas plugins.title: `_render_group` renders the title as an <h3>
+    # panel header (the convention every other chart follows), so an in-canvas
+    # title would double-label the donut. Title is returned as tuple[0] for the h3.
     options = {
         "responsive": True,
         "maintainAspectRatio": False,
@@ -233,8 +236,6 @@ def _donut(cid, title, labels, values, color_marker, height=200, center_label=No
             "centerTotal": {"text": total_text},
         },
     }
-    if title:
-        options["plugins"]["title"] = {"display": True, "text": title, "font": {"size": 12}}
     cfg = {"type": "doughnut", "data": {"labels": list(labels), "datasets": [ds]},
            "options": options}
     return (title, cid, cfg, height)
