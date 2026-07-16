@@ -33,6 +33,9 @@ def test_run_page_has_drt_tab_and_plugins(tmp_path):
     assert "9171" in html                          # rides tile still present (regression)
     assert "<canvas" in html                       # Task 6 charts render real canvases
     assert "prefers-color-scheme" in html          # dark mode present
+    # v2 Plan C Task 10: real build_tabs no longer embed their own KPI table --
+    # render_run_page always appends it once, below the tabs.
+    assert "Alle KPIs" in html
     assert len(html.encode("utf-8")) < 2_000_000   # performance budget
 
 

@@ -37,4 +37,10 @@ def test_comparison_two_runs(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Vergleich" in html
     assert "DRT_TEST_A" in html and "DRT_TEST_B" in html
+    # per-run tabs are now the real compact tab builders (v2 Plan C Task 10):
+    # LMD provider chart present, but no distribution canvas / drilldown rows
+    # (those are non-compact-only -- compact per-run tabs stay lean).
+    assert 'id="c_p_parcels_run0"' in html
+    assert 'id="c_wdist_run0"' not in html
+    assert 'class="vehrow"' not in html
     assert len(html.encode("utf-8")) < 3_000_000   # comparison budget

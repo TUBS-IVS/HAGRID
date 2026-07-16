@@ -23,9 +23,9 @@ def build_comparison(run_dirs, out_file=None, build_missing=False, no_events=Fal
                 raise FileNotFoundError(str(analysis / "kpis_long.csv")
                                         + " (run build_kpis.py first or pass --build-missing)")
             build_kpis.build(d, no_events=no_events)
-        kpis, ts = render.load_run_csvs(analysis)
+        data = render.load_run_data(analysis)
         label = meta.tag if meta.tag else meta.run_id
-        runs.append({"label": label, "scenario": meta.scenario, "kpis": kpis, "ts": ts})
+        runs.append({"label": label, "scenario": meta.scenario, "data": data})
 
     if out_file is None:
         cmp_dir = Path(run_dirs[0]).parent / "comparison"
