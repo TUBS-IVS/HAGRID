@@ -44,3 +44,21 @@ def test_comparison_two_runs(tmp_path):
     assert 'id="c_wdist_run0"' not in html
     assert 'class="vehrow"' not in html
     assert len(html.encode("utf-8")) < 3_000_000   # comparison budget
+
+
+def test_comparison_page_defines_all_chart_plugins(tmp_path):
+    # regression (Plan D final review): the per-run compact tabs are the real
+    # render_drt/render_lmd build_tab output, which can emit a modal donut
+    # (centerTotal), vlines, feeder toggles or drilldown calls. The comparison
+    # page must DEFINE those plugins, same as render_run_page -- previously its
+    # body_js was TAB_JS only, so centerTotalPlugin was undefined here and the
+    # modal donut's hole total silently never drew.
+    a = _fake_run(tmp_path, "DRT_TEST_A_iter1_jsprit1")
+    b = _fake_run(tmp_path, "DRT_TEST_B_iter1_jsprit1")
+    out = tmp_path / "cmp.html"
+    build_comparison([a, b], out_file=out)
+    html = out.read_text(encoding="utf-8")
+    assert "centerTotalPlugin" in html   # DONUT_JS
+    assert "vlinePlugin" in html          # VLINE_JS
+    assert "mkToggle" in html             # TOGGLE_JS
+    assert "toggleVeh" in html            # DRILL_JS
