@@ -70,7 +70,7 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     if is_drt:
         rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet, recon=recon)
     if has_freight:
-        rows += extract_freight.extract(run_dir, meta.prefix)
+        rows += extract_freight.extract(run_dir, meta.prefix, pf=pf)
     for predicate, extract_fn in EXTRACTORS:
         if predicate(run_dir, meta):
             rows += extract_fn(run_dir, meta.prefix)

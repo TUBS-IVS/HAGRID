@@ -14,6 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import carriers_parse as cp  # noqa: E402
+import extract_freight  # noqa: E402
 import extract_freight_provider as efp  # noqa: E402
 
 HEADS = Path(__file__).parent / "fixtures" / "real_heads"
@@ -52,6 +53,32 @@ def test_full_married250_provider_runs():
     # real carrier ids match the TSV carrierIds exactly here (unlike the
     # drtrun fixture) -- the provider join must produce real km, not 0.
     assert _by("dhl", "km") > 0
+
+
+@pytest.mark.skipif(not REAL.exists(), reason="married250 run not on disk")
+def test_full_married250_freight_cost_aggregate_matches_legacy():
+    """v2 Plan D Task 10 #3: the aggregate freight_var_costs_dist/
+    freight_total_costs (extract_freight.extract) must equal the sum of the
+    real per-provider cost_dist/cost_total (extract_freight_provider.extract)
+    -- i.e. both read off the same carrier-attribute cost basis that the
+    legacy DashboardGenerator.java uses (costDistance/costTime/costOvertime +
+    fixed, with the low-util ratio re-allocation) -- and must match the
+    legacy-analogous totals measured on this run: var_costs_dist ~= 2423.49,
+    total_costs ~= 12975.29 (includes the +50 UPS costOvertime the old
+    TSV-sourced totalCosts[EUR] column silently dropped)."""
+    rows = extract_freight.extract(REAL, "DRT_BASELINE_13052025_married250")
+    k = {r["kpi_name"]: r for r in rows}
+
+    prov_rows = efp.extract(REAL, "DRT_BASELINE_13052025_married250")
+    real = [r for r in prov_rows if r["provider"] != "all"
+            and not r["provider"].startswith(("type:", "vtype:"))]
+    expected_dist = sum(r["value"] for r in real if r["kpi_name"] == "cost_dist")
+    expected_total = sum(r["value"] for r in real if r["kpi_name"] == "cost_total")
+
+    assert k["freight_var_costs_dist"]["value"] == pytest.approx(expected_dist)
+    assert k["freight_total_costs"]["value"] == pytest.approx(expected_total)
+    assert k["freight_var_costs_dist"]["value"] == pytest.approx(2423.49, abs=0.01)
+    assert k["freight_total_costs"]["value"] == pytest.approx(12975.29, abs=0.01)
 
 
 @pytest.mark.skipif(not REAL.exists(), reason="married250 run not on disk")
