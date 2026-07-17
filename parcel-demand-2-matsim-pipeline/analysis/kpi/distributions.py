@@ -3,8 +3,11 @@
 (run_id;series;bin_lo;bin_hi;value;unit). Sources: output_drt_legs (wait
 time), drt_service_time.reconstruct results (per-vehicle active duration,
 occupancy segments), and TimeDistance_perVehicle.tsv (LMD tour distance /
-duration). Network-dependent series (per-vehicle DRT km, occ_km) are
-deferred to Plan D -- this module never emits them."""
+duration). Network-dependent series (drt_tour_distance, occ_km) are emitted
+only when the caller supplies veh_km / occ_km_shares (computed from the
+MATSim network by build_kpis.build via geometry.py, Plan D Task 5) --
+otherwise a dynamic deferred-note prints naming only the series still
+absent."""
 import csv
 from pathlib import Path
 
@@ -53,7 +56,7 @@ def bin_equal_width(values, n_bins):
     return counts
 
 
-def extract(run_dir, prefix, recon=None):
+def extract(run_dir, prefix, recon=None, veh_km=None, occ_km_shares=None):
     run_dir = Path(run_dir)
     rows = []
 
@@ -98,7 +101,22 @@ def extract(run_dir, prefix, recon=None):
             for (lo, hi), n in bin_equal_width(scores, 12).items():
                 rows.append(_dist("lmd_carrier_score", lo, hi, int(n), "score"))
 
-    print("[distributions] drt_tour_distance/occ_km deferred to Plan D (needs network km)")
+    if veh_km is not None:
+        for (lo, hi), n in bin_equal_width(list(veh_km.values()), 16).items():
+            rows.append(_dist("drt_tour_distance", lo, hi, int(n), "km"))
+
+    if occ_km_shares is not None:
+        for lv in sorted(occ_km_shares):
+            rows.append(_dist("occ_km", lv, lv, occ_km_shares[lv], "share"))
+
+    deferred = []
+    if veh_km is None:
+        deferred.append("drt_tour_distance")
+    if occ_km_shares is None:
+        deferred.append("occ_km")
+    if deferred:
+        print("[distributions] " + "/".join(deferred)
+              + " deferred to Plan D (needs network km)")
     return rows
 
 
