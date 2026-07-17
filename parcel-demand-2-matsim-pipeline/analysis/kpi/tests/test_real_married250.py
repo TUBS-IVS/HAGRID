@@ -52,3 +52,28 @@ def test_full_married250_provider_runs():
     # real carrier ids match the TSV carrierIds exactly here (unlike the
     # drtrun fixture) -- the provider join must produce real km, not 0.
     assert _by("dhl", "km") > 0
+
+
+@pytest.mark.skipif(not REAL.exists(), reason="married250 run not on disk")
+def test_full_married250_page_budget(tmp_path):
+    """Task 9 usability gate (spec 3.5): the real map-heavy married250 page
+    renders with Leaflet + populated map layers and stays within the measured
+    budget.
+
+    Measured 2026-07-17: page 6.1 MB, map_data.json 5.5 MB (227 DRT vehicles,
+    23146 PU/DO points, 67 LMD tours across 7 providers, 2789 heat points).
+    User confirmed fast & responsive in-browser -> per the confirmed
+    "usability, not bytes" decision the MEASURED size wins; 6.1 MB rounds up to
+    a 7 MB asserted ceiling. (The map-FREE page keeps its own tight 2 MB guard
+    in test_render.py -- that assert is unchanged.)
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import build_kpis  # noqa: E402
+    out = build_kpis.build(REAL, out_dir=tmp_path)
+    html = (out / "kpi_dashboard.html").read_text(encoding="utf-8")
+    # maps actually rendered (not the --no-events / map-free path)
+    assert "Leaflet 1.9.4" in html
+    assert 'id="map_drt_m0"' in html and 'id="map_lmd_m0"' in html
+    assert (out / "map_data.json").exists()
+    # the locked budget: fast at 6.1 MB measured -> 7 MB ceiling
+    assert len(html.encode("utf-8")) < 7_000_000
