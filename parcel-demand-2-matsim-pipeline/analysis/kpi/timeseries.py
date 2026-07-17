@@ -59,6 +59,8 @@ def extract(run_dir, prefix, freight_cache=None):
         counts = {}
         with open(freight_cache, "r", encoding="utf-8") as f:
             for line in f:
+                if not ('type="actstart"' in line and 'actType="service"' in line):
+                    continue
                 m = RE_TIME.search(line)
                 if m:
                     h = int(float(m.group(1)) // 3600)

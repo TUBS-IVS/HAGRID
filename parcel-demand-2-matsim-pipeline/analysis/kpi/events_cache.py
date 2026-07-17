@@ -1,15 +1,27 @@
 # -*- coding: utf-8 -*-
 """Single pass over output_events.xml.gz producing two per-run line caches:
-- <prefix>.drt_events_filtered.txt   (same name + filter as build_drt_dashboard.py)
-- <prefix>.freight_service_starts.txt (freight 'service' actstart lines)
+- <prefix>.drt_events_filtered.txt      (same name + filter as build_drt_dashboard.py)
+- <prefix>.freight_events_filtered.txt  (freight 'entered link' + actstart/actend
+  lines -- richer than just service-actstarts, see _freight_wanted() below, to
+  support structured freight parsing / maps in later tasks)
 If either cache is missing, BOTH are rebuilt in one pass (~1-2 min on a 90 MB
 events file; the drt rebuild is byte-identical, so sharing with the legacy
-dashboard stays safe)."""
+dashboard stays safe). The two predicates are evaluated independently per
+line (no elif), so a line matching both (e.g. a shared drt_/freight_ vehicle
+id) lands in BOTH caches."""
 from pathlib import Path
 import gzip
 
 DRT_SUFFIX = ".drt_events_filtered.txt"
-FREIGHT_SUFFIX = ".freight_service_starts.txt"
+FREIGHT_SUFFIX = ".freight_events_filtered.txt"
+
+
+def _freight_wanted(line):
+    if "freight" not in line:
+        return False
+    if 'type="entered link"' in line:
+        return True
+    return 'type="actstart"' in line or 'type="actend"' in line
 
 
 def ensure_caches(run_dir, prefix):
@@ -27,6 +39,6 @@ def ensure_caches(run_dir, prefix):
         for line in f:
             if "drt_" in line:
                 fd.write(line)
-            if 'type="actstart"' in line and 'actType="service"' in line and "freight" in line:
+            if _freight_wanted(line):
                 ff.write(line)
     return drt, frt
