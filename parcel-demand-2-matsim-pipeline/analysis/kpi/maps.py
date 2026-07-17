@@ -177,7 +177,12 @@ def _service_area(run_dir):
 
 def _depots(run_dir):
     """Returns a list of {"name","lat","lon"} or None. Port of
-    build_drt_dashboard.py:291-299."""
+    build_drt_dashboard.py:291-299 -- with one intentional deviation: the
+    legacy script uppercases the provider name (`p.upper()`) for its display
+    label, but v2 keeps the provider name verbatim from the CSV (lowercase),
+    consistent with how PROVIDER_SLOTS/CAT/classify key providers elsewhere
+    in v2. Uppercasing here would be inconsistent with that convention and
+    could break any future name-to-provider matching."""
     path = Path(run_dir) / ".." / ".." / "hagrid-input" / "lausitz" / "hubs" / "lmd-depots.csv"
     try:
         if not path.exists():
