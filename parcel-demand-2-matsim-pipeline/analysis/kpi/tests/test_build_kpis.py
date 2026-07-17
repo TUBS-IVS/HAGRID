@@ -56,6 +56,16 @@ def test_build_writes_all_csvs(tmp_path):
     assert not (out / "kpi_vehicles.csv").exists()
 
 
+def test_no_events_dashboard_has_no_leaflet(tmp_path):
+    """Task 8 regression: maps are only built in the events branch. With
+    no_events=True the dashboard must carry ZERO Leaflet bytes (blocks stays
+    None -> render_run_page gets maps=None -> no vendored map head)."""
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    html = (out / "kpi_dashboard.html").read_text(encoding="utf-8")
+    assert "Leaflet 1.9.4" not in html
+    assert not (out / "map_data.json").exists()
+
+
 def test_build_survives_missing_vehicle_types_xml(tmp_path):
     """v2 Plan A final-review: a bad/missing freight XML (here, the vehicle-types
     gz) must NOT kill the whole build. The DRT path, kpi_iterations.csv, and

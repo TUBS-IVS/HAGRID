@@ -502,32 +502,72 @@ def _ts_bar(ts, series, title, cid, height=210):
     return (title, cid, cfg, height)
 
 
+def _series_float(ts, name):
+    """Module-local float-hour reader for the multi-provider hourly charts.
+
+    The shared `render._series` casts `hour` to int -- correct for integer
+    hour bins, but it TRUNCATES the fractional hours emitted by
+    `freight_active_vehicles_` (t/3600 in 1/12-h steps), collapsing every
+    step within an hour onto one label. This reads `hour` (and value) as
+    float, sorted by hour, so fractional hours survive. Do NOT swap the
+    shared `_series` -- many integer-hour charts depend on its int cast."""
+    m = ts[ts["series"] == name].sort_values("hour")
+    return list(m["hour"].astype(float)), list(m["value"].astype(float))
+
+
+def _fmt_hour(h):
+    """Union x-label: integral -> "8", fractional -> "8.08" (2-dp, trimmed)."""
+    h = float(h)
+    return str(int(h)) if h.is_integer() else ("%g" % round(h, 2))
+
+
+def _union_hours(series_list):
+    """Align a list of (provider, hrs, vals) onto the sorted UNION of every
+    series' hours, 0-filling each series at hours it lacks. Returns
+    (labels, [(provider, aligned_vals)]) -- each aligned_vals has one entry
+    per union hour, so a value that belongs to hour H always lands at the
+    union index for H (never positionally against another series' hours)."""
+    all_hours = sorted({h for _, hrs, _ in series_list for h in hrs})
+    idx = {h: i for i, h in enumerate(all_hours)}
+    labels = [_fmt_hour(h) for h in all_hours]
+    aligned = []
+    for provider, hrs, vals in series_list:
+        row = [0] * len(all_hours)
+        for h, val in zip(hrs, vals):
+            row[idx[h]] = val
+        aligned.append((provider, row))
+    return labels, aligned
+
+
 def _hourly_provider_stack(ts, prefix, title, cid, height=220):
     """Stacked bar over all `<prefix><provider>` series present in `ts`
     (chart 16). Plan-D-only series -- absent until then, returns None with
     no error. Each provider's dataset is one flat color across every hour
     (`__slots` with the same slot repeated len(hours) times -- see the
-    color-safety note above the chart-builder section)."""
+    color-safety note above the chart-builder section). X-labels are the
+    sorted UNION of every provider's hours, each dataset 0-filled/aligned to
+    it (providers with differing hour ranges no longer render positionally)."""
     if ts is None or "series" not in ts.columns:
         return None
     names = sorted(s for s in ts["series"].unique() if s.startswith(prefix))
     if not names:
         return None
-    labels = None
-    datasets = []
+    series_list = []
     for name in names:
         provider = name[len(prefix):]
-        hrs, vals = _series(ts, name)
+        hrs, vals = _series_float(ts, name)
         if not hrs:
             continue
-        if labels is None:
-            labels = hrs
-        slot = provider_slot(provider)
-        datasets.append({"label": provider, "data": vals, "stack": "s",
-                          "__slots": [slot] * len(vals),
-                          "borderRadius": 4, "maxBarThickness": 18})
-    if not datasets:
+        series_list.append((provider, hrs, vals))
+    if not series_list:
         return None
+    labels, aligned = _union_hours(series_list)
+    datasets = []
+    for provider, row in aligned:
+        slot = provider_slot(provider)
+        datasets.append({"label": provider, "data": row, "stack": "s",
+                          "__slots": [slot] * len(row),
+                          "borderRadius": 4, "maxBarThickness": 18})
     # legend on: x-axis is HOURS, so color is the only channel identifying
     # which series is which provider (>=2 series once Plan D populates this).
     cfg = {"type": "bar", "data": {"labels": labels, "datasets": datasets},
@@ -540,26 +580,29 @@ def _hourly_provider_stack(ts, prefix, title, cid, height=220):
 def _hourly_provider_lines(ts, prefix, title, cid, height=220):
     """Line chart, one line per `<prefix><provider>` series present in `ts`
     (chart 17). Plan-D-only -- absent until then. Same per-provider flat-
-    color `__slots` treatment as `_hourly_provider_stack`."""
+    color `__slots` treatment as `_hourly_provider_stack`, and the same
+    sorted-UNION x-label alignment. Reads FRACTIONAL hours via `_series_float`
+    (freight_active_vehicles_ uses 1/12-h steps) so they are not collapsed."""
     if ts is None or "series" not in ts.columns:
         return None
     names = sorted(s for s in ts["series"].unique() if s.startswith(prefix))
     if not names:
         return None
-    labels = None
-    datasets = []
+    series_list = []
     for name in names:
         provider = name[len(prefix):]
-        hrs, vals = _series(ts, name)
+        hrs, vals = _series_float(ts, name)
         if not hrs:
             continue
-        if labels is None:
-            labels = hrs
-        slot = provider_slot(provider)
-        datasets.append({"label": provider, "data": vals, "borderWidth": 2, "pointRadius": 0,
-                          "tension": 0.25, "__slots": [slot] * len(vals)})
-    if not datasets:
+        series_list.append((provider, hrs, vals))
+    if not series_list:
         return None
+    labels, aligned = _union_hours(series_list)
+    datasets = []
+    for provider, row in aligned:
+        slot = provider_slot(provider)
+        datasets.append({"label": provider, "data": row, "borderWidth": 2, "pointRadius": 0,
+                          "tension": 0.25, "__slots": [slot] * len(row)})
     # legend on: x-axis is HOURS, color is the only per-provider channel.
     cfg = {"type": "line", "data": {"labels": labels, "datasets": datasets},
            "options": {"responsive": True, "maintainAspectRatio": False,
