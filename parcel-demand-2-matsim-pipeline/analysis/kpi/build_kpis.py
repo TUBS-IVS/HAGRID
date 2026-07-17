@@ -89,7 +89,36 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     import extract_iterations, distributions
     it_rows = extract_iterations.extract(run_dir, meta.prefix)
     extract_iterations.write(it_rows, meta, out / "kpi_iterations.csv")
-    dist_rows = distributions.extract(run_dir, meta.prefix, recon=recon)
+
+    # Network-based DRT distributions (drt_tour_distance, occ_km): reconstruct
+    # per-vehicle link paths + link geometry ONCE here so Task 6 (maps.py) can
+    # reuse the same veh_path/link_geo objects without re-scanning events/network.
+    import geometry
+    veh_path = link_geo = None
+    veh_km = occ_km_shares = None
+    network = run_dir / (meta.prefix + ".output_network.xml.gz")
+    if drt_cache is not None and network.exists():
+        veh_path, used = geometry.reconstruct_drt_paths(drt_cache)
+        freight_used = geometry.freight_used_links(fev) if fev is not None else set()
+        link_geo = geometry.load_link_geometry(network, used | freight_used)
+        veh_km = {}
+        dist_by_occ = {}
+        for v, path in veh_path.items():
+            km = 0.0
+            for lid, occ in path:
+                lg = link_geo.get(lid)
+                if lg is None:
+                    continue
+                km += lg.length_m / 1000.0
+                dist_by_occ[occ] = dist_by_occ.get(occ, 0.0) + lg.length_m
+            veh_km[v] = km
+        tot = sum(dist_by_occ.values())
+        occ_km_shares = {lv: dist_by_occ[lv] / tot for lv in dist_by_occ} if tot else {}
+    elif drt_cache is not None:
+        print("[build] network file absent -> drt_tour_distance/occ_km skipped")  # ASCII
+
+    dist_rows = distributions.extract(run_dir, meta.prefix, recon=recon,
+                                       veh_km=veh_km, occ_km_shares=occ_km_shares)
     distributions.write(dist_rows, meta, out / "kpi_distributions.csv")
     prov_rows = []
     if has_freight and pf is not None:
