@@ -140,6 +140,26 @@ def test_missing_optional_layers_are_absent_without_raising(tmp_path):
     assert "rail_stops" not in data["drt"]
 
 
+def test_depots_happy_path_parses_real_csv_and_transforms_coords(tmp_path):
+    # run_dir sits two levels below the hagrid-input tree (matches the real
+    # <lausitz-run>/hagrid-output/<prefix> layout), so build the fixture
+    # relative to run_dir.parent.parent, not tmp_path directly.
+    run = tmp_path / "runs" / "hagrid-output" / "MINI_run"
+    run.mkdir(parents=True)
+    hubs_dir = run.parent.parent / "hagrid-input" / "lausitz" / "hubs"
+    hubs_dir.mkdir(parents=True)
+    (hubs_dir / "lmd-depots.csv").write_text(
+        "provider;x;y\ndhl;864000;5705000\nhermes;865000;5705050\n", encoding="utf-8"
+    )
+
+    data = maps.build_map_data(run, "MINI")
+
+    assert data["drt"]["depots"] == [
+        {"name": "dhl", "lat": 51.37924, "lon": 14.23179},
+        {"name": "hermes", "lat": 51.37905, "lon": 14.24615},
+    ]
+
+
 def test_lmd_key_present_but_empty(tmp_path):
     run = _make_run(tmp_path)
     veh_path, link_geo = _aligned_inputs()
@@ -195,6 +215,4 @@ def test_write_produces_valid_json_roundtrip(tmp_path):
     maps.write(data, out_file)
 
     loaded = json.loads(out_file.read_text(encoding="utf-8"))
-    assert loaded["center"] == data["center"]
-    assert loaded["lmd"] == {}
-    assert loaded["drt"]["cap"] == 8
+    assert loaded == data
