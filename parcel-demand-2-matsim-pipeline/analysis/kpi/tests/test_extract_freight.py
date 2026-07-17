@@ -7,9 +7,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import extract_freight_provider as efp
 from extract_freight import extract
 
 FIX = Path(__file__).parent / "fixtures" / "drtrun"
+FIX_LMD = Path(__file__).parent / "fixtures" / "mini_lmd"
 
 
 def test_extract_freight_kpis():
@@ -17,7 +19,15 @@ def test_extract_freight_kpis():
     assert k["carriers"]["value"] == 2
     assert k["freight_tours"]["value"] == 35
     assert k["freight_vehicle_km"]["value"] == pytest.approx(4047.687, abs=1e-3)
-    assert k["freight_total_costs"]["value"] == pytest.approx(6616.4907, abs=1e-3)
+    # freight_total_costs: NOT asserted here (v2 Plan D Task 10 #3) -- this
+    # fixture's carriers XML ids ("dhl_1"/"ups_1") don't match the TSV
+    # carrierIds ("dhl"/"ups") and carry no costDistance/costTime/
+    # costOvertime attributes, so the carrier-attribute cost basis correctly
+    # totals 0.0 here; that is a fixture artifact, not a behavior to pin.
+    # Cost-aggregate consistency against a realistic carrier-attribute
+    # fixture is covered by test_freight_cost_aggregate_matches_provider_sum
+    # below and by test_full_married250_freight_cost_aggregate_matches_legacy
+    # in test_real_married250.py.
     assert k["freight_vehicles"]["value"] == 3
     assert k["parcels_handled"]["value"] == 410
     assert k["avg_max_load"]["value"] == pytest.approx((72.7 + 90.0 + 86.9) / 300.0)
@@ -26,6 +36,38 @@ def test_extract_freight_kpis():
     assert k["parcels_unassigned"]["value"] == 5
     assert k["delivery_rate"]["value"] == pytest.approx(485 / 500)
     assert k["parcels_per_vehicle_km"]["value"] == pytest.approx(485 / 4047.687, abs=1e-6)
+
+
+def test_freight_cost_aggregate_matches_provider_sum():
+    """freight_var_costs_dist/freight_total_costs (the aggregate, 'economic'
+    category rows) must be sourced from the SAME carrier-attribute cost basis
+    as extract_freight_provider (legacy DashboardGenerator-analogous
+    costDistance/costTime/costOvertime + fixed vehicle-type fixed cost, with
+    the low-util ratio re-allocation) -- NOT MATSim's own TSV
+    varCostsDist[EUR]/totalCosts[EUR] columns. Those TSV columns accumulate
+    distance on LinkEnterEvent only (structurally missing each tour's first
+    link) and totalCosts[EUR] drops costOvertime entirely, which is why the
+    old TSV-sourced aggregate silently diverged from both the per-provider
+    table and the legacy dashboard. The aggregate must equal the sum of the
+    real (non-'all', non-'type:'/'vtype:') per-provider parts."""
+    rows = extract(FIX_LMD, "MINI")
+    k = {r["kpi_name"]: r for r in rows}
+
+    prov_rows = efp.extract(FIX_LMD, "MINI")
+    real = [r for r in prov_rows if r["provider"] != "all"
+            and not r["provider"].startswith(("type:", "vtype:"))]
+    expected_dist = sum(r["value"] for r in real if r["kpi_name"] == "cost_dist")
+    expected_total = sum(r["value"] for r in real if r["kpi_name"] == "cost_total")
+
+    assert k["freight_var_costs_dist"]["value"] == pytest.approx(expected_dist)
+    assert k["freight_total_costs"]["value"] == pytest.approx(expected_total)
+    # fixture-level values pinned (dhl+hermes+amazon carrier-attribute basis)
+    # so a future accidental TSV-sourcing regression is caught even if the
+    # provider extractor changes underneath this test.
+    assert k["freight_var_costs_dist"]["value"] == pytest.approx(1040.0)
+    assert k["freight_total_costs"]["value"] == pytest.approx(1610.0)
+    assert k["freight_var_costs_dist"]["source"] != "TimeDistance_perCarrier"
+    assert k["freight_total_costs"]["source"] != "TimeDistance_perCarrier"
 
 
 _CARRIERS_XML = """<?xml version="1.0" encoding="UTF-8"?>

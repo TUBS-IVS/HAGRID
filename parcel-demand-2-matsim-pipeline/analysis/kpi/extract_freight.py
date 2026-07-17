@@ -31,13 +31,57 @@ def _int_attr(attrs, name):
         return 0
 
 
-def extract(run_dir, prefix):
+def _provider_cost_totals(run_dir, prefix, pf):
+    """Sum the real (non-'all', non-'type:'/'vtype:') per-provider
+    cost_dist/cost_total rows from extract_freight_provider, which computes
+    them off the carrier-attribute cost basis (costDistance/costTime/
+    costOvertime + vehicle-type fixed cost, with the low-util ratio
+    re-allocation) -- the SAME basis the legacy DashboardGenerator.java uses.
+    Returns (var_costs_dist, total_costs) or None if the carrier XML /
+    provider parse is unavailable (graceful degradation -- the caller falls
+    back to the TSV-sourced columns rather than aborting the build)."""
+    try:
+        import extract_freight_provider as efp
+        if pf is None:
+            pf = efp.parse_run(run_dir, prefix)
+        prov_rows = efp.extract(run_dir, prefix, pf=pf)
+    except Exception as e:
+        print("[freight] provider cost basis unavailable, "
+              "falling back to TSV-sourced costs: " + str(e))  # ASCII only
+        return None
+
+    real = [r for r in prov_rows if r["provider"] != "all"
+            and not r["provider"].startswith(("type:", "vtype:"))]
+    var_costs_dist = sum(r["value"] for r in real if r["kpi_name"] == "cost_dist")
+    total_costs = sum(r["value"] for r in real if r["kpi_name"] == "cost_total")
+    return var_costs_dist, total_costs
+
+
+def extract(run_dir, prefix, pf=None):
     run_dir = Path(run_dir)
     rows = []
 
     fr = run_dir / "analysis" / "freight"
     td = pd.read_csv(fr / "TimeDistance_perCarrier.tsv", sep="\t")
     km = float(td["travelDistances[km]"].sum())
+
+    # freight_var_costs_dist/freight_total_costs: re-sourced (v2 Plan D
+    # Task 10 #3) from the carrier-attribute cost basis so the aggregate
+    # equals the sum of the per-provider parts AND matches the legacy
+    # dashboard. MATSim's own TSV varCostsDist[EUR]/totalCosts[EUR] columns
+    # are NOT used for these two rows any more: varCostsDist[EUR] is
+    # accumulated on LinkEnterEvent only (structurally missing each tour's
+    # first link) and totalCosts[EUR] drops the costOvertime component
+    # entirely. Falls back to the TSV columns if the carrier XML / provider
+    # parse is unavailable for any reason (graceful degradation).
+    var_costs_dist = float(td["varCostsDist[EUR]"].sum())
+    total_costs = float(td["totalCosts[EUR]"].sum())
+    cost_source = "TimeDistance_perCarrier"
+    provider_totals = _provider_cost_totals(run_dir, prefix, pf)
+    if provider_totals is not None:
+        var_costs_dist, total_costs = provider_totals
+        cost_source = "carrier attributes (sum of per-provider cost_dist/cost_total, re-allocated)"
+
     rows += [
         row("freight", "carriers", len(td), "carriers", "TimeDistance_perCarrier"),
         row("freight", "freight_tours", int(td["nuOfTours"].sum()), "tours", "TimeDistance_perCarrier"),
@@ -46,12 +90,10 @@ def extract(run_dir, prefix):
             float(td["tourDurations[h]"].sum()), "h", "TimeDistance_perCarrier"),
         row("economic", "freight_fixed_costs",
             float(td["fixedCosts[EUR]"].sum()), "EUR", "TimeDistance_perCarrier"),
-        row("economic", "freight_var_costs_dist",
-            float(td["varCostsDist[EUR]"].sum()), "EUR", "TimeDistance_perCarrier"),
+        row("economic", "freight_var_costs_dist", var_costs_dist, "EUR", cost_source),
         row("economic", "freight_var_costs_time",
             float(td["varCostsTime[EUR]"].sum()), "EUR", "TimeDistance_perCarrier"),
-        row("economic", "freight_total_costs",
-            float(td["totalCosts[EUR]"].sum()), "EUR", "TimeDistance_perCarrier"),
+        row("economic", "freight_total_costs", total_costs, "EUR", cost_source),
     ]
 
     # Load_perVehicle.tsv is only populated by MATSim's CarrierLoadAnalysis for
