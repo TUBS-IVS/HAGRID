@@ -16,7 +16,24 @@ build_map_data() assembles:
   - drt.cap: DRT vehicle capacity (from kpis_long.csv if present, else 8).
   - center: mean of whatever WGS84 points are available, falling back to
     Hoyerswerda.
-  - lmd: always present, `{}` until Task 7 fills it in.
+  - lmd: always present; stays `{}` unless a `fev` (FreightEvents) is
+    supplied (Task 7), in which case it is filled with tours/stops/heat/
+    depots built from `fev` + `carriers` + `excluded` + `link_geo`:
+      - tours: per freight vehicle in fev.veh_links, resolved to a
+        (provider, carrier) via matching event_vehicle_id against each
+        carrier's tours -- a vehicle with no carrier match (e.g. a shared
+        drt_freight_* vehicle) is not a real LMD tour and is omitted
+        entirely; `excluded` vehicles are omitted too. runs reuse the same
+        polyline_runs/drop_collinear/douglas_peucker chain as drt.vehicles.
+        A matched vehicle whose links all lack geometry keeps runs: [].
+      - stops: order-based zip of a tour's service-start times to its
+        service capacityDemands (same demand-lookup default of 1 as
+        freight_events.parcels_per_hour_by_provider), each stop's coords
+        are the midpoint of the vehicle's nearest PRECEDING entered-link at
+        that start time; a start with no known preceding link is skipped.
+      - heat: entered-link counts over ALL freight vehicles (no carrier
+        match required, no exclusion filter), midpoint per link.
+      - depots: shared verbatim with drt.depots (same source list).
 
 All emitted coordinates are [lat, lon], rounded to 5 decimals.
 """
@@ -28,6 +45,7 @@ from pathlib import Path
 import pandas as pd
 from pyproj import Transformer
 
+import freight_classify
 import geometry
 
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
@@ -242,6 +260,125 @@ def _rail_stops(run_dir, prefix, service_poly, legs):
         return None
 
 
+# --------------------------------------------------------------- lmd (Task 7)
+
+def _link_midpoint(link_geo, link_id):
+    """Rounded (lat, lon) midpoint of `link_id`'s geometry, or None if the
+    link is absent from `link_geo`."""
+    g = (link_geo or {}).get(link_id)
+    if g is None:
+        return None
+    return round((g.flat + g.tlat) / 2, 5), round((g.flon + g.tlon) / 2, 5)
+
+
+def _evid_lookup(carriers):
+    """evid -> (provider, carrier_id) for every tour of every carrier, keyed
+    by TourDef.event_vehicle_id(carrier_id) -- the same id fev.veh_links is
+    keyed on for a real freight vehicle."""
+    lookup = {}
+    for c in carriers or []:
+        prov = freight_classify.provider_of(c.carrier_id, c.attrs.get("provider"))
+        for t in c.tours:
+            lookup[t.event_vehicle_id(c.carrier_id)] = (prov, c.carrier_id)
+    return lookup
+
+
+def _lmd_tours(fev, carriers, excluded, link_geo):
+    """One entry per freight vehicle that resolves to a (provider, carrier)
+    via `_evid_lookup` -- an unmatched vehicle (e.g. a shared drt_freight_*
+    id) is not a real LMD tour and is omitted. `excluded` vehicles are
+    omitted too. runs reuse the same polyline_runs/drop_collinear/
+    douglas_peucker chain as the DRT vehicles layer; a matched vehicle whose
+    links are all absent from link_geo keeps runs: []."""
+    lookup = _evid_lookup(carriers)
+    link_geo = link_geo or {}
+    tours = []
+    for veh, path in (fev.veh_links or {}).items():
+        if veh in (excluded or set()):
+            continue
+        resolved = lookup.get(veh)
+        if resolved is None:
+            continue
+        prov, carrier_id = resolved
+        runs = []
+        for run in geometry.polyline_runs(path, link_geo):
+            simplified = geometry.douglas_peucker(geometry.drop_collinear(run), 1e-5)
+            if simplified:
+                runs.append([[round(lat, 5), round(lon, 5)] for lat, lon in simplified])
+        tours.append({"veh": veh, "provider": prov, "carrier": carrier_id, "runs": runs})
+    return tours
+
+
+def _nearest_preceding_link(veh_links, t):
+    """Link id of the entry in `veh_links` ([(link_id, link_time), ...])
+    with the largest link_time <= t, or None if no such entry exists."""
+    best_link, best_time = None, None
+    for link_id, link_time in veh_links or []:
+        if link_time <= t and (best_time is None or link_time > best_time):
+            best_link, best_time = link_id, link_time
+    return best_link
+
+
+def _lmd_stops(fev, carriers, excluded, link_geo):
+    """Per-stop records: for each carrier tour (skipping `excluded`
+    vehicles), zip the vehicle's service-start times to its services'
+    capacityDemands by order (same demand.get(sid, 1) default as
+    freight_events.parcels_per_hour_by_provider). Each stop sits at the
+    midpoint of the vehicle's nearest preceding entered-link at that start
+    time; a start with no known preceding link (or a link absent from
+    link_geo) is skipped."""
+    excluded = excluded or set()
+    stops = []
+    for c in carriers or []:
+        prov = freight_classify.provider_of(c.carrier_id, c.attrs.get("provider"))
+        demand = {sid: s.capacity_demand for sid, s in c.services.items()}
+        for t in c.tours:
+            vid = t.event_vehicle_id(c.carrier_id)
+            if vid in excluded:
+                continue
+            starts = fev.service_starts.get(vid, [])
+            demands = [demand.get(sid, 1) for sid in t.service_ids]
+            veh_links = fev.veh_links.get(vid, [])
+            for st, d in zip(starts, demands):
+                link_id = _nearest_preceding_link(veh_links, st)
+                if link_id is None:
+                    continue
+                mid = _link_midpoint(link_geo, link_id)
+                if mid is None:
+                    continue
+                lat, lon = mid
+                stops.append({"lat": lat, "lon": lon, "provider": prov, "veh": vid,
+                              "t": int(st), "demand": d})
+    return stops
+
+
+def _lmd_heat(fev, link_geo):
+    """Entered-link counts over ALL freight vehicles in fev.veh_links (no
+    carrier match required, no exclusion filter -- raw link usage). Links
+    absent from link_geo are skipped."""
+    counts = {}
+    for entries in (fev.veh_links or {}).values():
+        for link_id, _time in entries:
+            counts[link_id] = counts.get(link_id, 0) + 1
+    heat = []
+    for link_id, cnt in counts.items():
+        mid = _link_midpoint(link_geo, link_id)
+        if mid is None:
+            continue
+        lat, lon = mid
+        heat.append([lat, lon, cnt])
+    return heat
+
+
+def _build_lmd(fev, carriers, excluded, link_geo, depots):
+    return {
+        "tours": _lmd_tours(fev, carriers, excluded, link_geo),
+        "stops": _lmd_stops(fev, carriers, excluded, link_geo),
+        "heat": _lmd_heat(fev, link_geo),
+        "depots": depots or [],
+    }
+
+
 # --------------------------------------------------------------- center
 
 def _compute_center(pu, do, link_geo, depots):
@@ -262,11 +399,13 @@ def _compute_center(pu, do, link_geo, depots):
 def build_map_data(run_dir, prefix, veh_path=None, link_geo=None, fev=None,
                     carriers=None, excluded=None, n_sample=None):
     """Assembles the map_data dict consumed verbatim by render_maps.py
-    (Task 8). `fev`/`carriers`/`excluded` are accepted (LMD forward-compat,
-    Task 7) but unused here -- `lmd` stays `{}`."""
+    (Task 8). `lmd` stays `{}` unless `fev` (a freight_events.FreightEvents)
+    is supplied, in which case it is built from `fev`/`carriers`/`excluded`/
+    `link_geo` (Task 7) -- see the module docstring for the construction."""
     run_dir = Path(run_dir)
     veh_path = veh_path or {}
     link_geo = link_geo or {}
+    excluded = excluded or set()
 
     vehicles = _build_vehicles(veh_path, link_geo)
     legs = _load_legs(run_dir, prefix, n_sample)
@@ -296,7 +435,11 @@ def build_map_data(run_dir, prefix, veh_path=None, link_geo=None, fev=None,
 
     center = _compute_center(pu, do, link_geo, depots)
 
-    return {"center": center, "drt": drt, "lmd": {}}
+    lmd = {}
+    if fev is not None:
+        lmd = _build_lmd(fev, carriers, excluded, link_geo, depots)
+
+    return {"center": center, "drt": drt, "lmd": lmd}
 
 
 def write(map_data, out_file):
