@@ -136,9 +136,23 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
         extract_vehicles.write(veh_rows, meta, out / "kpi_vehicles.csv")
     print("kpi_vehicles: {} rows".format(len(veh_rows)))
 
+    # Plan D Task 8: build the Leaflet map layers ONLY when events were parsed
+    # (maps need reconstructed DRT paths / freight events). --no-events (or a
+    # run without an events file) leaves both caches None -> blocks stays None
+    # -> render_run_page gets maps=None -> no vendored Leaflet bytes.
+    import maps, render_maps
+    blocks = None
+    if not no_events and (drt_cache is not None or frt_cache is not None):
+        md = maps.build_map_data(run_dir, meta.prefix, veh_path=veh_path,
+                                 link_geo=link_geo, fev=fev,
+                                 carriers=pf.carriers if pf is not None else None,
+                                 excluded=pf.excluded if pf is not None else None)
+        maps.write(md, out / "map_data.json")
+        blocks = render_maps.build_blocks(md, uid="m0")
+
     import render
     data = render.load_run_data(out)
-    html = render.render_run_page(data, title=meta.run_id)
+    html = render.render_run_page(data, title=meta.run_id, maps=blocks)
     (out / "kpi_dashboard.html").write_text(html, encoding="utf-8")
     print("dashboard: " + str(out / "kpi_dashboard.html"))
     return out

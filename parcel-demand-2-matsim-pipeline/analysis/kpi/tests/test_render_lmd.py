@@ -475,3 +475,54 @@ def test_tables_absent_in_compact_mode():
     assert "vehrow" not in html
     assert "toggleVeh" not in html
     assert "reallokiert" not in html
+
+
+# ---------------------------------------------------------------------------
+# Task 8 (carried whole-branch review item): union-of-hours x-labels
+# ---------------------------------------------------------------------------
+
+def test_hourly_provider_stack_uses_sorted_union_of_hours():
+    # Providers with different/partially-overlapping INTEGER hour ranges: the
+    # x-labels must be the sorted UNION and each dataset must be 0-filled where
+    # it lacks an hour and aligned to the union index where it has one (a value
+    # belonging to hour 11 must land at the union index for 11, not positionally).
+    ts = pd.DataFrame([
+        {"series": "freight_parcels_h_dhl", "hour": 8, "value": 10},
+        {"series": "freight_parcels_h_dhl", "hour": 9, "value": 20},
+        {"series": "freight_parcels_h_dhl", "hour": 10, "value": 30},
+        {"series": "freight_parcels_h_amazon", "hour": 9, "value": 5},
+        {"series": "freight_parcels_h_amazon", "hour": 10, "value": 6},
+        {"series": "freight_parcels_h_amazon", "hour": 11, "value": 7},
+    ])
+    title, cid, cfg, h = render_lmd._hourly_provider_stack(
+        ts, "freight_parcels_h_", "Pakete", "c_h_parcels")
+    assert cfg["data"]["labels"] == ["8", "9", "10", "11"]
+    dsets = {d["label"]: d["data"] for d in cfg["data"]["datasets"]}
+    # dhl has 8/9/10, lacks 11 -> 0-filled at the union index for 11
+    assert dsets["dhl"] == [10, 20, 30, 0]
+    # amazon lacks 8 -> 0-filled at index 0; its hour-11 value lands at index 3
+    assert dsets["amazon"] == [0, 5, 6, 7]
+    # __slots length tracks the union width, not the per-provider width
+    for d in cfg["data"]["datasets"]:
+        assert len(d["__slots"]) == 4
+
+
+def test_hourly_provider_lines_preserves_fractional_hours():
+    # freight_active_vehicles_ carries FRACTIONAL hours (t/3600 in 1/12-h
+    # steps). The shared _series casts hour to int and would collapse every
+    # 1/12 step within an hour to a single label; the float-hour reader must
+    # keep them distinct.
+    ts = pd.DataFrame([
+        {"series": "freight_active_vehicles_dhl", "hour": 8.0, "value": 1},
+        {"series": "freight_active_vehicles_dhl", "hour": 8.0833, "value": 2},
+        {"series": "freight_active_vehicles_dhl", "hour": 8.1667, "value": 3},
+    ])
+    title, cid, cfg, h = render_lmd._hourly_provider_lines(
+        ts, "freight_active_vehicles_", "Aktiv", "c_h_active")
+    labels = cfg["data"]["labels"]
+    assert len(labels) == 3           # NOT collapsed to a single "8"
+    assert len(set(labels)) == 3
+    assert labels[0] == "8"           # integral union value reads like "8"
+    assert "8.08" in labels           # fractional reads like "8.08"
+    # values survive in hour order
+    assert cfg["data"]["datasets"][0]["data"] == [1, 2, 3]
