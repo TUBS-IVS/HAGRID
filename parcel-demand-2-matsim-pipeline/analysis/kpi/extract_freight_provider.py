@@ -104,9 +104,10 @@ def parse_run(run_dir, prefix):
                           vehrecords=vehrecords)
 
 
-def extract(run_dir, prefix):
+def extract(run_dir, prefix, pf=None):
     run_dir = Path(run_dir)
-    pf = parse_run(run_dir, prefix)
+    if pf is None:
+        pf = parse_run(run_dir, prefix)
     excluded = pf.excluded
     vtypes = pf.vtypes
 

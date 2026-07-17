@@ -13,10 +13,26 @@ too -- it is kept under its own key, not merged or dropped.
 
 Consumed by timeseries (hourly series) and maps (link sequences / tours) in
 later Plan D tasks.
+
+`hourly_series()` (Task 3) builds the event-derived freight hourly rows
+(shaped like timeseries._ts's {series, hour, value, unit} dicts) consumed
+by build_kpis.build() and appended to kpi_timeseries.csv:
+  - freight_parcels_h_<provider> (parcels/h): integer `hour` bucket, ported
+    verbatim from the Java buildParcelsPerHourByProviderJson.
+  - freight_depot_departures / freight_depot_arrivals (vehicles/h): integer
+    `hour` bucket, counted over ALL vehicles in fev with no per-provider
+    grouping and no exclusion filter.
+  - freight_active_vehicles_<provider> (vehicles): 5-minute (1/12-hour)
+    sampling of a vehicle active in the half-open interval
+    [first_departure, last_arrival) -- unlike every other series here, its
+    `hour` field is a FRACTIONAL hour (t/3600, e.g. 8.0, 8.0833, ...), not
+    an integer bucket; render treats it as a plain x value.
 """
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import freight_classify
 
 RE_TIME = re.compile(r'time="([0-9.]+)"')
 RE_PERSON = re.compile(r'person="([^"]+)"')
@@ -67,3 +83,106 @@ def parse_freight_cache(cache_path):
     for times in fev.service_starts.values():
         times.sort()
     return fev
+
+
+def parcels_per_hour_by_provider(fev, carriers, excluded):
+    """Ported verbatim from the Java DashboardGenerator.
+    buildParcelsPerHourByProviderJson: 1:1 zip of service-start times to
+    tour stop demands (by stop order) when counts match; otherwise spreads
+    the tour's total demand evenly over the available starts so the total
+    parcel count is conserved even when a start event is missing."""
+    out = {}  # provider -> {hour: parcels}
+    for c in carriers:
+        prov = freight_classify.provider_of(c.carrier_id, c.attrs.get("provider"))
+        demand = {sid: s.capacity_demand for sid, s in c.services.items()}
+        for t in c.tours:
+            vid = t.event_vehicle_id(c.carrier_id)
+            if vid in excluded:
+                continue
+            stop_demands = [demand.get(sid, 1) for sid in t.service_ids]
+            starts = fev.service_starts.get(vid, [])
+            if not stop_demands or not starts:
+                continue
+            bins = out.setdefault(prov, {})
+            if len(starts) == len(stop_demands):        # 1:1 zip by stop order
+                for st, d in zip(starts, stop_demands):
+                    h = min(24, int(st // 3600)); bins[h] = bins.get(h, 0) + d
+            else:                                        # mismatch: spread, conserve total
+                per = sum(stop_demands) / len(starts)
+                for st in starts:
+                    h = min(24, int(st // 3600)); bins[h] = bins.get(h, 0) + per
+    return out
+
+
+def _depot_hour_counts(times_by_vehicle):
+    """Hourly count of depot events over ALL vehicles (no per-provider
+    grouping, no exclusion filter -- per Task 3 brief: 'over all vehicles').
+    `times_by_vehicle` is one of fev.depot_departures / fev.depot_arrivals."""
+    counts = {}
+    for times in times_by_vehicle.values():
+        for t in times:
+            h = min(24, int(t // 3600))
+            counts[h] = counts.get(h, 0) + 1
+    return counts
+
+
+def active_vehicles_by_provider(fev, carriers, excluded):
+    """5-minute (1/12-hour) sampling of active-vehicle counts per provider.
+    A vehicle is active in the half-open interval
+    [first_departure, last_arrival) -- resolved via the same carrier/tour
+    walk as parcels_per_hour_by_provider (skips `excluded`). Returned hours
+    are FRACTIONAL (t/3600), not integer buckets."""
+    out = {}  # provider -> {fractional_hour: active_count}
+    for c in carriers:
+        prov = freight_classify.provider_of(c.carrier_id, c.attrs.get("provider"))
+        for t in c.tours:
+            vid = t.event_vehicle_id(c.carrier_id)
+            if vid in excluded:
+                continue
+            deps = fev.depot_departures.get(vid)
+            arrs = fev.depot_arrivals.get(vid)
+            if not deps or not arrs:
+                continue
+            start_h = min(deps) / 3600.0
+            end_h = max(arrs) / 3600.0
+            n_steps = int(round((end_h - start_h) * 12))
+            if n_steps <= 0:
+                continue
+            bins = out.setdefault(prov, {})
+            for i in range(n_steps):
+                h = round(start_h + i / 12.0, 6)
+                bins[h] = bins.get(h, 0) + 1
+    return out
+
+
+def hourly_series(fev, carriers, excluded):
+    """Event-derived freight hourly rows for kpi_timeseries.csv -- see the
+    module docstring for the series produced and the fractional-hour
+    convention used by freight_active_vehicles_<provider>."""
+    rows = []
+
+    parcels = parcels_per_hour_by_provider(fev, carriers, excluded)
+    for prov in sorted(parcels):
+        series = "freight_parcels_h_" + prov
+        for h in sorted(parcels[prov]):
+            rows.append({"series": series, "hour": h, "value": parcels[prov][h],
+                         "unit": "parcels/h"})
+
+    dep_counts = _depot_hour_counts(fev.depot_departures)
+    for h in sorted(dep_counts):
+        rows.append({"series": "freight_depot_departures", "hour": h,
+                     "value": dep_counts[h], "unit": "vehicles/h"})
+
+    arr_counts = _depot_hour_counts(fev.depot_arrivals)
+    for h in sorted(arr_counts):
+        rows.append({"series": "freight_depot_arrivals", "hour": h,
+                     "value": arr_counts[h], "unit": "vehicles/h"})
+
+    active = active_vehicles_by_provider(fev, carriers, excluded)
+    for prov in sorted(active):
+        series = "freight_active_vehicles_" + prov
+        for h in sorted(active[prov]):
+            rows.append({"series": series, "hour": h, "value": active[prov][h],
+                         "unit": "vehicles"})
+
+    return rows

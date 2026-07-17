@@ -11,6 +11,7 @@ from pathlib import Path
 import economics
 import extract_drt
 import extract_freight
+import freight_events
 import kpi_writer
 import timeseries
 from events_cache import ensure_caches
@@ -50,6 +51,21 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     recon = (drt_service_time.reconstruct(str(drt_cache), str(fleet) if fleet else None)
              if drt_cache else None)
 
+    # Parse the freight events cache and the carriers XML (`pf`) once, up
+    # front, so both the hourly series below and the provider/vehicles
+    # blocks further down can reuse them instead of each re-parsing --
+    # graceful degradation preserved: any freight XML problem here just
+    # leaves pf None, which skips the hourly series and the provider block
+    # below (extract_vehicles falls back to parsing pf itself internally).
+    fev = freight_events.parse_freight_cache(frt_cache) if frt_cache is not None else None
+    pf = None
+    if has_freight:
+        try:
+            import extract_freight_provider as efp
+            pf = efp.parse_run(run_dir, meta.prefix)
+        except Exception as e:
+            print("[build] freight provider parse skipped: " + str(e))  # ASCII only
+
     rows = []
     if is_drt:
         rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet, recon=recon)
@@ -63,6 +79,8 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     kpi_writer.write_long(rows, meta, out / "kpis_long.csv")
     kpi_writer.write_wide(rows, meta, out / "kpis_wide.csv")
     ts = timeseries.extract(run_dir, meta.prefix, freight_cache=frt_cache)
+    if fev is not None and pf is not None:
+        ts += freight_events.hourly_series(fev, pf.carriers, pf.excluded)
     timeseries.write(ts, meta, out / "kpi_timeseries.csv")
 
     print("KPI CSVs written to " + str(out) + " (" + str(len(rows)) + " KPIs, "
@@ -74,10 +92,9 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     dist_rows = distributions.extract(run_dir, meta.prefix, recon=recon)
     distributions.write(dist_rows, meta, out / "kpi_distributions.csv")
     prov_rows = []
-    if has_freight:
+    if has_freight and pf is not None:
         try:
-            import extract_freight_provider as efp
-            prov_rows = efp.extract(run_dir, meta.prefix)
+            prov_rows = efp.extract(run_dir, meta.prefix, pf=pf)
             efp.write(prov_rows, meta, out / "kpis_provider.csv")
         except Exception as e:
             print("[build] provider KPIs skipped: " + str(e))  # ASCII only
@@ -85,7 +102,7 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
         len(it_rows), len(dist_rows), len(prov_rows)))
 
     import extract_vehicles
-    veh_rows = extract_vehicles.extract(run_dir, meta.prefix, recon=recon)
+    veh_rows = extract_vehicles.extract(run_dir, meta.prefix, recon=recon, pf=pf)
     if veh_rows:
         extract_vehicles.write(veh_rows, meta, out / "kpi_vehicles.csv")
     print("kpi_vehicles: {} rows".format(len(veh_rows)))
