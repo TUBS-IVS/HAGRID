@@ -111,6 +111,14 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-17._
   orthogonal über beide integrierten Szenarien. Plan **nach** 1c+1d. Integrationspunkt:
   das bislang unverdrahtete `IntegratedScenarioConfig`. _(added 2026-07-14)_
 
+- **`[M]` Karten-Dropdowns/-Controls noch nicht manuell durchgeklickt** — Plan-D-maps Task 9 hat
+  nur Ladezeit/Größe im Browser bestätigt (6.1 MB, married250, "fast & responsive"); die
+  interaktiven Elemente selbst (DRT-Fahrzeug-`<select>` inkl. 227 Einträgen + Stop-Badges, LMD
+  Touren/Stopps/Heatmap-Modus-Radio, Provider/Carrier/Vehicle-Filter, Depot/Rail/Heat-Checkboxen,
+  Light/Dark-Tile-Wechsel) sind noch **nicht** einzeln durchgeklickt/reviewt. Vor "fertig" fürs
+  Kartenfeature: einmal jeden Dropdown/Filter/Toggle auf dem married250-Dashboard durchgehen.
+  _(added 2026-07-17)_
+
 ## Low
 
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
@@ -141,6 +149,14 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-17._
   reale married-Runs nutzen `drt_<int>` → kein Real-Run-Defekt, aber der KPI-Test-Fixture musste
   die ID in-test umschreiben. Trivialer Defensiv-Fix (trailing-int extrahieren, sonst 0) entfernt
   den Workaround. Entdeckt bei Plan-D-maps Task 5. _(added 2026-07-17)_
+
+- **`[L]` LMD-Karte leer bei DRT-losem Run** — `build_kpis.py:100` gated den Netzwerk-Geometrie-Block
+  auf `drt_cache is not None`, d.h. bei einem reinen Freight/LMD-Run (kein DRT) bleibt `link_geo=None`
+  → alle LMD-Touren `runs:[]`, Stopps gedroppt, Heat leer (Karte zeigt nur Controls). Betrifft
+  married250 NICHT (hat DRT → `freight_used` wird unioniert). Fix: Gate auf
+  `(drt_cache is not None or fev is not None) and network.exists()`, `veh_path` weiter nur bei
+  vorhandenem `drt_cache`. Vor dem ersten LMD-only-Szenario (vgl. `LMD_BASELINE`) fixen. Gefunden im
+  Plan-D-maps Whole-Branch-Review. _(added 2026-07-17)_
 
 ---
 
