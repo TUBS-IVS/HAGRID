@@ -13,7 +13,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt — aufgeschobene Punkte und neue Findings
 kommen mit Datum hier rein; Erledigtes wandert nach `## Erledigt` (kurzer Nachweis) oder wird
-gestrichen. _Zuletzt aktualisiert: 2026-07-16._
+gestrichen. _Zuletzt aktualisiert: 2026-07-17._
 
 ---
 
@@ -51,6 +51,12 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-16._
   (Bottom-up 25 € / Literatur-Benchmark 68 €). Muss vor der Headline-Evaluation ein belastbares
   Modell werden (autonomie-zerlegbar, Overhead). _(Prio-Vorschlag: eng an Nachhaltigkeit gekoppelt.)_
   _(added 2026-07-14)_
+  - **Subtask: DRT-Kosten-KPI im v2-Dashboard klären + einbauen** — v2 hat aktuell **null**
+    DRT-Kosten-KPIs (Passenger-Gruppe rein operativ). Legacy-Python zeigte "Kosten Literatur-Benchmark"
+    408.000 € / 35,25 €-pro-Fahrt; User erinnert einen pauschalen Ansatz **150.000 € mit Verweis auf
+    Currie/Fournier** — welcher Wert/welche Quelle stimmt (150k pauschal vs 408k Benchmark vs die
+    68 €/25 €-Platzhalter oben)? Einmal sauber klären, dann als Teil der Kostenfunktion in v2
+    aufnehmen. Aufgedeckt beim Plan-D-maps Task-10 §5-Legacy-Vergleich (married250). _(added 2026-07-17)_
 
 ## Medium
 
@@ -129,6 +135,12 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-16._
 - **`[L]` Phase-2-Deferrals (gesammelt)** — Packstationen/Locker (braucht Standortdaten),
   Ride-and-Collect, mobile-Packstation (Opt 1), verschiedene Van-Größen. Alle bewusst aufgeschoben.
   _(added 2026-07-14)_
+
+- **`[L]` Legacy `drt_service_time.py:194` Sort-Key härten** — `int(v.split("_")[1]) if
+  v.split("_")[-1].isdigit() else 0` crasht auf nicht-`drt_<int>`-Fahrzeug-IDs (z.B. `drt_veh_1`);
+  reale married-Runs nutzen `drt_<int>` → kein Real-Run-Defekt, aber der KPI-Test-Fixture musste
+  die ID in-test umschreiben. Trivialer Defensiv-Fix (trailing-int extrahieren, sonst 0) entfernt
+  den Workaround. Entdeckt bei Plan-D-maps Task 5. _(added 2026-07-17)_
 
 ---
 
