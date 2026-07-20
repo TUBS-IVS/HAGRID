@@ -15,11 +15,34 @@
 - **D3 — MATSim bump `2025.0-PR3552` → `2025.0` as Task 1 with the full test suite + all four e2e tests as compatibility gate** (spike: smallest upgrade that unlocks `DvrpLoad`; matsim-lausitz 2.0 binary-compat is the flagged open risk — the gate proves or falsifies it before anything else is built).
 - **D4 — Vehicle = 10 seats + 20 parcel slots** (spec §6.1). Seats go into the fleet XML scalar (`mapFleetCapacity=passengers`); parcel slots come from the `DvrpLoadFromFleet` override. Fleet size stays the existing `fleetSize` runner key.
 - **D5 — χ threshold as runner key `chiThreshold` (seconds of marginal vehicle time-loss), default 600** — same parse/ctor pattern as `fleetSize`/`freight`. `InsertionCostCalculator` cost IS `totalTimeLoss` in seconds (spike §3), so no unit conversion; the EUR interpretation (25 €/h → 600 s ≈ 4.17 €) is a reporting concern.
-- **D6 — Parcel submission times uniformly jittered in [08:00, 10:00]** (seeded `Random`), inside the LMD time window 08–20 h; avoids ~1,000 simultaneous submissions at one tick. Calibration lever later.
+- **D6 — Parcel submission times uniformly jittered in [07:30, 10:00]** (seeded `Random`, `SUBMIT_FROM_S`/`SUBMIT_TO_S`); earliest delivery 07:30 (rev. 2026-07-20). Each parcel additionally carries a **per-type delivery deadline** (B2B 17:00, B2C 20:00 — `WINDOW_END_ATTRIBUTE`), enforced via per-request `maxRequestAge` (Methodology refinements §"Delivery windows"). Avoids ~1,000 simultaneous submissions at one tick; submission spread is a calibration lever.
 - **D7 — `freight=true` is IGNORED for DRT_SHAREDUSE** (log + proceed): no jsprit preprocessing, no `FreightRunComposer`/CarrierModule — the spec's "no jsprit on the parcel side" and no double-serving of demand.
 - **D8 — `IntegratedScenarioConfig` stays unwired** (it is production-dead today, grounding §6). The autonomy follow-up plan is its natural integration point; 1c threads only `chiThreshold` through `HAGRIDSimulationConfig` to avoid double config plumbing.
 - **D9 — KPI contract file `shareduse_channel_stats.csv`** (`metric;value`) written by an event handler at shutdown, consumed by 1e's `extract_shareduse.py` (Task 8; requires the 1e plan to have landed — execute 1e first, as agreed).
-- **D10 — KNOWN, ACCEPTED distortions of stock outputs in SHAREDUSE runs:** MATSim's `drt_customer_stats`/occupancy/fare aggregates mix parcel-requests into pax numbers (parcels physically board, get fared by `PtAndDrtFareModule`, appear in legs). Pax-only truth is recoverable from `output_drt_legs_drt.csv` via the `personId` prefix — Task 8 emits corrected `*_pax_only` KPI rows, and the comparison uses those. Legacy dashboards are NOT adapted (they remain baseline tools).
+- **D10 — Passenger/Freight event & KPI separation (HARDENED 2026-07-20).** In SHAREDUSE, parcels are dummy DRT passengers by construction — co-riding (pax + parcels simultaneously in one vehicle, spec §4.2/§6.1) IS the scenario, and a separate non-passenger `CargoRequest` that co-rides with pax does **not** exist natively (external review "Dummy_Chat" §3.2.7 concedes this; a truly separate co-riding cargo type = a deep drt/dvrp fork, tracked as "Option C" in `docs/BACKLOG.md`). MATSim's stock `drt_customer_stats`/occupancy/fare aggregates therefore mix parcel-requests into pax numbers (parcels physically board, get fared, appear in legs). This is a **reporting-hygiene** problem, NOT a modelling-validity one: parcel person-ids are disjoint from pax ids by construction, so the separation is a deterministic FILTER, not an estimate. The following separation discipline is BINDING for every SHAREDUSE KPI:
+  - **(a) Three-way KPI taxonomy** (adopted from the external review §3.2.6), mapped onto 1e's `kpi_group`: `passenger/*` (wait, in-vehicle, rejection, service-level — non-parcel requests only), `freight/*` (delivery time, delivery delay, undelivered δ, load units, cargo occupancy — parcel requests only), `system/*` shared fleet (pax veh-km, freight veh-km share, empty-km, idle). No stock DRT aggregate is EVER reported for a SHAREDUSE run without this split.
+  - **(b) Load-based classifier, prefix as cross-check.** Classify a request as parcel via the Goods dimension on `(Passenger)DrtRequestSubmittedEvent` (2025.0 carries `DvrpLoad load, String serializedDvrpLoad`, spike §1.4), with the `parcel_` person-id prefix as fallback/assert — more robust than string-matching alone.
+  - **(c) Fares: post-hoc filter (user 2026-07-20).** Parcels ARE fared in-sim (harmless — the parcel subpopulation never replans, so the fare changes no behaviour), but are EXCLUDED from every reported revenue/economic KPI by filtering parcel `personMoney` events (non-`parcel_` persons only). The native `PtAndDrtFareModule` wiring is NOT touched. The in-sim parcel fare is documented as a footnote, not suppressed at source.
+  - **(d) Score statistics.** The parcel subpopulation (selector-only) still appears in global score-stats CSVs → pax-only executed-score is reported by filtering the `parcel` subpopulation; parcels never enter a headline score number.
+  - **(e) χ→0 validation (methodology proof).** A SHAREDUSE run with `chiThreshold=0` accepts zero parcels and MUST reproduce the DRT_BASELINE pax KPIs within noise (Task 10). This is the constructive proof that the dummy-agent mixing does not distort pax accounting — the direct, empirical answer to the "wrong KPIs" objection.
+  - **(f) Legacy dashboards NOT adapted** — they remain baseline tools; a guard/label makes stock `drt_customer_stats` of a SHAREDUSE run non-authoritative for pax truth.
+
+## Methodology refinements (grilling review 2026-07-20)
+
+Agreed with the user in the 2026-07-20 review. These SHARPEN the scenario's scientific accuracy; each names the task it touches. Where a refinement flips an existing code/test literal, the executor applies it there (the constants block, Task 3, and Task 10 are already updated in place).
+
+- **M1 — Seat basis (Confound #1 resolved).** The base vehicle is fixed across arms; Shared-Use = base **−2 seats +20 parcel slots** (the repurposed back bench). So **Baseline/standard DRT = `BASE_SEATS`=10, Shared-Use = `SEATS`=8**. The 2-seat loss is now a deliberate, physically-meaningful part of the intervention, not an accidental mismatch. **Revises spec §6.1** (Shared-Use was 10+20 → now 8+20; Baseline 8 → 10). **Re-baseline consequence:** existing married runs are cap=8 → a headline comparison needs the Baseline re-run at 10 seats. **NOT now** (user 2026-07-20) — tracked in `docs/BACKLOG.md`. Task 3 + its test assertions updated.
+- **M2 — Segment split above vehicle capacity (Confound #4, δ de-contamination).** A segment with `amount > PARCEL_SLOTS` is split in `ParcelAgentGenerator` (Task 2) into `ceil(amount/PARCEL_SLOTS)` sub-persons, same segment link, load ≤ 20, staggered submission — so nothing is undeliverable *by construction* (the demand has segments up to 102 parcels; p95≈23; ~69 segments >20). Dwell per sub-visit stays `segmentDwellSeconds(sub)`. Framing: "one request per segment, sub-divided only when the segment exceeds vehicle capacity" (physical necessity; a dense point gets multiple visits). **Pure preprocessing, ~10 lines.**
+- **M3 — δ decomposition.** `SharedUseKpiHandler` (Task 7) reports δ split into **χ-rejected** vs **pending-at-EOD/expired-window** (capacity-infeasible is eliminated by M2). Undelivered rate stays a headline KPI but is now a clean feasibility signal, not a capacity artifact.
+- **M4 — Depot pickup: scale dwell + provider assignment.** (a) Pickup dwell scales with parcels — `depotPickupSeconds(n)` (`DEPOT_LOAD_PER_PARCEL_S`=30 s, cap 600 s) replaces the flat 120 s; Task 4's `SharedUseStopDurationProvider` resolves it per-request (extend the snapshot map to carry the parcel count, same pattern as the dropoff-dwell map). (b) **Provider-depot assignment, not nearest** (Task 2): map `delivery.getProvider()` → its provider-tagged depot from `lmd-depots.csv`, nearest as fallback — removes the cross-docking / shared-inventory assumption at zero extra complexity (parcels physically originate at the provider depot; the single operator merely runs all of them). (c) *Accepted caveat, no fix:* the online optimizer is not incentivised to batch multiple segments into one depot loading visit; native same-link pickup-merging gives some batching when one vehicle serves two same-depot segments — second-order efficiency, fine for Phase 1.
+- **M5 — Delivery windows per type (Confound #6).** B2B/B2C classification already exists (`ParcelType`; B2C 5,521 / B2B 860). Each parcel-person carries `WINDOW_END_ATTRIBUTE` = **B2B 17:00 / B2C 20:00**; earliest delivery **07:30** (`SUBMIT_FROM_S`). Enforced via **per-request `maxRequestAge`** = window-end − submission (Task 4/5 retry params become per-request, not a single global 86400) — a parcel unserved by its window end becomes undelivered. δ now means "delivered *within window*", and B2B-at-20:00 absurdities vanish.
+- **M6 — χ as a SWEEP, not a single point (Confound #7).** χ stays a fleet-time-loss budget on **raw `totalTimeLoss`** (the pax-service-primary framing is correct — retract the earlier "derive χ from van cost" idea). The evaluation runs a **χ-sweep** (e.g. {0, 300, 600, 900, ∞}) and reports the trade-off front: δ and pax-service KPIs (P95 wait, in-vehicle stretch, rejection) as functions of χ. χ is the *knob*; pax-service KPIs are the *measured outcome* (`totalTimeLoss` is fleet time, a proxy — so report the actual pax impact). Gate on raw `totalTimeLoss`, not the soft-violation-penalized cost (spike residual risk). **χ=0 is also the Task-10 leakage anchor.**
+- **M7 — Rebalancing = PAX-only (Modeling decision #10).** Demand-based MinCostFlow rebalancing uses **passenger demand only** (fleet positions for pax; parcels are opportunistic) — consistent with pax-primary and keeps the pax baseline comparable. Documented as a deliberate choice; combined rebalancing is a sensitivity for later.
+- **M8 — "Passenger-primary" wording (Precision #8).** No code change. Describe precisely: pax get insertion priority and parcels are cost-gated, but a *committed* parcel is **not preempted** for a later pax request → pax rejection can rise, which is exactly the measured integration cost. Do not overstate "pax are never disadvantaged".
+- **M9 — δ convergence check (#9).** Post-implementation, confirm δ (and pax KPIs) plateau over the last ~10–20 iterations of a long run. Parcels are static demand → only pax equilibrate → convergence should track the pax-only run. A simple acceptance plot, not a code feature.
+- **M10 — Not-at-home consistency (Confound #3).** Both arms treat first-attempt delivery as 100 % (the LMD missed-delivery overlay is behaviour-neutral/cosmetic). **Consistency requirement:** the canonical KPI must treat both arms identically — either drop the overlay from both (report raw 100 %) or apply the same cosmetic rates to both. Chosen: **raw 100 % in both**, declared as an assumption in the methodology text.
+- **M11 — Joint-cost allocation defined (#11).** Unit-cost-per-parcel is a secondary KPI, but its allocation rule is fixed now to avoid ad-hoc choices: **marginal-cost attribution** — a parcel's cost = its accepted `totalTimeLoss` × vehicle-time-rate + its delivery-km × km-rate (reuses the χ measurement); pax carry the base fleet cost. (Still gated on the real cost model — `economics.py` placeholder, BACKLOG.)
+- **M12 — DOF control arm → long-term backlog.** A "Dedicated Online Freight" arm (Shared-Use dispatch + vehicle, parcels only, no pax) would isolate the *pure* integration effect (Shared-Use vs DOF) from the tooling/vehicle effect (DOF vs offline Baseline) and complete a factorial decomposition (pax-alone = χ=0 run / parcel-alone = DOF / both = Shared-Use). User priority is system-level claims → **Phase 2 / paper-extension** (BACKLOG), not the 1c headline.
 
 ## Global Constraints
 
@@ -107,7 +130,7 @@ git commit -m "build: bump matsim.version to 2025.0 (unlocks DvrpLoad for Shared
 **Interfaces:**
 - Consumes: `hagrid.utils.demand.Delivery` (fields `getCoordinate(): Coord`, `getAmount(): int`, `getParcelType(): ParcelType` (B2B/B2C), `getProvider(): String`); `LmdDemandReader.read(String)/group(Collection)`; `DepotNetwork` (`nearestDepot(Coord)`, record `Depot(String id, Coord coord)`); `DrtDepotReader.readCoords(Path)`; `NetworkUtils.getNearestLinkExactly(Network, Coord)`; `GeoUtils.getBoundaryGeometry` (same clip approach as `LausitzFreightPreprocessor`).
 - Produces:
-  - `SharedUse` constants: `PARCEL_PERSON_PREFIX="parcel_"`, `PARCEL_SUBPOPULATION="parcel"`, `SEATS=10`, `PARCEL_SLOTS=20`, `LOAD_ATTRIBUTE="dvrp:load:parcels"`, `DWELL_ATTRIBUTE="parcelDwellSeconds"`, `CHANNEL_ATTRIBUTE="parcelChannel"`, `ACT_DEPOT="parcelDepot"`, `ACT_DELIVERY="parcelDelivery"`, `PICKUP_DURATION_S=120.0`, `DURATION_PER_PARCEL_MIN=2`, `MAX_DURATION_PER_STOP_MIN=15`, `SUBMIT_FROM_S=8*3600`, `SUBMIT_TO_S=10*3600`.
+  - `SharedUse` constants: `PARCEL_PERSON_PREFIX="parcel_"`, `PARCEL_SUBPOPULATION="parcel"`, `BASE_SEATS=10`, `SEATS=8`, `PARCEL_SLOTS=20`, `LOAD_ATTRIBUTE`, `DWELL_ATTRIBUTE`, `PICKUP_ATTRIBUTE`, `WINDOW_END_ATTRIBUTE`, `CHANNEL_ATTRIBUTE`, `ACT_DEPOT`, `ACT_DELIVERY`, `DEPOT_LOAD_PER_PARCEL_S=30`, `MAX_PICKUP_DURATION_S=600`, `DURATION_PER_PARCEL_MIN=2`, `MAX_DURATION_PER_STOP_MIN=15`, `SUBMIT_FROM_S=7.5*3600`, `SUBMIT_TO_S=10*3600`, `B2B_WINDOW_END_S=17*3600`, `B2C_WINDOW_END_S=20*3600`; helpers `segmentDwellSeconds(n)`, `depotPickupSeconds(n)`. See the **Methodology refinements** section for the seat-basis / split / provider-depot / window decisions these encode.
   - `DeliveryChannelResolver.resolve(Delivery d) -> Channel` (`enum Channel { DOOR, LOCKER }`), constructed with `List<Coord> lockerLocations` (empty in Phase 1) — B2B always DOOR; B2C→LOCKER only if a locker within `maxLockerDistance` exists, else DOOR.
   - `ParcelAgentGenerator.generate(Map<String,List<Delivery>> byProvider, Geometry serviceArea, Network drtNetwork, List<Coord> depotCoords, Population targetPopulation, long seed) -> Result` with `record Result(int personsAdded, int parcels, int skippedSameLink, int clippedOutside)` — adds one parcel-person per in-area delivery.
 
@@ -175,24 +198,36 @@ package hagrid.integrated.shareduse;
 public final class SharedUse {
     public static final String PARCEL_PERSON_PREFIX = "parcel_";
     public static final String PARCEL_SUBPOPULATION = "parcel";
-    public static final int SEATS = 10;                 // spec §6.1
-    public static final int PARCEL_SLOTS = 20;          // spec §6.1
+    public static final int BASE_SEATS = 10;            // standard DRT / Baseline base vehicle (rev. 2026-07-20; re-baseline pending)
+    public static final int SEATS = 8;                  // Shared-Use = base vehicle with 2 seats (back bench) repurposed -> cargo
+    public static final int PARCEL_SLOTS = 20;          // the repurposed back-bench volume (~2 seats -> 20 parcel units)
     public static final String LOAD_ATTRIBUTE = "dvrp:load:parcels";  // DefaultDvrpLoadFromTrip prefix + dimension
     public static final String DWELL_ATTRIBUTE = "parcelDwellSeconds";
+    public static final String PICKUP_ATTRIBUTE = "parcelPickupSeconds";   // per-request depot load time (scales with parcels)
+    public static final String WINDOW_END_ATTRIBUTE = "parcelWindowEndSeconds";  // per-type delivery deadline
     public static final String CHANNEL_ATTRIBUTE = "parcelChannel";
     public static final String ACT_DEPOT = "parcelDepot";
     public static final String ACT_DELIVERY = "parcelDelivery";
-    public static final double PICKUP_DURATION_S = 120.0;
-    public static final int DURATION_PER_PARCEL_MIN = 2;    // parity: LmdCarrierBuilder
+    public static final double DEPOT_LOAD_PER_PARCEL_S = 30.0;  // bulk depot loading (faster than the 2 min/parcel door delivery)
+    public static final double MAX_PICKUP_DURATION_S = 600.0;   // cap depot load time
+    public static final int DURATION_PER_PARCEL_MIN = 2;    // parity: LmdCarrierBuilder (door delivery)
     public static final int MAX_DURATION_PER_STOP_MIN = 15; // parity: LmdCarrierBuilder
-    public static final double SUBMIT_FROM_S = 8 * 3600.0;  // D6
+    public static final double SUBMIT_FROM_S = 7.5 * 3600.0; // 07:30 earliest delivery/submission (rev. 2026-07-20)
     public static final double SUBMIT_TO_S = 10 * 3600.0;
+    public static final double B2B_WINDOW_END_S = 17 * 3600.0;   // business-hours recipient presence
+    public static final double B2C_WINDOW_END_S = 20 * 3600.0;   // home recipient, wider window
 
     private SharedUse() {
     }
 
+    /** Door-delivery dwell (dropoff), parity with LMD. */
     public static double segmentDwellSeconds(int parcels) {
         return Math.min(DURATION_PER_PARCEL_MIN * 60.0 * parcels, MAX_DURATION_PER_STOP_MIN * 60.0);
+    }
+
+    /** Depot loading dwell (pickup), scales with parcel count (rev. 2026-07-20 - flat 120 s was unrealistic). */
+    public static double depotPickupSeconds(int parcels) {
+        return Math.min(DEPOT_LOAD_PER_PARCEL_S * parcels, MAX_PICKUP_DURATION_S);
     }
 
     public static boolean isParcelPerson(String personId) {
@@ -481,12 +516,12 @@ long parcelPersons = prepared.getPersons().values().stream()
 long paxPersons = prepared.getPersons().size() - parcelPersons;
 assertTrue(parcelPersons >= 1, "parcel subpopulation missing");
 assertTrue(paxPersons >= 1, "pax must survive the person-filter");
-// fleet capacity = 10 for shareduse
+// fleet capacity = 8 for shareduse (base 10 minus 2 repurposed seats)
 String fleetXml = readGzToString(cfg.getDrtFleetFile());
-assertTrue(fleetXml.contains("capacity=\"10\""));
+assertTrue(fleetXml.contains("capacity=\"8\""));
 ```
 
-And a second assertion set with `concept=drt_baseline` on the same fixtures: NO `parcel_` persons, `capacity="8"` (regression).
+And a second assertion set with `concept=drt_baseline` on the same fixtures: NO `parcel_` persons, `capacity="10"` (regression — the Baseline base vehicle is now 10 seats; see Methodology refinements re-baseline note).
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -500,7 +535,7 @@ In `run(HAGRIDSimulationConfig cfg)` (`LausitzDrtPreprocessor.java:148`, hardcod
 ```java
 HagridConfig.Scenario scenario = HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
 boolean sharedUse = scenario == HagridConfig.Scenario.DRT_SHAREDUSE;
-int capacity = sharedUse ? SharedUse.SEATS : 8;
+int capacity = sharedUse ? SharedUse.SEATS : SharedUse.BASE_SEATS;  // 8 (Shared-Use) vs 10 (Baseline base vehicle), rev. 2026-07-20
 ```
 
 and pass `capacity` where the literal `8` was. The **person-filter gotcha** (`:82-87` removes every subpopulation except `"person"`): inject parcels AFTER the filter and BEFORE `writePopulation(clipped, plansOut)` — since `run(cfg)` currently delegates to the 15-arg overload, the least invasive seam is a post-step in `run(cfg)` that re-reads and re-writes the plans file:
@@ -801,6 +836,8 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
 
 (VERIFY-SOURCE: `ParallelStopTimeCalculator`/`MinimumStopDurationAdapter` constructor argument order; `DvrpLoadFromFleet` functional signature `getDvrpVehicleLoad(int, Id<DvrpVehicle>)` — adapt the lambda if it is not a SAM interface.)
 
+**VERIFY-SOURCE gate — reconfiguration extension (checked 2026-07-20):** the `drt-extensions/reconfiguration` extension (MOIA fork) ships ready-made, semantically-named `PersonsLoadType`/`GoodsLoadType` + `DvrpLoadFromFleet`/`DvrpLoadFromDrtPassengers` bindings + a serializer that cover exactly this 2D-capacity plumbing off-the-shelf. **IF** this extension is present in the resolved MATSim **2025.0** drt-extensions jar (check `~/.m2/repository/org/matsim/contrib/drt-extensions/2025.0/*-sources.jar` — it exists in TUBS-IVS/master and moia-oss/main, but its presence in the 2025.0 RELEASE line is UNVERIFIED), prefer `GoodsLoadType`/`PersonsLoadType` over the generic `"passengers"`/`"parcels"` dimensions shown above (cleaner names + a Goods-load on the request event = the D10 (b) load-based classifier for free). **ELSE** keep the hand-rolled dimensions above — do NOT enlarge the version bump beyond 2025.0 just to adopt the extension (matsim-lausitz binary-compat is the flagged gate risk; a bigger jump reopens it). Either way the observable test result (D10 (a)/(b)) is identical.
+
 - [ ] **Step 8: Run config test + full suite; commit**
 
 Run: `mvn -q test -Dtest=SharedUseConfigTest,SharedUseStopDurationProviderTest` then `mvn -q test`
@@ -1084,6 +1121,7 @@ git commit -m "feat(shareduse): DRT_SHAREDUSE dispatch + chiThreshold key (1c Ta
 - Consumes: events `PassengerRequestSubmittedEvent` (has request id + person ids; in 2025.0 also the serialized DvrpLoad), `PassengerRequestRejectedEvent`, `PassengerDroppedOffEvent` (all `org.matsim.contrib.dvrp.passenger`); person attributes (`LOAD_ATTRIBUTE`, `CHANNEL_ATTRIBUTE`) via injected `Population`; `ShutdownListener` + `OutputDirectoryHierarchy` for the output path.
 - Produces: `<matsim-output>/shareduse_channel_stats.csv`, format `metric;value` (`;`, dot decimals, UTF-8 — 1e conventions), metrics: `segments_submitted`, `segments_delivered`, `segments_rejected_final`, `segments_pending_eod`, `parcels_submitted`, `parcels_delivered`, `parcels_undelivered`, `undelivered_rate`, `share_channel_door`, `share_channel_locker`, `mean_delivery_delay_s` (dropoff − submission, mean over delivered segments).
 - δ definition (spike §6): submitted-without-dropoff; `pending_eod = submitted − delivered − rejected_final` (no event fires for still-pending requests at QSim end — the handler derives it at shutdown, NOT from PersonStuck).
+- **Classifier (D10 (b)):** identify parcel requests via the Goods-load dimension on the submitted-event where available, `parcel_` prefix as fallback/assert — apply the SAME predicate here, in the χ-gate, the retry queue, and Task 8, from the one `SharedUse.isParcelPerson` helper. Fares are NOT handled here (D10 (c) is a post-hoc extractor filter in Task 8, not a handler concern).
 
 - [ ] **Step 1: Failing handler unit test** — feed synthetic events (2 parcel submissions with loads 3+2, 1 dropoff for the first after 1800 s, no event for the second; 1 pax submission+dropoff that must be ignored) and assert the counters + the written CSV: `segments_submitted=2`, `segments_delivered=1`, `segments_pending_eod=1`, `parcels_submitted=5`, `parcels_delivered=3`, `undelivered_rate=0.4`, `mean_delivery_delay_s=1800`, `share_channel_door=1.0`.
 
@@ -1126,6 +1164,10 @@ git commit -m "feat(shareduse): delta/channel KPI handler + end-to-end test (1c 
 **Interfaces:**
 - Consumes: `<run>/shareduse_channel_stats.csv` (Task 7 format); `<prefix>.output_drt_legs_drt.csv` (`personId` column — parcel legs carry the `parcel_` prefix).
 - Produces: rows `channel/undelivered_rate`, `channel/share_channel_door`, `channel/share_channel_locker`, `freight/parcels_submitted|delivered|undelivered` (source `shareduse_channel_stats`), `freight/mean_delivery_delay_s`; PLUS corrected pax rows (D10) computed from legs with `personId` not starting `parcel_`: `passenger/drt_rides_pax_only`, `passenger/wait_mean_pax_only`, `passenger/wait_median_pax_only` (source `output_drt_legs pax-filter`).
+- **D10 hardening — additional rows (all filtered by the ONE parcel predicate):**
+  - **Fare post-hoc filter (D10 (c), user 2026-07-20):** `economic/fare_revenue_pax_only` = Σ `personMoney` amounts for NON-`parcel_` persons (source `personMoney pax-filter`; read via 1e's events cache or the money CSV — VERIFY the available source in the run dir; if only the contaminated stock fare aggregate exists, compute from events). Parcel fares are dropped from the reported number, not from the sim.
+  - **Three-way taxonomy (D10 (a)):** ensure every emitted row's `kpi_group` is one of `passenger`/`freight`/`system`; add `system/freight_veh_km` (veh-km attributable to legs carrying a parcel) alongside the existing pax veh-km so the shared fleet is decomposed, not double-counted.
+  - **Classifier (D10 (b)):** prefer the serialized Goods-load on the leg/event when the column exists; fall back to the `parcel_` prefix. Keep the prefix constant identical to the Java `SharedUse.PARCEL_PERSON_PREFIX`.
 
 - [ ] **Step 1: Failing test** — fixture stats CSV (`metric;value` lines from Task 7's unit-test expectations) + a legs fixture containing 3 pax legs and 2 `parcel_` legs; assert the channel rows land, `drt_rides_pax_only == 3`, `wait_mean_pax_only` averages ONLY the pax rows, and every row has the five extractor keys.
 
@@ -1213,6 +1255,26 @@ mvn exec:java -Dexec.mainClass=hagrid.HAGRIDSimulationRunner -Dexec.args="concep
 
 ---
 
+### Task 10: χ→0 validation run (methodology proof — D10 (e))
+
+**Files:** none (run + compare); optionally a tiny assert script under `analysis/kpi/tests/` if the comparison is scripted.
+
+**Purpose:** prove empirically that modelling parcels as dummy DRT passengers does NOT distort the passenger KPIs — the direct answer to the external "wrong KPIs" objection. With `chiThreshold=0` every parcel insertion is infeasible (§Task 5), so zero parcels are served; the χ=0 Shared-Use vehicle is therefore an **8-seat DRT with parcel-agents present but never boarding**.
+
+**⚠ Reference must match the SEAT COUNT (M1), NOT the Baseline.** The χ=0 Shared-Use vehicle is 8 seats; the headline Baseline base vehicle is 10 (M1). So the leakage reference is a plain **8-seat DRT run WITHOUT the `parcel` subpopulation**, at the same fleet/iter/seed/area — NOT the 10-seat Baseline. Any pax-KPI delta between χ=0-Shared-Use and this 8-seat-no-parcel run = parcel-agent presence leaking into the pax sim (the thing being tested). The 10-vs-8-seat effect is a SEPARATE control (part of the seat-loss cost of integration), not the leakage test.
+
+- [ ] **Step 1: Two runs, matched.** (a) SHAREDUSE with `chiThreshold=0`, `fleetSize=F`, seed `S`, tag `suchi0`. (b) A plain 8-seat DRT run (no parcel subpop) at the same `F`/iter/`S`/area — either a `drt_baseline` run forced to 8 seats, or the χ=0 run's own pax side is the probe and (b) is the control. Same two-step invocation.
+
+- [ ] **Step 2: Assert pax-equivalence** — compare the `passenger/*_pax_only` rows of the χ=0 SHAREDUSE run against the `passenger/*` rows of the 8-seat-no-parcel reference:
+  - `drt_rides_pax_only` ≈ reference rides (within run-to-run noise — parcels never boarded, but the parcel subpopulation's presence in the QSim and its selector-only replanning could in principle perturb RNG draws; a small delta is acceptable, a large one is a BUG in the isolation of the parcel subpopulation).
+  - wait mean/median, rejection rate, modal share pax-only ≈ reference.
+  - `freight/parcels_delivered == 0`, `channel/undelivered_rate == 1.0` (nothing served — the χ-gate is doing its job).
+  - `economic/fare_revenue_pax_only` ≈ reference fare revenue (confirms the fare filter (D10 (c)) removes only parcel fares — with χ=0 there are none, so this must match exactly).
+
+- [ ] **Step 3: Record the result** in the run report / thesis methodology section as the constructive validation of D10. If pax KPIs do NOT reconcile, STOP — the parcel subpopulation is leaking into the pax simulation and the isolation (subpopulation, non-scoring activities, selector-only replanning) must be fixed before any headline SHAREDUSE run.
+
+---
+
 ## Self-Review (run after writing, fix inline)
 
 1. **Spec §4.2 coverage:** segment-stop insertion unit ✅ (PANDA demand IS segment-aggregated, 1,056 segments; one person per segment-delivery); depot pickup ✅ (nearest depot, `DepotNetwork` finally in production); stretched dwell ✅ (LMD-parity formula, priced by the insertion search); 2D capacity ✅ (native DvrpLoad, Task 1 bump); online pax insertion untouched ✅; χ static acceptance ✅ (Task 5); pending/undelivered δ ✅ (retry queue + event-derived, Task 7); channel logic ✅ structurally, door-only per D1; channel shares as params+KPIs — shares emitted as KPIs ✅, the *input* share lever (`b2cLockerShare`) deliberately NOT wired (D8, no lockers to share into); Ride-and-Collect Phase 2 ✅ (absent); operator = Einheitsunternehmen ✅ (provider dissolved, kept as attribute).
@@ -1221,6 +1283,6 @@ mvn exec:java -Dexec.mainClass=hagrid.HAGRIDSimulationRunner -Dexec.args="concep
 
 ## Execution notes
 
-- **Order:** Task 1 is the gate — if the e2e gate fails, STOP (user decision on the lausitz dep). Tasks 2→7 sequential; Task 8 requires the 1e plan landed (execute 1e first, as agreed); Task 9 is manual acceptance.
+- **Order:** Task 1 is the gate — if the e2e gate fails, STOP (user decision on the lausitz dep). Tasks 2→7 sequential; Task 8 requires the 1e plan landed (execute 1e first, as agreed); Task 9 is manual acceptance; **Task 10 (χ→0 validation) is the D10 methodology gate — run it before any headline SHAREDUSE run and record the pax-equivalence result.**
 - **Deferred, tracked:** Packstation locations file + `b2cLockerShare` wiring (D1); autonomy switch plan (D2); parcel time-window semantics beyond the sliding retry window; prebooked advance submission; χ calibration + fleet sizing (calibration phase, after 1d).
 - The spike's residual risks list (`docs/superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md`, bottom) is the executor's watch-list — especially: gate χ on raw `totalTimeLoss` (not soft-violation-penalized cost) if `DiscourageSoftConstraintViolations` turns out to be the bound strategy.

@@ -13,7 +13,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt — aufgeschobene Punkte und neue Findings
 kommen mit Datum hier rein; Erledigtes wandert nach `## Erledigt` (kurzer Nachweis) oder wird
-gestrichen. _Zuletzt aktualisiert: 2026-07-17._
+gestrichen. _Zuletzt aktualisiert: 2026-07-20._
 
 ---
 
@@ -36,9 +36,65 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-17._
     Autoren empfehlen öffentliche statt Operator-Finanzierung. HAGRIDs Shared-Use-Szenario
     misst bislang nur operative Machbarkeit, keine Fahrgast-Kompensation — vor der
     Evaluation als Erweiterung prüfen. _(added 2026-07-15)_
+  - **Entscheidung 2026-07-20: 1c ist echtes Co-Riding** (Pax + Paket *gleichzeitig* an Bord,
+    2D-Kapazität wie Spec §4.2/§6.1) — nicht Exklusiv-Phase. Umsetzung = **Option A**
+    (Dummy-Parcel-Agenten + `DvrpLoad`, Trennung von Fracht/Pax nur auf **Event-/KPI-Ebene**).
+    Begründung: eine *native* Trennung separater Fracht- von Passagieragenten *bei gleichzeitigem*
+    Co-Riding existiert in MATSim nicht (siehe Option C unten). Vor Ausführung: D10 des 1c-Plans
+    härten (3-Wege-KPI-Taxonomie, Contamination-Checkliste, Fare-Unterdrückung für Pakete,
+    χ→0-Validierungslauf als konstruktiver Beweis, dass die Agenten-Mischung die Pax-Buchführung
+    nicht verzerrt).
+  - **Design-Input: `drt-extensions/reconfiguration` (MOIA-Fork)** — liefert fertige, benannte
+    DvrpLoad-Typen `PersonsLoadType`/`GoodsLoadType` + die Bindings `DvrpLoadFromFleet` /
+    `DvrpLoadFromDrtPassengers` + Serializer off-the-shelf → deckt die 2D-Kapazitäts-Plumbing aus
+    1c **Task 4** ab (statt handgerollter `DvrpLoadFromFleet`-Override) und liefert einen
+    **load-basierten Klassifikator** (Goods-Load im Request-Event, robuster als das `parcel_`-Präfix).
+    Bonus: dynamischer Laufzeit-Kapazitäts-Umbau = **1d-Enabler**. **Ändert NICHTS am
+    Dummy-Agent-Erfordernis** (Goods-Request kommt weiter über die Passenger-Engine). **Offen/VERIFY:**
+    ist die Extension im **2025.0-Release-JAR** enthalten oder zieht ihre Nutzung einen größeren
+    Versions-Bump nach sich (matsim-lausitz-Binärkompat-Risiko)? Vor Adoption verifizieren — sonst
+    Person/Goods-Namenskonvention + load-Klassifikator nur *nachbauen* beim minimalen 2025.0-Bump.
+    _(added 2026-07-20)_
+  - **Alternative Architektur (zurückgestellt) — vollsimultaner nativer `CargoRequest`-Fork
+    (Option C):** Der DRT-Request-Lebenszyklus ist durchgängig personengebunden
+    (`DrtRequest implements PassengerRequest`, `DefaultPassengerEngine`, `DrtStopActivity`/
+    Passenger-Handler; leere Passenger-ID-Liste wird per `Preconditions` abgelehnt, künstliche ID
+    ohne Agent crasht beim Pickup). Ein eigener `CargoRequest`-Typ, der *gleichzeitig* mit Pax auf
+    demselben Fahrzeug fährt, erfordert die Generalisierung von `InsertionGenerator` /
+    `VehicleEntry` / `StopWaypoint` / Occupancy — ein **tiefer Fork des drt/dvrp-Contribs**
+    (verliert Upstream-Wartung, Forschungs-Softwareaufwand von Monaten). Die native
+    `drt-extensions/services`-Vorlage (`DrtServiceDynActionCreator`, blockierende `EntryFactory`,
+    eigene Events) deckt nur die **exklusive** Phase ab → gehört zu **Modular (1d)**, nicht zu
+    Co-Riding-1c. Quelle des Vorschlags: externes Dokument „3.2 Fracht-Requests nicht als
+    Dummy-Passagiere modellieren" (in `Research/Paper/City Logistics/Dummy_Chat.txt`) — technisch
+    korrekt, adressiert aber den exklusiven Fall, nicht Co-Riding (§3.2.7 räumt das selbst ein).
+    **Reaktivieren, falls** die Event-/KPI-Kontamination in der Evaluation trotz gehärtetem D10
+    untragbar wird. _(added 2026-07-20)_
+  - **Grilling-Review 2026-07-20 → 12 Methodik-Verfeinerungen (M1–M12) in den 1c-Plan eingearbeitet**
+    (Sektion „Methodology refinements"): Sitz-Basis 10/8+20 (M1), Segment-Split über Kapazität (M2),
+    δ-Dekomposition (M3), skalierte Depot-Pickup-Dwell + Provider-Depot-Zuordnung (M4), per-Typ-Zeitfenster
+    B2B 07:30–17 / B2C 07:30–20 (M5), χ-Sweep statt Einzelpunkt auf rohem `totalTimeLoss` (M6),
+    Pax-only-Rebalancing (M7), präzises „passenger-primary"-Wording (M8), δ-Konvergenzcheck (M9),
+    not-at-home beidseitig 100 % konsistent (M10), marginale Joint-Cost-Allokation definiert (M11).
+    _(added 2026-07-20)_
+  - **Re-Baseline auf 10 Sitze (Folge von M1) — Sim-Run ausstehend.** Die existierenden married-Runs
+    (married120/250) fahren cap=8; für den Headline-Vergleich Baseline vs. Shared-Use muss die **Baseline
+    auf 10 Sitze** neu laufen (Shared-Use = 8). Kein Code-Problem, ein Overnight-Run. User 2026-07-20:
+    **nicht jetzt.** _(added 2026-07-20)_
+  - **DOF-Kontrollarm (M12) — langfristig / Paper-Extension.** „Dedicated Online Freight" = Shared-Use-Dispatch
+    + Fahrzeug, nur Pakete, keine Pax. Isoliert den **reinen** Integrationseffekt (Shared-Use vs. DOF) vom
+    Tooling-/Fahrzeug-Effekt (DOF vs. offline-Baseline) und vervollständigt eine faktorielle Zerlegung
+    (Pax-allein = χ=0-Lauf / Fracht-allein = DOF / beide = Shared-Use). Priorität liegt auf Systemebene →
+    aufgreifen, wenn fürs Paper eine mechanistische Zusatzaussage gebraucht wird. _(added 2026-07-20)_
 
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
   **Plan noch nicht geschrieben** (soll nach dem 1c-Plan entstehen, erbt Infra-Entscheidungen von 1c).
+  - **Design-Input (2026-07-20):** die *exklusive* Pax-oder-Fracht-Phase des Kapsel-Tauschs passt
+    zur nativen `drt-extensions/services`-Vorlage (`DrtServiceDynActionCreator` + blockierende
+    `EntryFactory` + eigene Events = **echte** Fracht-Agent-Trennung ohne Dummy-Passagiere) und zum
+    dynamischen Laufzeit-Kapazitäts-Umbau der `drt-extensions/reconfiguration`-Extension. Beim
+    1d-Plan prüfen, ob das den geplanten Offline-jsprit-Pfad ergänzt/ersetzt. Kontext siehe
+    Co-Riding-1c-Notizen oben (Option C). _(added 2026-07-20)_
   _(added 2026-07-14)_
 
 - **`[H]` Nachhaltigkeitsparameter einbauen** — Emissions-/CO₂-/Energie-KPIs und -Parameter
@@ -83,24 +139,49 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-17._
   **Meine Einordnung:**
   - **Richtung sinnvoll:** bessere VRP-Qualität wirkt direkt auf die Tourgeometrie — genau das, was die
     Dashboards messen (Kosten/km/Stopps). Innerhalb jsprit zu bleiben statt VROOM ist der klar risikoärmere
-    Schritt. Zustimmung zum Vorgehen (Branch + Regression).
-  - ⚠️ **Vor Umsetzung verifizieren:** (1) ob „jsprit 2.0" als Release überhaupt existiert und welche Version
-    MATSims freight-contrib mitträgt (jsprit-Releases lagen zuletzt eher im 1.9er-Bereich — „2.0" ist unbestätigt);
-    (2) der Beispiel-Code (`addRuinOperator(w, Ruin.random(...))`, `Insertion.regretFast()`) entspricht **nicht**
-    der mir bekannten jsprit-API — die nutzt **property-basierte** Strategie-Gewichte über `Jsprit.Parameter`/
-    `Jsprit.Strategy`, kein Fluent-`addRuinOperator`. Als Pseudocode behandeln, gegen echte jsprit-Doku/Source prüfen.
-  - **HAGRID-Spezifika:** Bump berührt `pom.xml` + Fork-POM (`external/matsim-libs`, contribs/freight) und braucht
-    die freight-272-Regression **plus** einen Re-Run-Vergleich auf married250 (Kosten/Routen-KPIs verschieben sich
-    → alle Dashboards neu baseline). Custom-Operatoren am elegantesten über das **Algorithm-XML-Hook** im Config
-    (existiert bereits), nicht per Java-Patch im Fork. Determinismus: Operator-Gewichte + fixer Seed für
-    Reproduzierbarkeit klären.
-  - **Kopplung:** beim MATSim-Core-Bump `2025.0` (eigener Punkt) mitprüfen, ob der die jsprit-Version ohnehin mitzieht.
-  _(added 2026-07-16)_
+    Schritt.
+  - ✅ **Verifiziert 2026-07-20 (README graphhopper/jsprit + lokale Fakten):** (1) **jsprit 2.0.0 existiert**
+    als Vollrelease (`com.graphhopper:jsprit-core:2.0.0`), „unbestätigt" erledigt; (2) verlangt **Java 21** —
+    HAGRID ist bereits auf 21 (`pom.xml:19-21`), **kein Blocker**; (3) die **Fluent-API** (`addRuinOperator(w, Ruin.…)`,
+    `Insertion.regretFast()`) ist in 2.0 **real** (nicht Pseudocode), inkl. Regret-k-Insertion — genau Chattys Ziel;
+    (4) **MATSim-Upstream steht selbst noch auf jsprit 1.8** (master-freight-contrib-POM) → der **Core-Bump 2025.0
+    zieht jsprit NICHT mit**.
+  - ⚠️ **Neu erkannter Hauptaufwand (korrigiert frühere Annahme):** HAGRID ruft jsprit **nicht nur** via
+    `CarriersUtils.runJsprit` — **~16 Java-Dateien** nutzen die jsprit-API direkt und tief (eigene `HardActivityConstraint`/
+    `SoftActivityConstraint`, `VehicleRoutingActivityCosts`/`VehicleRoutingTransportCosts`, `StateUpdater`/`StateManager`,
+    `ConstraintManager`; u.a. `MaxRouteDurationConstraint`, `UTurnSoftConstraint`, `ZoneBasedTransportCosts`, `JspritCarrierTask`).
+    Genau diese SPI-Interfaces brechen typischerweise beim Major-Bump. **Plus:** weil Upstream auf 1.8 bleibt, kompiliert
+    MATSims **freight-contrib selbst nicht gegen 2.0** → der komplette contrib müsste im Fork
+    (`external/matsim-libs/contribs/freight`) auf die 2.0-API portiert **und die Divergenz dauerhaft gepflegt** werden.
+    Damit ist das **L (hoch), nicht M** — Einstufung angehoben.
+  - **Empfohlenes Vorgehen (2026-07-20):** (a) **entkoppeln** vom Core-Bump; (b) **zeitboxierter Spike (½–1 Tag) ZUERST**,
+    der zwei Fragen klärt, bevor irgendetwas portiert wird: **(i)** Reicht schon **1.8** für Chattys Ziel? — property-basierte
+    Strategie-Gewichte via `Jsprit.Parameter`/`Jsprit.Strategy` **oder** der Algorithm-XML-Hook (existiert im Config bereits)
+    geben Operator-Diversität evtl. ohne jeden Bump (→ 80 % Nutzen, 0 Fork-Port-Last). **(ii)** Falls doch 2.0: wie groß ist
+    der freight-contrib-Fork-Port real (Kompilier-Spike gegen 2.0.0)? Erst danach Go/No-Go.
+  - **HAGRID-Spezifika bei tatsächlichem Bump:** berührt `pom.xml` (`jsprit.version`) + drei POMs (root, parcel-pipeline,
+    Fork-freight) und braucht freight-272-Regression **plus** Re-Run-Vergleich married250 (Kosten/Routen-KPIs verschieben sich
+    → alle Dashboards neu baseline). Determinismus: Operator-Gewichte + fixer Seed klären.
+  - **Kopplung:** entfällt — Core-Bump 2025.0 zieht jsprit nachweislich **nicht** mit (Upstream 1.8). Beide Punkte sind
+    unabhängig; Core-Bump zuerst (echter 1c-Gate), jsprit separat nach Spike.
+  _(added 2026-07-16, verifiziert + neu eingeordnet 2026-07-20)_
 
 - **`[M]` Case-Study-Area erweitern** — konkret: Ruhland-Korridor-Entscheidung (aktuell dropped als
   Kurzfix wegen Orphan-Polygon). Tendenz: DRT-Service-Area zu einem zusammenhängenden
   Hoyerswerda↔Ruhland-Korridor vergrößern (DRT als Bahn-Zubringer = natives Lausitz-Konzept).
-  Muss VOR einem finalen Headline-Run entschieden werden (Vergleichbarkeit). _(added 2026-07-14)_
+  **User-Entscheidung 2026-07-20:** zunächst bei **Hoyerswerda** bleiben, Erweiterung erst
+  **~nächstes Jahr** (2027) erwägen — konkret wenn es um Simulation konkreter Policies geht.
+  Muss VOR einem finalen Headline-Run entschieden werden (Vergleichbarkeit). _(added 2026-07-14, aktualisiert 2026-07-20)_
+  - **Re-Implementierung „Bahn-Zubringer"-Kartenlayer** — der DRT-Karten-Layer „Bahn-Zubringer"
+    (Bahnhaltestellen im Bediengebiet, gefärbt/skaliert nach Zahl der DRT-Ausstiege im 600-m-Umkreis;
+    natives DRT-als-Bahn-Zubringer-Konzept) wurde **2026-07-20 entfernt** (Checkbox + JS aus
+    `render_maps.py`, Producer `maps._rail_stops` + `FEED_RADIUS_M` + ungenutzte `gzip`/`ET`-Imports).
+    Grund: bei der aktuellen kleinen geografischen Ausdehnung (nur Hoyerswerda) sind Bahn-Zubringer
+    inhaltlich unwichtig, und der Layer war auf married250 ohnehin leer (`rail_stops` fehlte im
+    `map_data.json` — Producer gab still `None` zurück, Ursache nie isoliert). **Wieder-Einbauen,
+    wenn die Case-Study-Area erweitert wird** (Ruhland-Korridor → Zubringer wird relevant); dabei die
+    stille-`None`-Ursache mit-fixen und den Layer nur zeigen, wenn Daten vorhanden. Port-Referenz:
+    Legacy `build_drt_dashboard.py:260-289`. _(added 2026-07-20)_
 
 - **`[M]` hagrid-input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
   letzter manueller Transfer-Schritt für "läuft auf jedem neuen PC". Geplant:
@@ -120,6 +201,15 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-17._
   _(added 2026-07-17)_
 
 ## Low
+
+- **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
+  nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
+  die dort ein-/ausgestiegen sind (wie im Legacy-Dashboard per Passagier-ID). Aktuell tragen die
+  Stop-Records nur `lat/lon/t/n/kind` (`maps._attach_stops`, [maps.py:126](parcel-demand-2-matsim-pipeline/analysis/kpi/maps.py#L126))
+  und der Badge-Marker hat gar kein Popup ([render_maps.py](parcel-demand-2-matsim-pipeline/analysis/kpi/render_maps.py#L143)).
+  Machbar: die Personen-ID steht in der Quelle (`*.output_drt_legs_drt.csv` hat `personId`,
+  `geometry.py` parst `person=` bereits) — nur bis in den Stop-Record + `bindPopup`/`bindTooltip`
+  durchreichen. User-Wunsch 2026-07-20. _(added 2026-07-20)_
 
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
   / `hagrid-lausitz`. Reiner Move-Refactor; `HagridPaths`-Root-Detection pro Szenario neu bauen.

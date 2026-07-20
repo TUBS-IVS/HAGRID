@@ -388,7 +388,8 @@ with a sensitivity plan.
 |---|---|---|
 | Modular cargo capsule | 216 packages | Paper 1 / DLR U-Shift |
 | Modular passenger capsule | 8 seats | DLR U-Shift (to confirm) |
-| Shared-Use capacity | ~10 seats + ~20 parcels (2D) | Paper 2, adapted; parcel-count unit consistent with HAGRID |
+| Base DRT vehicle (Baseline + Shared-Use) | **10 seats** | rev. 2026-07-20; standard/Baseline vehicle (was native 8 → re-baseline pending) |
+| Shared-Use capacity | **8 seats + ~20 parcels (2D)** | rev. 2026-07-20: same base vehicle with **2 seats (back bench) repurposed → cargo** — the 2-seat loss is the physical cost of hitching (was 10+20). Parcel-count unit consistent with HAGRID |
 | Retooling time (capsule swap) | 7 min | Own assumption; **pure swap only** (drive to/from the swap point is a separate routed leg); sensitivity 2–15 min |
 | Idle-fleet threshold (Modular) | 0.50 | Paper 1 starting point; calibrate for Hoyerswerda |
 | Freight submission look-ahead | **travelToDepot + retoolingTime** | must cover the approach leg **and** the swap, not the swap alone; sensitivity 3–15 min |
