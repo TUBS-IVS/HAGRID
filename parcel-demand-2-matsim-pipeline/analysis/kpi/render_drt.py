@@ -139,9 +139,12 @@ def _tiles(data):
     # 13. Ø Pax an Bord -- events only
     v = _kpi(kpis, "mean_pax_aboard")
     if v is not None:
-        t.append(_tile(_fmt_de(v, 2), "Ø Pax an Bord",
-                        tip="Zeitgewichtetes Mittel der Fahrgaeste an Bord ueber die "
-                            "aktive Tourzeit inkl. Leerfahrten, aus Event-Rekonstruktion."))
+        t.append(_tile(_fmt_de(v, 2), "Ø Pax an Bord (Fzg-Sicht)",
+                        tip="FAHRZEUG-Sicht: zeitgewichtetes Mittel der Fahrgaeste an Bord "
+                            "ueber die aktive Tourzeit INKL. Leerfahrten (Belegung 0) -- "
+                            "daher systematisch niedrig. Nicht mit dem Sharing-Faktor "
+                            "(Fahrgast-Sicht, nur besetzte Zeit) verwechseln. Aus "
+                            "Event-Rekonstruktion."))
 
     # 14. Umwegfaktor
     v = _kpi(kpis, "detour_factor")
@@ -212,8 +215,14 @@ def _tiles(data):
         sf = _kpi(kpis, "sharing_factor")
         sub = (_fmt_de(sf, 2) + " Sharing-Faktor") if sf is not None else ""
         t.append(_tile(_fmt_pct(v), "Pooling-Quote", sub,
-                        tip="Anteil der DRT-Fahrten mit gleichzeitig mehreren Fahrgaesten "
-                            "an Bord (poolingRate aus drt_sharing_metrics)."))
+                        tip="FAHRGAST-Sicht (nur besetzte Zeit). Pooling-Quote = Anteil der "
+                            "Fahrten, die IRGENDWANN mit >=1 weiterem Fahrgast geteilt wurden "
+                            "(binaer je Fahrt -- saettigt daher nahe 100%). Sharing-Faktor "
+                            "(Untertitel) = zeitgewichtete, fahrgast-erlebte Belegung waehrend "
+                            "der eigenen Fahrt (harmon. Mittel: 1,0=durchweg allein, "
+                            "2,0=durchweg zu zweit), gemittelt ueber alle Fahrgaeste. Beide "
+                            "NICHT mit 'Ø Pax an Bord' (Fahrzeug-Sicht inkl. Leerfahrten) "
+                            "vergleichbar. Aus drt_sharing_metrics."))
 
     return "".join(t)
 
