@@ -19,7 +19,6 @@ def _map_data():
         "drt": {
             "service_area": [[[51.40, 14.20], [51.50, 14.20], [51.50, 14.30]]],
             "depots": [{"name": "dhl", "lat": 51.40, "lon": 14.20}],
-            "rail_stops": [{"name": "HBF", "lat": 51.45, "lon": 14.25, "feeders": 10}],
             "vehicles": {
                 "drt_veh_1": {
                     "segs": {"0": [[[51.40, 14.20], [51.50, 14.20]]],

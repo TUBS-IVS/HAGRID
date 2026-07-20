@@ -136,8 +136,8 @@ def test_per_vehicle_stops_numbered_in_departure_order(tmp_path):
 
 
 def test_missing_optional_layers_are_absent_without_raising(tmp_path):
-    # tmp_path has no hagrid-input/hagrid-output siblings -> shp/depots/rail
-    # schedule are all absent. Must not raise, and the keys must be omitted.
+    # tmp_path has no hagrid-input/hagrid-output siblings -> shp/depots are
+    # absent. Must not raise, and the keys must be omitted.
     run = _make_run(tmp_path)
     veh_path, link_geo = _aligned_inputs()
 
@@ -145,7 +145,6 @@ def test_missing_optional_layers_are_absent_without_raising(tmp_path):
 
     assert "service_area" not in data["drt"]
     assert "depots" not in data["drt"]
-    assert "rail_stops" not in data["drt"]
 
 
 def test_depots_happy_path_parses_real_csv_and_transforms_coords(tmp_path):

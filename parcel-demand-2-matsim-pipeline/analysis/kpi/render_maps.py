@@ -63,7 +63,6 @@ def _drt_html(drt, uid):
         '<div class="panel"><div style="' + _CTRL_STYLE + '">'
         '<label>Fahrzeug <select id="drt_sel_' + uid + '">' + veh_opts + "</select></label>"
         '<label><input type="checkbox" id="drt_depots_' + uid + '" checked> Depots</label>'
-        '<label><input type="checkbox" id="drt_rail_' + uid + '" checked> Bahn-Zubringer</label>'
         '<label><input type="checkbox" id="drt_heatpu_' + uid + '"> Heatmap Einstiege</label>'
         '<label><input type="checkbox" id="drt_heatdo_' + uid + '"> Heatmap Ausstiege</label>'
         "</div>"
@@ -124,7 +123,6 @@ _DRT_JS = """
   }
   var tours = L.layerGroup().addTo(map);
   var depotG = L.layerGroup();
-  var railG = L.layerGroup();
   var heatPu = null, heatDo = null;
   (MD.service_area || []).forEach(function(ring){
     L.polygon(ring, {color: V('--axis'), weight: 1, fill: false, dashArray: '4 3'}).addTo(map);
@@ -158,13 +156,6 @@ _DRT_JS = """
       fillOpacity: 0.9, weight: 2}).bindPopup('Depot: ' + d.name).addTo(depotG);
   });
   depotG.addTo(map);
-  (MD.rail_stops || []).forEach(function(r){
-    var f = r.feeders || 0;
-    var col = f > 0 ? V('--seq') : OTHER;
-    L.circleMarker([r.lat, r.lon], {radius: 4 + Math.sqrt(f) * 2, color: col, fillColor: col,
-      fillOpacity: 0.5, weight: 1}).bindPopup(r.name + '<br>Zubringer: ' + f).addTo(railG);
-  });
-  railG.addTo(map);
   function ensureHeat(which){
     var pts = MD[which] || [];
     return pts.length ? L.heatLayer(pts, {radius: 14, blur: 18, maxZoom: 15}) : null;
@@ -174,9 +165,6 @@ _DRT_JS = """
   var elDep = document.getElementById('drt_depots___UID__');
   if (elDep) elDep.addEventListener('change', function(e){
     if (e.target.checked) depotG.addTo(map); else map.removeLayer(depotG); });
-  var elRail = document.getElementById('drt_rail___UID__');
-  if (elRail) elRail.addEventListener('change', function(e){
-    if (e.target.checked) railG.addTo(map); else map.removeLayer(railG); });
   var elPu = document.getElementById('drt_heatpu___UID__');
   if (elPu) elPu.addEventListener('change', function(e){
     if (e.target.checked){ heatPu = heatPu || ensureHeat('pu'); if (heatPu) heatPu.addTo(map); }
