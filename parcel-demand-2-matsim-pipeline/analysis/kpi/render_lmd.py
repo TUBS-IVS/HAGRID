@@ -618,14 +618,21 @@ def _depot_chart(ts, cid, title="Depot-Abfahrten/-Ankünfte", height=210):
     hrs_a, arr = _series(ts, "freight_depot_arrivals")
     if not hrs_d and not hrs_a:
         return None
-    labels = hrs_d if hrs_d else hrs_a
-    datasets = []
+    # Departures (morning) and arrivals (the afternoon returns) live in
+    # disjoint hour ranges -- align both onto the sorted UNION so every return
+    # survives and each series lands at the union index for ITS hour, not
+    # positionally against the other's (see `_union_hours` / chart 16-17).
+    series_list = []
     if hrs_d:
-        datasets.append({"label": "Abfahrten", "data": dep, "borderWidth": 2, "pointRadius": 0,
-                          "tension": 0.25, "__slot": 0})
+        series_list.append(("Abfahrten", hrs_d, dep))
     if hrs_a:
-        datasets.append({"label": "Ankünfte", "data": arr, "borderWidth": 2, "pointRadius": 0,
-                          "tension": 0.25, "__slot": 1})
+        series_list.append(("Ankünfte", hrs_a, arr))
+    labels, aligned = _union_hours(series_list)
+    slot = {"Abfahrten": 0, "Ankünfte": 1}
+    datasets = []
+    for label, row in aligned:
+        datasets.append({"label": label, "data": row, "borderWidth": 2, "pointRadius": 0,
+                          "tension": 0.25, "__slot": slot[label]})
     cfg = {"type": "line", "data": {"labels": labels, "datasets": datasets},
            "options": {"responsive": True, "maintainAspectRatio": False,
                        "plugins": {"legend": {"display": True}}}}

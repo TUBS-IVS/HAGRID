@@ -526,3 +526,25 @@ def test_hourly_provider_lines_preserves_fractional_hours():
     assert "8.08" in labels           # fractional reads like "8.08"
     # values survive in hour order
     assert cfg["data"]["datasets"][0]["data"] == [1, 2, 3]
+
+
+def test_depot_chart_uses_sorted_union_and_aligns_arrivals():
+    # Departures cluster in the morning, arrivals (the returns) in the
+    # afternoon -- disjoint hour ranges. The x-labels must be the sorted UNION
+    # so the afternoon returns survive (not truncated to the departure range),
+    # and each series must align by hour, not positionally: the hour-13 arrival
+    # must land at the union index for 13, and Abfahrten must 0-fill hour 13.
+    ts = pd.DataFrame([
+        {"series": "freight_depot_departures", "hour": 7, "value": 40},
+        {"series": "freight_depot_departures", "hour": 8, "value": 30},
+        {"series": "freight_depot_arrivals", "hour": 8, "value": 5},
+        {"series": "freight_depot_arrivals", "hour": 13, "value": 20},
+    ])
+    title, cid, cfg, h = render_lmd._depot_chart(ts, "c_h_depot")
+    assert cfg["data"]["labels"] == ["7", "8", "13"]
+    dsets = {d["label"]: d["data"] for d in cfg["data"]["datasets"]}
+    assert dsets["Abfahrten"] == [40, 30, 0]   # lacks hour 13 -> 0-filled
+    assert dsets["Ankünfte"] == [0, 5, 20]     # hour-13 return survives, aligned
+    # fixed per-series slots preserved (Abfahrten=0, Ankünfte=1)
+    slots = {d["label"]: d.get("__slot") for d in cfg["data"]["datasets"]}
+    assert slots["Abfahrten"] == 0 and slots["Ankünfte"] == 1
