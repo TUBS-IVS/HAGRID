@@ -1,11 +1,14 @@
 package hagrid.integrated.drt;
 
+import com.google.inject.Provider;
+import com.google.inject.TypeLiteral;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.contrib.common.zones.Zone;
 import org.matsim.contrib.common.zones.ZoneSystem;
+import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingModule;
 import org.matsim.contrib.drt.optimizer.rebalancing.demandestimator.ZonalDemandEstimator;
 import org.matsim.contrib.drt.optimizer.rebalancing.targetcalculator.DemandEstimatorAsTargetCalculator;
 import org.matsim.contrib.drt.optimizer.rebalancing.targetcalculator.RebalancingTargetCalculator;
@@ -43,16 +46,21 @@ public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule
 
     @Override
     public void install() {
-        // RebalancingTargetCalculator is bound inside a QSim child injector by
-        // DrtModeMinCostFlowRebalancingModule (AbstractDvrpModeQSimModule scope).
-        // To override it we must also bind inside the QSim scope via
-        // installOverridingQSimModule — a controller-scope bindModal would create
-        // a second, conflicting binding (BindingAlreadySet).
+        // RebalancingTargetCalculator is bound inside the QSim child injector by
+        // DrtModeMinCostFlowRebalancingModule$1 (AbstractDvrpModeQSimModule scope). To override it we
+        // must bind in the SAME QSim scope via installOverridingQSimModule — a controller-scope
+        // bindModal would be a second, conflicting binding (Guice BindingAlreadySet).
+        //
+        // matsim 2025.0: ZoneSystem is NOT bound directly; RebalancingModule registers it in a modal
+        // MapBinder<String, Provider<ZoneSystem>> keyed REBALANCING_ZONE_SYSTEM (reachable from the
+        // QSim getter). Retrieve it exactly like the stock QSim target calculators do — a plain
+        // getModal(ZoneSystem.class) fails with "ZoneSystem ... not explicitly bound".
         installOverridingQSimModule(new AbstractDvrpModeQSimModule(getMode()) {
             @Override
             protected void configureQSim() {
                 bindModal(RebalancingTargetCalculator.class).toProvider(modalProvider(getter -> {
-                    ZoneSystem zones = getter.getModal(ZoneSystem.class);
+                    ZoneSystem zones = getter.getModal(new TypeLiteral<Map<String, Provider<ZoneSystem>>>() {})
+                            .get(RebalancingModule.REBALANCING_ZONE_SYSTEM).get();
                     ZonalDemandEstimator estimator = getter.getModal(ZonalDemandEstimator.class);
                     RebalancingTargetCalculator daytime =
                             new DemandEstimatorAsTargetCalculator(estimator, demandEstimationPeriod);
