@@ -87,8 +87,8 @@ class LausitzDrtConfiguratorTest {
         assertThat(cfg.counts().getCountsFileName()).isNull();
         // DRT composed (full sim + fleet)
         var drt = MultiModeDrtConfigGroup.get(cfg).getModalElements().iterator().next();
-        assertThat(drt.simulationType).isEqualTo(DrtConfigGroup.SimulationType.fullSimulation);
-        assertThat(drt.vehiclesFile).isEqualTo(fleet);
+        assertThat(drt.getSimulationType()).isEqualTo(DrtConfigGroup.SimulationType.fullSimulation);
+        assertThat(drt.getVehiclesFile()).isEqualTo(fleet);
         // activity params present (SnzActivities) — at least 'home_*' style scored
         assertThat(cfg.scoring().getActivityParams()).isNotEmpty();
 
@@ -138,7 +138,7 @@ class LausitzDrtConfiguratorTest {
                 .isTrue();
         // fleet path is stored inside the DRT config group
         var drtRel = MultiModeDrtConfigGroup.get(cfgRel).getModalElements().iterator().next();
-        assertThat(Path.of(drtRel.vehiclesFile).isAbsolute())
+        assertThat(Path.of(drtRel.getVehiclesFile()).isAbsolute())
                 .as("build() must absolutise the fleetFile path (was relative)")
                 .isTrue();
     }

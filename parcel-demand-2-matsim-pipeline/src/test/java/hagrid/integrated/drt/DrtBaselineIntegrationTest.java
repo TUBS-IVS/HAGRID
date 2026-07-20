@@ -78,10 +78,10 @@ class DrtBaselineIntegrationTest {
         DrtConfigComposer.composeConfig(config, "UNUSED_for_door2door.shp", fleet.toString());
         // For the smoke test, override to door2door so no real shapefile is needed.
         org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(config).getModalElements()
-                .iterator().next().operationalScheme =
-                org.matsim.contrib.drt.run.DrtConfigGroup.OperationalScheme.door2door;
+                .iterator().next().setOperationalScheme(
+                        org.matsim.contrib.drt.run.DrtConfigGroup.OperationalScheme.door2door);
         org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(config).getModalElements()
-                .iterator().next().drtServiceAreaShapeFile = null;
+                .iterator().next().setDrtServiceAreaShapeFile(null);
 
         // Build scenario first so we can register the DrtRouteFactory before loading the
         // plans file — ScenarioUtils.loadScenario requires it to deserialise DrtRoute legs.
@@ -98,7 +98,7 @@ class DrtBaselineIntegrationTest {
         // DRT output produced
         Path drtOut = dir.resolve("matsim");
         assertThat(Files.exists(drtOut)).isTrue();
-        assertThat(DvrpConfigGroup.get(config).networkModes).contains(TransportMode.drt);
+        assertThat(DvrpConfigGroup.get(config).getNetworkModes()).contains(TransportMode.drt);
         // a DRT-specific output file exists (customer stats / vehicle stats)
         try (var stream = Files.walk(drtOut)) {
             assertThat(stream.anyMatch(p -> p.getFileName().toString().toLowerCase().contains("drt")))
