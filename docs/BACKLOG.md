@@ -21,8 +21,10 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
 
 - **`[H]` Shared-Use / Cargo-Hitching (Szenario 1c)** — Minibus mit 2D-Kapazität (Sitze+Pakete),
   Online-DVRP-Insertion. Plan geschrieben, **noch nicht ausgeführt**.
-  Gate: MATSim-Core-Bump `2025.0-PR3552` → `2025.0` (siehe eigener Punkt unten). Vor Ausführung:
-  unterbrochenen Grilling-Pass auf dem Plan fortsetzen.
+  Gate: MATSim-Core-Bump `2025.0-PR3552` → `2025.0` ✅ **erledigt 2026-07-20** (Branch
+  `bump/matsim-2025.0`, Suite grün; siehe `## Erledigt`) — `DvrpLoad`/2D-Kapazität steht jetzt bereit.
+  Vor Ausführung: unterbrochenen Grilling-Pass auf dem Plan fortsetzen; offener technischer
+  Zwischenschritt = **Kontroll-Sim-Run** married250 auf `2025.0` (Kapazität 10/8 per Spec, User startet auf Zuruf).
   → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md), [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md)
   _(added 2026-07-14)_
   - **Design-Input: Passenger-Parcel Compensation (PPC)** — Profit-Redistribution-Mechanismus
@@ -115,11 +117,6 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
     aufnehmen. Aufgedeckt beim Plan-D-maps Task-10 §5-Legacy-Vergleich (married250). _(added 2026-07-17)_
 
 ## Medium
-
-- **`[M]` MATSim-Core-Bump `2025.0-PR3552` → `2025.0`** — kleinster Upgrade-Schritt; Gate für 1c
-  (`DvrpLoad`/2D-Kapazität existiert erst im finalen 2025.0-Release). Nebeneffekt: der freight-Fork
-  kann den Test-Kompat-Patch-Commit fallen lassen. Risiko: matsim-lausitz-2.0-Binärkompatibilität
-  (durch die e2e-Suite zu beweisen). _(added 2026-07-14)_
 
 - **`[M]` Run-Dashboard v2 — Plan D (Karten) + zwei zurückgestellte KPIs** — B ✅ (gepusht), C ✅ (lokal),
   Plan-D **Visual-Polish** ✅ (lokal, 2026-07-16, Tasks D1–D3: Donuts/Größenfarben/0–23-Achse/volle Breite).
@@ -252,6 +249,19 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
 
 ## Erledigt
 
+- **MATSim-Core-Bump `2025.0-PR3552` → `2025.0`** — ✅ 2026-07-20. Branch `bump/matsim-2025.0`
+  (von `hendrik`, **nicht** gemergt/gepusht). Approach A (in-place Property-Bump, fix-forward). Ergebnis:
+  freight-Fork kompiliert **unverändert** gegen 2025.0 (kein PR3552-Patch-Drop nötig); matsim-lausitz-2.0
+  binär **kompatibel** (keine Transitive-/`NoSuchMethod`-Konflikte, kein Lausitz-Neubau). API-Delta nur in
+  HAGRID-eigenem Code: (1) `DrtConfigGroup`/`DvrpConfigGroup`/`RebalancingParams`/`MinCostFlow…Params`
+  public-fields → getter/setter; (2) Rebalancing-Zone-System + Target-Link-Selection von entferntem
+  `DrtZoneSystemParams` (DRT-Gruppe) → `RebalancingParams` (`getZoneSystemParams`/`setTargetLinkSelection`);
+  (3) `DefaultDrtOptimizationConstraintsSet` → `DrtOptimizationConstraintsSetImpl`; (4) `DisallowedNextLinks`
+  → `core.network.turnRestrictions`; (5) `FleetWriter` braucht `DvrpLoadType` → `IntegerLoadType("passengers")`
+  (DVRP-Default); (6) `ReturnToDepotRebalancingModule` holt die Rebalancing-`ZoneSystem` jetzt aus dem
+  modalen `MapBinder` (`REBALANCING_ZONE_SYSTEM`) statt via `getModal(ZoneSystem.class)`. Volle Suite grün:
+  parcel-pipeline **282/0/0** inkl. aller vier e2e (Drt/Married/DrtRailIntermodal/Lmd), freight-Modul grün.
+  jsprit bleibt **1.8**. Kein Sim-Run/keine Re-Baseline in diesem Scope. Commits `a3349fe`, `c292062`.
 - **freight Fork + Submodule (Restructure Schritt 1)** — ✅ 2026-07-14. Copy-Vendoring durch
   Submodule `external/matsim-libs` (Fork `TUBS-IVS/matsim-libs`) ersetzt; sim-PC warm + kalt
   validiert. → [Spec](superpowers/specs/2026-07-13-freight-fork-submodule-design.md) / [Plan](superpowers/plans/2026-07-13-freight-fork-submodule.md)
