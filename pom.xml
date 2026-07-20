@@ -19,7 +19,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
-    <matsim.version>2025.0-PR3552</matsim.version>
+    <matsim.version>2025.0</matsim.version>
     <geotools.version>31.1</geotools.version>
     <jsprit.version>1.8</jsprit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

@@ -2,9 +2,8 @@ package hagrid.integrated.drt;
 
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams;
-import org.matsim.contrib.drt.analysis.zonal.DrtZoneSystemParams;
-import org.matsim.contrib.drt.optimizer.constraints.DefaultDrtOptimizationConstraintsSet;
 import org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsParams;
+import org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsSetImpl;
 import org.matsim.contrib.drt.optimizer.insertion.extensive.ExtensiveInsertionSearchParams;
 import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingParams;
 import org.matsim.contrib.drt.optimizer.rebalancing.mincostflow.MinCostFlowRebalancingStrategyParams;
@@ -53,52 +52,52 @@ public final class DrtConfigComposer {
      */
     public static void composeConfig(Config config, String serviceAreaShp, String fleetFile) {
         DvrpConfigGroup dvrp = ConfigUtils.addOrGetModule(config, DvrpConfigGroup.class);
-        dvrp.networkModes = Set.of(TransportMode.drt);
+        dvrp.setNetworkModes(Set.of(TransportMode.drt));
 
         MultiModeDrtConfigGroup multi = ConfigUtils.addOrGetModule(config, MultiModeDrtConfigGroup.class);
         if (multi.getModalElements().isEmpty()) {
             DrtConfigGroup drt = new DrtConfigGroup();
-            drt.mode = TransportMode.drt;
-            drt.operationalScheme = DrtConfigGroup.OperationalScheme.serviceAreaBased;
-            drt.stopDuration = STOP_DURATION_S;
-            drt.simulationType = DrtConfigGroup.SimulationType.fullSimulation;
-            drt.drtServiceAreaShapeFile = serviceAreaShp;
-            drt.vehiclesFile = fleetFile;
+            drt.setMode(TransportMode.drt);
+            drt.setOperationalScheme(DrtConfigGroup.OperationalScheme.serviceAreaBased);
+            drt.setStopDuration(STOP_DURATION_S);
+            drt.setSimulationType(DrtConfigGroup.SimulationType.fullSimulation);
+            drt.setDrtServiceAreaShapeFile(serviceAreaShp);
+            drt.setVehiclesFile(fleetFile);
 
             DrtOptimizationConstraintsParams constraints = drt.addOrGetDrtOptimizationConstraintsParams();
-            DefaultDrtOptimizationConstraintsSet set =
-                    (DefaultDrtOptimizationConstraintsSet) constraints.addOrGetDefaultDrtOptimizationConstraintsSet();
+            DrtOptimizationConstraintsSetImpl set =
+                    constraints.addOrGetDefaultDrtOptimizationConstraintsSet();
             set.maxWaitTime = MAX_WAIT_TIME_S;
             set.maxTravelTimeAlpha = MAX_TRAVEL_TIME_ALPHA;
             set.maxTravelTimeBeta = MAX_TRAVEL_TIME_BETA_S;
 
             drt.setDrtInsertionSearchParams(new ExtensiveInsertionSearchParams());
 
-            // Rebalancing zones: square grid over the service area.
-            DrtZoneSystemParams zoneParams = new DrtZoneSystemParams();
-            zoneParams.targetLinkSelection = DrtZoneSystemParams.TargetLinkSelection.mostCentral;
-            SquareGridZoneSystemParams gridParams = new SquareGridZoneSystemParams();
-            gridParams.cellSize = ZONE_CELL_SIZE_M;
-            zoneParams.addParameterSet(gridParams);
-            drt.addParameterSet(zoneParams);
-
             // Demand-based MinCostFlow rebalancing (idle vehicles flow toward demand;
             // balanced zones keep their vehicles -> "stay put" emerges naturally).
             RebalancingParams rebalancing = new RebalancingParams();
-            rebalancing.interval = REBALANCE_INTERVAL_S;
+            rebalancing.setInterval(REBALANCE_INTERVAL_S);
+            // Rebalancing zones: square grid over the service area, targeting the most central
+            // link. In matsim 2025.0 the zone system + target-link selection live on
+            // RebalancingParams (were DrtZoneSystemParams on the DRT group in PR3552).
+            rebalancing.setTargetLinkSelection(RebalancingParams.TargetLinkSelection.mostCentral);
+            SquareGridZoneSystemParams gridParams = new SquareGridZoneSystemParams();
+            gridParams.setCellSize(ZONE_CELL_SIZE_M);
+            rebalancing.addParameterSet(gridParams);
+
             MinCostFlowRebalancingStrategyParams mcf = new MinCostFlowRebalancingStrategyParams();
-            mcf.rebalancingTargetCalculatorType =
-                    MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand;
-            mcf.zonalDemandEstimatorType =
-                    MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand;
-            mcf.demandEstimationPeriod = DEMAND_ESTIMATION_PERIOD_S;
+            mcf.setRebalancingTargetCalculatorType(
+                    MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand);
+            mcf.setZonalDemandEstimatorType(
+                    MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand);
+            mcf.setDemandEstimationPeriod(DEMAND_ESTIMATION_PERIOD_S);
             // alpha=1, beta=0 documents what actually runs: ReturnToDepotRebalancingModule
             // overrides the RebalancingTargetCalculator with a plain
             // DemandEstimatorAsTargetCalculator (target = 1.0 * estimated demand + 0), so any
             // other alpha/beta here would be dead config misleading output_config readers.
             // (The fields are bean-validated >= 0, they cannot simply be omitted.)
-            mcf.targetAlpha = 1.0;
-            mcf.targetBeta = 0.0;
+            mcf.setTargetAlpha(1.0);
+            mcf.setTargetBeta(0.0);
             rebalancing.addParameterSet(mcf);
             drt.addParameterSet(rebalancing);
 

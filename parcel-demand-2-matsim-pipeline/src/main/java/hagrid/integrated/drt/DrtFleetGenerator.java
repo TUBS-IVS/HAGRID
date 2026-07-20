@@ -9,6 +9,7 @@ import org.matsim.contrib.dvrp.fleet.DvrpVehicle;
 import org.matsim.contrib.dvrp.fleet.DvrpVehicleSpecification;
 import org.matsim.contrib.dvrp.fleet.FleetWriter;
 import org.matsim.contrib.dvrp.fleet.ImmutableDvrpVehicleSpecification;
+import org.matsim.contrib.dvrp.load.IntegerLoadType;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,6 +24,12 @@ import java.util.stream.Stream;
 public final class DrtFleetGenerator {
 
     private DrtFleetGenerator() {}
+
+    // matsim 2025.0 FleetWriter serializes vehicle capacity via a DvrpLoadType. We write a
+    // single-dimension integer load under the default DVRP dimension "passengers" (see
+    // DvrpLoadParams defaults), so the file reads back with the default IntegerLoadType the
+    // DRT run binds when no custom DvrpLoadParams is configured.
+    private static final String LOAD_DIMENSION = "passengers";
 
     public static void write(Network net, int fleetSize, int capacity,
                              double serviceBegin, double serviceEnd, Path out) {
@@ -46,7 +53,8 @@ public final class DrtFleetGenerator {
                     .serviceEndTime(serviceEnd)
                     .build());
         }
-        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0]))).write(out.toString());
+        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0])),
+                new IntegerLoadType(LOAD_DIMENSION)).write(out.toString());
     }
 
     /**
@@ -82,6 +90,7 @@ public final class DrtFleetGenerator {
                     .serviceEndTime(serviceEnd)
                     .build());
         }
-        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0]))).write(out.toString());
+        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0])),
+                new IntegerLoadType(LOAD_DIMENSION)).write(out.toString());
     }
 }

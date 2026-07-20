@@ -339,7 +339,7 @@ public final class LausitzDrtConfigurator {
                 config, org.matsim.pt.config.TransitRouterConfigGroup.class).getSearchRadius();
         for (org.matsim.contrib.drt.run.DrtConfigGroup drt :
                 org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(config).getModalElements()) {
-            var set = (org.matsim.contrib.drt.optimizer.constraints.DefaultDrtOptimizationConstraintsSet)
+            var set = (org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsSetImpl)
                     drt.addOrGetDrtOptimizationConstraintsParams().addOrGetDefaultDrtOptimizationConstraintsSet();
             set.maxWalkDistance = searchRadius;
         }

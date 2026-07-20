@@ -27,7 +27,7 @@ import org.matsim.core.network.TimeDependentNetwork;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import org.matsim.core.network.io.NetworkChangeEventsWriter;
-import org.matsim.core.network.DisallowedNextLinks;
+import org.matsim.core.network.turnRestrictions.DisallowedNextLinks;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.utils.objectattributes.attributable.AttributesUtils;
 

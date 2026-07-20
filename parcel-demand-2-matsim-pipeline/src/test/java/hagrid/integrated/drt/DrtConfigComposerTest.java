@@ -26,12 +26,12 @@ class DrtConfigComposerTest {
         MultiModeDrtConfigGroup multi = MultiModeDrtConfigGroup.get(config);
         assertThat(multi.getModalElements()).hasSize(1);
         DrtConfigGroup drt = multi.getModalElements().iterator().next();
-        assertThat(drt.mode).isEqualTo(TransportMode.drt);
-        assertThat(drt.simulationType).isEqualTo(DrtConfigGroup.SimulationType.fullSimulation);
-        assertThat(drt.operationalScheme).isEqualTo(DrtConfigGroup.OperationalScheme.serviceAreaBased);
-        assertThat(drt.stopDuration).isEqualTo(60.0);
-        assertThat(drt.drtServiceAreaShapeFile).isEqualTo("input/drt/drt-service-area.shp");
-        assertThat(drt.vehiclesFile).isEqualTo("out/fleet.xml");
+        assertThat(drt.getMode()).isEqualTo(TransportMode.drt);
+        assertThat(drt.getSimulationType()).isEqualTo(DrtConfigGroup.SimulationType.fullSimulation);
+        assertThat(drt.getOperationalScheme()).isEqualTo(DrtConfigGroup.OperationalScheme.serviceAreaBased);
+        assertThat(drt.getStopDuration()).isEqualTo(60.0);
+        assertThat(drt.getDrtServiceAreaShapeFile()).isEqualTo("input/drt/drt-service-area.shp");
+        assertThat(drt.getVehiclesFile()).isEqualTo("out/fleet.xml");
     }
 
     @Test
@@ -39,7 +39,7 @@ class DrtConfigComposerTest {
     void dvrpNetworkMode() {
         Config config = ConfigUtils.createConfig();
         DrtConfigComposer.composeConfig(config, "a.shp", "f.xml");
-        assertThat(DvrpConfigGroup.get(config).networkModes).containsExactly(TransportMode.drt);
+        assertThat(DvrpConfigGroup.get(config).getNetworkModes()).containsExactly(TransportMode.drt);
     }
 
     @Test
@@ -78,22 +78,24 @@ class DrtConfigComposerTest {
 
         var rebal = drt.getRebalancingParams();
         assertThat(rebal).isPresent();
-        assertThat(rebal.get().interval).isEqualTo(1800);
+        assertThat(rebal.get().getInterval()).isEqualTo(1800);
 
         var strategy = rebal.get().getRebalancingStrategyParams();
         assertThat(strategy).isInstanceOf(MinCostFlowRebalancingStrategyParams.class);
         var mcf = (MinCostFlowRebalancingStrategyParams) strategy;
-        assertThat(mcf.rebalancingTargetCalculatorType)
+        assertThat(mcf.getRebalancingTargetCalculatorType())
                 .isEqualTo(MinCostFlowRebalancingStrategyParams.RebalancingTargetCalculatorType.EstimatedDemand);
-        assertThat(mcf.zonalDemandEstimatorType)
+        assertThat(mcf.getZonalDemandEstimatorType())
                 .isEqualTo(MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand);
-        assertThat(mcf.demandEstimationPeriod).isEqualTo(1800);
+        assertThat(mcf.getDemandEstimationPeriod()).isEqualTo(1800);
 
-        var zones = drt.getZonalSystemParams();
-        assertThat(zones).isPresent();
-        assertThat(zones.get().getZoneSystemParams())
+        // matsim 2025.0: the zone system + target-link selection live on RebalancingParams
+        // (were a DrtZoneSystemParams param set on the DRT group in PR3552).
+        assertThat(rebal.get().getTargetLinkSelection())
+                .isEqualTo(org.matsim.contrib.drt.optimizer.rebalancing.RebalancingParams.TargetLinkSelection.mostCentral);
+        assertThat(rebal.get().getZoneSystemParams())
                 .isInstanceOf(org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams.class);
         assertThat(((org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams)
-                zones.get().getZoneSystemParams()).cellSize).isEqualTo(2000.0);
+                rebal.get().getZoneSystemParams()).getCellSize()).isEqualTo(2000.0);
     }
 }
