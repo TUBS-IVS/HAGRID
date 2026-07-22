@@ -118,6 +118,15 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
 
 ## Medium
 
+- **`[M]` LMD Dispatch-Stunden besser streuen** — Abfahrtszeiten der LMD-Fahrzeuge sollten
+  gleichmäßiger über den Tag/die Wellen gestreut werden statt sich auf einzelne Minuten/Stunden
+  zu häufen. Bereits bekannt: legacy Hannover kollabiert 171/187 Carrier auf EIN Vehicle-Template
+  trotz ≥2 verfügbarer (jsprit klont früheste/billigste Kopie bei `FleetSize.INFINITE`); Lausitz'
+  4-Kopien-pro-Welle (`VEHICLES_PER_TYPE_PER_WAVE`) ist zwar stärker gegen Kollaps als legacy,
+  aber echte Pro-Fahrzeug-Streuung bräuchte `FleetSize.FINITE` oder einen Vehicle-Nutzungs-/
+  Tour-Count-Term im jsprit-Objective — siehe [[project_lausitz_drt_freight]] „LMD stagger" Fund.
+  Aufgeschoben bei der Marriage, hier erneut aufgenommen als eigener Punkt. _(added 2026-07-21)_
+
 - **`[M]` Run-Dashboard v2 — Plan D (Karten) + zwei zurückgestellte KPIs** — B ✅ (gepusht), C ✅ (lokal),
   Plan-D **Visual-Polish** ✅ (lokal, 2026-07-16, Tasks D1–D3: Donuts/Größenfarben/0–23-Achse/volle Breite).
   **Offen:** (a) Plan D **Karten** (depot-siting / vehicle-tours in die Tabs); (b) zwei bewusst auf Plan D
@@ -198,6 +207,14 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
   _(added 2026-07-17)_
 
 ## Low
+
+- **`[L]` `SimulationBatGenerator` JDK-Pfad hartcodiert** — der generierte `run_hagrid_sim.bat`
+  setzt `JAVA_EXE` auf einen fest verdrahteten Adoptium-Pfad inkl. Patch-Version
+  (`jdk-21.0.3.9-hotspot`). Nach einem JDK-Update auf einer Zielmaschine (z.B. Sim-PC-Bump auf
+  `21.0.8.9`, entdeckt 2026-07-21 während des Hannover-Kapa-Sweeps) schlägt der generierte Bat
+  sofort mit "Datei nicht gefunden" fehl — jeder Sweep-Neustart braucht einen manuellen Bat-Patch.
+  Fix: `%JAVA_HOME%\bin\java.exe` verwenden oder den Pfad zur Build-Zeit via System-Property
+  auflösen statt Major.Minor.Patch hartzucodieren. _(added 2026-07-22)_
 
 - **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
   nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
