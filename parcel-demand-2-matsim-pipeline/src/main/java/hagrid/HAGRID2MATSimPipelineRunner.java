@@ -73,7 +73,7 @@ public final class HAGRID2MATSimPipelineRunner {
 	private static final int MAX_ITER = 150;
 
 	/** jsprit VRP solver iterations during simulation carrier re-planning. */
-	private static final int SIM_JSPRIT_ITER = 100;
+	private static final int SIM_JSPRIT_ITER = 1000;
 
 	/** Enable zone-based transport cost caching during simulation. */
 	private static final boolean ZONE_CACHING = true;
@@ -93,9 +93,15 @@ public final class HAGRID2MATSimPipelineRunner {
 
 	private static final ScenarioConfig[] SCENARIOS = {
 
-			// Scenario 1: Standard Basecase mit M und L
-			scenario("basecase", "80", LocalDate.of(2025, 5, 13), "80_l"),
-			scenario("basecase", "300", LocalDate.of(2025, 5, 13), "300_l"),
+			// Sensitivity study capacity=30, 3 replicates.
+			// Distinct tags -> distinct runId -> distinct runId.hashCode() seed
+			// -> reseeded demand-layer RNG (dispatch time-shifts + missed-delivery draw).
+			// All three read the SAME demand shapefile (tag-independent baseRunId).
+			// vehicleSize "30_l": clones ct_cep_size_l, overrides freight capacity to 30
+			// (costs/speed/dimensions stay on the l-template -> only capacity varies across the sweep).
+			scenario("basecase", "30R1", LocalDate.of(2025, 5, 13), "30_l"),
+			scenario("basecase", "30R2", LocalDate.of(2025, 5, 13), "30_l"),
+			scenario("basecase", "30R3", LocalDate.of(2025, 5, 13), "30_l"),
 
 			// Scenario 2: Basecase V1 mit 100er Fahrzeugen (gleicher Tag, neuer Name)
 			// scenario("basecase", "V1", LocalDate.of(2025, 5, 13), "100_l"),
