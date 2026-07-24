@@ -138,6 +138,9 @@ public final class SimulationRunnerUtils {
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
         boolean drtWithFreight = bool(map.getOrDefault("freight", "true"), "freight");
         boolean kpiDashboard = bool(map.getOrDefault("kpiDashboard", "true"), "kpiDashboard");
+        // chi-gate threshold (seconds): max acceptable added vehicle time per parcel insertion.
+        // Only consumed by DRT_SHAREDUSE (SharedUseModule); harmless default for other concepts.
+        double chiThreshold = nonNegDouble(map.getOrDefault("chiThreshold", "600.0"), "chiThreshold");
 
         // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
         boolean requiresLausitz;
@@ -172,12 +175,12 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
-                drtWithFreight, kpiDashboard);
+                drtWithFreight, kpiDashboard, chiThreshold);
     }
 
     /**
@@ -235,7 +238,13 @@ public final class SimulationRunnerUtils {
 
         // DRT path: passenger DRT; married baseline additionally carries the LMD carriers.
         if (cfg.isDrtScenario()) {
-            if (cfg.isDrtWithFreight()) {
+            // DRT_SHAREDUSE (cargo hitching) rides the SAME DRT fleet as the parcel carrier —
+            // it never runs the offline jsprit routing / carrier modules (D7), even if the
+            // scenario spec left freight=true (its default) unset.
+            boolean sharedUse = hagrid.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase())
+                    == hagrid.HagridConfig.Scenario.DRT_SHAREDUSE;
+
+            if (cfg.isDrtWithFreight() && !sharedUse) {
                 // 1. offline jsprit routing - the exact same call the LMD_BASELINE uses,
                 //    clipped to the SAME service-area shapefile (identical geography).
                 hagrid.integrated.freight.LausitzFreightPreprocessor.run(
@@ -243,10 +252,17 @@ public final class SimulationRunnerUtils {
                         cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                         cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
                         cfg.getDrtServiceAreaShapefile());
+            } else if (sharedUse && cfg.isDrtWithFreight()) {
+                LOG.info("DRT_SHAREDUSE: freight flag ignored - parcels ride the DRT fleet (no jsprit/carriers)");
             }
 
             Scenario scenario = DrtScenarioBuilder.build(cfg);
-            if (cfg.isDrtWithFreight()) {
+            if (sharedUse) {
+                // Must run BEFORE `new Controler(scenario)` below: DRT config groups are read
+                // at controler construction time.
+                hagrid.integrated.drt.DrtConfigComposer.composeSharedUse(scenario.getConfig());
+            }
+            if (cfg.isDrtWithFreight() && !sharedUse) {
                 hagrid.integrated.freight.FreightRunComposer.addCarriers(
                         scenario, cfg.getLmdCarriersRouted(), cfg.getLmdVehicleTypes());
             }
@@ -262,10 +278,22 @@ public final class SimulationRunnerUtils {
             double perDepotCapacity = Math.ceil((double) cfg.getFleetSize() / Math.max(1, depots.size()));
             hagrid.integrated.drt.DrtConfigComposer.installModules(controler, depots,
                     serviceEnd - returnWindow, perDepotCapacity, 1800.0);
-            if (cfg.isDrtWithFreight()) {
+            if (cfg.isDrtWithFreight() && !sharedUse) {
                 hagrid.integrated.freight.FreightRunComposer.installCarrierModules(controler, scenario);
                 LOG.info("MARRIED baseline run '{}' (DRT fleet {} + LMD carriers).",
                         cfg.getRunId(), cfg.getFleetSize());
+            } else if (sharedUse) {
+                // LAST overriding module: overrides the base DRT bindings installed above
+                // (PassengerStopDurationProvider / StopTimeCalculator / DvrpLoadFromFleet at
+                // controller scope, InsertionCostCalculator / DrtRequestInsertionRetryQueue at
+                // QSim scope) with the Shared-Use cargo-hitching versions.
+                org.matsim.contrib.drt.run.DrtConfigGroup drtCfg =
+                        org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(scenario.getConfig())
+                                .getModalElements().iterator().next();
+                controler.addOverridingModule(
+                        new hagrid.integrated.shareduse.SharedUseModule(drtCfg, cfg.getChiThreshold()));
+                LOG.info("SHARED-USE run '{}' (DRT fleet {} carrying parcels, chiThreshold={}s).",
+                        cfg.getRunId(), cfg.getFleetSize(), cfg.getChiThreshold());
             } else {
                 LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             }

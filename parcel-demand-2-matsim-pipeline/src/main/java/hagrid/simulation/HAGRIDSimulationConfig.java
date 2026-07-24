@@ -109,6 +109,14 @@ public class HAGRIDSimulationConfig {
     private final boolean kpiDashboard;
 
     /**
+     * χ-gate threshold (seconds): the maximum acceptable added vehicle time (detour) for a
+     * single parcel insertion. Only meaningful for {@code DRT_SHAREDUSE}, where it is passed
+     * to {@code SharedUseModule}'s {@code ChiGateInsertionCostCalculator}; harmless for every
+     * other concept.
+     */
+    private final double chiThreshold;
+
+    /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
@@ -198,6 +206,35 @@ public class HAGRIDSimulationConfig {
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
                           boolean drtWithFreight, boolean kpiDashboard) {
+        this(concept, date, maxIterations, jspritIterations,
+                zoneBasedCachingEnabled, zoneBasedCachingThresholdMeters,
+                uTurnPenaltyCost, tag, studyArea, fleetSize, drtWithFreight, kpiDashboard,
+                /*chiThreshold*/ 600.0);
+    }
+
+    /**
+     * Creates a new scenario configuration with explicit study area, DRT fleet size,
+     * married-freight flag, KPI-dashboard trigger, and χ-gate threshold.
+     *
+     * @param concept          scenario concept name
+     * @param date             simulation date
+     * @param maxIterations    maximum number of MATSim iterations
+     * @param jspritIterations maximum number of jsprit iterations
+     * @param tag              optional version tag (null or empty to disable)
+     * @param studyArea        geographic study area
+     * @param fleetSize        DRT fleet size (number of vehicles)
+     * @param drtWithFreight   whether a DRT run also carries the offline-routed LMD carriers
+     *                         (married Baseline); ignored for non-DRT concepts
+     * @param kpiDashboard     whether to build the Python KPI dashboard after the run completes
+     * @param chiThreshold     χ-gate threshold (seconds); only meaningful for {@code DRT_SHAREDUSE}
+     * @throws NullPointerException     if concept, date, or studyArea is null
+     * @throws IllegalArgumentException if maxIterations &lt; 0; if maxIterations == 0 and the concept is not
+     *                                  {@code LMD_BASELINE}; or if jspritIterations is not positive (&gt;= 1)
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -233,6 +270,7 @@ public class HAGRIDSimulationConfig {
         this.fleetSize = fleetSize;
         this.drtWithFreight = drtWithFreight;
         this.kpiDashboard = kpiDashboard;
+        this.chiThreshold = chiThreshold;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -491,6 +529,16 @@ public class HAGRIDSimulationConfig {
     /** Scenario option {@code kpiDashboard} (default true): build the Python KPI dashboard after the run. */
     public boolean isKpiDashboardEnabled() {
         return kpiDashboard;
+    }
+
+    /**
+     * Returns the χ-gate threshold (seconds): the maximum acceptable added vehicle time for a
+     * single parcel insertion. Only meaningful for {@code DRT_SHAREDUSE} (default 600.0).
+     *
+     * @return chi threshold in seconds
+     */
+    public double getChiThreshold() {
+        return chiThreshold;
     }
 
     /**
