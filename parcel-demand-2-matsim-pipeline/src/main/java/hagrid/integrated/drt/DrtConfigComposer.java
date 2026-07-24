@@ -2,6 +2,7 @@ package hagrid.integrated.drt;
 
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams;
+import org.matsim.contrib.drt.optimizer.DrtRequestInsertionRetryParams;
 import org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsParams;
 import org.matsim.contrib.drt.optimizer.constraints.DrtOptimizationConstraintsSetImpl;
 import org.matsim.contrib.drt.optimizer.insertion.extensive.ExtensiveInsertionSearchParams;
@@ -11,14 +12,18 @@ import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.run.DrtConfigs;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtModule;
+import org.matsim.contrib.dvrp.load.DvrpLoadParams;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpModule;
 import org.matsim.contrib.dvrp.run.DvrpQSimComponents;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.QSimConfigGroup;
+import org.matsim.core.config.groups.ReplanningConfigGroup;
 import org.matsim.core.config.groups.ScoringConfigGroup;
 import org.matsim.core.controler.Controler;
+
+import hagrid.integrated.shareduse.SharedUse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -129,6 +134,52 @@ public final class DrtConfigComposer {
         if (!modes.contains(TransportMode.drt)) {
             modes.add(TransportMode.drt);
             config.subtourModeChoice().setModes(modes.toArray(new String[0]));
+        }
+    }
+
+    /**
+     * SHAREDUSE (cargo-hitching) additions on top of the composed baseline DRT config
+     * (call AFTER {@link #composeConfig}). Applies:
+     * <ul>
+     *   <li>a native 2D {@code IntegersLoadType} via {@code DvrpLoadParams}: the fleet
+     *       XML capacity scalar maps to {@code "passengers"} (seats), plus a separate
+     *       {@code "parcels"} dimension (the per-vehicle 20-slot capacity is injected in
+     *       {@code SharedUseModule} via a {@code DvrpLoadFromFleet} override);</li>
+     *   <li>an all-day request-retry window so rejected (parcel) requests stay pending
+     *       until day end — Task 5's {@code ParcelOnlyRetryQueue} narrows this to the
+     *       per-request M5 delivery window on top of this global ceiling;</li>
+     *   <li>a selector-only ({@code ChangeExpBeta}) replanning strategy for the parcel
+     *       subpopulation: parcel-persons are static, so no plan innovation;</li>
+     *   <li>non-scoring parcel activity types (depot + delivery segment).</li>
+     * </ul>
+     */
+    public static void composeSharedUse(Config config) {
+        DrtConfigGroup drt = MultiModeDrtConfigGroup.get(config).getModalElements().iterator().next();
+
+        // 2D load: two dimensions built into an IntegersLoadType by DvrpLoadModule.
+        DvrpLoadParams load = drt.addOrGetLoadParams();          // param set "load"
+        load.setDimensions(List.of("passengers", "parcels"));
+        load.setMapFleetCapacity("passengers");                  // fleet XML scalar -> seats
+        load.setDefaultRequestDimension("passengers");           // pax legs carry no load attributes
+
+        // All-day pending window (global ceiling); per-request window is Task 5's queue concern.
+        DrtRequestInsertionRetryParams retry = new DrtRequestInsertionRetryParams();
+        retry.setRetryInterval(300);
+        retry.setMaxRequestAge(86400.0);
+        drt.addParameterSet(retry);
+
+        // Parcel subpopulation: pure selector, no innovation.
+        ReplanningConfigGroup.StrategySettings parcelSelector = new ReplanningConfigGroup.StrategySettings();
+        parcelSelector.setStrategyName("ChangeExpBeta");
+        parcelSelector.setSubpopulation(SharedUse.PARCEL_SUBPOPULATION);
+        parcelSelector.setWeight(1.0);
+        config.replanning().addStrategySettings(parcelSelector);
+
+        // Non-scoring parcel activity types.
+        for (String actType : List.of(SharedUse.ACT_DEPOT, SharedUse.ACT_DELIVERY)) {
+            ScoringConfigGroup.ActivityParams params = new ScoringConfigGroup.ActivityParams(actType);
+            params.setScoringThisActivityAtAll(false);
+            config.scoring().addActivityParams(params);
         }
     }
 
