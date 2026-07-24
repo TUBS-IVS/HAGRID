@@ -95,4 +95,37 @@ class ParcelOnlyRetryQueueTest {
         DrtRequest parcel = request(B2B_PARCEL, 7.5 * 3600.0);
         assertTrue(queue().tryAddFailedRequest(parcel, B2B_WINDOW_END));
     }
+
+    @Test
+    @DisplayName("RETRIEVAL path drops a parcel whose window passed AFTER it was enqueued (never re-attempted past its deadline)")
+    void retrievalPathDropsParcelWhoseWindowPassedAfterEnqueue() {
+        // Enqueued just BEFORE its window (16:58 < 17:00), so tryAddFailedRequest accepts it.
+        ParcelOnlyRetryQueue queue = queue();
+        double tEnqueue = B2B_WINDOW_END - 120.0;    // 61080 s = 16:58
+        assertTrue(queue.tryAddFailedRequest(request(B2B_PARCEL, tEnqueue), tEnqueue),
+                "a parcel enqueued before its window must be accepted");
+
+        // Retrieved AFTER the window (17:05) AND after the retry interval (tEnqueue + 300 = 61380),
+        // so the native, window-unaware queue WOULD hand it back here.
+        double tAfter = B2B_WINDOW_END + 300.0;      // 61500 s = 17:05
+        assertTrue(queue.hasRequestsToRetryNow(tAfter),
+                "sanity: without the window guard the native queue is retry-interval-eligible here");
+        // The window guard must filter it out: a past-window parcel is never re-attempted,
+        // so it can never be scheduled/delivered past its deadline (M5).
+        assertTrue(queue.getRequestsToRetryNow(tAfter).isEmpty(),
+                "a parcel past its own delivery window must NOT be retrieved for re-attempt");
+    }
+
+    @Test
+    @DisplayName("RETRIEVAL path positive control: a parcel still within its window IS returned")
+    void retrievalPathReturnsParcelStillWithinWindow() {
+        ParcelOnlyRetryQueue queue = queue();
+        double tEnqueue = 8 * 3600.0;                // 28800 s = 08:00, well before the 17:00 window
+        assertTrue(queue.tryAddFailedRequest(request(B2B_PARCEL, tEnqueue), tEnqueue));
+
+        double tWithin = tEnqueue + RETRY_INTERVAL;  // 29100 s = 08:05, within the window & past the interval
+        List<DrtRequest> due = queue.getRequestsToRetryNow(tWithin);
+        assertEquals(1, due.size(), "a parcel within its window must still be retried");
+        assertEquals(List.of(B2B_PARCEL), due.get(0).getPassengerIds());
+    }
 }
