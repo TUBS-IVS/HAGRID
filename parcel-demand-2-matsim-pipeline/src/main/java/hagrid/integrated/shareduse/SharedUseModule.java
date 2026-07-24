@@ -1,13 +1,19 @@
 package hagrid.integrated.shareduse;
 
+import com.google.inject.Provider;
+import com.google.inject.TypeLiteral;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Population;
+import org.matsim.contrib.common.zones.ZoneSystem;
 import org.matsim.contrib.drt.optimizer.DrtRequestInsertionRetryParams;
 import org.matsim.contrib.drt.optimizer.DrtRequestInsertionRetryQueue;
 import org.matsim.contrib.drt.optimizer.insertion.CostCalculationStrategy;
 import org.matsim.contrib.drt.optimizer.insertion.DefaultInsertionCostCalculator;
 import org.matsim.contrib.drt.optimizer.insertion.InsertionCostCalculator;
+import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingModule;
+import org.matsim.contrib.drt.optimizer.rebalancing.demandestimator.ZonalDemandEstimator;
+import org.matsim.contrib.drt.optimizer.rebalancing.mincostflow.MinCostFlowRebalancingStrategyParams;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.stops.MinimumStopDurationAdapter;
 import org.matsim.contrib.drt.stops.ParallelStopTimeCalculator;
@@ -38,7 +44,10 @@ import java.util.Map;
  *       branch of {@code DrtModeModule};</li>
  *   <li>{@link DvrpLoadFromFleet} — gives every vehicle {@link SharedUse#PARCEL_SLOTS}
  *       parcel slots in addition to the fleet-XML seat scalar (the default fleet
- *       loader would leave {@code "parcels"} at 0).</li>
+ *       loader would leave {@code "parcels"} at 0);</li>
+ *   <li>the modal {@code ZonalDemandEstimator} — replaced by a
+ *       {@link PaxOnlyPreviousIterationDrtDemandEstimator} (1c M7) so rebalancing sees
+ *       PASSENGER demand only, excluding the parcel phantom depot departures.</li>
  * </ul>
  *
  * <p>The QSim overrides — the χ-gate on parcel insertion
@@ -102,6 +111,34 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
         bind(SharedUseKpiHandler.class).asEagerSingleton();
         addEventHandlerBinding().to(SharedUseKpiHandler.class);
         addControlerListenerBinding().to(SharedUseKpiHandler.class);
+
+        // M7 (Task, final-review C2): PASSENGER-only rebalancing demand. The stock
+        // PreviousIterationDrtDemandEstimator (bound by DrtModeMinCostFlowRebalancingModule) counts
+        // EVERY drt PersonDepartureEvent - including the parcel phantom departures at the depot - so
+        // idle-vehicle rebalancing chases parcel demand and the χ=0 pax validation is confounded.
+        // Rebind the modal ZonalDemandEstimator to a pax-only estimator. Because SharedUseModule is
+        // added LAST via addOverridingModule (each call nests Modules.override(previous).with(this)),
+        // this controller-scope binding OVERRIDES the stock one; both DrtModeMinCostFlowRebalancingModule
+        // and ReturnToDepotRebalancingModule resolve the estimator via getModal(ZonalDemandEstimator.class)
+        // (visible from their QSim child injector), so they pick up the pax-only demand. Bound ONLY when
+        // the stock estimator would be bound (MinCostFlow + PreviousIterationDemand); otherwise there is
+        // no binding to override and the eager-singleton provider would fail resolving the (unbound)
+        // rebalancing zone system. The stock estimator singleton still exists but its output is shadowed.
+        drtCfg.getRebalancingParams().ifPresent(rebalancing -> {
+            if (rebalancing.getRebalancingStrategyParams() instanceof MinCostFlowRebalancingStrategyParams mcf
+                    && mcf.getZonalDemandEstimatorType()
+                        == MinCostFlowRebalancingStrategyParams.ZonalDemandEstimatorType.PreviousIterationDemand) {
+                int period = mcf.getDemandEstimationPeriod();
+                bindModal(PaxOnlyPreviousIterationDrtDemandEstimator.class).toProvider(modalProvider(getter -> {
+                    ZoneSystem zones = getter.getModal(new TypeLiteral<Map<String, Provider<ZoneSystem>>>() {})
+                            .get(RebalancingModule.REBALANCING_ZONE_SYSTEM).get();
+                    return new PaxOnlyPreviousIterationDrtDemandEstimator(zones, getMode(), period);
+                })).asEagerSingleton();
+                bindModal(ZonalDemandEstimator.class).to(modalKey(PaxOnlyPreviousIterationDrtDemandEstimator.class));
+                addEventHandlerBinding().to(modalKey(PaxOnlyPreviousIterationDrtDemandEstimator.class));
+                addControlerListenerBinding().to(modalKey(PaxOnlyPreviousIterationDrtDemandEstimator.class));
+            }
+        });
 
         // ---- QSim half (Task 5) --------------------------------------------------------
         // The χ-acceptance gate and the parcel-only pending/retry queue are QSim-scope keys.
