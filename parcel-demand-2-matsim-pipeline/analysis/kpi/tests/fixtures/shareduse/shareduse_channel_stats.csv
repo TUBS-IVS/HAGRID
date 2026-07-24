@@ -1,0 +1,12 @@
+metric;value
+segments_submitted;2
+segments_delivered;1
+segments_rejected_final;0
+segments_pending_eod;1
+parcels_submitted;5
+parcels_delivered;3
+parcels_undelivered;2
+undelivered_rate;0.4
+share_channel_door;1.0
+share_channel_locker;0.0
+mean_delivery_delay_s;1800.0
