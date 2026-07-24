@@ -160,6 +160,10 @@ class SharedUseEndToEndTest {
         int rejectedFinal = Integer.parseInt(metrics.get("segments_rejected_final"));
         int pendingEod = Integer.parseInt(metrics.get("segments_pending_eod"));
         assertThat(submitted).as("segments_submitted").isGreaterThanOrEqualTo(1);
+        // A real production-path signal, not just the (tautological, since pending_eod is
+        // defined as the remainder) conservation identity below: at least one parcel segment
+        // actually got delivered by the DRT fleet in this run.
+        assertThat(delivered).as("segments_delivered").isGreaterThanOrEqualTo(1);
         assertThat(delivered + rejectedFinal + pendingEod)
                 .as("M3 conservation: delivered + rejected_final + pending_eod == submitted")
                 .isEqualTo(submitted);

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * Covers 1c Task 7: {@link SharedUseKpiHandler} tracks submitted / delivered / finally-rejected
@@ -137,6 +138,28 @@ class SharedUseKpiHandlerTest {
 
         assertThat(Double.parseDouble(m.get("share_channel_door"))).isEqualTo(0.5);
         assertThat(Double.parseDouble(m.get("share_channel_locker"))).isEqualTo(0.5);
+    }
+
+    @Test
+    @DisplayName("channel shares are LOAD-weighted, not segment-weighted (door load=5, locker load=1)")
+    void channelSharesAreLoadWeightedNotSegmentWeighted() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person door = person(population, "parcel_dhl_1_B2B", 5, "DOOR");
+        Person locker = person(population, "parcel_dhl_2_B2C", 1, "LOCKER");
+
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+
+        handler.handleEvent(submitted(0.0, Id.create("reqDoor", Request.class), door.getId()));
+        handler.handleEvent(submitted(0.0, Id.create("reqLocker", Request.class), locker.getId()));
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+
+        // Segment-weighting (one vote per submitted segment) would wrongly give 0.5 / 0.5 here -
+        // load-weighting must reflect the 5:1 parcel-count split instead.
+        assertThat(Double.parseDouble(m.get("share_channel_door"))).isCloseTo(5.0 / 6.0, within(1e-9));
+        assertThat(Double.parseDouble(m.get("share_channel_locker"))).isCloseTo(1.0 / 6.0, within(1e-9));
     }
 
     // -------------------------------------------------------------------------
