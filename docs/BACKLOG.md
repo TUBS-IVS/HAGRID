@@ -13,7 +13,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt — aufgeschobene Punkte und neue Findings
 kommen mit Datum hier rein; Erledigtes wandert nach `## Erledigt` (kurzer Nachweis) oder wird
-gestrichen. _Zuletzt aktualisiert: 2026-07-20._
+gestrichen. _Zuletzt aktualisiert: 2026-07-24._
 
 ---
 
@@ -46,17 +46,28 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
     härten (3-Wege-KPI-Taxonomie, Contamination-Checkliste, Fare-Unterdrückung für Pakete,
     χ→0-Validierungslauf als konstruktiver Beweis, dass die Agenten-Mischung die Pax-Buchführung
     nicht verzerrt).
-  - **Design-Input: `drt-extensions/reconfiguration` (MOIA-Fork)** — liefert fertige, benannte
-    DvrpLoad-Typen `PersonsLoadType`/`GoodsLoadType` + die Bindings `DvrpLoadFromFleet` /
-    `DvrpLoadFromDrtPassengers` + Serializer off-the-shelf → deckt die 2D-Kapazitäts-Plumbing aus
-    1c **Task 4** ab (statt handgerollter `DvrpLoadFromFleet`-Override) und liefert einen
-    **load-basierten Klassifikator** (Goods-Load im Request-Event, robuster als das `parcel_`-Präfix).
-    Bonus: dynamischer Laufzeit-Kapazitäts-Umbau = **1d-Enabler**. **Ändert NICHTS am
-    Dummy-Agent-Erfordernis** (Goods-Request kommt weiter über die Passenger-Engine). **Offen/VERIFY:**
-    ist die Extension im **2025.0-Release-JAR** enthalten oder zieht ihre Nutzung einen größeren
-    Versions-Bump nach sich (matsim-lausitz-Binärkompat-Risiko)? Vor Adoption verifizieren — sonst
-    Person/Goods-Namenskonvention + load-Klassifikator nur *nachbauen* beim minimalen 2025.0-Bump.
-    _(added 2026-07-20)_
+  - **VERIFIED 2026-07-24 — die 2026-07-20-Notiz war falsch, hier korrigiert:** Das 2D-Kapazitäts-Plumbing
+    für 1c **Task 4** ist **nativ im `dvrp`-Core `2025.0`** (schon auf HAGRIDs Classpath via `dvrp:2025.0` —
+    KEIN neuer Dependency, KEIN Bump, KEIN MOIA-Fork nötig). Package `org.matsim.contrib.dvrp.load`:
+    `DvrpLoad`/`DvrpLoadType`, `IntegersLoad`/`IntegersLoadType` (mehrdimensional → Sitze + Paket-Slots),
+    `DvrpLoadFromFleet`/`DefaultDvrpLoadFromFleet`, `DvrpLoadFromVehicle`/`DefaultDvrpLoadFromVehicle`,
+    `DvrpLoadModule`, `DvrpLoadParams`; die DRT-Request→Load-Abbildung ist nativ
+    `dvrp.passenger.DvrpLoadFromTrip`/`DefaultDvrpLoadFromTrip` (= das, was die alte Notiz
+    „`DvrpLoadFromDrtPassengers`" nannte). **`PersonsLoadType`/`GoodsLoadType` existieren NICHT als Klassen**
+    (nirgends in dvrp/drt/drt-extensions 2025.0, auch nicht auf master) — die zwei Dimensionen
+    (Personen/Güter) definiert man selbst über `IntegersLoadType` (trivial). → **1c Task 4 = native Core-API
+    nutzen, kein Fork-Override, keine Serializer-Frage.** (Verifiziert gegen lokales `.m2` `dvrp-2025.0.jar`
+    + GitHub-Tag `2025.0`.)
+  - **`drt-extensions/reconfiguration` (MOIA-Fork) — was es WIRKLICH ist:** dynamischer Laufzeit-Umbau der
+    Fahrzeugkapazität während der Sim (`CapacityReconfigurationEngine` +
+    `logic/{,Default,Noop}CapacityReconfigurationLogic` + `run/CapacityReconfiguration{,QSim}Module`).
+    Das ist ein **1d-Enabler** (Kapsel-Tausch Personen- ↔ Güter-Konfiguration), NICHT die 1c-Task-4-Abkürzung,
+    als die die alte Notiz sie führte (Extension und Core waren verwechselt). **VERIFY erledigt:** die Extension
+    IST im `2025.0`-Release enthalten (zwischen PR3552 und 2025.0 hinzugefügt; HAGRIDs `.m2` hat lokal nur die
+    veraltete `2025.0-PR3552` OHNE reconfiguration) → Nutzung braucht KEINEN größeren Bump, nur
+    `org.matsim.contrib:drt-extensions:2025.0` als Dependency ergänzen (aktuell gar keine HAGRID-Dependency)
+    + Binärkompat via Build/e2e bestätigen. Für 1c irrelevant (Core reicht); Cross-Ref: `[H]` 1d unten.
+    _(korrigiert 2026-07-24, ersetzt die 2026-07-20-Notiz)_
   - **Alternative Architektur (zurückgestellt) — vollsimultaner nativer `CargoRequest`-Fork
     (Option C):** Der DRT-Request-Lebenszyklus ist durchgängig personengebunden
     (`DrtRequest implements PassengerRequest`, `DefaultPassengerEngine`, `DrtStopActivity`/
@@ -91,12 +102,16 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-20._
 
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
   **Plan noch nicht geschrieben** (soll nach dem 1c-Plan entstehen, erbt Infra-Entscheidungen von 1c).
-  - **Design-Input (2026-07-20):** die *exklusive* Pax-oder-Fracht-Phase des Kapsel-Tauschs passt
-    zur nativen `drt-extensions/services`-Vorlage (`DrtServiceDynActionCreator` + blockierende
-    `EntryFactory` + eigene Events = **echte** Fracht-Agent-Trennung ohne Dummy-Passagiere) und zum
-    dynamischen Laufzeit-Kapazitäts-Umbau der `drt-extensions/reconfiguration`-Extension. Beim
-    1d-Plan prüfen, ob das den geplanten Offline-jsprit-Pfad ergänzt/ersetzt. Kontext siehe
-    Co-Riding-1c-Notizen oben (Option C). _(added 2026-07-20)_
+  - **Design-Input (2026-07-20, verifiziert 2026-07-24):** die *exklusive* Pax-oder-Fracht-Phase des
+    Kapsel-Tauschs passt zur nativen `drt-extensions/services`-Vorlage (`DrtServiceDynActionCreator` +
+    blockierende `EntryFactory` + eigene Events = **echte** Fracht-Agent-Trennung ohne Dummy-Passagiere)
+    und zum dynamischen Laufzeit-Kapazitäts-Umbau der `drt-extensions/reconfiguration`-Extension
+    (`CapacityReconfigurationEngine`/-`Logic`/-`Module`). **Beide sind im `2025.0`-Release vorhanden**
+    (`services` schon seit PR3552, `reconfiguration` erst ab 2025.0) — Nutzung = `org.matsim.contrib:drt-extensions:2025.0`
+    als Dependency ergänzen (aktuell keine HAGRID-Dependency; `.m2` hat lokal nur veraltetes PR3552) +
+    Binärkompat via Build/e2e bestätigen, KEIN größerer Bump. Beim 1d-Plan prüfen, ob das den geplanten
+    Offline-jsprit-Pfad ergänzt/ersetzt. Kontext siehe Co-Riding-1c-Notizen oben (Option C).
+    _(added 2026-07-20, verifiziert 2026-07-24)_
   _(added 2026-07-14)_
 
 - **`[H]` Nachhaltigkeitsparameter einbauen** — Emissions-/CO₂-/Energie-KPIs und -Parameter
