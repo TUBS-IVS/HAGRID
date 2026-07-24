@@ -46,7 +46,6 @@ public final class ChiGateInsertionCostCalculator implements InsertionCostCalcul
     public double calculate(DrtRequest drtRequest, Insertion insertion, DetourTimeInfo detourTimeInfo) {
         double cost = delegate.calculate(drtRequest, insertion, detourTimeInfo);
         if (isParcel(drtRequest)
-                && detourTimeInfo != null
                 && detourTimeInfo.getTotalTimeLoss() > chiThreshold) {
             return INFEASIBLE_SOLUTION_COST;
         }
