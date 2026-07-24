@@ -1,8 +1,16 @@
 package hagrid.integrated.drt;
 
+import hagrid.HagridConfig;
 import hagrid.integrated.PopulationClipper;
+import hagrid.integrated.freight.LmdDemandReader;
+import hagrid.integrated.shareduse.ParcelAgentGenerator;
+import hagrid.integrated.shareduse.SharedUse;
 import hagrid.simulation.HAGRIDSimulationConfig;
 import hagrid.utils.GeoUtils;
+import hagrid.utils.demand.Delivery;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.locationtech.jts.geom.Geometry;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Network;
@@ -20,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -37,6 +46,8 @@ import java.util.Set;
  * link count is preserved.</p>
  */
 public final class LausitzDrtPreprocessor {
+
+    private static final Logger LOG = LogManager.getLogger(LausitzDrtPreprocessor.class);
 
     private LausitzDrtPreprocessor() {}
 
@@ -156,6 +167,14 @@ public final class LausitzDrtPreprocessor {
         if (runDir != null) {
             Files.createDirectories(runDir);
         }
+
+        // Shared-Use (cargo hitching) repurposes 2 of the base vehicle's seats for parcel
+        // volume; every other concept keeps the full base-vehicle seat count (rev. 2026-07-20 —
+        // Baseline base vehicle is now 10 seats, see SharedUse.BASE_SEATS javadoc).
+        HagridConfig.Scenario scenario = HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
+        boolean sharedUse = scenario == HagridConfig.Scenario.DRT_SHAREDUSE;
+        int capacity = sharedUse ? SharedUse.SEATS : SharedUse.BASE_SEATS;
+
         run(
                 cfg.getLausitzNetworkRaw(),
                 cfg.getPassengerPlansRaw(),
@@ -169,9 +188,29 @@ public final class LausitzDrtPreprocessor {
                 cfg.getRailScheduleFiltered(),
                 cfg.getRailTransitVehiclesFiltered(),
                 cfg.getFleetSize(),
-                8,
+                capacity,
                 0.0,
                 86400.0
         );
+
+        // Shared-Use only: inject the parcel subpopulation into the just-written, person-only
+        // clipped plans. Post-step (re-read + re-write) rather than threading through the 15-arg
+        // overload, since the person-filter (removing every non-"person" subpopulation) lives
+        // inside the 11-arg run(...) above and would otherwise strip the parcel-persons right
+        // back out.
+        if (sharedUse) {
+            Population pop = PopulationUtils.readPopulation(cfg.getPassengerPlansClipped());
+            Network drtNet = NetworkUtils.readNetwork(cfg.getDrtNetworkClipped());
+            Geometry area = GeoUtils.getBoundaryGeometry(
+                    GeoFileReader.getAllFeatures(cfg.getDrtServiceAreaShapefile()));
+            Map<String, List<Delivery>> demand =
+                    LmdDemandReader.group(LmdDemandReader.read(cfg.getLmdDemandShapefile()));
+            List<Coord> depots = DrtDepotReader.readCoords(Path.of(cfg.getLmdDepotCsv()));
+            ParcelAgentGenerator.Result r = ParcelAgentGenerator.generate(
+                    demand, area, drtNet, depots, pop, 4711L);
+            LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",
+                    r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
+            PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());
+        }
     }
 }
