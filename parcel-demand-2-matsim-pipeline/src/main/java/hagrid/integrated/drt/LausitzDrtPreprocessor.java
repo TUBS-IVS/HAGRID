@@ -200,7 +200,15 @@ public final class LausitzDrtPreprocessor {
         // back out.
         if (sharedUse) {
             Population pop = PopulationUtils.readPopulation(cfg.getPassengerPlansClipped());
-            Network drtNet = NetworkUtils.readNetwork(cfg.getDrtNetworkClipped());
+            // cfg.getDrtNetworkClipped() is the FULL augmented network (drt added only to
+            // eligible in-area links, and MultimodalNetworkCleaner(drt) may have stripped some
+            // of those again for connectivity) - snapping parcels against it directly with the
+            // mode-agnostic getNearestLinkExactly risks landing a parcel activity on a link DVRP
+            // can't service. Filter down to the drt-only subnetwork first, mirroring the
+            // existing fleet-anchoring pattern above (TransportModeNetworkFilter -> drtSubNet).
+            Network fullNet = NetworkUtils.readNetwork(cfg.getDrtNetworkClipped());
+            Network drtNet = NetworkUtils.createNetwork();
+            new TransportModeNetworkFilter(fullNet).filter(drtNet, Set.of(TransportMode.drt));
             Geometry area = GeoUtils.getBoundaryGeometry(
                     GeoFileReader.getAllFeatures(cfg.getDrtServiceAreaShapefile()));
             Map<String, List<Delivery>> demand =
