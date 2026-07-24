@@ -79,11 +79,14 @@ public final class ParcelAgentGenerator {
 
                 Plan plan = pf.createPlan();
                 Activity depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, depotLink.getId());
+                depot.setCoord(depotCoord);
                 depot.setEndTime(SharedUse.SUBMIT_FROM_S
                         + rnd.nextDouble() * (SharedUse.SUBMIT_TO_S - SharedUse.SUBMIT_FROM_S));
                 plan.addActivity(depot);
                 plan.addLeg(pf.createLeg("drt"));
-                plan.addActivity(pf.createActivityFromLinkId(SharedUse.ACT_DELIVERY, segmentLink.getId()));
+                Activity delivery = pf.createActivityFromLinkId(SharedUse.ACT_DELIVERY, segmentLink.getId());
+                delivery.setCoord(d.getCoordinate());
+                plan.addActivity(delivery);
                 p.addPlan(plan);
                 population.addPerson(p);
                 persons++;

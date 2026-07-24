@@ -67,6 +67,11 @@ class ParcelAgentGeneratorTest {
         assertTrue(depot.getEndTime().seconds() >= SharedUse.SUBMIT_FROM_S
                 && depot.getEndTime().seconds() <= SharedUse.SUBMIT_TO_S);
         assertNotEquals(depot.getLinkId(), delivery.getLinkId());   // validator guard
+        // Coords must be set (not link-only): serviceAreaBased DRT routing needs a resolvable
+        // activity coord to find an access/egress stop via ClosestAccessEgressFacilityFinder -
+        // without it the trip silently falls back to a teleported walk leg (1c Task 3 review).
+        assertEquals(new Coord(500, 500), depot.getCoord());
+        assertEquals(new Coord(800, 800), delivery.getCoord());
     }
 
     @Test
