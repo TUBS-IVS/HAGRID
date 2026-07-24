@@ -11,6 +11,7 @@ from pathlib import Path
 import economics
 import extract_drt
 import extract_freight
+import extract_shareduse
 import freight_events
 import kpi_writer
 import timeseries
@@ -23,6 +24,7 @@ import drt_service_time  # noqa: E402
 # 1c/1d register their scenario-specific extractors here:
 # each entry: (predicate(run_dir, meta) -> bool, extract(run_dir, prefix) -> rows)
 EXTRACTORS = []
+EXTRACTORS.append((extract_shareduse.has_shareduse_stats, extract_shareduse.extract))
 
 
 def _default_fleet_file(run_dir, meta):
