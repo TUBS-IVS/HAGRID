@@ -73,6 +73,9 @@ public final class ParcelAgentGenerator {
                         SharedUse.segmentDwellSeconds(d.getAmount()));
                 p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, resolver.resolve(d).name());
                 p.getAttributes().putAttribute("provider", d.getProvider());
+                double windowEnd = d.getParcelType() == Delivery.ParcelType.B2B
+                        ? SharedUse.B2B_WINDOW_END_S : SharedUse.B2C_WINDOW_END_S;
+                p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, windowEnd);
 
                 Plan plan = pf.createPlan();
                 Activity depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, depotLink.getId());

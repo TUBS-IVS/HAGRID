@@ -53,6 +53,8 @@ class ParcelAgentGeneratorTest {
         assertEquals(SharedUse.segmentDwellSeconds(3),
                 (double) (Double) p.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE), 1e-9);
         assertEquals("DOOR", p.getAttributes().getAttribute(SharedUse.CHANNEL_ATTRIBUTE));
+        assertEquals(SharedUse.B2C_WINDOW_END_S,
+                (double) (Double) p.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE), 1e-9);
 
         Plan plan = p.getSelectedPlan();
         assertEquals(3, plan.getPlanElements().size());
