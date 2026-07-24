@@ -95,6 +95,14 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
                     "parcels", SharedUse.PARCEL_SLOTS));     // repurposed back-bench volume
         })).asEagerSingleton();
 
+        // delta / channel KPIs (Task 7): tracks submitted/delivered/rejected parcel requests
+        // via the native DVRP passenger events and writes shareduse_channel_stats.csv at
+        // shutdown. Controller-scope singleton (not modal): the handler keys everything by
+        // request id / person id itself, so it never needs a modal binding.
+        bind(SharedUseKpiHandler.class).asEagerSingleton();
+        addEventHandlerBinding().to(SharedUseKpiHandler.class);
+        addControlerListenerBinding().to(SharedUseKpiHandler.class);
+
         // ---- QSim half (Task 5) --------------------------------------------------------
         // The χ-acceptance gate and the parcel-only pending/retry queue are QSim-scope keys.
         // They MUST be bound inside a QSim module (binding them at controller scope would
