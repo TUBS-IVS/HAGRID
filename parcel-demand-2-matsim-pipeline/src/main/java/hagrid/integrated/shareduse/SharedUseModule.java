@@ -3,6 +3,11 @@ package hagrid.integrated.shareduse;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Population;
+import org.matsim.contrib.drt.optimizer.DrtRequestInsertionRetryParams;
+import org.matsim.contrib.drt.optimizer.DrtRequestInsertionRetryQueue;
+import org.matsim.contrib.drt.optimizer.insertion.CostCalculationStrategy;
+import org.matsim.contrib.drt.optimizer.insertion.DefaultInsertionCostCalculator;
+import org.matsim.contrib.drt.optimizer.insertion.InsertionCostCalculator;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.stops.MinimumStopDurationAdapter;
 import org.matsim.contrib.drt.stops.ParallelStopTimeCalculator;
@@ -11,6 +16,7 @@ import org.matsim.contrib.drt.stops.StopTimeCalculator;
 import org.matsim.contrib.dvrp.load.DvrpLoadFromFleet;
 import org.matsim.contrib.dvrp.load.DvrpLoadType;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeModule;
+import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,13 +41,16 @@ import java.util.Map;
  *       loader would leave {@code "parcels"} at 0).</li>
  * </ul>
  *
- * <p>The QSim overrides (the χ-gate on parcel insertion + the parcel-only retry
- * queue) are installed via {@code installOverridingQSimModule} in Task 5.
+ * <p>The QSim overrides — the χ-gate on parcel insertion
+ * ({@link ChiGateInsertionCostCalculator}) and the parcel-only pending/retry queue
+ * ({@link ParcelOnlyRetryQueue}) — are installed via {@code installOverridingQSimModule}
+ * at the end of {@link #install()} (QSim-scope keys must not be bound at controller scope).
  */
 public final class SharedUseModule extends AbstractDvrpModeModule {
 
     private final DrtConfigGroup drtCfg;
-    /** χ-gate threshold; consumed by the QSim half installed in Task 5. */
+    /** χ-gate threshold (seconds of max acceptable added vehicle time per parcel
+     *  insertion); consumed by the QSim-half {@link ChiGateInsertionCostCalculator}. */
     private final double chiThreshold;
 
     public SharedUseModule(DrtConfigGroup drtCfg, double chiThreshold) {
@@ -86,6 +95,44 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
                     "parcels", SharedUse.PARCEL_SLOTS));     // repurposed back-bench volume
         })).asEagerSingleton();
 
-        // QSim half installed in Task 5
+        // ---- QSim half (Task 5) --------------------------------------------------------
+        // The χ-acceptance gate and the parcel-only pending/retry queue are QSim-scope keys.
+        // They MUST be bound inside a QSim module (binding them at controller scope would
+        // collide with the native bindings -> BindingAlreadySet). installOverridingQSimModule
+        // lets this override the native DrtModeOptimizerQSimModule bindings for the same keys.
+        installOverridingQSimModule(new AbstractDvrpModeQSimModule(getMode()) {
+            @Override
+            protected void configureQSim() {
+                // χ-gate wraps the native DefaultInsertionCostCalculator (constructed exactly as
+                // DrtModeOptimizerQSimModule does) and rejects a parcel insertion whose raw
+                // totalTimeLoss exceeds χ; pax and sub-χ parcels keep the delegate's cost.
+                bindModal(InsertionCostCalculator.class).toProvider(modalProvider(getter ->
+                        new ChiGateInsertionCostCalculator(
+                                new DefaultInsertionCostCalculator(
+                                        getter.getModal(CostCalculationStrategy.class),
+                                        drtCfg.addOrGetDrtOptimizationConstraintsParams()
+                                                .addOrGetDefaultDrtOptimizationConstraintsSet()),
+                                chiThreshold)));
+
+                // Parcel-only pending queue: pax rejections stay native-immediate; parcels retry
+                // until the global maxRequestAge OR their own per-request delivery window (M5).
+                // Must be a singleton — it holds the shared pending-queue state.
+                bindModal(DrtRequestInsertionRetryQueue.class).toProvider(modalProvider(getter -> {
+                    Population population = getter.get(Population.class);
+                    Map<Id<Person>, Double> windowEndById = new HashMap<>();
+                    population.getPersons().values().stream()
+                            .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
+                            .forEach(p -> {
+                                Object windowEnd = p.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE);
+                                if (windowEnd instanceof Number n) {
+                                    windowEndById.put(p.getId(), n.doubleValue());
+                                }
+                            });
+                    DrtRequestInsertionRetryParams retryParams = drtCfg.getDrtRequestInsertionRetryParams()
+                            .orElseGet(DrtRequestInsertionRetryParams::new);
+                    return new ParcelOnlyRetryQueue(retryParams, windowEndById);
+                })).asEagerSingleton();
+            }
+        });
     }
 }
