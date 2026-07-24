@@ -42,10 +42,28 @@ import java.util.Set;
  * the retrieval path ({@link ParcelOnlyRetryQueue#getRequestsToRetryNow}), so it can never
  * be tallied directly from events the way {@code segments_rejected_final} is.</p>
  *
+ * <p><b>Honest δ decomposition (I1):</b> a χ-starved parcel is NEVER terminally rejected -
+ * it retries until its own delivery window closes, then drops silently on the retrieval path,
+ * so {@code segments_rejected_final} captures only genuine hard rejects (which are ~always 0
+ * for parcels). The real "χ cost" signal therefore lives in {@code segments_pending_eod},
+ * which is split at shutdown by each parcel's {@link SharedUse#WINDOW_END_ATTRIBUTE} against
+ * the last simulated (event) time: {@code segments_window_expired} (windowEnd &le; last-event-time
+ * = χ-starved past its deadline) vs {@code segments_pending_open} (windowEnd &gt; last-event-time
+ * = the sim ended before the deadline). These two sum back to {@code segments_pending_eod}, so
+ * {@code delivered + rejected_final + window_expired + pending_open == submitted} still holds.</p>
+ *
  * <p>Requests are keyed by request id (stable across retries - retries never re-emit a
- * submission event); per-parcel LOAD ({@link SharedUse#LOAD_ATTRIBUTE}) and CHANNEL
- * ({@link SharedUse#CHANNEL_ATTRIBUTE}) are resolved ONCE from the injected
+ * submission event); per-parcel LOAD ({@link SharedUse#LOAD_ATTRIBUTE}), CHANNEL
+ * ({@link SharedUse#CHANNEL_ATTRIBUTE}) and delivery-window end
+ * ({@link SharedUse#WINDOW_END_ATTRIBUTE}) are resolved ONCE from the injected
  * {@link Population} at construction, since parcel-persons are static for the run.</p>
+ *
+ * <p><b>Per-iteration reset (C1):</b> DRT request ids restart at {@code drt_0} each iteration
+ * (the QSim and its passenger-id counter are rebuilt per iteration), so on a {@code maxIter>1}
+ * run the ids collide across iterations. {@link #reset(int)} therefore clears the per-request
+ * event state between iterations (mirroring stock DRT analysis handlers), so the CSV written at
+ * shutdown reflects ONLY the final iteration. The static population snapshots
+ * (load/channel/window-end) are NOT cleared - they are run-invariant.</p>
  */
 public final class SharedUseKpiHandler implements
         PassengerRequestSubmittedEventHandler,
@@ -55,14 +73,19 @@ public final class SharedUseKpiHandler implements
 
     static final String FILE_NAME = "shareduse_channel_stats.csv";
 
+    // Static population snapshots (run-invariant - NOT cleared on reset).
     private final Map<Id<Person>, Integer> loadByPerson = new LinkedHashMap<>();
     private final Map<Id<Person>, String> channelByPerson = new LinkedHashMap<>();
+    private final Map<Id<Person>, Double> windowEndByPerson = new LinkedHashMap<>();
 
+    // Per-request event state (CLEARED on reset - see reset(int)).
     /** requestId -> the one parcel-person id carried on its submission (parcel requests are single-person). */
     private final Map<Id<Request>, Id<Person>> personByRequest = new LinkedHashMap<>();
     private final Map<Id<Request>, Double> submittedAt = new LinkedHashMap<>();
     private final Map<Id<Request>, Double> deliveredAt = new LinkedHashMap<>();
     private final Set<Id<Request>> rejectedFinal = new LinkedHashSet<>();
+    /** Latest time seen across ALL handled events (pax + parcel) = proxy for the sim end / EOD. */
+    private double lastEventTime = 0.0;
 
     private final Path outputCsv;
 
@@ -79,14 +102,35 @@ public final class SharedUseKpiHandler implements
                     if (channel != null) {
                         channelByPerson.put(p.getId(), channel.toString());
                     }
+                    Object windowEnd = p.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE);
+                    if (windowEnd instanceof Number n) {
+                        windowEndByPerson.put(p.getId(), n.doubleValue());
+                    }
                 });
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
+    }
+
+    /**
+     * Clears the per-request event state between iterations (C1). DRT request ids restart at
+     * {@code drt_0} each iteration, so without this the ids collide across iterations and the
+     * shutdown CSV becomes a corrupted cross-iteration aggregate; resetting guarantees the CSV
+     * reflects ONLY the final iteration. Mirrors how stock DRT analysis handlers reset. The
+     * static population snapshots (load/channel/window-end) are intentionally NOT cleared.
+     */
+    @Override
+    public void reset(int iteration) {
+        personByRequest.clear();
+        submittedAt.clear();
+        deliveredAt.clear();
+        rejectedFinal.clear();
+        lastEventTime = 0.0;
     }
 
     // ---- events ---------------------------------------------------------------------
 
     @Override
     public void handleEvent(PassengerRequestSubmittedEvent event) {
+        lastEventTime = Math.max(lastEventTime, event.getTime()); // advance EOD proxy on ALL events
         Id<Person> parcelPersonId = firstParcelPerson(event.getPersonIds());
         if (parcelPersonId == null) {
             return; // pax request - ignored entirely (D10(b))
@@ -97,6 +141,7 @@ public final class SharedUseKpiHandler implements
 
     @Override
     public void handleEvent(PassengerRequestRejectedEvent event) {
+        lastEventTime = Math.max(lastEventTime, event.getTime());
         if (!submittedAt.containsKey(event.getRequestId())) {
             return; // not a tracked parcel request
         }
@@ -105,6 +150,7 @@ public final class SharedUseKpiHandler implements
 
     @Override
     public void handleEvent(PassengerDroppedOffEvent event) {
+        lastEventTime = Math.max(lastEventTime, event.getTime());
         if (!SharedUse.isParcelPerson(event.getPersonId().toString())) {
             return; // pax dropoff - ignored entirely
         }
@@ -143,6 +189,13 @@ public final class SharedUseKpiHandler implements
         int lockerLoad = 0;
         double delaySumS = 0.0;
 
+        // Honest δ decomposition (I1): split the UNDELIVERED set (submitted - delivered -
+        // rejected_final) by each parcel's delivery-window end against the last simulated time.
+        // χ-caused undelivered manifest as window_expired (NOT rejected_final): a χ-starved
+        // parcel retries until its window closes, then drops silently - it is never hard-rejected.
+        int segmentsWindowExpired = 0;
+        int segmentsPendingOpen = 0;
+
         for (Map.Entry<Id<Request>, Double> e : submittedAt.entrySet()) {
             Id<Request> requestId = e.getKey();
             Id<Person> personId = personByRequest.get(requestId);
@@ -159,6 +212,14 @@ public final class SharedUseKpiHandler implements
             if (deliveredTime != null) {
                 parcelsDelivered += load;
                 delaySumS += deliveredTime - e.getValue();
+            } else if (!rejectedFinal.contains(requestId)) {
+                // Undelivered and not a hard reject -> classify by its own delivery window.
+                Double windowEnd = windowEndByPerson.get(personId);
+                if (windowEnd != null && windowEnd <= lastEventTime) {
+                    segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
+                } else {
+                    segmentsPendingOpen++;   // sim ended before the deadline (or window unknown)
+                }
             }
         }
 
@@ -181,6 +242,8 @@ public final class SharedUseKpiHandler implements
                 writeMetric(w, "segments_submitted", segmentsSubmitted);
                 writeMetric(w, "segments_delivered", segmentsDelivered);
                 writeMetric(w, "segments_rejected_final", segmentsRejectedFinal);
+                writeMetric(w, "segments_window_expired", segmentsWindowExpired);
+                writeMetric(w, "segments_pending_open", segmentsPendingOpen);
                 writeMetric(w, "segments_pending_eod", segmentsPendingEod);
                 writeMetric(w, "parcels_submitted", parcelsSubmitted);
                 writeMetric(w, "parcels_delivered", parcelsDelivered);
