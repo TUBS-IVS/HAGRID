@@ -12,8 +12,11 @@ import org.matsim.core.population.PopulationUtils;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.config.ConfigUtils;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -72,6 +75,75 @@ class ParcelAgentGeneratorTest {
         // without it the trip silently falls back to a teleported walk leg (1c Task 3 review).
         assertEquals(new Coord(500, 500), depot.getCoord());
         assertEquals(new Coord(800, 800), delivery.getCoord());
+    }
+
+    @Test
+    void splitsOversizedSegmentIntoSubPersonsEachWithinCapacity() {
+        // M2 (segment-split): a segment of 45 parcels exceeds SharedUse.PARCEL_SLOTS (20) and would
+        // be undeliverable-by-construction as a single 2D load; it must be split into sub-persons
+        // that each fit, all visiting the same physical depot/segment point.
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
+                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
+                        .provider("dhl").amount(45).parcelType(ParcelType.B2C).build()));
+
+        var result = ParcelAgentGenerator.generate(demand, square(2000), net,
+                List.of(new Coord(500, 500)), pop, 4711L);
+
+        assertEquals(3, result.personsAdded());
+        assertEquals(45, result.parcels());
+        assertEquals(0, result.clippedOutside());
+        assertEquals(0, result.skippedSameLink());
+
+        List<Person> persons = List.copyOf(pop.getPersons().values());
+        assertEquals(3, persons.size());
+
+        List<Integer> loads = persons.stream()
+                .map(p -> (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE))
+                .sorted()
+                .collect(Collectors.toList());
+        assertEquals(List.of(5, 20, 20), loads);
+
+        Set<String> ids = new HashSet<>();
+        for (Person p : persons) {
+            assertTrue((Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE) <= SharedUse.PARCEL_SLOTS);
+            assertTrue(p.getId().toString().startsWith(SharedUse.PARCEL_PERSON_PREFIX));
+            assertTrue(ids.add(p.getId().toString()), "person ids must be distinct");
+
+            Plan plan = p.getSelectedPlan();
+            Activity depot = (Activity) plan.getPlanElements().get(0);
+            Activity delivery = (Activity) plan.getPlanElements().get(2);
+            assertEquals(new Coord(500, 500), depot.getCoord());
+            assertEquals(new Coord(800, 800), delivery.getCoord());
+            assertEquals(SharedUse.segmentDwellSeconds(
+                            (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE)),
+                    (double) (Double) p.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE), 1e-9);
+        }
+        // all sub-persons of one segment share the same depot link and the same delivery link
+        assertEquals(1, persons.stream()
+                .map(p -> ((Activity) p.getSelectedPlan().getPlanElements().get(0)).getLinkId()).distinct().count());
+        assertEquals(1, persons.stream()
+                .map(p -> ((Activity) p.getSelectedPlan().getPlanElements().get(2)).getLinkId()).distinct().count());
+    }
+
+    @Test
+    void doesNotSplitSegmentAtExactlyCapacity() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
+                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
+                        .provider("dhl").amount(SharedUse.PARCEL_SLOTS).parcelType(ParcelType.B2C).build()));
+
+        var result = ParcelAgentGenerator.generate(demand, square(2000), net,
+                List.of(new Coord(500, 500)), pop, 4711L);
+
+        assertEquals(1, result.personsAdded());
+        assertEquals(SharedUse.PARCEL_SLOTS, result.parcels());
+        Person p = pop.getPersons().values().iterator().next();
+        assertEquals(SharedUse.PARCEL_SLOTS,
+                (int) (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE));
+        assertTrue(p.getId().toString().startsWith(SharedUse.PARCEL_PERSON_PREFIX));
     }
 
     @Test

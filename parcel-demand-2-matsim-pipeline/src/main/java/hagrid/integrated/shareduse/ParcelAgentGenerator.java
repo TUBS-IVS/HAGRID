@@ -37,6 +37,19 @@ public final class ParcelAgentGenerator {
     private ParcelAgentGenerator() {
     }
 
+    /** M2 (segment-split): split a segment's total parcel amount into sub-loads of at most
+     *  SharedUse.PARCEL_SLOTS each (filling full slots first, then the remainder), e.g. 45 -> [20,20,5]. */
+    private static List<Integer> splitLoad(int amount) {
+        List<Integer> subLoads = new java.util.ArrayList<>();
+        int remaining = amount;
+        while (remaining > 0) {
+            int chunk = Math.min(SharedUse.PARCEL_SLOTS, remaining);
+            subLoads.add(chunk);
+            remaining -= chunk;
+        }
+        return subLoads;
+    }
+
     public static Result generate(Map<String, List<Delivery>> byProvider, Geometry serviceArea,
                                   Network drtNetwork, List<Coord> depotCoords,
                                   Population population, long seed) {
@@ -65,32 +78,43 @@ public final class ParcelAgentGenerator {
                     continue;
                 }
 
-                Person p = pf.createPerson(Id.createPersonId(SharedUse.PARCEL_PERSON_PREFIX
-                        + d.getProvider() + "_" + index + "_" + d.getParcelType()));
-                PopulationUtils.putSubpopulation(p, SharedUse.PARCEL_SUBPOPULATION);
-                p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, d.getAmount());
-                p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE,
-                        SharedUse.segmentDwellSeconds(d.getAmount()));
-                p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, resolver.resolve(d).name());
-                p.getAttributes().putAttribute("provider", d.getProvider());
+                // M2 (segment-split): a segment can carry more parcels than a Shared-Use vehicle
+                // has slots (PARCEL_SLOTS=20) - such a 2D load could never fit and would be
+                // undeliverable-by-construction. Split into >=1 sub-loads of <=20 parcels each,
+                // all visiting the same physical depot/segment point (dense point -> multiple visits).
+                List<Integer> subLoads = splitLoad(d.getAmount());
+                String channel = resolver.resolve(d).name();
                 double windowEnd = d.getParcelType() == Delivery.ParcelType.B2B
                         ? SharedUse.B2B_WINDOW_END_S : SharedUse.B2C_WINDOW_END_S;
-                p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, windowEnd);
 
-                Plan plan = pf.createPlan();
-                Activity depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, depotLink.getId());
-                depot.setCoord(depotCoord);
-                depot.setEndTime(SharedUse.SUBMIT_FROM_S
-                        + rnd.nextDouble() * (SharedUse.SUBMIT_TO_S - SharedUse.SUBMIT_FROM_S));
-                plan.addActivity(depot);
-                plan.addLeg(pf.createLeg("drt"));
-                Activity delivery = pf.createActivityFromLinkId(SharedUse.ACT_DELIVERY, segmentLink.getId());
-                delivery.setCoord(d.getCoordinate());
-                plan.addActivity(delivery);
-                p.addPlan(plan);
-                population.addPerson(p);
-                persons++;
-                parcels += d.getAmount();
+                for (int part = 0; part < subLoads.size(); part++) {
+                    int subLoad = subLoads.get(part);
+                    String idSuffix = subLoads.size() > 1 ? "_p" + part : "";
+                    Person p = pf.createPerson(Id.createPersonId(SharedUse.PARCEL_PERSON_PREFIX
+                            + d.getProvider() + "_" + index + "_" + d.getParcelType() + idSuffix));
+                    PopulationUtils.putSubpopulation(p, SharedUse.PARCEL_SUBPOPULATION);
+                    p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, subLoad);
+                    p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE,
+                            SharedUse.segmentDwellSeconds(subLoad));
+                    p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, channel);
+                    p.getAttributes().putAttribute("provider", d.getProvider());
+                    p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, windowEnd);
+
+                    Plan plan = pf.createPlan();
+                    Activity depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, depotLink.getId());
+                    depot.setCoord(depotCoord);
+                    depot.setEndTime(SharedUse.SUBMIT_FROM_S
+                            + rnd.nextDouble() * (SharedUse.SUBMIT_TO_S - SharedUse.SUBMIT_FROM_S));
+                    plan.addActivity(depot);
+                    plan.addLeg(pf.createLeg("drt"));
+                    Activity delivery = pf.createActivityFromLinkId(SharedUse.ACT_DELIVERY, segmentLink.getId());
+                    delivery.setCoord(d.getCoordinate());
+                    plan.addActivity(delivery);
+                    p.addPlan(plan);
+                    population.addPerson(p);
+                    persons++;
+                    parcels += subLoad;
+                }
             }
         }
         LOG.info("ParcelAgentGenerator: {} parcel-persons ({} parcels), {} outside area, {} same-link skipped",
