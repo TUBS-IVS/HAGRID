@@ -139,8 +139,8 @@ public final class SharedUseKpiHandler implements
 
         int parcelsSubmitted = 0;
         int parcelsDelivered = 0;
-        int doorSegments = 0;
-        int lockerSegments = 0;
+        int doorLoad = 0;
+        int lockerLoad = 0;
         double delaySumS = 0.0;
 
         for (Map.Entry<Id<Request>, Double> e : submittedAt.entrySet()) {
@@ -150,9 +150,9 @@ public final class SharedUseKpiHandler implements
             parcelsSubmitted += load;
 
             if ("LOCKER".equals(channelByPerson.get(personId))) {
-                lockerSegments++;
+                lockerLoad += load;
             } else {
-                doorSegments++; // DOOR, or an unattributed fallback -> door-default
+                doorLoad += load; // DOOR, or an unattributed fallback -> door-default
             }
 
             Double deliveredTime = deliveredAt.get(requestId);
@@ -164,8 +164,10 @@ public final class SharedUseKpiHandler implements
 
         int parcelsUndelivered = parcelsSubmitted - parcelsDelivered;
         double undeliveredRate = parcelsSubmitted > 0 ? (double) parcelsUndelivered / parcelsSubmitted : 0.0;
-        double shareChannelDoor = segmentsSubmitted > 0 ? (double) doorSegments / segmentsSubmitted : 0.0;
-        double shareChannelLocker = segmentsSubmitted > 0 ? (double) lockerSegments / segmentsSubmitted : 0.0;
+        // LOAD-weighted (fraction of parcel COUNT, not fraction of segments) - consistent with
+        // every other parcel-facing metric in this file (parcels_submitted/delivered/undelivered_rate).
+        double shareChannelDoor = parcelsSubmitted > 0 ? (double) doorLoad / parcelsSubmitted : 0.0;
+        double shareChannelLocker = parcelsSubmitted > 0 ? (double) lockerLoad / parcelsSubmitted : 0.0;
         double meanDelaySeconds = segmentsDelivered > 0 ? delaySumS / segmentsDelivered : 0.0;
 
         try {
