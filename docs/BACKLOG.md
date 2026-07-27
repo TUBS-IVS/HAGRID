@@ -13,7 +13,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt — aufgeschobene Punkte und neue Findings
 kommen mit Datum hier rein; Erledigtes wandert nach `## Erledigt` (kurzer Nachweis) oder wird
-gestrichen. _Zuletzt aktualisiert: 2026-07-24._
+gestrichen. _Zuletzt aktualisiert: 2026-07-27._
 
 ---
 
@@ -120,6 +120,21 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-24._
   - **Shared-Use-Teil zurückgestellt**, bis 1c-Runs laufen — dann an den χ-Sweep (M6)
     hängen, kostet dort nur einen zusätzlichen Punkt. Nichtlinearität ist genau dort
     plausibel (χ-Gate: weniger Pakete → überproportional höheres δ).
+  - **✅ Baseline-Hälfte erledigt (2026-07-27).** `LMD_BASELINE` × {central, low} gelaufen
+    (`run_lmd_band.ps1`, Tags `band_central`/`band_low`, je `maxIter=0 jspritIter=100`),
+    Ergebnis in `PANDA/docs/transferability.md` → „Ergebnis Baseline-Band". Kurz: −18,1 %
+    Pakete ⇒ nur −11,2 % Fahrzeug-km (Elastizität 0,62), −13,8 % Gesamtkosten, **+5,2 %
+    Kosten je Paket**. Die Reaktion ist **sublinear**, nicht linear wie ex ante vermutet —
+    Ursache ist Flächendegression, nicht die Zeitbindung (`parcels_unassigned = 0`,
+    `FleetSize.INFINITE`, Cap 7,5 h nie bindend). Absolute €/Paket-Werte sind damit
+    niveaugekoppelt und im Central-Run ~5 % zu optimistisch.
+  - **`[M]` Offen aus der Prüfung:** die berichtete Zustellquote weicht in **beiden** Runs
+    reproduzierbar um −14 % von den konfigurierten Provider-Quoten ab (475 statt 552 bzw.
+    388 statt 452 verpasste Pakete; providerweise z. B. Hermes −8 pp, DHL +3 pp). Weil es
+    systematisch ist, hebt es sich in Vergleichen weg und das Band ist unberührt — aber eine
+    *absolut* berichtete Zustellquote wäre zu optimistisch. Mechanismus nicht identifiziert;
+    Einstieg: `CarrierGenerator.adjustDeliveryRatesConsideringB2B` (Zeile 252) und
+    `determineMissedParcels` (1049), Sollwerte `HagridConfig.java:190-196`.
   _(added 2026-07-27)_
 
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
@@ -243,6 +258,62 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-24._
   Kartenfeature: einmal jeden Dropdown/Filter/Toggle auf dem married250-Dashboard durchgehen.
   _(added 2026-07-17)_
 
+### Fallback-Audit 2026-07-27 (Medium-Tier)
+
+Ergebnis eines gezielten Durchgangs durch `hagrid/integrated/**` + `analysis/kpi/` nach
+Fallbacks, die greifen statt zu scheitern und dabei still falsche Zahlen erzeugen. Die vier
+scharfen Befunde sind erledigt (siehe `## Erledigt`); hier stehen die verbleibenden.
+Positiv-Befund am Rande: im gesamten `integrated`-Baum wirft **jedes** `catch` weiter — es gibt
+dort kein Exception-Swallowing.
+
+- **`[M]` Stille Attribut-Fallbacks im Shared-Use-Pfad härten** — eine Paketperson ohne
+  numerisches `dvrp:load:parcels`-Attribut fällt geräuschlos auf „1 Paket" zurück:
+  Depot-Pickup sinkt von bis zu 600 s auf 30 s, Türdwell von bis zu 900 s auf 120 s
+  (`SharedUseStopDurationProvider.java:48,56`; Snapshot wird nur bei `instanceof Number`
+  gefüllt, `SharedUseModule.java:82-89`). Gleiche Klasse: `SharedUseKpiHandler.java:202`
+  (`getOrDefault(personId, 0)` → Segment zählt 0 Pakete) und `:208` (unattribuierter Kanal
+  → DOOR). Shared-Use sähe damit billiger aus als es ist, ohne Crash.
+  Vorschlag: Snapshot strikt bauen (werfen bei fehlendem Attribut) oder Misses zählen und
+  als KPI ausgeben. _(added 2026-07-27)_
+
+- **`[M]` Locker-Kanal ist per Konstruktion tot + `IntegratedScenarioConfig` ist totes Config-Objekt** —
+  `ParcelAgentGenerator.java:59` hartcodiert `new DeliveryChannelResolver(List.of(), 500.0)`,
+  also ist `share_channel_locker` strukturell 0. Das Javadoc von `DeliveryChannelResolver:10-15`
+  behauptet, der Locker-Zweig aktiviere sich „ohne Codeänderung hier" — das stimmt nicht.
+  Zusätzlich: `IntegratedScenarioConfig` (mit `b2cLockerShare=0.7`, Autonomie-Dwell-Faktor,
+  Labour-Kosten, Retooling-Zeit) wird **nur vom eigenen Test** referenziert und erreicht keinen
+  Run — liest sich aber wie aktive Konfiguration. Locker selbst bleibt Phase-2 (siehe
+  `[L]` Phase-2-Deferrals); hier geht es nur darum, dass Javadoc und totes Config-Objekt
+  aktuell täuschen. Verwandt: `[M]` Autonomie-Switch-Plan (dort ist `operation_mode` in
+  `RunMetadataWriter.java:31` hart auf `"conventional"`). _(added 2026-07-27)_
+
+- **`[M]` Ungeschützte Kompositions-Zweige im DRT-Config-Aufbau** — zwei stille No-Ops:
+  (a) `DrtConfigComposer.java:63` `if (multi.getModalElements().isEmpty())` — bringt die
+  Base-Config je ein `drt`-Element mit, wird die **komplette** HAGRID-Komposition übersprungen
+  (ServiceArea, Fleet-File, maxWaitTime, Rebalancing, ExtensiveInsertionSearch) und die
+  Base-Werte laufen; (b) `DrtConfigComposer.java:201-207` — `PtAndDrtFareModule` wird nur bei
+  komponierten Tarifen *und* vorhandenen pt-Scoring-Params installiert, sonst fahren pt und drt
+  monetär gratis, während Auto pro km zahlt (genau die Asymmetrie, gegen die das Modul laut
+  Kommentar existiert). Beide Zweige feuern heute nicht, loggen aber auch nichts.
+  Vorschlag: gewählten Zweig loggen; `pt_fare_module_installed` in die Run-Metadaten.
+  _(added 2026-07-27)_
+
+- **`[M]` Depot-Zonenzuordnung ohne Warnung** — `ReturnToDepotRebalancingModule.java:94-106`:
+  ein Depot außerhalb aller Rebalancing-Zonen hängt sich still an die nächstgelegene
+  Zentroid-Zone. Zusammen mit `ReturnToDepotTargetCalculator.java:38`
+  (`getOrDefault(zone, 0.0)`) zieht das die Abend-Flotte in die falsche Gitterzelle.
+  Vorschlag: Fallback pro Depot loggen, Containment für In-Area-Depots assertieren.
+  _(added 2026-07-27)_
+
+- **`[M]` Analyse-Provenance: stiller Kostenbasis-Tausch + nie aufgefrischte `shared/`-Inputs** —
+  (a) `extract_freight.py:~40-53`: jede Exception im Provider-Parse tauscht die Kostenbasis
+  still auf die TSV-Spalten — andere Zahlen unter gleichem KPI-Namen; Vorschlag: `cost_basis`-
+  Provenance-Zeile (analog zu den neuen `meta`-Rows) und im Dashboard zeigen.
+  (b) `HagridPaths.java:478-489` `copyIfMissing` aktualisiert nie und warnt bei fehlender
+  Quelle nur — ein veraltetes `hagrid-output/shared/sim-config.xml` oder Zonen-Shapefile
+  überlebt beliebig lange Input-Änderungen. Vorschlag: Hash/Mtime vergleichen, laut warnen.
+  _(added 2026-07-27)_
+
 ## Low
 
 - **`[L]` `SimulationBatGenerator` JDK-Pfad hartcodiert** — der generierte `run_hagrid_sim.bat`
@@ -299,9 +370,89 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-24._
   vorhandenem `drt_cache`. Vor dem ersten LMD-only-Szenario (vgl. `LMD_BASELINE`) fixen. Gefunden im
   Plan-D-maps Whole-Branch-Review. _(added 2026-07-17)_
 
+### Fallback-Audit 2026-07-27 (Low-Tier)
+
+- **`[L]` Shapefile-/CSV-Parsing: „still zu 0/1"-Fallbacks absichern** — vier Stellen, an denen
+  ein Schema-Wechsel Daten geräuschlos vernichtet statt zu scheitern. Alle sind **heute nicht
+  scharf** (gegen echten Output verifiziert), aber ungeschützt:
+  `LmdDemandReader.java:87` `asLong` gibt bei Nicht-Number **und bei fehlender DBF-Spalte** `0`
+  zurück → eine umbenannte/als Text typisierte Spalte löscht die Nachfrage eines Providers
+  komplett; `LmdDemandReader.java:46` `String.valueOf(getAttribute("id"))` → ohne `id`-Spalte
+  heißt jede Delivery `"null_B2C"` (der Kommentar in `ParcelAgentGenerator:66` bestätigt, dass es
+  keine gibt), Delivery-IDs sind also nicht eindeutig; `carriers_parse.py:96,200`
+  (`capacityDemand` Default 1, `capacity other=` Default 0.0) → ein Writer-Schemawechsel machte
+  jeden Service zu 1 Paket und jeden Van zu Kapazität 0; `freight_events.py:102` /
+  `maps.py:292` `demand.get(sid, 1)` und `extract_freight_provider.py:136` `get(cid, "other")`.
+  Vorschlag: Spaltenexistenz beim Parsen assertieren + Provider-Summen loggen.
+  _(added 2026-07-27)_
+
+- **`[L]` Kleine stille Defaults & irreführender toter Code** — Sammelposten:
+  `PopulationClipper.java:36-47` — der „Home-Anker" ist faktisch „erste Aktivität *mit*
+  Koordinate", Personen ganz ohne Koordinaten fallen unbemerkt aus dem Clip (Drops zählen/loggen);
+  `LmdCarrierBuilder.java:89,128` — `DEFAULT_DELIVERY_RATE` und `DEFAULT_DISPATCH_HOURS` sind
+  beide unerreichbar (alle 7 Provider stehen in der Map), lesen sich aber wie aktive Konfiguration;
+  `SimulationRunnerUtils.java:238` und `:64-73` — die einzigen echten Exception-Swallows im
+  Projekt (Log-Verzeichnis); `SimulationRunnerUtils.java:151-155,168-174` — ein vertipptes
+  `concept` fällt in `requiresLausitz=false` statt am Tippfehler zu scheitern;
+  `GeoUtils.java:363-393` — `Coord(0,0)` wenn kein Service ein `coord`-Attribut hat;
+  `DrtNetworkPreparer.java` ist **toter Code**, wird aber in drei Kommentaren
+  (`LausitzFreightPreprocessor.java:52,163`, `SimulationRunnerUtils.java:494`) als die lebende
+  Implementierung zitiert — real läuft `PrepareNetwork.prepareDrtNetwork`
+  (`LausitzDrtPreprocessor.java:80`) mit anderer Semantik (Vollnetz bleibt, drt kommt auf
+  Car-Links). _(added 2026-07-27)_
+
+- **`[L]` `ct_cep_size_s` Doku/Daten-Divergenz** — `lmd-vehicle-types.xml` enthält drei Van-Typen
+  und alle drei werden eingesetzt (je 56 Fahrzeuge in `married250` verifiziert), obwohl
+  `HagridPaths.java:337` „ct_cep_size_m / _l only" dokumentiert. Kein Fallback, aber ein realer
+  Effekt auf den Flotten-Mix — entweder `_s` bewusst aufnehmen (dann Doku korrigieren) oder aus
+  der Typdatei entfernen. Nebeneffekt: `LmdCarrierBuilder.jitterSigmaMinutes:160-163` gibt `_s`
+  per Durchfall die 15-Min-Sigma des „m"-Zweigs. _(added 2026-07-27)_
+
 ---
 
 ## Erledigt
+
+- **Fallback-Audit Lausitz: die vier scharfen Befunde** — ✅ 2026-07-27, **lokal, ungepusht**.
+  Gezielter Durchgang durch `hagrid/integrated/**` (~3,2k LOC) + `analysis/kpi/` (~11k LOC) nach
+  Fallbacks, die greifen statt zu scheitern. Behoben:
+  - **Pax-KPIs auf Shared-Use-Runs waren paketkontaminiert, die Korrektur war toter Code.**
+    `extract_shareduse` berechnete `*_pax_only`, aber `render.HEADLINE_KPIS`, `render_drt`-Kacheln
+    und `economics.py` lasen alle das kontaminierte `drt_rides`/`wait_median`/`modal_share_drt`.
+    Neu: `analysis/kpi/pax_only.py` tauscht einmalig zentral (`<name>_pax_only` → `<name>`, Stock →
+    `<name>_incl_parcels`) vor `economics.extract`; `extract_shareduse` liefert jetzt zusätzlich
+    p95/below-10/below-15/in-vehicle-time/Detour/Trip-Distanz (Legs-CSV), pax-only Rejections
+    (Rejections-CSV) und **alle** Modal-Shares (output_trips — gemeinsam, sonst summieren sie
+    sich nicht zu 1). Was vehicle-seitig unkorrigierbar bleibt (pooling_rate, sharing_factor,
+    drt_passenger_km, drt_dp_over_dt, mean_pax_aboard, drt_empty_ratio) steht als
+    `meta/parcel_contaminated_kpis` in der CSV statt sich als Passagierzahl auszugeben.
+  - **Veraltete vorbereitete DRT-Inputs.** Der Run prüfte nur Existenz, und der Pfad kodiert nur
+    `CONCEPT_date[_tag]` — nicht `fleetSize`/Sitzzahl/`noParcels`. Real scharf: alle 11
+    Fleet-Dateien auf Platte tragen `capacity="8"`, geschrieben bevor `BASE_SEATS` am 2026-07-20
+    auf 10 ging. Neu: `DrtInputsFingerprint` (Properties-Datei neben den Artefakten, Parameter +
+    `size:mtime` der Rohinputs + die Sitz-/Slot-Konstanten), geschrieben vom Präprozessor,
+    geprüft in `validateInputFiles()` → Abbruch mit konkreter Drift-Meldung. Die
+    Kapazitätsregel lebt jetzt einmal in `DrtInputsFingerprint.expectedCapacity`, damit der
+    Guard nicht von dem wegdriften kann, was er bewacht.
+  - **Kapazitäts-/Schicht-Nenner wurden geraten.** `read_capacity(default=8)` und der
+    Sim-Horizont-Ersatz für fehlende Schichtfenster sind weg: ohne Fleet-Datei liefert
+    `drt_service_time.reconstruct` kein `capacity`/`util_*`/`ratio_shift`/`sum_shift_s` mehr,
+    `extract_drt` lässt die betroffenen KPIs weg und setzt `meta/fleet_file_missing`.
+    Zusätzlich emittiert `extract_drt` jetzt `system/drt_vehicle_capacity` — genau den KPI, den
+    `maps._read_cap` suchte, dessen Suchmuster aber nie matchen konnte (immer `DEFAULT_CAP=8`).
+  - **Fehlende `run_metadata.json` degradierte still.** `writeRunMetadataSafely` schluckt jeden
+    Fehler, `load_run_meta` fiel dann wortlos auf Verzeichnisnamen-Parsing zurück
+    (`fleet_size=None` → **gar keine** Kosten-KPIs). Jetzt laute Warnung + `meta_source` auf
+    `RunMeta` + `meta/run_meta_degraded` in der CSV. (Betrifft real z.B.
+    `DRT_BASELINE_13052025_fleet80_depot_railpt_iter150_jsprit100`.)
+  - **`SharedUseModule` Retry-Params gehärtet** (`orElseGet(new …)` → `orElseThrow`): der
+    MATSim-Default ist `maxRequestAge=0`, also *kein Retry* — das hätte die gesamte
+    M5-Fensterlogik still abgeschaltet und δ von `segments_window_expired` nach
+    `segments_rejected_final` verschoben.
+
+  Verifikation: Python 210 Tests grün (vorher 193, +17 neue in `test_pax_only.py`,
+  `test_fleet_provenance.py`, `test_extract_drt.py`); Java-Modulsuite grün; H1 zusätzlich
+  end-to-end gegen den echten `SharedUseEndToEndTest`-Output geprüft. Verbleibende Befunde:
+  siehe „Fallback-Audit 2026-07-27" unter Medium und Low.
 
 - **MATSim-Core-Bump `2025.0-PR3552` → `2025.0`** — ✅ 2026-07-20. Branch `bump/matsim-2025.0`
   (von `hendrik`, **nicht** gemergt/gepusht). Approach A (in-place Property-Bump, fix-forward). Ergebnis:
