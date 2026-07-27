@@ -4,6 +4,7 @@ shareduse_channel_stats.csv (Task 7 format) plus D10 pax-only corrected
 passenger KPIs and the best-effort D10(c) fare split."""
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,15 +15,32 @@ import extract_shareduse as es
 from common import KPI_GROUPS
 
 FIX = Path(__file__).parent / "fixtures" / "shareduse"
+# Real runs write the handler CSV run-ID-prefixed; the fixture mirrors that
+# ("SHAREDUSE_TEST.shareduse_channel_stats.csv"), so the predicate/extractor
+# are exercised against the actual on-disk filename convention.
+PREFIX = "SHAREDUSE_TEST"
+
+
+def _meta(prefix):
+    return SimpleNamespace(prefix=prefix)
 
 
 def _rows_by_name(rows):
     return {r["kpi_name"]: r for r in rows}
 
 
+def _seed_stats(dirpath, prefix):
+    """Copy the channel-stats fixture into dirpath under the run-ID-prefixed
+    name the extractor reads ({prefix}.shareduse_channel_stats.csv), mirroring
+    MATSim's prefixed output."""
+    (dirpath / (prefix + ".shareduse_channel_stats.csv")).write_text(
+        (FIX / (PREFIX + ".shareduse_channel_stats.csv")).read_text(encoding="utf-8"),
+        encoding="utf-8")
+
+
 def test_has_shareduse_stats_predicate(tmp_path):
-    assert es.has_shareduse_stats(FIX, meta=None) is True
-    assert es.has_shareduse_stats(tmp_path, meta=None) is False
+    assert es.has_shareduse_stats(FIX, meta=_meta(PREFIX)) is True
+    assert es.has_shareduse_stats(tmp_path, meta=_meta(PREFIX)) is False
 
 
 def test_registered_in_build_kpis_extractors():
@@ -92,9 +110,7 @@ def test_extract_skips_pax_rows_gracefully_without_legs_file(tmp_path):
     """Only shareduse_channel_stats.csv present (no legs CSV for this
     prefix) -- channel/freight rows must still be emitted, but none of the
     legs-derived passenger/economic pax-only rows."""
-    (tmp_path / "shareduse_channel_stats.csv").write_text(
-        (FIX / "shareduse_channel_stats.csv").read_text(encoding="utf-8"),
-        encoding="utf-8")
+    _seed_stats(tmp_path, "NO_LEGS")
 
     rows = es.extract(tmp_path, "NO_LEGS")
     k = _rows_by_name(rows)
@@ -109,9 +125,7 @@ def test_extract_omits_wait_rows_when_pax_slice_is_empty(tmp_path):
     """Legs CSV with ONLY parcel_ legs (no pax at all): drt_rides_pax_only
     must be 0, and wait_mean/median_pax_only must be omitted entirely rather
     than emitting NaN (pandas .mean()/.median() on 0 rows -> NaN)."""
-    (tmp_path / "shareduse_channel_stats.csv").write_text(
-        (FIX / "shareduse_channel_stats.csv").read_text(encoding="utf-8"),
-        encoding="utf-8")
+    _seed_stats(tmp_path, "ONLYPARCEL")
     (tmp_path / "ONLYPARCEL.output_drt_legs_drt.csv").write_text(
         "submissionTime;departureTime;personId;requestId;vehicleId;waitTime;fareForLeg\n"
         "30000;30100;parcel_dhl_1_B2C;drt_4;drt_veh_2;9999;1.5\n",
@@ -131,9 +145,7 @@ def test_extract_omits_wait_rows_when_pax_slice_is_empty(tmp_path):
 def test_extract_skips_fare_rows_when_column_absent(tmp_path):
     """Older/alternate legs CSV without fareForLeg: fare rows must be
     omitted gracefully, while the pax-only wait/ride corrections still work."""
-    (tmp_path / "shareduse_channel_stats.csv").write_text(
-        (FIX / "shareduse_channel_stats.csv").read_text(encoding="utf-8"),
-        encoding="utf-8")
+    _seed_stats(tmp_path, "NOFARE")
     (tmp_path / "NOFARE.output_drt_legs_drt.csv").write_text(
         "submissionTime;departureTime;personId;requestId;vehicleId;waitTime\n"
         "25000;25200;p1;drt_1;drt_veh_1;300\n"
