@@ -100,6 +100,28 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-24._
     (Pax-allein = χ=0-Lauf / Fracht-allein = DOF / beide = Shared-Use). Priorität liegt auf Systemebene →
     aufgreifen, wenn fürs Paper eine mechanistische Zusatzaussage gebraucht wird. _(added 2026-07-20)_
 
+- **`[H]` Nachfrage-Niveau-Band Lausitz (Transferability-Folge)** — Die PANDA-Transferstudie
+  (`PANDA/docs/transferability.md`, 2026-07-27) hat gezeigt: die räumliche Verteilung der
+  Lausitz-Nachfrage ist belegt, das **Niveau** liegt aber ~22 % über dem einzigen externen
+  Anker (BIEK-Kompendium 2021: Sachsen 43 vs. Niedersachsen 47 Sdg./Einw./Jahr). Ursache
+  isoliert = **EFH-Term** (28,3 % statt 14,8 % Anteil am Total); **nicht** Demografie
+  (−2…−3 %), **nicht** Einkommen (VGR 2023: verfügbares Einkommen je Einwohner
+  Bautzen/Region Hannover = 0,990), **nicht** das Dichte-Regime.
+  **Entscheidung (User 2026-07-27): minimales Zwei-Run-Band** — je ein Zusatzrun für
+  Baseline und Shared-Use auf einem Low-Nachfragestand (×0,819), räumliche Verteilung
+  unverändert. Zweck: die Aussage „Ergebnisse robust gegen ±18 % Nachfragefehler" belegen
+  statt hoffen.
+  - Nachfragedateien liegen exportiert: `PANDA/output/lausitz_central` (7.271 Pakete) und
+    `PANDA/output/lausitz_low` (5.956), 1.066 Segmente identisch. Neues `--scale`-Argument
+    in `export_demand.py`.
+  - **Achtung, gematchtes Paar nötig:** HAGRID fährt noch auf der 6.381-Paket-Datei aus dem
+    *zurückgezogenen* 12-Parameter-Modell → Central UND Low müssen neu laufen. Der
+    Central-Run ist ohnehin fällig (koppeln an die 10-Sitze-Re-Baseline unten).
+  - **Shared-Use-Teil zurückgestellt**, bis 1c-Runs laufen — dann an den χ-Sweep (M6)
+    hängen, kostet dort nur einen zusätzlichen Punkt. Nichtlinearität ist genau dort
+    plausibel (χ-Gate: weniger Pakete → überproportional höheres δ).
+  _(added 2026-07-27)_
+
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
   **Plan noch nicht geschrieben** (soll nach dem 1c-Plan entstehen, erbt Infra-Entscheidungen von 1c).
   - **Design-Input (2026-07-20, verifiziert 2026-07-24):** die *exklusive* Pax-oder-Fracht-Phase des

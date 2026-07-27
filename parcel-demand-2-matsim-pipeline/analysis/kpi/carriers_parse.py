@@ -7,6 +7,8 @@ matching mirrors the existing idiom in extract_freight._carrier_attrs so real
 married250 runs (default xmlns) and the namespace-free mini_lmd fixtures both
 parse the same way.
 """
+from __future__ import annotations  # PEP 563: keep `list[str]` etc. lazy for Python 3.8 (sim-PC)
+
 import gzip
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
