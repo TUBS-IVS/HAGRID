@@ -43,9 +43,9 @@ from pathlib import Path
 
 import pandas as pd
 
+import pax_only
 from common import row
-
-PARCEL_PREFIX = "parcel_"  # hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON_PREFIX
+from pax_only import PARCEL_PREFIX  # noqa: F401  (re-exported; canonical def lives there)
 
 
 def has_shareduse_stats(run_dir, meta):
@@ -71,25 +71,57 @@ def extract(run_dir, prefix):
         row("freight", "mean_delivery_delay_s", float(stats["mean_delivery_delay_s"]), "s", "shareduse_channel_stats"),
     ]
 
+    pax_rides = None
+
     legs_f = run_dir / (prefix + ".output_drt_legs_drt.csv")
     if legs_f.exists():
         legs = pd.read_csv(legs_f, sep=";")
-        is_parcel = legs["personId"].astype(str).str.startswith(PARCEL_PREFIX)
-        pax = legs[~is_parcel]
-        parcel = legs[is_parcel]
+        pax, parcel = pax_only.split_parcels(legs, "personId")
+        pax_rides = int(len(pax))
 
-        rows.append(row("passenger", "drt_rides_pax_only", int(len(pax)),
+        rows.append(row("passenger", "drt_rides_pax_only", pax_rides,
                          "trips", "output_drt_legs pax-filter"))
         if len(pax):
             # Guard against an empty pax slice: pandas .mean()/.median() on
             # zero rows return NaN, which must never be emitted as a KPI
-            # (mirrors extract_freight's avg_max_load NaN guard).
+            # (mirrors extract_freight's avg_max_load NaN guard). Every column
+            # below is also presence-guarded: the legs CSV schema varies across
+            # MATSim versions, and a missing column must drop ONE KPI, never
+            # abort the extractor.
             rows += [
                 row("passenger", "wait_mean_pax_only",
                     float(pax["waitTime"].mean()), "s", "output_drt_legs pax-filter"),
                 row("passenger", "wait_median_pax_only",
                     float(pax["waitTime"].median()), "s", "output_drt_legs pax-filter"),
+                # NB estimator caveat: MATSim's own wait_p95 / percentage_WT_below_*
+                # come from its internal accumulators; these are pandas
+                # re-derivations over the same served-leg population. On a
+                # pure-pax run they agree to ~1e-4 -- far below the parcel
+                # contamination they replace -- and the `source` column keeps
+                # the basis switch visible in kpis_long.csv.
+                row("passenger", "wait_p95_pax_only",
+                    float(pax["waitTime"].quantile(0.95)), "s", "output_drt_legs pax-filter"),
+                row("passenger", "wait_below_10min_pax_only",
+                    float((pax["waitTime"] <= 600).mean()), "share", "output_drt_legs pax-filter"),
+                row("passenger", "wait_below_15min_pax_only",
+                    float((pax["waitTime"] <= 900).mean()), "share", "output_drt_legs pax-filter"),
             ]
+            if "inVehicleTravelTime" in legs.columns:
+                rows.append(row("passenger", "in_vehicle_time_mean_pax_only",
+                                 float(pax["inVehicleTravelTime"].mean()), "s",
+                                 "output_drt_legs pax-filter"))
+            if "travelDistance_m" in legs.columns:
+                rows.append(row("passenger", "drt_trip_distance_mean_pax_only",
+                                 float(pax["travelDistance_m"].mean()) / 1000.0, "km",
+                                 "output_drt_legs pax-filter"))
+                if "directTravelDistance_m" in legs.columns:
+                    direct_mean = float(pax["directTravelDistance_m"].mean())
+                    if direct_mean > 0:
+                        # Same ratio-of-means form as extract_drt's detour_factor
+                        # (distance_m_mean / directDistance_m_mean), not a mean of ratios.
+                        rows.append(row("passenger", "detour_factor_pax_only",
+                                         float(pax["travelDistance_m"].mean()) / direct_mean,
+                                         "ratio", "output_drt_legs pax-filter"))
 
         if "fareForLeg" in legs.columns:
             rows += [
@@ -99,4 +131,56 @@ def extract(run_dir, prefix):
                     float(parcel["fareForLeg"].sum()), "EUR", "output_drt_legs pax-filter"),
             ]
 
+    rows += _rejection_rows(run_dir, prefix, pax_rides)
+    rows += _modal_share_rows(run_dir, prefix)
     return rows
+
+
+def _rejection_rows(run_dir, prefix, pax_rides):
+    """Pax-only rejection count/rate from the per-request rejections CSV.
+
+    The stock `drt_rejections` (drt_customer_stats) counts every rejected DVRP
+    request, and on a Shared-Use run a chi-starved parcel can be rejected many
+    times over -- so the stock rejection RATE is not a passenger-service signal
+    at all. Filtered by the same parcel predicate, it is again."""
+    f = run_dir / (prefix + ".output_drt_rejections_drt.csv")
+    if not f.exists():
+        return []
+    rej = pd.read_csv(f, sep=";")
+    if "personIds" not in rej.columns:
+        return []
+    # joined=True: `personIds` holds one id for a single-person request and a joined
+    # list for a grouped one (a pax id can never carry the prefix, so substring is safe).
+    pax_rej, _ = pax_only.split_parcels(rej, "personIds", joined=True)
+    pax_rejections = int(len(pax_rej))
+    out = [row("passenger", "drt_rejections_pax_only", pax_rejections,
+               "requests", "output_drt_rejections pax-filter")]
+    if pax_rides is not None:
+        out.append(row("passenger", "drt_rejection_rate_pax_only",
+                        pax_rejections / max(1, pax_rides + pax_rejections),
+                        "share", "computed(output_drt_rejections pax-filter)"))
+    return out
+
+
+def _modal_share_rows(run_dir, prefix):
+    """Pax-only modal shares from output_trips.
+
+    Parcel-persons are a full subpopulation whose single trip is always `drt`,
+    so they inflate `modal_share_drt` (modestats) and deflate every other mode.
+    The shares therefore have to be recomputed TOGETHER -- correcting drt alone
+    would leave the set not summing to 1. Verified against modestats on a
+    parcel-free run: agreement to ~1e-4 (main-mode share over trips is the same
+    basis), which is negligible next to the contamination removed."""
+    f = run_dir / (prefix + ".output_trips.csv.gz")
+    if not f.exists():
+        return []
+    trips = pd.read_csv(f, sep=";")
+    if "person" not in trips.columns or "main_mode" not in trips.columns:
+        return []
+    pax, _ = pax_only.split_parcels(trips, "person")
+    if not len(pax):
+        return []
+    shares = pax["main_mode"].value_counts(normalize=True)
+    return [row("system", "modal_share_" + str(mode) + "_pax_only", float(share),
+                "share", "output_trips pax-filter")
+            for mode, share in shares.items()]

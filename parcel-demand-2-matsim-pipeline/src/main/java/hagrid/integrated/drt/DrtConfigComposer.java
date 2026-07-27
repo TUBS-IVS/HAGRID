@@ -37,6 +37,9 @@ import java.util.Set;
  */
 public final class DrtConfigComposer {
 
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger(DrtConfigComposer.class);
+
     // Native Lausitz DRT parameters (verbatim).
     private static final double STOP_DURATION_S = 60.0;
     private static final double MAX_WAIT_TIME_S = 1200.0;
@@ -202,8 +205,20 @@ public final class DrtConfigComposer {
                 .get(org.matsim.contrib.vsp.pt.fare.PtFareConfigGroup.MODULE_NAME);
         boolean faresComposed = ptFare != null && !ptFare.getParameterSets(
                 org.matsim.contrib.vsp.pt.fare.FareZoneBasedPtFareParams.SET_TYPE).isEmpty();
-        if (faresComposed && config.scoring().getModes().containsKey(TransportMode.pt)) {
+        boolean ptScoringPresent = config.scoring().getModes().containsKey(TransportMode.pt);
+        if (faresComposed && ptScoringPresent) {
             controler.addOverridingModule(new org.matsim.drt.PtAndDrtFareModule());
+            LOG.info("PtAndDrtFareModule installed - drt is fared like pt (VVO zone / Deutschlandtarif).");
+        } else {
+            // Skipping is a MODE-CHOICE-CHANGING outcome, not a detail: drt and pt then ride
+            // monetarily free while car keeps paying per km, which is exactly the asymmetry this
+            // module exists to remove. Say which precondition failed - silently taking this
+            // branch is how a run ends up with structurally over-attractive drt.
+            LOG.warn("PtAndDrtFareModule NOT installed (faresComposed={}, ptScoringParams={}):"
+                    + " drt and pt ride MONETARILY FREE while car pays per km, so mode choice is"
+                    + " biased toward drt. Expected on the Lausitz paths is both true - check"
+                    + " LausitzDrtConfigurator.composePtFareConfig and the base config's pt scoring.",
+                    faresComposed, ptScoringPresent);
         }
     }
 

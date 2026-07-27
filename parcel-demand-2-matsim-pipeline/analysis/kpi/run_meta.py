@@ -24,6 +24,11 @@ class RunMeta:
     jsprit_iterations: int
     fleet_size: Optional[int]
     prefix: str
+    #: "run_metadata.json" or "dir-name" -- which source the fields above came
+    #: from. The dir-name fallback cannot recover fleet_size (stays None, which
+    #: silently suppresses every economics cost KPI) nor operation_mode (defaults
+    #: to "conventional"), so callers must be able to see which one they got.
+    meta_source: str = "run_metadata.json"
 
 
 def load_run_meta(run_dir):
@@ -37,7 +42,15 @@ def load_run_meta(run_dir):
             operation_mode=j["operation_mode"], tag=j.get("tag", ""),
             matsim_iterations=int(j["matsim_iterations"]),
             jsprit_iterations=int(j["jsprit_iterations"]),
-            fleet_size=j.get("fleet_size"), prefix=j["run_id"])
+            fleet_size=j.get("fleet_size"), prefix=j["run_id"],
+            meta_source="run_metadata.json")
+    # writeRunMetadataSafely swallows any writer failure, so a missing file is a
+    # normal (and easy to miss) outcome of a completed run. Say so loudly: the
+    # degraded metadata silently changes which KPIs get emitted at all.
+    print("[run_meta] WARNING: no run_metadata.json in " + str(run_dir)
+          + " -- falling back to dir-name parsing; fleet_size unknown, so the"
+          + " economics cost KPIs will be omitted and operation_mode defaults"
+          + " to 'conventional'.")  # ASCII only
     return parse_legacy_dir_name(run_dir.name)
 
 
@@ -52,4 +65,4 @@ def parse_legacy_dir_name(name):
                    study_area=study, operation_mode="conventional", tag=tag,
                    matsim_iterations=int(m.group("it")),
                    jsprit_iterations=int(m.group("js")),
-                   fleet_size=None, prefix=run_id)
+                   fleet_size=None, prefix=run_id, meta_source="dir-name")

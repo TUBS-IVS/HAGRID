@@ -140,6 +140,11 @@ class SharedUseDispatchTest {
         p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, 3);
         p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE, SharedUse.segmentDwellSeconds(3));
         p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.B2C_WINDOW_END_S);
+        // Must mirror ParcelAgentGenerator's FULL attribute set: ParcelAttributes validates all
+        // four at module install, so a fixture missing one describes a population that cannot
+        // occur in a real run (and used to be papered over by a DOOR default in the KPI handler).
+        p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE,
+                DeliveryChannelResolver.Channel.DOOR.name());
 
         Plan plan = pf.createPlan();
         var depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, Id.createLinkId("l0"));

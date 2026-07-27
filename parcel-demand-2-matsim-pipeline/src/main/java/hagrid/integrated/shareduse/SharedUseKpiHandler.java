@@ -73,10 +73,11 @@ public final class SharedUseKpiHandler implements
 
     static final String FILE_NAME = "shareduse_channel_stats.csv";
 
-    // Static population snapshots (run-invariant - NOT cleared on reset).
-    private final Map<Id<Person>, Integer> loadByPerson = new LinkedHashMap<>();
-    private final Map<Id<Person>, String> channelByPerson = new LinkedHashMap<>();
-    private final Map<Id<Person>, Double> windowEndByPerson = new LinkedHashMap<>();
+    // Static population snapshots (run-invariant - NOT cleared on reset). Built STRICTLY:
+    // see ParcelAttributes for why a missing attribute aborts instead of defaulting.
+    private final Map<Id<Person>, Integer> loadByPerson;
+    private final Map<Id<Person>, String> channelByPerson;
+    private final Map<Id<Person>, Double> windowEndByPerson;
 
     // Per-request event state (CLEARED on reset - see reset(int)).
     /** requestId -> the one parcel-person id carried on its submission (parcel requests are single-person). */
@@ -91,22 +92,13 @@ public final class SharedUseKpiHandler implements
 
     @Inject
     public SharedUseKpiHandler(Population population, OutputDirectoryHierarchy controlerIO) {
-        population.getPersons().values().stream()
-                .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
-                .forEach(p -> {
-                    Object load = p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE);
-                    if (load instanceof Number n) {
-                        loadByPerson.put(p.getId(), n.intValue());
-                    }
-                    Object channel = p.getAttributes().getAttribute(SharedUse.CHANNEL_ATTRIBUTE);
-                    if (channel != null) {
-                        channelByPerson.put(p.getId(), channel.toString());
-                    }
-                    Object windowEnd = p.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE);
-                    if (windowEnd instanceof Number n) {
-                        windowEndByPerson.put(p.getId(), n.doubleValue());
-                    }
-                });
+        // STRICT snapshots (ParcelAttributes): previously a parcel-person without a LOAD
+        // attribute silently contributed 0 parcels to parcels_submitted/_delivered, and an
+        // unattributed CHANNEL landed in the DOOR bucket - both produce a plausible CSV that
+        // simply undercounts. Validating here aborts at controler startup instead.
+        this.loadByPerson = ParcelAttributes.loads(population);
+        this.channelByPerson = ParcelAttributes.channels(population);
+        this.windowEndByPerson = ParcelAttributes.windowEnds(population);
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
     }
 
@@ -199,13 +191,24 @@ public final class SharedUseKpiHandler implements
         for (Map.Entry<Id<Request>, Double> e : submittedAt.entrySet()) {
             Id<Request> requestId = e.getKey();
             Id<Person> personId = personByRequest.get(requestId);
-            int load = loadByPerson.getOrDefault(personId, 0);
+            // Strict: the constructor validated every parcel-person, and personByRequest is
+            // written together with submittedAt, so both lookups are total. A miss would mean
+            // a parcel request whose person is unknown here - counting it as 0 parcels / DOOR
+            // (the old behaviour) would quietly deflate every parcel KPI below.
+            Integer loadOrNull = loadByPerson.get(personId);
+            String channel = channelByPerson.get(personId);
+            if (loadOrNull == null || channel == null) {
+                throw new IllegalStateException("parcel request " + requestId + " maps to person "
+                        + personId + ", which is not in the population snapshot - cannot attribute"
+                        + " its parcels or delivery channel.");
+            }
+            int load = loadOrNull;
             parcelsSubmitted += load;
 
-            if ("LOCKER".equals(channelByPerson.get(personId))) {
+            if (DeliveryChannelResolver.Channel.LOCKER.name().equals(channel)) {
                 lockerLoad += load;
             } else {
-                doorLoad += load; // DOOR, or an unattributed fallback -> door-default
+                doorLoad += load;   // the only remaining channel (ParcelAttributes validates the set)
             }
 
             Double deliveredTime = deliveredAt.get(requestId);
@@ -214,11 +217,13 @@ public final class SharedUseKpiHandler implements
                 delaySumS += deliveredTime - e.getValue();
             } else if (!rejectedFinal.contains(requestId)) {
                 // Undelivered and not a hard reject -> classify by its own delivery window.
-                Double windowEnd = windowEndByPerson.get(personId);
-                if (windowEnd != null && windowEnd <= lastEventTime) {
+                // windowEndByPerson is total over the same validated person set as the two
+                // lookups above, so there is no "window unknown" bucket any more: the split is
+                // purely deadline-passed vs sim-ended-first.
+                if (windowEndByPerson.get(personId) <= lastEventTime) {
                     segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
                 } else {
-                    segmentsPendingOpen++;   // sim ended before the deadline (or window unknown)
+                    segmentsPendingOpen++;   // sim ended before the deadline
                 }
             }
         }

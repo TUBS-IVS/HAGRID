@@ -24,7 +24,6 @@ import org.matsim.contrib.dvrp.load.DvrpLoadType;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeModule;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -58,8 +57,9 @@ import java.util.Map;
 public final class SharedUseModule extends AbstractDvrpModeModule {
 
     private final DrtConfigGroup drtCfg;
-    /** χ-gate threshold (seconds of max acceptable added vehicle time per parcel
-     *  insertion); consumed by the QSim-half {@link ChiGateInsertionCostCalculator}. */
+    /** χ-gate threshold (seconds of max acceptable DETOUR-ONLY added vehicle time per
+     *  parcel insertion — the request's own dwell is subtracted; &lt; 0 = gate hard-closed,
+     *  rejects all parcels); consumed by the QSim-half {@link ChiGateInsertionCostCalculator}. */
     private final double chiThreshold;
 
     public SharedUseModule(DrtConfigGroup drtCfg, double chiThreshold) {
@@ -74,21 +74,12 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
         // (dropoff) from the population; parcel-persons are static, so the snapshot stays valid.
         bindModal(PassengerStopDurationProvider.class).toProvider(modalProvider(getter -> {
             Population population = getter.get(Population.class);
-            Map<Id<Person>, Integer> loadById = new HashMap<>();
-            Map<Id<Person>, Double> dwellById = new HashMap<>();
-            population.getPersons().values().stream()
-                    .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
-                    .forEach(p -> {
-                        Object load = p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE);
-                        if (load instanceof Number n) {
-                            loadById.put(p.getId(), n.intValue());
-                        }
-                        Object dwell = p.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE);
-                        if (dwell instanceof Number n) {
-                            dwellById.put(p.getId(), n.doubleValue());
-                        }
-                    });
-            return new SharedUseStopDurationProvider(drtCfg.getStopDuration(), loadById, dwellById);
+            // STRICT: a parcel-person without a usable load/dwell attribute aborts the run here
+            // (eager singleton -> at startup). The previous lenient snapshot let such a person
+            // through and the provider then dwelled it as a single parcel, quietly understating
+            // both depot pickup and door service. See ParcelAttributes.
+            return new SharedUseStopDurationProvider(drtCfg.getStopDuration(),
+                    ParcelAttributes.loads(population), ParcelAttributes.dwells(population));
         })).asEagerSingleton();
 
         bindModal(StopTimeCalculator.class).toProvider(modalProvider(getter ->
@@ -149,32 +140,41 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
             @Override
             protected void configureQSim() {
                 // χ-gate wraps the native DefaultInsertionCostCalculator (constructed exactly as
-                // DrtModeOptimizerQSimModule does) and rejects a parcel insertion whose raw
-                // totalTimeLoss exceeds χ; pax and sub-χ parcels keep the delegate's cost.
+                // DrtModeOptimizerQSimModule does) and rejects a parcel insertion whose DETOUR-ONLY
+                // time loss (totalTimeLoss minus the request's own dwell, clamped at 0) exceeds χ;
+                // χ<0 = hard-closed (rejects all parcels). The modal DvrpLoadType (controller-scope,
+                // visible from the QSim child injector) lets the gate read the request's parcel
+                // count off its DvrpLoad. Pax and kept parcels keep the delegate's cost.
                 bindModal(InsertionCostCalculator.class).toProvider(modalProvider(getter ->
                         new ChiGateInsertionCostCalculator(
                                 new DefaultInsertionCostCalculator(
                                         getter.getModal(CostCalculationStrategy.class),
                                         drtCfg.addOrGetDrtOptimizationConstraintsParams()
                                                 .addOrGetDefaultDrtOptimizationConstraintsSet()),
-                                chiThreshold)));
+                                chiThreshold,
+                                getter.getModal(DvrpLoadType.class))));
 
                 // Parcel-only pending queue: pax rejections stay native-immediate; parcels retry
                 // until the global maxRequestAge OR their own per-request delivery window (M5).
                 // Must be a singleton — it holds the shared pending-queue state.
                 bindModal(DrtRequestInsertionRetryQueue.class).toProvider(modalProvider(getter -> {
                     Population population = getter.get(Population.class);
-                    Map<Id<Person>, Double> windowEndById = new HashMap<>();
-                    population.getPersons().values().stream()
-                            .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
-                            .forEach(p -> {
-                                Object windowEnd = p.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE);
-                                if (windowEnd instanceof Number n) {
-                                    windowEndById.put(p.getId(), n.doubleValue());
-                                }
-                            });
+                    // STRICT (see ParcelAttributes): a parcel-person without a delivery window
+                    // used to be treated as "never expires", silently disabling M5 for it.
+                    Map<Id<Person>, Double> windowEndById = ParcelAttributes.windowEnds(population);
+                    // NOT orElseGet(new DrtRequestInsertionRetryParams()): the MATSim default
+                    // is maxRequestAge=0, i.e. NO RETRY. Substituting it would silently turn
+                    // every chi-rejected parcel into a hard rejection, disable the M5 per-request
+                    // delivery window this queue exists to enforce, and move the whole delta
+                    // signal from segments_window_expired to segments_rejected_final — a wrong
+                    // result with no crash. The params are installed by
+                    // DrtConfigComposer.composeSharedUse (86400 s / 300 s); their absence means
+                    // the Shared-Use config composition was skipped, which is a wiring bug.
                     DrtRequestInsertionRetryParams retryParams = drtCfg.getDrtRequestInsertionRetryParams()
-                            .orElseGet(DrtRequestInsertionRetryParams::new);
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Shared-Use requires drtRequestInsertionRetryParams on mode '"
+                                    + getMode() + "'. Call DrtConfigComposer.composeSharedUse(config)"
+                                    + " before installing SharedUseModule."));
                     return new ParcelOnlyRetryQueue(retryParams, windowEndById);
                 })).asEagerSingleton();
             }

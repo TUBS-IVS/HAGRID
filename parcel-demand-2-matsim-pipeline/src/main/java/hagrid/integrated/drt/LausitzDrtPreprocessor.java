@@ -4,7 +4,6 @@ import hagrid.HagridConfig;
 import hagrid.integrated.PopulationClipper;
 import hagrid.integrated.freight.LmdDemandReader;
 import hagrid.integrated.shareduse.ParcelAgentGenerator;
-import hagrid.integrated.shareduse.SharedUse;
 import hagrid.simulation.HAGRIDSimulationConfig;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
@@ -170,10 +169,11 @@ public final class LausitzDrtPreprocessor {
 
         // Shared-Use (cargo hitching) repurposes 2 of the base vehicle's seats for parcel
         // volume; every other concept keeps the full base-vehicle seat count (rev. 2026-07-20 —
-        // Baseline base vehicle is now 10 seats, see SharedUse.BASE_SEATS javadoc).
+        // Baseline base vehicle is now 10 seats, see SharedUse.BASE_SEATS javadoc). The rule
+        // lives in DrtInputsFingerprint so the staleness guard derives it from the same place.
         HagridConfig.Scenario scenario = HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
         boolean sharedUse = scenario == HagridConfig.Scenario.DRT_SHAREDUSE;
-        int capacity = sharedUse ? SharedUse.SEATS : SharedUse.BASE_SEATS;
+        int capacity = DrtInputsFingerprint.expectedCapacity(cfg);
 
         run(
                 cfg.getLausitzNetworkRaw(),
@@ -224,5 +224,14 @@ public final class LausitzDrtPreprocessor {
                     r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
             PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());
         }
+
+        // Record WHAT these artifacts were built from. The run id encodes only
+        // CONCEPT_date[_tag], so without this a later run with a different fleetSize /
+        // seat count / noParcels setting would silently reuse them; validateInputFiles()
+        // compares this fingerprint and aborts on drift.
+        Path fingerprint = Path.of(cfg.getDrtInputsFingerprint());
+        DrtInputsFingerprint.write(cfg, fingerprint);
+        LOG.info("DRT inputs fingerprint (fleetSize={}, capacity={}, noParcels={}) -> {}",
+                cfg.getFleetSize(), capacity, cfg.isNoParcels(), fingerprint);
     }
 }

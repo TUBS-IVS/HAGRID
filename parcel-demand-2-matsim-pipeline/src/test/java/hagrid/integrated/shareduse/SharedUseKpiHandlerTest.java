@@ -237,10 +237,20 @@ class SharedUseKpiHandlerTest {
 
     // -------------------------------------------------------------------------
 
+    /**
+     * A parcel-person with the FULL attribute set ParcelAgentGenerator writes. The window-end
+     * default matters: the handler now builds its snapshots via {@link ParcelAttributes}, which
+     * refuses a parcel-person missing any of them rather than defaulting (a missing load used to
+     * count as 0 parcels, a missing channel as DOOR). Tests that care about a specific deadline
+     * use {@link #personWithWindow}; everyone else gets the B2C default, so an undelivered
+     * segment lands in pending_open unless the test drives the clock past 20:00.
+     */
     private static Person person(Population population, String id, int load, String channel) {
         Person p = population.getFactory().createPerson(Id.createPersonId(id));
         p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, load);
         p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, channel);
+        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.B2C_WINDOW_END_S);
+        p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE, SharedUse.segmentDwellSeconds(load));
         population.addPerson(p);
         return p;
     }

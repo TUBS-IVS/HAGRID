@@ -101,3 +101,53 @@ def test_write(tmp_path):
     lines = out.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "run_id;series;hour;value;unit"
     assert lines[1].startswith("DRT_BASELINE_13052025_married120;")
+
+
+def _seed_legs(dirpath, prefix, rows):
+    (dirpath / (prefix + ".output_drt_legs_drt.csv")).write_text(
+        "submissionTime;departureTime;personId;waitTime\n" + "".join(rows), encoding="utf-8")
+
+
+def test_hourly_series_exclude_parcel_legs(tmp_path):
+    """The hourly passenger charts must not count parcel_ phantom legs -- otherwise
+    the Shared-Use dashboard's charts contradict its own (pax-only corrected) tiles.
+    Fixture: 2 pax legs in hour 8, 3 parcel legs in the same hour."""
+    _seed_legs(tmp_path, "SU", [
+        "28000;28800;p1;100\n",
+        "28000;28900;p2;200\n",
+        "28000;29000;parcel_dhl_1_B2C;9999\n",
+        "28000;29100;parcel_dhl_2_B2C;9999\n",
+        "28000;29200;parcel_dhl_3_B2C;9999\n",
+    ])
+
+    ts = {(r["series"], r["hour"]): r["value"] for r in extract(tmp_path, "SU")}
+
+    assert ts[("drt_rides", 8)] == 2
+    assert ts[("drt_wait_mean", 8)] == pytest.approx(150.0)   # not dragged up by 9999
+    # the mixed series survives alongside it, explicitly named
+    assert ts[("drt_rides_incl_parcels", 8)] == 5
+
+
+def test_incl_parcels_series_absent_without_parcels(tmp_path):
+    """Baseline runs must keep byte-identical series names -- no spurious twins."""
+    _seed_legs(tmp_path, "BASE", ["28000;28800;p1;100\n", "28000;28900;p2;200\n"])
+
+    series = {r["series"] for r in extract(tmp_path, "BASE")}
+
+    assert "drt_rides" in series
+    assert not any(s.endswith("_incl_parcels") for s in series)
+
+
+def test_rejection_series_excludes_parcel_retries(tmp_path):
+    """A chi-starved parcel is rejected repeatedly; unfiltered, this series would
+    measure parcel retries rather than passenger service."""
+    (tmp_path / "REJ.output_drt_rejections_drt.csv").write_text(
+        "time;personIds;requestId;cause\n"
+        "28800;p1;drt_1;no_insertion_found\n"
+        "28900;parcel_dhl_1_B2C;drt_2;no_insertion_found\n"
+        "29000;parcel_dhl_1_B2C;drt_3;no_insertion_found\n",
+        encoding="utf-8")
+
+    ts = {(r["series"], r["hour"]): r["value"] for r in extract(tmp_path, "REJ")}
+
+    assert ts[("drt_rejections", 8)] == 1

@@ -90,10 +90,16 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
     Pax-only-Rebalancing (M7), präzises „passenger-primary"-Wording (M8), δ-Konvergenzcheck (M9),
     not-at-home beidseitig 100 % konsistent (M10), marginale Joint-Cost-Allokation definiert (M11).
     _(added 2026-07-20)_
-  - **Re-Baseline auf 10 Sitze (Folge von M1) — Sim-Run ausstehend.** Die existierenden married-Runs
-    (married120/250) fahren cap=8; für den Headline-Vergleich Baseline vs. Shared-Use muss die **Baseline
-    auf 10 Sitze** neu laufen (Shared-Use = 8). Kein Code-Problem, ein Overnight-Run. User 2026-07-20:
-    **nicht jetzt.** _(added 2026-07-20)_
+  - **Re-Baseline auf 10 Sitze (Folge von M1) — Sim-Run ausstehend. ENTSCHEIDUNG OFFEN.** Die existierenden
+    married-Runs (married120/250) fahren cap=8; für den Headline-Vergleich Baseline vs. Shared-Use muss die
+    **Baseline auf 10 Sitze** neu laufen (Shared-Use = 8). Kein Code-Problem, ein Overnight-Run.
+    User 2026-07-20: **nicht jetzt.**
+    **Statusänderung 2026-07-27:** aus „irgendwann" ist „vor dem nächsten Baseline-Run" geworden. Alle 11
+    Fleet-Dateien in `hagrid-output/*/` tragen noch `capacity="8"` (geschrieben vor der 8→10-Revision), und
+    der neue `DrtInputsFingerprint`-Guard **blockiert** einen DRT_BASELINE-Rerun darauf jetzt mit
+    `prepared=8 but run wants=10`, statt ihn wie bisher still auf 8 Sitzen laufen zu lassen. Nächster
+    Baseline-Run braucht also zwingend ein vorheriges `PrepareLausitzDrtInputs`. _(added 2026-07-20,
+    aktualisiert 2026-07-27)_
   - **DOF-Kontrollarm (M12) — langfristig / Paper-Extension.** „Dedicated Online Freight" = Shared-Use-Dispatch
     + Fahrzeug, nur Pakete, keine Pax. Isoliert den **reinen** Integrationseffekt (Shared-Use vs. DOF) vom
     Tooling-/Fahrzeug-Effekt (DOF vs. offline-Baseline) und vervollständigt eine faktorielle Zerlegung
@@ -316,9 +322,26 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
 
 Ergebnis eines gezielten Durchgangs durch `hagrid/integrated/**` + `analysis/kpi/` nach
 Fallbacks, die greifen statt zu scheitern und dabei still falsche Zahlen erzeugen. Die vier
-scharfen Befunde sind erledigt (siehe `## Erledigt`); hier stehen die verbleibenden.
-Positiv-Befund am Rande: im gesamten `integrated`-Baum wirft **jedes** `catch` weiter — es gibt
-dort kein Exception-Swallowing.
+scharfen Befunde sowie M2 (strikte Parcel-Attribute) und M6 (Fare-Modul-Skip) sind erledigt
+(siehe `## Erledigt`); hier stehen die verbleibenden. Positiv-Befund am Rande: im gesamten
+`integrated`-Baum wirft **jedes** `catch` weiter — es gibt dort kein Exception-Swallowing.
+
+**Reihenfolge-Hinweis (2026-07-27):** drei der Punkte hängen an einer Nutzer-Entscheidung und
+sind unten mit **ENTSCHEIDUNG OFFEN** markiert (`IntegratedScenarioConfig`, `ct_cep_size_s`, sowie
+die Re-Baseline unter `[H]` Shared-Use). Der Rest ist mechanisch und kann jederzeit am Stück
+laufen — siehe den Sammelposten „mechanischer Restblock" direkt hier drunter.
+
+- **`[M]` Mechanischer Restblock des Fallback-Audits (keine Entscheidung nötig)** — kann in einem
+  Rutsch erledigt werden, wenn gerade Zeit ist: den Kompositions-Zweig in `DrtConfigComposer:63`
+  loggen, den Depot-Zonen-Fallback in `ReturnToDepotRebalancingModule:94-106` loggen,
+  `HagridPaths.copyIfMissing` gegen veraltete `shared/`-Inputs absichern, sowie der Low-Tier-
+  Sammelposten (tote Defaults in `LmdCarrierBuilder`, `PopulationClipper`-Anker-Semantik,
+  geschluckte Log-Verzeichnis-Exceptions, `parseScenario`-Typo-Fallback, `GeoUtils` `Coord(0,0)`,
+  irreführende `DrtNetworkPreparer`-Kommentare) und die Parse-Assertions für Shapefile/CSV.
+  Jeder Einzelpunkt steht unten bzw. unter Low mit `file:line`. **Bewusst ausgenommen:** M8
+  (Kostenbasis-Provenance in `extract_freight.py`) — das sitzt in `economics.py`, das laut
+  `[H]` Kostenfunktion-Review ohnehin ersetzt wird; jetzt Provenance einbauen und dann wegwerfen
+  wäre Doppelarbeit. _(added 2026-07-27)_
 
 - **`[M]` Locker-Kanal ist per Konstruktion tot + `IntegratedScenarioConfig` ist totes Config-Objekt** —
   `ParcelAgentGenerator.java:59` hartcodiert `new DeliveryChannelResolver(List.of(), 500.0)`,
@@ -329,7 +352,12 @@ dort kein Exception-Swallowing.
   Run — liest sich aber wie aktive Konfiguration. Locker selbst bleibt Phase-2 (siehe
   `[L]` Phase-2-Deferrals); hier geht es nur darum, dass Javadoc und totes Config-Objekt
   aktuell täuschen. Verwandt: `[M]` Autonomie-Switch-Plan (dort ist `operation_mode` in
-  `RunMetadataWriter.java:31` hart auf `"conventional"`). _(added 2026-07-27)_
+  `RunMetadataWriter.java:31` hart auf `"conventional"`).
+  **⚠️ ENTSCHEIDUNG OFFEN (gestellt 2026-07-27, noch nicht beantwortet):** kommt der Autonomie-Switch
+  (§4.4) in 1c/1d, ist `IntegratedScenarioConfig` sein designierter Ort → **verdrahten**; kommt er
+  nicht → **löschen**, damit sie nicht länger wie lebende Konfiguration aussieht. Das
+  Locker-Javadoc wird in beiden Fällen korrigiert (unabhängig, kann sofort passieren).
+  _(added 2026-07-27)_
 
 - **`[M]` Ungeschützter Kompositions-Zweig im DRT-Config-Aufbau** —
   `DrtConfigComposer.java:63` `if (multi.getModalElements().isEmpty())`: bringt die Base-Config
@@ -338,6 +366,16 @@ dort kein Exception-Swallowing.
   Feuert heute nicht, loggt aber auch nichts. Vorschlag: gewählten Zweig loggen, oder werfen
   wenn nicht-leer aber die erwarteten Keys fehlen. (Der zweite Teil dieses Punkts — der stille
   `PtAndDrtFareModule`-Skip — ist erledigt, siehe `## Erledigt`.) _(added 2026-07-27)_
+
+- **`[M]` `ct_cep_size_s` im LMD-Flottenmix — ja oder nein? ENTSCHEIDUNG OFFEN.**
+  `lmd-vehicle-types.xml` enthält drei Van-Typen und **alle drei werden eingesetzt** (je 56
+  Fahrzeuge in `married250` verifiziert), obwohl `HagridPaths.java:337` „ct_cep_size_m / _l only"
+  dokumentiert. Kein Fallback, aber ein realer Effekt auf den Flotten-Mix — und damit auf den
+  **LMD-Vergleichsarm**, gegen den Shared-Use gemessen wird (deshalb 2026-07-27 von `[L]` auf
+  `[M]` hochgestuft). Entweder `_s` bewusst aufnehmen → Doku korrigieren, oder aus der Typdatei
+  entfernen → die LMD-Zahlen ändern sich und die married-Runs müssten neu. Nebeneffekt:
+  `LmdCarrierBuilder.jitterSigmaMinutes:160-163` gibt `_s` per Durchfall die 15-Min-Sigma des
+  „m"-Zweigs. _(added 2026-07-27)_
 
 - **`[M]` Depot-Zonenzuordnung ohne Warnung** — `ReturnToDepotRebalancingModule.java:94-106`:
   ein Depot außerhalb aller Rebalancing-Zonen hängt sich still an die nächstgelegene
@@ -442,12 +480,8 @@ dort kein Exception-Swallowing.
   (`LausitzDrtPreprocessor.java:80`) mit anderer Semantik (Vollnetz bleibt, drt kommt auf
   Car-Links). _(added 2026-07-27)_
 
-- **`[L]` `ct_cep_size_s` Doku/Daten-Divergenz** — `lmd-vehicle-types.xml` enthält drei Van-Typen
-  und alle drei werden eingesetzt (je 56 Fahrzeuge in `married250` verifiziert), obwohl
-  `HagridPaths.java:337` „ct_cep_size_m / _l only" dokumentiert. Kein Fallback, aber ein realer
-  Effekt auf den Flotten-Mix — entweder `_s` bewusst aufnehmen (dann Doku korrigieren) oder aus
-  der Typdatei entfernen. Nebeneffekt: `LmdCarrierBuilder.jitterSigmaMinutes:160-163` gibt `_s`
-  per Durchfall die 15-Min-Sigma des „m"-Zweigs. _(added 2026-07-27)_
+_(Der ursprünglich hier eingeordnete Punkt `ct_cep_size_s` ist am 2026-07-27 nach **Medium**
+hochgestuft worden — er betrifft den LMD-Vergleichsarm der 1c-Studie, nicht nur eine Notiz.)_
 
 ---
 

@@ -109,10 +109,12 @@ public class HAGRIDSimulationConfig {
     private final boolean kpiDashboard;
 
     /**
-     * χ-gate threshold (seconds): the maximum acceptable added vehicle time (detour) for a
-     * single parcel insertion. Only meaningful for {@code DRT_SHAREDUSE}, where it is passed
-     * to {@code SharedUseModule}'s {@code ChiGateInsertionCostCalculator}; harmless for every
-     * other concept.
+     * χ-gate threshold (seconds): the maximum acceptable DETOUR-ONLY added vehicle time for a
+     * single parcel insertion — the gate subtracts the request's own depot-pickup + door-dropoff
+     * dwell from the raw {@code totalTimeLoss} before comparing (rev. 2026-07-27). &lt; 0 = gate
+     * closed (rejects all parcels; leakage-control probe). Only meaningful for
+     * {@code DRT_SHAREDUSE}, where it is passed to {@code SharedUseModule}'s
+     * {@code ChiGateInsertionCostCalculator}; harmless for every other concept.
      */
     private final double chiThreshold;
 
@@ -237,7 +239,8 @@ public class HAGRIDSimulationConfig {
      * @param drtWithFreight   whether a DRT run also carries the offline-routed LMD carriers
      *                         (married Baseline); ignored for non-DRT concepts
      * @param kpiDashboard     whether to build the Python KPI dashboard after the run completes
-     * @param chiThreshold     χ-gate threshold (seconds); only meaningful for {@code DRT_SHAREDUSE}
+     * @param chiThreshold     χ-gate threshold (seconds, detour-only; &lt; 0 = gate closed,
+     *                         rejects all parcels); only meaningful for {@code DRT_SHAREDUSE}
      * @throws NullPointerException     if concept, date, or studyArea is null
      * @throws IllegalArgumentException if maxIterations &lt; 0; if maxIterations == 0 and the concept is not
      *                                  {@code LMD_BASELINE}; or if jspritIterations is not positive (&gt;= 1)
@@ -561,8 +564,10 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Returns the χ-gate threshold (seconds): the maximum acceptable added vehicle time for a
-     * single parcel insertion. Only meaningful for {@code DRT_SHAREDUSE} (default 600.0).
+     * Returns the χ-gate threshold (seconds): the maximum acceptable DETOUR-ONLY added vehicle
+     * time for a single parcel insertion (the request's own dwell is subtracted by the gate).
+     * &lt; 0 = gate closed (rejects all parcels; leakage-control probe). Only meaningful for
+     * {@code DRT_SHAREDUSE} (default 600.0).
      *
      * @return chi threshold in seconds
      */
@@ -670,6 +675,11 @@ public class HAGRIDSimulationConfig {
         return paths.railTransitVehiclesFiltered();
     }
 
+    /** Fingerprint of the prepared DRT inputs (written by {@code LausitzDrtPreprocessor}). */
+    public String getDrtInputsFingerprint() {
+        return paths.drtInputsFingerprint();
+    }
+
     /** Provider-tagged synthetic LMD depot CSV (one row per LSP). */
     public String getLmdDepotCsv() {
         return paths.lmdDepotCsv();
@@ -738,10 +748,21 @@ public class HAGRIDSimulationConfig {
                 checkFile(Path.of(getLmdVehicleTypes()), "LMD vehicle types", missing);
                 checkFile(Path.of(getLausitzNetworkRaw()), "Lausitz network (raw, jsprit routing)", missing);
             }
+
+            // Existence is not enough: the prepared artifacts above are keyed only by
+            // CONCEPT_date[_tag], so inputs prepared for a different fleetSize / seat count /
+            // noParcels setting live at exactly the same paths. Only run this once the files
+            // are actually there — otherwise a first-time user gets a confusing drift report
+            // on top of the plain "missing file" list.
+            if (missing.isEmpty()) {
+                missing.addAll(hagrid.integrated.drt.DrtInputsFingerprint.mismatches(
+                        this, Path.of(getDrtInputsFingerprint())));
+            }
         }
 
         if (!missing.isEmpty()) {
-            throw new IllegalStateException("Missing required input files:\n" + String.join("\n", missing));
+            throw new IllegalStateException("Missing or stale required inputs:\n"
+                    + String.join("\n", missing));
         }
 
         if (getOutputDirectory().toFile().exists()) {

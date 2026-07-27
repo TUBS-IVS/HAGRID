@@ -44,18 +44,39 @@ public final class SharedUseStopDurationProvider implements PassengerStopDuratio
 
     double pickupDurationFor(Id<Person> personId) {
         if (SharedUse.isParcelPerson(personId.toString())) {
-            Integer load = parcelLoadById.get(personId);
-            return SharedUse.depotPickupSeconds(load != null ? load : 1);
+            return SharedUse.depotPickupSeconds(require(parcelLoadById, personId, "load"));
         }
         return paxStopDuration;
     }
 
     double dropoffDurationFor(Id<Person> personId) {
         if (SharedUse.isParcelPerson(personId.toString())) {
-            Double dwell = parcelDwellById.get(personId);
-            return dwell != null ? dwell : SharedUse.segmentDwellSeconds(1);
+            return require(parcelDwellById, personId, "dwell");
         }
         return 0.0;
+    }
+
+    /**
+     * Snapshot lookup that refuses to guess.
+     *
+     * <p>The previous fallbacks ("1 parcel" / {@code segmentDwellSeconds(1)}) turned a parcel
+     * missing from the snapshot into the CHEAPEST possible request — 30 s at the depot instead
+     * of up to {@value SharedUse#MAX_PICKUP_DURATION_S} s, 120 s at the door instead of up to
+     * 900 s — so the insertion search under-priced it and every dwell-derived KPI came out
+     * optimistic, with nothing in the log to show for it.
+     *
+     * <p>{@link ParcelAttributes} validates the whole population at install time, and
+     * parcel-persons are static (no plan innovation), so a miss here can only mean the
+     * snapshot-is-complete invariant broke — which must surface, not be absorbed.
+     */
+    private static <T> T require(Map<Id<Person>, T> snapshot, Id<Person> personId, String what) {
+        T value = snapshot.get(personId);
+        if (value == null) {
+            throw new IllegalStateException("parcel-person " + personId + " is missing from the "
+                    + what + " snapshot taken at module install. Shared-Use cannot price its stop"
+                    + " without guessing; the population must have changed after install.");
+        }
+        return value;
     }
 
     @Override
