@@ -4,8 +4,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("parseScenario: chiThreshold option (DRT_SHAREDUSE)")
+@DisplayName("parseScenario: chiThreshold + noParcels options (DRT_SHAREDUSE)")
 class ParseScenarioSharedUseTest {
 
     @Test
@@ -22,5 +24,21 @@ class ParseScenarioSharedUseTest {
         HAGRIDSimulationConfig def = SimulationRunnerUtils.parseScenarios(new String[]{
                 "concept=drt_shareduse,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA"}).get(0);
         assertEquals(600.0, def.getChiThreshold(), 1e-9);
+    }
+
+    @Test
+    @DisplayName("noParcels defaults to false when omitted")
+    void noParcelsDefaultsFalse() {
+        HAGRIDSimulationConfig def = SimulationRunnerUtils.parseScenarios(new String[]{
+                "concept=drt_shareduse,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA"}).get(0);
+        assertFalse(def.isNoParcels(), "noParcels must default to false (parcels injected)");
+    }
+
+    @Test
+    @DisplayName("noParcels=true parses to the leakage-control switch")
+    void noParcelsParsesTrue() {
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenarios(new String[]{
+                "concept=drt_shareduse,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,noParcels=true"}).get(0);
+        assertTrue(cfg.isNoParcels(), "noParcels=true must enable the 8-seat leakage control");
     }
 }

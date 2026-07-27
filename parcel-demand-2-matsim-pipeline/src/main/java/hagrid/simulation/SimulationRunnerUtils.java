@@ -141,6 +141,10 @@ public final class SimulationRunnerUtils {
         // chi-gate threshold (seconds): max acceptable added vehicle time per parcel insertion.
         // Only consumed by DRT_SHAREDUSE (SharedUseModule); harmless default for other concepts.
         double chiThreshold = nonNegDouble(map.getOrDefault("chiThreshold", "600.0"), "chiThreshold");
+        // Reference-run switch: skip parcel injection for a DRT_SHAREDUSE run (8-seat DRT with the
+        // Shared-Use module stack installed but inert). Leakage control for the χ→0 validation
+        // (Task 10 / D10 (e)). Harmless default for every other concept (none inject parcels).
+        boolean noParcels = bool(map.getOrDefault("noParcels", "false"), "noParcels");
 
         // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
         boolean requiresLausitz;
@@ -175,12 +179,12 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
-                drtWithFreight, kpiDashboard, chiThreshold);
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels);
     }
 
     /**
@@ -292,8 +296,14 @@ public final class SimulationRunnerUtils {
                                 .getModalElements().iterator().next();
                 controler.addOverridingModule(
                         new hagrid.integrated.shareduse.SharedUseModule(drtCfg, cfg.getChiThreshold()));
-                LOG.info("SHARED-USE run '{}' (DRT fleet {} carrying parcels, chiThreshold={}s).",
-                        cfg.getRunId(), cfg.getFleetSize(), cfg.getChiThreshold());
+                if (cfg.isNoParcels()) {
+                    LOG.info("SHARED-USE run '{}' (DRT fleet {}, noParcels=true - 8-seat leakage "
+                            + "control, module stack inert, chiThreshold={}s ignored).",
+                            cfg.getRunId(), cfg.getFleetSize(), cfg.getChiThreshold());
+                } else {
+                    LOG.info("SHARED-USE run '{}' (DRT fleet {} carrying parcels, chiThreshold={}s).",
+                            cfg.getRunId(), cfg.getFleetSize(), cfg.getChiThreshold());
+                }
             } else {
                 LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             }
