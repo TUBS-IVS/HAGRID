@@ -215,6 +215,51 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
   ins Modell + Dashboard. Noch **kein Design/Spec** — Brainstorming-Kandidat. Berührt Autonomie-Switch
   (E-Antrieb) und die Kostenfunktion.
   _(added 2026-07-14)_
+  - **Recherche 2026-07-27: MATSim emissions contrib ist der richtige Weg, und matsim-lausitz
+    bringt die Verkabelung schon mit.** `LausitzScenario.setEmissionsConfigs()` (HBEFA-2020-Dateien,
+    verschlüsselt auf VSP-SVN, `tryDetailedThenTechnologyAverageThenAverageTable`) +
+    `prepareVehicleTypesForEmissionAnalysis()` (car→PC, freight→HGV, ride/bike/pt→NON_HBEFA) +
+    Emissions-Dashboard (`AirPollutionAnalysis`: total/per-link/per-m/Grid-Raster/per-vehicle-type)
+    existieren dort bereits; Berechnung läuft **offline auf den Events** → keine Re-Runs nötig.
+    **Gate: HBEFA-Lizenz** — Entschlüsselungspasswort (`MATSIM_DECRYPTION_PASSWORD`) gibt VSP nur
+    gegen Lizenznachweis; klären, ob Institut/TU BS eine HBEFA-Lizenz hat (Langläufer, früh anstoßen).
+    **Vorab festzuziehen:** HBEFA-Attribute für unsere eigenen Fahrzeugtypen (DRT-Flotte, LMD-Vans:
+    Diesel-LCV vs. ZEV/BEV pro Szenario) — der Lausitz-Switch kennt sie nicht. **Output:** Tank-to-Wheel-
+    Auspuffemissionen (CO2_TOTAL/CO2_rep TTW; NOx, NO2, PM10/PM2.5 inkl. non-exhaust, BC, CO, CH4, N2O,
+    NH3, SO2, PN, Benzol, FC/FC_MJ) **plus** `CO2e` (lt. HBEFA auf WTW-Basis); TTW-CO₂e alternativ selbst
+    aus CO2+CH4+N2O×GWP; BEV-Strom-Vorkette ggf. mit dem existierenden WTT-Ansatz aus
+    `hagrid_output_analysis/emissions.py` (Hannover-Legacy) ergänzen. _(added 2026-07-27)_
+  - **Lizenzfrage (2026-07-27, User klärt):** HBEFA = EIN Produkt (Access-App + Faktoren-DB),
+    „einfaches Nutzungsrecht" reicht für Forschung+Paper (aggregierte Ergebnisse publizieren ok;
+    kommerzielle Lizenz nur bei Weiterveröffentlichung der Faktoren/Software-Integration).
+    Preise 5.x: Standard 350 € / Studentenversion 70 € (setzt aktuelle **Immatrikulation** voraus;
+    für Institutsprojekt Grauzone → bei INFRAS hbefa@infras.ch anfragen; sauberste Lösung:
+    Standard-Lizenz übers Institut — **zuerst fragen, ob Institut schon eine hat**). VSP-Passwort
+    (`MATSIM_DECRYPTION_PASSWORD`) gegen Lizenznachweis; in der VSP-Mail mitfragen: (a) reicht
+    Studentenlizenz? (b) reicht heutige 5.x-Lizenz für die 4.1-basierten VSP-Dateien (HBEFA 2020)?
+    Plan B bei VSP-Absage: mit eigener Lizenz Tabellen selbst aus der Access-DB exportieren,
+    lokale Pfade statt VSP-URLs in `setEmissionsConfigs()`.
+  - **Dreistufige Fallback-Strategie (2026-07-27, User-bestätigt):**
+    **① HBEFA-Lizenz klappt** → Contrib mit Original-VSP-Tabellen (voller Schadstoffsatz, Karten).
+    **② Keine Lizenz → EMEP/EEA-Tier-3-Konverter, gleiche Contrib-Maschinerie:** die Contrib
+    prüft nicht, ob Werte „echtes HBEFA" sind, nur das CSV-Schema (Checking-Level konfigurierbar;
+    freie Null-Kaltstartdatei existiert im Contrib-Repo). Einmaliges Python-Skript: freie
+    EMEP/EEA-Guidebook-Tier-3-Faktoren (COPERT-Geschwindigkeitskurven) an den repräsentativen
+    Geschwindigkeiten der HBEFA-Verkehrssituationen auswerten → Pseudo-HBEFA-„Average"-Tabellen
+    schreiben. Lausitz-Verkabelung/Dashboard bleiben identisch; späterer HBEFA-Umstieg = reiner
+    Dateipfad-Tausch. Caveats: Tier 2 wäre zu grob (verkehrssituations-blind = Pseudo-Präzision);
+    Stop&Go wird systematisch niedriger bewertet als in HBEFA (Literaturbefund) — für
+    Szenarien*vergleiche* unkritisch (konsistent), für absolute NOx/PM-Aussagen Faktorquelle im
+    Paper ausweisen.
+    **③ Minimal-Fallback: bestehendes Python-Modell** (`hagrid_output_analysis/emissions.py`,
+    mobilTUM-erprobt). Quelle der CO₂-Fahrfaktoren identifiziert: **CE Delft STREAM** (Kommentar
+    `config.py:158` „STREAM TTW CO2 g/km"; Klassen/Segmente/Min-Max=leer/voll passen exakt) —
+    öffentlich + zitierfähig. Lücken vor Paper-Einsatz: (a) reines Freight-Modell — DRT-/Pkw-Klassen
+    fehlen (aus EMEP/EEA ergänzen), (b) CH4/N2O/Idle/Kaltstart-Parameter sind unbelegte Setzungen
+    (±15 %-Spannen synthetisch via `_build_minmax`) → belegen oder Scope auf CO₂/CO₂e+Energie
+    begrenzen, (c) STREAM-Werte einmal gegen Original-PDF verifizieren + Quellentabelle ins Repo.
+    In allen Stufen: identische KPI-Definitionen im Dashboard, damit der Rechenweg austauschbar
+    bleibt. _(added 2026-07-27)_
 
 - **`[H]` Kostenfunktion reviewen** — `analysis/kpi/economics.py` ist ein **Platzhalter**
   (25 €/Fahrzeug-Schicht-h = 20 Arbeit + 5 Fahrzeug); DRT-Dashboard hat zwei Platzhalter-Karten
