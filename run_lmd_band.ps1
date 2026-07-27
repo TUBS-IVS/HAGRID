@@ -27,8 +27,16 @@ foreach ($lvl in @('central', 'low')) {
     if (-not (Test-Path $src)) { Write-Output "MISSING $src -- abort"; exit 2 }
     Get-ChildItem $src -File | Copy-Item -Destination $demand -Force
 
-    $shp = Join-Path $demand 'hagrid_parcel_demand_2025-05-13_(Tuesday).dbf'
-    Write-Output "active demand dbf size: $((Get-Item $shp).Length) bytes"
+    # Verify by HASH, not by size: .dbf records are fixed-width, so both levels have the
+    # same byte length (same row count, same schema) and size proves nothing about content.
+    $dbf = 'hagrid_parcel_demand_2025-05-13_(Tuesday).dbf'
+    $hStaged = (Get-FileHash (Join-Path $demand $dbf) -Algorithm SHA256).Hash
+    $hWanted = (Get-FileHash (Join-Path $src $dbf) -Algorithm SHA256).Hash
+    if ($hStaged -ne $hWanted) {
+        Write-Output "STAGING MISMATCH for level_$lvl -- staged $($hStaged.Substring(0,16)) != $($hWanted.Substring(0,16)) -- abort"
+        exit 3
+    }
+    Write-Output "active demand verified: level_$lvl sha256=$($hStaged.Substring(0,16))"
 
     & mvn -pl parcel-demand-2-matsim-pipeline exec:java `
         "-Dexec.mainClass=hagrid.HAGRIDSimulationRunner" `
