@@ -49,14 +49,18 @@ PARCEL_PREFIX = "parcel_"  # hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON
 
 
 def has_shareduse_stats(run_dir, meta):
-    return (Path(run_dir) / "shareduse_channel_stats.csv").exists()
+    # MATSim writes run outputs run-ID-prefixed, so the handler's CSV lands as
+    # "{prefix}.shareduse_channel_stats.csv" (e.g. DRT_SHAREDUSE_..._suchi0.shareduse_channel_stats.csv),
+    # NOT a bare "shareduse_channel_stats.csv". Match the real filename or the extractor
+    # is silently skipped on every real run.
+    return (Path(run_dir) / (meta.prefix + ".shareduse_channel_stats.csv")).exists()
 
 
 def extract(run_dir, prefix):
     run_dir = Path(run_dir)
     rows = []
 
-    stats = dict(pd.read_csv(run_dir / "shareduse_channel_stats.csv", sep=";").values)
+    stats = dict(pd.read_csv(run_dir / (prefix + ".shareduse_channel_stats.csv"), sep=";").values)
     rows += [
         row("channel", "undelivered_rate", float(stats["undelivered_rate"]), "share", "shareduse_channel_stats"),
         row("channel", "share_channel_door", float(stats["share_channel_door"]), "share", "shareduse_channel_stats"),
