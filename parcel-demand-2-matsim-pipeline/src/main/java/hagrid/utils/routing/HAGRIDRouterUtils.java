@@ -34,11 +34,15 @@ import org.jfree.data.xy.XYSeriesCollection;
 import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.freight.carriers.Carrier;
+import org.matsim.freight.carriers.CarrierService;
 import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
 
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
@@ -303,5 +307,42 @@ public class HAGRIDRouterUtils {
         VehicleRoutingProblem.Builder vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, network);
         vrpBuilder.setRoutingCost(netBasedCosts);
         return vrpBuilder.build();
+    }
+
+    /**
+     * Persists the jobs the best jsprit solution could NOT insert as carrier attributes, so they
+     * surface as a dashboard KPI instead of silently disappearing from the tours while
+     * {@code numberOfParcels} still counts them as attempted demand. Shared by BOTH the Hannover
+     * legacy {@code Router} and the Lausitz {@code LausitzFreightPreprocessor}.
+     * <p>
+     * Both routing paths use an INFINITE fleet, so an unassigned stop is never "out of vehicles":
+     * it is a stop whose demand exceeds every (identical) van's capacity — e.g. a merged MIXED stop
+     * of 179 parcels against a capacity-30 van — or that is infeasible under the 7h route-duration
+     * cap / vehicle end window. Adding vehicles cannot help; the job is structurally infeasible.
+     * <p>
+     * {@code unassignedParcels} sums the resolved services' {@code capacityDemand} (parcel-level).
+     * An unresolved id is still counted as a job but contributes ZERO parcels — it is deliberately
+     * NOT defaulted to 1, which would silently invent demand.
+     *
+     * @param carrier           the routed carrier; attributes are written onto it
+     * @param unassignedJobIds  ids of the jobs jsprit left unassigned (e.g. from
+     *                          {@code solution.getUnassignedJobs()} mapped to {@code Job::getId})
+     */
+    public static void recordUnassignedJobs(Carrier carrier, Collection<String> unassignedJobIds) {
+        List<String> ids = new ArrayList<>(unassignedJobIds);
+        int unassignedParcels = 0;
+        for (String id : ids) {
+            CarrierService service = carrier.getServices().get(Id.create(id, CarrierService.class));
+            if (service != null) {
+                unassignedParcels += service.getCapacityDemand();
+            }
+        }
+        carrier.getAttributes().putAttribute("unassignedJobs", ids.size());
+        carrier.getAttributes().putAttribute("unassignedParcels", unassignedParcels);
+        carrier.getAttributes().putAttribute("unassignedJobsAsString", ids.toString());
+        if (!ids.isEmpty()) {
+            LOGGER.warn("Carrier {}: jsprit left {} of {} stops UNASSIGNED ({} parcels) - not driven by any tour: {}",
+                    carrier.getId(), ids.size(), carrier.getServices().size(), unassignedParcels, ids);
+        }
     }
 }

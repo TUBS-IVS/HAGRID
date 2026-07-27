@@ -14,6 +14,7 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
 import com.graphhopper.jsprit.core.algorithm.listener.IterationEndsListener;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
+import com.graphhopper.jsprit.core.problem.job.Job;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.util.Solutions;
 
@@ -767,6 +768,11 @@ public class Router {
             long jspritEnd = System.currentTimeMillis();
             LOGGER.info("JSPRIT solution for carrier {} found. Search took {}s (class={} deliveries={})",
                     carrier.getId(), (System.currentTimeMillis() - start) / 1000, clazz, deliveriesTotal);
+            // Persist jobs jsprit could not insert (INFINITE fleet -> demand exceeds every van's
+            // capacity, or infeasible under the 7h/end-window cap) so the dashboard shows the real
+            // count instead of a false zero on the Hannover legacy path.
+            HAGRIDRouterUtils.recordUnassignedJobs(carrier,
+                    solution.getUnassignedJobs().stream().map(Job::getId).toList());
             CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
             CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
             long routeStart = System.currentTimeMillis();
