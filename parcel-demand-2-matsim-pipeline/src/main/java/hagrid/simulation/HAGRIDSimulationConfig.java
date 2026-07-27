@@ -117,6 +117,17 @@ public class HAGRIDSimulationConfig {
     private final double chiThreshold;
 
     /**
+     * Reference-run switch (default {@code false}): when {@code true}, a {@code DRT_SHAREDUSE}
+     * run skips the parcel-subpopulation injection entirely, yielding an 8-seat DRT with the
+     * Shared-Use module stack installed but inert (no parcel ever exists to gate, retry or
+     * count). This is the leakage control for the χ→0 validation (Task 10 / D10 (e)): comparing
+     * its pax KPIs against a χ=0 run (parcels present but never boarding) isolates exactly one
+     * variable — the mere presence of parcel-agents in the QSim — with everything else held
+     * identical. Ignored for every non-{@code DRT_SHAREDUSE} concept (they never inject parcels).
+     */
+    private final boolean noParcels;
+
+    /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
@@ -235,6 +246,23 @@ public class HAGRIDSimulationConfig {
                           boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
                           boolean drtWithFreight, boolean kpiDashboard, double chiThreshold) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, /*noParcels*/ false);
+    }
+
+    /**
+     * Fullest constructor: adds the {@link #noParcels} reference-run switch on top of every
+     * other parameter. All shorter constructors default {@code noParcels} to {@code false}.
+     *
+     * @param noParcels when {@code true}, a {@code DRT_SHAREDUSE} run skips parcel injection
+     *                  (leakage control for the χ→0 validation, D10 (e)); ignored otherwise
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -271,6 +299,7 @@ public class HAGRIDSimulationConfig {
         this.drtWithFreight = drtWithFreight;
         this.kpiDashboard = kpiDashboard;
         this.chiThreshold = chiThreshold;
+        this.noParcels = noParcels;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -539,6 +568,17 @@ public class HAGRIDSimulationConfig {
      */
     public double getChiThreshold() {
         return chiThreshold;
+    }
+
+    /**
+     * Returns the {@link #noParcels} reference-run switch. When {@code true}, a
+     * {@code DRT_SHAREDUSE} run injects no parcels (8-seat DRT, inert Shared-Use stack) — the
+     * leakage control for the χ→0 validation. Default {@code false}.
+     *
+     * @return {@code true} to skip parcel injection for this Shared-Use run
+     */
+    public boolean isNoParcels() {
+        return noParcels;
     }
 
     /**

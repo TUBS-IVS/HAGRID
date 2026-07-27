@@ -198,7 +198,11 @@ public final class LausitzDrtPreprocessor {
         // overload, since the person-filter (removing every non-"person" subpopulation) lives
         // inside the 11-arg run(...) above and would otherwise strip the parcel-persons right
         // back out.
-        if (sharedUse) {
+        if (sharedUse && cfg.isNoParcels()) {
+            LOG.info("SHAREDUSE noParcels=true: skipping parcel injection (8-seat DRT leakage "
+                    + "control for the χ→0 validation) - {} stays person-only.",
+                    cfg.getPassengerPlansClipped());
+        } else if (sharedUse) {
             Population pop = PopulationUtils.readPopulation(cfg.getPassengerPlansClipped());
             // cfg.getDrtNetworkClipped() is the FULL augmented network (drt added only to
             // eligible in-area links, and MultimodalNetworkCleaner(drt) may have stripped some
