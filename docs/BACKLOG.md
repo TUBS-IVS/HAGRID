@@ -176,6 +176,32 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
     oben abflachen, das war vorher nicht prüfbar.
     Treiber `run_lmd_band.ps1`, Tags `bandz_{central,low,high}` (neu, damit die alten
     `band_*`-Outputs erhalten bleiben); überholte Stände als `level_osm_{central,low}`.
+  - **✅ Band gemessen (2026-07-28, `bandz_{low,central,high}`, je `maxIter=0 jspritIter=100`,
+    1 h 46 / 1 h 34 / 1 h 40, Stand je Arm per SHA256 verifiziert).** Pakete 5.426 / 6.020 /
+    6.618, Fahrzeuge 59 / 63 / 67, Gesamtkosten 11.524 / 12.097 / 13.438 €, € je Paket
+    2,124 / 2,009 / 2,031, `parcels_unassigned = 0` überall (7,5-h-Cap bindet nie).
+    **Belastbar:** Bogen-Elastizität über die volle Spanne — Fahrzeuge **0,62**, Tour-Stunden
+    0,93, **Gesamtkosten 0,76**. Die 0,76 reproduzieren die erste Bandmessung exakt, auf
+    anderem Nachfragemodell und mit drittem Arm. Konsistenzbefund: der neue Central-Run landet
+    operativ fast exakt auf dem alten Low-Run (6.020 vs. 5.946 Pakete, 2,009 vs. 2,012 €/Paket)
+    — die Umverteilung OSM→Zensus *innerhalb* der Region ändert die LMD-Effizienz bei gleichem
+    Niveau praktisch nicht. Niveau-Unsicherheit ist erster Ordnung, Muster-Unsicherheit zweiter.
+  - **`[H]` NICHT belastbar: die Fahrleistungs-Kanäle. `km je Paket` ist nicht monoton** —
+    Central ist lokales Minimum (1,039), beide Nachbarn liegen höher. Als Dichteeffekt
+    unmöglich. Zerlegung je Carrier zeigt Heuristikrauschen: amazon fährt bei 10 % MEHR
+    Paketen 74 % MEHR km/Paket, gls und ups schwanken ±50 % in beide Richtungen, ups-Touren
+    wobbeln 6→4→6; nur dpd und fedex sind monoton. Gleiches Muster wie die c=100-Diagnose.
+    Ursache: die Zielfunktion ist **fixkostendominiert (81 %)** → jsprit optimiert die
+    Fahrzeugzahl (saubere +4-Schritte) und behandelt Distanz als schwachen Term. Fahrzeugzahl
+    konvergiert, Tourengeometrie nicht.
+    **Rückwirkung:** der Kernbefund der ERSTEN Bandmessung („Nichtlinearität = Flächendegression",
+    gestützt auf Fahrzeug-km-Elastizität 0,62 und km/Paket +8,3 %) stand auf demselben
+    `jspritIter=100` und einem einzigen Armpaar — nicht gezeigt, dass er über dem Rauschen
+    liegt. Die Aussage „€/Paket steigt bei weniger Nachfrage" bleibt (trägt sich über
+    Fixkosten/Fahrzeugzahl), die *Zuschreibung an die Fahrleistung* ist offen.
+    **Laufende Diagnose:** Central mit `jspritIter=1000` (Tag `bandz_central_j1000`) — sinkt km
+    deutlich unter 6.252, müssen die Distanzkanäle beider Bandmessungen bei höherer
+    Iterationszahl wiederholt werden. Betrifft dann auch 1c/1d, die dieselben 100 Iterationen fahren.
   - **`[M]` Offen nach dem Fix:** (1) die volle CV-Batterie ist **nicht** nachgezogen —
     Bootstrap-KI, Segment-, Cross-Carrier- und Transfer-Check im PANDA-README sind noch
     OSM-Zahlen. (2) Neue Nebenwirkung: **281 Zellen mit 630 von 6.024 Paketen (10,5 %)**
