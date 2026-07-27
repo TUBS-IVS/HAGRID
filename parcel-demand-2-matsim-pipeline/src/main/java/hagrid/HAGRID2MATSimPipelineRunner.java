@@ -73,7 +73,7 @@ public final class HAGRID2MATSimPipelineRunner {
 	private static final int MAX_ITER = 150;
 
 	/** jsprit VRP solver iterations during simulation carrier re-planning. */
-	private static final int SIM_JSPRIT_ITER = 100;
+	private static final int SIM_JSPRIT_ITER = 1000;
 
 	/** Enable zone-based transport cost caching during simulation. */
 	private static final boolean ZONE_CACHING = true;
@@ -93,9 +93,23 @@ public final class HAGRID2MATSimPipelineRunner {
 
 	private static final ScenarioConfig[] SCENARIOS = {
 
-			// Scenario 1: Standard Basecase mit M und L
-			scenario("basecase", "80", LocalDate.of(2025, 5, 13), "80_l"),
-			scenario("basecase", "300", LocalDate.of(2025, 5, 13), "300_l"),
+			// Sensitivity study v2 (capacity-conform merge): weekend sweep capacities 60..150 step 10.
+			// "v2" tag marks the CarrierServiceMerger split fix (36ba71d) -> merged stops capped at
+			// the van capacity; NOT comparable to the old 30R1/R2/R3 / April boards.
+			// Together with the done 30v2/40v2/50v2 this completes a 30..150 v2 sweep in steps of 10.
+			// Ascending order so the steeper low-cap arc lands first if the sim-PC PSU dies mid-batch.
+			// vehicleSize "<n>_l": clones ct_cep_size_l, overrides freight capacity to <n>
+			// (costs/speed/dimensions stay on the l-template -> only capacity varies across the sweep).
+			scenario("basecase", "60v2", LocalDate.of(2025, 5, 13), "60_l"),
+			scenario("basecase", "70v2", LocalDate.of(2025, 5, 13), "70_l"),
+			scenario("basecase", "80v2", LocalDate.of(2025, 5, 13), "80_l"),
+			scenario("basecase", "90v2", LocalDate.of(2025, 5, 13), "90_l"),
+			scenario("basecase", "100v2", LocalDate.of(2025, 5, 13), "100_l"),
+			scenario("basecase", "110v2", LocalDate.of(2025, 5, 13), "110_l"),
+			scenario("basecase", "120v2", LocalDate.of(2025, 5, 13), "120_l"),
+			scenario("basecase", "130v2", LocalDate.of(2025, 5, 13), "130_l"),
+			scenario("basecase", "140v2", LocalDate.of(2025, 5, 13), "140_l"),
+			scenario("basecase", "150v2", LocalDate.of(2025, 5, 13), "150_l"),
 
 			// Scenario 2: Basecase V1 mit 100er Fahrzeugen (gleicher Tag, neuer Name)
 			// scenario("basecase", "V1", LocalDate.of(2025, 5, 13), "100_l"),

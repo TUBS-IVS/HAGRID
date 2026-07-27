@@ -253,8 +253,15 @@ public class DashboardGenerator {
         int deliveryCarriers = delivery.size();
         int supplyCarriers   = supply.size();
 
-        // Per-vehicle utilisation via carrier services + collect delivery event vehicle IDs
-        List<Double> loadFactors = new ArrayList<>();
+        // Authoritative, exclusion-independent parcel + utilisation accounting (see
+        // computeRoutedParcelStats): replaces the former ": 1" fallback that distorted
+        // parcel/load KPIs as a function of vehicle count across a capacity sweep.
+        RoutedParcelStats parcelStats = computeRoutedParcelStats(delivery, this::lookupCapacity);
+        double avgLoadFactor = parcelStats.avgLoadFactor();
+
+        // Delivery vehicles materially used (low-utilisation filter applies) + their
+        // event vehicle IDs — used for the operational KPIs (distance / cost / stops)
+        // and the reported delivery-vehicle count.
         Set<String> deliveryEventVehIds = new HashSet<>();
         int totalDeliveryVehicles = 0;
         for (ParsedCarrier c : delivery) {
@@ -266,18 +273,15 @@ public class DashboardGenerator {
                 for (TourAct a : t.acts()) {
                     if ("service".equals(a.type()) && a.serviceId() != null) {
                         ParsedService svc = svcMap.get(a.serviceId());
-                        vehParcels += svc != null ? svc.capacityDemand() : 1;
+                        if (svc != null) vehParcels += svc.capacityDemand();
                     }
                 }
                 if (vehParcels > 0 && !excludedLowUtilVehicles.contains(t.eventVehicleId())) {
-                    int cap = lookupCapacity(c, t.vehicleId());
-                    loadFactors.add(Math.min(1.0, (double) vehParcels / cap));
                     totalDeliveryVehicles++;
                     deliveryEventVehIds.add(t.eventVehicleId());
                 }
             }
         }
-        double avgLoadFactor = loadFactors.stream().mapToDouble(Double::doubleValue).average().orElse(0);
 
         // Vehicle type counts (exclude low-util)
         long vanCount   = eventHandler.getVehicleTours().keySet().stream()
@@ -326,22 +330,17 @@ public class DashboardGenerator {
         int totalStops = deliveryEventVehIds.stream()
                 .mapToInt(vid -> evtStopCount.getOrDefault(vid, 0)).sum();
 
-        // Parcel/service counts from non-excluded vehicles only
-        int totalServices = 0, totalDemand = 0, totalParcels = 0;
-        for (ParsedCarrier c : delivery) {
-            Map<String, ParsedService> sm = new HashMap<>();
-            for (ParsedService s : c.services()) sm.put(s.serviceId(), s);
-            for (ParsedTour t : c.tours()) {
-                if (excludedLowUtilVehicles.contains(t.eventVehicleId())) continue;
-                for (TourAct a : t.acts()) {
-                    if ("service".equals(a.type()) && a.serviceId() != null) {
-                        totalServices++;
-                        ParsedService svc = sm.get(a.serviceId());
-                        totalDemand += svc != null ? svc.capacityDemand() : 1;
-                        totalParcels += svc != null ? svc.capacityDemand() : 1;
-                    }
-                }
-            }
+        // Parcel/service counts: authoritative Σ capacityDemand over ALL routed
+        // service-acts (exclusion-independent, so it is comparable across a capacity
+        // sweep and does not depend on the vehicle count).
+        int totalServices = parcelStats.totalServices();
+        int totalDemand   = parcelStats.totalDemand();
+        int totalParcels  = parcelStats.totalParcels();
+        if (parcelStats.unresolvedServiceRefs() > 0) {
+            LOG.warn("Dashboard parcel accounting: {} routed service-act(s) referenced an "
+                    + "unknown serviceId and were excluded from parcel totals (carrier XML "
+                    + "inconsistency); they are NOT counted as 1 parcel.",
+                    parcelStats.unresolvedServiceRefs());
         }
         int parcelBase = totalParcels > 0 ? totalParcels : totalServices;
 
@@ -397,6 +396,61 @@ public class DashboardGenerator {
                 totalUnassignedParcels, totalUnassignedJobs,
                 numVehicleTypes, avgSpeedKmh
         );
+    }
+
+    /** Authoritative, exclusion-independent routed-parcel statistics. */
+    public record RoutedParcelStats(int totalServices, int totalParcels, int totalDemand,
+                                    double avgLoadFactor, int unresolvedServiceRefs) {}
+
+    /**
+     * Counts parcels across ALL routed delivery service-acts, independent of the
+     * low-utilisation exclusion, by summing the authoritative {@code capacityDemand}
+     * of each referenced {@link CarrierXmlParser.ParsedService}.
+     *
+     * <p>A service-act whose {@code serviceId} does not resolve to a parsed service is
+     * tallied in {@link RoutedParcelStats#unresolvedServiceRefs()} and NOT silently
+     * treated as a single parcel (the former {@code : 1} fallback). That fallback
+     * distorted the parcel/utilisation totals as a function of vehicle count and made
+     * the capacity sweep look like the parcel demand changed, when it does not.
+     *
+     * <p>{@code avgLoadFactor} is the mean per-tour load (parcels / vehicle capacity,
+     * capped at 1) over all delivery tours carrying at least one parcel — deliberately
+     * exclusion-independent, so it is comparable across a vehicle-capacity sweep.
+     * (The operational fleet KPIs — delivery-vehicle count, distance, cost — keep the
+     * low-utilisation filter and are computed elsewhere.)
+     *
+     * @param deliveryCarriers delivery carriers (caller filters out supply carriers)
+     * @param capacityResolver resolves a tour's vehicle capacity: (carrier, vehicleId) -> capacity
+     */
+    static RoutedParcelStats computeRoutedParcelStats(
+            List<CarrierXmlParser.ParsedCarrier> deliveryCarriers,
+            java.util.function.ToIntBiFunction<CarrierXmlParser.ParsedCarrier, String> capacityResolver) {
+        int totalServices = 0, totalParcels = 0, unresolved = 0;
+        List<Double> loadFactors = new ArrayList<>();
+        for (CarrierXmlParser.ParsedCarrier c : deliveryCarriers) {
+            Map<String, CarrierXmlParser.ParsedService> sm = new HashMap<>();
+            for (CarrierXmlParser.ParsedService s : c.services()) sm.put(s.serviceId(), s);
+            for (CarrierXmlParser.ParsedTour t : c.tours()) {
+                int vehParcels = 0;
+                for (CarrierXmlParser.TourAct a : t.acts()) {
+                    if ("service".equals(a.type()) && a.serviceId() != null) {
+                        totalServices++;
+                        CarrierXmlParser.ParsedService svc = sm.get(a.serviceId());
+                        if (svc == null) { unresolved++; continue; }
+                        vehParcels += svc.capacityDemand();
+                    }
+                }
+                totalParcels += vehParcels;
+                if (vehParcels > 0) {
+                    int cap = capacityResolver.applyAsInt(c, t.vehicleId());
+                    if (cap > 0) loadFactors.add(Math.min(1.0, (double) vehParcels / cap));
+                }
+            }
+        }
+        double avg = loadFactors.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        // totalDemand mirrors totalParcels (both are the summed capacityDemand); kept as a
+        // distinct field for backward-compatible KPI JSON.
+        return new RoutedParcelStats(totalServices, totalParcels, totalParcels, avg, unresolved);
     }
 
     /**

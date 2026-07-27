@@ -233,21 +233,10 @@ public final class LausitzFreightPreprocessor {
      * Mirrors the legacy {@code Router} which logs {@code getUnassignedJobs()} per iteration.
      */
     private static void recordUnassignedJobs(Carrier carrier, VehicleRoutingProblemSolution solution) {
-        List<String> unassignedIds = new ArrayList<>();
-        int unassignedParcels = 0;
-        for (com.graphhopper.jsprit.core.problem.job.Job job : solution.getUnassignedJobs()) {
-            unassignedIds.add(job.getId());
-            CarrierService service = carrier.getServices().get(Id.create(job.getId(), CarrierService.class));
-            unassignedParcels += service != null ? service.getCapacityDemand() : 1;
-        }
-        carrier.getAttributes().putAttribute("unassignedJobs", unassignedIds.size());
-        carrier.getAttributes().putAttribute("unassignedParcels", unassignedParcels);
-        carrier.getAttributes().putAttribute("unassignedJobsAsString", unassignedIds.toString());
-        if (!unassignedIds.isEmpty()) {
-            LOG.warn("Carrier {}: jsprit left {} of {} stops UNASSIGNED ({} parcels) - not driven by any tour: {}",
-                    carrier.getId(), unassignedIds.size(), carrier.getServices().size(),
-                    unassignedParcels, unassignedIds);
-        }
+        HAGRIDRouterUtils.recordUnassignedJobs(carrier,
+                solution.getUnassignedJobs().stream()
+                        .map(com.graphhopper.jsprit.core.problem.job.Job::getId)
+                        .toList());
     }
 
     public static void main(String[] args) {
