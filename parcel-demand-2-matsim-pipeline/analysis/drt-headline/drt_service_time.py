@@ -52,20 +52,56 @@ def read_shift_windows(fleet_file):
     return out
 
 
-def read_capacity(fleet_file, default=8):
-    """Seat capacity from the first <vehicle ... capacity="N"/> in the DVRP fleet file."""
+#: Load dimension holding the seat count. Mirrors the Java side:
+#: DrtFleetGenerator.LOAD_DIMENSION / SharedUse's DvrpLoadParams mapFleetCapacity.
+SEAT_DIMENSION = "passengers"
+
+
+def parse_capacity(raw):
+    """Seat count from a DVRP `capacity` attribute value, or None if unreadable.
+
+    Two serialisations occur and BOTH are real inputs here:
+      - scalar, as DrtFleetGenerator writes it:            capacity="8"
+      - per-dimension, as MATSim dumps it on a 2D-load run: capacity="passengers=8,parcels=20"
+    The second is exactly the Shared-Use case, so parsing only the scalar form would
+    fail precisely on the scenario under active work."""
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if "=" in raw:
+        for part in raw.split(","):
+            key, _, value = part.partition("=")
+            if key.strip() == SEAT_DIMENSION:
+                try:
+                    return int(float(value))
+                except ValueError:
+                    return None
+        return None  # 2D load without a "passengers" dimension: not a seat count
+    try:
+        return int(float(raw))
+    except ValueError:
+        return None
+
+
+def read_capacity(fleet_file):
+    """Seat capacity from the first <vehicle ... capacity="..."/> in the DVRP fleet
+    file, or None when the fleet file is absent/unreadable.
+
+    NO DEFAULT ON PURPOSE. This used to fall back to 8, which silently produced
+    utilisation KPIs computed against the wrong denominator whenever the fleet file
+    could not be located -- and it stopped being even coincidentally right when
+    SharedUse.BASE_SEATS was raised to 10 (2026-07-20), since a DRT_BASELINE vehicle
+    now seats 10 while a Shared-Use one seats 8. Callers must treat None as
+    "utilisation not computable" and omit those KPIs rather than invent a divisor."""
     if not fleet_file or not os.path.exists(fleet_file):
-        return default
+        return None
     rc = re.compile(r'capacity="([^"]+)"')
     with _open(fleet_file) as f:
         for line in f:
             m = rc.search(line)
             if m:
-                try:
-                    return int(float(m.group(1)))
-                except ValueError:
-                    return default
-    return default
+                return parse_capacity(m.group(1))
+    return None
 
 
 def reconstruct(events_path, fleet_file=None):
@@ -199,6 +235,10 @@ def reconstruct(events_path, fleet_file=None):
         occt = occupied_time.get(v, 0.0)
         tt = task_time.get(v, {"STAY": 0.0, "DRIVE": 0.0, "STOP": 0.0})
         active = (last_prod[v] - first_prod[v]) if (v in first_prod and v in last_prod) else 0.0
+        # Vehicles present in the events but absent from the fleet file keep the
+        # sim-horizon substitute (a per-vehicle gap in an otherwise known fleet).
+        # A WHOLLY unknown fleet is handled at the fleet level below, where the
+        # shift-based aggregates are omitted instead of silently fabricated.
         t0, t1 = shift.get(v, (0.0, sim_horizon))
         shift_span = max(0.0, t1 - t0)
         per_veh[v] = {
@@ -231,32 +271,40 @@ def reconstruct(events_path, fleet_file=None):
             fleet_seg_count[lv] = fleet_seg_count.get(lv, 0) + c
     tot_seg_time = sum(fleet_seg_time.values())
     tot_seg_count = sum(fleet_seg_count.values())
-    # utilisation = mean of (x/capacity); by_trips unweighted over segments, by_time duration-weighted
-    util_by_trips = (sum((lv / capacity) * c for lv, c in fleet_seg_count.items()) / tot_seg_count) if tot_seg_count else 0.0
-    util_by_time = (sum((lv / capacity) * s for lv, s in fleet_seg_time.items()) / tot_seg_time) if tot_seg_time else 0.0
     # tour duration = active span; waiting = idle between jobs = tour - driving - service (assumption b)
     tour_s = sum_active
     waiting_s = max(0.0, tour_s - drive_s - stop_s)
     fleet = {
         "n_vehicles": n,
         "capacity": capacity,
+        "fleet_file_known": bool(shift),
         "occupied_s": sum_occ,
         "sum_active_s": sum_active,
-        "sum_shift_s": sum_shift,
         "sim_horizon_s": sim_horizon,
         "ratio_active": (sum_occ / sum_active) if sum_active > 0 else 0.0,
-        "ratio_shift": (sum_occ / sum_shift) if sum_shift > 0 else 0.0,
         "ratio_sim": (sum_occ / (sim_horizon * n)) if (sim_horizon > 0 and n) else 0.0,
         "stay_s": sum(p["stay_s"] for p in per_veh.values()),
         "drive_s": drive_s,
         "stop_s": stop_s,
         "tour_s": tour_s,
         "waiting_s": waiting_s,
-        "util_by_trips": util_by_trips,
-        "util_by_time": util_by_time,
         "seg_time": fleet_seg_time,
         "seg_count": fleet_seg_count,
     }
+    # Shift-denominated aggregates need the DVRP service windows from the fleet file.
+    # Without it every shift_span above is the sim-horizon substitute, so sum_shift is
+    # not a shift at all -- omit the keys rather than publish a look-alike number.
+    if shift:
+        fleet["sum_shift_s"] = sum_shift
+        fleet["ratio_shift"] = (sum_occ / sum_shift) if sum_shift > 0 else 0.0
+    # utilisation = mean of (x/capacity); by_trips unweighted over segments, by_time
+    # duration-weighted. Both need a real seat count -- see read_capacity on why there
+    # is deliberately no default divisor.
+    if capacity:
+        fleet["util_by_trips"] = (sum((lv / capacity) * c for lv, c in fleet_seg_count.items())
+                                  / tot_seg_count) if tot_seg_count else 0.0
+        fleet["util_by_time"] = (sum((lv / capacity) * s for lv, s in fleet_seg_time.items())
+                                 / tot_seg_time) if tot_seg_time else 0.0
     return {"per_veh": per_veh, "fleet": fleet, "sim_horizon": sim_horizon, "capacity": capacity}
 
 
@@ -274,18 +322,25 @@ if __name__ == "__main__":
           f"(avg/veh {_fmt_hms(fleet['occupied_s']/max(1,fleet['n_vehicles']))})")
     print(f"  ratio vs ACTIVE service time: {fleet['ratio_active']*100:5.1f}%   "
           f"(sum active {_fmt_hms(fleet['sum_active_s'])})")
-    print(f"  ratio vs SHIFT window       : {fleet['ratio_shift']*100:5.1f}%   "
-          f"(sum shift  {_fmt_hms(fleet['sum_shift_s'])})")
+    if "ratio_shift" in fleet:
+        print(f"  ratio vs SHIFT window       : {fleet['ratio_shift']*100:5.1f}%   "
+              f"(sum shift  {_fmt_hms(fleet['sum_shift_s'])})")
+    else:
+        print("  ratio vs SHIFT window       :   n/a   (no fleet file -> DVRP service windows unknown)")
     print(f"  ratio vs SIM horizon        : {fleet['ratio_sim']*100:5.1f}%   "
           f"(horizon {_fmt_hms(fleet['sim_horizon_s'])})")
     print(f"  fleet time: STAY {_fmt_hms(fleet['stay_s'])}  DRIVE {_fmt_hms(fleet['drive_s'])}  "
           f"STOP {_fmt_hms(fleet['stop_s'])}")
-    print(f"\n  capacity={fleet['capacity']}  utilisation by trips={fleet['util_by_trips']*100:.1f}%  "
-          f"by time={fleet['util_by_time']*100:.1f}%")
+    if fleet["capacity"]:
+        print(f"\n  capacity={fleet['capacity']}  utilisation by trips={fleet['util_by_trips']*100:.1f}%  "
+              f"by time={fleet['util_by_time']*100:.1f}%")
+        print("  segments by occupancy:", {lv: fleet['seg_count'].get(lv, 0)
+                                            for lv in range(fleet['capacity'] + 1)})
+    else:
+        print("\n  capacity=unknown (no fleet file) -> utilisation not computed")
+        print("  segments by occupancy:", dict(sorted(fleet['seg_count'].items())))
     print(f"  tour duration {_fmt_hms(fleet['tour_s'])} = driving {_fmt_hms(fleet['drive_s'])} "
           f"+ service {_fmt_hms(fleet['stop_s'])} + waiting {_fmt_hms(fleet['waiting_s'])}")
-    print("  segments by occupancy:", {lv: fleet['seg_count'].get(lv, 0)
-                                        for lv in range(fleet['capacity'] + 1)})
     pv = r["per_veh"]
     busiest = sorted(pv.items(), key=lambda kv: kv[1]["ratio_active"], reverse=True)[:5]
     idlest = sorted(pv.items(), key=lambda kv: kv[1]["ratio_shift"])[:5]

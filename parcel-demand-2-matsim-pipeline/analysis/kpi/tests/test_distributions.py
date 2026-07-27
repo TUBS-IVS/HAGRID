@@ -115,3 +115,31 @@ def test_write_schema(tmp_path):
     assert lines[0] == "run_id;series;bin_lo;bin_hi;value;unit"
     assert all(len(l.split(";")) == 6 for l in lines[1:])
     assert lines[1].split(";")[0] == "MINI"
+
+
+def test_wait_distribution_excludes_parcel_legs(tmp_path):
+    """drt_wait is a PASSENGER wait distribution; parcel legs (which can wait for
+    hours before a sub-chi insertion appears) must not shape its bins."""
+    (tmp_path / "SU.output_drt_legs_drt.csv").write_text(
+        "departureTime;personId;waitTime\n"
+        "28800;p1;30\n"
+        "28900;p2;90\n"
+        "29000;parcel_dhl_1_B2C;5000\n",
+        encoding="utf-8")
+
+    rows = dist.extract(tmp_path, "SU", recon=None)
+    w = {(r["bin_lo"], r["bin_hi"]): r["value"] for r in rows if r["series"] == "drt_wait"}
+
+    assert w == {(0, 60): 1, (60, 120): 1}
+
+
+def test_wait_distribution_unfiltered_without_person_column(tmp_path):
+    """Reduced fixtures / older leg CSVs carry no personId -- nothing can be
+    classified, so the pre-filter behaviour is kept rather than dropping rows."""
+    (tmp_path / "OLD.output_drt_legs_drt.csv").write_text(
+        "departureTime;waitTime\n28800;30\n28900;90\n", encoding="utf-8")
+
+    rows = dist.extract(tmp_path, "OLD", recon=None)
+    w = {(r["bin_lo"], r["bin_hi"]): r["value"] for r in rows if r["series"] == "drt_wait"}
+
+    assert w == {(0, 60): 1, (60, 120): 1}

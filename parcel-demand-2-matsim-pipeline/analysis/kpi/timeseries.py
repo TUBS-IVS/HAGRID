@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import pax_only
+
 RE_TIME = re.compile(r'time="([^"]+)"')
 
 
@@ -19,15 +21,24 @@ def extract(run_dir, prefix, freight_cache=None):
     run_dir = Path(run_dir)
     rows = []
 
+    # The hourly passenger series must exclude the parcel_ phantom legs, exactly like
+    # the pax-only KPI corrections do (pax_only.apply_overrides) -- otherwise the
+    # dashboard's charts would contradict its own tiles on a Shared-Use run. On every
+    # other scenario the split is a no-op (no parcel-persons exist), so the canonical
+    # series stay byte-identical and the *_incl_parcels twins are simply not emitted.
     legs_f = run_dir / (prefix + ".output_drt_legs_drt.csv")
     if legs_f.exists():
-        legs = pd.read_csv(legs_f, sep=";")
-        legs["hour"] = (legs["departureTime"] // 3600).astype(int)
-        g = legs.groupby("hour")
-        for h, n in g.size().items():
-            rows.append(_ts("drt_rides", h, int(n), "trips/h"))
-        for h, wm in g["waitTime"].mean().items():
-            rows.append(_ts("drt_wait_mean", h, float(wm), "s"))
+        all_legs = pd.read_csv(legs_f, sep=";")
+        legs, parcel_legs = pax_only.split_parcels(all_legs, "personId")
+        for label, df in (("", legs), (pax_only.INCL_SUFFIX, all_legs)):
+            if label and not len(parcel_legs):
+                continue
+            hour = (df["departureTime"] // 3600).astype(int)
+            g = df.groupby(hour)
+            for h, n in g.size().items():
+                rows.append(_ts("drt_rides" + label, h, int(n), "trips/h"))
+            for h, wm in g["waitTime"].mean().items():
+                rows.append(_ts("drt_wait_mean" + label, h, float(wm), "s"))
 
         if "submissionTime" in legs.columns:
             sub_hour = (legs["submissionTime"] // 3600).astype(int)
@@ -37,6 +48,10 @@ def extract(run_dir, prefix, freight_cache=None):
     rej_f = run_dir / (prefix + ".output_drt_rejections_drt.csv")
     if rej_f.exists():
         rej = pd.read_csv(rej_f, sep=";")
+        if "personIds" in rej.columns:
+            # A chi-starved parcel can be rejected many times over, so unfiltered this
+            # series is dominated by parcel retries rather than passenger service.
+            rej, _ = pax_only.split_parcels(rej, "personIds", joined=True)
         if len(rej):
             for h, n in (rej["time"] // 3600).astype(int).value_counts().sort_index().items():
                 rows.append(_ts("drt_rejections", h, int(n), "requests/h"))

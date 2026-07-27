@@ -13,7 +13,10 @@ build_map_data() assembles:
     independently and gracefully omitted (ASCII console note, never a raise)
     when their source file/library is missing -- ports of
     build_drt_dashboard.py:247-299.
-  - drt.cap: DRT vehicle capacity (from kpis_long.csv if present, else 8).
+  - drt.cap: DRT vehicle capacity, read from the `system/drt_vehicle_capacity`
+    KPI in kpis_long.csv (extract_drt sources it from the DVRP fleet file);
+    DEFAULT_CAP only when that KPI is absent, which means the fleet file was
+    not found for this run.
   - center: mean of whatever WGS84 points are available, falling back to
     Hoyerswerda.
   - lmd: always present; stays `{}` unless a `fev` (FreightEvents) is
@@ -143,18 +146,27 @@ def _attach_stops(vehicles, legs):
 
 # --------------------------------------------------------------- cap
 
+CAP_KPI = "drt_vehicle_capacity"
+
+
 def _read_cap(run_dir, default=DEFAULT_CAP):
+    """DRT seat count for the occupancy colouring, from the `drt_vehicle_capacity` KPI.
+
+    The previous lookup matched any kpi_name containing "capacity" AND a kpi_group
+    containing "drt" -- no such row is ever written to kpis_long.csv (the only
+    "capacity" KPI lives in the separate kpis_provider.csv, under kpi_group "freight"),
+    so the branch was unreachable and every map silently used DEFAULT_CAP. extract_drt
+    now emits the seat count from the DVRP fleet file under the exact name matched here."""
     path = Path(run_dir) / "analysis" / "kpis_long.csv"
     if not path.exists():
         return default
     try:
         df = pd.read_csv(path, sep=";")
-        mask = df["kpi_name"].astype(str).str.contains("capacity", case=False, na=False)
-        if "kpi_group" in df.columns:
-            mask &= df["kpi_group"].astype(str).str.contains("drt", case=False, na=False)
-        rows = df[mask]
+        rows = df[df["kpi_name"].astype(str) == CAP_KPI]
         if not rows.empty:
             return int(float(rows.iloc[0]["value"]))
+        print("[maps] " + CAP_KPI + " KPI absent (no fleet file?) -- occupancy scaled to "
+              + str(default) + " seats")  # ASCII only
     except Exception as e:
         print("[maps] cap KPI read skipped: " + str(e))  # ASCII only
     return default

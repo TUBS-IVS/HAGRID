@@ -44,21 +44,29 @@ def test_no_events_no_service_rows():
     assert "service_ratio_shift" not in _by_name(rows)
 
 
-def test_recon_stub_used_without_touching_events_file():
-    stub_recon = {
-        "fleet": {
-            "ratio_active": 0.77,
-            "ratio_shift": 0.55,
-            "util_by_time": 0.42,
-            "sum_shift_s": 3600.0 * 10,
-            "seg_time": {0: 100.0, 1: 200.0, 2: 50.0},
-            "util_by_trips": 0.25,
-            "tour_s": 360000.0,
-            "drive_s": 200000.0,
-            "waiting_s": 100000.0,
-            "stop_s": 60000.0,
-        }
+def _stub_fleet(**overrides):
+    """A recon["fleet"] shaped like drt_service_time.reconstruct returns it when
+    the DVRP fleet file WAS found (capacity + the shift-denominated keys present)."""
+    fleet = {
+        "capacity": 10,
+        "fleet_file_known": True,
+        "ratio_active": 0.77,
+        "ratio_shift": 0.55,
+        "util_by_time": 0.42,
+        "sum_shift_s": 3600.0 * 10,
+        "seg_time": {0: 100.0, 1: 200.0, 2: 50.0},
+        "util_by_trips": 0.25,
+        "tour_s": 360000.0,
+        "drive_s": 200000.0,
+        "waiting_s": 100000.0,
+        "stop_s": 60000.0,
     }
+    fleet.update(overrides)
+    return {"fleet": fleet}
+
+
+def test_recon_stub_used_without_touching_events_file():
+    stub_recon = _stub_fleet()
     bogus_events_path = FIX / "does_not_exist.output_events.xml.gz"
     assert not bogus_events_path.exists()
 
@@ -79,6 +87,33 @@ def test_recon_stub_used_without_touching_events_file():
     assert k["drt_drive_hours_total"]["value"] == pytest.approx(55.5556, abs=1e-4)
     assert k["drt_wait_hours_total"]["value"] == pytest.approx(27.7778, abs=1e-4)
     assert k["drt_service_hours_total"]["value"] == pytest.approx(16.6667, abs=1e-4)
+
+
+def test_capacity_kpi_is_emitted_for_the_map_layer():
+    """maps._read_cap reads exactly this KPI; without it the occupancy colouring
+    silently falls back to a hardcoded 8 seats."""
+    k = _by_name(extract(FIX, "DRT_TEST", recon=_stub_fleet(capacity=10)))
+    assert k["drt_vehicle_capacity"]["value"] == 10
+    assert k["drt_vehicle_capacity"]["kpi_group"] == "system"
+
+
+def test_no_fleet_file_omits_denominated_kpis_and_flags_it():
+    """The regression guard: an unlocatable fleet file must DROP the
+    capacity/shift KPIs, not compute them against a guessed 8 seats or a
+    sim-horizon stand-in for the shift window."""
+    recon = _stub_fleet(capacity=None, fleet_file_known=False)
+    for key in ("util_by_time", "util_by_trips", "ratio_shift", "sum_shift_s"):
+        recon["fleet"].pop(key)
+
+    k = _by_name(extract(FIX, "DRT_TEST", recon=recon))
+
+    for name in ("fleet_utilisation_by_time", "fleet_utilisation_by_trips",
+                 "service_ratio_shift", "fleet_shift_hours", "drt_vehicle_capacity"):
+        assert name not in k, name
+    assert k["fleet_file_missing"]["kpi_group"] == "meta"
+    # Everything that does NOT need the fleet file must still be there.
+    assert k["service_ratio_active"]["value"] == pytest.approx(0.77)
+    assert "mean_pax_aboard" in k
 
 
 def test_customer_stats_tile_kpis_without_recon():

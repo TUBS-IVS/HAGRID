@@ -89,8 +89,13 @@ public final class ParcelOnlyRetryQueue extends DrtRequestInsertionRetryQueue {
     /**
      * The parcel's absolute delivery deadline. If several passenger ids carry a
      * window (defensive — parcel requests are single-person in practice), the most
-     * restrictive (earliest) governs. A parcel with no recorded window never expires
-     * here, so only the global {@code maxRequestAge} bounds it.
+     * restrictive (earliest) governs.
+     *
+     * <p>A parcel with NO recorded window used to fall back to {@code POSITIVE_INFINITY},
+     * i.e. "never expires" — which silently switched M5 off for that request: it would keep
+     * retrying past its deadline and could be delivered at any hour, while δ still looked
+     * clean. {@link ParcelAttributes#windowEnds} now validates the whole population at QSim
+     * module install, so a miss here means the snapshot went stale and must surface.
      */
     private double windowEnd(DrtRequest request) {
         return request.getPassengerIds().stream()
@@ -98,6 +103,10 @@ public final class ParcelOnlyRetryQueue extends DrtRequestInsertionRetryQueue {
                 .filter(Objects::nonNull)
                 .mapToDouble(Double::doubleValue)
                 .min()
-                .orElse(Double.POSITIVE_INFINITY);
+                .orElseThrow(() -> new IllegalStateException(
+                        "parcel request " + request.getId() + " (passengers "
+                        + request.getPassengerIds() + ") has no delivery window in the snapshot;"
+                        + " refusing to treat it as never-expiring, which would disable M5"
+                        + " for this request."));
     }
 }

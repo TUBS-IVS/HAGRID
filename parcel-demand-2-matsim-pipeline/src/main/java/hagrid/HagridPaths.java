@@ -355,6 +355,17 @@ public class HagridPaths {
         return runDir().resolve(p() + "drt_fleet.xml.gz").toString();
     }
 
+    /**
+     * Fingerprint of the prepared DRT inputs above (parameters + raw-input identities),
+     * written by the preprocessor and re-checked by {@code validateInputFiles()} so a run
+     * cannot silently reuse artifacts prepared for a different fleet size / seat count /
+     * noParcels setting — none of which appear in the run id.
+     */
+    public String drtInputsFingerprint() {
+        return runDir().resolve(p() + hagrid.integrated.drt.DrtInputsFingerprint.FILE_SUFFIX)
+                .toString();
+    }
+
     /** Rail-only transit schedule for this run (bus + tram filtered out). */
     public String railScheduleFiltered() {
         return runDir().resolve(p() + "rail-transitSchedule.xml.gz").toString();

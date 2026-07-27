@@ -89,16 +89,31 @@ def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None)
         tot_t = sum(seg_t.values())
         rows += [
             row("system", "service_ratio_active", fl["ratio_active"], "share", "events"),
-            row("system", "service_ratio_shift", fl["ratio_shift"], "share", "events"),
-            row("system", "fleet_utilisation_by_time", fl["util_by_time"], "share", "events"),
-            row("system", "fleet_shift_hours", fl["sum_shift_s"] / 3600.0, "h", "events/fleet file"),
             row("passenger", "mean_pax_aboard",
                 (sum(lv * s for lv, s in seg_t.items()) / tot_t) if tot_t else 0.0,
                 "pax", "events"),
         ]
-        if "util_by_trips" in fl:
+        # Shift- and capacity-denominated KPIs exist ONLY when the DVRP fleet file was
+        # actually found. drt_service_time no longer substitutes a default seat count or
+        # the sim horizon for a missing shift window, so an absent fleet file now drops
+        # these KPIs instead of silently publishing a wrong denominator. The meta rows
+        # below make that omission visible in kpis_long.csv rather than in stdout only.
+        if "ratio_shift" in fl:
+            rows.append(row("system", "service_ratio_shift", fl["ratio_shift"], "share", "events"))
+            rows.append(row("system", "fleet_shift_hours",
+                             fl["sum_shift_s"] / 3600.0, "h", "events/fleet file"))
+        if fl.get("capacity"):
+            # Also the KPI maps.py looks for when colouring occupancy -- without it that
+            # lookup silently fell back to a hardcoded 8 seats.
+            rows.append(row("system", "drt_vehicle_capacity", int(fl["capacity"]),
+                             "seats", "fleet file"))
+            rows.append(row("system", "fleet_utilisation_by_time",
+                             fl["util_by_time"], "share", "events"))
             rows.append(row("system", "fleet_utilisation_by_trips",
                              fl["util_by_trips"], "share", "events"))
+        else:
+            rows.append(row("meta", "fleet_file_missing", 1, "flag",
+                             "capacity/shift KPIs omitted - DVRP fleet file not found"))
         if "tour_s" in fl:
             rows.append(row("system", "drt_tour_hours_total",
                              fl["tour_s"] / 3600.0, "h", "events"))

@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -127,5 +128,21 @@ class ParcelOnlyRetryQueueTest {
         List<DrtRequest> due = queue.getRequestsToRetryNow(tWithin);
         assertEquals(1, due.size(), "a parcel within its window must still be retried");
         assertEquals(List.of(B2B_PARCEL), due.get(0).getPassengerIds());
+    }
+
+    @Test
+    @DisplayName("parcel with NO window in the snapshot throws instead of silently never expiring")
+    void parcelWithoutWindowThrows() {
+        // The old orElse(POSITIVE_INFINITY) meant "never expires": such a parcel kept retrying
+        // past its deadline and could be physically delivered at any hour, while the delta
+        // decomposition still looked clean. ParcelAttributes validates the whole population at
+        // QSim module install, so reaching this means the snapshot went stale.
+        ParcelOnlyRetryQueue queue = new ParcelOnlyRetryQueue(params(), Map.of());
+        DrtRequest orphan = request(Id.createPersonId("parcel_dhl_9_B2C"), 8 * 3600.0);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> queue.tryAddFailedRequest(orphan, 8 * 3600.0));
+        assertTrue(ex.getMessage().contains("no delivery window"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("M5"), ex.getMessage());
     }
 }

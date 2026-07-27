@@ -14,7 +14,9 @@ import extract_freight
 import extract_shareduse
 import freight_events
 import kpi_writer
+import pax_only
 import timeseries
+from common import row as common_row
 from events_cache import ensure_caches
 from run_meta import load_run_meta
 
@@ -76,6 +78,15 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     for predicate, extract_fn in EXTRACTORS:
         if predicate(run_dir, meta):
             rows += extract_fn(run_dir, meta.prefix)
+    # Promote the Shared-Use pax-only corrections to the canonical KPI names
+    # BEFORE economics runs -- economics._get("drt_rides") must see the
+    # pax-only ride count, not the parcel-contaminated one.
+    pax_only.apply_overrides(rows)
+    if meta.meta_source != "run_metadata.json":
+        # Degraded metadata changes which KPIs exist at all (no fleet_size ->
+        # no economics rows), so it has to travel with the CSV, not just stdout.
+        rows.append(common_row("meta", "run_meta_degraded", 1, "flag",
+                               "dir-name parsing: " + meta.run_dir_name))
     rows += economics.extract(rows, fleet_size=meta.fleet_size)
 
     kpi_writer.write_long(rows, meta, out / "kpis_long.csv")

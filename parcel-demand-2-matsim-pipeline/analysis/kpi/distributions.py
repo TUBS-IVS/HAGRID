@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 import carriers_parse
+import pax_only
 
 
 def _dist(series, bin_lo, bin_hi, value, unit):
@@ -62,7 +63,9 @@ def extract(run_dir, prefix, recon=None, veh_km=None, occ_km_shares=None):
 
     legs_f = run_dir / (prefix + ".output_drt_legs_drt.csv")
     if legs_f.exists():
-        legs = pd.read_csv(legs_f, sep=";")
+        legs, _ = pax_only.split_parcels(pd.read_csv(legs_f, sep=";"), "personId")
+        # Passenger wait distribution: parcel legs are excluded for the same reason
+        # the wait KPIs are (pax_only.apply_overrides). No-op outside Shared-Use.
         for (lo, hi), n in bin_fixed(legs["waitTime"], 60).items():
             rows.append(_dist("drt_wait", lo, hi, int(n), "s"))
 
