@@ -106,9 +106,17 @@ analyze_tw*.ps1
 
 # Freight module generated output (sim + MATSim test output)
 freight/output/
+freight/test/output/
 
 # MATSim integration-test output (MatsimTestUtils writes to <module>/test/output)
 parcel-demand-2-matsim-pipeline/test/output/
+
+# Python bytecode caches (were tracked by accident until 2026-07-27)
+__pycache__/
+*.pyc
+
+# Generated analysis pages (regenerated from the run output; not versioned)
+parcel-demand-2-matsim-pipeline/analysis/**/*.html
 
 # Root-level generated analysis artifacts
 /Analyse_*.png
