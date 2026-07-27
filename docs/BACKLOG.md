@@ -135,10 +135,64 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
     *absolut* berichtete Zustellquote wäre zu optimistisch. Mechanismus nicht identifiziert;
     Einstieg: `CarrierGenerator.adjustDeliveryRatesConsideringB2B` (Zeile 252) und
     `determineMissedParcels` (1049), Sollwerte `HagridConfig.java:190-196`.
+  - **✅ Ursache der +22 % gefunden (2026-07-27, B7).** Der EFH-Term oben ist gegen
+    Zensus-2022-Gebäudedaten geprüft und **falsch**: `PANDA/data_loader.py:615` schickt jedes
+    `building=yes` ohne `building:levels` per `fillna(2) <= 2` in die EFH-Klasse (und es kann
+    nie MFH werden). Dieser Fallback trägt in Hannover 73,6 %, in der Lausitz **92,5 %** der
+    EFH-Fläche, weil dort 91,8 % statt 57,8 % der Wohngebäude untypisiert sind. Folge:
+    **44,8 %** der Lausitzer OSM-„Wohn"-Geschossfläche liegen in Zellen mit **null**
+    gemeldeten Wohnungen (Hannover 28,3 %) — Scheunen und Nebengebäude, abgerechnet mit dem
+    größten B2C-Koeffizienten. Korrigiert fällt der Ankerabstand von **+22,2 % auf +5,6 %**.
+    Das **stützt den Low-Arm** als realistischeren Bandpunkt (Korrektur ≙ ×0,864, zwischen
+    Low und Central, näher an Low); das gemessene Band bleibt gültig. Details:
+    `PANDA/docs/transferability.md` → B7, reproduzierbar über
+    `python -u studies/run_efh_validation.py`.
+  - **✅ Proxy-Fix umgesetzt (2026-07-27, B8 + User-Entscheidung).** Ein blinder Bake-off von
+    fünf Kandidaten gegen zwei **vorab** festgelegte Gates (blinder Hannover-CV darf nicht
+    schlechter werden UND Anker muss näher an BIEK) hat entschieden: die Wohnfläche kommt
+    jetzt komplett aus dem **Zensus-2022-Gebäudebestand × Leerstandskorrektur**
+    (`PANDA/zensus_wohnflaeche.py`), nicht mehr aus OSM. Sie gewinnt auf **beiden** Achsen —
+    blinder wMAPE **9,8 %** (OSM: 10,1 %) *und* Anker **+0,9 %** (OSM: +22,2 %). Also **auch
+    ein Modellfehler**, nicht nur ein Transferfehler; die B7-Frage ist damit beantwortet.
+    Wichtig für die Diagnose: nur den *Split* zu ersetzen (Kandidat C2) brachte fast nichts
+    (+20,7 %) — der Fehler saß in der **Fläche selbst**, B7-Option (c) wäre zu schwach gewesen.
+    Robust über neun Kombinationen der Klassenkonstanten (Anker +3,6…+4,8 %).
+    Neue Parameter: `w_efh` 0,20 → **1,28**, `w_mfh` 0,12 → **0,99**, `rate_einwohner`
+    0,051 → **0,018** (Zensus zählt Netto-Wohnfläche, OSM zählte Brutto-GF mit Nebengebäuden).
+  - **`[H]` Band neu gerechnet — jetzt symmetrisch, drei Arme.** Das Band war eine Korrektur
+    einer bekannten Verzerrung; die ist behoben, also ist es jetzt Restunsicherheit um ein
+    verankertes Zentralniveau: **low ×0,90 = 5.430 · central ×1,00 = 6.024 · high ×1,10 =
+    6.622** Pakete, 1.053 Segmente. ±10 % ist eine *erklärte Sensitivität*, kein KI (deckt
+    BIEKs eigene Ungenauigkeit + Bootstrap-KI 7,5–13 % wMAPE grob ab).
+    Schöner Konsistenzbefund: das neue Central (6.024) liegt fast auf dem **alten Low-Arm**
+    (5.946 gemessen) — was vorher extern erzwungen war, kommt jetzt aus den Daten. Der
+    High-Arm ist neu und macht die Elastizität zweiseitig; die Flächendegression sollte nach
+    oben abflachen, das war vorher nicht prüfbar.
+    Treiber `run_lmd_band.ps1`, Tags `bandz_{central,low,high}` (neu, damit die alten
+    `band_*`-Outputs erhalten bleiben); überholte Stände als `level_osm_{central,low}`.
+  - **`[M]` Offen nach dem Fix:** (1) die volle CV-Batterie ist **nicht** nachgezogen —
+    Bootstrap-KI, Segment-, Cross-Carrier- und Transfer-Check im PANDA-README sind noch
+    OSM-Zahlen. (2) Neue Nebenwirkung: **281 Zellen mit 630 von 6.024 Paketen (10,5 %)**
+    haben kein gewichtetes OSM-Gebäude und werden per Zellzentroid auf das nächste Segment
+    gesnappt — Nachfrage kommt jetzt aus dem Zensus, die Verteilung *innerhalb* der Zelle
+    weiter aus OSM. Niveau unberührt, Platzierung unter 100 m nicht; unterhalb der
+    dokumentierten ≳300-m-Verlässlichkeit, sollte aber nicht wachsen.
   _(added 2026-07-27)_
 
 - **`[H]` Modular / U-Shift (Szenario 1d)** — Kapsel-Tausch, Offline-jsprit + Pax-Priorität.
-  **Plan noch nicht geschrieben** (soll nach dem 1c-Plan entstehen, erbt Infra-Entscheidungen von 1c).
+  **Spike + Design ✅ 2026-07-27** ([Spike](superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md) /
+  [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md), user-approved). Kernbefunde:
+  Kapsel-Tausch = **nativer** drt-Core `DefaultDrtCapacityChangeTask` (keine neue Dependency; die
+  2026-07-24-Annahme „braucht drt-extensions:2025.0" ist damit **überholt** — services = Ein-Stopp-Vorlage
+  zum Abschreiben, reconfiguration = nur onPrepareSim, beide ungeeignet). Entscheidungen: Pax-Sperre ab
+  Dispatch (strikt); Pax-Kapsel 10 Sitze (= 1c-M1-Basis); 7 Depot-Gruppen, nur Fahrzeugtyp getauscht;
+  Tour-Cap 3,5 h Konzeptparameter + 7,0-h-Kontrollarm (Reversibilitäts-Argument); Idle-Threshold voll
+  gesweept, Cap 2 Punkte. **Detail-Plan noch nicht geschrieben** (nächster Schritt: writing-plans).
+  ⚠️ Die 10-Sitze-Re-Baseline (unten) ist jetzt auch 1d-Voraussetzung, nicht nur 1c.
+  - **Sensitivitätsidee (User 2026-07-27, zurückgestellt):** jsprit-Tourplanung als EIN Pool
+    (ein Carrier, Fahrzeuge an allen 7 Depots, freie Depotwahl je Paket = stärkstes
+    Einheitsunternehmen) und/oder beide Varianten als Zerlegung Konsolidierungs- vs.
+    Integrationseffekt. Verwandt mit `[L]` Consolidated-Operator-Baseline. _(added 2026-07-27)_
   - **Design-Input (2026-07-20, verifiziert 2026-07-24):** die *exklusive* Pax-oder-Fracht-Phase des
     Kapsel-Tauschs passt zur nativen `drt-extensions/services`-Vorlage (`DrtServiceDynActionCreator` +
     blockierende `EntryFactory` + eigene Events = **echte** Fracht-Agent-Trennung ohne Dummy-Passagiere)
@@ -266,16 +320,6 @@ scharfen Befunde sind erledigt (siehe `## Erledigt`); hier stehen die verbleiben
 Positiv-Befund am Rande: im gesamten `integrated`-Baum wirft **jedes** `catch` weiter — es gibt
 dort kein Exception-Swallowing.
 
-- **`[M]` Stille Attribut-Fallbacks im Shared-Use-Pfad härten** — eine Paketperson ohne
-  numerisches `dvrp:load:parcels`-Attribut fällt geräuschlos auf „1 Paket" zurück:
-  Depot-Pickup sinkt von bis zu 600 s auf 30 s, Türdwell von bis zu 900 s auf 120 s
-  (`SharedUseStopDurationProvider.java:48,56`; Snapshot wird nur bei `instanceof Number`
-  gefüllt, `SharedUseModule.java:82-89`). Gleiche Klasse: `SharedUseKpiHandler.java:202`
-  (`getOrDefault(personId, 0)` → Segment zählt 0 Pakete) und `:208` (unattribuierter Kanal
-  → DOOR). Shared-Use sähe damit billiger aus als es ist, ohne Crash.
-  Vorschlag: Snapshot strikt bauen (werfen bei fehlendem Attribut) oder Misses zählen und
-  als KPI ausgeben. _(added 2026-07-27)_
-
 - **`[M]` Locker-Kanal ist per Konstruktion tot + `IntegratedScenarioConfig` ist totes Config-Objekt** —
   `ParcelAgentGenerator.java:59` hartcodiert `new DeliveryChannelResolver(List.of(), 500.0)`,
   also ist `share_channel_locker` strukturell 0. Das Javadoc von `DeliveryChannelResolver:10-15`
@@ -287,16 +331,13 @@ dort kein Exception-Swallowing.
   aktuell täuschen. Verwandt: `[M]` Autonomie-Switch-Plan (dort ist `operation_mode` in
   `RunMetadataWriter.java:31` hart auf `"conventional"`). _(added 2026-07-27)_
 
-- **`[M]` Ungeschützte Kompositions-Zweige im DRT-Config-Aufbau** — zwei stille No-Ops:
-  (a) `DrtConfigComposer.java:63` `if (multi.getModalElements().isEmpty())` — bringt die
-  Base-Config je ein `drt`-Element mit, wird die **komplette** HAGRID-Komposition übersprungen
-  (ServiceArea, Fleet-File, maxWaitTime, Rebalancing, ExtensiveInsertionSearch) und die
-  Base-Werte laufen; (b) `DrtConfigComposer.java:201-207` — `PtAndDrtFareModule` wird nur bei
-  komponierten Tarifen *und* vorhandenen pt-Scoring-Params installiert, sonst fahren pt und drt
-  monetär gratis, während Auto pro km zahlt (genau die Asymmetrie, gegen die das Modul laut
-  Kommentar existiert). Beide Zweige feuern heute nicht, loggen aber auch nichts.
-  Vorschlag: gewählten Zweig loggen; `pt_fare_module_installed` in die Run-Metadaten.
-  _(added 2026-07-27)_
+- **`[M]` Ungeschützter Kompositions-Zweig im DRT-Config-Aufbau** —
+  `DrtConfigComposer.java:63` `if (multi.getModalElements().isEmpty())`: bringt die Base-Config
+  je ein `drt`-Element mit, wird die **komplette** HAGRID-Komposition übersprungen (ServiceArea,
+  Fleet-File, maxWaitTime, Rebalancing, ExtensiveInsertionSearch) und die Base-Werte laufen.
+  Feuert heute nicht, loggt aber auch nichts. Vorschlag: gewählten Zweig loggen, oder werfen
+  wenn nicht-leer aber die erwarteten Keys fehlen. (Der zweite Teil dieses Punkts — der stille
+  `PtAndDrtFareModule`-Skip — ist erledigt, siehe `## Erledigt`.) _(added 2026-07-27)_
 
 - **`[M]` Depot-Zonenzuordnung ohne Warnung** — `ReturnToDepotRebalancingModule.java:94-106`:
   ein Depot außerhalb aller Rebalancing-Zonen hängt sich still an die nächstgelegene
@@ -411,6 +452,31 @@ dort kein Exception-Swallowing.
 ---
 
 ## Erledigt
+
+- **Fallback-Audit Folgearbeit: M2 (strikte Parcel-Attribute) + M6 (Fare-Modul-Skip)** — ✅ 2026-07-27,
+  **lokal, ungepusht**.
+  - **M2:** neue `ParcelAttributes` (shareduse) baut die Population-Snapshots STRIKT und meldet
+    alle Verstöße auf einmal mit Person-IDs. Damit fallen vier stille Stand-ins weg:
+    `SharedUseStopDurationProvider` „1 Paket" (Depot-Pickup 30 s statt bis 600 s, Türdwell 120 s
+    statt bis 900 s), `SharedUseKpiHandler` `getOrDefault(personId, 0)` (Segment zählte 0 Pakete)
+    und der DOOR-Default für einen unattribuierten Kanal, sowie `ParcelOnlyRetryQueue`
+    `orElse(POSITIVE_INFINITY)` (= M5-Fenster still abgeschaltet). Validierung passiert **einmal
+    beim Modul-Install / Handler-Bau**, also als billiger Startup-Abbruch statt als Exception
+    Stunden in die Mobsim hinein. Der Kanal wird zusätzlich gegen die
+    `DeliveryChannelResolver.Channel`-Enumwerte geprüft, damit ein Tippfehler nicht mehr im
+    DOOR-Bucket landet. **Nebenbefund:** der Guard hat sofort zwei Fixtures erwischt
+    (`SharedUseDispatchTest`, `SharedUseRebalTest`), die Paketpersonen ohne `parcelChannel`
+    bauten — also eine Population beschrieben, die real gar nicht entstehen kann; beide an
+    `ParcelAgentGenerator` angeglichen.
+  - **M6:** `DrtConfigComposer.installModules` loggt jetzt beide Zweige — INFO wenn
+    `PtAndDrtFareModule` installiert wird, WARN mit `faresComposed=…, ptScoringParams=…` wenn
+    nicht (dann fahren drt und pt monetär gratis, während Auto pro km zahlt → Mode-Choice-Bias).
+    **Verifiziert, dass der echte Lausitz-Pfad das Modul bekommt** (`SharedUseEndToEndTest` loggt
+    „installed") — es war also reine Logging-Härtung, kein Live-Bug. Der WARN feuert nur in zwei
+    Minimal-Fixtures, die keine Tarife komponieren.
+
+  Verifikation: 45 Unit-Tests (davon 8 neue in `ParcelAttributesTest`, je 1 neuer in
+  `SharedUseStopDurationProviderTest`/`ParcelOnlyRetryQueueTest`) + 11 Integrations-/E2E-Tests grün.
 
 - **Fallback-Audit Lausitz: die vier scharfen Befunde** — ✅ 2026-07-27, **lokal, ungepusht**.
   Gezielter Durchgang durch `hagrid/integrated/**` (~3,2k LOC) + `analysis/kpi/` (~11k LOC) nach
