@@ -130,6 +130,17 @@ class ModularTest {
     }
 
     @Test
+    @DisplayName("DEFAULT_IDLE_THRESHOLD / DEFAULT_MAX_TOUR_DURATION_S pin the plan's literal values (Task 11 review Minor)")
+    void defaultsPinLiteralPlanValues() {
+        // Every prior test/consumer (parseScenario/HAGRIDSimulationConfig defaults included)
+        // checks these constants against THEMSELVES, not against the plan's literal numbers -
+        // so a silent change to either constant would flow straight into published runs with
+        // every test still green. Pin the literals here, once, at the source.
+        assertThat(Modular.DEFAULT_IDLE_THRESHOLD).isEqualTo(0.50);
+        assertThat(Modular.DEFAULT_MAX_TOUR_DURATION_S).isEqualTo(12600);
+    }
+
+    @Test
     @DisplayName("event round-trips its attributes")
     void eventAttributes() {
         ModularTourEvent e = ModularTourEvent.dispatched(3600.0, "dhl_t0",
