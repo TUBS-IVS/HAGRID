@@ -98,13 +98,26 @@ class ModularTest {
      * on every assertion in that test, and the test would not catch a regression to the narrow
      * check. This test breaks that coincidence: it inserts a plain (non-Modular) repositioning
      * DriveTask AFTER the swap-back and BEFORE the trailing stay (a realistic "leave the depot"
-     * leg), which pushes the still-unperformed swap off the one-before-last slot while the
-     * schedule's current task is still the ORIGINAL stay, far earlier still. Only a predicate
-     * that scans every task from current onward (design D2, the wide check) finds the pending
-     * swap here; current-task/one-before-last alone would wrongly report "not committed".
+     * leg), so neither of the two slots the narrow check looks at holds a freight task — the
+     * current task is still the ORIGINAL stay at index 0 and one-before-last is now that plain
+     * repositioning drive. Only a predicate that scans every task from current onward (design D2,
+     * the wide check) reports "committed" here.
+     *
+     * <p><b>What this test does NOT do</b> (whole-branch review): it does not isolate the pending
+     * SWAP, and an earlier version of this comment claimed it did. Two unperformed freight tasks
+     * sit past the current index — the {@code MODULAR_FREIGHT_DRIVE} at index 1 as well as the
+     * swap at index 2 — and the freight drive alone already flips narrow-versus-wide, so the
+     * assertion below would still pass with the swap removed entirely. That is fine for the
+     * property this test is actually named after (the wide scan), and the swap's own detection is
+     * covered by {@link #commitmentPredicate()}, which walks a schedule through
+     * {@code nextTask()} until the swap is the only unperformed freight task left and the
+     * predicate flips to false exactly then. Recording the limit here rather than leaving a
+     * comment that overstates the test's reach: in a plan whose recurring lesson was "tests that
+     * do not discriminate the property they name", a misdescribed test is the same defect one
+     * level up.
      */
     @Test
-    @DisplayName("hasUnperformedFreightTask: detects a pending swap that is neither the current task nor one-before-last")
+    @DisplayName("hasUnperformedFreightTask: detects an unperformed freight task that is neither the current task nor one-before-last")
     void commitmentPredicateNotFooledByNarrowCurrentOrOneBeforeLastCheck() {
         Link link = fixtureLink();
         DvrpVehicle vehicle = fixtureVehicle(link);

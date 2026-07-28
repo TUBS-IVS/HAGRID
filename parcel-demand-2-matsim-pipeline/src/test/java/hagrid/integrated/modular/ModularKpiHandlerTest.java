@@ -128,9 +128,59 @@ class ModularKpiHandlerTest {
         assertThat(csv.get("delta_parcels")).isEqualTo(
                 csv.get("parcels_planned") - csv.get("parcels_served"));
 
-        // Exactly the 20 metric names the brief mandates, no more, no less - Task 13's extractor
-        // is written against this exact set.
-        assertThat(csv).hasSize(20);
+        // No splicer rejection anywhere in this sequence - the diagnostic must be 0, not
+        // silently absent (a missing key would read as 0.0 downstream and hide a regression).
+        assertThat(csv).containsKey("tours_rejected_at_splice");
+        assertThat(csv.get("tours_rejected_at_splice")).isZero();
+
+        // Exactly the metric names the brief mandates, no more, no less - Task 13's extractor is
+        // written against this exact set. 20 originally + tours_rejected_at_splice APPENDED by
+        // the whole-branch review (Finding 3); the twenty and their order are unchanged.
+        assertThat(csv).hasSize(21);
+        assertThat(List.copyOf(csv.keySet()).get(20))
+                .as("appended LAST so no existing column position shifts")
+                .isEqualTo("tours_rejected_at_splice");
+    }
+
+    /**
+     * Review Finding 3. A splicer rejection used to leave no trace at all — no event, no log, no
+     * counter — so the tour later tripped pending expiry and was published as
+     * {@code tours_expired_pending}. That attributes to "the gate was too tight" what was really
+     * "the tour never fit", and the two call for opposite responses on the θ sweep.
+     *
+     * <p>The two tours here separate the diagnostic from the bucket it used to be swallowed by:
+     * {@code t_rejected} was refused by the splicer AND then expired (so it appears in BOTH), while
+     * {@code t_gated} only ever expired (so it must NOT appear in the rejection count). A handler
+     * that simply aliased the new metric onto {@code expired} would pass an assertion on
+     * {@code t_rejected} alone and fail here.
+     */
+    @Test
+    @DisplayName("Finding 3: tours_rejected_at_splice counts splicer refusals, not pending expiries")
+    void spliceRejectionIsCountedSeparatelyFromExpiry(@TempDir Path tmp) throws Exception {
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+
+        handler.handleEvent(ModularTourEvent.planned(100, "t_rejected", 5));
+        handler.handleEvent(ModularTourEvent.spliceRejected(200, "t_rejected", vehId, 5));
+        handler.handleEvent(ModularTourEvent.expired(300, "t_rejected", 5));
+        // gate-starved only: never offered to the splicer, just ran out of envelope
+        handler.handleEvent(ModularTourEvent.planned(100, "t_gated", 4));
+        handler.handleEvent(ModularTourEvent.expired(300, "t_gated", 4));
+        // rejected once, then a nearer vehicle turned up: rejected AND dispatched, no contradiction
+        handler.handleEvent(ModularTourEvent.planned(100, "t_late_fit", 3));
+        handler.handleEvent(ModularTourEvent.spliceRejected(200, "t_late_fit", vehId, 3));
+        handler.handleEvent(ModularTourEvent.dispatched(400, "t_late_fit", vehId2, 3, 10.0, 20.0));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("tours_rejected_at_splice")).isEqualTo(2);   // t_rejected + t_late_fit
+        assertThat(csv.get("tours_expired_pending")).isEqualTo(2);      // t_rejected + t_gated
+        assertThat(csv.get("tours_dispatched")).isEqualTo(1);           // t_late_fit
+        // The diagnostic overlaps the buckets instead of being one - so the identities that
+        // partition the tours must be untouched by it.
+        assertThat(csv.get("tours_planned")).isEqualTo(
+                csv.get("tours_expired_pending") + csv.get("tours_dispatched")
+                        + csv.get("tours_pending_eod"));
     }
 
     @Test
@@ -268,7 +318,7 @@ class ModularKpiHandlerTest {
                 .doesNotThrowAnyException();
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(20);
+        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(21);
 
         double dispatched = csv.get("parcels_dispatched");
         double served = csv.get("parcels_served");
@@ -327,10 +377,10 @@ class ModularKpiHandlerTest {
         assertThat(Files.exists(path)).as("CSV must be written even for a legitimately freight-free run").isTrue();
         List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
         assertThat(lines.get(0)).isEqualTo("metric;value");
-        assertThat(lines).as("header + all 20 metrics").hasSize(21);
+        assertThat(lines).as("header + all 21 metrics").hasSize(22);
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).hasSize(20);
+        assertThat(csv).hasSize(21);
         csv.values().forEach(v -> assertThat(v).isEqualTo(0.0));
     }
 

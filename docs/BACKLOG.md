@@ -380,6 +380,23 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
   Ride-and-Collect, mobile-Packstation (Opt 1), verschiedene Van-Größen. Alle bewusst aufgeschoben
   → [METHODS-LOG](METHODS-LOG.md) §4.5. _(added 2026-07-14)_
 
+- **`[L]` 1d-Modular-Testhygiene (aus der Whole-Branch-Review verschoben)** — drei Punkte, die
+  bewusst *nicht* im Review-Fix-Wave erledigt wurden, hier abgelegt statt in einem Arbeits-Ledger,
+  das kein BACKLOG-Leser je öffnet (sonst sind sie nicht aufgeschoben, sondern verloren):
+  1. **Fixture-Duplikation über fünf Modular-Testdateien** — `buildNetwork()`, das
+     `fixtureVehicle`-Idle-Muster und das Splice-Setup stehen jeweils mehrfach
+     (`ModularTest`, `ModularTourDispatcherTest`, `ModularTourSchedulerTest`,
+     `ModularOptimizerTest`, `ModularStayTaskEndTimeCalculatorTest`). **Jetzt bewusst nicht
+     refaktoriert:** fünf angefasste, grüne Testdateien für null Verhaltensgewinn ist der falsche
+     Tausch; erst anfassen, wenn ohnehin eine dieser Dateien substanziell geändert wird.
+  2. **Namensdrift `link()` vs. `fixtureLink()`** für dieselbe Rolle in denselben Testdateien.
+  3. **`ModularKpiHandler.logConservationViolationIfAny` hat 13 positionale `long`-Parameter** —
+     eine Vertauschung korrumpiert nur die Stolperdraht-Prüfung, nicht die veröffentlichten
+     Zahlen. Genau deshalb aber heikel: dieser Stolperdraht ist die **einzige** Absicherung der
+     Fracht-Buchhaltung, weil es (Design D7) keinen zweiten Ereignisstrom zum Gegenrechnen gibt.
+     Vorschlag: ein `record` mit benannten Feldern statt der Parameterliste.
+  _(added 2026-07-29)_
+
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 
 - **`[L]` Shapefile-/CSV-Parsing: „still zu 0/1"-Fallbacks absichern** — vier Stellen, an denen

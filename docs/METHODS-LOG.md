@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-28._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-29._
 
 ---
 
@@ -365,6 +365,66 @@ Eine Exkursion, die nie abgeschlossen wurde, hat keinen Abschluss-Zeitstempel un
 in die Kennzahl ein. Das verzerrt die Kennzahl systematisch nach unten — genau dann, wenn die
 Flotte am stärksten gesättigt ist, d. h. in genau den Armen, in denen Fracht den Passagierbetrieb
 am stärksten stört.
+
+**Anschluss-Caveat (2026-07-29):** `deadhead_km_planned`/`service_km_planned` summieren über
+**alle DISPATCHTEN** Touren, `freight_vehicle_hours` nur über die **dispatchten UND
+abgeschlossenen**. Die drei Kennzahlen laufen also über *verschiedene Tourenmengen*: eine
+dispatchte, aber unvollständige Exkursion liefert ihre Kilometer und keine ihrer Stunden. Jedes
+km-je-Fracht-Stunde-Verhältnis aus diesen Zahlen ist damit **überhöht**, und zwar umso stärker,
+je gesättigter der Arm.
+
+### 2.14 1d Modular: fahrzeugseitige System-KPIs sind frachtkontaminiert (D7 war zu weit gefasst)
+
+`trägt` · 2026-07-29 · **Paper-Caveat, wichtigster 1d-Eintrag für die Zahleninterpretation.**
+
+**Korrektur einer bisherigen Zusage.** Design-Entscheidung D7 hielt fest, für die Fahrzeug-KPIs
+von Modular sei *keine* `pax_only.py`-Korrektur nötig. Das gilt nur für die **Anfragen-Seite**:
+Pakete werden in 1d nie DVRP-Passagiere, `drt_customer_stats` ist also unverfälschte Pax-Wahrheit.
+Für die **Fahrzeug-Seite** ist die Zusage **falsch**, und zwar strukturell: 1c wurde von Paket-
+*Agenten* kontaminiert, die am `parcel_`-Präfix erkennbar und damit filterbar sind; 1d wird von
+Fracht-*Tasks* auf denselben Passagierfahrzeugen kontaminiert — dafür gibt es keinen Filter.
+
+**Was vor dem Fix falsch war.** `drt_service_time.py` verbuchte `dvrpTaskStarted`-Dauern über den
+Task-Typ-**Namen** in genau drei Töpfe (STAY/DRIVE/STOP). `MODULAR_FREIGHT_DRIVE` und
+`MODULAR_FREIGHT_STOP` landeten in Schlüsseln, die nie gelesen wurden, und tauchten über
+`waiting_s = tour_s − drive_s − stop_s` als **Flotten-Leerlauf** wieder auf; der Kapsel-Tausch
+heißt als Task-Typ wörtlich `"STOP"` (er erbt `DefaultDrtCapacityChangeTask`, Design C6) und
+zählte damit als **Passagier-Standzeit**. Größenordnung bei 120 Fahrzeugen und ~60 Exkursionen à
+3,5 h: rund **195 Fahrzeugstunden Frachtarbeit als Leerlauf** plus rund **14 h Rüstzeit als
+Passagierdienst**.
+
+**Was jetzt korrigiert ist** (Trennung über das `modularTour`-Ereignisfenster
+DISPATCHED…COMPLETED je Fahrzeug — innerhalb einer Exkursion gibt es wegen der strikten
+Pax-Sperre D2 keine Passagierstopps): `drt_drive_hours_total`, `drt_service_hours_total` und
+`drt_wait_hours_total` sind wieder reine Pax- bzw. Leerlaufgrößen. Neu ausgewiesen:
+`drt_freight_drive_hours_total`, `drt_freight_dwell_hours_total`, `drt_retooling_hours_total`,
+`drt_freight_hours_total`.
+
+**Was unkorrigierbar bleibt:** `drt_vehicle_km`, `drt_empty_ratio`, `drt_dp_over_dt`. Ihre Quelle
+`drt_vehicle_stats` enthält die Exkursions-Kilometer bereits aggregiert, und es gibt keine
+Task-weise Distanzaufteilung, gegen die man sie herausrechnen könnte.
+
+**Was von Hand korrigierbar bleibt:** `drt_tour_hours_total`, `service_ratio_active`,
+`fleet_utilisation_by_time`, `fleet_utilisation_by_trips`, `mean_pax_aboard`. Ihr Fenster bzw.
+Nenner ist die *aktive Spanne* des Fahrzeugs, die in 1d die Exkursion einschließt; sie sind
+dadurch gedrückt. `drt_freight_hours_total` ist genau der Überschuss und erlaubt die Umrechnung.
+
+⚠️ **Für die Zahleninterpretation:** fahrzeugseitige System-KPIs aus 1d-Runs sind **nicht direkt
+mit denen der Baseline vergleichbar**, solange sie nicht wie oben korrigiert werden. Beide Gruppen
+stehen als `meta/modular_contaminated_kpis` in `kpis_long.csv`. Runs, die **vor** dem
+2026-07-29-Fix erzeugt wurden, tragen die alten, falschen Werte.
+
+### 2.15 1d Modular: schwächeres Zeitversprechen — Touren-Geometrie ist nicht vergleichbar
+
+`trägt` · 2026-07-29 · **Paper-Caveat.** Konsequenz aus C4 (§1.2), hier als Limitation geführt,
+weil sie im Plan stand und in den Limitations fehlte.
+1d macht ein **schwächeres Zeitversprechen** als die LMD-Baseline — Zustellung am selben Tag
+zwischen 07:30 und 21:00 statt innerhalb einer Welle —, und das ist eine bewusst gesetzte
+**Konzepteigenschaft** (Nutzerentscheidung 2026-07-28), kein Nebeneffekt der Umsetzung. Weil
+jsprit für 1d dadurch ein anderes Fahrzeugfenster bekommt (dazu die 216er-Kapsel und der
+3,5-h-Cap), schneidet es die 1d-Touren **strukturell anders** als die Baseline-Touren. Der
+Vergleich 1d ↔ LMD-Baseline läuft deshalb über **δ/Pakete und operative KPIs**, **nicht** über
+Tourenzahl, Tourlänge oder km je Paket.
 
 ---
 

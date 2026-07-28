@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * End-to-end proof of DRT_MODULAR (U-Shift capsule swap, 1d Task 10) — the FIRST run of the whole
@@ -218,6 +219,17 @@ class ModularEndToEndTest {
                 .isGreaterThanOrEqualTo(2.0);
         assertThat(stats.get("freight_vehicle_hours")).as("freight_vehicle_hours").isGreaterThan(0.0);
         assertThat(stats.get("service_km_planned")).as("service_km_planned").isGreaterThan(0.0);
+        // Review Finding 4: deadhead had NO assertion at all here, so a run publishing 0.0 km of
+        // approach+return - which a real excursion cannot have - passed unremarked. The
+        // ARGUMENT-ORDER guard for the split lives in
+        // ModularTourDispatcherTest#dispatchedEventDoesNotTransposeDeadheadAndService: a
+        // transposition at the dispatcher's call site propagates consistently into event AND CSV,
+        // so no end-to-end assertion over this chain alone can see it.
+        assertThat(stats.get("deadhead_km_planned")).as("deadhead_km_planned (approach + return)")
+                .isGreaterThan(0.0);
+        assertThat(stats.get("tours_rejected_at_splice"))
+                .as("splicer-rejection diagnostic must be published, even when zero (finding 3)")
+                .isNotNull();
         // retooling_hours is derived from swaps_completed: cross-check the derivation, not a copy.
         assertThat(stats.get("retooling_hours")).as("retooling_hours == swaps * 420 s")
                 .isEqualTo(stats.get("swaps_completed") * Modular.RETOOLING_S / 3600.0);
@@ -276,6 +288,10 @@ class ModularEndToEndTest {
         double[] excursionStart = {Double.NaN};
         double[] excursionEnd = {Double.NaN};
         String[] excursionVehicle = {null};
+        // Review Finding 4: accumulated straight off the serialised DISPATCHED events so the
+        // CSV's two km metrics can be checked against their own source across the real chain.
+        double[] dispatchedDeadheadM = {0.0};
+        double[] dispatchedServiceM = {0.0};
         List<Double> paxRequestTimes = new ArrayList<>();
         List<Map.Entry<Double, String>> paxServiceEvents = new ArrayList<>();
         AtomicBoolean paxBoarded = new AtomicBoolean(false);
@@ -295,6 +311,10 @@ class ModularEndToEndTest {
                 if (ModularTourEvent.Phase.DISPATCHED.name().equals(phase)) {
                     excursionStart[0] = event.getTime();
                     excursionVehicle[0] = event.getAttributes().get("vehicle");
+                    dispatchedDeadheadM[0] +=
+                            Double.parseDouble(event.getAttributes().get("deadheadMeters"));
+                    dispatchedServiceM[0] +=
+                            Double.parseDouble(event.getAttributes().get("serviceMeters"));
                 } else if (ModularTourEvent.Phase.COMPLETED.name().equals(phase)) {
                     excursionEnd[0] = event.getTime();
                 }
@@ -337,6 +357,21 @@ class ModularEndToEndTest {
         assertThat(modularTourIds)
                 .as("event tour ids must be the converted tours' ids")
                 .isSubsetOf(tours.stream().map(ModularFreightTour::tourId).toList());
+
+        // Review Finding 4: the two published km metrics must equal the DISPATCHED events they
+        // are accumulated from, read back off output_events.xml.gz - so a handler that summed the
+        // wrong field, or dropped an excursion, is caught over the real chain. Asserted against
+        // each other too: two metrics that are supposed to measure different legs coming out
+        // identical would mean one source is feeding both.
+        assertThat(stats.get("deadhead_km_planned"))
+                .as("CSV deadhead == sum of DISPATCHED deadheadMeters")
+                .isCloseTo(dispatchedDeadheadM[0] / 1000.0, within(1e-6));
+        assertThat(stats.get("service_km_planned"))
+                .as("CSV service == sum of DISPATCHED serviceMeters")
+                .isCloseTo(dispatchedServiceM[0] / 1000.0, within(1e-6));
+        assertThat(dispatchedDeadheadM[0])
+                .as("approach+return and inter-stop legs are different distances")
+                .isNotEqualTo(dispatchedServiceM[0]);
 
         // The mobsim really executed the spliced tasks (not just: the schedule contained them).
         assertThat(startedTaskTypes)

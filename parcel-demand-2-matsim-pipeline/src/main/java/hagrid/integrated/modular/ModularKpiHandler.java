@@ -80,6 +80,25 @@ import java.util.function.ToIntFunction;
  * silently wiping out every other tour's real contribution, not just the offending one. The
  * deadhead/service sums use the same {@code dispatched} filter for the same reason.</p>
  *
+ * <p><b>⚠ The km metrics and {@code freight_vehicle_hours} are over DIFFERENT TOUR SETS</b>
+ * (review Minor 6). {@code deadhead_km_planned} / {@code service_km_planned} filter on
+ * {@code dispatched} alone; {@code freight_vehicle_hours} filters on
+ * {@code completed && dispatched} — for the NaN reason just given, but the effect is that every
+ * dispatched-but-incomplete excursion contributes its kilometres and none of its hours. Any
+ * km-per-freight-hour ratio formed from these three numbers is therefore INFLATED, the more so
+ * the more saturated the arm. Each filter is individually documented above; this paragraph
+ * exists because the mismatch BETWEEN them is what a reader dividing one by the other trips
+ * over, and neither metric's own note can show it.</p>
+ *
+ * <p><b>{@code tours_rejected_at_splice} is a diagnostic, not a bucket</b> (review Finding 3).
+ * It counts tours the splicer refused at least once — see {@link ModularTourDispatcher} on why
+ * that is a different failure from pending expiry (jsprit's car-network {@code plannedDuration}
+ * vs. the actual DRT-routed completion plus approach leg). It is deliberately OUTSIDE the five
+ * conservation identities and overlaps every one of their buckets: a rejected tour may be
+ * dispatched later, may expire, or may sit pending at EOD. Read it against
+ * {@code tours_dispatched}: a tour counted here that never reached DISPATCHED had the gate open
+ * for it and still did not fit.</p>
+ *
  * <p><b>Conservation identities (design §4; assert in test, log — never throw — at shutdown):</b>
  * <ol>
  *   <li>{@code tours_planned == tours_expired_pending + tours_dispatched + tours_pending_eod}</li>
@@ -136,6 +155,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         int parcelsPlanned;
         boolean dispatched;
         boolean expired;
+        boolean rejectedAtSplice;   // review Finding 3: refused by the splicer at least once
         boolean completed;
         boolean completedLate;      // C8: COMPLETED arrived after Modular.DELIVERY_DAY_END_S
         int parcelsServed;
@@ -201,6 +221,11 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         switch (event.getPhase()) {
             case PLANNED -> s.parcelsPlanned = event.getParcels();
             case EXPIRED -> s.expired = true;
+            // NOT mutually exclusive with any other flag, and deliberately outside the
+            // conservation identities: a rejected tour may still be dispatched later (a nearer
+            // vehicle turns up), or expire, or sit pending at EOD. It is a DIAGNOSTIC over the
+            // same tours, not a fourth bucket - see the class javadoc's metric note.
+            case SPLICE_REJECTED -> s.rejectedAtSplice = true;
             case DISPATCHED -> {
                 s.dispatched = true;
                 s.dispatchedAt = event.getTime();
@@ -269,6 +294,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 .sum();
         long toursCompletedLate = count(s -> s.completedLate);
         long parcelsServedLate = sum(s -> true, s -> s.parcelsServedLate);
+        long toursRejectedAtSplice = count(s -> s.rejectedAtSplice);
 
         logConservationViolationIfAny(toursPlanned, toursExpired, toursDispatched, toursCompleted,
                 toursIncomplete, toursPendingEod, parcelsPlanned, parcelsExpired, parcelsDispatched,
@@ -294,7 +320,10 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 "service_km_planned;" + serviceKmPlanned,
                 "freight_vehicle_hours;" + freightVehicleHours,
                 "tours_completed_late;" + toursCompletedLate,
-                "parcels_served_late;" + parcelsServedLate));
+                "parcels_served_late;" + parcelsServedLate,
+                // APPENDED, never inserted (review Finding 3): the twenty names above and their
+                // order are a published contract Task 13's extractor and its tests read.
+                "tours_rejected_at_splice;" + toursRejectedAtSplice));
         try {
             Path parent = outputCsv.getParent();
             if (parent != null) {
