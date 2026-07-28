@@ -92,6 +92,18 @@ public final class ModularTourConverter {
                                                      Network carNetwork, Network drtNetwork) {
         List<ModularFreightTour.Stop> stops = new ArrayList<>();
         double duration = 0.0;
+        // Every leg's expected transport time is summed here, INCLUDING the final leg back to the
+        // depot (a tour's tourElements end on a leg, not an activity - Tour.Builder.scheduleEnd
+        // stores "end" as a separate field, never appending it to tourElements; see Tour.java).
+        // Task 7's expiry formula (now + 2xRETOOLING_S + plannedDuration > latestEnd) is computed
+        // from this exact sum, so dropping the return leg would systematically UNDERSTATE
+        // plannedDuration and let an actually-too-late tour look dispatchable.
+        //
+        // Only Leg/ServiceActivity are handled here: Pickup/Delivery (CarrierShipment-based
+        // activities) are silently skipped. That is safe TODAY because this codebase only ever
+        // builds CarrierService jobs (LmdCarrierBuilder) - never a CarrierShipment - so neither
+        // ever appears in a HAGRID tour in practice. If shipments are ever introduced, this loop
+        // must be extended, or a shipment-based tour will silently lose its stops and duration.
         for (Tour.TourElement el : st.getTour().getTourElements()) {
             if (el instanceof Tour.Leg leg) {
                 duration += leg.getExpectedTransportTime();
