@@ -81,6 +81,8 @@ def extract(run_dir, prefix):
     stat("channel", "segments_delivered_late", int, "segments")
     stat("channel", "segments_window_expired", int, "segments")
     stat("channel", "segments_pending_open", int, "segments")
+    stat("channel", "segments_rejected_final", int, "segments")
+    stat("channel", "segments_pending_eod", int, "segments")
     stat("channel", "undelivered_rate", float, "share")
     stat("channel", "delivery_rate_total", float, "share")
     stat("channel", "share_channel_door", float, "share")
@@ -97,15 +99,21 @@ def extract(run_dir, prefix):
     # deliveries only) and OMITS the line when nothing was delivered -- never
     # re-materialize a 0.0 pseudo-result here. Legacy CSVs carry the old
     # mean_delivery_delay_s key instead; emit it under the NEW name so the
-    # kpis_long schema is uniform across old and new runs.
-    delay_key = None
+    # kpis_long schema is uniform across old and new runs -- BUT (review pass):
+    # the OLD handler wrote `mean_delivery_delay_s;0.0` even with ZERO deliveries
+    # (the chi=0 probe case the C1 fix kills), and its value included late
+    # deliveries. So the legacy fallback (a) skips the row when the same CSV
+    # says nothing was delivered, and (b) carries an honest pre-I1 source label
+    # instead of claiming in-window-only semantics it never had.
     if "mean_time_to_delivery_s" in stats:
-        delay_key = "mean_time_to_delivery_s"
-    elif "mean_delivery_delay_s" in stats:
-        delay_key = "mean_delivery_delay_s"
-    if delay_key is not None:
-        rows.append(row("freight", "mean_time_to_delivery_s", float(stats[delay_key]), "s",
+        rows.append(row("freight", "mean_time_to_delivery_s",
+                        float(stats["mean_time_to_delivery_s"]), "s",
                         "shareduse_channel_stats (delivered in-window only, right-censored)"))
+    elif "mean_delivery_delay_s" in stats and int(stats.get("parcels_delivered", 0)) > 0:
+        rows.append(row("freight", "mean_time_to_delivery_s",
+                        float(stats["mean_delivery_delay_s"]), "s",
+                        "shareduse_channel_stats (legacy mean_delivery_delay_s, "
+                        "pre-I1 semantics: incl. late deliveries, right-censored)"))
 
     pax_rides = None
 
