@@ -110,6 +110,14 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     veh_path = link_geo = None
     veh_km = occ_km_shares = None
     network = run_dir / (meta.prefix + ".output_network.xml.gz")
+    # `drt_cache is not None` is NOT a DRT-only gate: events_cache.ensure_caches
+    # returns BOTH cache paths unconditionally, so a DRT-less freight/LMD run
+    # gets an EMPTY drt cache file (not None) and still enters this block --
+    # reconstruct_drt_paths yields ({}, set()) and link_geo is loaded from
+    # `freight_used` alone, which is what maps.py needs for the LMD layers.
+    # drt_cache is None only for --no-events / no events file, and both skip the
+    # maps entirely below. Verified 2026-07-28 (retracts a BACKLOG finding that
+    # claimed LMD maps render empty here).
     if drt_cache is not None and network.exists():
         veh_path, used = geometry.reconstruct_drt_paths(drt_cache)
         freight_used = geometry.freight_used_links(fev) if fev is not None else set()

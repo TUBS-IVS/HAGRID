@@ -5,8 +5,16 @@ cd /d "%~dp0"
 
 rem logs for each run land in sim-output/<runId...>/logs
 
-rem harte Vorgabe JDK 21
-set "JAVA_EXE=C:\Program Files\Eclipse Adoptium\jdk-21.0.3.9-hotspot\bin\java.exe"
+rem JDK aufloesen: HAGRID_JAVA_EXE > JAVA_HOME > PATH (JDK 21 erwartet)
+set "JAVA_EXE="
+if defined HAGRID_JAVA_EXE if exist "%HAGRID_JAVA_EXE%" set "JAVA_EXE=%HAGRID_JAVA_EXE%"
+if not defined JAVA_EXE if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
+if not defined JAVA_EXE for %%J in (java.exe) do set "JAVA_EXE=%%~$PATH:J"
+if not defined JAVA_EXE (
+  echo No java.exe found. Set JAVA_HOME or HAGRID_JAVA_EXE to a JDK 21 installation.
+  exit /b 1
+)
+echo Using JAVA_EXE=%JAVA_EXE%
 
 rem evtl. Overrides entschärfen
 set "JAVA_TOOL_OPTIONS="
@@ -19,6 +27,10 @@ rem Sichtprüfung
 rem effektive VM Settings vor dem Start loggen
 if not exist "hagrid-output\logs\jvm" mkdir "hagrid-output\logs\jvm"
 "%JAVA_EXE%" -XshowSettings:vm -version 2> "hagrid-output\logs\jvm\vm_settings_before.txt"
+
+rem Versionspruefung: MATSim/HAGRID sind auf 21 gebaut (pom.xml release=21)
+findstr /r /c:"version .21\." "hagrid-output\logs\jvm\vm_settings_before.txt" >nul
+if errorlevel 1 echo WARNING: JDK 21 expected - see hagrid-output\logs\jvm\vm_settings_before.txt
 
 rem Start mit Argumentdatei, kein Umbruch Chaos
 set "JAR=target\parcel-demand-2-matsim-pipeline-1.0-SNAPSHOT.jar"

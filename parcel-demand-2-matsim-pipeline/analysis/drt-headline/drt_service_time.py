@@ -104,6 +104,20 @@ def read_capacity(fleet_file):
     return None
 
 
+def _veh_sort_key(v):
+    """Numeric-suffix sort key for vehicle ids, tolerant of any id shape.
+
+    Real runs use "drt_<int>", but the id is free-form MATSim data: "drt_veh_1"
+    used to raise ValueError here (split("_")[1] == "veh"), which forced a test
+    fixture to rewrite its ids. Take the LAST underscore-separated token if it is
+    an int, else 0; the id string breaks ties, so the order stays deterministic
+    even though the caller sorts a set (arbitrary iteration order).
+    """
+    s = str(v)
+    tail = s.rsplit("_", 1)[-1]
+    return (int(tail) if tail.isdigit() else 0, s)
+
+
 def reconstruct(events_path, fleet_file=None):
     """
     Single time-ordered pass over the DRT events. Returns a dict with per-vehicle and
@@ -227,7 +241,7 @@ def reconstruct(events_path, fleet_file=None):
 
     vehicles = sorted(
         set(list(task_time.keys()) + list(occ_change.keys()) + list(shift.keys())),
-        key=lambda v: int(v.split("_")[1]) if v.split("_")[-1].isdigit() else 0)
+        key=_veh_sort_key)
 
     sim_horizon = max_t
     per_veh = {}
