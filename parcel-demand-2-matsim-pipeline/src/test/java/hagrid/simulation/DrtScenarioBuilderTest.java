@@ -80,16 +80,21 @@ class DrtScenarioBuilderTest {
 
         String outDir = tmp.resolve("matsim").toString();
 
-        // --- 6. Invoke the package-private path-based build overload ---
+        // --- 6. Invoke the path-based build overload (seed-aware 12-arg variant, review F3:
+        // this is the exact overload the HAGRIDSimulationConfig path delegates to, so the
+        // seed assertion below covers the real DRT simulation path) ---
+        long seed = 20260728L;   // deliberately != the base-config/MATSim default (4711)
         Scenario scenario = DrtScenarioBuilder.build(
                 baseConfig,
                 drtNetFile.toString(),
                 clippedPlansFile.toString(),
                 "UNUSED_door2door.shp",  // service area shp — overridden to door2door below
                 fleetFile.toString(),
+                /*railScheduleFile*/ null, /*railTransitVehiclesFile*/ null, /*vehicleTypesFile*/ null,
                 outDir,
                 "DRT_TEST_BUILD",
-                0);
+                0,
+                seed);
 
         // Override operational scheme to door2door so no real shapefile is needed.
         // (The Config was already built by LausitzDrtConfigurator; the scenario was loaded from it.)
@@ -116,6 +121,13 @@ class DrtScenarioBuilderTest {
                 .as("DrtRoute route factory must be registered (getRouteClassForType(ROUTE_TYPE) != null)")
                 .isNotNull()
                 .isEqualTo(DrtRoute.class);
+
+        // (d) F3 load-bearing assertion: the runner seed genuinely reaches the built MATSim
+        // config (AbstractController resets MatsimRandom from it every iteration) — it must
+        // override whatever the base config pins.
+        assertThat(scenario.getConfig().global().getRandomSeed())
+                .as("runner seed must reach config.global().randomSeed on the DRT path")
+                .isEqualTo(seed);
     }
 
     // -------------------------------------------------------------------------

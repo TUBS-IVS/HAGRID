@@ -131,7 +131,9 @@ public class HAGRIDScenarioBuilder {
     @SuppressWarnings("deprecation")
     private static void setupConfig(Config config, HAGRIDSimulationConfig simConfig) {
 
-        config.global().setRandomSeed(1337);
+        // F3: runner-key seed (default 1337 — the value that was hard-coded here before the
+        // key existed, so unchanged specs stay identical); vary for error-band replicates.
+        config.global().setRandomSeed(simConfig.getSeed());
 
         config.network().setInputFile(simConfig.getCarNetworkPath().toAbsolutePath().toString());
         config.network().setTimeVariantNetwork(true);

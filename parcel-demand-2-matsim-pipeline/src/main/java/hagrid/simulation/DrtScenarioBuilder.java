@@ -40,8 +40,9 @@ public final class DrtScenarioBuilder {
      * Builds a passenger-only DRT scenario from a fully initialised simulation config.
      *
      * <p>Supplies the three rail getters ({@code getRailScheduleFiltered},
-     * {@code getRailTransitVehiclesFiltered}, {@code getLausitzVehicleTypes}) added in Task 2,
-     * delegating to the 11-arg path-based overload.</p>
+     * {@code getRailTransitVehiclesFiltered}, {@code getLausitzVehicleTypes}) added in Task 2
+     * plus the MATSim random seed (review F3), delegating to the seed-aware 12-arg
+     * path-based overload.</p>
      *
      * @param cfg a {@link HAGRIDSimulationConfig} for which {@link HAGRIDSimulationConfig#isDrtScenario()}
      *            returns {@code true}
@@ -59,7 +60,8 @@ public final class DrtScenarioBuilder {
                 cfg.getLausitzVehicleTypes(),
                 cfg.getOutputDirectoryAsString(),
                 cfg.getRunId(),
-                cfg.getMaxIterations());
+                cfg.getMaxIterations(),
+                cfg.getSeed());
     }
 
     // ===================================================================
@@ -124,6 +126,36 @@ public final class DrtScenarioBuilder {
                 railScheduleFile, railTransitVehiclesFile, vehicleTypesFile,
                 outputDir, runId, lastIteration);
 
+        return loadScenarioFromConfig(config, serviceAreaShp, railScheduleFile);
+    }
+
+    /**
+     * Seed-aware variant of the 11-arg overload (review F3): additionally applies the MATSim
+     * global random seed to the composed config, overriding whatever the base Lausitz config
+     * pins (4711). This is the overload the {@link HAGRIDSimulationConfig} path delegates to,
+     * so a {@code seed=} runner key genuinely reaches
+     * {@code config.global().setRandomSeed(...)} on the DRT simulation path —
+     * {@code AbstractController} resets {@code MatsimRandom} from it every iteration.
+     *
+     * @param seed MATSim global random seed; vary for error-band replicate runs
+     */
+    public static Scenario build(String baseConfigPath, String drtNetworkFile, String plansFile,
+                                 String serviceAreaShp, String fleetFile,
+                                 String railScheduleFile, String railTransitVehiclesFile, String vehicleTypesFile,
+                                 String outputDir, String runId, int lastIteration, long seed) {
+
+        Config config = LausitzDrtConfigurator.build(
+                baseConfigPath, drtNetworkFile, plansFile, serviceAreaShp, fleetFile,
+                railScheduleFile, railTransitVehiclesFile, vehicleTypesFile,
+                outputDir, runId, lastIteration);
+        config.global().setRandomSeed(seed);
+
+        return loadScenarioFromConfig(config, serviceAreaShp, railScheduleFile);
+    }
+
+    /** Shared steps 2-4: two-step scenario load + optional intermodal rail-stop tagging. */
+    private static Scenario loadScenarioFromConfig(Config config, String serviceAreaShp,
+                                                   String railScheduleFile) {
         // 2. Two-step load: create scenario first so we can register the DrtRouteFactory
         //    BEFORE the plans XML is read. ScenarioUtils.loadScenario(config) gives no
         //    hook for this and would fail to deserialise DRT legs.

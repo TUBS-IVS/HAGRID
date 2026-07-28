@@ -35,6 +35,10 @@ class RunMeta:
     #: dir-name fallback -- both simply predate the fields.
     chi_threshold: Optional[float] = None
     no_parcels: Optional[bool] = None
+    #: MATSim global random seed (F3): error-band replicate runs differ only in
+    #: it (and the tag), so sweep assembly binds replicates via this field. None
+    #: on old metadata files (pre-2026-07-28 writer) and the dir-name fallback.
+    matsim_seed: Optional[int] = None
 
 
 def load_run_meta(run_dir):
@@ -50,7 +54,8 @@ def load_run_meta(run_dir):
             jsprit_iterations=int(j["jsprit_iterations"]),
             fleet_size=j.get("fleet_size"), prefix=j["run_id"],
             meta_source="run_metadata.json",
-            chi_threshold=j.get("chi_threshold"), no_parcels=j.get("no_parcels"))
+            chi_threshold=j.get("chi_threshold"), no_parcels=j.get("no_parcels"),
+            matsim_seed=j.get("matsim_seed"))
     # writeRunMetadataSafely swallows any writer failure, so a missing file is a
     # normal (and easy to miss) outcome of a completed run. Say so loudly: the
     # degraded metadata silently changes which KPIs get emitted at all.

@@ -32,6 +32,8 @@ class RunMetadataWriterTest {
         // I2/M5: sweep coordinates that are NOT part of the runId travel via the metadata
         m.put("chi_threshold", 600.0);
         m.put("no_parcels", false);
+        // F3: the MATSim seed is a runner key; error-band assembly binds replicates via it
+        m.put("matsim_seed", 1337L);
         m.put("created", "2026-07-06T12:00:00");
 
         Path file = RunMetadataWriter.writeMap(m, tmp);
@@ -44,6 +46,7 @@ class RunMetadataWriterTest {
         assertTrue(json.contains("\"drt_with_freight\": true"));
         assertTrue(json.contains("\"chi_threshold\": 600.0"));
         assertTrue(json.contains("\"no_parcels\": false"));
+        assertTrue(json.contains("\"matsim_seed\": 1337"));
         // valid enough JSON for Python's json.loads: braces + quoted keys
         assertTrue(json.trim().startsWith("{") && json.trim().endsWith("}"));
     }

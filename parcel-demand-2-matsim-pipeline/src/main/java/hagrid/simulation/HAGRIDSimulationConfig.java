@@ -138,6 +138,15 @@ public class HAGRIDSimulationConfig {
     private final boolean noParcels;
 
     /**
+     * MATSim global random seed; vary for error-band replicate runs. Applied to
+     * {@code config.global().setRandomSeed(...)} on every simulation path (review F3);
+     * default 1337. The jsprit seed is a separate system-property override and is NOT
+     * affected. Persisted as {@code matsim_seed} in {@code run_metadata.json} so
+     * sweep/error-band assembly can bind replicates to their seed.
+     */
+    private final long seed;
+
+    /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
@@ -263,8 +272,8 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Fullest constructor: adds the {@link #noParcels} reference-run switch on top of every
-     * other parameter. All shorter constructors default {@code noParcels} to {@code false}.
+     * Creates a new scenario configuration with the {@link #noParcels} reference-run switch,
+     * defaulting the MATSim random {@code seed} to 1337.
      *
      * @param noParcels when {@code true}, a {@code DRT_SHAREDUSE} run skips parcel injection
      *                  (leakage control for the χ→0 validation, D10 (e)); ignored otherwise
@@ -274,6 +283,22 @@ public class HAGRIDSimulationConfig {
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
                           boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
                           boolean noParcels) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, /*seed*/ 1337L);
+    }
+
+    /**
+     * Fullest constructor: adds the MATSim global random {@code seed} (review F3) on top of
+     * every other parameter. All shorter constructors default {@code seed} to 1337.
+     *
+     * @param seed MATSim global random seed; vary for error-band replicate runs
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -311,6 +336,7 @@ public class HAGRIDSimulationConfig {
         this.kpiDashboard = kpiDashboard;
         this.chiThreshold = chiThreshold;
         this.noParcels = noParcels;
+        this.seed = seed;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -592,6 +618,17 @@ public class HAGRIDSimulationConfig {
      */
     public boolean isNoParcels() {
         return noParcels;
+    }
+
+    /**
+     * Returns the MATSim global random seed; vary for error-band replicate runs (review F3).
+     * Default 1337. Applied to {@code config.global().setRandomSeed(...)} on every simulation
+     * path; the jsprit seed is a separate system-property override and is NOT affected.
+     *
+     * @return MATSim global random seed
+     */
+    public long getSeed() {
+        return seed;
     }
 
     /**
