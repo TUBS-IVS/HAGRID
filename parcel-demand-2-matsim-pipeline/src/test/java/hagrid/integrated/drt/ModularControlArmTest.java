@@ -1,40 +1,32 @@
 package hagrid.integrated.drt;
 
-import hagrid.integrated.freight.LausitzFreightPreprocessor;
-import hagrid.integrated.freight.LmdTestShapefiles;
-import hagrid.integrated.modular.Modular;
 import hagrid.integrated.modular.ModularDispatchModule;
 import hagrid.integrated.modular.ModularFreightTour;
-import hagrid.integrated.modular.ModularTourConverter;
-import hagrid.integrated.modular.ModularVehicleTypes;
 import hagrid.simulation.DrtScenarioBuilder;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Scenario;
-import org.matsim.api.core.v01.TransportMode;
-import org.matsim.api.core.v01.network.Network;
+import org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams;
+import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingParams;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
+import org.matsim.contrib.drt.scheduler.EmptyVehicleRelocator;
+import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.controler.Controler;
-import org.matsim.core.network.NetworkUtils;
-import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
-import org.matsim.core.network.io.NetworkWriter;
-import org.matsim.core.population.PopulationUtils;
-import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
-import org.matsim.freight.carriers.CarrierVehicleTypes;
-import org.matsim.freight.carriers.Carriers;
+import org.matsim.core.events.EventsUtils;
+import org.matsim.core.events.MatsimEventsReader;
+import org.matsim.core.events.handler.BasicEventHandler;
 import org.matsim.testcases.MatsimTestUtils;
-import org.matsim.vehicles.VehicleType;
-import org.matsim.vehicles.VehicleUtils;
 
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,34 +42,76 @@ import static org.assertj.core.api.Assertions.assertThat;
  * so the passenger side must come out BYTE-IDENTICAL to a run with no modular module at all, not
  * merely "within noise".
  *
- * <p><b>Staging: once, not twice.</b> Every input file (raw network, raw plans, service-area
- * shapefile, depot csv, van type, LMD demand shapefile, the jsprit-routed carriers, and — via
- * {@link LausitzDrtPreprocessor#run} — the DRT-tagged network / clipped plans / fleet file) is
- * written to disk EXACTLY ONCE and then read by BOTH {@link DrtScenarioBuilder#build} calls below.
- * There is therefore no staging step left that could itself introduce a difference between the two
- * runs: the only thing that differs between run A and run B is whether
- * {@link ModularDispatchModule} is installed at all. (This also means the recipe is NOT sensitive
- * to whether {@code LausitzFreightPreprocessor.runModular}'s jsprit routing is itself deterministic —
- * it runs once, and its single output is fed to run A only.)</p>
+ * <p><b>TWO arm-pairs, proving the same property under two different compositions (Task 12 review,
+ * Important finding).</b> The first attempt at this test used the bare 1-arg
+ * {@code DrtConfigComposer.installModules(Controler)} for both arms of a single pair — a real
+ * property, but a THIRD wiring that is neither the production {@code DRT_MODULAR} run nor the
+ * production 10-seat Baseline run those two both actually use
+ * ({@code SimulationRunnerUtils.java:337-347}: every real DRT run unconditionally installs the
+ * 5-arg overload with {@link ReturnToDepotRebalancingModule}). Since this control arm is what
+ * licenses the study's headline pax-cost comparison, extrapolating from a stripped composition to
+ * the production one is exactly the kind of gap a reader would poke at. Two pairs close it:</p>
+ * <ul>
+ *   <li><b>Pair 1 (A vs B), stripped composition</b> — plain {@code installModules(Controler)}
+ *       (1-arg) for both arms, no rebalancing module. This isolates the WIRING-LEVEL leak cleanly:
+ *       the {@code ScheduleTimingUpdater} decorator, the {@code VehicleEntry.EntryFactory} decorator
+ *       and the {@code DrtOptimizer} rebind are all installed unconditionally at QSim startup
+ *       (see {@link ModularDispatchModule}), so a leak in any of them would fire whether or not
+ *       anything else is going on — this pair has the fewest possible confounds for finding one.</li>
+ *   <li><b>Pair 2 (C vs D), production composition</b> — the 5-arg
+ *       {@code installModules(Controler, depots, returnStart, perDepotCapacity,
+ *       demandEstimationPeriod)} with {@link ReturnToDepotRebalancingModule}, i.e. the SAME
+ *       composition every real {@code DRT_MODULAR} and 10-seat-Baseline run uses. This proves the
+ *       SAME byte-identity property holds when rebalancing is actually live and actually relocating
+ *       vehicles (asserted, not merely configured — see {@link #anyRelocateTaskStarted}), which is
+ *       what licenses reading pair 1's property as representative of the runs the paper's headline
+ *       numbers come from.</li>
+ * </ul>
+ * Both pairs share ONE staged fixture ({@link ModularE2eStaging}) and the SAME two pinned pax
+ * output files; only the DRT config composition differs between pairs, and only whether
+ * {@link ModularDispatchModule} is installed differs within a pair.
  *
- * <p><b>Composition chosen: plain {@code installModules(Controler)} (1-arg), for BOTH runs</b> — the
- * same "plain baseline" composition {@code DrtBaselineEndToEndTest}/{@code MarriedBaselineEndToEndTest}
- * use, NOT {@code ModularEndToEndTest}'s 5-arg overload with {@link ReturnToDepotRebalancingModule}.
- * Deviation from the Task 10 recipe, recorded per the brief's instruction to say why: Task 10's three
- * deviations (300 m rebalancing cell, {@code returnStart=10:00}, five contention agents) all exist
- * to make the splicer/rebalancer COEXISTENCE property observable — machinery this test has no use
- * for and every additional moving part is a confound, not evidence, for a byte-identity proof. The
- * composed config's UNCONDITIONAL {@code RebalancingParams} (native to {@code DrtConfigComposer
- * .composeConfig}, 2000 m cell — see {@code DrtConfigComposer.java:50,86-110}) is left at its default:
- * with this fixture's network spanning 100..1000 the whole service area is ONE zone, so MinCostFlow
- * rebalancing already never has anything to move regardless, which is a virtue here, not a gap.</p>
+ * <p><b>Pair 2's rebalancing parameters mirror Task 10's {@code ModularEndToEndTest}, not the design
+ * spec's or production's literal values</b> — for the same reason Task 10 deviated:</p>
+ * <ul>
+ *   <li>rebalancing zone cell size shrunk from the composed 2000 m default to 300 m: this fixture's
+ *       network spans 100..1000 m, so at 2000 m the WHOLE service area is one zone and MinCostFlow
+ *       never has anything to move regardless of whether {@link ReturnToDepotRebalancingModule} is
+ *       present — which would make "pair 2 actually exercises the rebalancing interaction" true only
+ *       by vacuous absence of any relocation at all. Applied identically to run C and run D so the
+ *       two arms of the pair stay identically staged.</li>
+ *   <li>{@code returnStart} = 10:00, not the design spec's 84600 (23:30) nor production's literal
+ *       {@code serviceEnd - 5400 = 81000} (22:30): every fixture DRT vehicle starts at the single
+ *       depot link, so a depot pull engaging 30-90 min before service end has nothing left to pull —
+ *       at 10:00 both the demand-based and the depot-targeting branch of
+ *       {@code ReturnToDepotTargetCalculator} meet live vehicle activity. Must be a multiple of the
+ *       1800 s rebalancing interval.</li>
+ * </ul>
  *
- * <p>Also NOT reused from Task 10: the five extra {@code person_c*} "contention" agents. Those exist
- * to give the D2 lockout a live insertion search to be tested against WHILE a vehicle is on freight;
- * with the gate never opening there is no freight excursion window for them to contend inside, so
- * they would be inert padding here. The stock {@link DrtE2eFixtures#buildDemand()} population (5
- * {@code person_*} drt-mode agents + 1 {@code pt} agent) is used as-is and already yields non-trivial
- * DRT legs and customer-stats content (verified below, not merely assumed).</p>
+ * <p><b>Staging: once, not four times.</b> {@link ModularE2eStaging#stage} writes every input file
+ * (raw network, raw plans, service-area shapefile, depot csv, van type, LMD demand shapefile, the
+ * jsprit-routed carriers, and — via {@code LausitzDrtPreprocessor.run} — the DRT-tagged network /
+ * clipped plans / fleet file) to disk EXACTLY ONCE and converts the routed carriers into the
+ * {@link ModularFreightTour} list ONCE; all four {@code DrtScenarioBuilder.build} calls (one per
+ * run A/B/C/D) read the SAME files, and runs A/C additionally share the SAME tour list. There is
+ * therefore no staging step left that could itself introduce a difference between arms within a
+ * pair — the only thing that differs within a pair is whether {@link ModularDispatchModule} is
+ * installed at all, and the only thing that differs between pairs is the DRT config composition.
+ * (Also extracted into {@link ModularE2eStaging} because {@link ModularEndToEndTest} depends on
+ * staging the identical fixture — Task 12 review, Minor 1: two independently maintained copies of
+ * this recipe were a drift risk, not merely duplication.)</p>
+ *
+ * <p>Deliberately NOT reused from Task 10: the five extra {@code person_c*} "contention" agents.
+ * Those exist to give the D2 lockout a live insertion search to be tested against WHILE a vehicle is
+ * on freight; with the gate never opening in EITHER pair there is no freight excursion window for
+ * them to contend inside, so they would be inert padding here. The stock
+ * {@link DrtE2eFixtures#buildDemand()} population (5 {@code person_*} drt-mode agents + 1 {@code pt}
+ * agent) is used as-is and already yields non-trivial DRT legs and customer-stats content (verified
+ * below, not merely assumed). Confirmed empirically (Task 12 mutation-testing round): even a REAL
+ * freight dispatch forced via a temporarily lowered {@code idleThreshold} left the pax CSVs of this
+ * exact fixture completely unchanged, because nothing contends with the committed vehicle — which is
+ * why a SEPARATE deliberate-leak mutation (in {@code ModularStayTaskEndTimeCalculator}, gate held
+ * shut) was needed to prove the byte-identity assertion itself has teeth; see the Task 12 report.</p>
  */
 @DisplayName("DRT_MODULAR control arm (idleThreshold=1.0, 1d Task 12)")
 class ModularControlArmTest {
@@ -85,166 +119,222 @@ class ModularControlArmTest {
     @RegisterExtension
     public MatsimTestUtils utils = new MatsimTestUtils();
 
-    private static final double AREA_SIZE = 2000.0;
-    private static final int FLEET_SIZE = 4;
-    /** 1d baseline seat count (the capsule swap trades these seats for cargo volume). */
-    private static final int PAX_CAPACITY = 10;
-    /** Same literal run id fed to BOTH runs (separate output directories) — see the class javadoc
-     *  for why this is safe: {@code OutputDirectoryHierarchy} is a per-{@code Controler} instance
-     *  keyed only by {@code config.controller().getOutputDirectory()}, which differs between A/B. */
+    /** Same literal run id fed to all four runs (separate output directories: matsimA/B/C/D) — see
+     *  the class javadoc for why this is safe: {@code OutputDirectoryHierarchy} is a per-{@code
+     *  Controler} instance keyed only by {@code config.controller().getOutputDirectory()}
+     *  ({@code LausitzDrtPreprocessor.java:139-144} composes that from the explicit {@code outputDir}
+     *  argument, not from any JVM-wide registry keyed by run id), which differs between every arm. */
     private static final String RUN_ID = "CONTROL_E2E";
     /** The control arm: {@code idleShare > idleThreshold} can be at most {@code 1.0 > 1.0} (all
      *  vehicles idle) which is false, so the gate never opens. Confirmed against
      *  {@code ModularTourDispatcher}'s literal condition, not merely the design doc. */
     private static final double IDLE_THRESHOLD_CONTROL = 1.0;
 
+    // ---- pair 2 (production composition) parameters — see class javadoc for why these values ----
+    /** Single fixture depot, matches {@code depots.csv} ("dhl;500.0;500.0") staged by
+     *  {@link ModularE2eStaging}. */
+    private static final List<Coord> DEPOT_COORDS = List.of(new Coord(500.0, 500.0));
+    private static final double RETURN_START_S = 10 * 3600.0;
+    /** Must equal the composed config's demandEstimationPeriod, else ZonalDemandEstimator's
+     *  estimationPeriod==timeBinSize precondition fails (SharedUseRebalTest.java:129-134). */
+    private static final double DEMAND_ESTIMATION_PERIOD_S = 1800.0;
+    /** ceil(fleetSize / depots.size()) = ceil(4/1) — mirrors {@code SimulationRunnerUtils}'
+     *  production formula for a single depot and {@code ModularE2eStaging.FLEET_SIZE}. */
+    private static final double PER_DEPOT_CAPACITY = 4.0;
+    private static final double REBAL_CELL_SIZE_M = 300.0;
+    /** The two task types {@link EmptyVehicleRelocator} appends — used to confirm pair 2 actually
+     *  exercised rebalancing, not merely configured it. */
+    private static final Set<String> RELOCATE_TASK_TYPES = Set.of(
+            EmptyVehicleRelocator.RELOCATE_VEHICLE_TASK_TYPE.name(),
+            EmptyVehicleRelocator.RELOCATE_VEHICLE_TO_DEPOT_TASK_TYPE.name());
+
     @Test
-    @DisplayName("theta=1.0: zero dispatches AND pax outputs byte-identical to a run without the module")
+    @DisplayName("theta=1.0: zero dispatches AND pax outputs byte-identical to a run without the"
+            + " module, under BOTH the stripped and the production composition")
     void gateNeverOpensReproducesBaseline() throws Exception {
         Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
-        Files.createDirectories(dir);
+        ModularE2eStaging staging = ModularE2eStaging.stage(dir);
 
-        // ================= STAGE ONCE (shared by both runs) =================
-        Network rawNet = DrtE2eFixtures.buildGrid();
-        Path rawNetFile = dir.resolve("raw_network.xml.gz");
-        new NetworkWriter(rawNet).write(rawNetFile.toString());
-        Path rawPlansFile = dir.resolve("raw_plans.xml.gz");
-        PopulationUtils.writePopulation(DrtE2eFixtures.buildDemand(), rawPlansFile.toString());
-        Path shpFile = dir.resolve("service-area.shp");
-        DrtE2eFixtures.writeSquareShapefile(shpFile, AREA_SIZE);
-        Path depotCsv = dir.resolve("depots.csv");
-        Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
-
-        // Freight side: van type (cost donor for the capsule) + tiny PANDA-like demand.
-        CarrierVehicleTypes types = new CarrierVehicleTypes();
-        VehicleType van = VehicleUtils.createVehicleType(Id.create("ct_cep_size_m", VehicleType.class));
-        van.getCapacity().setOther(165);
-        van.setNetworkMode("car");
-        van.getCostInformation().setCostsPerMeter(0.0004).setCostsPerSecond(0.0).setFixedCost(170.0);
-        types.getVehicleTypes().put(van.getId(), van);
-        Path typesFile = dir.resolve("vans.xml");
-        new CarrierVehicleTypeWriter(types).write(typesFile.toString());
-
-        Path demandShp = dir.resolve("demand.shp");
-        LmdTestShapefiles.writeDemand(demandShp,
-                new double[][]{{300, 200}, {800, 600}},
-                new long[]{3, 2},    // dhl B2C parcels
-                new long[]{1, 0},    // dhl B2B parcels
-                new long[]{0, 0});   // hermes: none
-
-        // Offline jsprit half: ONE run, ONE routed-carriers file, consumed by run A only.
-        Path carriersOut = dir.resolve("modular_carriers_routed.xml");
-        LausitzFreightPreprocessor.runModular(demandShp.toString(), depotCsv.toString(),
-                rawNetFile.toString(), typesFile.toString(), carriersOut.toString(),
-                /*jspritIterations*/ 1, shpFile.toString(), Modular.DEFAULT_MAX_TOUR_DURATION_S);
-        assertThat(carriersOut).exists();
-
-        // DRT side: production preprocessor (drt-tagged net, person plans, fleet) — ONE set of
-        // files, read by BOTH DrtScenarioBuilder.build calls below.
-        Path drtNetFile = dir.resolve("drt_network.xml.gz");
-        Path clippedPlans = dir.resolve("clipped_plans.xml.gz");
-        Path fleetFile = dir.resolve("fleet.xml.gz");
-        LausitzDrtPreprocessor.run(
-                rawNetFile.toString(), rawPlansFile.toString(), shpFile.toString(),
-                depotCsv.toString(), drtNetFile.toString(), clippedPlans.toString(),
-                fleetFile.toString(), FLEET_SIZE, PAX_CAPACITY,
-                /*serviceBegin*/ 0.0, /*serviceEnd*/ 86400.0);
-
-        URL cfgUrl = getClass().getClassLoader().getResource("lausitz-native-like.config.xml");
-        assertThat(cfgUrl)
-                .as("test fixture lausitz-native-like.config.xml must be on the test classpath")
-                .isNotNull();
-
-        // Tours: read the routed carriers, convert against the car + DRT networks (Task 10 recipe).
-        // Used by run A only — run B installs no modular module and never touches this list.
-        Carriers routed = ModularTourConverter.read(carriersOut.toString(),
-                ModularVehicleTypes.createCapsuleTypes(typesFile.toString()));
-        Network carNet = LausitzFreightPreprocessor.carNetwork(
-                NetworkUtils.readNetwork(rawNetFile.toString()));
-        Network drtNet = NetworkUtils.createNetwork();
-        new TransportModeNetworkFilter(NetworkUtils.readNetwork(drtNetFile.toString()))
-                .filter(drtNet, Set.of(TransportMode.drt));
-        List<ModularFreightTour> tours = ModularTourConverter.convert(routed, carNet, drtNet);
-
-        // Ground truth: without this, "tours_dispatched == 0" would be vacuously true for a fixture
-        // that produced no tours at all — proving nothing about the gate, only about an empty plan.
-        int expectedTours = tours.size();
-        int expectedParcels = tours.stream().mapToInt(ModularFreightTour::totalParcels).sum();
+        // Ground truth: without this, "tours_dispatched == 0" would be vacuously true for a
+        // fixture that produced no tours at all - proving nothing about the gate, only about an
+        // empty plan. Shared by BOTH pairs: the tour list itself does not depend on which
+        // composition (never) dispatches it.
+        int expectedTours = staging.tours.size();
+        int expectedParcels = staging.tours.stream().mapToInt(ModularFreightTour::totalParcels).sum();
         assertThat(expectedTours).as("fixture must produce >=1 dispatchable tour").isGreaterThan(0);
         assertThat(expectedParcels).as("fixture must plan >=1 parcel").isGreaterThan(0);
 
-        // ================= RUN A: idleThreshold=1.0 (gate never opens) =================
+        // SoftAssertions (Task 12 review, Minor 2): group (1) zero-dispatch and group (2)
+        // byte-identity are collected together so a regression that breaks BOTH surfaces both
+        // failures at once, instead of fail-fast hiding the byte-identity diff - the assertion this
+        // whole task exists to prove has teeth - behind the KPI-count failure.
+        SoftAssertions softly = new SoftAssertions();
+
+        // ================= PAIR 1: stripped composition (isolates the wiring-level leak) =========
         Path matsimOutA = dir.resolve("matsimA");
-        Scenario scenarioA = DrtScenarioBuilder.build(cfgUrl.toString(), drtNetFile.toString(),
-                clippedPlans.toString(), shpFile.toString(), fleetFile.toString(),
-                matsimOutA.toString(), RUN_ID, /*lastIteration*/ 1);
-        DrtConfigGroup drtCfgA = MultiModeDrtConfigGroup.get(scenarioA.getConfig())
-                .getModalElements().iterator().next();
-
-        Controler controlerA = new Controler(scenarioA);
-        DrtConfigComposer.installModules(controlerA);
-        // LAST overriding module (SharedUseModule convention) — theta=1.0, the control arm.
-        controlerA.addOverridingModule(
-                new ModularDispatchModule(drtCfgA, tours, IDLE_THRESHOLD_CONTROL));
-        controlerA.run();
-
-        // ================= RUN B: no modular module at all (plain baseline composition) =========
         Path matsimOutB = dir.resolve("matsimB");
-        Scenario scenarioB = DrtScenarioBuilder.build(cfgUrl.toString(), drtNetFile.toString(),
-                clippedPlans.toString(), shpFile.toString(), fleetFile.toString(),
-                matsimOutB.toString(), RUN_ID, /*lastIteration*/ 1);
+        runStrippedArm(staging, matsimOutA, /*withModule*/ true);
+        runStrippedArm(staging, matsimOutB, /*withModule*/ false);
+        assertControlArm(softly, "pair 1 (stripped composition)", matsimOutA, matsimOutB,
+                expectedTours, expectedParcels);
 
-        Controler controlerB = new Controler(scenarioB);
-        DrtConfigComposer.installModules(controlerB);
-        controlerB.run();
+        // ================= PAIR 2: production composition (5-arg installModules + RTDRM) =========
+        Path matsimOutC = dir.resolve("matsimC");
+        Path matsimOutD = dir.resolve("matsimD");
+        runProductionArm(staging, matsimOutC, /*withModule*/ true);
+        runProductionArm(staging, matsimOutD, /*withModule*/ false);
+        assertControlArm(softly, "pair 2 (production composition)", matsimOutC, matsimOutD,
+                expectedTours, expectedParcels);
 
-        // ================= (1) Run A dispatched NOTHING =================
-        Path kpiCsvA = matsimOutA.resolve(RUN_ID + ".modular_tour_stats.csv");
-        assertThat(kpiCsvA).as("KPI CSV must be written under the run-ID prefix").exists();
-        Map<String, Double> statsA = readMetricCsv(kpiCsvA);
+        // Pair 2 must actually exercise rebalancing while the module is installed, else it
+        // silently degenerates into a slower copy of pair 1 and proves nothing about the
+        // interaction (Task 12 review, Important finding).
+        softly.assertThat(anyRelocateTaskStarted(matsimOutC))
+                .as("run C (production composition, module installed) must emit >=1 RELOCATE task -"
+                        + " otherwise pair 2 never actually exercised the rebalancing machinery and"
+                        + " degenerates into a slower copy of pair 1")
+                .isTrue();
 
-        // Not vacuous: tours_planned must be positive, else the zero-dispatch identities below
-        // would be trivially satisfied by an empty plan rather than by the gate actually staying
-        // shut on a real, non-empty tour list.
-        assertThat(statsA.get("tours_planned")).as("tours_planned (ground truth: %s)", expectedTours)
-                .isEqualTo((double) expectedTours).isGreaterThan(0.0);
-        assertThat(statsA.get("parcels_planned")).as("parcels_planned (ground truth: %s)", expectedParcels)
-                .isEqualTo((double) expectedParcels);
+        softly.assertAll();
+    }
 
-        assertThat(statsA.get("tours_dispatched")).as("tours_dispatched").isZero();
-        assertThat(statsA.get("parcels_served")).as("parcels_served").isZero();
-        assertThat(statsA.get("delta_parcels")).as("delta_parcels == parcels_planned (every parcel undelivered)")
-                .isEqualTo(statsA.get("parcels_planned"));
+    // ------------------------------------------------------------------ arm builders
 
-        // Run B never installs the module at all: the KPI channel itself must not exist, not
-        // merely report zeros — the stronger "no carriers" style guard from Task 10 (c).
-        assertThat(matsimOutB.resolve(RUN_ID + ".modular_tour_stats.csv"))
-                .as("run B installs no ModularDispatchModule - the KPI CSV must not exist at all")
+    /** One arm of pair 1: plain {@code installModules(Controler)} (1-arg), no rebalancing module. */
+    private static void runStrippedArm(ModularE2eStaging staging, Path matsimOut, boolean withModule)
+            throws Exception {
+        Scenario scenario = DrtScenarioBuilder.build(staging.cfgUrl.toString(),
+                staging.drtNetFile.toString(), staging.clippedPlans.toString(),
+                staging.shpFile.toString(), staging.fleetFile.toString(),
+                matsimOut.toString(), RUN_ID, /*lastIteration*/ 1);
+
+        Controler controler = new Controler(scenario);
+        DrtConfigComposer.installModules(controler);
+        if (withModule) {
+            DrtConfigGroup drtCfg = MultiModeDrtConfigGroup.get(scenario.getConfig())
+                    .getModalElements().iterator().next();
+            // LAST overriding module (SharedUseModule convention) - theta=1.0, the control arm.
+            controler.addOverridingModule(
+                    new ModularDispatchModule(drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL));
+        }
+        controler.run();
+    }
+
+    /** One arm of pair 2: the production 5-arg {@code installModules} +
+     *  {@link ReturnToDepotRebalancingModule}, rebalancing cell shrunk so MinCostFlow can actually
+     *  relocate in this fixture (see class javadoc). Applied identically regardless of
+     *  {@code withModule} so the two arms of the pair stay identically staged/configured. */
+    private static void runProductionArm(ModularE2eStaging staging, Path matsimOut, boolean withModule)
+            throws Exception {
+        Scenario scenario = DrtScenarioBuilder.build(staging.cfgUrl.toString(),
+                staging.drtNetFile.toString(), staging.clippedPlans.toString(),
+                staging.shpFile.toString(), staging.fleetFile.toString(),
+                matsimOut.toString(), RUN_ID, /*lastIteration*/ 1);
+        DrtConfigGroup drtCfg = MultiModeDrtConfigGroup.get(scenario.getConfig())
+                .getModalElements().iterator().next();
+        // Config mutation MUST precede `new Controler(scenario)`: DRT config groups are read at
+        // controler construction time.
+        RebalancingParams rebalancing = drtCfg.getRebalancingParams().orElseThrow(
+                () -> new AssertionError("composeConfig must install RebalancingParams"));
+        ((SquareGridZoneSystemParams) rebalancing.getZoneSystemParams()).setCellSize(REBAL_CELL_SIZE_M);
+
+        Controler controler = new Controler(scenario);
+        DrtConfigComposer.installModules(controler, DEPOT_COORDS, RETURN_START_S,
+                PER_DEPOT_CAPACITY, DEMAND_ESTIMATION_PERIOD_S);
+        if (withModule) {
+            controler.addOverridingModule(
+                    new ModularDispatchModule(drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL));
+        }
+        controler.run();
+    }
+
+    // ------------------------------------------------------------------ shared assertions
+
+    /**
+     * Asserts one arm-pair's control-arm property: the {@code withModule} run dispatched nothing
+     * (ground-truthed, not vacuous), the {@code baseline} run never even had the KPI channel, and
+     * the two pinned pax CSVs are byte-identical between them. Numeric and byte-identity checks are
+     * SOFT (Task 12 review, Minor 2) so both surface together; the two existence/non-existence
+     * preconditions stay hard/fail-fast since nothing downstream is meaningful if they are wrong.
+     */
+    private static void assertControlArm(SoftAssertions softly, String label,
+                                          Path matsimOutWithModule, Path matsimOutBaseline,
+                                          int expectedTours, int expectedParcels) throws IOException {
+        Path kpiCsv = matsimOutWithModule.resolve(RUN_ID + ".modular_tour_stats.csv");
+        assertThat(kpiCsv).as(label + ": KPI CSV must be written under the run-ID prefix").exists();
+        assertThat(matsimOutBaseline.resolve(RUN_ID + ".modular_tour_stats.csv"))
+                .as(label + ": baseline installs no ModularDispatchModule - the KPI CSV must not"
+                        + " exist at all")
                 .doesNotExist();
 
-        // ================= (2) bit-identical pax outputs =================
-        Path legsA = matsimOutA.resolve(RUN_ID + ".output_drt_legs_drt.csv");
-        Path legsB = matsimOutB.resolve(RUN_ID + ".output_drt_legs_drt.csv");
-        Path custA = matsimOutA.resolve(RUN_ID + ".drt_customer_stats_drt.csv");
-        Path custB = matsimOutB.resolve(RUN_ID + ".drt_customer_stats_drt.csv");
+        Map<String, Double> stats = readMetricCsv(kpiCsv);
+
+        // ---- group (1): zero dispatch, ground-truthed so an empty plan can't satisfy it ----
+        softly.assertThat(stats.get("tours_planned"))
+                .as(label + ": tours_planned (ground truth %s)", expectedTours)
+                .isEqualTo((double) expectedTours);
+        softly.assertThat(stats.get("tours_planned"))
+                .as(label + ": tours_planned must be > 0 (else zero-dispatch below is vacuous)")
+                .isGreaterThan(0.0);
+        softly.assertThat(stats.get("parcels_planned"))
+                .as(label + ": parcels_planned (ground truth %s)", expectedParcels)
+                .isEqualTo((double) expectedParcels);
+        softly.assertThat(stats.get("tours_dispatched")).as(label + ": tours_dispatched").isZero();
+        softly.assertThat(stats.get("parcels_served")).as(label + ": parcels_served").isZero();
+        softly.assertThat(stats.get("delta_parcels"))
+                .as(label + ": delta_parcels == parcels_planned (every parcel undelivered)")
+                .isEqualTo(stats.get("parcels_planned"));
+
+        // ---- group (2): bit-identical pax outputs ----
+        Path legsWith = matsimOutWithModule.resolve(RUN_ID + ".output_drt_legs_drt.csv");
+        Path legsBase = matsimOutBaseline.resolve(RUN_ID + ".output_drt_legs_drt.csv");
+        Path custWith = matsimOutWithModule.resolve(RUN_ID + ".drt_customer_stats_drt.csv");
+        Path custBase = matsimOutBaseline.resolve(RUN_ID + ".drt_customer_stats_drt.csv");
 
         // Non-vacuous: both files must actually carry data rows, not merely a header - an
         // empty-vs-empty (or headers-only) comparison would pass for a reason unrelated to the
         // property under test.
-        assertNonTrivial(legsA, "output_drt_legs_drt.csv (run A)");
-        assertNonTrivial(legsB, "output_drt_legs_drt.csv (run B)");
-        assertNonTrivial(custA, "drt_customer_stats_drt.csv (run A)");
-        assertNonTrivial(custB, "drt_customer_stats_drt.csv (run B)");
+        assertNonTrivial(legsWith, label + ": output_drt_legs_drt.csv (with module)");
+        assertNonTrivial(legsBase, label + ": output_drt_legs_drt.csv (baseline)");
+        assertNonTrivial(custWith, label + ": drt_customer_stats_drt.csv (with module)");
+        assertNonTrivial(custBase, label + ": drt_customer_stats_drt.csv (baseline)");
 
-        assertThat(Files.mismatch(legsA, legsB))
-                .as("output_drt_legs_drt.csv must be byte-identical between A (theta=1.0) and B (no module)")
+        softly.assertThat(Files.mismatch(legsWith, legsBase))
+                .as(label + ": output_drt_legs_drt.csv must be byte-identical between the module"
+                        + " (theta=1.0) and no-module arms")
                 .isEqualTo(-1L);
-        assertThat(Files.mismatch(custA, custB))
-                .as("drt_customer_stats_drt.csv must be byte-identical between A (theta=1.0) and B (no module)")
+        softly.assertThat(Files.mismatch(custWith, custBase))
+                .as(label + ": drt_customer_stats_drt.csv must be byte-identical between the module"
+                        + " (theta=1.0) and no-module arms")
                 .isEqualTo(-1L);
     }
 
-    // ------------------------------------------------------------------ helpers
+    /** Reads the native {@code dvrpTaskStarted} event stream and reports whether ANY RELOCATE task
+     *  (demand-based or depot-targeting) was started — mirrors {@code ModularEndToEndTest}'s
+     *  event-collection machinery so pair 2's "rebalancing actually fired" claim is asserted, not
+     *  assumed from configuration alone. */
+    private static boolean anyRelocateTaskStarted(Path matsimOut) throws IOException {
+        Path eventsFile = findFile(matsimOut, "output_events.xml.gz");
+        Set<String> startedTaskTypes = new LinkedHashSet<>();
+        EventsManager events = EventsUtils.createEventsManager();
+        events.addHandler((BasicEventHandler) event -> {
+            if ("dvrpTaskStarted".equals(event.getEventType())) {
+                startedTaskTypes.add(event.getAttributes().get("taskType"));
+            }
+        });
+        new MatsimEventsReader(events).readFile(eventsFile.toString());
+        return startedTaskTypes.stream().anyMatch(RELOCATE_TASK_TYPES::contains);
+    }
+
+    private static Path findFile(Path root, String suffix) throws IOException {
+        try (var s = Files.walk(root)) {
+            return s.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(suffix))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "expected a file ending with '" + suffix + "' under " + root));
+        }
+    }
 
     /** Reads a {@code metric;value} KPI CSV (the 1c extractor convention). */
     private static Map<String, Double> readMetricCsv(Path path) throws IOException {
