@@ -217,9 +217,12 @@ public final class LausitzDrtPreprocessor {
                     GeoFileReader.getAllFeatures(cfg.getDrtServiceAreaShapefile()));
             Map<String, List<Delivery>> demand =
                     LmdDemandReader.group(LmdDemandReader.read(cfg.getLmdDemandShapefile()));
-            List<Coord> depots = DrtDepotReader.readCoords(Path.of(cfg.getLmdDepotCsv()));
+            // M4(b): keep the provider identity so each parcel originates at ITS provider's
+            // depot (mirrors the provider-constrained LMD van arm), nearest only as fallback.
+            Map<String, Coord> depotsByProvider =
+                    DrtDepotReader.readByProvider(Path.of(cfg.getLmdDepotCsv()));
             ParcelAgentGenerator.Result r = ParcelAgentGenerator.generate(
-                    demand, area, drtNet, depots, pop, 4711L);
+                    demand, area, drtNet, depotsByProvider, pop, 4711L);
             LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",
                     r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
             PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());
