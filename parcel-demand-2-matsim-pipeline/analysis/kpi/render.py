@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import common
+
 VENDOR = Path(__file__).parent / "vendor" / "chart.umd.min.js"
 
 # categorical slots (fixed order, never cycled) — light / dark steps
@@ -111,6 +113,16 @@ HEADLINE_KPIS = [
     ("parcels_delivered", "Pakete zugestellt", 1.0, ""),
     ("freight_vehicle_km", "Freight-km", 1.0, "km"),
     ("freight_cost_per_parcel", "Kosten je Paket", 1.0, "EUR"),
+    # 1d Modular "cost of modularity" (kpi_group `modular`). A theta sweep is the
+    # study's main 1d instrument and these are the curves it is swept FOR, so they
+    # belong on the comparison page, not only in the table. Runs without them
+    # (baseline, Shared-Use, LMD) skip the bar via the same `v is None -> continue`
+    # guard the Shared-Use rows above rely on.
+    ("swaps_completed", "Kapsel-Tausche", 1.0, ""),
+    ("retooling_hours", "Ruestzeit", 1.0, "h"),
+    ("freight_vehicle_hours", "Fahrzeug-h Fracht", 1.0, "h"),
+    ("deadhead_km_planned", "Leerfahrt-km (geplant)", 1.0, "km"),
+    ("service_km_planned", "Zustell-km (geplant)", 1.0, "km"),
 ]
 
 
@@ -295,13 +307,38 @@ def _meta_notes(kpis):
             '<ul style="margin:0;padding-left:18px">' + "".join(items) + "</ul></div>")
 
 
+#: READING order of the KPI table. This literal fixes only the order of the groups
+#: that already had one; it is deliberately NOT the whole list -- see table_groups().
+_TABLE_GROUP_ORDER = ("passenger", "system", "freight", "economic", "channel")
+
+#: Groups rendered separately and therefore never in the table body.
+#: "meta" is the "Hinweise" block written by _meta_notes above.
+_TABLE_GROUP_EXCLUDED = ("meta",)
+
+
+def table_groups():
+    """Every KPI group the table renders, in reading order.
+
+    Enumerating a hardcoded literal here is what hid Task 13's whole `modular`
+    group: `swaps_completed`, `retooling_hours`, `deadhead_km_planned`,
+    `service_km_planned` and `freight_vehicle_hours` -- every "cost of modularity"
+    metric, i.e. the point of scenario 1d -- reached kpis_long.csv but appeared
+    nowhere on the page a reader actually opens. Anything in common.KPI_GROUPS that
+    the literal does not name is therefore APPENDED rather than dropped, so adding a
+    group to the canonical tuple can never again publish KPIs into the CSV that the
+    dashboard silently swallows. The literal is kept for the groups that have an
+    established order, so existing pages stay byte-identical."""
+    known = tuple(_TABLE_GROUP_ORDER) + tuple(_TABLE_GROUP_EXCLUDED)
+    return list(_TABLE_GROUP_ORDER) + [g for g in common.KPI_GROUPS if g not in known]
+
+
 def render_kpi_table(kpis):
     """Full KPI table (grouped, tabular-nums) — the "table view" accessibility
     fallback. Shared by the DRT/LMD tab pages (appended once, below the tabs).
     Prefixed by the meta-group "Hinweise" block (absent on baseline runs)."""
     rows_html = []
     config_echo = (not kpis.empty) and _channel_config_echo(kpis)
-    for grp in ["passenger", "system", "freight", "economic", "channel"]:
+    for grp in table_groups():
         for _, r in kpis[kpis["kpi_group"] == grp].iterrows():
             source = str(r["source"])
             if (config_echo and grp == "channel"

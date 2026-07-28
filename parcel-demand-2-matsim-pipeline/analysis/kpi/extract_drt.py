@@ -1,7 +1,29 @@
 # -*- coding: utf-8 -*-
 """Passenger/system/channel KPI rows from MATSim's DRT analysis CSVs
 (authoritative; event reconstruction is ~3% low) plus optional event-based
-service-time KPIs via drt_service_time.reconstruct."""
+service-time KPIs via drt_service_time.reconstruct.
+
+1d MODULAR contamination
+------------------------
+On a DRT_MODULAR run the SAME vehicles that serve passengers also run freight
+excursions, so several of the system KPIs below stop being passenger numbers.
+Design D7 promised no correction would be needed here; that promise holds for
+the pax REQUEST side (parcels never become DVRP passengers, so
+drt_customer_stats is pax-truth) but NOT for the vehicle side, and the reason it
+does not is structural: 1c's contamination came from parcel AGENTS, which carry
+a `parcel_` id prefix and can therefore be filtered; 1d's comes from freight
+TASKS on ordinary passenger vehicles, and nothing filters those.
+
+The event-reconstruction KPIs ARE corrected (drt_service_time now separates
+freight driving, freight dwell and capsule-swap retooling from passenger drive
+and stop time -- see that module's docstring). The drt_vehicle_stats-derived
+ones CANNOT be: MATSim aggregates the excursion kilometres into
+totalDistance/emptyRatio/d_p_d_t before this code ever sees them, and there is
+no per-task distance breakdown in that CSV to subtract. Both sets are named in
+the `meta/modular_contaminated_kpis` provenance row emitted below, following the
+precedent pax_only.CONTAMINATION_KPI sets for Shared-Use.
+See METHODS-LOG §2.14.
+"""
 import sys
 from pathlib import Path
 
@@ -11,6 +33,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "drt-headline"))
 import drt_service_time  # noqa: E402
 
 from common import row  # noqa: E402
+
+#: Name of the meta provenance row emitted on a 1d Modular run. Mirrors
+#: pax_only.CONTAMINATION_KPI (the Shared-Use equivalent) -- one name, defined
+#: once, next to the machinery that writes it.
+MODULAR_CONTAMINATION_KPI = "modular_contaminated_kpis"
+
+#: NOT correctable in analysis, at all. Source is drt_vehicle_stats, which reports
+#: whole-vehicle totals: the excursion's kilometres are already inside
+#: `totalDistance` (-> drt_empty_ratio's denominator) and inside `d_p/d_t` by the
+#: time this code sees the CSV, and there is no per-task distance split to net
+#: them out against. Getting these right needs a per-link, per-task distance
+#: reconstruction that cannot be built for freight legs (D7: freight stops emit no
+#: native events).
+MODULAR_UNCORRECTABLE = (
+    "drt_vehicle_km",
+    "drt_empty_ratio",
+    "drt_dp_over_dt",
+)
+
+#: Correct as measurements, but their window/denominator is the vehicle's ACTIVE
+#: span, which on a 1d run includes the freight excursion. They are therefore
+#: depressed relative to the baseline's and are NOT directly comparable with it.
+#: Unlike the group above a reader CAN net these out, because
+#: `drt_freight_hours_total` (published below) is exactly the excess -- so they are
+#: reported as "adjustable", not as silently-wrong passenger numbers.
+MODULAR_FREIGHT_IN_WINDOW = (
+    "drt_tour_hours_total",
+    "service_ratio_active",
+    "fleet_utilisation_by_time",
+    "fleet_utilisation_by_trips",
+    "mean_pax_aboard",
+)
+
+#: WERE contaminated, now corrected by drt_service_time's freight/retooling split.
+#: Named in the provenance row too, so a reader holding an older CSV can tell which
+#: side of the fix it came from: before it, `drt_wait_hours_total` absorbed the
+#: fleet's entire freight workload as "idle" and `drt_service_hours_total` counted
+#: capsule retooling as passenger service.
+MODULAR_CORRECTED = (
+    "drt_drive_hours_total",
+    "drt_service_hours_total",
+    "drt_wait_hours_total",
+)
 
 
 def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None):
@@ -126,4 +191,46 @@ def extract(run_dir, prefix, fleet_file=None, drt_events_cache=None, recon=None)
         if "stop_s" in fl:
             rows.append(row("system", "drt_service_hours_total",
                              fl["stop_s"] / 3600.0, "h", "events"))
+        rows += _modular_rows(fl)
+    return rows
+
+
+def _modular_rows(fl):
+    """The 1d freight time components + the contamination provenance row.
+
+    Emitted ONLY when the reconstruction actually observed freight activity, so a
+    baseline / Shared-Use / LMD run's kpis_long.csv keeps exactly the KPI names it
+    had before -- the same discipline `meta/fleet_file_missing` and
+    `meta/parcel_contaminated_kpis` follow.
+
+    The three component rows exist so the fleet's freight workload is VISIBLE
+    rather than merely no longer misfiled: `drt_drive_hours_total` and
+    `drt_service_hours_total` are passenger-only now, and without these the
+    difference between them and the tour span would just be an unexplained gap.
+    They are also what makes MODULAR_FREIGHT_IN_WINDOW adjustable by hand.
+    """
+    if not fl.get("modular_freight_seen"):
+        return []
+    rows = [
+        row("system", "drt_freight_drive_hours_total",
+            fl["freight_drive_s"] / 3600.0, "h", "events(MODULAR_FREIGHT_DRIVE)"),
+        row("system", "drt_freight_dwell_hours_total",
+            fl["freight_stop_s"] / 3600.0, "h", "events(MODULAR_FREIGHT_STOP)"),
+        # The capsule swaps. Event-derived and therefore INDEPENDENT of the Java
+        # handler's `retooling_hours` (= swaps_completed x 420 s), which is a
+        # derivation, not a measurement -- the two agreeing is a real cross-check.
+        row("system", "drt_retooling_hours_total",
+            fl["retooling_s"] / 3600.0, "h", "events(STOP inside a freight window)"),
+        row("system", "drt_freight_hours_total",
+            fl["freight_s"] / 3600.0, "h", "events(freight drive + dwell + retooling)"),
+    ]
+    rows.append(row(
+        "meta", MODULAR_CONTAMINATION_KPI,
+        len(MODULAR_UNCORRECTABLE) + len(MODULAR_FREIGHT_IN_WINDOW), "kpis",
+        "1d: freight tasks share the passenger fleet. NOT CORRECTABLE (drt_vehicle_stats"
+        " already contains the excursion km): " + ",".join(MODULAR_UNCORRECTABLE)
+        + " | ACTIVE WINDOW INCLUDES FREIGHT, subtract drt_freight_hours_total to compare"
+        " with the baseline: " + ",".join(MODULAR_FREIGHT_IN_WINDOW)
+        + " | CORRECTED (freight/retooling split out of pax drive+stop time): "
+        + ",".join(MODULAR_CORRECTED)))
     return rows

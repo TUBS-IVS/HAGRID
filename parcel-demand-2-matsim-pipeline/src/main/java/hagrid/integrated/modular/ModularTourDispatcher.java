@@ -16,8 +16,10 @@ import org.matsim.core.utils.geometry.CoordUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +40,23 @@ import java.util.stream.Collectors;
  *       would dispatch every dhl tour before the first gls tour and bias per-provider delta;
  *       interleaving by tour index removes that.</li>
  * </ol>
+ *
+ * <p><b>Two different envelopes, two different failures (review Finding 3).</b> Step 2's expiry
+ * check and the splicer's feasibility check are NOT the same test, and a tour can pass the first
+ * while failing the second on every attempt until it expires:
+ * <ul>
+ *   <li>expiry (here, {@code :95}) uses {@link ModularFreightTour#plannedDuration()} — jsprit's
+ *       sum over the <b>car</b> network, with no approach leg;</li>
+ *   <li>the splicer ({@link ModularTourScheduler#schedule}) uses the actual routed completion on
+ *       the <b>DRT</b> network <i>plus</i> the approach leg from wherever the candidate vehicle
+ *       happens to be — always larger, and systematically so wherever DRT routing diverges from
+ *       jsprit's.</li>
+ * </ul>
+ * A splicer rejection therefore emits {@link ModularTourEvent.Phase#SPLICE_REJECTED} (once per
+ * tour) and feeds {@code tours_rejected_at_splice}. Without it the tour later trips expiry and is
+ * published as {@code tours_expired_pending}, attributing to "the gate was too tight" what was
+ * really "the tour never fit" — and those call for opposite responses (lower θ vs. loosen the
+ * tour cap), on the sweep that is this study's main 1d instrument.
  *
  * <p>The morning surge is accepted, not fixed: with the full delivery-day window every tour's
  * submissionTime falls at ~07:16, the fleet is still fully idle at that hour, and this gate's
@@ -62,6 +81,13 @@ public class ModularTourDispatcher {
 
     private int nextToActivate = 0;
     private final List<ModularFreightTour> pending = new ArrayList<>();
+    /**
+     * Tour ids already reported as rejected by the splicer, so the SPLICE_REJECTED event and its
+     * log line fire ONCE per tour rather than once per retry — a tour the splicer keeps refusing
+     * is re-offered every simstep the gate is open. QSim-scoped like the rest of this class, so
+     * it resets per iteration by construction.
+     */
+    private final Set<String> spliceRejected = new LinkedHashSet<>();
 
     public ModularTourDispatcher(String mode, List<ModularFreightTour> tours, double idleThreshold,
                                  Fleet fleet, DrtScheduleInquiry scheduleInquiry,
@@ -125,6 +151,26 @@ public class ModularTourDispatcher {
                 events.processEvent(ModularTourEvent.dispatched(now, tour.tourId(),
                         vehicle.getId(), tour.totalParcels(),
                         excursion.get().deadheadMeters(), excursion.get().serviceMeters()));
+            } else if (spliceRejected.add(tour.tourId())) {
+                // Review Finding 3: this branch used to be EMPTY - no event, no log, no counter.
+                // The tour stayed pending and, when it later tripped the expiry check, was
+                // published as tours_expired_pending / delta_share_undispatched, i.e. as
+                // "the gate was too tight". It is not the same failure. The two envelopes are
+                // different tests: the expiry check above uses plannedDuration - jsprit's sum
+                // over the CAR network - while the splicer checks the actual DRT-routed
+                // completion plus the approach leg, which is always larger and systematically
+                // so wherever DRT routing diverges from jsprit's. A tour can therefore pass
+                // expiry and still be refused every simstep until it expires. Confusing the two
+                // points the theta sweep - the study's main 1d instrument - at the wrong knob:
+                // "lower theta" is the answer to a gate that is too tight, "loosen the tour cap"
+                // to a tour that never fit.
+                LOG.warn("Modular tour {} (mode {}) rejected by the splicer at {} on candidate"
+                        + " vehicle {}: the DRT-routed completion exceeds min(latestEnd {},"
+                        + " vehicle service end). Tour stays pending; this is NOT the pending"
+                        + " expiry check, which passed.",
+                        tour.tourId(), mode, now, vehicle.getId(), tour.latestEnd());
+                events.processEvent(ModularTourEvent.spliceRejected(now, tour.tourId(),
+                        vehicle.getId(), tour.totalParcels()));
             }
             // infeasible for the nearest vehicle -> stays pending; expiry (above) is the exit
         }

@@ -285,6 +285,103 @@ class ModularTourDispatcherTest {
         assertThat(recorded(ModularTourEvent.Phase.DISPATCHED)).isEmpty();
     }
 
+    /**
+     * Review Finding 4: the deadhead/service split is pinned at both ends but not at the joint.
+     * {@code ModularTourSchedulerTest} pins the {@code ScheduledExcursion} record, {@code
+     * ModularTest} pins the event factory's attributes and {@code ModularKpiHandlerTest} pins the
+     * CSV from a hand-built event — but NOTHING crossed the two adjacent {@code double} arguments
+     * at the dispatcher's own {@code ModularTourEvent.dispatched(...)} call. Swap them and every
+     * published deadhead and service kilometre is wrong while the whole suite stays green.
+     *
+     * <p>Expectations come from the scheduler run on a TWIN vehicle rather than from hardcoded
+     * router arithmetic, so the test pins the PASS-THROUGH (the thing that can transpose) instead
+     * of re-deriving MATSim's routing — which would make it fail on an unrelated routing change
+     * and, worse, tempt a future reader to "fix" it by copying whatever the code now produces.
+     * The fixture is deliberately asymmetric (stop on `mid`, not on the depot link, so neither
+     * number is 0 and the two differ); the inequality is asserted first, because a symmetric
+     * fixture would make the whole test blind to the transposition it exists to catch.
+     */
+    @Test
+    @DisplayName("dispatch event carries deadhead and service the right way round (review finding 4)")
+    void dispatchedEventDoesNotTransposeDeadheadAndService() {
+        DvrpVehicle vehicle = fixtureVehicle(vehALink, "vehA");
+        DvrpVehicle twin = fixtureVehicle(vehALink, "vehA");   // same id, same link, own schedule
+        ModularFreightTour tour = tourViaMid("dhl_t0", 0);
+
+        ModularTourScheduler.ScheduledExcursion expected =
+                scheduler.schedule(twin, tour, T0).orElseThrow();
+        assertThat(expected.deadheadMeters())
+                .as("fixture must be asymmetric or this test cannot see a transposition")
+                .isNotEqualTo(expected.serviceMeters());
+        assertThat(expected.deadheadMeters()).isGreaterThan(0.0);
+        assertThat(expected.serviceMeters()).isGreaterThan(0.0);
+
+        Fleet fleet = fakeFleet(Map.of(vehicle.getId(), vehicle));
+        ModularTourDispatcher dispatcher = new ModularTourDispatcher("drt", List.of(tour), 0.0,
+                fleet, scheduleInquiry, scheduler, network, events);
+
+        at(dispatcher, T0);
+
+        List<ModularTourEvent> dispatched = recorded(ModularTourEvent.Phase.DISPATCHED);
+        assertThat(dispatched).hasSize(1);
+        assertThat(dispatched.get(0).getDeadheadMeters()).as("deadhead (approach + return)")
+                .isEqualTo(expected.deadheadMeters());
+        assertThat(dispatched.get(0).getServiceMeters()).as("service (inter-stop legs)")
+                .isEqualTo(expected.serviceMeters());
+    }
+
+    /**
+     * Review Finding 3. When the splicer returns {@code Optional.empty()} the tour stays pending
+     * and NOTHING used to be recorded — no event, no log, no counter — so the tour later tripped
+     * the expiry check and was published as {@code tours_expired_pending}, i.e. as "the gate was
+     * too tight" when the truth was "the tour never fit".
+     *
+     * <p>The fixture forces exactly the divergence that makes the two envelopes different tests.
+     * {@code plannedDuration} is jsprit's car-network figure and stays small (600 s), so the
+     * dispatcher's expiry check ({@code now + 2*RETOOLING + plannedDuration <= latestEnd}) PASSES
+     * with room to spare. The only idle vehicle, however, is 300 km from the depot, so the
+     * splicer's DRT-routed completion — which includes the approach leg the expiry check knows
+     * nothing about — lands about 11000 s out and blows the same {@code latestEnd}. Asserting the
+     * tour is NOT expired is what separates the new counter from the bucket it used to vanish
+     * into.
+     */
+    @Test
+    @DisplayName("splicer rejection is recorded as SPLICE_REJECTED, once, and is not an expiry (review finding 3)")
+    void spliceRejectionIsRecordedOncePerTour() {
+        DvrpVehicle vehB = fixtureVehicle(vehBLink, "vehB");   // ~300 km from the depot
+        Fleet fleet = fakeFleet(Map.of(vehB.getId(), vehB));
+        // latestEnd leaves the expiry check comfortable (28800 + 840 + 600 = 30240 < 30800) but
+        // is far short of the ~11000 s the real routed excursion needs.
+        ModularFreightTour tour = new ModularFreightTour("dhl_t0", "dhl", 0, depotLink,
+                T0, /*plannedDuration*/ 600.0, /*latestEnd*/ T0 + 2000.0,
+                List.of(new ModularFreightTour.Stop(depotLink, 240.0, 2)));
+        ModularTourDispatcher dispatcher = new ModularTourDispatcher("drt", List.of(tour), 0.0,
+                fleet, scheduleInquiry, scheduler, network, events);
+
+        // sanity: the splicer really does refuse this pairing (otherwise the test proves nothing)
+        assertThat(scheduler.schedule(fixtureVehicle(vehBLink, "vehB"), tour, T0)).isEmpty();
+
+        at(dispatcher, T0);
+
+        assertThat(recorded(ModularTourEvent.Phase.DISPATCHED)).isEmpty();
+        assertThat(recorded(ModularTourEvent.Phase.EXPIRED))
+                .as("the pending-expiry envelope PASSES here - this is the splicer's rejection,"
+                        + " and conflating the two is the whole point of the finding")
+                .isEmpty();
+        List<ModularTourEvent> rejected = recorded(ModularTourEvent.Phase.SPLICE_REJECTED);
+        assertThat(rejected).hasSize(1);
+        assertThat(rejected.get(0).getTourId()).isEqualTo("dhl_t0");
+        assertThat(rejected.get(0).getVehicleId().toString())
+                .as("names the CANDIDATE vehicle the envelope was tested against").isEqualTo("vehB");
+        assertThat(rejected.get(0).getParcels()).isEqualTo(2);
+
+        // Retried every simstep the gate is open, but reported ONCE: in the theta=0 arm a
+        // per-attempt event would write tens of thousands of identical rows into the events file.
+        at(dispatcher, T0 + 1.0);
+        at(dispatcher, T0 + 2.0);
+        assertThat(recorded(ModularTourEvent.Phase.SPLICE_REJECTED)).hasSize(1);
+    }
+
     @Test
     @DisplayName("observeTaskTransition: performed stop -> STOP_SERVED; swap-back -> SWAP_DONE + COMPLETED")
     void taskTransitionEvents() {
@@ -339,6 +436,20 @@ class ModularTourDispatcherTest {
         Map<Id<DvrpVehicle>, DvrpVehicle> map = new LinkedHashMap<>();
         for (DvrpVehicle v : vehicles) map.put(v.getId(), v);
         return map;
+    }
+
+    /**
+     * Like {@link #tour} but with its single stop on the "mid" link instead of on the depot link,
+     * which is what makes deadhead and service both non-zero AND unequal: the default fixture's
+     * stop sits ON the depot, so every inter-stop leg is a zero-length path and
+     * {@code serviceMeters} comes out 0.0 — a symmetric-enough shape to hide an argument
+     * transposition in one direction. Used by
+     * {@link #dispatchedEventDoesNotTransposeDeadheadAndService}.
+     */
+    private ModularFreightTour tourViaMid(String tourId, int tourIndex) {
+        return new ModularFreightTour(tourId, "dhl", tourIndex, depotLink, T0,
+                /*plannedDuration*/ 600.0, /*latestEnd*/ 21 * 3600.0,
+                List.of(new ModularFreightTour.Stop(Id.createLinkId("mid"), 240.0, 2)));
     }
 
     private ModularFreightTour tour(String tourId, String provider, int tourIndex, double plannedStart) {

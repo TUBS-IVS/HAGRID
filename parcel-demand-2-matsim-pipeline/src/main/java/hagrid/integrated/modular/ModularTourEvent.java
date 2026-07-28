@@ -17,7 +17,17 @@ public final class ModularTourEvent extends Event {
 
     public static final String EVENT_TYPE = "modularTour";
 
-    public enum Phase { PLANNED, EXPIRED, DISPATCHED, SWAP_DONE, STOP_SERVED, COMPLETED }
+    /**
+     * {@code SPLICE_REJECTED} is emitted at most ONCE per tour, the first time
+     * {@link ModularTourScheduler#schedule} returns {@code Optional.empty()} for it — see
+     * {@link ModularTourDispatcher} for why that is a different failure from {@code EXPIRED}
+     * and why the two must not be confused in the δ decomposition. Once-per-tour, not
+     * once-per-attempt: a tour the splicer keeps rejecting is retried every simstep the gate is
+     * open, which in the θ=0 arm would otherwise write tens of thousands of identical events
+     * into {@code output_events.xml.gz} to say the one thing "this tour did not fit".
+     */
+    public enum Phase { PLANNED, EXPIRED, SPLICE_REJECTED, DISPATCHED, SWAP_DONE, STOP_SERVED,
+        COMPLETED }
 
     private final String tourId;
     private final Phase phase;
@@ -42,6 +52,15 @@ public final class ModularTourEvent extends Event {
     }
     public static ModularTourEvent expired(double time, String tourId, int parcels) {
         return new ModularTourEvent(time, tourId, Phase.EXPIRED, null, parcels, 0, 0);
+    }
+    /**
+     * The splicer refused this tour on the vehicle offered to it. Carries the CANDIDATE vehicle
+     * (the nearest idle one, which is what the envelope was tested against) so a reader can tell
+     * a systematically-too-far candidate from a systematically-too-long tour.
+     */
+    public static ModularTourEvent spliceRejected(double time, String tourId,
+                                                  Id<DvrpVehicle> vehicle, int parcels) {
+        return new ModularTourEvent(time, tourId, Phase.SPLICE_REJECTED, vehicle, parcels, 0, 0);
     }
     public static ModularTourEvent dispatched(double time, String tourId, Id<DvrpVehicle> vehicle,
                                               int parcels, double deadheadMeters, double serviceMeters) {

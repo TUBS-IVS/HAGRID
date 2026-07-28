@@ -189,3 +189,38 @@ def test_headline_kpis_include_shareduse_outcomes():
     names = [n for n, *_ in render.HEADLINE_KPIS]
     assert "undelivered_rate" in names
     assert "parcels_delivered" in names
+
+
+def test_table_groups_cover_every_canonical_kpi_group():
+    """Whole-branch review Finding 2: the table loop enumerated a hardcoded literal, so
+    Task 13's whole `modular` group reached kpis_long.csv and appeared nowhere on the page.
+    Deriving the list from common.KPI_GROUPS is what stops that recurring -- assert the
+    coverage property itself, not the presence of one group name."""
+    import common
+
+    groups = render.table_groups()
+    assert "modular" in groups
+    assert "meta" not in groups          # rendered separately, as the "Hinweise" block
+    missing = [g for g in common.KPI_GROUPS if g != "meta" and g not in groups]
+    assert missing == [], missing
+    assert len(groups) == len(set(groups))
+    # the established reading order is preserved (existing pages stay byte-identical)
+    assert groups[:5] == ["passenger", "system", "freight", "economic", "channel"]
+
+
+def test_modular_kpis_are_rendered_in_the_table(tmp_path):
+    """End of the chain: a `modular` row in the CSV must actually appear in the HTML."""
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    data = render.load_run_data(out)
+    r = data.kpis.iloc[0].copy()
+    r["kpi_group"] = "modular"
+    r["kpi_name"] = "swaps_completed"
+    r["value"] = 137
+    r["unit"] = "swaps"
+    r["source"] = "modular_tour_stats"
+    data.kpis.loc[len(data.kpis)] = r
+
+    html = render.render_kpi_table(data.kpis)
+
+    assert "swaps_completed" in html
+    assert ">modular<" in html

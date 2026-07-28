@@ -7,14 +7,44 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-07-28._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-07-29._
+
+---
+
+## 2026-07-29
+
+- **1d Whole-Branch-Review: Fix-Wave abgeschlossen** — ✅ Commit
+  `fix(modular): correct DRT system-KPI contamination, publish modular group, record limitations
+  (final review)` auf `hendrik`. Die vierzehn Task-Reviews konnten querschnittliche Fehler nicht
+  sehen; dieser Durchgang behebt sie:
+  1. **KRITISCH — Fracht-Tasks korrumpierten die vorbestehenden DRT-System-KPIs.**
+     `MODULAR_FREIGHT_DRIVE`/`_STOP` fielen in nie gelesene Töpfe und kamen als **Flotten-
+     Leerlauf** wieder heraus; der Kapsel-Tausch (Task-Typ heißt wörtlich `"STOP"`) zählte als
+     **Passagier-Standzeit**. Getrennt wird jetzt über das `modularTour`-Fenster
+     DISPATCHED…COMPLETED je Fahrzeug (kein Eingriff in die Java-Task-Hierarchie — C6 bleibt
+     unangetastet). Konsequenz für die Zahlen: [METHODS-LOG](METHODS-LOG.md) **§2.14**.
+  2. **Fünf `modular`-KPIs erreichten das Dashboard nie** — die Tabellenschleife zählte eine
+     hartcodierte Gruppenliste auf. Leitet sich jetzt aus `common.KPI_GROUPS` ab.
+  3. **Splicer-Ablehnungen waren unsichtbar** und wurden später als „pending expired"
+     veröffentlicht, obwohl es eine *andere* Fehlerart ist (jsprit-Auto-Netz vs. reale
+     DRT-Routung inkl. Anfahrt). Neu: `tours_rejected_at_splice`, angehängt an die bestehenden
+     20 Metriknamen ohne Umsortierung.
+  4. **Deadhead/Service-Split am Übergabepunkt ungeprüft** — zwei benachbarte `double`-Argumente,
+     vertauschbar bei komplett grüner Suite. Jetzt gepinnt.
+  5. **C4-Vergleichbarkeitsfolgen** standen im Plan, nicht in den Limitations →
+     [METHODS-LOG](METHODS-LOG.md) **§2.15**.
+  Dazu die Minors M6–M8, ein Test-Javadoc, das beschrieb, was der Test *nicht* unterscheidet, und
+  ein `[L]`-BACKLOG-Punkt für die verschobene Testhygiene.
+  Regression: Java **436/436** (drei Chunks gegen jeweils geleerte `target/surefire-reports/`),
+  Python-KPI-Suite **249/249**. Bericht:
+  `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/final-review-fix-report.md`.
 
 ---
 
 ## 2026-07-28
 
 - **1d Implementierung (U-Shift Kapsel-Tausch): alle 14 Tasks abgeschlossen** — ✅ Commits
-  `48a41eb`..`31b323e` auf `hendrik`, vierzehn Tasks, jede mit eigenem Review-Pass und
+  `48a41eb`..`0516bcb` auf `hendrik`, vierzehn Tasks, jede mit eigenem Review-Pass und
   vollständig behobenen Findings. Volle Regression grün: Java **433/433** (Chunk 1, alles außer
   `LmdBaselineEndToEndTest`: **432/432**; Chunk 2, `LmdBaselineEndToEndTest` isoliert wegen seiner
   Laufzeit: **1/1** — jeweils gegen eine geleerte `target/surefire-reports/`, damit die beiden
@@ -26,7 +56,8 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-28._
   → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
   [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) (Status: implementiert).
   Konzeptparameter/Status: [BACKLOG](BACKLOG.md) `[H]` Modular; drei neue Paper-Limitations dazu:
-  [METHODS-LOG](METHODS-LOG.md) §2.11–§2.13. Voller Regressionsnachweis:
+  [METHODS-LOG](METHODS-LOG.md) §2.11–§2.13 (zwei weitere aus der Whole-Branch-Review:
+  §2.14–§2.15, siehe Eintrag 2026-07-29). Voller Regressionsnachweis:
   `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/task-14-report.md`.
   Offen bleibt ausschließlich die Run-Arbeit (10-Sitze-Re-Baseline, Idle-Threshold-Sweep,
   7,0-h-Kontrollarm, Entscheidung prädiktives Gate) → BACKLOG.
