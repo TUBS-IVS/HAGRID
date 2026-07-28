@@ -105,7 +105,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       only a mobsim run can surface.</li>
  * </ul>
  *
- * <p><b>Two deliberate deviations from the brief's staging sketch</b>, both made because the
+ * <p><b>Three deliberate deviations from the brief's staging sketch</b>, all made because the
  * brief's literal values cannot exercise the property the brief asks this test to prove:</p>
  * <ol>
  *   <li>the rebalancing zone cell size is shrunk from the composed 2000 m to 300 m. The fixture
@@ -117,8 +117,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       demand-based branch during the morning (when the excursion is in flight) and the
  *       depot-targeting branch afterwards. At 84600 the depot branch would engage 30 min before
  *       service end, when nothing is left to interact with.</li>
+ *   <li>five extra {@code person_c*} passenger agents are added to the loaded POPULATION, departing
+ *       inside the excursion window — the largest of the three deviations, and the reason assertion
+ *       (e) below is not vacuous. The shared {@code DrtE2eFixtures.buildDemand()} agents depart
+ *       08:00-08:04, after an excursion that ends ~07:48, so the stock fixture leaves the fleet
+ *       entirely uncontended for the whole excursion. {@code DrtE2eFixtures} itself is shared with
+ *       the other DRT e2e suites and is NOT touched; the agents are created here (see
+ *       {@link #addContentionPaxPerson}) and mirror the fixture's own agents exactly.</li>
  * </ol>
- * Neither deviation changes WHAT is proven; both are what make the named property observable.
+ * No deviation changes WHAT is proven; all three are what make the named properties observable.
  */
 @DisplayName("DRT_MODULAR end-to-end run (capsule swap, 1d Task 10)")
 class ModularEndToEndTest {
@@ -223,8 +230,17 @@ class ModularEndToEndTest {
         new TransportModeNetworkFilter(NetworkUtils.readNetwork(drtNetFile.toString()))
                 .filter(drtNet, Set.of(TransportMode.drt));
         List<ModularFreightTour> tours = ModularTourConverter.convert(routed, carNet, drtNet);
-        assertThat(tours).as("jsprit must have produced at least one dispatchable modular tour")
-                .isNotEmpty();
+        // EXACTLY one tour, not merely "at least one" (Task 10 review, Item 4): the excursion-window
+        // collection below (excursionStart/End/Vehicle) is last-wins across the modularTour event
+        // stream, which is correct for one tour but with two would let the "window" span both tours
+        // or invert, silently pinning the coexistence and D2 assertions to the wrong vehicle over
+        // the wrong interval. With this fixture (6 parcels, 216-parcel capsule, 3.5 h cap) jsprit
+        // always produces one tour; if a future fixture change makes it two, this fails HERE with a
+        // clear reason instead of degrading the two assertions further down.
+        assertThat(tours)
+                .as("this fixture must yield exactly one dispatchable tour - the excursion-window"
+                        + " collection below assumes it (see comment)")
+                .hasSize(1);
         // Ground truth for (b), computed independently of anything the run writes.
         int expectedTours = tours.size();
         int expectedParcels = tours.stream().mapToInt(ModularFreightTour::totalParcels).sum();
@@ -325,7 +341,11 @@ class ModularEndToEndTest {
         Set<String> modularTourIds = new LinkedHashSet<>();
         Set<String> startedTaskTypes = new LinkedHashSet<>();
         Set<String> freightVehicles = new LinkedHashSet<>();
-        Set<String> relocatedVehicles = new LinkedHashSet<>();
+        // RELOCATE start times per vehicle, NOT just the set of relocated vehicles (Task 10 review,
+        // Finding 1): the coexistence claim is DIRECTIONAL - the rebalancer appending onto the tail
+        // the SPLICER created - and a vehicle-identity-only check is satisfied identically by a
+        // RELOCATE that happened BEFORE the dispatch, which is the other direction.
+        Map<String, List<Double>> relocateTimesByVehicle = new LinkedHashMap<>();
         int[] swapDoneCount = {0};
         // D2 lockout: the excursion window is only known once every event is read, so the
         // passenger-service events are collected here and filtered against the window afterwards.
@@ -361,7 +381,8 @@ class ModularEndToEndTest {
                 if (taskType.startsWith("MODULAR_FREIGHT_")) {
                     freightVehicles.add(vehicle);
                 } else if (RELOCATE_TASK_TYPES.contains(taskType)) {
-                    relocatedVehicles.add(vehicle);
+                    relocateTimesByVehicle.computeIfAbsent(vehicle, k -> new ArrayList<>())
+                            .add(event.getTime());
                 }
             } else if ("DrtRequest submitted".equals(event.getEventType())) {
                 paxRequestTimes.add(event.getTime());
@@ -397,22 +418,40 @@ class ModularEndToEndTest {
         assertThat(startedTaskTypes)
                 .as("the mobsim must have started the spliced freight drive and stop tasks")
                 .contains(Modular.FREIGHT_DRIVE_TASK_TYPE.name(), Modular.FREIGHT_STOP_TASK_TYPE.name());
-        // Design §6 coexistence, in its literal form: the same VEHICLE's schedule tail was extended
-        // both by the splicer (freight tasks) and by the rebalancing relocator (RELOCATE) during
-        // this one run. Robust rather than lucky: once the excursion's swap-back is performed the
-        // vehicle idles on the trailing STAY the splicer itself appended, which makes it a
-        // rebalancing candidate again at the next rebalancing step - so the two mechanisms are
-        // guaranteed to meet on that tail, which is exactly the boundary that would throw
-        // ("The current STAY task is not last") if the lockout logic were wrong.
+        // The excursion window, needed by both the coexistence and the D2 assertions below.
+        assertThat(excursionVehicle[0]).as("DISPATCHED event must name the vehicle").isNotNull();
+        assertThat(excursionStart[0]).as("excursion start").isNotNaN();
+        assertThat(excursionEnd[0]).as("excursion end").isNotNaN();
+        // Cross-check: the vehicle the DISPATCHED event names is the vehicle that really executed
+        // the freight tasks (the KPI event stream and the native task stream must agree).
+        assertThat(freightVehicles)
+                .as("the DISPATCHED event's vehicle must be the one that ran the freight tasks")
+                .containsExactly(excursionVehicle[0]);
+
+        // ---- design §6 coexistence, DIRECTIONALLY (Task 10 review, Finding 1) -----------------
+        // The claim is not "both mechanisms ran somewhere in this run" - that is satisfied by a
+        // RELOCATE that happened BEFORE the dispatch, which is the opposite direction. What must be
+        // pinned is that the rebalancer appended onto the trailing STAY the SPLICER created: once
+        // the swap-back is performed the vehicle idles on that stay, which makes it a rebalancing
+        // candidate again, and that is exactly the boundary where
+        // EmptyVehicleRelocator.relocateVehicleImpl would throw ("The current STAY task is not
+        // last") - or cast-fail on a ModularFreightStopTask - if the lockout logic were wrong.
         assertThat(startedTaskTypes)
                 .as("the rebalancing side must have appended at least one RELOCATE task in this run,"
                         + " else splicer/return-to-depot coexistence is not actually exercised")
                 .containsAnyElementsOf(RELOCATE_TASK_TYPES);
-        assertThat(freightVehicles)
-                .as("at least one vehicle must have had BOTH freight tasks spliced onto and a"
-                        + " RELOCATE appended to its schedule tail (design §6 coexistence);"
-                        + " freight=%s relocated=%s", freightVehicles, relocatedVehicles)
-                .containsAnyElementsOf(relocatedVehicles);
+        List<Double> relocatesAfterExcursion = relocateTimesByVehicle
+                .getOrDefault(excursionVehicle[0], List.of()).stream()
+                .filter(t -> t > excursionEnd[0])
+                .toList();
+        assertThat(relocatesAfterExcursion)
+                .as("vehicle %s must be relocated AFTER its excursion ended at %s - i.e. the"
+                        + " rebalancer appended to the trailing STAY the splicer itself created."
+                        + " All relocate times for that vehicle: %s",
+                        excursionVehicle[0], excursionEnd[0],
+                        relocateTimesByVehicle.get(excursionVehicle[0]))
+                .isNotEmpty();
+
         // Passenger primacy: withdrawing a vehicle for freight must not break pax service.
         assertThat(paxBoarded.get())
                 .as("expected >=1 person_* agent to physically board a drt_* vehicle").isTrue();
@@ -421,9 +460,13 @@ class ModularEndToEndTest {
         // Task 8 unit-tests ModularEntryFactory in isolation; this is the only place the lockout is
         // exercised against a live insertion search. First: contention really existed (otherwise
         // the second assertion is vacuously true).
-        assertThat(excursionVehicle[0]).as("DISPATCHED event must name the vehicle").isNotNull();
-        assertThat(excursionStart[0]).as("excursion start").isNotNaN();
-        assertThat(excursionEnd[0]).as("excursion end").isNotNaN();
+        //
+        // What this pair does NOT establish (do not over-read it): that the insertion search WOULD
+        // have chosen the committed vehicle had ModularEntryFactory not excluded it. Proving the
+        // counterfactual would need a control run with the lockout removed, which no e2e can do from
+        // inside one Controler. "No passenger was served by the committed vehicle while a real
+        // request queue existed" is the strongest statement available at this level; the exclusion
+        // mechanism itself is what ModularEntryFactoryTest covers directly.
         long requestsDuringExcursion = paxRequestTimes.stream()
                 .filter(t -> t >= excursionStart[0] && t <= excursionEnd[0])
                 .count();
