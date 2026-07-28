@@ -130,14 +130,47 @@ def test_legacy_stats_csv_still_extracts_old_rows(tmp_path):
     assert k["parcels_submitted"]["value"] == 5
     assert k["parcels_delivered"]["value"] == 3
     assert k["parcels_undelivered"]["value"] == 2
-    # ... the delay arrives under the NEW name via the legacy-key fallback ...
+    # ... the delay arrives under the NEW name via the legacy-key fallback, with
+    # an HONEST provenance label (pre-I1 value included late deliveries -- it must
+    # not claim the new in-window-only semantics) ...
     assert k["mean_time_to_delivery_s"]["value"] == pytest.approx(1800.0)
+    assert "pre-I1" in k["mean_time_to_delivery_s"]["source"]
+    assert "in-window only" not in k["mean_time_to_delivery_s"]["source"]
     assert "mean_delivery_delay_s" not in k
     # ... and keys the old handler never wrote are absent, not zero-filled.
     for absent in ("segments_injected", "segments_never_submitted", "parcels_injected",
                    "parcels_never_submitted", "parcels_delivered_late",
                    "segments_delivered_late", "delivery_rate_total"):
         assert absent not in k
+
+
+def test_legacy_zero_delivery_delay_pseudo_result_suppressed(tmp_path):
+    """Review pass on the fix package: the OLD handler wrote
+    `mean_delivery_delay_s;0.0` even with ZERO deliveries (the chi=0 probe --
+    exactly the C1 pseudo-result the rename kills). Re-extracting such a legacy
+    CSV must NOT resurrect the 0.0 under the new name."""
+    (tmp_path / "PROBE.shareduse_channel_stats.csv").write_text(
+        "metric;value\n"
+        "segments_submitted;2929\n"
+        "segments_delivered;0\n"
+        "segments_rejected_final;0\n"
+        "segments_window_expired;2929\n"
+        "segments_pending_open;0\n"
+        "segments_pending_eod;2929\n"
+        "parcels_submitted;6188\n"
+        "parcels_delivered;0\n"
+        "parcels_undelivered;6188\n"
+        "undelivered_rate;1.0\n"
+        "share_channel_door;1.0\n"
+        "share_channel_locker;0.0\n"
+        "mean_delivery_delay_s;0.0\n",
+        encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, "PROBE"))
+
+    assert "mean_time_to_delivery_s" not in k
+    assert "mean_delivery_delay_s" not in k
+    assert k["undelivered_rate"]["value"] == pytest.approx(1.0)
 
 
 def test_delivered_late_rows_reach_kpis_long(tmp_path):
