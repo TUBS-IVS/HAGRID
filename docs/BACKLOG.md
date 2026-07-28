@@ -199,9 +199,36 @@ gestrichen. _Zuletzt aktualisiert: 2026-07-27._
     `jspritIter=100` und einem einzigen Armpaar — nicht gezeigt, dass er über dem Rauschen
     liegt. Die Aussage „€/Paket steigt bei weniger Nachfrage" bleibt (trägt sich über
     Fixkosten/Fahrzeugzahl), die *Zuschreibung an die Fahrleistung* ist offen.
-    **Laufende Diagnose:** Central mit `jspritIter=1000` (Tag `bandz_central_j1000`) — sinkt km
-    deutlich unter 6.252, müssen die Distanzkanäle beider Bandmessungen bei höherer
-    Iterationszahl wiederholt werden. Betrifft dann auch 1c/1d, die dieselben 100 Iterationen fahren.
+  - **✅ Rauschboden GEMESSEN (2026-07-28, Seed-Test).** Statt zu vermuten: derselbe
+    Central-Stand, dieselben 100 Iterationen, nur anderer jsprit-Seed (neue System-Property
+    **`-Dhagrid.jsprit.seed`**, Commit `06c2707`). Pakete/verpasste bitgleich, aber
+    **Fahrzeug-km −6,5 %**, km/Paket −6,5 %, Tour-Stunden −3,2 %, Touren −1,6 %,
+    **Gesamtkosten nur −0,8 %**. Je Carrier bis **±30,6 %** km (ups 494→343), Tourenzahlen
+    kippen mit (dhl 24→22, ups 4→3) — dieselbe Größenordnung wie die „Effekte" zwischen den
+    Bandarmen. Signal-Rausch je Kennzahl: Gesamtkosten 6×/14× (**trägt**), Touren 4×
+    (**trägt**), Tour-Stunden 2,4×/3,4× (knapp), **km/Paket 0,5× (im Rauschen)**.
+    Nebenbefund: der Alternativ-Seed findet die BESSERE Lösung (−6,5 % km bei −0,8 % Kosten)
+    → der Default-4711-Lauf ist beliebig, nicht gut; Distanzen bei 100 Iterationen
+    unkonvergiert und pessimistisch verzerrt. Kosten dagegen praktisch ausoptimiert.
+    **Gotcha für jeden, der das nachbaut:** jsprits globales `RandomNumberGeneration.setSeed()`
+    wirkt NICHT — `Jsprit.Builder` holt seinen RNG über `newInstance()`, das immer den festen
+    DEFAULT_SEED nimmt. Tragender Hook ist `Builder.setRandom()` vor `buildAlgorithm()`.
+  - **`[H]` ZURÜCKGEZOGEN: „Nichtlinearität = Flächendegression, gemessen in Fahrzeug-km".**
+    Der Kernbefund der ERSTEN Bandmessung (Fahrzeug-km −11,2 %, Elastizität 0,62, km/Paket
+    +8,3 %) liegt bei 1,3–1,7× über einem Rauschboden von 6,5 % — nicht belastbar.
+    **Bestand hat** der Effekt selbst: € je Paket steigt bei weniger Nachfrage (+5,2 % damals,
+    +5,7 % jetzt, gegen 0,8 % Rauschen = 6-7×). Der Mechanismus läuft aber über den
+    **Fahrzeugzahl-Kanal** — 81 % der Kosten sind Fixkosten je Fahrzeug, die Fahrzeugzahl
+    sinkt mit Elastizität 0,62, weil jedes Fahrzeug zeit-/dwell-gebunden ist und die Fläche
+    trotzdem abgedeckt werden muss. Inhaltlich weiter Flächendegression, aber in Fahrzeugen
+    gemessen, nicht in Kilometern.
+  - **`[H]` Auslegungsentscheidung offen für 1c/1d und alle km-basierten KPIs.**
+    `jspritIter=100` genügt für Flotten-/Kostenaussagen, NICHT für Fahrleistung, km/Paket oder
+    distanzbasierte Emissionen (→ betrifft die laufende Emissions-Recherche direkt!).
+    Ein Iterations-Hochlauf ist teuer: `jspritIter=1000` braucht **~4 h pro Carrier**, also
+    ~20 h je Arm (nach 2 von 7 Carriern in 5,8 h abgebrochen). **Empfehlung: Mittelwert über
+    3–5 Seeds bei 100 Iterationen** — kostet wie 3–5 normale Läufe, liefert zusätzlich ein
+    Streuungsmaß, und der Seed-Schalter ist dafür jetzt da.
   - **`[M]` Offen nach dem Fix:** (1) die volle CV-Batterie ist **nicht** nachgezogen —
     Bootstrap-KI, Segment-, Cross-Carrier- und Transfer-Check im PANDA-README sind noch
     OSM-Zahlen. (2) Neue Nebenwirkung: **281 Zellen mit 630 von 6.024 Paketen (10,5 %)**
