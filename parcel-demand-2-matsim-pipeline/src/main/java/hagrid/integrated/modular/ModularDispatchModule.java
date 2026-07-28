@@ -57,10 +57,34 @@ import java.util.List;
  *       by construction (the 1c {@code dd34b23} lesson).</li>
  * </ul>
  *
- * <p><b>Install order.</b> MUST be added LAST via {@code controler.addOverridingModule}, AFTER
- * {@code DrtConfigComposer.installModules} — each {@code addOverridingModule} call nests
- * {@code Modules.override(previous).with(this)}, so only a module added after the native DRT
- * modules can override their bindings.</p>
+ * <p><b>Install order — convention, and what actually depends on it (VERIFY-SOURCE, corrected).</b>
+ * Add this LAST via {@code controler.addOverridingModule}, after
+ * {@code DrtConfigComposer.installModules}. That is the {@code SharedUseModule} convention and the
+ * right habit, but be precise about why, because the obvious reasoning is wrong for this module:
+ * <ul>
+ *   <li>For CONTROLLER-scope keys, each {@code addOverridingModule} nests
+ *       {@code Modules.override(previous).with(this)}, so order does decide the winner. This module
+ *       overrides NO controller-scope key — it only ADDS {@link ModularKpiHandler} plus two
+ *       multibinder contributions, and multibindings merge regardless of order. Nothing here needs
+ *       the ordering today; a future controller-scope override WOULD.</li>
+ *   <li>For the QSim-scope keys this module rebinds, order is IRRELEVANT:
+ *       {@code AbstractModule.installOverridingQSimModule} contributes to a separate multibinder
+ *       (@Named {@code "overridesFromAbstractModule"}), and {@code QSimProvider.get()} composes the
+ *       QSim injector as {@code overrideQSimModules(plainModules, …)} FIRST and then applies every
+ *       overriding contribution on top. The native {@code DrtModeOptimizerQSimModule} arrives as a
+ *       PLAIN module ({@code MultiModeDrtModule} → {@code installQSimModule(new
+ *       DrtModeQSimModule(drtCfg))} → {@code install(optimizerQSimModule)}), so this module's
+ *       {@link DrtOptimizer} rebinding wins whether it was added before or after the native DRT
+ *       modules.</li>
+ * </ul>
+ * The residual QSim-scope hazard is therefore NOT install order but a SECOND overriding QSim module
+ * claiming the same key: {@code overridesFromAbstractModule} is a {@code Set} whose contributions are
+ * applied in unspecified iteration order, so two overrides of {@code modalKey(DrtOptimizer.class)}
+ * would resolve non-deterministically. No such conflict exists today
+ * ({@code ReturnToDepotRebalancingModule} overrides {@code RebalancingTargetCalculator};
+ * {@code SharedUseModule} overrides {@code InsertionCostCalculator} and
+ * {@code DrtRequestInsertionRetryQueue}), and {@link OptimizerRebindGuard} fails loudly if one ever
+ * appears — see its javadoc for the failure it prevents and the one it cannot.</p>
  *
  * <p><b>Binding rule (VERIFY-SOURCE: {@code AbstractModalQSimModule.addModalComponent}).</b>
  * {@link DrtOptimizer} is REBOUND with {@code bindModal(...).toProvider(...)} ONLY, never with
@@ -73,6 +97,21 @@ import java.util.List;
  * Rebinding the key alone is enough: the existing registration resolves through the (now
  * overridden) binding. The native {@code bindModal(VrpOptimizer.class).to(modalKey(DrtOptimizer
  * .class))} alias picks the decorator up for free.</p>
+ *
+ * <p><b>NOTE FOR THE NEXT MATSim UPGRADER — the one silent hole in this composition.</b> "Rebinding
+ * alone suffices" holds only while the native module keeps registering the QSim component under
+ * {@code modalKey(DrtOptimizer.class)}. If a future drt version registered a DIFFERENT key, this
+ * module would still bind a perfectly good {@link ModularOptimizer} that nothing ever drives:
+ * {@code notifyMobsimBeforeSimStep} would never be called, the dispatcher would never tick, the run
+ * would complete GREEN, and every freight KPI would be zero with no error anywhere. Every OTHER
+ * native key this module consumes fails loudly instead — an unbound key is a Guice error at startup,
+ * and the hand-built {@link DefaultDrtOptimizer} argument list is compile-time checked — so this is
+ * the single place where a version bump can go quietly wrong. {@link OptimizerRebindGuard} does NOT
+ * catch it (the binding would still be this module's); what catches it is
+ * {@code ModularEndToEndTest}, whose {@code tours_dispatched >= 1} and {@code MODULAR_FREIGHT_*}
+ * task-stream assertions fail if nothing drives the optimizer. Re-check
+ * {@code DrtModeOptimizerQSimModule}'s {@code addModalComponent} call on every MATSim upgrade, and
+ * treat that e2e as the upgrade gate.</p>
  *
  * <p><b>WIRING INVARIANT 1 (Task 6 review, both reviewers concurring — do not casually rewire).</b>
  * {@link ModularTourScheduler} MUST be constructed with the IDENTICAL modal {@link Network} object
@@ -140,6 +179,15 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
         // itself. Eager singleton bound ONCE and referenced by both the event-handler and the
         // controler-listener binding, so the CSV written at shutdown is fed by the same instance
         // that accumulated the events (the SharedUseKpiHandler precedent).
+        //
+        // MULTI-MODE CONSEQUENCE (single-DRT-mode assumption, made explicit): because this binding is
+        // NOT modal and ModularKpiHandler.FILE_NAME is a fixed filename, installing this module for
+        // two DRT modes would silently collapse both modes into ONE accumulator writing ONE
+        // <runId>.modular_tour_stats.csv - the second bind() simply wins under addOverridingModule
+        // nesting, with no Guice error. The numbers would still be self-consistent (the handler keys
+        // by tour id, and Task 4 tour ids are carrier-scoped), but they would be a silent SUM across
+        // modes, not per-mode KPIs. 1d is single-mode (drt) by design; a multi-mode variant must make
+        // this binding modal and put the mode in the filename.
         bind(ModularKpiHandler.class).asEagerSingleton();
         addEventHandlerBinding().to(ModularKpiHandler.class);
         addControlerListenerBinding().to(ModularKpiHandler.class);
@@ -213,8 +261,51 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                     return new ModularOptimizer(delegate,
                             getter.getModal(ModularTourDispatcher.class), timingUpdater, timer);
                 })).asEagerSingleton();
+
+                // Asserts the rebind above actually won the key (see OptimizerRebindGuard).
+                bindModal(OptimizerRebindGuard.class).toProvider(modalProvider(getter ->
+                        new OptimizerRebindGuard(getter.getModal(DrtOptimizer.class), getMode())))
+                        .asEagerSingleton();
             }
         });
+    }
+
+    /**
+     * Fails the run at QSim startup unless the {@link DrtOptimizer} actually in effect for this mode
+     * is this module's {@link ModularOptimizer} (Task 10 review, Item 2). Symmetric in spirit with
+     * {@link #verifyFleetLinksComeFromNetwork}: both convert a silent-wrong-result failure into a
+     * loud startup one.
+     *
+     * <p><b>What it catches.</b> Any configuration in which something else wins
+     * {@code modalKey(DrtOptimizer.class)} — realistically a SECOND module calling
+     * {@code installOverridingQSimModule} with its own binding for that key, which
+     * {@code QSimProvider} resolves in unspecified {@code Set} iteration order (class javadoc,
+     * "Install order"). Also catches this module simply not being installed on some future runner
+     * path while the rest of the modular wiring is. Without the guard the symptom is a GREEN run with
+     * an all-zero KPI CSV: the optimizer is never decorated, so {@code dispatch()} never ticks, no
+     * tour is ever spliced, and nothing anywhere reports an error.</p>
+     *
+     * <p><b>What it deliberately does NOT catch</b>, so nobody over-reads it: the case where this
+     * module's binding wins but no QSim component drives it (a future MATSim registering the
+     * optimizer component under a different key). The binding would be correct and the guard would
+     * pass — see the upgrader note in the class javadoc; {@code ModularEndToEndTest} is what covers
+     * that. Nor does it check install ORDER, which for these QSim keys does not decide the winner.</p>
+     */
+    static final class OptimizerRebindGuard {
+        OptimizerRebindGuard(DrtOptimizer inEffect, String mode) {
+            if (!(inEffect instanceof ModularOptimizer)) {
+                throw new IllegalStateException("DRT_MODULAR composition is inert on mode '" + mode
+                        + "': the DrtOptimizer in effect is " + inEffect.getClass().getName()
+                        + ", not ModularOptimizer, so the freight dispatcher would never tick and"
+                        + " every freight KPI would be zero without any error. Something else won"
+                        + " the modal DrtOptimizer key - most likely a second module calling"
+                        + " installOverridingQSimModule for it (resolved in unspecified order), or"
+                        + " ModularDispatchModule not being installed at all. Install"
+                        + " ModularDispatchModule via controler.addOverridingModule after"
+                        + " DrtConfigComposer.installModules, and ensure no other overriding QSim"
+                        + " module rebinds DrtOptimizer for this mode.");
+            }
+        }
     }
 
     /**
