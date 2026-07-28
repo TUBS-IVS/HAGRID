@@ -38,6 +38,14 @@ import java.util.stream.Collectors;
  *       would dispatch every dhl tour before the first gls tour and bias per-provider delta;
  *       interleaving by tour index removes that.</li>
  * </ol>
+ *
+ * <p>The morning surge is accepted, not fixed: with the full delivery-day window every tour's
+ * submissionTime falls at ~07:16, the fleet is still fully idle at that hour, and this gate's
+ * while-loop therefore dispatches in ONE simstep until idleShare drops to theta - roughly
+ * {@code (1 - theta) * fleetSize} vehicles leave at once. This is a deliberate user decision
+ * ("erst Ergebnisse ansehen" - look at results first), not an oversight: no dispatch-rate limit,
+ * demand forecast, or smoothing is added here; the theta-sweep plus passenger KPIs are the
+ * intended instrument for making that cost visible, not a defect for a future reader to "fix".
  */
 public class ModularTourDispatcher {
 
@@ -85,8 +93,11 @@ public class ModularTourDispatcher {
         // C4 envelope: even an immediate dispatch (approach ~0) could not finish anymore
         pending.removeIf(t -> {
             if (now + 2 * Modular.RETOOLING_S + t.plannedDuration() > t.latestEnd()) {
-                LOG.warn("Modular tour {} expired pending at {} (latestEnd {}).",
-                        t.tourId(), now, t.latestEnd());
+                // review Finding 1: `mode` earns its place in the log line here - a multi-mode
+                // DRT run would otherwise emit expiry warnings with no indication of which mode
+                // they came from.
+                LOG.warn("Modular tour {} (mode {}) expired pending at {} (latestEnd {}).",
+                        t.tourId(), mode, now, t.latestEnd());
                 events.processEvent(ModularTourEvent.expired(now, t.tourId(), t.totalParcels()));
                 return true;
             }
@@ -144,7 +155,7 @@ public class ModularTourDispatcher {
      * already applied upstream.
      */
     private DvrpVehicle nearestToDepot(List<DvrpVehicle> idle, ModularFreightTour tour) {
-        Coord depot = network.getLinks().get(tour.depotLink()).getToNode().getCoord();
+        Coord depot = resolveDepotLink(tour).getToNode().getCoord();
         DvrpVehicle best = null;
         double bestDist = Double.POSITIVE_INFINITY;
         for (DvrpVehicle v : idle) {   // idle is id-sorted -> '<' keeps the smallest id on ties
@@ -157,5 +168,22 @@ public class ModularTourDispatcher {
             }
         }
         return best;
+    }
+
+    /**
+     * Resolves a tour's depot link against this dispatcher's Network, or throws naming both the
+     * tour and the missing link id (review Finding 2) - the same diagnostic
+     * {@code ModularTourScheduler.resolveLink} gives for the identical failure mode (a Task 10
+     * wiring bug: the Network injected here differs from the one the tour was converted against),
+     * so an unguarded {@code NullPointerException} here would be an inconsistent, less useful
+     * report of the same root cause.
+     */
+    private Link resolveDepotLink(ModularFreightTour tour) {
+        Link link = network.getLinks().get(tour.depotLink());
+        if (link == null) {
+            throw new IllegalStateException("Modular tour " + tour.tourId() + " references link "
+                    + tour.depotLink() + " which does not exist in the injected Network");
+        }
+        return link;
     }
 }

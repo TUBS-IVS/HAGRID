@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * VERIFY-SOURCE (read from the dvrp/drt 2025.0 sources jars, see task-7-report.md): {@code
@@ -255,6 +256,33 @@ class ModularTourDispatcherTest {
         List<ModularTourEvent> dispatched = recorded(ModularTourEvent.Phase.DISPATCHED);
         assertThat(dispatched).hasSize(1);
         assertThat(dispatched.get(0).getVehicleId().toString()).isEqualTo("vehFar");
+    }
+
+    /**
+     * Review Finding 4: the reviewer traced by inspection that an empty idle pool, an empty
+     * fleet, and a zero-tour list are all handled safely (the {@code !idle.isEmpty()}
+     * short-circuit in the gate's while-loop avoids ever evaluating
+     * {@code idle.size() / fleetSize}), but nothing exercised it. This is the state a real run
+     * spends its afternoon in once the morning surge has consumed the fleet: every vehicle is
+     * already committed to an in-progress freight excursion, spliced here via the REAL scheduler
+     * (not a hand-built fixture), so {@code DrtScheduleInquiry.isIdle} genuinely returns false for
+     * both, for the ordinary reason (appended tasks push current off the last-task index).
+     */
+    @Test
+    @DisplayName("degenerate fleet: every vehicle already committed to freight - no dispatch, no exception (review finding 4)")
+    void allVehiclesCommittedNoDispatch() {
+        DvrpVehicle vehA = fixtureVehicle(vehALink, "vehA");
+        DvrpVehicle vehB = fixtureVehicle(vehBLink, "vehB");
+        assertThat(scheduler.schedule(vehA, tour("committer_a", "dhl", 0, T0), T0)).isPresent();
+        assertThat(scheduler.schedule(vehB, tour("committer_b", "dhl", 1, T0), T0)).isPresent();
+        Fleet fleet = fakeFleet(orderedFleet(vehA, vehB));
+
+        ModularFreightTour pendingTour = tour("dhl_t9", "dhl", 9, T0);
+        ModularTourDispatcher dispatcher = new ModularTourDispatcher("drt", List.of(pendingTour), 0.0,
+                fleet, scheduleInquiry, scheduler, network, events);
+
+        assertThatCode(() -> at(dispatcher, T0)).doesNotThrowAnyException();
+        assertThat(recorded(ModularTourEvent.Phase.DISPATCHED)).isEmpty();
     }
 
     @Test
