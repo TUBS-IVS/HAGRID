@@ -73,6 +73,8 @@ table.kpis td, table.kpis th { padding:4px 8px; border-bottom:1px solid var(--gr
   text-align:left; font-variant-numeric: tabular-nums; }
 table.kpis th { color:var(--muted); font-weight:600; }
 .tablewrap { overflow-x:auto; }
+.warnbanner { background:rgba(237,161,0,0.14); border:1px solid #eda100;
+  border-radius:8px; padding:8px 12px; font-size:12.5px; margin:0 0 10px; }
 """
 
 TAB_CSS = """
@@ -102,6 +104,11 @@ HEADLINE_KPIS = [
     ("service_ratio_shift", "Service-Zeit (Schicht)", 100.0, "%"),
     ("drt_vehicle_km", "DRT-Fahrzeug-km", 1.0, "km"),
     ("delivery_rate", "Zustellquote", 100.0, "%"),
+    # Shared-Use channel outcomes: on a chi sweep the delta lives here -- runs
+    # without these rows (baseline) simply skip the bar/cell (see the
+    # `v is None -> continue` guard and the "-" union-table fallback below).
+    ("undelivered_rate", "Paket-Nichtzustellquote", 100.0, "%"),
+    ("parcels_delivered", "Pakete zugestellt", 1.0, ""),
     ("freight_vehicle_km", "Freight-km", 1.0, "km"),
     ("freight_cost_per_parcel", "Kosten je Paket", 1.0, "EUR"),
 ]
@@ -175,6 +182,34 @@ def _kpi(kpis, name, default=None):
     return float(m.iloc[0]["value"]) if len(m) else default
 
 
+def _kpi_source(kpis, name):
+    """The `source` column of a KPI row ("" when the row is absent). Tile
+    tooltips must cite THIS, not a hardcoded string: on a Shared-Use run
+    pax_only.apply_overrides swaps the canonical row for its pax-only
+    correction, so e.g. drt_rides' source becomes "output_drt_legs pax-filter"
+    and a literal "drt_customer_stats" citation would be stale exactly when
+    the distinction matters."""
+    m = kpis[kpis["kpi_name"] == name]
+    if not len(m):
+        return ""
+    src = m.iloc[0]["source"]
+    return "" if pd.isna(src) else str(src)
+
+
+#: E5: door==1 / locker==0 is true BY CONSTRUCTION in this study phase (no
+#: Packstationen staged), so the channel-share rows are a config echo, not a
+#: finding -- every place they render appends this note.
+CHANNEL_CONFIG_NOTE = "Konfiguration (keine Packstationen im Szenario), kein Ergebnis"
+_CHANNEL_SHARE_NAMES = ("share_channel_door", "share_channel_locker")
+
+
+def _channel_config_echo(kpis):
+    """True when the channel-share rows merely echo the scenario config:
+    locker share exactly 0 AND door share exactly 1."""
+    return (_kpi(kpis, "share_channel_door") == 1.0
+            and _kpi(kpis, "share_channel_locker") == 0.0)
+
+
 def _tile(value, label, sub="", tip=""):
     title_attr = (' title="' + tip.replace('"', "&quot;") + '"') if tip else ""
     return ('<div class="tile"' + title_attr + '><div class="v">' + value + '</div><div class="l">'
@@ -241,16 +276,42 @@ def _donut(cid, title, labels, values, color_marker, height=200, center_label=No
     return (title, cid, cfg, height)
 
 
+def _meta_notes(kpis):
+    """Provenance rows (kpi_group == "meta", e.g. parcel_contaminated_kpis,
+    run_meta_degraded, fleet_file_missing) as a small "Hinweise" block -- they
+    never fit the ["passenger", ..., "channel"] table loop, so before this
+    block they were written to the CSV but invisible on the page. Baseline
+    runs carry no meta rows -> empty string, page byte-identical."""
+    if kpis.empty:
+        return ""
+    meta = kpis[kpis["kpi_group"] == "meta"]
+    if not len(meta):
+        return ""
+    items = []
+    for _, r in meta.iterrows():
+        items.append("<li><b>" + str(r["kpi_name"]) + "</b>: " + str(r["value"])
+                     + " " + str(r["unit"]) + " &mdash; " + str(r["source"]) + "</li>")
+    return ('<h2>Hinweise</h2><div class="panel">'
+            '<ul style="margin:0;padding-left:18px">' + "".join(items) + "</ul></div>")
+
+
 def render_kpi_table(kpis):
     """Full KPI table (grouped, tabular-nums) — the "table view" accessibility
-    fallback. Shared by the DRT/LMD tab pages (appended once, below the tabs)."""
+    fallback. Shared by the DRT/LMD tab pages (appended once, below the tabs).
+    Prefixed by the meta-group "Hinweise" block (absent on baseline runs)."""
     rows_html = []
+    config_echo = (not kpis.empty) and _channel_config_echo(kpis)
     for grp in ["passenger", "system", "freight", "economic", "channel"]:
         for _, r in kpis[kpis["kpi_group"] == grp].iterrows():
+            source = str(r["source"])
+            if (config_echo and grp == "channel"
+                    and r["kpi_name"] in _CHANNEL_SHARE_NAMES):
+                source += " &mdash; " + CHANNEL_CONFIG_NOTE
             rows_html.append("<tr><td>" + grp + "</td><td>" + str(r["kpi_name"])
                              + "</td><td>" + str(r["value"]) + "</td><td>"
-                             + str(r["unit"]) + "</td><td>" + str(r["source"]) + "</td></tr>")
-    return ('<h2>Alle KPIs</h2><div class="panel tablewrap"><table class="kpis">'
+                             + str(r["unit"]) + "</td><td>" + source + "</td></tr>")
+    return (_meta_notes(kpis)
+            + '<h2>Alle KPIs</h2><div class="panel tablewrap"><table class="kpis">'
             '<tr><th>Gruppe</th><th>KPI</th><th>Wert</th><th>Einheit</th><th>Quelle</th></tr>'
             + "".join(rows_html) + "</table></div>")
 
@@ -515,6 +576,12 @@ def render_comparison_page(runs, title):
                 all_names.append(key)
     header = "<tr><th>Gruppe</th><th>KPI</th><th>Einheit</th>" + "".join(
         "<th>" + r["label"] + "</th>" for r in runs) + "</tr>"
+    # E5: the channel-share rows are a config echo (no lockers staged) when
+    # EVERY run that carries them shows door==1/locker==0 exactly.
+    carrying = [r for r in runs
+                if _kpi(r["data"].kpis, "share_channel_door") is not None]
+    share_echo = bool(carrying) and all(
+        _channel_config_echo(r["data"].kpis) for r in carrying)
     body_rows = []
     for grp, name, unit in all_names:
         cells = ""
@@ -522,7 +589,10 @@ def render_comparison_page(runs, title):
             kpis = r["data"].kpis
             m = kpis[(kpis["kpi_name"] == name) & (kpis["kpi_group"] == grp)]
             cells += "<td>" + (str(m.iloc[0]["value"]) if len(m) else "-") + "</td>"
-        body_rows.append("<tr><td>" + grp + "</td><td>" + name + "</td><td>"
+        name_cell = name
+        if share_echo and grp == "channel" and name in _CHANNEL_SHARE_NAMES:
+            name_cell += " &mdash; " + CHANNEL_CONFIG_NOTE
+        body_rows.append("<tr><td>" + grp + "</td><td>" + name_cell + "</td><td>"
                          + str(unit) + "</td>" + cells + "</tr>")
     table = ('<h2>Alle KPIs im Vergleich</h2><div class="panel tablewrap">'
              '<table class="kpis">' + header + "".join(body_rows) + "</table></div>")

@@ -101,6 +101,12 @@ UNCORRECTABLE = (
     "drt_passengers",
 )
 
+#: Name of the meta provenance row `apply_overrides` appends when any pax-only
+#: override fired. Renderers import it as the canonical "this is a Shared-Use
+#: run with mixed stock aggregates" signal (e.g. the Konvergenz banner in
+#: render_drt) -- one name, defined once, next to the machinery that writes it.
+CONTAMINATION_KPI = "parcel_contaminated_kpis"
+
 #: KNOWN GAP, tracked in docs/BACKLOG.md (Fallback-Audit 2026-07-27): the PER-ITERATION
 #: series in kpi_iterations.csv (drt_rides, drt_rejection_rate, wait_mean, wait_p95,
 #: modal_share_*) come from drt_customer_stats rows for EVERY iteration, and MATSim writes
@@ -178,7 +184,7 @@ def apply_overrides(rows):
                        if n in first_by_name and n not in overridden]
         rows.append({
             "kpi_group": "meta",
-            "kpi_name": "parcel_contaminated_kpis",
+            "kpi_name": CONTAMINATION_KPI,
             "value": len(still_mixed),
             "unit": "kpis",
             "source": ",".join(still_mixed) if still_mixed else "none",
