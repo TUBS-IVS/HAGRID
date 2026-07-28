@@ -157,15 +157,19 @@ class SharedUseEndToEndTest {
         Map<String, String> metrics = readCsv(statsCsv);
         int submitted = Integer.parseInt(metrics.get("segments_submitted"));
         int delivered = Integer.parseInt(metrics.get("segments_delivered"));
+        int deliveredLate = Integer.parseInt(metrics.get("segments_delivered_late"));
         int rejectedFinal = Integer.parseInt(metrics.get("segments_rejected_final"));
         int pendingEod = Integer.parseInt(metrics.get("segments_pending_eod"));
         assertThat(submitted).as("segments_submitted").isGreaterThanOrEqualTo(1);
         // A real production-path signal, not just the (tautological, since pending_eod is
         // defined as the remainder) conservation identity below: at least one parcel segment
-        // actually got delivered by the DRT fleet in this run.
-        assertThat(delivered).as("segments_delivered").isGreaterThanOrEqualTo(1);
-        assertThat(delivered + rejectedFinal + pendingEod)
-                .as("M3 conservation: delivered + rejected_final + pending_eod == submitted")
+        // actually got PHYSICALLY delivered by the DRT fleet in this run (in-window or late -
+        // the I1/F4 split moves a post-window dropoff to delivered_late, so the sum is the
+        // stable physical-delivery signal here).
+        assertThat(delivered + deliveredLate)
+                .as("segments_delivered + segments_delivered_late").isGreaterThanOrEqualTo(1);
+        assertThat(delivered + deliveredLate + rejectedFinal + pendingEod)
+                .as("M3 conservation: delivered + delivered_late + rejected_final + pending_eod == submitted")
                 .isEqualTo(submitted);
 
         // ---- (e) at least one parcel_* person physically boarded a drt_* vehicle ----

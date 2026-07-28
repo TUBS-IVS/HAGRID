@@ -61,15 +61,51 @@ def extract(run_dir, prefix):
     rows = []
 
     stats = dict(pd.read_csv(run_dir / (prefix + ".shareduse_channel_stats.csv"), sep=";").values)
-    rows += [
-        row("channel", "undelivered_rate", float(stats["undelivered_rate"]), "share", "shareduse_channel_stats"),
-        row("channel", "share_channel_door", float(stats["share_channel_door"]), "share", "shareduse_channel_stats"),
-        row("channel", "share_channel_locker", float(stats["share_channel_locker"]), "share", "shareduse_channel_stats"),
-        row("freight", "parcels_submitted", int(stats["parcels_submitted"]), "parcels", "shareduse_channel_stats"),
-        row("freight", "parcels_delivered", int(stats["parcels_delivered"]), "parcels", "shareduse_channel_stats"),
-        row("freight", "parcels_undelivered", int(stats["parcels_undelivered"]), "parcels", "shareduse_channel_stats"),
-        row("freight", "mean_delivery_delay_s", float(stats["mean_delivery_delay_s"]), "s", "shareduse_channel_stats"),
-    ]
+
+    # I1: export ALL of the handler's segment counters, not just a 7-metric
+    # subset -- the delivered/delivered_late/window_expired/pending decomposition
+    # is the honest delta accounting and must reach kpis_long. Every read is
+    # tolerant (stats.get): old CSVs from finished runs lack the newer keys
+    # (injected/never_submitted/delivered_late/delivery_rate_total), and a
+    # missing key must drop ONE row, never KeyError the extractor.
+    def stat(kpi_group, name, cast, unit):
+        if name in stats:
+            rows.append(row(kpi_group, name, cast(stats[name]), unit,
+                            "shareduse_channel_stats"))
+
+    # segment counters + rates (kpi_group "channel")
+    stat("channel", "segments_injected", int, "segments")
+    stat("channel", "segments_submitted", int, "segments")
+    stat("channel", "segments_never_submitted", int, "segments")
+    stat("channel", "segments_delivered", int, "segments")
+    stat("channel", "segments_delivered_late", int, "segments")
+    stat("channel", "segments_window_expired", int, "segments")
+    stat("channel", "segments_pending_open", int, "segments")
+    stat("channel", "undelivered_rate", float, "share")
+    stat("channel", "delivery_rate_total", float, "share")
+    stat("channel", "share_channel_door", float, "share")
+    stat("channel", "share_channel_locker", float, "share")
+    # parcel counts (kpi_group "freight")
+    stat("freight", "parcels_injected", int, "parcels")
+    stat("freight", "parcels_submitted", int, "parcels")
+    stat("freight", "parcels_never_submitted", int, "parcels")
+    stat("freight", "parcels_delivered", int, "parcels")
+    stat("freight", "parcels_delivered_late", int, "parcels")
+    stat("freight", "parcels_undelivered", int, "parcels")
+
+    # C1 delay rename: the handler now writes mean_time_to_delivery_s (in-window
+    # deliveries only) and OMITS the line when nothing was delivered -- never
+    # re-materialize a 0.0 pseudo-result here. Legacy CSVs carry the old
+    # mean_delivery_delay_s key instead; emit it under the NEW name so the
+    # kpis_long schema is uniform across old and new runs.
+    delay_key = None
+    if "mean_time_to_delivery_s" in stats:
+        delay_key = "mean_time_to_delivery_s"
+    elif "mean_delivery_delay_s" in stats:
+        delay_key = "mean_delivery_delay_s"
+    if delay_key is not None:
+        rows.append(row("freight", "mean_time_to_delivery_s", float(stats[delay_key]), "s",
+                        "shareduse_channel_stats (delivered in-window only, right-censored)"))
 
     pax_rides = None
 
@@ -124,12 +160,24 @@ def extract(run_dir, prefix):
                                          "ratio", "output_drt_legs pax-filter"))
 
         if "fareForLeg" in legs.columns:
-            rows += [
-                row("economic", "fare_revenue_pax_only",
-                    float(pax["fareForLeg"].sum()), "EUR", "output_drt_legs pax-filter"),
-                row("economic", "parcel_fare_revenue",
-                    float(parcel["fareForLeg"].sum()), "EUR", "output_drt_legs pax-filter"),
-            ]
+            pax_fare = float(pax["fareForLeg"].sum())
+            parcel_fare = float(parcel["fareForLeg"].sum())
+            if pax_fare == 0.0 and parcel_fare == 0.0:
+                # I3: fareForLeg is 0.0 per leg whenever no DRT fare is configured
+                # for the run, so an all-zero sum is a NOT-CONFIGURED signal, not a
+                # measured "0 EUR revenue" -- emitting the fare rows would render as
+                # a spurious zero-revenue finding downstream. Flag it instead.
+                rows.append(row("meta", "fare_not_configured", 1, "flag",
+                                "fareForLeg sums to 0 for pax AND parcels -- no DRT"
+                                " fare configured; fare_revenue_pax_only/"
+                                "parcel_fare_revenue suppressed"))
+            else:
+                rows += [
+                    row("economic", "fare_revenue_pax_only",
+                        pax_fare, "EUR", "output_drt_legs pax-filter"),
+                    row("economic", "parcel_fare_revenue",
+                        parcel_fare, "EUR", "output_drt_legs pax-filter"),
+                ]
 
     rows += _rejection_rows(run_dir, prefix, pax_rides)
     rows += _modal_share_rows(run_dir, prefix)
