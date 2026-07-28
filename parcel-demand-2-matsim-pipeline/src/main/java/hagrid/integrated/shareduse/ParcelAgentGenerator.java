@@ -14,17 +14,22 @@ import org.matsim.api.core.v01.population.*;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * Turns the segment-aggregated PANDA deliveries into dummy parcel-persons:
- * plan = act(parcelDepot @ nearest depot link, endTime = jittered submit time)
- *        -> leg(drt) -> act(parcelDelivery @ segment link).
+ * plan = act(parcelDepot @ the delivery provider's tagged depot link, endTime = jittered
+ *        submit time) -> leg(drt) -> act(parcelDelivery @ segment link).
  * The drt departure triggers the native request submission (spike §2, path b).
- * Provider identity is dissolved (Einheitsunternehmen) but kept as attribute.
+ * Provider identity is dissolved operationally (Einheitsunternehmen) but kept as attribute,
+ * and — M4(b) — each parcel still physically originates at ITS provider's depot from
+ * lmd-depots.csv (mirrors the provider-constrained LMD van arm); the nearest depot is only
+ * the fallback for a provider without a tagged depot (WARN once per provider).
  */
 public final class ParcelAgentGenerator {
 
@@ -51,11 +56,14 @@ public final class ParcelAgentGenerator {
     }
 
     public static Result generate(Map<String, List<Delivery>> byProvider, Geometry serviceArea,
-                                  Network drtNetwork, List<Coord> depotCoords,
+                                  Network drtNetwork, Map<String, Coord> depotByProvider,
                                   Population population, long seed) {
-        DepotNetwork depots = new DepotNetwork(depotCoords.stream()
+        // Nearest-depot network over ALL tagged depots: fallback for providers without a
+        // tagged depot (M4(b) — the primary assignment is the provider's own depot below).
+        DepotNetwork fallbackDepots = new DepotNetwork(depotByProvider.values().stream()
                 .map(c -> new DepotNetwork.Depot("depot_" + c.getX() + "_" + c.getY(), c))
                 .collect(Collectors.toList()));
+        Set<String> warnedProviders = new HashSet<>();
         DeliveryChannelResolver resolver = new DeliveryChannelResolver(List.of(), 500.0); // Phase 1: no lockers
         Random rnd = new Random(seed);
         PopulationFactory pf = population.getFactory();
@@ -69,7 +77,17 @@ public final class ParcelAgentGenerator {
                     outside++;
                     continue;
                 }
-                Coord depotCoord = depots.nearestDepot(d.getCoordinate()).coord();
+                // M4(b): provider-tagged depot (normalization mirrors LmdDepotLoader /
+                // DrtDepotReader.readByProvider: trimmed lowercase), nearest as fallback.
+                String provider = d.getProvider() == null ? "" : d.getProvider().trim().toLowerCase();
+                Coord depotCoord = depotByProvider.get(provider);
+                if (depotCoord == null) {
+                    if (warnedProviders.add(provider)) {
+                        LOG.warn("no provider-tagged depot for '{}' - falling back to the nearest depot"
+                                + " for all of its parcels (M4(b))", d.getProvider());
+                    }
+                    depotCoord = fallbackDepots.nearestDepot(d.getCoordinate()).coord();
+                }
                 Link depotLink = NetworkUtils.getNearestLinkExactly(drtNetwork, depotCoord);
                 Link segmentLink = NetworkUtils.getNearestLinkExactly(drtNetwork, d.getCoordinate());
                 if (depotLink.getId().equals(segmentLink.getId())) {
