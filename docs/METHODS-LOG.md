@@ -97,11 +97,30 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-28._
   der Fehler saß in der **Fläche selbst**. Details: `PANDA/docs/transferability.md` → B8.
 
 - **Nachfrage-Band = ±10 % erklärte Sensitivität, kein Konfidenzintervall** — `trägt` · 2026-07-28
-  Drei Arme um ein extern verankertes Zentralniveau: **low ×0,90 = 5.430 · central ×1,00 = 6.024
-  · high ×1,10 = 6.622** Pakete, 1.053 Segmente. Die ±10 % decken BIEKs eigene Ungenauigkeit +
+  Drei Arme um ein extern verankertes Zentralniveau. Die ±10 % decken BIEKs eigene Ungenauigkeit +
   den Bootstrap-KI (7,5–13 % wMAPE) grob ab. Räumliche Verteilung über die Arme unverändert.
-  Treiber `run_lmd_band.ps1`, Tags `bandz_{central,low,high}`; überholte Stände als
-  `level_osm_{central,low}`. (Ersetzt das asymmetrische Zwei-Run-Band, → §3.2.)
+  Treiber `run_lmd_band.ps1`, Tags `bandz_{central,low,high}`.
+  Niveaus **wie gemessen** (Eingaben jetzt archiviert als `level_ctrsnap_*`): low 5.426 · central
+  6.020 · high 6.618 Pakete auf 1.053 Segmenten. Niveaus **aktuell gestaged** (nach dem
+  Zentroid-Snap-Fix, → §2.8): **5.461 / 6.058 / 6.642** auf 1.131 Segmenten — gleiche Erwartungs-
+  werte (5.412 / 6.013 / 6.615), abweichende Realisierung nur wegen der stochastischen Rundung
+  auf mehr Segmenten. Überholte Stände: `level_osm_{central,low}` (OSM-Proxy),
+  `level_ctrsnap_{central,low,high}` (Zensus + Zentroid-Snap).
+  (Ersetzt das asymmetrische Zwei-Run-Band, → §3.2.)
+
+- **Residual-PLZ statt `00000`-Sentinel** — `trägt` · 2026-07-28
+  `_segment_plz` stimmte nur über OSM-Gebäude ab, also bekam jedes Segment, das ausschließlich
+  Residualnachfrage trägt, den Sentinel `00000`: **58 Punkte mit 570 Paketen (9,8 %)**. Jetzt
+  stimmen auch die Residualzellen mit ihrer eigenen PLZ ab → **0 Sentinel-Punkte**. Im
+  integrierten LMD-Pfad war das harmlos (`LmdDemandReader.group()` gruppiert nach Provider,
+  `postal_cod` fließt nur in `ParcelStatisticsLogger`), es verfälschte aber die PLZ-Statistik und
+  hätte im Hannover-Legacy-Pfad (`DemandProcessor`, Schlüssel `provider_PLZ`) eine Scheingruppe
+  erzeugt.
+  Dabei gefunden und mitbehoben: `export_demand.run()` übergab `_segment_plz` die **unprojizierten**
+  Zellen, während die Segmente in EPSG:25832 lagen. Vorher folgenlos (die Funktion nutzte keine
+  Geometrie), mit dem Residual-Join aber ein **stiller** Fehler — `shapely.STRtree` kennt kein CRS
+  und liefert bei Mismatch einfach keine Treffer. `distribution.py` prüft die CRS-Gleichheit
+  jetzt explizit und hat einen Regressionstest dafür.
 
 - **Gemessenes Ergebnis des Bandes** — `trägt` · 2026-07-28
   (`bandz_{low,central,high}`, je `maxIter=0 jspritIter=100`, 1 h 46 / 1 h 34 / 1 h 40, Stand je
@@ -133,6 +152,10 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-28._
   e(v)-Kurven auf Trip-Ø-Geschwindigkeit aus Events (Guidebook-Empfehlung bei vorhandenen vkm +
   Ø-Speed). Kern-KPI **CO₂e**, dazu NOx/PM/CO/VOC/SPN23 (nur CO₂ wirkte methodisch dünn).
   **Faktorquelle:** Appendix 4 zum Guidebook-Kapitel 1.A.3.b.i–iv, Version Okt 2025.
+  **Zitat-Caveat (2026-07-28):** der offizielle Werkstitel ist „EMEP/EEA air pollutant emission
+  inventory guidebook **2023**"; 2025 ist ein *Update* davon. Die interne Kurzform „Guidebook 2025"
+  ist als Provenance eindeutig, in der **Paper-Referenz** muss „Guidebook 2023, Update 2025" stehen.
+  Rohdateien + Prüfsummen liegen lokal in `hagrid-input/emissions/` (untracked, `SOURCES.md`).
   Eigenschaften der Quelle: **CO₂ ist keine Tabellenzeile** — kraftstoffbasiert aus der EC-Kurve
   (MJ/km → FC → CO₂, Diesel ~3,17 kg/kg; der Energie-KPI fällt gratis ab). BEV-Zeilen (nur EC)
   existieren für beide Kategorien.
@@ -267,11 +290,32 @@ die *Richtung* ist robust, das Niveau nicht.
 
 ### 2.8 Räumliche Platzierung unterhalb ~300 m
 
-`trägt` · 2026-07-27 · **281 Zellen mit 630 von 6.024 Paketen (10,5 %)** haben kein gewichtetes
-OSM-Gebäude und werden per Zellzentroid auf das nächste Segment gesnappt. Nachfrage kommt seit
-B8 aus dem Zensus, die Verteilung *innerhalb* der Zelle weiter aus OSM. Niveau unberührt,
-Platzierung unter 100 m nicht — unterhalb der dokumentierten ≳300-m-Verlässlichkeit. Sollte
-nicht wachsen.
+`trägt` · 2026-07-27, entschärft 2026-07-28 · Nachfrage kommt seit B8 aus dem Zensus, die
+Verteilung *innerhalb* der Zelle weiter aus OSM. **281 Zellen haben kein gewichtetes
+OSM-Gebäude** — OSM kartiert die ländliche Lausitz unvollständig, was genau der Grund für B8
+war. Diese Nachfrage ist echt, hat aber kein Gebäude zum Anhängen.
+
+**Korrektur der Größenangabe:** die zuerst notierten „630 von 6.024 Paketen (10,5 %)" verglichen
+DHL-Skala gegen All-Carrier-Skala. Korrekt sind **630 von 2.652 (23,8 %)** auf DHL-Skala bzw.
+**1.666 von 6.013 (27,7 %)** auf der exportierten All-Carrier-Skala — also gut ein Viertel der
+Nachfrage, nicht ein Zehntel.
+
+**Behoben (2026-07-28, `PANDA/distribution.py`):** statt die ganze Zelle auf das eine dem
+Zentroid nächste Segment zu werfen, wird die Residualnachfrage **längengewichtet über die Straßen
+*innerhalb* der Zelle** verteilt (eine längere Straße in einer 100-m-Zelle erschließt mehr
+Grundstücke). Gestuft, lokal zuerst: Straßen in der Zelle → Straßen innerhalb einer halben
+Zellbreite → einzelner Nearest-Snap. Auf der Lausitz greift Stufe 1 bei **217 Zellen / 558
+Paketen**, Stufe 2 bei **34 / 42**, Stufe 3 bei **30 / 31** (echte Off-Network-Zellen; fünf
+liegen >500 m von jedem Auto-Link). Wirkung bei unverändertem Niveau: Zustellpunkte 1.053 →
+**1.131**, Maximum je Punkt 83 → **81**, **12,6 % der Pakete anders platziert**. Der Faktor
+zwischen 27,7 % betroffener und 12,6 % verschobener Nachfrage ist erklärbar: das
+Zentroid-nächste Segment lag oft schon in der Zelle.
+
+**Was bleibt:** die Zuordnung ist ein Straßennetz-Proxy, keine Adresse. Unterhalb der
+dokumentierten ≳300-m-Verlässlichkeit bleibt die Platzierung unbelegt, und besser wird sie nur
+mit Zustellpunkt-/Adressdaten — die nicht offen und damit nicht übertragbar sind (§4). Für den
+Szenarienvergleich ist das der einzige Nachfragefehler-Kanal, der sich *nicht* herauskürzt, weil
+die Konzepte unterschiedlich auf Raum reagieren (χ-Gate bei Shared-Use).
 
 ### 2.9 CV-Batterie ist noch auf OSM-Zahlen
 
@@ -281,10 +325,14 @@ der Rest der Batterie nicht.
 
 ### 2.10 `share_channel_locker` ist keine Variable
 
-`trägt` · 2026-07-27 · `ParcelAgentGenerator.java:59` hartcodiert
+`trägt` · 2026-07-27 · `ParcelAgentGenerator.java:67` (bei Aufnahme `:59` notiert) hartcodiert
 `new DeliveryChannelResolver(List.of(), 500.0)` → der Locker-Kanal ist strukturell 0. Locker
 selbst ist bewusst Phase 2 (§4.5); relevant hier, weil das Javadoc etwas anderes behauptet
 (BACKLOG-Punkt) und weil kein Ergebnis als „mit Locker-Anteil" gelesen werden darf.
+**Annotation 2026-07-28:** das irreführende Javadoc ist korrigiert
+(`integrated/shareduse/DeliveryChannelResolver.java:10-20` — nicht `integrated/freight/`, wie im
+BACKLOG stand); es benennt jetzt die strukturelle 0 und dass die Aktivierung eine Codeänderung am
+Aufrufer braucht, nicht bloß eine Standortdatei. Der Befund selbst trägt unverändert.
 
 ---
 
@@ -369,6 +417,31 @@ HBEFA-Verkehrssituationen auswerten → Pseudo-HBEFA-Tabellen, die Contrib prüf
 Erhalten geblieben ist aus dieser Linie die Identifikation der **Alt**-Faktorquelle des
 Python-Modells: **CE Delft STREAM** (Kommentar `config.py:158`; Klassen/Segmente/Min-Max passen
 exakt) — öffentlich und zitierfähig, wird aber durch EMEP/EEA ersetzt.
+
+### 3.6 „Die LMD-Karte bleibt leer bei einem DRT-losen Run"
+
+`zurückgezogen` · 2026-07-28
+
+**Geglaubt** (Plan-D-maps Whole-Branch-Review, 2026-07-17): `build_kpis.py` gated den
+Netzwerk-Geometrie-Block auf `drt_cache is not None`, also fiele bei einem reinen Freight-/LMD-Run
+`link_geo=None` → alle LMD-Touren `runs:[]`, Stopps gedroppt, Heat leer, Karte nur Controls. Vor
+dem ersten LMD-only-Szenario zu fixen.
+
+**Gemessen** (2026-07-28): `events_cache.ensure_caches` gibt **beide** Cache-Pfade
+bedingungslos zurück — bei einem DRT-losen Run ist der DRT-Cache eine **leere Datei**, nicht
+`None` (nachgemessen: `drt is None = False`, 0 Bytes, Freight-Cache 922 Bytes). Der Block läuft
+also, `reconstruct_drt_paths` liefert `({}, set())`, und `link_geo` wird aus `freight_used`
+geladen — genau das, was die LMD-Layer brauchen. Ein Lauf ohne jede DRT-Zeile in den Events
+produziert eine nicht-leere Heat-Ebene. `drt_cache is None` tritt nur bei `--no-events` oder
+fehlender Events-Datei ein, und beide überspringen die Karten ohnehin komplett (eine Zeile
+weiter unten).
+
+**Es bleibt:** die *Prämisse*, dass `drt_cache` ein DRT-Indikator ist, war falsch — es ist ein
+Events-vorhanden-Indikator. Das ist jetzt als Kommentar an der Bedingung und als Regressionstest
+(`test_drt_less_run_still_gets_lmd_link_geometry`) festgenagelt, damit der Befund nicht ein
+zweites Mal aufgeschrieben wird. Der eigentliche Grund, warum `tours`/`stops` bei so einem Lauf
+leer aussehen können, ist ein **anderer**: ohne `output_carriers.xml.gz` gibt es kein
+Carrier-Match, und ungematchte Fahrzeuge werden bewusst weggelassen.
 
 ---
 

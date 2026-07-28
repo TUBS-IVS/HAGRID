@@ -94,8 +94,10 @@ SOS-Layer + Multi-Seed-Aggregation bewusst ausgeklammert).
 Methodenwahl, Klassenmapping, Systemgrenze und Caveats: [METHODS-LOG](METHODS-LOG.md)
 §1.4/§2.7. _(added 2026-07-14)_
 
-- **Konkrete Arbeitsschritte aus der Faktor-Sichtung:** Appendix-4-xlsx **ins Repo legen** (liegt
-  noch in Downloads) + Quellentabelle dazu · DRT-/Pkw-Klassen in der Pipeline ergänzen (bisher
+- **Konkrete Arbeitsschritte aus der Faktor-Sichtung:** ~~Appendix-4-xlsx ins Repo legen +
+  Quellentabelle~~ ✅ 2026-07-28 (`hagrid-input/emissions/` + `SOURCES.md`, Binaries bleiben
+  untracked — [BACKLOG-DONE](BACKLOG-DONE.md)); noch **offen** dort: Kapitel 1.A.3.b.vi–vii
+  (Non-Exhaust) nachladen · DRT-/Pkw-Klassen in der Pipeline ergänzen (bisher
   freight-only) · unbelegte Idle-/Kaltstart-Parameter belegen · `_l`-Van optional einmal als HDT
   „Rigid ≤7,5 t" gegenrechnen (ausgewiesene Bandbreite statt versteckter Annahme).
 - **⚠️ Constraint:** `hagrid_output_analysis/emissions.py` **nicht anfassen** (Kollegen-Paper,
@@ -158,9 +160,14 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Einstieg: `CarrierGenerator.adjustDeliveryRatesConsideringB2B:252`,
   `determineMissedParcels:1049`, Sollwerte `HagridConfig.java:190-196`.
   Details: [METHODS-LOG](METHODS-LOG.md) §2.5. _(added 2026-07-27)_
-- **`[M]` Zentroid-Snapping im Auge behalten** — 281 Zellen / 630 von 6.024 Paketen (10,5 %) ohne
-  gewichtetes OSM-Gebäude. Niveau unberührt, Platzierung unter 100 m nicht. Sollte nicht wachsen.
-  → [METHODS-LOG](METHODS-LOG.md) §2.8. _(added 2026-07-27)_
+- **`[S]` Entscheiden, ob das Band auf den gefixten Eingaben neu läuft** — der
+  Zentroid-Snap-Fix (2026-07-28) platziert **12,6 % der Pakete anders**, bei unverändertem
+  Niveau. Die auf Rekord stehenden `bandz_*`-Ergebnisse kamen aus `level_ctrsnap_*` (archiviert,
+  nicht überschrieben). Dagegen spricht: die belastbaren Aussagen des Bandes sind die Kosten- und
+  Fahrzeug-Elastizitäten, und die km-basierten Kanäle liegen ohnehin am oder unter dem
+  Rauschboden ([METHODS-LOG](METHODS-LOG.md) §2.1). Dafür spricht: die drei Szenarienläufe fahren
+  ohnehin die gefixte Datei, also wäre das Band sonst auf einem anderen Muster gemessen als die
+  Headline-Runs. Kosten: 3 × ~1 h 40. _(added 2026-07-28)_
 
 ### Sonstige Medium-Punkte
 
@@ -293,16 +300,14 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
   **Bewusst ausgenommen:** M8 (Kostenbasis-Provenance in `extract_freight.py`) — das sitzt in
   `economics.py`, das laut `[H]` Kostenfunktion ohnehin ersetzt wird. _(added 2026-07-27)_
 
-- **`[M]` Locker-Javadoc korrigieren + `IntegratedScenarioConfig` entscheiden** —
-  `DeliveryChannelResolver:10-15` behauptet, der Locker-Zweig aktiviere sich „ohne Codeänderung
-  hier"; das ist falsch, der Kanal ist strukturell 0 (→ [METHODS-LOG](METHODS-LOG.md) §2.10).
-  Zusätzlich: `IntegratedScenarioConfig` (mit `b2cLockerShare=0.7`, Autonomie-Dwell-Faktor,
+- **`[M]` `IntegratedScenarioConfig` entscheiden** — _(Locker-Javadoc ✅ 2026-07-28 korrigiert →
+  [BACKLOG-DONE](BACKLOG-DONE.md); der Rest ist offen.)_
+  `IntegratedScenarioConfig` (mit `b2cLockerShare=0.7`, Autonomie-Dwell-Faktor,
   Labour-Kosten, Retooling-Zeit) wird **nur vom eigenen Test** referenziert und erreicht keinen
   Run — liest sich aber wie aktive Konfiguration. Verwandt: `[M]` Autonomie-Switch-Plan (dort ist
   `operation_mode` in `RunMetadataWriter.java:31` hart auf `"conventional"`).
   **⚠️ ENTSCHEIDUNG OFFEN (gestellt 2026-07-27):** kommt der Autonomie-Switch (§4.4) in 1c/1d, ist
   `IntegratedScenarioConfig` sein designierter Ort → **verdrahten**; kommt er nicht → **löschen**.
-  Das Locker-Javadoc wird in beiden Fällen korrigiert (unabhängig, kann sofort passieren).
   _(added 2026-07-27)_
 
 - **`[M]` Ungeschützter Kompositions-Zweig im DRT-Config-Aufbau** — `DrtConfigComposer.java:63`
@@ -341,14 +346,6 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
 
 ## Low
 
-- **`[L]` `SimulationBatGenerator` JDK-Pfad hartcodiert** — der generierte `run_hagrid_sim.bat`
-  setzt `JAVA_EXE` auf einen fest verdrahteten Adoptium-Pfad inkl. Patch-Version
-  (`jdk-21.0.3.9-hotspot`). Nach einem JDK-Update auf einer Zielmaschine (z.B. Sim-PC-Bump auf
-  `21.0.8.9`, entdeckt 2026-07-21 während des Hannover-Kapa-Sweeps) schlägt der generierte Bat
-  sofort mit "Datei nicht gefunden" fehl — jeder Sweep-Neustart braucht einen manuellen Bat-Patch.
-  Fix: `%JAVA_HOME%\bin\java.exe` verwenden oder den Pfad zur Build-Zeit via System-Property
-  auflösen statt Major.Minor.Patch hartzucodieren. _(added 2026-07-22)_
-
 - **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
   nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
   die dort ein-/ausgestiegen sind (wie im Legacy-Dashboard per Passagier-ID). Aktuell tragen die
@@ -361,9 +358,6 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
   / `hagrid-lausitz`. Reiner Move-Refactor; `HagridPaths`-Root-Detection pro Szenario neu bauen.
   _(added 2026-07-14)_
-
-- **`[L]` `.sha1`-Checksums für `libs/`-Artefakte committen** — der Kalt-`mvn`-Build warnt
-  "no checksums available from hagrid-local-libs" (harmlos). Fünf-Minuten-Fix. _(added 2026-07-14)_
 
 - **`[L]` Human Visual Pass der married120-Dashboards** — Rendering (Light/Dark, Tab-Wechsel,
   Label-Kollisionen, H-Scroll) kann kein Reviewer aus dem Diff prüfen. _(added 2026-07-14)_
@@ -381,20 +375,6 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
 - **`[L]` Phase-2-Deferrals (gesammelt)** — Packstationen/Locker (braucht Standortdaten),
   Ride-and-Collect, mobile-Packstation (Opt 1), verschiedene Van-Größen. Alle bewusst aufgeschoben
   → [METHODS-LOG](METHODS-LOG.md) §4.5. _(added 2026-07-14)_
-
-- **`[L]` Legacy `drt_service_time.py:194` Sort-Key härten** — `int(v.split("_")[1]) if
-  v.split("_")[-1].isdigit() else 0` crasht auf nicht-`drt_<int>`-Fahrzeug-IDs (z.B. `drt_veh_1`);
-  reale married-Runs nutzen `drt_<int>` → kein Real-Run-Defekt, aber der KPI-Test-Fixture musste
-  die ID in-test umschreiben. Trivialer Defensiv-Fix (trailing-int extrahieren, sonst 0) entfernt
-  den Workaround. Entdeckt bei Plan-D-maps Task 5. _(added 2026-07-17)_
-
-- **`[L]` LMD-Karte leer bei DRT-losem Run** — `build_kpis.py:100` gated den Netzwerk-Geometrie-Block
-  auf `drt_cache is not None`, d.h. bei einem reinen Freight/LMD-Run (kein DRT) bleibt `link_geo=None`
-  → alle LMD-Touren `runs:[]`, Stopps gedroppt, Heat leer (Karte zeigt nur Controls). Betrifft
-  married250 NICHT (hat DRT → `freight_used` wird unioniert). Fix: Gate auf
-  `(drt_cache is not None or fev is not None) and network.exists()`, `veh_path` weiter nur bei
-  vorhandenem `drt_cache`. Vor dem ersten LMD-only-Szenario (vgl. `LMD_BASELINE`) fixen. Gefunden im
-  Plan-D-maps Whole-Branch-Review. _(added 2026-07-17)_
 
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 

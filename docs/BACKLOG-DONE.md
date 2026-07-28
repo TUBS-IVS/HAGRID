@@ -13,6 +13,55 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-28._
 
 ## 2026-07-28
 
+- **Sofort-Block: fünf billige Fixes am Stück** — ✅ alle verifiziert, lokal auf `hendrik`.
+  1. **Locker-Javadoc korrigiert** — `integrated/shareduse/DeliveryChannelResolver.java:10-20`
+     behauptete, der Locker-Zweig aktiviere sich „without code changes here"; benennt jetzt die
+     strukturelle 0 + die nötige Änderung am Aufrufer (`ParcelAgentGenerator:67`).
+     → [METHODS-LOG](METHODS-LOG.md) §2.10 (annotiert).
+  2. **`drt_service_time`-Sort-Key gehärtet** — neuer `_veh_sort_key` (letztes Token wenn Zahl,
+     sonst 0; ID-String bricht Gleichstände → deterministisch trotz `sorted(set(...))`). Damit fiel
+     der Workaround in `test_build_kpis._make_mini_events_run`, der die Fixture-ID `drt_veh_1` in
+     der tmp-Kopie umschreiben musste; die Fixture ist jetzt selbst der Regressionswächter.
+     **Nachweis:** 237 KPI-Tests grün.
+  3. **JDK-Pfad entkoppelt** — `SimulationBatGenerator:118-133` generiert statt
+     `jdk-21.0.3.9-hotspot` eine Auflösungskette `HAGRID_JAVA_EXE > JAVA_HOME > PATH` mit hartem
+     Fail + Versionswarnung; der eingecheckte `run_hagrid_sim.bat` ist mitgezogen (CRLF/UTF-8
+     erhalten). **Nachweis:** `mvn compile` exit 0; Bat in einer Sandbox-Kopie gefahren — Happy
+     Path löste `jdk-21.0.10` über `JAVA_HOME` auf, Fail-Path (JAVA_HOME kaputt + java.exe von der
+     PATH genommen) brach mit Hinweistext und exit 1 ab. Die Versionsprüfung liest die schon
+     geschriebene `vm_settings_before.txt`, weil `for /f` an `C:\Program Files` scheitert
+     (verifiziert).
+  4. **`.sha1` für die `libs/`-Artefakte** — Maven-Format (nackter Hex-String) für Jar und Pom.
+     **Nachweis A/B:** `~/.m2`-Eintrag gelöscht und neu aufgelöst — ohne `.sha1`
+     `ChecksumFailureException: no checksums available`, mit `.sha1` sauberer BUILD SUCCESS.
+  5. **EMEP/EEA-Rohquellen aus `~/Downloads` geholt** — Appendix-4-xlsx (10,9 MB) + Kapitel-PDF
+     liegen in `hagrid-input/emissions/` mit Quellentabelle `SOURCES.md` (URL, SHA-256,
+     Download-Datum, Blattnamen, RF-Bruchteil-Gotcha, Zitat-Caveat „Guidebook 2023, Update 2025").
+     **User-Entscheidung 2026-07-28:** die Ablage bleibt komplett **untracked** — `.gitignore:59`
+     erfasst `hagrid-input/**`, und der User will es dort lassen (auch `SOURCES.md`, kein
+     `git add -f`). Reproduzierbarkeit läuft über URL + SHA-256 *in* der Datei, nicht über git.
+     Git-seitig sichtbar ist davon nur die Plan-Constraint, die nicht mehr auf `~/Downloads` zeigt,
+     plus der Zitat-Caveat in [METHODS-LOG](METHODS-LOG.md) §1.4.
+  Nebenbefund: der `[L]`-Punkt „LMD-Karte leer bei DRT-losem Run" ist **kein Defekt** →
+  [METHODS-LOG](METHODS-LOG.md) §3.6, festgenagelt durch
+  `test_drt_less_run_still_gets_lmd_link_geometry`.
+
+- **Zentroid-Snapping behoben: Residualnachfrage wird über die Straßen der Zelle verteilt** —
+  ✅ `PANDA/distribution.py`, 8 Tests (`tests/test_distribution.py`), 61 Tests grün, alle drei
+  Level neu exportiert und per SHA256 gestaged.
+  Statt die ganze Zelle auf das dem Zentroid nächste Segment zu werfen, wird längengewichtet über
+  die Straßen *innerhalb* der Zelle verteilt (gestuft: Zelle → halbe Zellbreite → Nearest-Snap).
+  Lausitz: Stufe 1 217 Zellen/558 Pakete, Stufe 2 34/42, Stufe 3 30/31. Zustellpunkte 1.053 →
+  1.131, Maximum je Punkt 83 → 81, **12,6 % der Pakete anders platziert, Niveau unverändert**.
+  Mitbehoben: PLZ-Sentinel `00000` (58 Punkte / 570 Pakete → **0**) und ein **stiller
+  CRS-Mismatch** in `export_demand.run()`, den erst der Residual-Join scharf machte — `STRtree`
+  kennt kein CRS und liefert bei Mismatch schweigend keine Treffer; `distribution.py` prüft das
+  jetzt und hat einen Regressionstest.
+  Eingaben der schon gemessenen Bandläufe **archiviert statt überschrieben**:
+  `level_ctrsnap_{central,low,high}`.
+  → Konsequenz und korrigierte Größenangabe (23,8 % DHL / 27,7 % all-carrier, nicht 10,5 %):
+  [METHODS-LOG](METHODS-LOG.md) §2.8; neue Niveaus §1.3.
+
 - **Rauschboden der jsprit-Heuristik gemessen** — ✅ Seed-Test, Commit `06c2707`.
   Neue System-Property `-Dhagrid.jsprit.seed`; identischer Central-Stand, identische 100
   Iterationen, nur anderer Seed. Ergebnis: Pakete/verpasste bitgleich, Fahrzeug-km −6,5 %,
