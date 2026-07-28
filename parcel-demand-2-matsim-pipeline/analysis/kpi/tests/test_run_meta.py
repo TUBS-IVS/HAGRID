@@ -63,6 +63,8 @@ def test_json_takes_precedence(tmp_path):
     # must load fine, with the sweep coordinates simply unknown.
     assert m.chi_threshold is None
     assert m.no_parcels is None
+    # F3 tolerance: same for the matsim_seed field (pre-2026-07-28 writer).
+    assert m.matsim_seed is None
 
 
 def test_json_carries_shareduse_sweep_coordinates(tmp_path):
@@ -85,14 +87,18 @@ def test_json_carries_shareduse_sweep_coordinates(tmp_path):
         "drt_with_freight": False,
         "chi_threshold": 300.0,
         "no_parcels": False,
+        "matsim_seed": 1338,
         "created": "2026-07-28T12:00:00",
     }), encoding="utf-8")
     m = load_run_meta(d)
     assert m.chi_threshold == 300.0
     assert m.no_parcels is False
+    # F3: error-band assembly binds replicate runs via the seed in the metadata.
+    assert m.matsim_seed == 1338
 
 
 def test_legacy_dir_name_leaves_sweep_coordinates_unknown():
     m = parse_legacy_dir_name("DRT_SHAREDUSE_13052025_chi300_iter50_jsprit100")
     assert m.chi_threshold is None
     assert m.no_parcels is None
+    assert m.matsim_seed is None

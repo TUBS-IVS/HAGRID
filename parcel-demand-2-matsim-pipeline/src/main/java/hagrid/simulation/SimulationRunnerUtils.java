@@ -147,6 +147,10 @@ public final class SimulationRunnerUtils {
         // Shared-Use module stack installed but inert). Leakage control for the χ→0 validation
         // (Task 10 / D10 (e)). Harmless default for every other concept (none inject parcels).
         boolean noParcels = bool(map.getOrDefault("noParcels", "false"), "noParcels");
+        // MATSim global random seed (review F3): vary for error-band replicate runs. Default
+        // 1337 keeps identical specs identical. NOTE: the jsprit seed is a separate
+        // system-property override and is NOT affected by this key.
+        long seed = anyLong(map.getOrDefault("seed", "1337"), "seed");
 
         // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
         // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold
@@ -203,12 +207,12 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
-                drtWithFreight, kpiDashboard, chiThreshold, noParcels);
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed);
     }
 
     /**
@@ -351,6 +355,10 @@ public final class SimulationRunnerUtils {
 
             // 2. build the run scenario on the Lausitz network with the routed carriers
             Config config = ConfigUtils.createConfig();
+            // F3: runner-key seed (default 1337; was the MATSim default 4711 before the key
+            // existed). LMD KPIs are plan-pinned/deterministic, but keep every simulation
+            // path consistently seeded so error-band replicates only vary via seed=.
+            config.global().setRandomSeed(cfg.getSeed());
             config.network().setInputFile(cfg.getLausitzNetworkRaw());
             config.controller().setOutputDirectory(cfg.getOutputDirectoryAsString());
             config.controller().setRunId(cfg.getRunId());
@@ -512,6 +520,7 @@ public final class SimulationRunnerUtils {
               uTurnPenalty   score penalty per U-turn (default 1.0)
               studyArea      HANNOVER or LAUSITZ_HOYERSWERDA (default HANNOVER)
               fleetSize      DRT fleet size in vehicles (default 50; only used for DRT concepts)
+              seed           MATSim global random seed (default 1337; vary for error-band replicates)
               writeDashboard true/false (default false) \u2014 generate dashboard after sim
 
             Note (DRT scenarios): the clipped network, clipped population, and fleet file must be
@@ -598,6 +607,15 @@ public final class SimulationRunnerUtils {
             return v;
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
+    }
+
+    /** Plain long parse (any value allowed — a seed is just a seed). */
+    private static long anyLong(String s, String name) {
+        try {
+            return Long.parseLong(s.trim());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid long for " + name + ": " + s, ex);
         }
     }
 

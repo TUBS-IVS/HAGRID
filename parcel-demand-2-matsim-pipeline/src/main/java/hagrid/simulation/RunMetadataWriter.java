@@ -40,6 +40,9 @@ public final class RunMetadataWriter {
         // finished run directory and its sweep coordinates (harmless defaults otherwise).
         m.put("chi_threshold", cfg.getChiThreshold());
         m.put("no_parcels", cfg.isNoParcels());
+        // F3: the MATSim seed is a runner key (error-band replicates differ ONLY in it and
+        // the tag) — persisting it lets sweep/error-band assembly bind replicates to seeds.
+        m.put("matsim_seed", cfg.getSeed());
         m.put("created", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return writeMap(m, targetDir);
     }
