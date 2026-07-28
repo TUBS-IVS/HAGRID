@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 
 import hagrid.HagridConfig;
 import hagrid.HagridPaths;
+import hagrid.integrated.modular.Modular;
 import hagrid.utils.general.StudyArea;
 
 /**
@@ -145,6 +146,22 @@ public class HAGRIDSimulationConfig {
      * sweep/error-band assembly can bind replicates to their seed.
      */
     private final long seed;
+
+    /**
+     * Passenger-first dispatch gate (design D6, spec §6.1): the DRT_MODULAR tour dispatcher only
+     * commits a vehicle to a freight excursion while the idle-vehicle SHARE strictly exceeds this
+     * threshold. {@code 0.0} dispatches whenever any vehicle is idle; {@code 1.0} is the
+     * never-dispatch control arm. Only meaningful for {@code DRT_MODULAR}, harmless otherwise.
+     */
+    private final double idleThreshold;
+
+    /**
+     * Jsprit tour-duration cap in seconds (design D5): the maximum route duration a single
+     * DRT_MODULAR freight excursion may plan for. Default {@link Modular#DEFAULT_MAX_TOUR_DURATION_S}
+     * (3.5h); 25200 (7h) is the control arm. Only meaningful for {@code DRT_MODULAR}, harmless
+     * otherwise.
+     */
+    private final int maxTourDurationSeconds;
 
     /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
@@ -289,8 +306,9 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Fullest constructor: adds the MATSim global random {@code seed} (review F3) on top of
-     * every other parameter. All shorter constructors default {@code seed} to 1337.
+     * Creates a new scenario configuration with the MATSim global random {@code seed} (review F3),
+     * defaulting {@code idleThreshold} / {@code maxTourDurationSeconds} to
+     * {@link Modular#DEFAULT_IDLE_THRESHOLD} / {@link Modular#DEFAULT_MAX_TOUR_DURATION_S}.
      *
      * @param seed MATSim global random seed; vary for error-band replicate runs
      */
@@ -299,6 +317,29 @@ public class HAGRIDSimulationConfig {
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
                           boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
                           boolean noParcels, long seed) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed,
+                Modular.DEFAULT_IDLE_THRESHOLD, Modular.DEFAULT_MAX_TOUR_DURATION_S);
+    }
+
+    /**
+     * Fullest constructor: adds the DRT_MODULAR (1d) dispatch-gate/tour-cap keys,
+     * {@code idleThreshold} and {@code maxTourDurationSeconds}, on top of every other parameter.
+     * All shorter constructors default them to {@link Modular#DEFAULT_IDLE_THRESHOLD} /
+     * {@link Modular#DEFAULT_MAX_TOUR_DURATION_S}.
+     *
+     * @param idleThreshold           passenger-first dispatch gate (design D6); must be in
+     *                                {@code [0.0, 1.0]} ({@code 1.0} = never-dispatch control arm)
+     * @param maxTourDurationSeconds  jsprit tour-duration cap in seconds (design D5); must be positive
+     * @throws IllegalArgumentException if {@code idleThreshold} is outside {@code [0.0, 1.0]} or
+     *                                  {@code maxTourDurationSeconds} is not positive
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -324,6 +365,13 @@ public class HAGRIDSimulationConfig {
         if (zoneBasedCachingThresholdMeters < 0) {
             throw new IllegalArgumentException("zoneBasedCachingThresholdMeters must be >= 0");
         }
+        if (idleThreshold < 0.0 || idleThreshold > 1.0) {
+            throw new IllegalArgumentException(
+                    "idleThreshold must be in [0.0, 1.0] (1.0 = never-dispatch control arm): " + idleThreshold);
+        }
+        if (maxTourDurationSeconds <= 0) {
+            throw new IllegalArgumentException("maxTourDurationSeconds must be positive: " + maxTourDurationSeconds);
+        }
         this.maxIterations = maxIterations;
         this.jspritIterations = jspritIterations;
         this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
@@ -337,6 +385,8 @@ public class HAGRIDSimulationConfig {
         this.chiThreshold = chiThreshold;
         this.noParcels = noParcels;
         this.seed = seed;
+        this.idleThreshold = idleThreshold;
+        this.maxTourDurationSeconds = maxTourDurationSeconds;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -632,6 +682,31 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
+     * Returns the passenger-first dispatch gate (design D6): the DRT_MODULAR tour dispatcher
+     * only commits a vehicle to a freight excursion while the idle-vehicle SHARE strictly
+     * exceeds this threshold. Always in {@code [0.0, 1.0]}; {@code 1.0} is the never-dispatch
+     * control arm. Default {@link Modular#DEFAULT_IDLE_THRESHOLD}. Only meaningful for
+     * {@code DRT_MODULAR}.
+     *
+     * @return idle-share dispatch gate threshold
+     */
+    public double getIdleThreshold() {
+        return idleThreshold;
+    }
+
+    /**
+     * Returns the jsprit tour-duration cap in seconds (design D5): the maximum route duration a
+     * single DRT_MODULAR freight excursion may plan for. Default
+     * {@link Modular#DEFAULT_MAX_TOUR_DURATION_S} (3.5h); 25200 (7h) is the control arm. Only
+     * meaningful for {@code DRT_MODULAR}.
+     *
+     * @return maximum tour duration in seconds
+     */
+    public int getMaxTourDurationSeconds() {
+        return maxTourDurationSeconds;
+    }
+
+    /**
      * Returns the path to the DRT service-area shapefile.
      *
      * @return DRT service area shapefile path
@@ -787,8 +862,14 @@ public class HAGRIDSimulationConfig {
             checkFile(Path.of(getLausitzTransitVehiclesRaw()), "Lausitz transit vehicles (raw)", missing);
             checkFile(Path.of(getLausitzVehicleTypes()), "Lausitz vehicle-types", missing);
 
-            if (isDrtWithFreight()) {
-                // Married baseline additionally needs the LMD preprocessing inputs.
+            // DRT_MODULAR always needs the LMD preprocessing inputs regardless of the freight flag
+            // (it always runs the offline jsprit preprocessing - runsCarrierModules() is what
+            // gates whether the CarrierModule ALSO runs, not whether jsprit does); the married
+            // baseline needs them only when drtWithFreight is set. concept.toUpperCase() cannot
+            // throw here: isDrtScenario() being true already proved it parses.
+            boolean modular = HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                    == HagridConfig.Scenario.DRT_MODULAR;
+            if (isDrtWithFreight() || modular) {
                 checkFile(Path.of(getLmdDemandShapefile()), "LMD demand shapefile", missing);
                 checkFile(Path.of(getLmdVehicleTypes()), "LMD vehicle types", missing);
                 checkFile(Path.of(getLausitzNetworkRaw()), "Lausitz network (raw, jsprit routing)", missing);

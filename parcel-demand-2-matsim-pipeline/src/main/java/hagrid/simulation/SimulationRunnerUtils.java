@@ -151,6 +151,12 @@ public final class SimulationRunnerUtils {
         // 1337 keeps identical specs identical. NOTE: the jsprit seed is a separate
         // system-property override and is NOT affected by this key.
         long seed = anyLong(map.getOrDefault("seed", "1337"), "seed");
+        // Modular dispatch gate (design D6) and jsprit tour cap (design D5, seconds). Same
+        // parse/ctor pattern as chiThreshold; harmless defaults for every other concept.
+        double idleThreshold = nonNegDouble(map.getOrDefault("idleThreshold",
+                Double.toString(hagrid.integrated.modular.Modular.DEFAULT_IDLE_THRESHOLD)), "idleThreshold");
+        int maxTourDuration = positiveInt(map.getOrDefault("maxTourDuration",
+                Integer.toString(hagrid.integrated.modular.Modular.DEFAULT_MAX_TOUR_DURATION_S)), "maxTourDuration");
 
         // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
         // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold
@@ -207,12 +213,13 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
-                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed);
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed,
+                idleThreshold, maxTourDuration);
     }
 
     /**
@@ -257,6 +264,20 @@ public final class SimulationRunnerUtils {
     // ====================================================================
 
     /**
+     * Whether a run carries the offline-routed LMD carriers INSIDE the mobsim ({@code CarrierModule}).
+     * DRT_SHAREDUSE: parcels ride the DRT fleet as passengers - no carriers (1c D7).
+     * DRT_MODULAR: the DRT fleet executes the jsprit tours itself via task splicing - running
+     * the CarrierModule too would deliver every parcel TWICE (phantom vans + DRT), silently
+     * corrupting every freight KPI (design §3.4). This is the SINGLE source of that rule; every
+     * call site in {@link #runSimulation} routes through this method instead of re-deriving it.
+     */
+    static boolean runsCarrierModules(hagrid.HagridConfig.Scenario scenario, boolean drtWithFreight) {
+        return drtWithFreight
+                && scenario != hagrid.HagridConfig.Scenario.DRT_SHAREDUSE
+                && scenario != hagrid.HagridConfig.Scenario.DRT_MODULAR;
+    }
+
+    /**
      * Runs a single HAGRID MATSim simulation.
      */
     public static void runSimulation(HAGRIDSimulationConfig cfg) throws Exception {
@@ -270,13 +291,18 @@ public final class SimulationRunnerUtils {
 
         // DRT path: passenger DRT; married baseline additionally carries the LMD carriers.
         if (cfg.isDrtScenario()) {
+            hagrid.HagridConfig.Scenario concept =
+                    hagrid.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
             // DRT_SHAREDUSE (cargo hitching) rides the SAME DRT fleet as the parcel carrier —
             // it never runs the offline jsprit routing / carrier modules (D7), even if the
             // scenario spec left freight=true (its default) unset.
-            boolean sharedUse = hagrid.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase())
-                    == hagrid.HagridConfig.Scenario.DRT_SHAREDUSE;
+            boolean sharedUse = concept == hagrid.HagridConfig.Scenario.DRT_SHAREDUSE;
+            // DRT_MODULAR (1d, capsule swap): jsprit routing YES, CarrierModule NO — the DRT
+            // fleet executes the tours itself via schedule splicing (design §3.4).
+            boolean modular = concept == hagrid.HagridConfig.Scenario.DRT_MODULAR;
+            boolean carrierModules = runsCarrierModules(concept, cfg.isDrtWithFreight());
 
-            if (cfg.isDrtWithFreight() && !sharedUse) {
+            if (carrierModules) {
                 // 1. offline jsprit routing - the exact same call the LMD_BASELINE uses,
                 //    clipped to the SAME service-area shapefile (identical geography).
                 hagrid.integrated.freight.LausitzFreightPreprocessor.run(
@@ -284,6 +310,15 @@ public final class SimulationRunnerUtils {
                         cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                         cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
                         cfg.getDrtServiceAreaShapefile());
+            } else if (modular) {
+                // jsprit YES (capsule type + tour cap), CarrierModule NO (design §3.4). Always
+                // runs regardless of the freight flag — 1d needs the LMD trio unconditionally.
+                hagrid.integrated.freight.LausitzFreightPreprocessor.runModular(
+                        cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(), cfg.getLausitzNetworkRaw(),
+                        cfg.getLmdVehicleTypes(), cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
+                        cfg.getDrtServiceAreaShapefile(), cfg.getMaxTourDurationSeconds());
+                LOG.info("DRT_MODULAR: jsprit tours routed (cap {}s); freight flag ignored - the DRT "
+                        + "fleet executes them (no CarrierModule).", cfg.getMaxTourDurationSeconds());
             } else if (sharedUse && cfg.isDrtWithFreight()) {
                 LOG.info("DRT_SHAREDUSE: freight flag ignored - parcels ride the DRT fleet (no jsprit/carriers)");
             }
@@ -294,7 +329,7 @@ public final class SimulationRunnerUtils {
                 // at controler construction time.
                 hagrid.integrated.drt.DrtConfigComposer.composeSharedUse(scenario.getConfig());
             }
-            if (cfg.isDrtWithFreight() && !sharedUse) {
+            if (carrierModules) {
                 hagrid.integrated.freight.FreightRunComposer.addCarriers(
                         scenario, cfg.getLmdCarriersRouted(), cfg.getLmdVehicleTypes());
             }
@@ -310,7 +345,7 @@ public final class SimulationRunnerUtils {
             double perDepotCapacity = Math.ceil((double) cfg.getFleetSize() / Math.max(1, depots.size()));
             hagrid.integrated.drt.DrtConfigComposer.installModules(controler, depots,
                     serviceEnd - returnWindow, perDepotCapacity, 1800.0);
-            if (cfg.isDrtWithFreight() && !sharedUse) {
+            if (carrierModules) {
                 hagrid.integrated.freight.FreightRunComposer.installCarrierModules(controler, scenario);
                 LOG.info("MARRIED baseline run '{}' (DRT fleet {} + LMD carriers).",
                         cfg.getRunId(), cfg.getFleetSize());
@@ -332,6 +367,33 @@ public final class SimulationRunnerUtils {
                     LOG.info("SHARED-USE run '{}' (DRT fleet {} carrying parcels, chiThreshold={}s).",
                             cfg.getRunId(), cfg.getFleetSize(), cfg.getChiThreshold());
                 }
+            } else if (modular) {
+                org.matsim.contrib.drt.run.DrtConfigGroup drtCfg =
+                        org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(scenario.getConfig())
+                                .getModalElements().iterator().next();
+                // Tour-loading sequence mirrors ModularEndToEndTest (Task 10) exactly: read the
+                // routed carriers this same runSimulation() call just wrote above (sequential,
+                // single-threaded — the file exists by the time this executes), build the car and
+                // DRT networks, convert, and install the dispatch module.
+                org.matsim.freight.carriers.Carriers routed = hagrid.integrated.modular.ModularTourConverter
+                        .read(cfg.getLmdCarriersRouted(),
+                                hagrid.integrated.modular.ModularVehicleTypes
+                                        .createCapsuleTypes(cfg.getLmdVehicleTypes()));
+                org.matsim.api.core.v01.network.Network carNet =
+                        hagrid.integrated.freight.LausitzFreightPreprocessor.carNetwork(
+                                org.matsim.core.network.NetworkUtils.readNetwork(cfg.getLausitzNetworkRaw()));
+                org.matsim.api.core.v01.network.Network drtNet =
+                        org.matsim.core.network.NetworkUtils.createNetwork();
+                new org.matsim.core.network.algorithms.TransportModeNetworkFilter(
+                        org.matsim.core.network.NetworkUtils.readNetwork(cfg.getDrtNetworkClipped()))
+                        .filter(drtNet, java.util.Set.of(org.matsim.api.core.v01.TransportMode.drt));
+                java.util.List<hagrid.integrated.modular.ModularFreightTour> tours =
+                        hagrid.integrated.modular.ModularTourConverter.convert(routed, carNet, drtNet);
+                controler.addOverridingModule(new hagrid.integrated.modular.ModularDispatchModule(
+                        drtCfg, tours, cfg.getIdleThreshold()));
+                LOG.info("MODULAR run '{}' (DRT fleet {}, {} freight tours, idleThreshold={}, cap={}s).",
+                        cfg.getRunId(), cfg.getFleetSize(), tours.size(), cfg.getIdleThreshold(),
+                        cfg.getMaxTourDurationSeconds());
             } else {
                 LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             }
