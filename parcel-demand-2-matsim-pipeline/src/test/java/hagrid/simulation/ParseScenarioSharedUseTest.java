@@ -113,6 +113,19 @@ class ParseScenarioSharedUseTest {
     }
 
     @Test
+    @DisplayName("idleThreshold=1.0 (never-dispatch control arm, Task 12) is ACCEPTED, not rejected")
+    void idleThresholdOneIsAccepted() {
+        // The upper bound is INCLUSIVE (ctor validates idleThreshold > 1.0, not >= 1.0) because
+        // 1.0 is the never-dispatch control arm the next task (12) is built on. A one-character
+        // slip from > to >= would silently reject it while every other test here (including
+        // idleThreshold=1.5 throwing above) stays green — that case does not discriminate this
+        // boundary at all. Pin it explicitly instead of relying on the reject-side test alone.
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,date=2025-06-10,maxIter=1,jspritIter=1,idleThreshold=1.0");
+        assertThat(cfg.getIdleThreshold()).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("carrier-module guard: married yes, shareduse no, MODULAR NO (double-delivery), lmd n/a")
     void carrierModuleGuard() {
         assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_BASELINE, true)).isTrue();

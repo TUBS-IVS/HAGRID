@@ -54,6 +54,36 @@ class HAGRIDSimulationConfigTest {
     }
 
     /**
+     * Task 11 review Finding 2: DRT_MODULAR must require the LMD preprocessing trio (demand
+     * shapefile, vehicle types, raw network) even when {@code drtWithFreight=false} — unlike
+     * DRT_BASELINE (see {@link #validateSkipsFreightForDrt}), which skips them in that case. This
+     * closes the coverage gap the Task 11 report itself flagged: {@code ModularEndToEndTest}
+     * bypasses {@code validateInputFiles()} entirely, so nothing else in the suite exercises the
+     * widened condition. Stubs the same 9 DRT files as {@link #validateSkipsFreightForDrt} plus
+     * the fingerprint, but deliberately leaves the LMD demand shapefile absent — if the widened
+     * condition ever regressed back to {@code isDrtWithFreight()} alone, this would wrongly NOT
+     * throw.
+     */
+    @Test
+    @DisplayName("modularRequiresLmdTrioRegardlessOfFreightFlag — DRT_MODULAR + freight=false still requires the LMD trio")
+    void modularRequiresLmdTrioRegardlessOfFreightFlag(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = modularConfig(20);
+            stubDrtInputs(tempDir, cfg);
+            DrtInputsFingerprint.write(cfg, Path.of(cfg.getDrtInputsFingerprint()));
+            // Deliberately NOT stubbed: getLmdDemandShapefile() / getLmdVehicleTypes() /
+            // getLausitzNetworkRaw() — the LMD trio this test proves is still required.
+
+            assertThatThrownBy(cfg::validateInputFiles)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("LMD demand shapefile");
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /**
      * Inputs present but never fingerprinted (prepared before this guard existed). Existence
      * alone must NOT be accepted — otherwise the run silently uses artifacts whose provenance
      * is unknown.
@@ -137,6 +167,23 @@ class HAGRIDSimulationConfigTest {
                 StudyArea.LAUSITZ_HOYERSWERDA,
                 fleetSize,
                 false);  // drtWithFreight=false: passenger-only DRT run
+    }
+
+    /**
+     * DRT_MODULAR config with {@code drtWithFreight=false} at the temp root: 1d always needs the
+     * LMD preprocessing trio regardless of the freight flag (it always runs the offline jsprit
+     * preprocessing), unlike DRT_BASELINE above where {@code drtWithFreight=false} skips them.
+     */
+    private static HAGRIDSimulationConfig modularConfig(int fleetSize) {
+        return new HAGRIDSimulationConfig(
+                "DRT_MODULAR",
+                LocalDate.of(2025, 5, 13),
+                1,  // maxIterations
+                1,  // jspritIterations
+                false, 0.0, 0.0, "",
+                StudyArea.LAUSITZ_HOYERSWERDA,
+                fleetSize,
+                false);  // drtWithFreight=false: must NOT skip the LMD trio for DRT_MODULAR
     }
 
     /** The 9 files a passenger-only DRT run requires (5 DRT-specific + 3 rail PT + 1 depot CSV). */

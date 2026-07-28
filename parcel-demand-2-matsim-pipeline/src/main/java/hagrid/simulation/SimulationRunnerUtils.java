@@ -375,6 +375,13 @@ public final class SimulationRunnerUtils {
                 // routed carriers this same runSimulation() call just wrote above (sequential,
                 // single-threaded — the file exists by the time this executes), build the car and
                 // DRT networks, convert, and install the dispatch module.
+                // NOTE (Task 11 review, positional note): ModularEndToEndTest computes `tours`
+                // BEFORE `new Controler(scenario)` (it needs them earlier only incidentally, to
+                // mutate the rebalancing zone-cell-size config first) — here they are read AFTER
+                // `installModules`/`new Controler` instead. This is not drift: reading the routed
+                // carriers off disk and filtering the network are pure file/network reads with no
+                // dependency on Controler state, so the two orderings are equivalent. Both must
+                // still run before `controler.run()`, which they do.
                 org.matsim.freight.carriers.Carriers routed = hagrid.integrated.modular.ModularTourConverter
                         .read(cfg.getLmdCarriersRouted(),
                                 hagrid.integrated.modular.ModularVehicleTypes
