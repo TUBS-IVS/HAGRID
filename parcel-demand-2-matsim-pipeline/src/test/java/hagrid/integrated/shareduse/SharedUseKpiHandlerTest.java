@@ -32,7 +32,11 @@ import static org.assertj.core.api.Assertions.within;
  * PARCEL requests via the native DVRP passenger events (pax requests are ignored entirely,
  * D10(b)) and writes the {@code metric;value} CSV at shutdown. {@code segments_pending_eod} is
  * never fed by an event — it is derived at write time as
- * {@code submitted - delivered - rejected_final} (M3 conservation).
+ * {@code submitted - delivered - delivered_late - rejected_final} (M3 conservation, extended by
+ * the I1/F4 delivered-late split). Plus the review-mandated honesty upgrades: injected counts
+ * (C2/F5), the delivered-late split (I1/F4), the right-censored
+ * {@code mean_time_to_delivery_s} that is OMITTED when nothing was delivered (C1), and the
+ * per-iteration series file (F8/M9).
  */
 @DisplayName("SharedUseKpiHandler")
 class SharedUseKpiHandlerTest {
@@ -59,7 +63,7 @@ class SharedUseKpiHandlerTest {
         handler.handleEvent(submitted(1000.0, reqB, parcelB.getId()));
         handler.handleEvent(submitted(1000.0, reqPax, pax.getId()));   // pax - must be ignored
 
-        handler.handleEvent(droppedOff(2800.0, reqA, parcelA.getId()));   // delay = 1800s
+        handler.handleEvent(droppedOff(2800.0, reqA, parcelA.getId()));   // time-to-delivery = 1800s
         handler.handleEvent(droppedOff(1100.0, reqPax, pax.getId()));    // pax dropoff - must be ignored
         // reqB: no dropoff, no reject -> still pending at EOD
 
@@ -67,21 +71,28 @@ class SharedUseKpiHandlerTest {
         handler.writeCsv(csv);
         Map<String, String> m = readCsv(csv);
 
+        assertThat(m.get("segments_injected")).as("pax_1 must not count as injected").isEqualTo("2");
         assertThat(m.get("segments_submitted")).isEqualTo("2");
+        assertThat(m.get("segments_never_submitted")).isEqualTo("0");
         assertThat(m.get("segments_delivered")).isEqualTo("1");
+        assertThat(m.get("segments_delivered_late")).isEqualTo("0");
         assertThat(m.get("segments_rejected_final")).isEqualTo("0");
         assertThat(m.get("segments_pending_eod")).isEqualTo("1");
+        assertThat(m.get("parcels_injected")).isEqualTo("5");
         assertThat(m.get("parcels_submitted")).isEqualTo("5");
+        assertThat(m.get("parcels_never_submitted")).isEqualTo("0");
         assertThat(m.get("parcels_delivered")).isEqualTo("3");
+        assertThat(m.get("parcels_delivered_late")).isEqualTo("0");
         assertThat(m.get("parcels_undelivered")).isEqualTo("2");
         assertThat(Double.parseDouble(m.get("undelivered_rate"))).isEqualTo(0.4);
+        assertThat(Double.parseDouble(m.get("delivery_rate_total"))).isEqualTo(0.6);
         assertThat(Double.parseDouble(m.get("share_channel_door"))).isEqualTo(1.0);
         assertThat(Double.parseDouble(m.get("share_channel_locker"))).isEqualTo(0.0);
-        assertThat(Double.parseDouble(m.get("mean_delivery_delay_s"))).isEqualTo(1800.0);
+        assertThat(Double.parseDouble(m.get("mean_time_to_delivery_s"))).isEqualTo(1800.0);
     }
 
     @Test
-    @DisplayName("M3 conservation: delivered + rejected_final + pending_eod == submitted, with a real reject event")
+    @DisplayName("M3 conservation: delivered + delivered_late + rejected_final + pending_eod == submitted, with a real reject event")
     void conservationHoldsWithRejectedAndPending() throws Exception {
         Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
         Person delivered = person(population, "parcel_dhl_1_B2C", 4, "DOOR");
@@ -109,15 +120,18 @@ class SharedUseKpiHandlerTest {
 
         int submitted = Integer.parseInt(m.get("segments_submitted"));
         int deliveredCount = Integer.parseInt(m.get("segments_delivered"));
+        int deliveredLate = Integer.parseInt(m.get("segments_delivered_late"));
         int rejectedFinal = Integer.parseInt(m.get("segments_rejected_final"));
         int pendingEod = Integer.parseInt(m.get("segments_pending_eod"));
 
         assertThat(submitted).isEqualTo(3);
         assertThat(deliveredCount).isEqualTo(1);
+        assertThat(deliveredLate).isEqualTo(0);
         assertThat(rejectedFinal).isEqualTo(1);
         assertThat(pendingEod).isEqualTo(1);
-        assertThat(deliveredCount + rejectedFinal + pendingEod)
-                .as("M3 conservation identity").isEqualTo(submitted);
+        assertThat(deliveredCount + deliveredLate + rejectedFinal + pendingEod)
+                .as("M3 conservation identity (extended by the delivered-late split)")
+                .isEqualTo(submitted);
     }
 
     @Test
@@ -135,7 +149,7 @@ class SharedUseKpiHandlerTest {
         // iter-0 dropoff), corrupting the final-iteration-only CSV written at shutdown.
         Id<Request> reqId = Id.create("drt_0", Request.class);
 
-        // iteration 0: parcelA submitted AND delivered (delay 1000s).
+        // iteration 0: parcelA submitted AND delivered (time-to-delivery 1000s).
         handler.handleEvent(submitted(1000.0, reqId, parcelA.getId()));
         handler.handleEvent(droppedOff(2000.0, reqId, parcelA.getId()));
 
@@ -153,8 +167,10 @@ class SharedUseKpiHandlerTest {
         assertThat(m.get("parcels_submitted")).as("parcelB load (3) only, not parcelA (5)").isEqualTo("3");
         assertThat(Double.parseDouble(m.get("share_channel_locker")))
                 .as("final request resolves to parcelB (LOCKER) - personByRequest was reset").isEqualTo(1.0);
-        assertThat(Double.parseDouble(m.get("mean_delivery_delay_s")))
-                .as("no delivery in the final iteration - not the stale 1000s from iter 0").isEqualTo(0.0);
+        // C1: nothing delivered in the final iteration -> the right-censored delay metric must be
+        // OMITTED entirely, never written as a stale 1000s from iter 0 nor as a 0.0 pseudo-result.
+        assertThat(m).as("no delivery in the final iteration - line must be absent")
+                .doesNotContainKey("mean_time_to_delivery_s");
     }
 
     @Test
@@ -162,7 +178,7 @@ class SharedUseKpiHandlerTest {
     void undeliveredSplitByWindowEndVsLastEventTime() throws Exception {
         Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
         // last simulated (event) time below is 50000; windows straddle it.
-        Person deliveredP = personWithWindow(population, "parcel_dhl_1_B2C", 2, "DOOR", 40000.0);
+        Person deliveredP = personWithWindow(population, "parcel_dhl_1_B2C", 2, "DOOR", 60000.0); // dropoff 50000 <= 60000 -> in-window
         Person expiredP = personWithWindow(population, "parcel_dhl_2_B2C", 1, "DOOR", 45000.0);  // <= 50000 -> expired
         Person openP = personWithWindow(population, "parcel_dhl_3_B2C", 1, "DOOR", 70000.0);      // >  50000 -> still open
 
@@ -179,6 +195,7 @@ class SharedUseKpiHandlerTest {
 
         assertThat(m.get("segments_submitted")).isEqualTo("3");
         assertThat(m.get("segments_delivered")).isEqualTo("1");
+        assertThat(m.get("segments_delivered_late")).isEqualTo("0");
         assertThat(m.get("segments_rejected_final")).isEqualTo("0");
         assertThat(m.get("segments_window_expired")).as("chi-starved past its own deadline").isEqualTo("1");
         assertThat(m.get("segments_pending_open")).as("sim ended before the deadline").isEqualTo("1");
@@ -186,11 +203,114 @@ class SharedUseKpiHandlerTest {
 
         int submitted = Integer.parseInt(m.get("segments_submitted"));
         int delivered = Integer.parseInt(m.get("segments_delivered"));
+        int deliveredLate = Integer.parseInt(m.get("segments_delivered_late"));
         int rejectedFinal = Integer.parseInt(m.get("segments_rejected_final"));
         int windowExpired = Integer.parseInt(m.get("segments_window_expired"));
         int pendingOpen = Integer.parseInt(m.get("segments_pending_open"));
-        assertThat(delivered + rejectedFinal + windowExpired + pendingOpen)
+        assertThat(delivered + deliveredLate + rejectedFinal + windowExpired + pendingOpen)
                 .as("honest decomposition still conserves to submitted").isEqualTo(submitted);
+    }
+
+    @Test
+    @DisplayName("I1/F4: dropoff AFTER the window end counts as delivered_late, NOT delivered (delta = in-window only)")
+    void dropoffAfterWindowEndCountsAsDeliveredLate() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        // Window closes at 40000; the queue accepted the request in time, but the physical
+        // dropoff happens at 45000 - the old handler counted this as delivered-within-window.
+        Person lateP = personWithWindow(population, "parcel_dhl_1_B2C", 4, "DOOR", 40000.0);
+
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+
+        Id<Request> req = Id.create("reqLate", Request.class);
+        handler.handleEvent(submitted(39000.0, req, lateP.getId()));
+        handler.handleEvent(droppedOff(45000.0, req, lateP.getId()));
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+
+        assertThat(m.get("segments_delivered")).isEqualTo("0");
+        assertThat(m.get("segments_delivered_late")).isEqualTo("1");
+        assertThat(m.get("parcels_delivered")).isEqualTo("0");
+        assertThat(m.get("parcels_delivered_late")).isEqualTo("4");
+        // delta counts the late delivery as NOT within-window ...
+        assertThat(m.get("parcels_undelivered")).isEqualTo("4");
+        assertThat(Double.parseDouble(m.get("undelivered_rate"))).isEqualTo(1.0);
+        // ... it is neither window_expired nor pending (it WAS physically dropped off) ...
+        assertThat(m.get("segments_window_expired")).isEqualTo("0");
+        assertThat(m.get("segments_pending_open")).isEqualTo("0");
+        assertThat(m.get("segments_pending_eod")).isEqualTo("0");
+        // ... and the in-window-only delay metric must be omitted, not fed by the late dropoff.
+        assertThat(m).doesNotContainKey("mean_time_to_delivery_s");
+    }
+
+    @Test
+    @DisplayName("C2/F5: injected counts come from the population snapshot; walk-fallback segments show up as never_submitted")
+    void injectedCountsExposeNeverSubmittedSegments() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person deliveredP = person(population, "parcel_dhl_1_B2C", 3, "DOOR");
+        Person pendingP = person(population, "parcel_dhl_2_B2C", 2, "DOOR");
+        // Injected but NEVER submitting: the router downgraded its drt leg to a walk fallback,
+        // so no DVRP submission event ever fires for it (review C2/F5 - it used to vanish
+        // from every KPI).
+        person(population, "parcel_dhl_3_B2C", 4, "DOOR");
+
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), deliveredP.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("p", Request.class), pendingP.getId()));
+        handler.handleEvent(droppedOff(2000.0, Id.create("d", Request.class), deliveredP.getId()));
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+
+        assertThat(m.get("segments_injected")).isEqualTo("3");
+        assertThat(m.get("segments_submitted")).isEqualTo("2");
+        assertThat(m.get("segments_never_submitted")).isEqualTo("1");
+        assertThat(m.get("parcels_injected")).isEqualTo("9");
+        assertThat(m.get("parcels_submitted")).isEqualTo("5");
+        assertThat(m.get("parcels_never_submitted")).isEqualTo("4");
+        // undelivered_rate keeps its submitted denominator (2 of 5 parcels undelivered) ...
+        assertThat(Double.parseDouble(m.get("undelivered_rate"))).isCloseTo(0.4, within(1e-9));
+        // ... while delivery_rate_total is the only rate the walk fallback cannot shrink: 3 of 9.
+        assertThat(Double.parseDouble(m.get("delivery_rate_total")))
+                .isCloseTo(3.0 / 9.0, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("F8/M9: per-iteration append captures each iteration's totals across a 2-iteration reset cycle")
+    void iterationsFileAppendsAcrossResetCycle() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person parcelA = person(population, "parcel_dhl_1_B2C", 5, "DOOR");
+        Person parcelB = person(population, "parcel_dhl_2_B2C", 3, "LOCKER");
+
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+        Path iterations = Path.of(utils.getOutputDirectory()).resolve("iterations.csv");
+
+        Id<Request> reqId = Id.create("drt_0", Request.class);
+
+        // iteration 0: parcelA submitted AND delivered in-window.
+        handler.handleEvent(submitted(1000.0, reqId, parcelA.getId()));
+        handler.handleEvent(droppedOff(2000.0, reqId, parcelA.getId()));
+        handler.appendIterationRow(0, iterations);   // IterationEnds fires BEFORE the next reset
+
+        handler.reset(1); // QSim rebuilt for iteration 1 - per-request state cleared
+
+        // iteration 1: SAME request id, parcelB submitted, never delivered (window still open).
+        handler.handleEvent(submitted(3000.0, reqId, parcelB.getId()));
+        handler.appendIterationRow(1, iterations);
+
+        List<String> lines = Files.readAllLines(iterations, StandardCharsets.UTF_8);
+        assertThat(lines).hasSize(3);
+        assertThat(lines.get(0)).isEqualTo(
+                "iteration;segments_submitted;segments_delivered;segments_delivered_late;"
+                        + "segments_window_expired;segments_pending_open;parcels_submitted;"
+                        + "parcels_delivered;parcels_delivered_late;parcels_undelivered");
+        assertThat(lines.get(1)).as("iteration 0: parcelA (load 5) delivered in-window")
+                .isEqualTo("0;1;1;0;0;0;5;5;0;0");
+        assertThat(lines.get(2)).as("iteration 1: parcelB (load 3) pending_open, no iter-0 leakage")
+                .isEqualTo("1;1;0;0;0;1;3;0;0;3");
     }
 
     @Test

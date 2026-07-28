@@ -49,27 +49,139 @@ def test_registered_in_build_kpis_extractors():
 
 def test_channel_and_freight_rows_from_stats_csv():
     """Values pinned to the exact 'metric;value' lines from Task 7's
-    SharedUseKpiHandlerTest#tracksSegmentsAndWritesCsv fixture."""
+    SharedUseKpiHandlerTest#tracksSegmentsAndWritesCsv fixture (post
+    review C1/C2/I1/F8 handler format)."""
     k = _rows_by_name(es.extract(FIX, "SHAREDUSE_TEST"))
 
     assert k["undelivered_rate"]["kpi_group"] == "channel"
     assert k["undelivered_rate"]["value"] == pytest.approx(0.4)
+    assert k["delivery_rate_total"]["kpi_group"] == "channel"
+    assert k["delivery_rate_total"]["value"] == pytest.approx(0.6)
     assert k["share_channel_door"]["kpi_group"] == "channel"
     assert k["share_channel_door"]["value"] == pytest.approx(1.0)
     assert k["share_channel_locker"]["kpi_group"] == "channel"
     assert k["share_channel_locker"]["value"] == pytest.approx(0.0)
 
+    # I1: the FULL segment decomposition reaches kpis_long (was a 7-metric subset)
+    assert k["segments_injected"]["kpi_group"] == "channel"
+    assert k["segments_injected"]["value"] == 2
+    assert k["segments_submitted"]["value"] == 2
+    assert k["segments_never_submitted"]["value"] == 0
+    assert k["segments_delivered"]["value"] == 1
+    assert k["segments_delivered_late"]["value"] == 0
+    assert k["segments_window_expired"]["value"] == 0
+    assert k["segments_pending_open"]["value"] == 1
+    for name in ("segments_injected", "segments_submitted", "segments_never_submitted",
+                 "segments_delivered", "segments_delivered_late",
+                 "segments_window_expired", "segments_pending_open"):
+        assert k[name]["kpi_group"] == "channel"
+        assert k[name]["unit"] == "segments"
+
     assert k["parcels_submitted"]["kpi_group"] == "freight"
+    assert k["parcels_submitted"]["value"] == 5
+    assert k["parcels_injected"]["value"] == 5
+    assert k["parcels_never_submitted"]["value"] == 0
+    assert k["parcels_delivered"]["value"] == 3
+    assert k["parcels_delivered_late"]["value"] == 0
+    assert k["parcels_undelivered"]["value"] == 2
+    for name in ("parcels_injected", "parcels_never_submitted", "parcels_delivered_late"):
+        assert k[name]["kpi_group"] == "freight"
+        assert k[name]["unit"] == "parcels"
+
+    # C1: renamed from mean_delivery_delay_s; the source spells out the censoring
+    assert k["mean_time_to_delivery_s"]["kpi_group"] == "freight"
+    assert k["mean_time_to_delivery_s"]["value"] == pytest.approx(1800.0)
+    assert "right-censored" in k["mean_time_to_delivery_s"]["source"]
+    assert "mean_delivery_delay_s" not in k
+
+    for name in ("undelivered_rate", "share_channel_door", "share_channel_locker",
+                 "parcels_submitted", "parcels_delivered", "parcels_undelivered"):
+        assert k[name]["source"] == "shareduse_channel_stats"
+
+
+def test_legacy_stats_csv_still_extracts_old_rows(tmp_path):
+    """Tolerant reading (I1): a channel-stats CSV from a FINISHED run written by
+    the pre-review handler (13 metrics, mean_delivery_delay_s, no injected/late
+    counters) must still yield the 7 legacy rows without a KeyError -- the new
+    keys are simply absent."""
+    (tmp_path / "LEGACY.shareduse_channel_stats.csv").write_text(
+        "metric;value\n"
+        "segments_submitted;2\n"
+        "segments_delivered;1\n"
+        "segments_rejected_final;0\n"
+        "segments_window_expired;0\n"
+        "segments_pending_open;1\n"
+        "segments_pending_eod;1\n"
+        "parcels_submitted;5\n"
+        "parcels_delivered;3\n"
+        "parcels_undelivered;2\n"
+        "undelivered_rate;0.4\n"
+        "share_channel_door;1.0\n"
+        "share_channel_locker;0.0\n"
+        "mean_delivery_delay_s;1800.0\n",
+        encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, "LEGACY"))
+
+    # the 7 rows the old extractor emitted are all still there ...
+    assert k["undelivered_rate"]["value"] == pytest.approx(0.4)
+    assert k["share_channel_door"]["value"] == pytest.approx(1.0)
+    assert k["share_channel_locker"]["value"] == pytest.approx(0.0)
     assert k["parcels_submitted"]["value"] == 5
     assert k["parcels_delivered"]["value"] == 3
     assert k["parcels_undelivered"]["value"] == 2
-    assert k["mean_delivery_delay_s"]["kpi_group"] == "freight"
-    assert k["mean_delivery_delay_s"]["value"] == pytest.approx(1800.0)
+    # ... the delay arrives under the NEW name via the legacy-key fallback ...
+    assert k["mean_time_to_delivery_s"]["value"] == pytest.approx(1800.0)
+    assert "mean_delivery_delay_s" not in k
+    # ... and keys the old handler never wrote are absent, not zero-filled.
+    for absent in ("segments_injected", "segments_never_submitted", "parcels_injected",
+                   "parcels_never_submitted", "parcels_delivered_late",
+                   "segments_delivered_late", "delivery_rate_total"):
+        assert absent not in k
 
-    for name in ("undelivered_rate", "share_channel_door", "share_channel_locker",
-                 "parcels_submitted", "parcels_delivered", "parcels_undelivered",
-                 "mean_delivery_delay_s"):
-        assert k[name]["source"] == "shareduse_channel_stats"
+
+def test_delivered_late_rows_reach_kpis_long(tmp_path):
+    """I1/F4 delivered-late split: nonzero late counters must be exported."""
+    (tmp_path / "LATE.shareduse_channel_stats.csv").write_text(
+        "metric;value\n"
+        "segments_submitted;3\n"
+        "segments_delivered;1\n"
+        "segments_delivered_late;2\n"
+        "parcels_submitted;10\n"
+        "parcels_delivered;3\n"
+        "parcels_delivered_late;7\n"
+        "parcels_undelivered;7\n"
+        "undelivered_rate;0.7\n",
+        encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, "LATE"))
+
+    assert k["segments_delivered_late"]["kpi_group"] == "channel"
+    assert k["segments_delivered_late"]["value"] == 2
+    assert k["parcels_delivered_late"]["kpi_group"] == "freight"
+    assert k["parcels_delivered_late"]["value"] == 7
+    # delta counts late as NOT within-window: undelivered includes the 7 late parcels
+    assert k["parcels_undelivered"]["value"] == 7
+
+
+def test_no_delay_row_when_key_absent(tmp_path):
+    """C1: the handler OMITS mean_time_to_delivery_s when nothing was delivered
+    in-window (chi=0 probe); the extractor must not re-materialize a 0.0."""
+    (tmp_path / "NODELIV.shareduse_channel_stats.csv").write_text(
+        "metric;value\n"
+        "segments_submitted;3\n"
+        "segments_delivered;0\n"
+        "parcels_submitted;10\n"
+        "parcels_delivered;0\n"
+        "parcels_undelivered;10\n"
+        "undelivered_rate;1.0\n",
+        encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, "NODELIV"))
+
+    assert "mean_time_to_delivery_s" not in k
+    assert "mean_delivery_delay_s" not in k
+    assert k["undelivered_rate"]["value"] == pytest.approx(1.0)
 
 
 def test_pax_only_corrections_exclude_parcel_legs():
@@ -96,6 +208,28 @@ def test_fare_split_best_effort_d10c():
     assert k["fare_revenue_pax_only"]["value"] == pytest.approx(6.0)
     assert k["parcel_fare_revenue"]["kpi_group"] == "economic"
     assert k["parcel_fare_revenue"]["value"] == pytest.approx(3.0)
+    # fares ARE configured here -> the I3 not-configured flag must not fire
+    assert "fare_not_configured" not in k
+
+
+def test_fare_rows_suppressed_when_all_fares_zero(tmp_path):
+    """I3: fareForLeg is 0.0 per leg when no DRT fare is configured -- an
+    all-zero pax AND parcel sum must suppress the fare rows (they would render
+    as a spurious '0 EUR revenue' finding) and emit the meta flag instead."""
+    _seed_stats(tmp_path, "ZEROFARE")
+    (tmp_path / "ZEROFARE.output_drt_legs_drt.csv").write_text(
+        "submissionTime;departureTime;personId;requestId;vehicleId;waitTime;fareForLeg\n"
+        "25000;25200;p1;drt_1;drt_veh_1;300;0.0\n"
+        "30000;30100;parcel_dhl_1_B2C;drt_4;drt_veh_2;9999;0.0\n",
+        encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, "ZEROFARE"))
+
+    assert "fare_revenue_pax_only" not in k
+    assert "parcel_fare_revenue" not in k
+    assert k["fare_not_configured"]["kpi_group"] == "meta"
+    assert k["fare_not_configured"]["value"] == 1
+    assert k["fare_not_configured"]["unit"] == "flag"
 
 
 def test_all_rows_have_five_keys_and_valid_kpi_group():

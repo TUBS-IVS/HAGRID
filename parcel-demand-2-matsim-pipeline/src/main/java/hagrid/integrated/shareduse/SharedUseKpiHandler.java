@@ -12,7 +12,9 @@ import org.matsim.contrib.dvrp.passenger.PassengerRequestRejectedEventHandler;
 import org.matsim.contrib.dvrp.passenger.PassengerRequestSubmittedEvent;
 import org.matsim.contrib.dvrp.passenger.PassengerRequestSubmittedEventHandler;
 import org.matsim.core.controler.OutputDirectoryHierarchy;
+import org.matsim.core.controler.events.IterationEndsEvent;
 import org.matsim.core.controler.events.ShutdownEvent;
+import org.matsim.core.controler.listener.IterationEndsListener;
 import org.matsim.core.controler.listener.ShutdownListener;
 
 import java.io.BufferedWriter;
@@ -21,6 +23,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,22 +38,55 @@ import java.util.Set;
  * by the chi-gate ({@link ChiGateInsertionCostCalculator}) and the retry queue
  * ({@link ParcelOnlyRetryQueue}).
  *
- * <p><b>Conservation identity (M3):</b> {@code segments_delivered + segments_rejected_final
- * + segments_pending_eod == segments_submitted}. {@code segments_pending_eod} is DERIVED
- * at shutdown (submitted - delivered - rejected_final) - no event fires for a request
- * still pending at day end, nor for one silently dropped past its own delivery window on
- * the retrieval path ({@link ParcelOnlyRetryQueue#getRequestsToRetryNow}), so it can never
- * be tallied directly from events the way {@code segments_rejected_final} is.</p>
+ * <p><b>δ definition (I1/F4 — the paper's undelivered rate):</b> the M5 delivery window is
+ * queue-enforced only ({@link ParcelOnlyRetryQueue}), so a parcel ACCEPTED shortly before its
+ * window end can physically be dropped off AFTER it. Such a segment is counted as
+ * {@code segments_delivered_late} / {@code parcels_delivered_late}, NOT as delivered:
+ * {@code segments_delivered} / {@code parcels_delivered} mean delivered WITHIN the window
+ * (dropoff time &le; {@link SharedUse#WINDOW_END_ATTRIBUTE}). Consequently
+ * {@code undelivered_rate = (parcels_submitted - parcels_delivered) / parcels_submitted}
+ * counts late deliveries as NOT within-window; readers can reconstruct
+ * total-physically-delivered as {@code parcels_delivered + parcels_delivered_late}.</p>
+ *
+ * <p><b>Conservation identity (M3, extended):</b> {@code segments_delivered
+ * + segments_delivered_late + segments_rejected_final + segments_window_expired
+ * + segments_pending_open == segments_submitted}. {@code segments_pending_eod} is DERIVED
+ * at write time (submitted - delivered - delivered_late - rejected_final
+ * = window_expired + pending_open) - no event fires for a request still pending at day end,
+ * nor for one silently dropped past its own delivery window on the retrieval path
+ * ({@link ParcelOnlyRetryQueue#getRequestsToRetryNow}), so it can never be tallied directly
+ * from events the way {@code segments_rejected_final} is.</p>
  *
  * <p><b>Honest δ decomposition (I1):</b> a χ-starved parcel is NEVER terminally rejected -
  * it retries until its own delivery window closes, then drops silently on the retrieval path,
  * so {@code segments_rejected_final} captures only genuine hard rejects (which are ~always 0
- * for parcels). The real "χ cost" signal therefore lives in {@code segments_pending_eod},
- * which is split at shutdown by each parcel's {@link SharedUse#WINDOW_END_ATTRIBUTE} against
+ * for parcels). The real "χ cost" signal therefore lives in the undelivered remainder,
+ * which is split at write time by each parcel's {@link SharedUse#WINDOW_END_ATTRIBUTE} against
  * the last simulated (event) time: {@code segments_window_expired} (windowEnd &le; last-event-time
  * = χ-starved past its deadline) vs {@code segments_pending_open} (windowEnd &gt; last-event-time
- * = the sim ended before the deadline). These two sum back to {@code segments_pending_eod}, so
- * {@code delivered + rejected_final + window_expired + pending_open == submitted} still holds.</p>
+ * = the sim ended before the deadline).</p>
+ *
+ * <p><b>Injected vs submitted (C2/F5):</b> {@code segments_injected} / {@code parcels_injected}
+ * count the FULL parcel subpopulation (the population snapshot), not just the segments that
+ * ever produced a submission event: a parcel-person whose drt leg the router downgrades to a
+ * walk fallback (no drt route found from its depot/delivery link) never submits a DVRP request
+ * and previously vanished from every KPI. {@code segments_never_submitted} /
+ * {@code parcels_never_submitted} (injected - submitted) make that loss visible, and
+ * {@code delivery_rate_total = parcels_delivered / parcels_injected} is the only rate whose
+ * denominator cannot be shrunk by that fallback.</p>
+ *
+ * <p><b>{@code mean_time_to_delivery_s} (C1 — right-censored):</b> dropoff minus submission,
+ * averaged over IN-WINDOW deliveries only. It is right-censored: as the χ-gate strangles
+ * service, only the easiest (fastest) segments still get delivered, so the mean IMPROVES while
+ * the service collapses — it must always be read alongside {@code undelivered_rate}. When
+ * nothing was delivered in-window the line is OMITTED entirely (never 0.0 as a pseudo-result;
+ * the χ=0 probe used to emit 0.0 with 100% undelivered).</p>
+ *
+ * <p><b>Per-iteration series (F8/M9):</b> at each iteration end (BEFORE {@link #reset(int)}
+ * clears the state for the next iteration) one line is appended to
+ * {@code shareduse_channel_stats_iterations.csv}, so the δ-convergence over iterations can be
+ * checked without re-running the simulation. The shutdown CSV still reflects ONLY the final
+ * iteration.</p>
  *
  * <p>Requests are keyed by request id (stable across retries - retries never re-emit a
  * submission event); per-parcel LOAD ({@link SharedUse#LOAD_ATTRIBUTE}), CHANNEL
@@ -69,15 +105,22 @@ public final class SharedUseKpiHandler implements
         PassengerRequestSubmittedEventHandler,
         PassengerRequestRejectedEventHandler,
         PassengerDroppedOffEventHandler,
+        IterationEndsListener,
         ShutdownListener {
 
     static final String FILE_NAME = "shareduse_channel_stats.csv";
+    static final String ITERATIONS_FILE_NAME = "shareduse_channel_stats_iterations.csv";
+    static final String ITERATIONS_HEADER = "iteration;segments_submitted;segments_delivered;"
+            + "segments_delivered_late;segments_window_expired;segments_pending_open;"
+            + "parcels_submitted;parcels_delivered;parcels_delivered_late;parcels_undelivered";
 
     // Static population snapshots (run-invariant - NOT cleared on reset). Built STRICTLY:
     // see ParcelAttributes for why a missing attribute aborts instead of defaulting.
     private final Map<Id<Person>, Integer> loadByPerson;
     private final Map<Id<Person>, String> channelByPerson;
     private final Map<Id<Person>, Double> windowEndByPerson;
+    /** Σ loads over the full parcel subpopulation = parcels_injected (run-invariant). */
+    private final int parcelsInjected;
 
     // Per-request event state (CLEARED on reset - see reset(int)).
     /** requestId -> the one parcel-person id carried on its submission (parcel requests are single-person). */
@@ -89,6 +132,7 @@ public final class SharedUseKpiHandler implements
     private double lastEventTime = 0.0;
 
     private final Path outputCsv;
+    private final Path outputIterationsCsv;
 
     @Inject
     public SharedUseKpiHandler(Population population, OutputDirectoryHierarchy controlerIO) {
@@ -99,7 +143,13 @@ public final class SharedUseKpiHandler implements
         this.loadByPerson = ParcelAttributes.loads(population);
         this.channelByPerson = ParcelAttributes.channels(population);
         this.windowEndByPerson = ParcelAttributes.windowEnds(population);
+        int injectedSum = 0;
+        for (int load : loadByPerson.values()) {
+            injectedSum += load;
+        }
+        this.parcelsInjected = injectedSum;
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
+        this.outputIterationsCsv = Path.of(controlerIO.getOutputFilename(ITERATIONS_FILE_NAME));
     }
 
     /**
@@ -108,6 +158,8 @@ public final class SharedUseKpiHandler implements
      * shutdown CSV becomes a corrupted cross-iteration aggregate; resetting guarantees the CSV
      * reflects ONLY the final iteration. Mirrors how stock DRT analysis handlers reset. The
      * static population snapshots (load/channel/window-end) are intentionally NOT cleared.
+     * The per-iteration line for the iteration just finished has already been appended by
+     * {@link #notifyIterationEnds(IterationEndsEvent)}, which fires BEFORE this clear.
      */
     @Override
     public void reset(int iteration) {
@@ -161,32 +213,125 @@ public final class SharedUseKpiHandler implements
         return null;
     }
 
-    // ---- shutdown ---------------------------------------------------------------------
+    // ---- iteration end / shutdown -----------------------------------------------------
+
+    /**
+     * F8/M9: appends this iteration's channel totals to
+     * {@code shareduse_channel_stats_iterations.csv}. IterationEnds fires BEFORE the events
+     * manager calls {@link #reset(int)} for the NEXT iteration, so the state captured here is
+     * exactly this iteration's.
+     */
+    @Override
+    public void notifyIterationEnds(IterationEndsEvent event) {
+        appendIterationRow(event.getIteration(), outputIterationsCsv);
+    }
 
     @Override
     public void notifyShutdown(ShutdownEvent event) {
         writeCsv(outputCsv);
     }
 
+    /** Package-visible so the unit test can drive it without a real Controler iteration. */
+    void appendIterationRow(int iteration, Path path) {
+        Totals t = computeTotals();
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            boolean writeHeader = !Files.exists(path);
+            try (BufferedWriter w = Files.newBufferedWriter(path, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+                if (writeHeader) {
+                    w.write(ITERATIONS_HEADER);
+                    w.newLine();
+                }
+                // Same locale-safe formatting idiom as writeCsv: plain string concat.
+                w.write(iteration + ";" + t.segmentsSubmitted + ";" + t.segmentsDelivered
+                        + ";" + t.segmentsDeliveredLate + ";" + t.segmentsWindowExpired
+                        + ";" + t.segmentsPendingOpen + ";" + t.parcelsSubmitted
+                        + ";" + t.parcelsDelivered + ";" + t.parcelsDeliveredLate
+                        + ";" + (t.parcelsSubmitted - t.parcelsDelivered));
+                w.newLine();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not append to " + path, e);
+        }
+    }
+
     /** Package-visible so the unit test can drive it without a real Controler shutdown. */
     void writeCsv(Path path) {
-        int segmentsSubmitted = submittedAt.size();
-        int segmentsDelivered = deliveredAt.size();
-        int segmentsRejectedFinal = rejectedFinal.size();
-        int segmentsPendingEod = segmentsSubmitted - segmentsDelivered - segmentsRejectedFinal;
+        Totals t = computeTotals();
 
-        int parcelsSubmitted = 0;
-        int parcelsDelivered = 0;
-        int doorLoad = 0;
-        int lockerLoad = 0;
-        double delaySumS = 0.0;
+        int segmentsInjected = loadByPerson.size();
+        // C2/F5: injected - submitted = parcel-persons whose drt leg the router downgraded to a
+        // walk fallback (no drt route found), so they never emitted a submission event at all.
+        int segmentsNeverSubmitted = segmentsInjected - t.segmentsSubmitted;
+        int parcelsNeverSubmitted = parcelsInjected - t.parcelsSubmitted;
+        int segmentsPendingEod = t.segmentsSubmitted - t.segmentsDelivered
+                - t.segmentsDeliveredLate - t.segmentsRejectedFinal;
 
-        // Honest δ decomposition (I1): split the UNDELIVERED set (submitted - delivered -
-        // rejected_final) by each parcel's delivery-window end against the last simulated time.
-        // χ-caused undelivered manifest as window_expired (NOT rejected_final): a χ-starved
-        // parcel retries until its window closes, then drops silently - it is never hard-rejected.
-        int segmentsWindowExpired = 0;
-        int segmentsPendingOpen = 0;
+        // δ (I1/F4): delivered means IN-WINDOW; late deliveries count as NOT within-window.
+        int parcelsUndelivered = t.parcelsSubmitted - t.parcelsDelivered;
+        double undeliveredRate = t.parcelsSubmitted > 0
+                ? (double) parcelsUndelivered / t.parcelsSubmitted : 0.0;
+        double deliveryRateTotal = parcelsInjected > 0
+                ? (double) t.parcelsDelivered / parcelsInjected : 0.0;
+        // LOAD-weighted (fraction of parcel COUNT, not fraction of segments) - consistent with
+        // every other parcel-facing metric in this file (parcels_submitted/delivered/undelivered_rate).
+        double shareChannelDoor = t.parcelsSubmitted > 0
+                ? (double) t.doorLoad / t.parcelsSubmitted : 0.0;
+        double shareChannelLocker = t.parcelsSubmitted > 0
+                ? (double) t.lockerLoad / t.parcelsSubmitted : 0.0;
+
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            try (BufferedWriter w = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+                w.write("metric;value");
+                w.newLine();
+                writeMetric(w, "segments_injected", segmentsInjected);
+                writeMetric(w, "segments_submitted", t.segmentsSubmitted);
+                writeMetric(w, "segments_never_submitted", segmentsNeverSubmitted);
+                writeMetric(w, "segments_delivered", t.segmentsDelivered);
+                writeMetric(w, "segments_delivered_late", t.segmentsDeliveredLate);
+                writeMetric(w, "segments_rejected_final", t.segmentsRejectedFinal);
+                writeMetric(w, "segments_window_expired", t.segmentsWindowExpired);
+                writeMetric(w, "segments_pending_open", t.segmentsPendingOpen);
+                writeMetric(w, "segments_pending_eod", segmentsPendingEod);
+                writeMetric(w, "parcels_injected", parcelsInjected);
+                writeMetric(w, "parcels_submitted", t.parcelsSubmitted);
+                writeMetric(w, "parcels_never_submitted", parcelsNeverSubmitted);
+                writeMetric(w, "parcels_delivered", t.parcelsDelivered);
+                writeMetric(w, "parcels_delivered_late", t.parcelsDeliveredLate);
+                writeMetric(w, "parcels_undelivered", parcelsUndelivered);
+                writeMetric(w, "undelivered_rate", undeliveredRate);
+                writeMetric(w, "delivery_rate_total", deliveryRateTotal);
+                writeMetric(w, "share_channel_door", shareChannelDoor);
+                writeMetric(w, "share_channel_locker", shareChannelLocker);
+                // C1: OMITTED entirely when nothing was delivered in-window - a 0.0 here is a
+                // pseudo-result (the chi=0 probe emitted 0.0 alongside 100% undelivered).
+                if (t.segmentsDelivered > 0) {
+                    writeMetric(w, "mean_time_to_delivery_s",
+                            t.timeToDeliverySumS / t.segmentsDelivered);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not write " + path, e);
+        }
+    }
+
+    /**
+     * One pass over the tracked requests, classifying each submitted segment into exactly one
+     * of: delivered (in-window), delivered_late, rejected_final, window_expired, pending_open -
+     * so the extended M3 conservation identity holds by construction.
+     */
+    private Totals computeTotals() {
+        Totals t = new Totals();
+        t.segmentsSubmitted = submittedAt.size();
+        t.segmentsRejectedFinal = rejectedFinal.size();
 
         for (Map.Entry<Id<Request>, Double> e : submittedAt.entrySet()) {
             Id<Request> requestId = e.getKey();
@@ -203,64 +348,57 @@ public final class SharedUseKpiHandler implements
                         + " its parcels or delivery channel.");
             }
             int load = loadOrNull;
-            parcelsSubmitted += load;
+            t.parcelsSubmitted += load;
 
             if (DeliveryChannelResolver.Channel.LOCKER.name().equals(channel)) {
-                lockerLoad += load;
+                t.lockerLoad += load;
             } else {
-                doorLoad += load;   // the only remaining channel (ParcelAttributes validates the set)
+                t.doorLoad += load;   // the only remaining channel (ParcelAttributes validates the set)
             }
 
+            double windowEnd = windowEndByPerson.get(personId);
             Double deliveredTime = deliveredAt.get(requestId);
             if (deliveredTime != null) {
-                parcelsDelivered += load;
-                delaySumS += deliveredTime - e.getValue();
+                // I1/F4: the M5 window is queue-enforced only, so a request accepted shortly
+                // before its window end can physically drop off after it - that is a LATE
+                // delivery, not a within-window one (see the class javadoc's delta definition).
+                if (deliveredTime <= windowEnd) {
+                    t.segmentsDelivered++;
+                    t.parcelsDelivered += load;
+                    t.timeToDeliverySumS += deliveredTime - e.getValue();
+                } else {
+                    t.segmentsDeliveredLate++;
+                    t.parcelsDeliveredLate += load;
+                }
             } else if (!rejectedFinal.contains(requestId)) {
                 // Undelivered and not a hard reject -> classify by its own delivery window.
                 // windowEndByPerson is total over the same validated person set as the two
                 // lookups above, so there is no "window unknown" bucket any more: the split is
                 // purely deadline-passed vs sim-ended-first.
-                if (windowEndByPerson.get(personId) <= lastEventTime) {
-                    segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
+                if (windowEnd <= lastEventTime) {
+                    t.segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
                 } else {
-                    segmentsPendingOpen++;   // sim ended before the deadline
+                    t.segmentsPendingOpen++;   // sim ended before the deadline
                 }
             }
         }
+        return t;
+    }
 
-        int parcelsUndelivered = parcelsSubmitted - parcelsDelivered;
-        double undeliveredRate = parcelsSubmitted > 0 ? (double) parcelsUndelivered / parcelsSubmitted : 0.0;
-        // LOAD-weighted (fraction of parcel COUNT, not fraction of segments) - consistent with
-        // every other parcel-facing metric in this file (parcels_submitted/delivered/undelivered_rate).
-        double shareChannelDoor = parcelsSubmitted > 0 ? (double) doorLoad / parcelsSubmitted : 0.0;
-        double shareChannelLocker = parcelsSubmitted > 0 ? (double) lockerLoad / parcelsSubmitted : 0.0;
-        double meanDelaySeconds = segmentsDelivered > 0 ? delaySumS / segmentsDelivered : 0.0;
-
-        try {
-            Path parent = path.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            try (BufferedWriter w = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
-                w.write("metric;value");
-                w.newLine();
-                writeMetric(w, "segments_submitted", segmentsSubmitted);
-                writeMetric(w, "segments_delivered", segmentsDelivered);
-                writeMetric(w, "segments_rejected_final", segmentsRejectedFinal);
-                writeMetric(w, "segments_window_expired", segmentsWindowExpired);
-                writeMetric(w, "segments_pending_open", segmentsPendingOpen);
-                writeMetric(w, "segments_pending_eod", segmentsPendingEod);
-                writeMetric(w, "parcels_submitted", parcelsSubmitted);
-                writeMetric(w, "parcels_delivered", parcelsDelivered);
-                writeMetric(w, "parcels_undelivered", parcelsUndelivered);
-                writeMetric(w, "undelivered_rate", undeliveredRate);
-                writeMetric(w, "share_channel_door", shareChannelDoor);
-                writeMetric(w, "share_channel_locker", shareChannelLocker);
-                writeMetric(w, "mean_delivery_delay_s", meanDelaySeconds);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not write " + path, e);
-        }
+    /** Mutable aggregate of one {@link #computeTotals()} pass (shutdown CSV + iteration rows). */
+    private static final class Totals {
+        int segmentsSubmitted;
+        int segmentsDelivered;
+        int segmentsDeliveredLate;
+        int segmentsRejectedFinal;
+        int segmentsWindowExpired;
+        int segmentsPendingOpen;
+        int parcelsSubmitted;
+        int parcelsDelivered;
+        int parcelsDeliveredLate;
+        int doorLoad;
+        int lockerLoad;
+        double timeToDeliverySumS;
     }
 
     private static void writeMetric(BufferedWriter w, String name, int value) throws IOException {
