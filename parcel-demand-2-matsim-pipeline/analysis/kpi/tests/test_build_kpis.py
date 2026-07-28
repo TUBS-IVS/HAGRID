@@ -113,18 +113,15 @@ def test_build_writes_kpi_vehicles_csv_with_freight(tmp_path):
 
 def _make_mini_events_run(tmp_path):
     """Copy mini_events into tmp_path as a run dir with a minimal run_metadata.json
-    (prefix "MINI"). Also: (a) drops any stray *_filtered.txt event caches that may
-    sit next to the fixture (leftovers from earlier ad-hoc runs against the fixture
-    dir itself) so events_cache.ensure_caches regenerates them fresh from the
-    output_events.xml.gz below, and (b) rewrites the fixture's "drt_veh_1" vehicle id
-    to "drt_1" in THIS COPY ONLY. (b) works around a pre-existing, unrelated bug in
-    analysis/drt-headline/drt_service_time.py's reconstruct() vehicle sort key
-    (`int(v.split("_")[1]) if v.split("_")[-1].isdigit() else 0`), which assumes
-    "drt_<int>" ids and raises ValueError on "drt_veh_1" (splits to "veh", not an
-    int) -- discovered while building this coverage-only test. Fixing that bug is
-    out of scope for this review-fix (production-code changes are not requested
-    here), so the workaround lives only in this test's tmp_path copy; the committed
-    fixture under tests/fixtures/mini_events/ is never modified.
+    (prefix "MINI"). Also drops any stray *_filtered.txt event caches that may sit
+    next to the fixture (leftovers from earlier ad-hoc runs against the fixture dir
+    itself) so events_cache.ensure_caches regenerates them fresh from the fixture's
+    output_events.xml.gz.
+
+    The fixture keeps its non-canonical "drt_veh_1" vehicle id ON PURPOSE: it is the
+    regression guard for drt_service_time._veh_sort_key, whose predecessor
+    (`int(v.split("_")[1])`) raised ValueError on exactly that shape and forced this
+    helper to rewrite the id in its tmp_path copy (removed 2026-07-28).
     """
     d = tmp_path / "mini_events_copy"
     shutil.copytree(MINI_EVENTS_FIX, d,
@@ -133,11 +130,6 @@ def _make_mini_events_run(tmp_path):
         p = d / stray
         if p.exists():
             p.unlink()
-    events_gz = d / "MINI.output_events.xml.gz"
-    with gzip.open(events_gz, "rt", encoding="utf-8") as f:
-        txt = f.read().replace("drt_veh_1", "drt_1")
-    with gzip.open(events_gz, "wt", encoding="utf-8") as f:
-        f.write(txt)
     (d / "run_metadata.json").write_text(json.dumps({
         "run_id": "MINI", "run_dir_name": "mini_events_copy", "scenario": "DRT_TEST",
         "study_area": "lausitz_hoyerswerda", "operation_mode": "conventional",
@@ -181,3 +173,27 @@ def test_build_geometry_block_skips_gracefully_without_network(tmp_path, capsys)
     assert "network file absent" in captured.out
     dist_txt = (out / "kpi_distributions.csv").read_text(encoding="utf-8")
     assert "drt_tour_distance" not in dist_txt
+
+
+def test_drt_less_run_still_gets_lmd_link_geometry(tmp_path):
+    """A run with NO drt_ events (LMD_BASELINE shape) must still load link_geo, so
+    the LMD map layers survive. Pins the `drt_cache is not None` gate as the
+    events-present gate it actually is: ensure_caches returns both cache paths
+    unconditionally, so the DRT cache is an EMPTY FILE here, not None, and the
+    geometry block runs with used=set() + freight_used. Retracts the BACKLOG
+    finding that claimed LMD tours/stops/heat come back empty on such runs."""
+    d = _make_mini_events_run(tmp_path)
+    gz = d / "MINI.output_events.xml.gz"
+    with gzip.open(gz, "rt", encoding="utf-8") as f:
+        kept = [ln for ln in f.read().splitlines() if "drt_" not in ln]
+    assert not any("drt_" in ln for ln in kept)
+    with gzip.open(gz, "wt", encoding="utf-8") as f:
+        f.write("\n".join(kept) + "\n")
+
+    out = build(d, no_events=False, out_dir=tmp_path / "out")
+
+    md = json.loads((out / "map_data.json").read_text(encoding="utf-8"))
+    # heat needs only fev + link_geo -> non-empty proves link_geo was loaded from
+    # the freight links alone (tours/stops additionally need the carriers XML,
+    # which this fixture has no counterpart for).
+    assert md["lmd"]["heat"], md["lmd"]
