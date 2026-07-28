@@ -1,6 +1,7 @@
 package hagrid.integrated.freight;
 
 import hagrid.utils.demand.Delivery;
+import hagrid.utils.routing.HAGRIDRouterUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.matsim.api.core.v01.Coord;
@@ -10,6 +11,7 @@ import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.freight.carriers.Carrier;
+import org.matsim.freight.carriers.CarrierCapabilities.FleetSize;
 import org.matsim.freight.carriers.CarrierService;
 import org.matsim.freight.carriers.CarrierVehicle;
 import org.matsim.vehicles.VehicleType;
@@ -165,6 +167,50 @@ class LmdCarrierBuilderTest {
         assertThat(missedList).hasSize(missedParcels);
         // serialized form the dashboard parses (CarrierXmlParser strips [ ] spaces, splits on ',')
         assertThat(missedStr).startsWith("[").endsWith("]").contains("dhl_0");
+    }
+
+    @Test
+    @DisplayName("buildSingleWindow: explicit 07:30-21:00 window, no waves, no jitter; legacy build untouched")
+    void singleWindowBuildsExplicitWindow() {
+        Network n = net();
+        List<Delivery> deliveries = List.of(
+                Delivery.builder().id("d1_B2C").coordinate(new Coord(100, 0)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2C).amount(10)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build(),
+                Delivery.builder().id("d2_B2B").coordinate(new Coord(900, 0)).provider("dhl")
+                        .parcelType(Delivery.ParcelType.B2B).amount(3)
+                        .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build());
+        VehicleType[] vanTypes = {van("ct_cep_size_m", 165), van("ct_cep_size_l", 230)};
+        Id<Link> depotLink = Id.createLinkId("ab");
+
+        Carrier modular = LmdCarrierBuilder.buildSingleWindow("dhl", deliveries, depotLink, n,
+                vanTypes, 2, 15, new Random(1), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        // exactly ONE vehicle per van type, window exactly as passed (no wave copies, no jitter)
+        assertThat(modular.getCarrierCapabilities().getCarrierVehicles()).hasSize(vanTypes.length);
+        modular.getCarrierCapabilities().getCarrierVehicles().values().forEach(v -> {
+            assertThat(v.getEarliestStartTime()).isEqualTo(27000.0);
+            assertThat(v.getLatestEndTime()).isEqualTo(75600.0);
+        });
+        // services carry the ALIGNED start window (C4 revised: 07:30-21:00, not DAY_START/DAY_END)
+        modular.getServices().values().forEach(s -> {
+            assertThat(s.getServiceStaringTimeWindow().getStart()).isEqualTo(27000.0);
+            assertThat(s.getServiceStaringTimeWindow().getEnd()).isEqualTo(75600.0);
+        });
+        // missed-delivery overlay still applied (same RNG core as build); numberOfParcels is a plain
+        // sum of delivery amounts (10 + 3), so - stronger than mere non-nullness - it is asserted exactly.
+        assertThat((int) modular.getAttributes().getAttribute("numberOfParcels")).isEqualTo(13);
+        // FleetSize.INFINITE, same as legacy build (jsprit decides tour count from an unbounded fleet)
+        assertThat(modular.getCarrierCapabilities().getFleetSize()).isEqualTo(FleetSize.INFINITE);
+
+        // legacy 9-arg build: wave-relative window EXACTLY as before (byte-identity guard)
+        Carrier legacy = LmdCarrierBuilder.build("dhl", deliveries, depotLink, n, vanTypes,
+                2, 15, List.of(8), new Random(1));
+        assertThat(legacy.getCarrierCapabilities().getFleetSize()).isEqualTo(FleetSize.INFINITE);
+        legacy.getCarrierCapabilities().getCarrierVehicles().values().forEach(v ->
+                assertThat(v.getLatestEndTime()).isEqualTo(Math.min(
+                        v.getEarliestStartTime() + HAGRIDRouterUtils.MAXROUTEDURATION + 3600.0,
+                        21 * 3600.0)));
     }
 
     @Test

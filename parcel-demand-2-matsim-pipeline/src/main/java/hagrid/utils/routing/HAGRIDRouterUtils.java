@@ -97,6 +97,8 @@ public class HAGRIDRouterUtils {
 
     /**
      * Configures the routing algorithm with custom iteration count and optional U-turn penalty.
+     * Delegates to the 6-arg overload with {@link #MAXROUTEDURATION} (Hannover + Lausitz LMD_BASELINE
+     * parity — byte-identical to before the cap became a parameter).
      *
      * @param vrp                  The vehicle routing problem.
      * @param serviceCount         The number of services.
@@ -108,6 +110,28 @@ public class HAGRIDRouterUtils {
     public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
                                                               int jspritIterations, Network network,
                                                               double uTurnPenaltyCost) {
+        return configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost,
+                MAXROUTEDURATION);
+    }
+
+    /**
+     * Configures the routing algorithm with an explicit route-duration cap, overriding
+     * {@link #MAXROUTEDURATION}. Introduced for the 1d DRT_MODULAR path, whose capsule-swap tours
+     * must fit the shorter 12600s (3.5h) round-trip budget instead of the 25200s (7h) driver-shift
+     * cap used by Hannover and the Lausitz LMD_BASELINE.
+     *
+     * @param vrp                     The vehicle routing problem.
+     * @param serviceCount            The number of services.
+     * @param jspritIterations        Number of JSprit iterations (1=quick, 20-50=production)
+     * @param network                 MATSim network for U-turn detection (null to disable)
+     * @param uTurnPenaltyCost        Soft score penalty per U-turn (0 to disable)
+     * @param maxRouteDurationSeconds Hard cap on jsprit route duration (seconds)
+     * @return The configured vehicle routing algorithm.
+     */
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
+                                                              int jspritIterations, Network network,
+                                                              double uTurnPenaltyCost,
+                                                              int maxRouteDurationSeconds) {
         StateManager stateManager = new StateManager(vrp);
         ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
 
@@ -119,13 +143,13 @@ public class HAGRIDRouterUtils {
         stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
         stateManager.addStateUpdater(new OpenRouteStateVerifier());
         stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
-                vrp.getTransportCosts(), MAXROUTEDURATION));
+                vrp.getTransportCosts(), maxRouteDurationSeconds));
 
         constraintManager.addConstraint(
-                new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
+                new MaxRouteDurationConstraint(maxRouteDurationSeconds, stateManager, vrp.getTransportCosts()),
                 Priority.CRITICAL);
         constraintManager.addConstraint(
-                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
+                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), maxRouteDurationSeconds),
                 Priority.CRITICAL);
 
         constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
