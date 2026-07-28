@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-27
 **Status:** approved (user, 2026-07-27) — next step: implementation plan via writing-plans
+**Revision 2026-07-28 (grilling pass, user-decided):** §4.3's "before the vehicle shift end" is concretised as a **full delivery day 07:30–21:00 — 1d has NO dispatch waves** (parcels arrive at the depot overnight; same-day delivery counts, time of day does not). The LMD wave windows would have made a 3.5 h tour expire ~46 min after its wave and killed the midday-lull story. Also added: interleaved dispatch order across providers, `tours_completed_late`/`parcels_served_late` KPIs. Details: plan C4 (revised)/C7/C8 in `../plans/2026-07-27-1d-modular-capsule-swap.md`.
 **Parent spec:** `2026-06-17-lausitz-drt-freight-integration-design.md` §4.3 (Modular), §4.4 (autonomy switch)
 **Spike:** `docs/superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md` (source-verified against
 `dvrp`/`drt`/`drt-extensions` 2025.0 — read it before planning; all "native reference" pointers below

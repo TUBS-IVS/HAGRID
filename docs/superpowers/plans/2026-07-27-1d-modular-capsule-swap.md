@@ -10,14 +10,16 @@
 
 ## Plan-level concretisations (deviations from the design spec — flag these in review)
 
-The design (§3.2) lists six hooks; source-grounding during planning showed three can be simplified and one needs a concretisation. These change NO observed behaviour of the design, only its mechanics:
+The design (§3.2) lists six hooks; source-grounding during planning showed three can be simplified and one needs a concretisation. C1–C3/C5/C6 change NO observed behaviour of the design, only its mechanics. **Revision 2026-07-28 (grilling pass with the user):** C4 was REPLACED (delivery day 07:30–21:00 instead of wave windows — a real behaviour change vs the design's implicit wave reading, user-decided), C7/C8 added, and the demand-level pairing softened to POC discipline (see Global Constraints). Design spec carries a matching one-line note.
 
 - **C1 — Hook 3 (DrtTaskFactory decorator) dropped.** Only the splicer ever creates 1d tasks — it constructs them directly (`new ModularFreightStopTask(...)`, `new ModularCapacityChangeTask(...)`); native code paths never need to create them. Drive tasks use the natively-bound factory unchanged. One less override, no behaviour change.
 - **C2 — Hook 4 (DynActionCreator decorator) dropped.** `ModularFreightStopTask` has DRT base type `STAY` → the native `DrtActionCreator` renders it as `IdleDynActivity` already; `CapacityChangeTask` is handled natively (spike: `DrtActionCreator` STOP branch → `VehicleCapacityChangeActivity`). Accepted cosmetic consequence: the vehicle's activity during a freight dwell is typed "DrtStay" in the QSim — our KPI events (Task 3/7) carry the real semantics.
 - **C3 — Divert-from-RELOCATE not implemented.** The dispatcher's candidate pool is idle vehicles only (`DrtScheduleInquiry.isIdle` = current task is the trailing STAY), so the splicer's relocate-divert branch is unreachable; the splicer asserts its precondition instead of silently mishandling it. (Vehicles relocating under rebalancing are simply not candidates that simstep.)
-- **C4 — Expiry envelope = the tour's planned vehicle window (`latestEnd` ≤ 21:00), not `vehicle.getServiceEndTime()`.** The fleet is written with `serviceEndTime=86400`, so the design's "before the vehicle shift end" is vacuous at run scale — a gate-starved tour would dispatch at 23:00 and deliver parcels overnight. The jsprit plan already carries the honest envelope: `CarrierVehicle.getLatestEndTime()` (wave-relative, capped 21:00 = `LmdCarrierBuilder.LATEST_VEHICLE_END`, identical semantics to the LMD baseline). A pending tour expires when even an immediate dispatch could not finish `swap + tour + return-swap` inside `min(latestEnd, vehicle.getServiceEndTime())`.
+- **C4 (REVISED 2026-07-28, user decision) — Expiry envelope = the full delivery day 07:30–21:00; 1d has NO dispatch waves.** The DRT fleet is written with `serviceEndTime=86400`, so the design's "before the vehicle shift end" needs concretising — but the first draft's answer (the LMD wave window `start + cap + 1h`) would have smuggled the baseline's *supply* structure into the 1d dispatch deadline: a full-length 3.5 h tour would expire ~46 min after its wave, right through the morning pax peak, and the midday lull could never be used. User decision: parcels arrive at the depot overnight; same-day delivery 07:30–21:00 counts, the time of day does not. Therefore `runModular` builds its jsprit vehicles with the EXPLICIT window `[Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S]` = [27000, 75600] and aligns the service-start time windows to the same interval (documented deviation from the baseline's 08:00–20:00 `DAY_START/DAY_END`); no waves, no departure jitter (the capsule vehicles are virtual — the DRT fleet executes the tours). `ModularFreightTour.latestEnd` is 21:00 for every tour; the pending-expiry formula (`now + 2×RETOOLING_S + plannedDuration > latestEnd`) and the splicer's completion-envelope check are mechanically unchanged — a 3.5 h tour stays dispatchable until ~17:16. Accepted consequences (user 2026-07-28): (a) 1d makes a weaker time promise than the LMD baseline (same-day instead of in-wave) — document as a concept property, not a side effect; (b) jsprit cuts 1d tours structurally differently (216 capsule, 3.5 h cap, day window) — the comparison runs over δ/parcels and operational KPIs, not tour geometry; the 25200 s control arm isolates the cap effect. The LMD-baseline wave mechanics themselves are a separate backlog item (`[M]` LMD Dispatch-Stunden, updated 2026-07-28).
 - **C5 — Swap capacities are 1-D.** The run's `DvrpLoadType` stays the default 1-D `passengers` type; swap-out sets capacity to the empty load (0 passengers), swap-back to `vehicle.getCapacity()` (10). A `parcels` load dimension would have nothing to count — parcels are never DVRP loads (D7); the 216-parcel cargo capacity is the documented never-binding concept parameter (D8). The design's chain notation `CapacityChange(pax=0, parcels=216)` is realised as `CapacityChange(passengers=0)` + documentation.
 - **C6 — `ModularCapacityChangeTask` subclasses `DefaultDrtCapacityChangeTask`** (design said "use the native task directly") — it adds only identity metadata (`tourId`, `swapBack` flag, `intendedDuration`) needed by the end-time calculator, the commitment predicate and the KPI events. The native swap mechanics are inherited untouched.
+- **C7 (2026-07-28) — Morning surge accepted; dispatch order interleaved across providers.** With the day window all tours share `plannedStart ≈ 07:30` → all become pending at ~07:16, the fleet is fully idle at that hour, and the gate's while-loop dispatches in ONE simstep (= 1 sim-second) until `idleShare ≤ θ` — i.e. ~(1−θ)·fleet vehicles leave at once, locked out for pax up to ~3.5 h + retooling + deadhead. Accepted deliberately (user: "erst Ergebnisse ansehen"): the θ-sweep plus pax KPIs vs baseline make the cost visible; no dispatch-rate limit, no demand forecast. (Predictive gate fed by previous-iteration request/rejection rates — native precedent `PreviousIterationDrtDemandEstimator` — is parked as backlog `[M]`, decide after the first runs.) To avoid a systematic per-provider δ bias when the gate is scarce, pending order is **`(submissionTime, tourIndex, provider)`** — all `_t0` tours first, then all `_t1`, … — instead of alphabetical `tourId` (which would put ALL dhl tours before the first gls tour). `ModularFreightTour` carries an explicit `tourIndex` component for this.
+- **C8 (2026-07-28) — Late delivery is measured, not prevented.** Feasibility is checked at dispatch with planned times (free-speed routing + planned dwells); mobsim delays can push the actual completion past 21:00 with the tour still counting COMPLETED. The KPI handler therefore also writes `tours_completed_late` (COMPLETED event time > `DELIVERY_DAY_END_S`) and `parcels_served_late` (Σ parcels of STOP_SERVED events with time > `DELIVERY_DAY_END_S`); `extract_modular.py` exports both (dashboard card noted in the backlog). No abort mechanism, no behaviour change — the 07:30–21:00 promise stays ex-ante, this makes the ex-post violation visible.
 
 ## Global Constraints
 
@@ -26,12 +28,12 @@ The design (§3.2) lists six hooks; source-grounding during planning showed thre
 - **Optimizer rebind rule:** the native `DrtModeOptimizerQSimModule` registers `DrtOptimizer` via `addModalComponent` (binding + QSim-component registration). The override module must `bindModal(DrtOptimizer.class).toProvider(...)` ONLY — a second `addModalComponent` would double-register the QSim component.
 - **Determinism:** no `UUID.randomUUID()` anywhere (spike §3.5) — tour ids derive from carrier id + tour index; all iteration over maps uses insertion-ordered or sorted collections; jsprit stays single-threaded with seed 4711 (existing `configureAlgorithm`); QSim-scoped dispatcher state resets naturally per iteration (fresh QSim injector), controller-scoped KPI handler resets via `reset(int)` (1c lesson `dd34b23`).
 - **Run-ID-prefixed outputs:** the KPI CSV is written via `controlerIO.getOutputFilename(...)` → `<runId>.modular_tour_stats.csv`; the extractor matches that exact name (1c bug `89f1ee5` designed out).
-- Parameters (design §5): pax capsule **10 seats** (already the DRT_MODULAR fleet capacity via `DrtInputsFingerprint.expectedCapacity` — verified, no change); cargo capsule **216** (documented never-binding); retooling **420 s**; tour cap default **12600 s** / control arm 25200 s; idle threshold default **0.50**; look-ahead **420 s + retooling**; stop dwell `min(2 min × parcels, 15 min)` (LMD parity) × dwell factor 1.0 (autonomy hook stays parameterised, out of scope).
+- Parameters (design §5): pax capsule **10 seats** (already the DRT_MODULAR fleet capacity via `DrtInputsFingerprint.expectedCapacity` — verified, no change); cargo capsule **216** (documented never-binding); retooling **420 s**; tour cap default **12600 s** / control arm 25200 s; idle threshold default **0.50**; look-ahead **420 s + retooling**; **delivery day 07:30–21:00** (`Modular.DELIVERY_DAY_START_S`/`DELIVERY_DAY_END_S`, C4 revised — vehicle window AND service-start TW, no waves); stop dwell `min(2 min × parcels, 15 min)` (LMD parity) × dwell factor 1.0 (autonomy hook stays parameterised, out of scope).
 - All existing scenarios (`DRT_BASELINE` married/pax-only, `DRT_SHAREDUSE`, `LMD_BASELINE`, Hannover legacy) must stay green — the full suite is the regression net for every task. Run tests from `parcel-demand-2-matsim-pipeline/`.
 - **VERIFY-SOURCE** steps: check the exact signature in the unzipped 2025.0 sources before compiling (`~/.m2/repository/org/matsim/contrib/{drt,dvrp}/2025.0/*-sources.jar`; unzipped copies exist in the spike scratchpad) and adapt mechanically if drifted.
 - Branch `hendrik`; never merge to master; commit per task with explicit `git add` of named files; `.shp`/binary test fixtures need `git add -f` (gitignore).
 - Windows: `python -u` for Python runs; no non-ASCII in `print()`; never Edit/Write `.bat` files.
-- **Demand pairing (run discipline, not code):** 1d headline runs use the SAME demand level as 1c's headline and compare against the 10-seat re-baseline (now a 1d prerequisite too, design §7). **⚠️ `level_central` is 6,024 parcels since the 2026-07-27 Zensus switch — NOT the 7,271 the design spec quotes** (that is the retired OSM stand, now `level_osm_central`). Whatever level 1c's headline actually runs, 1d must run the same one; a 7,271-vs-6,024 comparison spans two demand models. Verify the staged file's SHA256 before each headline run (`run_lmd_band.ps1` pattern) — `HagridPaths.lmdDemandShapefile()` is hard-wired, so levels are swapped by file exchange and only the run tag records which.
+- **Demand level (run discipline, not code — softened 2026-07-28, user):** POC runs simply use the current PANDA export stand (Zensus `level_central` = 6,024 parcels since 2026-07-27; the design spec's 7,271 is the retired OSM stand, now `level_osm_central`). **No pairing obligation now** — the serious paper runs later need ONE matched set (10-seat re-baseline + 1c + 1d on the identical demand file), not the POC. `HagridPaths.lmdDemandShapefile()` is hard-wired, so levels are swapped by file exchange — verify the staged file's SHA256 before each *reported* run (`run_lmd_band.ps1` pattern) and record the stand in the run tag.
 
 ## File Structure
 
@@ -74,6 +76,7 @@ analysis/kpi/tests/test_extract_modular.py                       ← NEW pytest 
 | `Modular.FREIGHT_LOOKAHEAD_S` | Task 3 | `double` = 420.0 |
 | `Modular.DEFAULT_IDLE_THRESHOLD` | Task 3 | `double` = 0.50 |
 | `Modular.DEFAULT_MAX_TOUR_DURATION_S` | Task 3 | `int` = 12600 |
+| `Modular.DELIVERY_DAY_START_S` / `DELIVERY_DAY_END_S` | Task 2 | `double` = 27000.0 (07:30) / 75600.0 (21:00) — C4 revised |
 | `Modular.CARGO_CAPSULE_TYPE_ID` | Task 3 | `String` = `"ushift_cargo_capsule"` |
 | `Modular.FREIGHT_STOP_TASK_TYPE` / `FREIGHT_DRIVE_TASK_TYPE` | Task 3 | `DrtTaskType("MODULAR_FREIGHT_STOP", STAY)` / `("MODULAR_FREIGHT_DRIVE", DRIVE)` |
 | `Modular.hasUnperformedFreightTask(Schedule)` | Task 3 | `static boolean` |
@@ -82,10 +85,10 @@ analysis/kpi/tests/test_extract_modular.py                       ← NEW pytest 
 | `ModularTourEvent` | Task 3 | phases `PLANNED, EXPIRED, DISPATCHED, SWAP_DONE, STOP_SERVED, COMPLETED`; static factories per phase |
 | `ModularVehicleTypes.createCapsuleTypes(String vanTypesFile)` | Task 2 | `static CarrierVehicleTypes` (exactly one type: the capsule) |
 | `LausitzFreightPreprocessor.runModular(String demandShp, String depotCsv, String networkFile, String vanTypesFile, String carriersOut, int jspritIterations, String serviceAreaShp, int maxTourDurationSeconds)` | Task 2 | `static void` |
-| `LmdCarrierBuilder.build(..., Random random, int maxRouteDurationSeconds)` | Task 1 | new fullest overload; old delegates with `HAGRIDRouterUtils.MAXROUTEDURATION` |
+| `LmdCarrierBuilder.buildSingleWindow(provider, deliveries, depotLink, network, vanTypes, durationPerParcelMin, maxDurationPerStopMin, random, vehicleEarliestStart, vehicleLatestEnd, serviceTwStart, serviceTwEnd)` | Task 1 | `static Carrier`; ONE un-jittered vehicle per van type, explicit window + service TW (C4/C7); legacy `build` untouched (waves) |
 | `HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost, maxRouteDurationSeconds)` | Task 1 | new fullest overload |
 | `LausitzFreightPreprocessor.routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations, maxRouteDurationSeconds)` | Task 1 | new overload |
-| `ModularFreightTour(String tourId, String provider, Id<Link> depotLink, double plannedStart, double plannedDuration, double latestEnd, List<Stop> stops)` | Task 4 | record; `Stop(Id<Link> link, double serviceDuration, int parcels)`; `int totalParcels()`; `double submissionTime()` |
+| `ModularFreightTour(String tourId, String provider, int tourIndex, Id<Link> depotLink, double plannedStart, double plannedDuration, double latestEnd, List<Stop> stops)` | Task 4 | record; `Stop(Id<Link> link, double serviceDuration, int parcels)`; `int totalParcels()`; `double submissionTime()`; `tourIndex` = C7 interleave key |
 | `ModularTourConverter.convert(Carriers carriers, Network carNetwork, Network drtNetwork)` | Task 4 | `static List<ModularFreightTour>`; + `static Carriers read(String carriersFile, CarrierVehicleTypes types)` |
 | `ModularStayTaskEndTimeCalculator(ScheduleTimingUpdater.StayTaskEndTimeCalculator delegate)` | Task 5 | implements `ScheduleTimingUpdater.StayTaskEndTimeCalculator` |
 | `ModularTourScheduler(Network network, TravelTime travelTime, TravelDisutility travelDisutility, DrtTaskFactory taskFactory, DvrpLoadType loadType)` | Task 6 | `Optional<ScheduledExcursion> schedule(DvrpVehicle vehicle, ModularFreightTour tour, double now)`; record `ScheduledExcursion(double deadheadMeters, double serviceMeters, double plannedCompletion)` |
@@ -99,9 +102,9 @@ analysis/kpi/tests/test_extract_modular.py                       ← NEW pytest 
 
 ---
 
-### Task 1: jsprit route-duration cap becomes a parameter (Lausitz path only)
+### Task 1: jsprit cap parameter + single-window carrier builder (Lausitz path only)
 
-The 3.5 h cap (D5) must flow through three places that today hard-code `HAGRIDRouterUtils.MAXROUTEDURATION` (25200): the two jsprit constraints, the departure-time updater, and the wave-relative vehicle window in `LmdCarrierBuilder:142-144`. Hannover and `LMD_BASELINE` must keep 25200 exactly (regression: their routing results are seed-stable).
+Two enablers, same files. **(1)** The 3.5 h cap (D5) must flow through the places that today hard-code `HAGRIDRouterUtils.MAXROUTEDURATION` (25200): the two jsprit constraints and the departure-time updater. **(2)** C4 (revised): 1d vehicles carry an EXPLICIT operating window 07:30–21:00 instead of the baseline's wave mechanics — new `LmdCarrierBuilder.buildSingleWindow(...)`. The wave-relative window derivation at `LmdCarrierBuilder:142-144` is NOT touched (the pre-revision draft parameterised it; dead code once 1d uses the explicit window). Hannover and `LMD_BASELINE` keep 25200 + waves byte-identically (regression: their routing results are seed-stable).
 
 **Files:**
 - Modify: `src/main/java/hagrid/utils/routing/HAGRIDRouterUtils.java` (around lines 89-120)
@@ -111,7 +114,7 @@ The 3.5 h cap (D5) must flow through three places that today hard-code `HAGRIDRo
 
 **Interfaces:**
 - Consumes: existing `configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost)`, `LmdCarrierBuilder.build(provider, deliveries, depotLink, network, vanTypes, durationPerParcelMin, maxDurationPerStopMin, dispatchHours, random)`.
-- Produces: `configureAlgorithm(..., int maxRouteDurationSeconds)` fullest overload; `LmdCarrierBuilder.build(..., Random random, int maxRouteDurationSeconds)` fullest overload; `routeWithDurationCap(..., int maxRouteDurationSeconds)`. All existing signatures delegate with `HAGRIDRouterUtils.MAXROUTEDURATION`.
+- Produces: `configureAlgorithm(..., int maxRouteDurationSeconds)` fullest overload; `routeWithDurationCap(..., int maxRouteDurationSeconds)`; `LmdCarrierBuilder.buildSingleWindow(provider, deliveries, depotLink, network, vanTypes, durationPerParcelMin, maxDurationPerStopMin, random, vehicleEarliestStart, vehicleLatestEnd, serviceTwStart, serviceTwEnd)` — ONE un-jittered vehicle per van type with the explicit window, services with the aligned start TW. Existing signatures delegate with `HAGRIDRouterUtils.MAXROUTEDURATION`; legacy `build` keeps its wave behaviour untouched.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -119,48 +122,72 @@ Add to `LmdCarrierBuilderTest` (reuse its existing fixture helpers for network/d
 
 ```java
 @Test
-@DisplayName("vehicle operating window derives from the passed maxRouteDuration, not the 7h constant")
-void vehicleWindowFollowsMaxRouteDurationParameter() {
-    // identical inputs, two caps -> different latestEnd
-    Carrier cap7h = LmdCarrierBuilder.build("dhl", deliveries, depotLink, network, vanTypes,
-            2, 15, List.of(8), new Random(1), 25200);
-    Carrier cap35h = LmdCarrierBuilder.build("dhl", deliveries, depotLink, network, vanTypes,
-            2, 15, List.of(8), new Random(1), 12600);
+@DisplayName("buildSingleWindow: explicit 07:30-21:00 window, no waves, no jitter; legacy build untouched")
+void singleWindowBuildsExplicitWindow() {
+    Carrier modular = LmdCarrierBuilder.buildSingleWindow("dhl", deliveries, depotLink, network,
+            vanTypes, 2, 15, new Random(1), 27000.0, 75600.0, 27000.0, 75600.0);
 
-    double latest7h = cap7h.getCarrierCapabilities().getCarrierVehicles().values().iterator()
-            .next().getLatestEndTime();
-    double latest35h = cap35h.getCarrierCapabilities().getCarrierVehicles().values().iterator()
-            .next().getLatestEndTime();
+    // exactly ONE vehicle per van type, window exactly as passed (no wave copies, no jitter)
+    assertThat(modular.getCarrierCapabilities().getCarrierVehicles()).hasSize(vanTypes.length);
+    modular.getCarrierCapabilities().getCarrierVehicles().values().forEach(v -> {
+        assertThat(v.getEarliestStartTime()).isEqualTo(27000.0);
+        assertThat(v.getLatestEndTime()).isEqualTo(75600.0);
+    });
+    // services carry the ALIGNED start window (C4 revised: 07:30-21:00, not DAY_START/DAY_END)
+    modular.getServices().values().forEach(s -> {
+        assertThat(s.getServiceStartTimeWindow().getStart()).isEqualTo(27000.0);
+        assertThat(s.getServiceStartTimeWindow().getEnd()).isEqualTo(75600.0);
+    });
+    // missed-delivery overlay still applied (same RNG core as build)
+    assertThat(modular.getAttributes().getAttribute("numberOfParcels")).isNotNull();
 
-    // 08:00 wave + jitter(seed 1) is identical in both; window = start + cap + 1h, capped 21:00.
-    assertThat(latest7h - latest35h).isCloseTo(25200.0 - 12600.0, within(1e-9));
-
-    // the existing 9-arg overload must behave EXACTLY like passing MAXROUTEDURATION
+    // legacy 9-arg build: wave-relative window EXACTLY as before (byte-identity guard)
     Carrier legacy = LmdCarrierBuilder.build("dhl", deliveries, depotLink, network, vanTypes,
             2, 15, List.of(8), new Random(1));
-    double latestLegacy = legacy.getCarrierCapabilities().getCarrierVehicles().values().iterator()
-            .next().getLatestEndTime();
-    assertThat(latestLegacy).isEqualTo(latest7h);
+    legacy.getCarrierCapabilities().getCarrierVehicles().values().forEach(v ->
+            assertThat(v.getLatestEndTime()).isEqualTo(Math.min(
+                    v.getEarliestStartTime() + HAGRIDRouterUtils.MAXROUTEDURATION + 3600.0,
+                    21 * 3600.0)));
 }
 ```
+
+(VERIFY-SOURCE: the `CarrierService` time-window accessor name in the freight contrib 2025.0 — historic versions carried a typo'd `getServiceStaringTimeWindow()`; adapt mechanically.)
 
 - [ ] **Step 2: Run it, verify it fails**
 
-Run: `mvn -q test -Dtest=LmdCarrierBuilderTest` — expected: compile error (no 10-arg overload).
+Run: `mvn -q test -Dtest=LmdCarrierBuilderTest` — expected: compile error (no `buildSingleWindow`).
 
 - [ ] **Step 3: Implement**
 
-`LmdCarrierBuilder`: rename the existing 9-arg `build(...)` body into a new 10-arg overload ending in `int maxRouteDurationSeconds`; at line 142-144 replace `HAGRIDRouterUtils.MAXROUTEDURATION` with the parameter. Re-add the 9-arg signature as a delegate:
+`LmdCarrierBuilder`: extract the carrier-skeleton + service-building + missed-delivery-overlay body of `build(...)` (lines 81-126: createCarrier through the missed-parcel attributes) into a private helper that takes the service time window as a parameter — **the RNG draw order inside must stay exactly as today** (dailyBias first, then per-parcel misses; the byte-identity of legacy `build` output hangs on it). `build(...)` calls it with `TimeWindow.newInstance(DAY_START, DAY_END)` and keeps its wave-vehicle loop untouched. Add the single-window variant:
 
 ```java
-public static Carrier build(String provider, List<Delivery> deliveries, Id<Link> depotLink,
-                            Network network, VehicleType[] vanTypes,
-                            int durationPerParcelMin, int maxDurationPerStopMin,
-                            List<Integer> dispatchHours, Random random) {
-    return build(provider, deliveries, depotLink, network, vanTypes, durationPerParcelMin,
-            maxDurationPerStopMin, dispatchHours, random, HAGRIDRouterUtils.MAXROUTEDURATION);
+/**
+ * 1d single-window variant (plan C4 revised, user 2026-07-28): the capsule "vehicles" are
+ * virtual (the DRT fleet executes the tours), so NO dispatch waves, NO departure jitter -
+ * ONE vehicle per van type with an explicit operating window, services with the aligned
+ * start time window (07:30-21:00 for 1d instead of the baseline's 08:00-20:00).
+ */
+public static Carrier buildSingleWindow(String provider, List<Delivery> deliveries,
+        Id<Link> depotLink, Network network, VehicleType[] vanTypes, int durationPerParcelMin,
+        int maxDurationPerStopMin, Random random, double vehicleEarliestStart,
+        double vehicleLatestEnd, double serviceTwStart, double serviceTwEnd) {
+    Carrier carrier = buildCore(provider, deliveries, network, vanTypes, durationPerParcelMin,
+            maxDurationPerStopMin, random, TimeWindow.newInstance(serviceTwStart, serviceTwEnd));
+    for (VehicleType vanType : vanTypes) {
+        CarrierVehicle vehicle = CarrierVehicle.Builder
+                .newInstance(Id.createVehicleId(provider + "_" + vanType.getId() + "_day_v0"),
+                        depotLink, vanType)
+                .setEarliestStart(vehicleEarliestStart)
+                .setLatestEnd(vehicleLatestEnd)
+                .build();
+        CarriersUtils.addCarrierVehicle(carrier, vehicle);
+    }
+    return carrier;
 }
 ```
+
+(Exact helper signature is the executor's choice — the contract is: legacy `build` output byte-identical, `buildSingleWindow` = same services/overlay + explicit-window vehicles, `FleetSize.INFINITE` clones as needed.)
 
 `HAGRIDRouterUtils`: same pattern — the existing 5-arg `configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost)` becomes a delegate to a new 6-arg overload with `int maxRouteDurationSeconds` as last parameter; inside, the three usages (`UpdateDepartureTimeAndPracticalTimeWindows`, `MaxRouteDurationConstraint`, `TimeWindowConstraintWithDriverTime`) use the parameter. Do NOT touch the `MAXROUTEDURATION` constant or its javadoc (Hannover parity).
 
@@ -174,7 +201,7 @@ Run: `mvn -q test -Dtest=LmdCarrierBuilderTest,LausitzFreightPreprocessorTest,Lm
 
 ```bash
 git add src/main/java/hagrid/utils/routing/HAGRIDRouterUtils.java src/main/java/hagrid/integrated/freight/LmdCarrierBuilder.java src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java src/test/java/hagrid/integrated/freight/LmdCarrierBuilderTest.java
-git commit -m "feat(modular): jsprit route-duration cap parameterised (Lausitz path, 7h default unchanged)"
+git commit -m "feat(modular): jsprit cap param + single-window carrier builder, no waves for 1d (Task 1)"
 ```
 
 ---
@@ -188,7 +215,7 @@ git commit -m "feat(modular): jsprit route-duration cap parameterised (Lausitz p
 - Test: `src/test/java/hagrid/integrated/freight/LausitzFreightPreprocessorTest.java` (extend)
 
 **Interfaces:**
-- Consumes: Task 1's `routeWithDurationCap(..., maxRouteDurationSeconds)` and `LmdCarrierBuilder.build(..., maxRouteDurationSeconds)`; constant `Modular.CARGO_CAPSULE_TYPE_ID` — **forward reference**: until Task 3 lands, define the ID string literal here and have Task 3 reference it; simplest is to create a minimal `Modular` class in THIS task containing only `CARGO_CAPACITY_PARCELS` and `CARGO_CAPSULE_TYPE_ID`, which Task 3 then extends.
+- Consumes: Task 1's `routeWithDurationCap(..., maxRouteDurationSeconds)` and `LmdCarrierBuilder.buildSingleWindow(...)`; constants `Modular.CARGO_CAPSULE_TYPE_ID` / `DELIVERY_DAY_START_S` / `DELIVERY_DAY_END_S` — **forward reference**: until Task 3 lands, create a minimal `Modular` seed class in THIS task containing only `CARGO_CAPACITY_PARCELS`, `CARGO_CAPSULE_TYPE_ID` and the two `DELIVERY_DAY_*` constants, which Task 3 then extends.
 - Produces: `ModularVehicleTypes.createCapsuleTypes(String vanTypesFile)` and `LausitzFreightPreprocessor.runModular(demandShp, depotCsv, networkFile, vanTypesFile, carriersOut, jspritIterations, serviceAreaShp, maxTourDurationSeconds)`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -231,8 +258,8 @@ Extend `LausitzFreightPreprocessorTest` (reuse its existing demand/depot/network
 
 ```java
 @Test
-@DisplayName("runModular: routed carriers use ONLY the capsule type and respect the 3.5h cap")
-void runModularRoutesWithCapsuleTypeAndCap(@TempDir Path tmp) throws Exception {
+@DisplayName("runModular: ONLY the capsule type, full 07:30-21:00 day window (C4 revised)")
+void runModularRoutesWithCapsuleTypeAndDayWindow(@TempDir Path tmp) throws Exception {
     // stage grid network / demand shp / depots csv / vans.xml exactly like the existing
     // run(...) test in this class, then:
     Path carriersOut = tmp.resolve("modular_carriers_routed.xml");
@@ -250,10 +277,12 @@ void runModularRoutesWithCapsuleTypeAndCap(@TempDir Path tmp) throws Exception {
         // every carrier vehicle is a capsule
         c.getCarrierCapabilities().getCarrierVehicles().values().forEach(v ->
                 assertThat(v.getType().getId().toString()).isEqualTo(Modular.CARGO_CAPSULE_TYPE_ID));
-        // every scheduled tour fits the cap envelope: window is start + 12600 + 3600 buffer
+        // C4 revised: every vehicle carries the full delivery-day window 07:30-21:00 (no waves)
         for (ScheduledTour st : c.getSelectedPlan().getScheduledTours()) {
-            assertThat(st.getVehicle().getLatestEndTime() - st.getVehicle().getEarliestStartTime())
-                    .isLessThanOrEqualTo(12600.0 + 3600.0 + 1e-9);
+            assertThat(st.getVehicle().getEarliestStartTime())
+                    .isEqualTo(Modular.DELIVERY_DAY_START_S);
+            assertThat(st.getVehicle().getLatestEndTime())
+                    .isEqualTo(Modular.DELIVERY_DAY_END_S);
         }
     }
 }
@@ -277,6 +306,12 @@ public final class Modular {
      *  It sizes the jsprit vehicle; it is NOT a DvrpLoad dimension (design D7 / plan C5). */
     public static final int CARGO_CAPACITY_PARCELS = 216;
     public static final String CARGO_CAPSULE_TYPE_ID = "ushift_cargo_capsule";
+
+    /** Delivery day (plan C4 revised, user 2026-07-28): parcels arrive at the depot overnight,
+     *  same-day delivery 07:30-21:00 is what counts - NO dispatch waves in 1d. Used as the
+     *  jsprit vehicle operating window AND the service-start time window. */
+    public static final double DELIVERY_DAY_START_S = 7.5 * 3600.0;   // 07:30
+    public static final double DELIVERY_DAY_END_S = 21 * 3600.0;      // 21:00
 
     private Modular() {}
 }
@@ -338,9 +373,11 @@ public final class ModularVehicleTypes {
 ```java
 /**
  * DRT_MODULAR preprocessing (1d): identical demand/depot/clip pipeline as the LMD baseline,
- * but every carrier gets ONE vehicle type - the 216-parcel U-Shift cargo capsule - and the
+ * but every carrier gets ONE vehicle type - the 216-parcel U-Shift cargo capsule -, the
  * jsprit route-duration cap is the Modular tour cap (design D5: 12600s default, 25200s
- * control arm) instead of the 7h driver shift.
+ * control arm) instead of the 7h driver shift, and there are NO dispatch waves (plan C4
+ * revised): one un-jittered vehicle template per carrier with the full delivery-day window
+ * 07:30-21:00, service-start TWs aligned to the same interval.
  */
 public static void runModular(String demandShp, String depotCsv, String networkFile,
                               String vanTypesFile, String carriersOut, int jspritIterations,
@@ -369,9 +406,13 @@ public static void runModular(String demandShp, String depotCsv, String networkF
             throw new IllegalStateException("No depot for provider with demand: " + provider);
         }
         Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
-        Carrier carrier = LmdCarrierBuilder.build(provider, e.getValue(), depot, network,
-                capsuleArr, DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN,
-                DISPATCH_HOURS, missedRng, maxTourDurationSeconds);
+        Carrier carrier = LmdCarrierBuilder.buildSingleWindow(provider, e.getValue(), depot,
+                network, capsuleArr, DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN,
+                missedRng,
+                hagrid.integrated.modular.Modular.DELIVERY_DAY_START_S,
+                hagrid.integrated.modular.Modular.DELIVERY_DAY_END_S,
+                hagrid.integrated.modular.Modular.DELIVERY_DAY_START_S,
+                hagrid.integrated.modular.Modular.DELIVERY_DAY_END_S);
         CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
         carriers.addCarrier(carrier);
     }
@@ -525,6 +566,8 @@ public final class Modular {
 
     public static final int CARGO_CAPACITY_PARCELS = 216;            // (javadoc from Task 2)
     public static final String CARGO_CAPSULE_TYPE_ID = "ushift_cargo_capsule";
+    public static final double DELIVERY_DAY_START_S = 7.5 * 3600.0;  // (javadoc from Task 2)
+    public static final double DELIVERY_DAY_END_S = 21 * 3600.0;
 
     /** Pure capsule-swap (retooling) duration, spec §6.1: 7 min. */
     public static final double RETOOLING_S = 420.0;
@@ -796,6 +839,7 @@ void convertsScheduledTour() {
     ModularFreightTour t = tours.get(0);
     assertThat(t.tourId()).isEqualTo("dhl_t0");                    // carrier + tour index, NO UUID
     assertThat(t.provider()).isEqualTo("dhl");
+    assertThat(t.tourIndex()).isEqualTo(0);                        // C7 interleave key
     assertThat(t.plannedStart()).isEqualTo(8 * 3600.0);
     assertThat(t.latestEnd()).isEqualTo(17 * 3600.0);
     assertThat(t.totalParcels()).isEqualTo(5);
@@ -834,12 +878,13 @@ import java.util.List;
 /**
  * One offline-planned freight tour, ready for online dispatch. All link ids are ALREADY
  * snapped to the DRT network (the jsprit side routes on the car network - different link set).
- * latestEnd is the jsprit vehicle's wave-relative operating window end (<= 21:00), the honest
- * completion envelope (plan C4: vehicle.getServiceEndTime() is 86400 and therefore vacuous).
+ * latestEnd is the jsprit vehicle's operating-window end = DELIVERY_DAY_END_S (21:00) for every
+ * 1d tour (plan C4 revised: full delivery day, no waves; vehicle.getServiceEndTime() is 86400
+ * and therefore vacuous as an envelope). tourIndex is the C7 interleave key.
  */
-public record ModularFreightTour(String tourId, String provider, Id<Link> depotLink,
-                                 double plannedStart, double plannedDuration, double latestEnd,
-                                 List<Stop> stops) {
+public record ModularFreightTour(String tourId, String provider, int tourIndex,
+                                 Id<Link> depotLink, double plannedStart, double plannedDuration,
+                                 double latestEnd, List<Stop> stops) {
 
     public record Stop(Id<Link> link, double serviceDuration, int parcels) {}
 
@@ -915,6 +960,7 @@ public final class ModularTourConverter {
         return new ModularFreightTour(
                 carrierId + "_t" + index,
                 carrierId,
+                index,
                 toDrtLink(st.getVehicle().getLinkId(), carNetwork, drtNetwork),
                 st.getDeparture(),
                 duration,
@@ -1334,6 +1380,12 @@ void nearestIdleSelection() {
 }
 
 @Test
+@DisplayName("equal submission: providers interleave (dhl_t0, gls_t0, ...), no alphabetical block (C7)")
+void providerInterleaving() { /* three tours dhl_t0, dhl_t1, gls_t0 with IDENTICAL submissionTime,
+        fleet/threshold sized so exactly 2 dispatches fit -> DISPATCHED tour ids are
+        [dhl_t0, gls_t0], NOT [dhl_t0, dhl_t1] */ }
+
+@Test
 @DisplayName("committed vehicles leave the idle pool (commitment predicate, not bookkeeping)")
 void committedVehicleExcluded() { /* dispatch tour1 to the only near vehicle; a second tour in
         the same tick must go to the far vehicle or stay pending - assert the spliced vehicle
@@ -1366,14 +1418,17 @@ package hagrid.integrated.modular;
  *      reject-and-log, never the native silent drop; no replanning, spec §4.3 step 5),
  *   3. while idleShare > idleThreshold (STRICT - theta=1.0 is the never-dispatch control arm):
  *      dispatch the longest-pending tour to the idle vehicle nearest its depot
- *      (deterministic tie-break by vehicle id).
+ *      (deterministic tie-break by vehicle id). Pending order is (submissionTime, tourIndex,
+ *      provider) - plan C7: with the day window ALL tours become pending at ~07:16, so a plain
+ *      tourId sort would dispatch every dhl tour before the first gls tour and bias per-provider
+ *      delta; interleaving by tour index removes that.
  */
 public class ModularTourDispatcher {
 
     private static final Logger LOG = LogManager.getLogger(ModularTourDispatcher.class);
 
     private final String mode;
-    private final List<ModularFreightTour> tours;      // sorted by (submissionTime, tourId)
+    private final List<ModularFreightTour> tours;      // sorted by (submissionTime, tourIndex, provider) - C7
     private final double idleThreshold;
     private final Fleet fleet;
     private final DrtScheduleInquiry scheduleInquiry;
@@ -1391,7 +1446,8 @@ public class ModularTourDispatcher {
         this.mode = mode;
         this.tours = tours.stream()
                 .sorted(Comparator.comparingDouble(ModularFreightTour::submissionTime)
-                        .thenComparing(ModularFreightTour::tourId))
+                        .thenComparingInt(ModularFreightTour::tourIndex)     // C7 interleave
+                        .thenComparing(ModularFreightTour::provider))
                 .toList();
         this.idleThreshold = idleThreshold;
         this.fleet = fleet;
@@ -1683,7 +1739,7 @@ git commit -m "feat(modular): optimizer decorator (tick + duration belt) and str
 
 **Interfaces:**
 - Consumes: Task 3's `ModularTourEvent`/`ModularTourEventHandler`; `OutputDirectoryHierarchy.getOutputFilename` (the run-ID-prefix mechanism, 1c bug `89f1ee5` designed out); `ShutdownListener`.
-- Produces: `<runId>.modular_tour_stats.csv`, format `metric;value` (semicolon — matches the 1c extractor convention). Metrics: `tours_planned, tours_expired_pending, tours_dispatched, tours_completed, tours_dispatched_incomplete, tours_pending_eod, parcels_planned, parcels_expired_pending, parcels_dispatched, parcels_served, parcels_dispatched_unserved, parcels_pending_eod, delta_parcels, swaps_completed, retooling_hours, deadhead_km_planned, service_km_planned, freight_vehicle_hours` (the last = Σ over COMPLETED tours of `(completed.time − dispatched.time)/3600` — the "vehicle-hours withdrawn from pax service" ingredient of design §4; incomplete excursions are excluded and that exclusion is documented in the CSV-consuming extractor).
+- Produces: `<runId>.modular_tour_stats.csv`, format `metric;value` (semicolon — matches the 1c extractor convention). Metrics: `tours_planned, tours_expired_pending, tours_dispatched, tours_completed, tours_dispatched_incomplete, tours_pending_eod, parcels_planned, parcels_expired_pending, parcels_dispatched, parcels_served, parcels_dispatched_unserved, parcels_pending_eod, delta_parcels, swaps_completed, retooling_hours, deadhead_km_planned, service_km_planned, freight_vehicle_hours, tours_completed_late, parcels_served_late`. `freight_vehicle_hours` = Σ over COMPLETED tours of `(completed.time − dispatched.time)/3600` — the "vehicle-hours withdrawn from pax service" ingredient of design §4; incomplete excursions are excluded and that exclusion is documented in the CSV-consuming extractor. The two `_late` metrics are C8 (ex-post honesty of the 07:30–21:00 promise): `tours_completed_late` = COMPLETED events with `time > Modular.DELIVERY_DAY_END_S`, `parcels_served_late` = Σ parcels of STOP_SERVED events with `time > Modular.DELIVERY_DAY_END_S`.
 
 Conservation identities (assert in test, log at shutdown):
 - `tours_planned == tours_expired_pending + tours_dispatched + tours_pending_eod`
@@ -1719,28 +1775,38 @@ void aggregatesAndConserves(@TempDir Path tmp) throws Exception {
     handler.handleEvent(ModularTourEvent.stopServed(950, "gls_t0", vehId2, 4));
     // tour D: planned, still pending at EOD
     handler.handleEvent(ModularTourEvent.planned(100, "gls_t1", 2));
+    // tour E: completes LATE (after 21:00 = 75600) - C8 marker case
+    handler.handleEvent(ModularTourEvent.planned(100, "hermes_t0", 2));
+    handler.handleEvent(ModularTourEvent.dispatched(70000, "hermes_t0", vehId, 2, 500.0, 800.0));
+    handler.handleEvent(ModularTourEvent.swapDone(70600, "hermes_t0", vehId));
+    handler.handleEvent(ModularTourEvent.stopServed(75900, "hermes_t0", vehId, 2));
+    handler.handleEvent(ModularTourEvent.swapDone(76000, "hermes_t0", vehId));
+    handler.handleEvent(ModularTourEvent.completed(76100, "hermes_t0", vehId));
 
     handler.notifyShutdown(fixtureShutdownEvent());
 
     Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-    assertThat(csv.get("tours_planned")).isEqualTo(4);
-    assertThat(csv.get("tours_dispatched")).isEqualTo(2);
-    assertThat(csv.get("tours_completed")).isEqualTo(1);
+    assertThat(csv.get("tours_planned")).isEqualTo(5);
+    assertThat(csv.get("tours_dispatched")).isEqualTo(3);
+    assertThat(csv.get("tours_completed")).isEqualTo(2);
     assertThat(csv.get("tours_dispatched_incomplete")).isEqualTo(1);
     assertThat(csv.get("tours_expired_pending")).isEqualTo(1);
     assertThat(csv.get("tours_pending_eod")).isEqualTo(1);
-    assertThat(csv.get("parcels_planned")).isEqualTo(18);
-    assertThat(csv.get("parcels_served")).isEqualTo(9);
+    assertThat(csv.get("parcels_planned")).isEqualTo(20);
+    assertThat(csv.get("parcels_served")).isEqualTo(11);
     assertThat(csv.get("parcels_expired_pending")).isEqualTo(4);
     assertThat(csv.get("parcels_dispatched_unserved")).isEqualTo(3);
     assertThat(csv.get("parcels_pending_eod")).isEqualTo(2);
     assertThat(csv.get("delta_parcels")).isEqualTo(9);
-    assertThat(csv.get("swaps_completed")).isEqualTo(3);
-    assertThat(csv.get("retooling_hours")).isCloseTo(3 * 420.0 / 3600.0, within(1e-9));
-    assertThat(csv.get("deadhead_km_planned")).isCloseTo(3.5, within(1e-9));
-    assertThat(csv.get("service_km_planned")).isCloseTo(6.2, within(1e-9));
-    // tour A is the only COMPLETED one: dispatched 200 -> completed 600
-    assertThat(csv.get("freight_vehicle_hours")).isCloseTo(400.0 / 3600.0, within(1e-9));
+    assertThat(csv.get("swaps_completed")).isEqualTo(5);
+    assertThat(csv.get("retooling_hours")).isCloseTo(5 * 420.0 / 3600.0, within(1e-9));
+    assertThat(csv.get("deadhead_km_planned")).isCloseTo(4.0, within(1e-9));
+    assertThat(csv.get("service_km_planned")).isCloseTo(7.0, within(1e-9));
+    // COMPLETED tours: A (200 -> 600) + E (70000 -> 76100)
+    assertThat(csv.get("freight_vehicle_hours")).isCloseTo((400.0 + 6100.0) / 3600.0, within(1e-9));
+    // C8: E completed at 76100 > 75600, its 2-parcel stop served at 75900 > 75600
+    assertThat(csv.get("tours_completed_late")).isEqualTo(1);
+    assertThat(csv.get("parcels_served_late")).isEqualTo(2);
 }
 
 @Test
@@ -1775,7 +1841,9 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
     private static final class TourStat {
         int parcelsPlanned;
         boolean dispatched, expired, completed;
+        boolean completedLate;          // C8: completed after DELIVERY_DAY_END_S
         int parcelsServed;
+        int parcelsServedLate;          // C8: stops served after DELIVERY_DAY_END_S
         int swaps;
         double deadheadMeters, serviceMeters;
         double dispatchedAt = Double.NaN, completedAt = Double.NaN;
@@ -1807,10 +1875,16 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 s.serviceMeters = event.getServiceMeters();
             }
             case SWAP_DONE -> s.swaps++;
-            case STOP_SERVED -> s.parcelsServed += event.getParcels();
+            case STOP_SERVED -> {
+                s.parcelsServed += event.getParcels();
+                if (event.getTime() > Modular.DELIVERY_DAY_END_S) {
+                    s.parcelsServedLate += event.getParcels();                    // C8
+                }
+            }
             case COMPLETED -> {
                 s.completed = true;
                 s.completedAt = event.getTime();
+                s.completedLate = event.getTime() > Modular.DELIVERY_DAY_END_S;   // C8
             }
         }
     }
@@ -1861,7 +1935,9 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 "retooling_hours;" + (swaps * Modular.RETOOLING_S / 3600.0),
                 "deadhead_km_planned;" + (sumD(s -> s.dispatched, s -> s.deadheadMeters) / 1000.0),
                 "service_km_planned;" + (sumD(s -> s.dispatched, s -> s.serviceMeters) / 1000.0),
-                "freight_vehicle_hours;" + freightVehicleHours));
+                "freight_vehicle_hours;" + freightVehicleHours,
+                "tours_completed_late;" + count(s -> s.completedLate),
+                "parcels_served_late;" + sum(s -> true, s -> s.parcelsServedLate)));
         try {
             java.nio.file.Files.write(outputCsv, lines, java.nio.charset.StandardCharsets.UTF_8);
         } catch (java.io.IOException e) {
@@ -2317,7 +2393,8 @@ def _write_stats(tmp_path, prefix):
              "parcels_served;350", "parcels_dispatched_unserved;50", "parcels_pending_eod;20",
              "delta_parcels;150", "swaps_completed;13", "retooling_hours;1.516",
              "deadhead_km_planned;42.5", "service_km_planned;120.0",
-             "freight_vehicle_hours;21.75"]
+             "freight_vehicle_hours;21.75",
+             "tours_completed_late;1", "parcels_served_late;12"]
     (tmp_path / (prefix + ".modular_tour_stats.csv")).write_text("\n".join(lines))
 
 
@@ -2342,6 +2419,8 @@ def test_extract_emits_delta_decomposition(tmp_path):
     assert by_name[("modular", "deadhead_km_planned")] == 42.5
     assert by_name[("modular", "freight_vehicle_hours")] == 21.75
     assert by_name[("freight", "tour_completion_rate")] == 6 / 7
+    assert by_name[("freight", "tours_completed_late")] == 1
+    assert by_name[("freight", "parcels_served_late")] == 12
 ```
 
 (Adapt the row-dict key names to whatever `common.row` actually produces — read `common.py` first; the existing `test_*` files in `analysis/kpi/tests/` show the import/bootstrap conventions incl. the `sys.path` setup.)
@@ -2395,6 +2474,9 @@ def extract(run_dir, prefix):
             "share", "modular_tour_stats"),
         row("freight", "tours_planned", int(stats["tours_planned"]), "tours", "modular_tour_stats"),
         row("freight", "tours_dispatched", int(dispatched_tours), "tours", "modular_tour_stats"),
+        # C8 ex-post honesty of the 07:30-21:00 promise (dashboard card noted in backlog)
+        row("freight", "tours_completed_late", int(stats["tours_completed_late"]), "tours", "modular_tour_stats"),
+        row("freight", "parcels_served_late", int(stats["parcels_served_late"]), "parcels", "modular_tour_stats"),
         row("modular", "swaps_completed", int(stats["swaps_completed"]), "swaps", "modular_tour_stats"),
         row("modular", "retooling_hours", float(stats["retooling_hours"]), "h", "modular_tour_stats"),
         row("modular", "deadhead_km_planned", float(stats["deadhead_km_planned"]), "km", "modular_tour_stats"),
@@ -2446,7 +2528,7 @@ Run: `python -u -m pytest analysis/kpi/tests -q` — expected: ALL PASS.
 
 - [ ] **Step 3: Update docs**
 
-`docs/BACKLOG.md`: under the [H] Modular item, mark the implementation done with date, keep the open run-work (10-seat re-baseline, idle-threshold sweep, 7.0h control arm) and the parked sensitivity ideas untouched. Design spec: flip `Status:` to `implemented <date> (plan 2026-07-27-1d-modular-capsule-swap.md)` and append one line listing C1-C6 as accepted plan concretisations.
+`docs/BACKLOG.md`: under the [H] Modular item, mark the implementation done with date, keep the open run-work (10-seat re-baseline, idle-threshold sweep, 7.0h control arm, predictive-gate decision) and the parked sensitivity ideas untouched. Design spec: flip `Status:` to `implemented <date> (plan 2026-07-27-1d-modular-capsule-swap.md)` and append one line listing C1–C8 (C4 revised 2026-07-28: delivery day 07:30–21:00, no waves) as accepted plan concretisations.
 
 - [ ] **Step 4: Commit**
 
@@ -2459,9 +2541,9 @@ git commit -m "docs(modular): 1d implementation closeout - status, concretisatio
 
 ## Validation runs (after implementation — run discipline, NOT plan tasks)
 
-Per design §6 + §7, sequenced with the user (long runs go to the sim-PC; laptop sleep kills them):
+Per design §6 + §7, revised 2026-07-28 (POC first, paper runs later — user), sequenced with the user (long runs go to the sim-PC; laptop sleep kills them):
 
-1. **10-seat re-baseline** (`DRT_BASELINE`, fleet as headline, capacity 10) — prerequisite for BOTH 1c and 1d comparisons.
-2. **Smoke run** `concept=DRT_MODULAR,maxIter=1,fleetSize=120,idleThreshold=0.5` on `level_central` (7,271 parcels) — conservation + no-carriers spot checks from Task 10 repeated at scale.
-3. **Control arm** `idleThreshold=1.0` — pax KPIs bit-identical to the 10-seat baseline (Task 12's property at scale).
-4. **Headline sweep** — idleThreshold ∈ {0.25, 0.5, 0.75, 1.0} full sweep × cap ∈ {12600, 25200} two points (D6; grid only if the main curve shows interaction).
+1. **POC smoke run** `concept=DRT_MODULAR,maxIter=1,fleetSize=120,idleThreshold=0.5` on the current PANDA stand (Zensus `level_central`, 6,024 parcels) — conservation + no-carriers spot checks from Task 10 repeated at scale; FIRST look: the 07:16 surge shape and the C8 late metrics (user: "erst Ergebnisse ansehen", feeds the predictive-gate backlog decision).
+2. **Control arm** `idleThreshold=1.0` — pax KPIs bit-identical to the same run without the module (Task 12's property at scale).
+3. **10-seat re-baseline** (`DRT_BASELINE`, capacity 10, fresh `PrepareLausitzDrtInputs` — fleet files still carry capacity=8) — needed for the PAPER-grade comparisons (1c + 1d), NOT for the POC.
+4. **Headline sweep (paper phase)** — idleThreshold ∈ {0.25, 0.5, 0.75, 1.0} full sweep × cap ∈ {12600, 25200} two points (D6; grid only if the main curve shows interaction), all arms + re-baseline + 1c on ONE matched demand file (SHA256-verified).
