@@ -31,6 +31,7 @@ import org.matsim.core.trafficmonitoring.FreeSpeedTravelTime;
 
 import com.google.common.collect.ImmutableList;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,17 +54,26 @@ class ModularEntryFactoryTest {
         Network network = buildNetwork();
         Link link = network.getLinks().get(Id.createLinkId("l0"));
         VehicleEntry sentinel = fixtureSentinel(link);
-        ModularEntryFactory factory = new ModularEntryFactory((vehicle, time) -> sentinel);
+        // review Minor: capture currentTime to prove the factory forwards it to the delegate
+        // verbatim (not just that it forwards SOME entry) - and, since this list only grows on
+        // an actual delegate invocation, that the delegate is NOT reached at all while locked out.
+        List<Double> capturedTimes = new ArrayList<>();
+        ModularEntryFactory factory = new ModularEntryFactory((vehicle, time) -> {
+            capturedTimes.add(time);
+            return sentinel;
+        });
 
         DvrpVehicle idle = fixtureVehicleIdle(link);
-        assertThat(factory.create(idle, 0.0)).isSameAs(sentinel);
+        assertThat(factory.create(idle, 12345.0)).isSameAs(sentinel);
 
         DvrpVehicle committed = fixtureVehicleWithSplicedTour(network, link);
-        assertThat(factory.create(committed, 0.0)).isNull();
+        assertThat(factory.create(committed, 99999.0)).isNull(); // locked out - delegate never reached
 
         // walk the schedule to completion -> vehicle re-enters the pax candidate set
         performAllFreightTasks(committed);
-        assertThat(factory.create(committed, 0.0)).isSameAs(sentinel);
+        assertThat(factory.create(committed, 67890.0)).isSameAs(sentinel);
+
+        assertThat(capturedTimes).containsExactly(12345.0, 67890.0);
     }
 
     /**

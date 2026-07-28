@@ -10,6 +10,8 @@ import org.matsim.contrib.dvrp.schedule.Task;
 import org.matsim.core.mobsim.framework.MobsimTimer;
 import org.matsim.core.mobsim.framework.events.MobsimBeforeSimStepEvent;
 
+import java.util.List;
+
 /**
  * {@link DrtOptimizer} decorator (pattern: drt-extensions {@code DrtServiceTaskOptimizer}). All
  * passenger handling delegates to the native optimizer unchanged; this class adds exactly three
@@ -50,13 +52,18 @@ import org.matsim.core.mobsim.framework.events.MobsimBeforeSimStepEvent;
  *       structure and observing {@code enforceIntendedDuration} go RED.</li>
  *   <li><b>Examining the OLD current task doesn't make sense.</b> Calling {@code
  *       enforceIntendedDurations} BEFORE {@code delegate.nextTask()} means "current" is still the
- *       task about to be marked PERFORMED - a task whose real completion time already happened.
- *       Retroactively pushing such a task's end time further into the future is not physically
- *       meaningful, and Task 5's belt 1 never attempts it either (it only protects tasks reached
- *       via {@code updateTimingsStartingFromTaskIdx}, i.e. strictly downstream of "current").
- *       Running belt 2 AFTER the transition means "current" is the task that just STARTED (not
- *       yet PERFORMED, so {@code setEndTime} is legal) - exactly the brief's own "any UPCOMING
- *       freight task" framing.
+ *       task about to be marked PERFORMED - a task whose real completion time already happened
+ *       (that is WHY the framework called {@code nextTask} in the first place). Note this is
+ *       NOT a legality problem: the task is still STARTED at that point, and {@code
+ *       AbstractTask.setEndTime} only rejects a task already PERFORMED, so the draft's call would
+ *       not have thrown. The real problem is a schedule/mobsim DESYNC: pushing that task's end
+ *       further into the future leaves the very next task's begin time ahead of the mobsim's
+ *       {@code now} - a task whose window hasn't opened yet from the simulation's point of view.
+ *       Task 5's belt 1 never attempts this either (it only protects tasks reached via {@code
+ *       updateTimingsStartingFromTaskIdx}, i.e. strictly downstream of "current"). Running belt 2
+ *       AFTER the transition means "current" is the task that just STARTED - matching the brief's
+ *       own "any UPCOMING freight task" framing, with no such desync (the schedule and the mobsim
+ *       agree on what "now" is at that point).
  * </ol>
  */
 public class ModularOptimizer implements DrtOptimizer {
@@ -108,11 +115,24 @@ public class ModularOptimizer implements DrtOptimizer {
             return;
         }
         Task current = schedule.getCurrentTask();
+        // Nothing to ripple past the trailing STAY, and by construction (ModularTourScheduler)
+        // the last task is always that plain trailing STAY, never a freight task itself - so
+        // this is a cheap-exit guard, not a correctness short-circuit that could skip repairing
+        // a freight task sitting in the last position.
         if (current == Schedules.getLastTask(schedule)) {
             return;
         }
         int currentIdx = current.getTaskIdx();
-        for (Task t : schedule.getTasks()) {
+        // review Finding 1: schedule.getTasks() is a live (unmodifiable) VIEW over ScheduleImpl's
+        // backing ArrayList. updateTimingsStartingFromTaskIdx (called below, mid-loop) can call
+        // schedule.removeTask(...) whenever a StayTaskEndTimeCalculator returns REMOVE_STAY_TASK -
+        // an ordinary DRT occurrence for a plain, non-last STAY whose old end has been overtaken,
+        // and belt 1 delegates plain (non-Modular) stays straight through to that native
+        // calculator. Removing from the live backing list mid-iteration throws
+        // ConcurrentModificationException on the next Iterator.next() and kills the mobsim. The
+        // drt-extensions DrtServiceTaskOptimizer template this class is patterned on materialises
+        // its own task list first for exactly this reason - do the same here.
+        for (Task t : List.copyOf(schedule.getTasks())) {
             if (t.getTaskIdx() < currentIdx) {
                 continue;
             }

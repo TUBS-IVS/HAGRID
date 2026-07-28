@@ -40,7 +40,6 @@ import com.google.common.collect.ImmutableMap;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -175,6 +174,61 @@ class ModularOptimizerTest {
         assertThat(dispatcher.observedPrevious).isEmpty();
     }
 
+    /**
+     * Review Minor: a schedule reaching its LAST task must still notify - this is what mints a
+     * tour's final {@code COMPLETED} KPI event (fed from the swap-back's own {@code observeTaskTransition}
+     * call). VERIFY-SOURCE (Task 3/7 reports, re-confirmed by the reviewer): {@code
+     * ScheduleImpl.nextTask()}, when the old current was the schedule's last task, sets {@code
+     * currentTask = null} and {@code status = COMPLETED} - it does NOT throw. {@code currentOrNull}
+     * must therefore report {@code null} here (via the status guard, not a crash), and the
+     * {@code previous != null && previous != next} check must still fire since {@code next} is
+     * {@code null} while {@code previous} (the completed last task) is not.
+     */
+    @Test
+    @DisplayName("schedule completing (last task -> COMPLETED) still notifies the dispatcher")
+    void forwardsTaskTransitionOnScheduleCompletion() {
+        DvrpVehicle vehicle = fixtureSingleTaskSchedule(); // one task only: also the LAST task
+        Task onlyTask = vehicle.getSchedule().getTasks().get(0);
+
+        ScheduleTimingUpdater updater = new ScheduleTimingUpdater(timer,
+                (v, t, newBegin) -> newBegin + 100.0, DriveTaskUpdater.NOOP);
+        RecordingDispatcher dispatcher = buildDispatcher(null);
+        RecordingDelegate delegate = new RecordingDelegate(null, updater, true, true); // advances -> COMPLETES
+        ModularOptimizer optimizer = new ModularOptimizer(delegate, dispatcher, updater, timer);
+
+        timer.setTime(500.0);
+        optimizer.nextTask(vehicle);
+
+        assertThat(vehicle.getSchedule().getStatus()).isEqualTo(Schedule.ScheduleStatus.COMPLETED);
+        assertThat(dispatcher.observedPrevious).containsExactly(onlyTask);
+    }
+
+    /**
+     * Review Minor: the reverse boundary - a schedule that was never started (still PLANNED)
+     * before this {@code nextTask} call must NOT notify, since there is no genuine "previous"
+     * task that was ever current. {@code currentOrNull} returns {@code null} before the call
+     * (status PLANNED), so the {@code previous != null} guard must suppress the notify even
+     * though the delegate's own advance (PLANNED -&gt; STARTED) is a perfectly real schedule
+     * transition.
+     */
+    @Test
+    @DisplayName("schedule never started (PLANNED -> STARTED) does NOT notify - no real 'previous'")
+    void doesNotForwardOnFirstStart() {
+        DvrpVehicle vehicle = fixtureNeverStartedSchedule(); // status stays PLANNED until this call
+
+        ScheduleTimingUpdater updater = new ScheduleTimingUpdater(timer,
+                (v, t, newBegin) -> newBegin + 100.0, DriveTaskUpdater.NOOP);
+        RecordingDispatcher dispatcher = buildDispatcher(null);
+        RecordingDelegate delegate = new RecordingDelegate(null, updater, true, true); // advances for real
+        ModularOptimizer optimizer = new ModularOptimizer(delegate, dispatcher, updater, timer);
+
+        timer.setTime(500.0);
+        optimizer.nextTask(vehicle);
+
+        assertThat(vehicle.getSchedule().getStatus()).isEqualTo(Schedule.ScheduleStatus.STARTED);
+        assertThat(dispatcher.observedPrevious).isEmpty();
+    }
+
     // --- fixture helpers ---
 
     private RecordingDispatcher buildDispatcher(List<String> order) {
@@ -227,6 +281,37 @@ class ModularOptimizerTest {
         schedule.addTask(new DrtStayTask(0.0, 1000.0, link));
         schedule.nextTask(); // PLANNED -> STARTED, current = task0
         schedule.addTask(new DrtStayTask(1000.0, 2000.0, link));
+        return vehicle;
+    }
+
+    /** A single-task schedule, STARTED: that one task is simultaneously current AND last. */
+    private DvrpVehicle fixtureSingleTaskSchedule() {
+        ImmutableDvrpVehicleSpecification spec = ImmutableDvrpVehicleSpecification.newBuilder()
+                .id(Id.create("drt_single", DvrpVehicle.class))
+                .startLinkId(link.getId())
+                .capacity(10)
+                .serviceBeginTime(0.0)
+                .serviceEndTime(1000.0)
+                .build();
+        DvrpVehicle vehicle = new DvrpVehicleImpl(spec, link);
+        Schedule schedule = vehicle.getSchedule();
+        schedule.addTask(new DrtStayTask(0.0, 1000.0, link));
+        schedule.nextTask(); // PLANNED -> STARTED, current = the only (and last) task
+        return vehicle;
+    }
+
+    /** A schedule with one task added but {@code nextTask()} deliberately never called - status
+     *  stays PLANNED until the test itself drives the transition via {@code optimizer.nextTask}. */
+    private DvrpVehicle fixtureNeverStartedSchedule() {
+        ImmutableDvrpVehicleSpecification spec = ImmutableDvrpVehicleSpecification.newBuilder()
+                .id(Id.create("drt_unstarted", DvrpVehicle.class))
+                .startLinkId(link.getId())
+                .capacity(10)
+                .serviceBeginTime(0.0)
+                .serviceEndTime(1000.0)
+                .build();
+        DvrpVehicle vehicle = new DvrpVehicleImpl(spec, link);
+        vehicle.getSchedule().addTask(new DrtStayTask(0.0, 1000.0, link));
         return vehicle;
     }
 
@@ -285,7 +370,6 @@ class ModularOptimizerTest {
         private final ScheduleTimingUpdater scheduleTimingUpdater;
         private final boolean callUpdateBeforeNextTask;
         private final boolean advanceSchedule;
-        final List<DvrpVehicle> nextTaskCalls = new ArrayList<>();
 
         RecordingDelegate(List<String> order, ScheduleTimingUpdater scheduleTimingUpdater,
                           boolean callUpdateBeforeNextTask, boolean advanceSchedule) {
@@ -301,7 +385,6 @@ class ModularOptimizerTest {
 
         @Override
         public void nextTask(DvrpVehicle vehicle) {
-            nextTaskCalls.add(vehicle);
             if (callUpdateBeforeNextTask) {
                 scheduleTimingUpdater.updateBeforeNextTask(vehicle);
             }
