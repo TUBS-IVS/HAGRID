@@ -1,7 +1,7 @@
 # Design: 1d Modular (U-Shift capsule swap) — DRT_MODULAR scenario
 
 **Date:** 2026-07-27
-**Status:** approved (user, 2026-07-27) — next step: implementation plan via writing-plans
+**Status:** implemented 2026-07-28 (plan `docs/superpowers/plans/2026-07-27-1d-modular-capsule-swap.md`)
 **Revision 2026-07-28 (grilling pass, user-decided):** §4.3's "before the vehicle shift end" is concretised as a **full delivery day 07:30–21:00 — 1d has NO dispatch waves** (parcels arrive at the depot overnight; same-day delivery counts, time of day does not). The LMD wave windows would have made a 3.5 h tour expire ~46 min after its wave and killed the midday-lull story. Also added: interleaved dispatch order across providers, `tours_completed_late`/`parcels_served_late` KPIs. Details: plan C4 (revised)/C7/C8 in `../plans/2026-07-27-1d-modular-capsule-swap.md`.
 **Parent spec:** `2026-06-17-lausitz-drt-freight-integration-design.md` §4.3 (Modular), §4.4 (autonomy switch)
 **Spike:** `docs/superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md` (source-verified against
@@ -191,3 +191,49 @@ Packstation (Phase 2); retooling-time / depot-count sensitivities (spec §11, af
 
 Single-pool jsprit (free depot choice) + consolidation-vs-integration decomposition as later
 sensitivity ideas under the `[H]` Modular item in `docs/BACKLOG.md`.
+
+## 10. Plan concretisations (accepted during implementation, 2026-07-28)
+
+The implementation plan (`../plans/2026-07-27-1d-modular-capsule-swap.md`) recorded eight
+concretisations against this design during planning/implementation, all accepted:
+
+- **C1** — Hook 3 (`DrtTaskFactory` decorator) dropped; only the schedule splicer ever
+  constructs 1d task instances directly, so the decorator has nothing to do. No behaviour change.
+- **C2** — Hook 4 (`DynActionCreator` decorator) dropped; the native `DrtActionCreator` already
+  renders the freight stop/swap correctly. Cosmetic-only consequence (QSim activity label reads
+  "DrtStay"); the KPI events (Task 3/7) carry the real semantics.
+- **C3** — Divert-from-RELOCATE not implemented; the dispatcher's candidate pool is idle vehicles
+  only, so the splicer's relocate-divert branch is unreachable and asserts its precondition
+  instead of handling it.
+- **C4 (REVISED 2026-07-28, user decision)** — Expiry envelope = the full delivery day
+  07:30–21:00, **no dispatch waves** (parcels arrive at the depot overnight; same-day delivery
+  counts, time of day does not). Replaces the design's implicit LMD-wave reading, which would have
+  expired a 3.5 h tour ~46 min after its wave and killed the midday-lull story.
+- **C5** — Swap capacities are 1-D (`passengers` `DvrpLoadType` only); parcels are never DVRP
+  loads (D7), so the design's `CapacityChange(pax=0, parcels=216)` notation is realised as
+  `CapacityChange(passengers=0)` plus documentation of the never-binding 216 capsule slots (D8).
+- **C6** — `ModularCapacityChangeTask` subclasses `DefaultDrtCapacityChangeTask` (design §3.2 said
+  "use the native task directly"), adding only identity metadata (`tourId`, `swapBack`,
+  `intendedDuration`) needed by the end-time calculator, the commitment predicate and the KPI
+  events; native swap mechanics are inherited unchanged.
+- **C7 (2026-07-28)** — The ~07:16 morning surge (all tours share `plannedStart ≈ 07:30`, so the
+  gate dispatches ~(1−θ)·fleet vehicles in one simstep) is accepted as a concept property, not
+  fixed. Pending order is interleaved across providers (`submissionTime, tourIndex, provider`)
+  instead of alphabetical `tourId`, to avoid a systematic per-provider δ bias when the gate is
+  scarce.
+- **C8 (2026-07-28)** — Late delivery is measured, not prevented: dispatch-time feasibility uses
+  planned times, but mobsim delays can push actual completion past 21:00 while the tour still
+  counts COMPLETED. `tours_completed_late`/`parcels_served_late` make that ex-post violation of
+  the 07:30–21:00 promise visible without changing dispatch behaviour.
+
+**Further accepted concretisation, found during implementation (Task 8) — corrects the design's
+own draft, not just the plan's:**
+
+> The plan's `ModularOptimizer.nextTask` draft called `scheduleTimingUpdater.updateBeforeNextTask`
+> explicitly and ran the intended-duration belt *before* delegating. That is wrong:
+> `DefaultDrtOptimizer.nextTask` already makes that call, and a second consecutive call is not
+> idempotent whenever `drtCfg.isUpdateRoutes()` is true, because `ScheduleTimingUpdater`'s guard
+> has a time-independent `driveTaskUpdater != NOOP` operand. The double update silently undid the
+> belt's repair on every task transition. The implemented order is: capture the previous task,
+> delegate, then enforce intended durations, then notify. The drt-extensions template the plan
+> derived its draft from carries the same latent bug.

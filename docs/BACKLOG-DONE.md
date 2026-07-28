@@ -13,6 +13,21 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-28._
 
 ## 2026-07-28
 
+- **1d Implementierung (U-Shift Kapsel-Tausch): alle 14 Tasks abgeschlossen** — ✅ Commits
+  `48a41eb`..`31b323e` auf `hendrik`, vierzehn Tasks, jede mit eigenem Review-Pass und
+  vollständig behobenen Findings. Volle Regression grün: Java **434/434** (433 ohne
+  `LmdBaselineEndToEndTest`, das wegen seiner Laufzeit isoliert lief: 1/1 in 431,5 s) + Python-KPI-
+  Suite **240/240**; das Modular-Paket (52 Tests, Untermenge der 433) lief zusätzlich ohne `-q` —
+  saubere Ausgabe, keine Warnungen/Stacktraces außer den Tests' eigenen, gezielt ausgelösten
+  Negativpfaden (Conservation-Violation-Logging, Ghost-Tour, Expired-Pending).
+  → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
+  [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) (Status: implementiert).
+  Konzeptparameter/Status: [BACKLOG](BACKLOG.md) `[H]` Modular; drei neue Paper-Limitations dazu:
+  [METHODS-LOG](METHODS-LOG.md) §2.11–§2.13. Voller Regressionsnachweis:
+  `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/task-14-report.md`.
+  Offen bleibt ausschließlich die Run-Arbeit (10-Sitze-Re-Baseline, Idle-Threshold-Sweep,
+  7,0-h-Kontrollarm, Entscheidung prädiktives Gate) → BACKLOG.
+
 - **Sofort-Block: fünf billige Fixes am Stück** — ✅ alle verifiziert, lokal auf `hendrik`.
   1. **Locker-Javadoc korrigiert** — `integrated/shareduse/DeliveryChannelResolver.java:10-20`
      behauptete, der Locker-Zweig aktiviere sich „without code changes here"; benennt jetzt die

@@ -70,14 +70,18 @@ Zahlen, Signal-Rausch-Tabelle, Seed-Schalter und der Nachbau-Gotcha:
 
 ### `[H]` Modular / U-Shift (Szenario 1d)
 
-Kapsel-Tausch, Offline-jsprit + Pax-Priorität. **Status: Spike + Design + Detail-Plan fertig
-(2026-07-27/28), Ausführung offen** — nächster Schritt ist die Umsetzung (subagent-driven, auf
-User-Go). POC läuft auf dem aktuellen PANDA-Stand; die gematchte Baseline braucht es erst für die
-Paper-Runs.
+Kapsel-Tausch, Offline-jsprit + Pax-Priorität. **Status: Implementierung fertig (2026-07-28),
+Ausführung offen.** 14 Tasks auf `hendrik`, jede mit eigenem Review-Pass und behobenen Findings,
+volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleibt ausschließlich die
+**Run-Arbeit**: 10-Sitze-Re-Baseline, Idle-Threshold-Sweep, 7,0-h-Kontrollarm sowie die
+Entscheidung zum prädiktiven Dispatch-Gate (θ_hist, s. Medium-Sektion) — dazu die
+zurückgestellte Sensitivitätsidee unten. POC läuft auf dem aktuellen PANDA-Stand; die gematchte
+Baseline braucht es erst für die Paper-Runs.
 → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
 [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) ·
 [Spike](superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md)
-Konzeptparameter und ihre Begründung: [METHODS-LOG](METHODS-LOG.md) §1.2. _(added 2026-07-14)_
+Konzeptparameter und ihre Begründung: [METHODS-LOG](METHODS-LOG.md) §1.2.
+_(added 2026-07-14, aktualisiert 2026-07-28)_
 
 - **Zurückgestellte Sensitivitätsidee (User 2026-07-27):** jsprit-Tourplanung als **EIN Pool**
   (ein Carrier, Fahrzeuge an allen 7 Depots, freie Depotwahl je Paket = stärkstes
