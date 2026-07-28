@@ -138,9 +138,11 @@ public final class SimulationRunnerUtils {
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
         boolean drtWithFreight = bool(map.getOrDefault("freight", "true"), "freight");
         boolean kpiDashboard = bool(map.getOrDefault("kpiDashboard", "true"), "kpiDashboard");
-        // chi-gate threshold (seconds): max acceptable added vehicle time per parcel insertion.
-        // Only consumed by DRT_SHAREDUSE (SharedUseModule); harmless default for other concepts.
-        double chiThreshold = nonNegDouble(map.getOrDefault("chiThreshold", "600.0"), "chiThreshold");
+        // chi-gate threshold (seconds): max acceptable DETOUR-ONLY added vehicle time per parcel
+        // insertion (the request's own dwell is subtracted by the gate). Negative values are
+        // deliberately ACCEPTED: < 0 = gate hard-closed, rejects ALL parcels (Task-10 leakage
+        // probe). Only consumed by DRT_SHAREDUSE (SharedUseModule); harmless default otherwise.
+        double chiThreshold = anyDouble(map.getOrDefault("chiThreshold", "600.0"), "chiThreshold");
         // Reference-run switch: skip parcel injection for a DRT_SHAREDUSE run (8-seat DRT with the
         // Shared-Use module stack installed but inert). Leakage control for the χ→0 validation
         // (Task 10 / D10 (e)). Harmless default for every other concept (none inject parcels).
@@ -571,6 +573,17 @@ public final class SimulationRunnerUtils {
         try {
             double v = Double.parseDouble(s.trim());
             if (v < 0) throw new IllegalArgumentException(name + " must be >= 0: " + v);
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
+    }
+
+    /** Plain double parse (negatives allowed — e.g. chiThreshold&lt;0 = closed gate); rejects NaN. */
+    private static double anyDouble(String s, String name) {
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (Double.isNaN(v)) throw new IllegalArgumentException(name + " must not be NaN: " + s);
             return v;
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
