@@ -19,26 +19,33 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 /**
  * Covers Task 9: {@link ModularKpiHandler} is the ONE place every freight number this study
  * publishes flows through (freight stops emit no native MATSim events at all - design D7), so a
  * miscount here is a wrong published number with nothing to contradict it. Besides the brief's
- * two named tests, this class adds four discriminating tests the brief's own literal assertions
- * do not cover (see task-9-report.md for the full reasoning):
+ * two named tests, this class adds several discriminating tests the brief's own literal
+ * assertions do not cover (see task-9-report.md for the full reasoning):
  * <ul>
  *   <li>{@link #lateThresholdIsStrictlyGreaterThan} pins {@code >} vs {@code >=} at the exact
  *       {@link Modular#DELIVERY_DAY_END_S} boundary - the brief's own fixture never puts an
  *       event exactly ON the threshold, so a {@code >=} bug would pass it unnoticed.</li>
  *   <li>{@link #lateClassificationIsPerEventNotPerTour} pins that C8 lateness is judged per
  *       EVENT, not smeared across a tour from its own (possibly late) completion.</li>
- *   <li>{@link #nonPlannedPhaseForUnknownTourThrows} pins ambiguity #4's defensive guard.</li>
+ *   <li>{@link #nonPlannedPhaseForUnknownTourIsLoggedNotThrown} pins ambiguity #4's guard as
+ *       downgraded by review Finding 2 (logged, never thrown).</li>
  *   <li>{@link #conservationViolationDoesNotPreventCsvWrite} pins BOTH the "loud but never
  *       fatal" shutdown contract AND that the independently-computed
  *       {@code parcels_dispatched_unserved} (not a plain aggregate subtraction) actually goes
  *       out of balance under a real anomaly a subtraction-only implementation could not detect.</li>
+ *   <li>{@link #freightVehicleHoursExcludesCompletedWithoutDispatched} pins review Finding 1: a
+ *       tour reaching COMPLETED without DISPATCHED must not poison the whole-run sum to NaN.</li>
+ *   <li>{@link #noEventsWritesAllZeroCsv} pins review Minor 1: a legitimately freight-free run
+ *       still gets a complete, well-formed, all-zero CSV.</li>
+ *   <li>{@link #doubleCountedTourDrivesResidualNegative} pins review Minor 2: a tour counted in
+ *       more than one mutually-exclusive bucket drives a {@code _pending_eod} residual negative,
+ *       which none of the five stated identities can see, but which is now logged separately.</li>
  * </ul>
  */
 @DisplayName("ModularKpiHandler")
@@ -198,13 +205,40 @@ class ModularKpiHandlerTest {
     }
 
     @Test
-    @DisplayName("ambiguity #4: a non-PLANNED phase for an unknown tour id throws")
-    void nonPlannedPhaseForUnknownTourThrows(@TempDir Path tmp) throws Exception {
+    @DisplayName("Review Finding 2: a non-PLANNED phase for an unknown tour id is logged, not "
+            + "thrown, and does not corrupt any other tour's counts")
+    void nonPlannedPhaseForUnknownTourIsLoggedNotThrown(@TempDir Path tmp) throws Exception {
         ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
 
-        assertThatThrownBy(() -> handler.handleEvent(ModularTourEvent.stopServed(100, "ghost_tour", vehId, 2)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("ghost_tour");
+        // ghost_tour never had a PLANNED - originally this threw IllegalStateException. Review
+        // Finding 2: that throw contradicted the class's own "loud but non-fatal" contract (Task
+        // 9 does not own the dispatcher's PLANNED-precedes-everything guarantee and cannot itself
+        // keep it true), so it is now a logged, dropped event instead.
+        assertThatCode(() -> handler.handleEvent(ModularTourEvent.stopServed(100, "ghost_tour", vehId, 2)))
+                .as("loud but non-fatal: the shutdown-time conservation check surfaces this, not a mid-run throw")
+                .doesNotThrowAnyException();
+
+        // A second event for the SAME ghost tour must also not throw (logged once per tour id,
+        // not once per event - not directly observable here without a log-capture appender, but
+        // it must at minimum not throw or corrupt any state).
+        assertThatCode(() -> handler.handleEvent(ModularTourEvent.stopServed(150, "ghost_tour", vehId, 1)))
+                .doesNotThrowAnyException();
+
+        // A perfectly ordinary tour fed afterward must be entirely unaffected.
+        handler.handleEvent(ModularTourEvent.planned(100, "t_ok", 3));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.swapDone(300, "t_ok", vehId));
+        handler.handleEvent(ModularTourEvent.stopServed(400, "t_ok", vehId, 3));
+        handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
+        handler.handleEvent(ModularTourEvent.completed(500, "t_ok", vehId));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+
+        // ghost_tour never got a PLANNED, so it must never appear as a counted tour at all - the
+        // dropped events must not manufacture an accumulator entry.
+        assertThat(csv.get("tours_planned")).as("ghost_tour must not be counted - it never had a PLANNED").isEqualTo(1);
+        assertThat(csv.get("parcels_served")).as("ghost_tour's stray served parcels must not leak in").isEqualTo(3);
     }
 
     @Test
@@ -221,10 +255,11 @@ class ModularKpiHandlerTest {
         handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
         handler.handleEvent(ModularTourEvent.completed(500, "t_ok", vehId));
 
-        // t_stray: PLANNED (so it passes ambiguity #4's guard) but NEVER dispatched, yet a
-        // STOP_SERVED arrives anyway - a real accounting anomaly the dispatcher is not supposed
-        // to allow, but which the "no preceding PLANNED" guard alone cannot rule out. This is
-        // exactly the case the conservation check (not the ambiguity-#4 throw) exists to flag.
+        // t_stray: PLANNED (so it passes ambiguity #4's "no preceding PLANNED" check without even
+        // logging) but NEVER dispatched, yet a STOP_SERVED arrives anyway - a real accounting
+        // anomaly the dispatcher is not supposed to allow, but which that check alone cannot rule
+        // out (it only ever sees a completely UNKNOWN tour id). This is exactly the case the
+        // shutdown-time conservation check exists to flag instead.
         handler.handleEvent(ModularTourEvent.planned(100, "t_stray", 4));
         handler.handleEvent(ModularTourEvent.stopServed(600, "t_stray", vehId2, 4));
 
@@ -248,6 +283,79 @@ class ModularKpiHandlerTest {
                 .as("stray STOP_SERVED against a never-dispatched tour breaks the identity - this"
                         + " is exactly what the shutdown-time conservation log flags")
                 .isNotEqualTo(dispatched);
+    }
+
+    @Test
+    @DisplayName("Review Finding 1: freight_vehicle_hours excludes a tour that reached COMPLETED "
+            + "without DISPATCHED, instead of poisoning the whole-run sum with NaN")
+    void freightVehicleHoursExcludesCompletedWithoutDispatched(@TempDir Path tmp) throws Exception {
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+
+        // t_ok: a normal, fully-dispatched-and-completed tour with real vehicle-hours (500 -> 200
+        // = 300s) to withdraw from passenger service.
+        handler.handleEvent(ModularTourEvent.planned(100, "t_ok", 3));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.swapDone(300, "t_ok", vehId));
+        handler.handleEvent(ModularTourEvent.stopServed(400, "t_ok", vehId, 3));
+        handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
+        handler.handleEvent(ModularTourEvent.completed(500, "t_ok", vehId));
+
+        // t_anomaly: PLANNED then COMPLETED directly - no DISPATCHED ever arrives. This is NOT
+        // blocked by the ambiguity-#4 check (PLANNED DID happen), so dispatchedAt stays
+        // Double.NaN. Before the fix, (completedAt - NaN) / 3600 = NaN, and DoubleStream.sum()
+        // propagates that single NaN term to the WHOLE-RUN freight_vehicle_hours, wiping out
+        // t_ok's real 300s contribution too - not just t_anomaly's own (absent) one.
+        handler.handleEvent(ModularTourEvent.planned(100, "t_anomaly", 5));
+        handler.handleEvent(ModularTourEvent.completed(9999, "t_anomaly", vehId2));
+
+        assertThatCode(() -> handler.notifyShutdown(fixtureShutdownEvent())).doesNotThrowAnyException();
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("freight_vehicle_hours"))
+                .as("t_anomaly must be excluded (dispatched=false) - t_ok's real 300s must survive, not become NaN")
+                .isCloseTo(300.0 / 3600.0, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("Minor 1: no events at all still writes a complete, well-formed, all-zero CSV")
+    void noEventsWritesAllZeroCsv(@TempDir Path tmp) throws Exception {
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        Path path = tmp.resolve("TESTRUN.modular_tour_stats.csv");
+        assertThat(Files.exists(path)).as("CSV must be written even for a legitimately freight-free run").isTrue();
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        assertThat(lines.get(0)).isEqualTo("metric;value");
+        assertThat(lines).as("header + all 20 metrics").hasSize(21);
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv).hasSize(20);
+        csv.values().forEach(v -> assertThat(v).isEqualTo(0.0));
+    }
+
+    @Test
+    @DisplayName("Minor 2: a tour counted as BOTH expired and dispatched drives a pending_eod "
+            + "residual negative - the one hole the five identities structurally cannot see")
+    void doubleCountedTourDrivesResidualNegative(@TempDir Path tmp) throws Exception {
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+
+        // t_double: PLANNED, then BOTH expired AND dispatched - an accounting anomaly no single
+        // event-phase check can rule out (nothing enforces mutual exclusivity between the two
+        // flags in this handler; that is the dispatcher's job upstream, Tasks 3-8). This drives
+        // tours_pending_eod / parcels_pending_eod NEGATIVE without violating any of the five
+        // stated identities (1 == 1 + 1 + (-1) still "holds" arithmetically).
+        handler.handleEvent(ModularTourEvent.planned(100, "t_double", 5));
+        handler.handleEvent(ModularTourEvent.expired(200, "t_double", 5));
+        handler.handleEvent(ModularTourEvent.dispatched(300, "t_double", vehId, 5, 10.0, 20.0));
+
+        assertThatCode(() -> handler.notifyShutdown(fixtureShutdownEvent()))
+                .as("loud but non-fatal - a negative residual must still not prevent the CSV write")
+                .doesNotThrowAnyException();
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("tours_pending_eod")).as("1 planned - 1 expired - 1 dispatched = -1").isEqualTo(-1);
+        assertThat(csv.get("parcels_pending_eod")).as("5 planned - 5 expired - 5 dispatched = -5").isEqualTo(-5);
     }
 
     // -------------------------------------------------------------------------
