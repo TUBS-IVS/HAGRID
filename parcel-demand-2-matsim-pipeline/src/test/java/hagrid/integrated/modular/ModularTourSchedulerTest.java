@@ -9,6 +9,7 @@ import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.NetworkFactory;
 import org.matsim.api.core.v01.network.Node;
+import org.matsim.contrib.drt.schedule.DrtDriveTask;
 import org.matsim.contrib.drt.schedule.DrtStayTask;
 import org.matsim.contrib.drt.schedule.DrtTaskFactory;
 import org.matsim.contrib.drt.schedule.DrtTaskFactoryImpl;
@@ -17,9 +18,10 @@ import org.matsim.contrib.dvrp.fleet.DvrpVehicleImpl;
 import org.matsim.contrib.dvrp.fleet.ImmutableDvrpVehicleSpecification;
 import org.matsim.contrib.dvrp.load.DvrpLoadType;
 import org.matsim.contrib.dvrp.load.IntegerLoadType;
+import org.matsim.contrib.dvrp.path.VrpPaths;
+import org.matsim.contrib.dvrp.router.TimeAsTravelDisutility;
 import org.matsim.contrib.dvrp.schedule.Task;
 import org.matsim.core.network.NetworkUtils;
-import org.matsim.core.router.costcalculators.OnlyTimeDependentTravelDisutility;
 import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
 import org.matsim.core.trafficmonitoring.FreeSpeedTravelTime;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("ModularTourScheduler")
 class ModularTourSchedulerTest {
@@ -64,11 +67,7 @@ class ModularTourSchedulerTest {
         loadType = new IntegerLoadType("passengers");
         DrtTaskFactory taskFactory = new DrtTaskFactoryImpl();
         TravelTime travelTime = new FreeSpeedTravelTime();
-        // VERIFY-SOURCE: the brief's fixture sketch names this "TimeAsTravelDisutility", but no
-        // class of that name exists anywhere in matsim/dvrp/drt 2025.0 (checked every jar in the
-        // local repo). The real class with this exact "time-only" semantics and a matching
-        // single-TravelTime-arg constructor is OnlyTimeDependentTravelDisutility - see report.
-        TravelDisutility travelDisutility = new OnlyTimeDependentTravelDisutility(travelTime);
+        TravelDisutility travelDisutility = new TimeAsTravelDisutility(travelTime);
         scheduler = new ModularTourScheduler(network, travelTime, travelDisutility, taskFactory, loadType);
         vehicle = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")));
     }
@@ -84,6 +83,11 @@ class ModularTourSchedulerTest {
 
         assertThat(result).isPresent();
         List<? extends Task> tasks = vehicle.getSchedule().getTasks();
+        // review Minor 11: pin the task COUNT too, so an extra spliced task between the asserted
+        // indices would not silently pass. 10 tasks: [0] truncated stay, [1] approach drive,
+        // [2] swap-out, [3] drive, [4] stop1, [5] drive, [6] stop2, [7] drive, [8] swap-back,
+        // [9] trailing stay.
+        assertThat(tasks).hasSize(10);
         // [0] initial STAY truncated to now (invariant: currently-executing trailing STAY is
         //     truncated, not removed)
         assertThat(tasks.get(0).getEndTime()).isEqualTo(8 * 3600.0);
@@ -96,7 +100,11 @@ class ModularTourSchedulerTest {
         assertThat(tasks.get(3).getTaskType()).isEqualTo(Modular.FREIGHT_DRIVE_TASK_TYPE);
         assertThat(tasks.get(4)).isInstanceOf(ModularFreightStopTask.class);
         assertThat(((ModularFreightStopTask) tasks.get(4)).getParcels()).isEqualTo(2);
+        // review Minor 11: both stops' stopIndex, not just stop1's parcel count.
+        assertThat(((ModularFreightStopTask) tasks.get(4)).getStopIndex()).isEqualTo(0);
         assertThat(tasks.get(6)).isInstanceOf(ModularFreightStopTask.class);
+        assertThat(((ModularFreightStopTask) tasks.get(6)).getParcels()).isEqualTo(3);
+        assertThat(((ModularFreightStopTask) tasks.get(6)).getStopIndex()).isEqualTo(1);
         assertThat(tasks.get(7).getTaskType()).isEqualTo(Modular.FREIGHT_DRIVE_TASK_TYPE);
         ModularCapacityChangeTask swapBack = (ModularCapacityChangeTask) tasks.get(8);
         assertThat(swapBack.isSwapBack()).isTrue();
@@ -184,6 +192,140 @@ class ModularTourSchedulerTest {
         assertThat(excursion.plannedCompletion()).isEqualTo(swapBack.getEndTime());
     }
 
+    @Test
+    @DisplayName("envelope boundary: latestEnd == completion is ACCEPTED, latestEnd == completion - 1 "
+            + "is REJECTED (review finding 3, the > vs >= boundary)")
+    void envelopeBoundary() {
+        // Discover the exact completion time this fixture produces for a fixed tour shape by
+        // scheduling once on a scratch vehicle with a generous envelope, then re-derive the exact
+        // boundary against that MEASURED value rather than a hand-guessed number.
+        DvrpVehicle probe = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_probe");
+        ModularFreightTour probeTour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        double completion = scheduler.schedule(probe, probeTour, 8 * 3600.0).orElseThrow().plannedCompletion();
+
+        DvrpVehicle justUnder = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_under");
+        ModularFreightTour justUnderTour = tour(depotLink, completion - 1.0, stop(stopLink1, 240.0, 2));
+        assertThat(scheduler.schedule(justUnder, justUnderTour, 8 * 3600.0)).isEmpty();
+
+        DvrpVehicle exact = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_exact");
+        ModularFreightTour exactTour = tour(depotLink, completion, stop(stopLink1, 240.0, 2));
+        assertThat(scheduler.schedule(exact, exactTour, 8 * 3600.0)).isPresent();
+    }
+
+    @Test
+    @DisplayName("envelope: vehicle.getServiceEndTime() can be the binding term of Math.min, not only "
+            + "tour.latestEnd() (review finding 3)")
+    void envelopeBindingOnVehicleServiceEndTime() {
+        DvrpVehicle probe = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_probe2");
+        ModularFreightTour probeTour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        double completion = scheduler.schedule(probe, probeTour, 8 * 3600.0).orElseThrow().plannedCompletion();
+
+        // latestEnd is generous; the vehicle's OWN serviceEndTime is the tighter, binding term.
+        DvrpVehicle tight = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_tight",
+                completion - 1.0);
+        ModularFreightTour tourWithGenerousLatestEnd = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        assertThat(scheduler.schedule(tight, tourWithGenerousLatestEnd, 8 * 3600.0)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("precondition: schedule must end with STAY, or IllegalStateException (review finding 4)")
+    void rejectsScheduleNotEndingInStay() {
+        Link startLink = network.getLinks().get(Id.createLinkId("start"));
+        DvrpVehicle badVehicle = new DvrpVehicleImpl(ImmutableDvrpVehicleSpecification.newBuilder()
+                .id(Id.create("drt_bad", DvrpVehicle.class))
+                .startLinkId(startLink.getId())
+                .capacity(10)
+                .serviceBeginTime(0.0)
+                .serviceEndTime(86400.0)
+                .build(), startLink);
+        badVehicle.getSchedule().addTask(new DrtStayTask(0.0, 100.0, startLink));
+        // ends with a plain DriveTask, not a StayTask - a zero-length same-link "drive" is enough
+        // to trigger the check, no router needed.
+        badVehicle.getSchedule().addTask(new DrtDriveTask(
+                VrpPaths.createZeroLengthPath(startLink, 100.0, false), DrtDriveTask.TYPE));
+
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        assertThatThrownBy(() -> scheduler.schedule(badVehicle, tour, 8 * 3600.0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("DRT schedule must end with STAY");
+    }
+
+    @Test
+    @DisplayName("precondition: non-idle (not-STARTED) vehicle throws the intended diagnostic instead "
+            + "of crashing on schedule.getCurrentTask() itself (review finding 4)")
+    void rejectsUnstartedSchedule() {
+        Link startLink = network.getLinks().get(Id.createLinkId("start"));
+        DvrpVehicle notStarted = new DvrpVehicleImpl(ImmutableDvrpVehicleSpecification.newBuilder()
+                .id(Id.create("drt_unstarted", DvrpVehicle.class))
+                .startLinkId(startLink.getId())
+                .capacity(10)
+                .serviceBeginTime(0.0)
+                .serviceEndTime(86400.0)
+                .build(), startLink);
+        notStarted.getSchedule().addTask(new DrtStayTask(0.0, 86400.0, startLink));
+        // deliberately never call nextTask() -> schedule.getStatus() stays PLANNED. Before the
+        // fix, schedule.getCurrentTask() was called unconditionally here and itself threw a bare,
+        // message-less IllegalStateException (ScheduleImpl.failIfNotStarted()) - this is exactly
+        // that branch.
+
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        assertThatThrownBy(() -> scheduler.schedule(notStarted, tour, 8 * 3600.0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Modular dispatch expects an idle vehicle")
+                .hasMessageContaining("status=PLANNED");
+    }
+
+    @Test
+    @DisplayName("unresolved depot link throws explicitly, naming the link and the tour "
+            + "(review finding 5: a Task 10 wiring bug, not Optional.empty())")
+    void rejectsUnresolvableDepotLink() {
+        ModularFreightTour tour = tour(Id.createLinkId("no_such_depot"), 21 * 3600.0,
+                stop(stopLink1, 240.0, 2));
+        assertThatThrownBy(() -> scheduler.schedule(vehicle, tour, 8 * 3600.0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no_such_depot")
+                .hasMessageContaining("dhl_t0");
+    }
+
+    @Test
+    @DisplayName("unresolved stop link throws explicitly, naming the link and the tour "
+            + "(review finding 5)")
+    void rejectsUnresolvableStopLink() {
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0,
+                stop(Id.createLinkId("no_such_stop"), 240.0, 2));
+        assertThatThrownBy(() -> scheduler.schedule(vehicle, tour, 8 * 3600.0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no_such_stop")
+                .hasMessageContaining("dhl_t0");
+    }
+
+    @Test
+    @DisplayName("sameLink: id equality, not reference equality (review Minor 9, the seam for finding 1)")
+    void sameLinkIsIdBasedNotReferenceBased() {
+        // Two DIFFERENT Link objects, from two SEPARATE Network instances, sharing the same id -
+        // exactly the "from and depot being different Link objects with the same id" scenario
+        // review finding 1 is about. A live Schedule can't force this apart (ScheduleImpl.addTask
+        // itself enforces REFERENCE equality on link continuity, so feeding it a foreign-but-
+        // same-id link throws for an unrelated reason before this decision ever gets exercised
+        // twice) - this is the one granularity where `==` and id-equality CAN be forced to
+        // disagree and observed directly.
+        Network otherNetwork = NetworkUtils.createNetwork();
+        NetworkFactory f = otherNetwork.getFactory();
+        Node x = f.createNode(Id.createNodeId("x"), new Coord(0, 0));
+        Node y = f.createNode(Id.createNodeId("y"), new Coord(100, 0));
+        otherNetwork.addNode(x);
+        otherNetwork.addNode(y);
+        Link foreignDepot = f.createLink(depotLink, x, y); // SAME id ("depot") as the main network's
+        otherNetwork.addLink(foreignDepot);
+
+        Link realDepot = network.getLinks().get(depotLink);
+        assertThat(foreignDepot).isNotSameAs(realDepot);   // a `!=` check would say "different"
+        assertThat(ModularTourScheduler.sameLink(foreignDepot, realDepot)).isTrue(); // id-based: same
+
+        Link stop1 = network.getLinks().get(stopLink1);
+        assertThat(ModularTourScheduler.sameLink(realDepot, stop1)).isFalse(); // genuinely different ids
+    }
+
     // --- fixture helpers ---
 
     private ModularFreightTour tour(Id<Link> depotLink, double latestEnd, ModularFreightTour.Stop... stops) {
@@ -237,15 +379,21 @@ class ModularTourSchedulerTest {
     }
 
     private DvrpVehicle fixtureVehicle(Link link, String id) {
+        return fixtureVehicle(link, id, 86400.0);
+    }
+
+    /** As above, with an explicit {@code serviceEndTime} (review finding 3: lets a test make the
+     *  vehicle's OWN service end time - not tour.latestEnd() - the binding term of the envelope). */
+    private DvrpVehicle fixtureVehicle(Link link, String id, double serviceEndTime) {
         ImmutableDvrpVehicleSpecification spec = ImmutableDvrpVehicleSpecification.newBuilder()
                 .id(Id.create(id, DvrpVehicle.class))
                 .startLinkId(link.getId())
                 .capacity(10)
                 .serviceBeginTime(0.0)
-                .serviceEndTime(86400.0)
+                .serviceEndTime(serviceEndTime)
                 .build();
         DvrpVehicle vehicle = new DvrpVehicleImpl(spec, link);
-        vehicle.getSchedule().addTask(new DrtStayTask(0.0, 86400.0, link));
+        vehicle.getSchedule().addTask(new DrtStayTask(0.0, serviceEndTime, link));
         vehicle.getSchedule().nextTask(); // PLANNED -> STARTED, current = the initial STAY
         return vehicle;
     }
