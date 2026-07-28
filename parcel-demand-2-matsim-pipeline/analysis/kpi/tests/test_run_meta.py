@@ -59,3 +59,40 @@ def test_json_takes_precedence(tmp_path):
     m = load_run_meta(d)
     assert m.operation_mode == "autonomous"     # only the JSON knows this
     assert m.fleet_size == 120
+    # I2/M5 tolerance: metadata written BEFORE the chi/noParcels fields existed
+    # must load fine, with the sweep coordinates simply unknown.
+    assert m.chi_threshold is None
+    assert m.no_parcels is None
+
+
+def test_json_carries_shareduse_sweep_coordinates(tmp_path):
+    """I2/M5: chi_threshold/no_parcels are not encoded in the runId, so
+    run_metadata.json is the only machine-readable binding -- RunMeta must
+    expose both when the (new) writer emitted them."""
+    d = tmp_path / "DRT_SHAREDUSE_13052025_chi300_iter50_jsprit100"
+    d.mkdir()
+    (d / "run_metadata.json").write_text(json.dumps({
+        "run_id": "DRT_SHAREDUSE_13052025_chi300",
+        "run_dir_name": d.name,
+        "scenario": "DRT_SHAREDUSE",
+        "study_area": "lausitz_hoyerswerda",
+        "operation_mode": "conventional",
+        "tag": "chi300",
+        "sim_date": "13052025",
+        "matsim_iterations": 50,
+        "jsprit_iterations": 100,
+        "fleet_size": 20,
+        "drt_with_freight": False,
+        "chi_threshold": 300.0,
+        "no_parcels": False,
+        "created": "2026-07-28T12:00:00",
+    }), encoding="utf-8")
+    m = load_run_meta(d)
+    assert m.chi_threshold == 300.0
+    assert m.no_parcels is False
+
+
+def test_legacy_dir_name_leaves_sweep_coordinates_unknown():
+    m = parse_legacy_dir_name("DRT_SHAREDUSE_13052025_chi300_iter50_jsprit100")
+    assert m.chi_threshold is None
+    assert m.no_parcels is None

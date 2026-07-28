@@ -115,6 +115,14 @@ public class HAGRIDSimulationConfig {
      * closed (rejects all parcels; leakage-control probe). Only meaningful for
      * {@code DRT_SHAREDUSE}, where it is passed to {@code SharedUseModule}'s
      * {@code ChiGateInsertionCostCalculator}; harmless for every other concept.
+     *
+     * <p><b>Output-collision warning (I2/M5):</b> this value is NOT part of the runId
+     * ({@code CONCEPT_date[_tag]}), and MATSim deletes an existing output directory at startup —
+     * so the {@code tag} MUST encode the sweep point (e.g. {@code tag=chi600}) or two χ sweep
+     * runs will silently overwrite each other. {@code SimulationRunnerUtils.parseScenario}
+     * rejects a {@code DRT_SHAREDUSE} spec with a blank tag for exactly this reason, and
+     * {@code RunMetadataWriter} persists the value as {@code chi_threshold} in
+     * {@code run_metadata.json} so finished runs stay attributable.</p>
      */
     private final double chiThreshold;
 

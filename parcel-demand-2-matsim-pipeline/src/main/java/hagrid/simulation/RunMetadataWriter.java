@@ -35,6 +35,11 @@ public final class RunMetadataWriter {
         m.put("jsprit_iterations", cfg.getJspritIterations());
         m.put("fleet_size", cfg.isDrtScenario() ? cfg.getFleetSize() : null);
         m.put("drt_with_freight", cfg.isDrtWithFreight());
+        // I2/M5: chiThreshold/noParcels define the DRT_SHAREDUSE sweep point but are NOT part
+        // of the runId — persisting them here is the only machine-readable binding between a
+        // finished run directory and its sweep coordinates (harmless defaults otherwise).
+        m.put("chi_threshold", cfg.getChiThreshold());
+        m.put("no_parcels", cfg.isNoParcels());
         m.put("created", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return writeMap(m, targetDir);
     }
