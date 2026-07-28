@@ -340,7 +340,9 @@ Aufrufer braucht, nicht bloß eine Standortdatei. Der Befund selbst trägt unver
 Sowohl der Splicer-/Return-to-Depot-Koexistenzbeweis (`ModularEndToEndTest`) als auch der
 θ=1,0-Kontrollarm (`ModularControlArmTest`, zweites Testpaar) laufen mit einer
 **fixture-getunten** Rebalancing-Konfiguration — 300-m-Zonenzellen und Rückkehr-Start 10:00 —,
-nicht der Produktionskonfiguration (2000 m Zellgröße, Rückkehr-Start 23:30). Grund: das kleine
+nicht der Produktionskonfiguration (2000 m Zellgröße, Rückkehr-Start **22:30**,
+`serviceEnd − returnWindow = 86400 − 5400 = 81000 s`, `SimulationRunnerUtils.java:340-347`).
+Grund: das kleine
 Test-Gitter deckt nur ~900 × 900 m ab; bei 2000 m Zellgröße ist das eine einzige Zone, und der
 Min-Cost-Flow-Rebalancer kann dann grundsätzlich nichts mehr verlagern — die Koexistenz-Assertion
 wäre vakuos. **Konsequenz für die Zahleninterpretation:** Koexistenz von Splicer und
@@ -349,7 +351,7 @@ Rebalancing-Konfiguration gezeigt, nicht für die Produktionskonfiguration.
 
 ### 2.12 1d Modular: km-Konvention weicht von der üblichen Fracht-Konvention ab
 
-`trägt` · 2026-07-28
+`trägt` · 2026-07-28 · **Paper-Caveat.**
 `deadhead_km_planned` zählt **nur** die An- und die Rückfahrt zum/vom Depot; **jede**
 Zwischen-Stopp-Etappe, **einschließlich Depot→erster Stopp**, zählt als `service_km_planned`. Das
 weicht von der üblichen Fracht-Konvention ab, in der Depot→erster-Stopp oft als Deadhead gilt.
@@ -358,7 +360,7 @@ rekonstruierten gefahrenen Kilometer.
 
 ### 2.13 1d Modular: `freight_vehicle_hours` schließt unvollständige Exkursionen aus
 
-`trägt` · 2026-07-28
+`trägt` · 2026-07-28 · **Paper-Caveat.**
 Eine Exkursion, die nie abgeschlossen wurde, hat keinen Abschluss-Zeitstempel und geht daher nicht
 in die Kennzahl ein. Das verzerrt die Kennzahl systematisch nach unten — genau dann, wenn die
 Flotte am stärksten gesättigt ist, d. h. in genau den Armen, in denen Fracht den Passagierbetrieb

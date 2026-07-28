@@ -226,14 +226,12 @@ concretisations against this design during planning/implementation, all accepted
   counts COMPLETED. `tours_completed_late`/`parcels_served_late` make that ex-post violation of
   the 07:30–21:00 promise visible without changing dispatch behaviour.
 
-**Further accepted concretisation, found during implementation (Task 8) — corrects the design's
-own draft, not just the plan's:**
-
-> The plan's `ModularOptimizer.nextTask` draft called `scheduleTimingUpdater.updateBeforeNextTask`
-> explicitly and ran the intended-duration belt *before* delegating. That is wrong:
-> `DefaultDrtOptimizer.nextTask` already makes that call, and a second consecutive call is not
-> idempotent whenever `drtCfg.isUpdateRoutes()` is true, because `ScheduleTimingUpdater`'s guard
-> has a time-independent `driveTaskUpdater != NOOP` operand. The double update silently undid the
-> belt's repair on every task transition. The implemented order is: capture the previous task,
-> delegate, then enforce intended durations, then notify. The drt-extensions template the plan
-> derived its draft from carries the same latent bug.
+- **C9 (found during implementation, Task 8) — corrects the design's own draft, not just the
+  plan's.** The plan's `ModularOptimizer.nextTask` draft called
+  `scheduleTimingUpdater.updateBeforeNextTask` explicitly and ran the intended-duration belt
+  *before* delegating. That is wrong: `DefaultDrtOptimizer.nextTask` already makes that call, and a
+  second consecutive call is not idempotent whenever `drtCfg.isUpdateRoutes()` is true, because
+  `ScheduleTimingUpdater`'s guard has a time-independent `driveTaskUpdater != NOOP` operand. The
+  double update silently undid the belt's repair on every task transition. The implemented order
+  is: capture the previous task, delegate, then enforce intended durations, then notify. The
+  drt-extensions template the plan derived its draft from carries the same latent bug.
