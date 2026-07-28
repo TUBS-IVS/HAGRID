@@ -31,6 +31,12 @@ import java.util.Random;
  * as the {@code missedParcelDeliveriesAsString} carrier attribute that {@code DashboardGenerator} reads
  * for the "Delivery Rate" KPI. This is purely a statistical overlay — it does NOT change routing or the
  * services that get driven (the vehicle still attempts every stop), exactly as in the legacy model.
+ *
+ * <p>{@link #build} is the LMD_BASELINE (and Hannover-parity) entry point: dispatch-wave vehicles with
+ * jittered departures. {@link #buildSingleWindow} is the 1d DRT_MODULAR entry point: the capsule
+ * "vehicles" are virtual placeholders for the DRT fleet, so it builds ONE un-jittered vehicle per van
+ * type with an explicit operating window instead. Both share the same carrier-skeleton/service/overlay
+ * core, so the missed-delivery overlay behaves identically either way.
  */
 public final class LmdCarrierBuilder {
 
@@ -78,52 +84,8 @@ public final class LmdCarrierBuilder {
                                 Network network, VehicleType[] vanTypes,
                                 int durationPerParcelMin, int maxDurationPerStopMin,
                                 List<Integer> dispatchHours, Random random) {
-        Carrier carrier = CarriersUtils.createCarrier(Id.create(provider, Carrier.class));
-        CarriersUtils.setCarrierMode(carrier, "car");
-        carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
-
-        // Legacy-parity attribute read back by the analysis layer (provider colouring + per-LSP tables).
-        carrier.getAttributes().putAttribute("provider", provider);
-
-        // Per-provider base rate + a daily bias sampled once per carrier (mirrors CarrierGenerator).
-        double baseRate = DELIVERY_RATES.getOrDefault(provider, DEFAULT_DELIVERY_RATE);
-        double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
-        double dailyBias = random.nextGaussian() * sigmaPercent;
-
-        List<Id<CarrierService>> missedParcels = new ArrayList<>();
-        int totalParcels = 0;
-        int n = 0;
-        for (Delivery d : deliveries) {
-            Link link = NetworkUtils.getNearestLinkExactly(network, d.getCoordinate());
-            double duration = Math.min(
-                    (durationPerParcelMin * 60.0) * d.getAmount(),
-                    maxDurationPerStopMin * 60.0);
-            Id<CarrierService> serviceId = Id.create(provider + "_" + n++, CarrierService.class);
-            CarrierService service = CarrierService.Builder
-                    .newInstance(serviceId, link.getId())
-                    .setCapacityDemand(d.getAmount())
-                    .setServiceDuration(duration)
-                    .setServiceStartTimeWindow(TimeWindow.newInstance(DAY_START, DAY_END))
-                    .build();
-            CarriersUtils.addService(carrier, service);
-            totalParcels += d.getAmount();
-
-            // Cosmetic missed-delivery overlay: draw each parcel against the effective rate.
-            double effectiveRate = d.getParcelType() == Delivery.ParcelType.B2B
-                    ? B2B_DELIVERY_RATE
-                    : Math.max(0.0, Math.min(MAX_EFFECTIVE_RATE, baseRate + dailyBias));
-            for (int p = 0; p < d.getAmount(); p++) {
-                if (random.nextDouble() * 100.0 > effectiveRate) {
-                    missedParcels.add(serviceId);
-                }
-            }
-        }
-
-        // Attributes consumed by CarrierXmlParser/DashboardGenerator (Delivery Rate = (parcels-missed)/parcels).
-        carrier.getAttributes().putAttribute("numberOfParcels", totalParcels);
-        carrier.getAttributes().putAttribute("missedParcels", missedParcels.size());
-        carrier.getAttributes().putAttribute("missedParcelsAsList", new ArrayList<>(missedParcels));
-        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedParcels.toString());
+        Carrier carrier = buildCore(provider, deliveries, network, durationPerParcelMin,
+                maxDurationPerStopMin, random, TimeWindow.newInstance(DAY_START, DAY_END));
 
         List<Integer> hours = (dispatchHours == null || dispatchHours.isEmpty())
                 ? DEFAULT_DISPATCH_HOURS : dispatchHours;
@@ -152,6 +114,94 @@ public final class LmdCarrierBuilder {
                 }
             }
         }
+
+        return carrier;
+    }
+
+    /**
+     * 1d single-window variant (plan C4 revised, user 2026-07-28): the capsule "vehicles" are
+     * virtual (the DRT fleet executes the tours), so NO dispatch waves, NO departure jitter -
+     * ONE vehicle per van type with an explicit operating window, services with the aligned
+     * start time window (07:30-21:00 for 1d instead of the baseline's 08:00-20:00).
+     */
+    public static Carrier buildSingleWindow(String provider, List<Delivery> deliveries,
+            Id<Link> depotLink, Network network, VehicleType[] vanTypes, int durationPerParcelMin,
+            int maxDurationPerStopMin, Random random, double vehicleEarliestStart,
+            double vehicleLatestEnd, double serviceTwStart, double serviceTwEnd) {
+        Carrier carrier = buildCore(provider, deliveries, network, durationPerParcelMin,
+                maxDurationPerStopMin, random, TimeWindow.newInstance(serviceTwStart, serviceTwEnd));
+        for (VehicleType vanType : vanTypes) {
+            CarrierVehicle vehicle = CarrierVehicle.Builder
+                    .newInstance(Id.createVehicleId(provider + "_" + vanType.getId() + "_day_v0"),
+                            depotLink, vanType)
+                    .setEarliestStart(vehicleEarliestStart)
+                    .setLatestEnd(vehicleLatestEnd)
+                    .build();
+            CarriersUtils.addCarrierVehicle(carrier, vehicle);
+        }
+        return carrier;
+    }
+
+    /**
+     * Shared carrier-skeleton + service-building + missed-delivery-overlay body of {@link #build}
+     * and {@link #buildSingleWindow}: creates the carrier ({@code FleetSize.INFINITE}), one
+     * {@link CarrierService} per {@link Delivery} using the given {@code serviceTimeWindow}, and
+     * draws the missed-delivery overlay attributes. Callers add their own vehicles afterwards.
+     *
+     * <p><strong>RNG draw order is part of this method's contract</strong> (byte-identity of the
+     * legacy {@code build} output depends on it): the per-carrier daily bias is drawn first, then
+     * exactly one per-parcel miss draw per delivery, in delivery order — unchanged from the
+     * pre-extraction code.
+     */
+    private static Carrier buildCore(String provider, List<Delivery> deliveries, Network network,
+            int durationPerParcelMin, int maxDurationPerStopMin, Random random,
+            TimeWindow serviceTimeWindow) {
+        Carrier carrier = CarriersUtils.createCarrier(Id.create(provider, Carrier.class));
+        CarriersUtils.setCarrierMode(carrier, "car");
+        carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
+
+        // Legacy-parity attribute read back by the analysis layer (provider colouring + per-LSP tables).
+        carrier.getAttributes().putAttribute("provider", provider);
+
+        // Per-provider base rate + a daily bias sampled once per carrier (mirrors CarrierGenerator).
+        double baseRate = DELIVERY_RATES.getOrDefault(provider, DEFAULT_DELIVERY_RATE);
+        double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
+        double dailyBias = random.nextGaussian() * sigmaPercent;
+
+        List<Id<CarrierService>> missedParcels = new ArrayList<>();
+        int totalParcels = 0;
+        int n = 0;
+        for (Delivery d : deliveries) {
+            Link link = NetworkUtils.getNearestLinkExactly(network, d.getCoordinate());
+            double duration = Math.min(
+                    (durationPerParcelMin * 60.0) * d.getAmount(),
+                    maxDurationPerStopMin * 60.0);
+            Id<CarrierService> serviceId = Id.create(provider + "_" + n++, CarrierService.class);
+            CarrierService service = CarrierService.Builder
+                    .newInstance(serviceId, link.getId())
+                    .setCapacityDemand(d.getAmount())
+                    .setServiceDuration(duration)
+                    .setServiceStartTimeWindow(serviceTimeWindow)
+                    .build();
+            CarriersUtils.addService(carrier, service);
+            totalParcels += d.getAmount();
+
+            // Cosmetic missed-delivery overlay: draw each parcel against the effective rate.
+            double effectiveRate = d.getParcelType() == Delivery.ParcelType.B2B
+                    ? B2B_DELIVERY_RATE
+                    : Math.max(0.0, Math.min(MAX_EFFECTIVE_RATE, baseRate + dailyBias));
+            for (int p = 0; p < d.getAmount(); p++) {
+                if (random.nextDouble() * 100.0 > effectiveRate) {
+                    missedParcels.add(serviceId);
+                }
+            }
+        }
+
+        // Attributes consumed by CarrierXmlParser/DashboardGenerator (Delivery Rate = (parcels-missed)/parcels).
+        carrier.getAttributes().putAttribute("numberOfParcels", totalParcels);
+        carrier.getAttributes().putAttribute("missedParcels", missedParcels.size());
+        carrier.getAttributes().putAttribute("missedParcelsAsList", new ArrayList<>(missedParcels));
+        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedParcels.toString());
 
         return carrier;
     }

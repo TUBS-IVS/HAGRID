@@ -207,6 +207,17 @@ public final class LausitzFreightPreprocessor {
      */
     static void routeWithDurationCap(Carriers carriers, Network network,
                                      CarrierVehicleTypes vehicleTypes, int jspritIterations) {
+        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations,
+                HAGRIDRouterUtils.MAXROUTEDURATION);
+    }
+
+    /**
+     * Same as {@link #routeWithDurationCap(Carriers, Network, CarrierVehicleTypes, int)} but with an
+     * explicit route-duration cap (seconds), e.g. the 1d DRT_MODULAR path's shorter 12600s (3.5h)
+     * capsule-swap tour cap instead of the 25200s (7h) driver-shift default.
+     */
+    static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
+                                     int jspritIterations, int maxRouteDurationSeconds) {
         NetworkBasedTransportCosts netBasedCosts = NetworkBasedTransportCosts.Builder
                 .newInstance(network, vehicleTypes.getVehicleTypes().values())
                 .setTimeSliceWidth(1800)
@@ -215,7 +226,8 @@ public final class LausitzFreightPreprocessor {
         for (Carrier carrier : carriers.getCarriers().values()) {
             int serviceCount = carrier.getServices().size();
             VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(vrp, serviceCount, iters);
+            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
+                    vrp, serviceCount, iters, null, 0.0, maxRouteDurationSeconds);
             VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
             recordUnassignedJobs(carrier, solution);
             CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
