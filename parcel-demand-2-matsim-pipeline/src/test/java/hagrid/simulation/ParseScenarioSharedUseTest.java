@@ -1,8 +1,11 @@
 package hagrid.simulation;
 
+import hagrid.HagridConfig.Scenario;
+import hagrid.integrated.modular.Modular;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,8 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * are not part of the runId and MATSim deletes an existing output directory — two sweep points
  * differing only in chi would silently destroy each other's outputs (see
  * {@link #blankTagIsRejectedForSharedUse()}).
+ *
+ * <p>Task 11 (1d) broadened this class beyond its original DRT_SHAREDUSE-only scope: it also
+ * covers {@code idleThreshold}/{@code maxTourDuration} (DRT_MODULAR's 1d keys, parsed/constructed
+ * with the exact same pattern as {@code chiThreshold} above) and the
+ * {@link SimulationRunnerUtils#runsCarrierModules(Scenario, boolean)} static guard those keys'
+ * runner branch depends on — extended here rather than in a new file because chiThreshold is
+ * the closest analogous key already covered by a dedicated parse-test class.</p>
  */
-@DisplayName("parseScenario: chiThreshold + noParcels options (DRT_SHAREDUSE)")
+@DisplayName("parseScenario: chiThreshold/noParcels (1c) + idleThreshold/maxTourDuration (1d) + carrier-module guard")
 class ParseScenarioSharedUseTest {
 
     @Test
@@ -79,5 +89,36 @@ class ParseScenarioSharedUseTest {
         HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
                 "concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA");
         assertEquals("", cfg.getTag(), "non-shareduse concepts keep the optional-tag behaviour");
+    }
+
+    // ---- Task 11 (1d): idleThreshold / maxTourDuration (DRT_MODULAR) ------------------------
+
+    @Test
+    @DisplayName("parseScenario: modular keys parse with 1c-pattern defaults and validation")
+    void parsesModularKeys() {
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,date=2025-06-10,maxIter=1,jspritIter=1,fleetSize=120,"
+                + "idleThreshold=0.7,maxTourDuration=25200");
+        assertThat(cfg.getIdleThreshold()).isEqualTo(0.7);
+        assertThat(cfg.getMaxTourDurationSeconds()).isEqualTo(25200);
+
+        HAGRIDSimulationConfig defaults = SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,date=2025-06-10,maxIter=1,jspritIter=1");
+        assertThat(defaults.getIdleThreshold()).isEqualTo(Modular.DEFAULT_IDLE_THRESHOLD);
+        assertThat(defaults.getMaxTourDurationSeconds()).isEqualTo(Modular.DEFAULT_MAX_TOUR_DURATION_S);
+
+        assertThatThrownBy(() -> SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,date=2025-06-10,maxIter=1,jspritIter=1,idleThreshold=1.5"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("carrier-module guard: married yes, shareduse no, MODULAR NO (double-delivery), lmd n/a")
+    void carrierModuleGuard() {
+        assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_BASELINE, true)).isTrue();
+        assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_BASELINE, false)).isFalse();
+        assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_SHAREDUSE, true)).isFalse();
+        assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_MODULAR, true)).isFalse();
+        assertThat(SimulationRunnerUtils.runsCarrierModules(Scenario.DRT_MODULAR, false)).isFalse();
     }
 }
