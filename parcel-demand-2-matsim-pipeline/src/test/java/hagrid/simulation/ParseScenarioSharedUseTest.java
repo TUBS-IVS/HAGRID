@@ -27,6 +27,16 @@ class ParseScenarioSharedUseTest {
     }
 
     @Test
+    @DisplayName("chiThreshold=-1 (hard-closed gate) is accepted")
+    void chiThresholdNegativeParses() {
+        // < 0 = gate hard-closed (rejects ALL parcels; Task-10 leakage probe) — the parser
+        // must not reject negative values (was nonNegDouble before rev. 2026-07-27).
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenarios(new String[]{
+                "concept=drt_shareduse,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,chiThreshold=-1"}).get(0);
+        assertEquals(-1.0, cfg.getChiThreshold(), 1e-9);
+    }
+
+    @Test
     @DisplayName("noParcels defaults to false when omitted")
     void noParcelsDefaultsFalse() {
         HAGRIDSimulationConfig def = SimulationRunnerUtils.parseScenarios(new String[]{
