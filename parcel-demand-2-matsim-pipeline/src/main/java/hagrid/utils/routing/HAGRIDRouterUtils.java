@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Random;
 
 import org.apache.logging.log4j.LogManager;
 import org.matsim.api.core.v01.Id;
@@ -57,6 +58,24 @@ public class HAGRIDRouterUtils {
      * (Hannover parity) — do not change casually: it alters legacy Hannover routing results.
      */
     public static final int MAXROUTEDURATION = 25200;
+
+    /**
+     * System property that overrides jsprit's search seed, e.g. {@code -Dhagrid.jsprit.seed=1234}.
+     *
+     * <p>Why this exists: jsprit's ruin-and-recreate search is stochastic, and its default RNG is
+     * seeded with a fixed 4711 ({@code RandomNumberGeneration.DEFAULT_SEED}). A run is therefore
+     * reproducible, but its solution is a single draw — two runs that differ in some input also
+     * differ by an unknown amount of pure search noise. Re-running with a different seed and an
+     * otherwise identical input measures that noise floor, which is what tells you whether a KPI
+     * difference between two scenarios is a real effect. The 2026-07-28 demand-band measurement
+     * needed exactly this: vehicle-km moved non-monotonically across the three demand levels,
+     * which is physically impossible and hence must be search noise.
+     *
+     * <p>Left unset, jsprit keeps its own default seed, so production runs are bit-identical to
+     * before this property existed. Note the seed is applied per carrier (each carrier builds its
+     * own algorithm), matching how the default already behaves.
+     */
+    public static final String JSPRIT_SEED_PROPERTY = "hagrid.jsprit.seed";
 
     /**
      * Configures the routing algorithm (no U-turn penalty).
@@ -140,7 +159,7 @@ public class HAGRIDRouterUtils {
         int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
     // int jspritThreads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-    VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
+    Jsprit.Builder builder = Jsprit.Builder.newInstance(vrp)
                 .setStateAndConstraintManager(stateManager, constraintManager)
                 // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
                 .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
@@ -148,8 +167,14 @@ public class HAGRIDRouterUtils {
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.BEST_INSERTION.toString())
-                .setProperty(Jsprit.Parameter.FAST_REGRET, "false")
-                .buildAlgorithm();
+                .setProperty(Jsprit.Parameter.FAST_REGRET, "false");
+
+        // Must be set on the builder, not via RandomNumberGeneration.setSeed(): Jsprit.Builder
+        // takes its RNG from RandomNumberGeneration.newInstance(), which always uses the fixed
+        // DEFAULT_SEED and therefore ignores setSeed() entirely.
+        applySeedOverride(builder);
+
+        VehicleRoutingAlgorithm algorithm = builder.buildAlgorithm();
 
         int iterations = Math.max(1, jspritIterations);
         int termination = calculateNoImprovementThreshold(iterations);
@@ -161,6 +186,28 @@ public class HAGRIDRouterUtils {
   
 
         return algorithm;
+    }
+
+    /**
+     * Applies {@link #JSPRIT_SEED_PROPERTY} to the builder, if set. No-op otherwise, so the
+     * default stays jsprit's own fixed seed. A malformed value fails loudly rather than
+     * silently falling back: a seed sweep whose seed was ignored would produce identical runs
+     * and read as "no search noise", the exact opposite of the truth.
+     */
+    static void applySeedOverride(Jsprit.Builder builder) {
+        String raw = System.getProperty(JSPRIT_SEED_PROPERTY);
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        long seed;
+        try {
+            seed = Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    JSPRIT_SEED_PROPERTY + " must be a long, was: '" + raw + "'", e);
+        }
+        builder.setRandom(new Random(seed));
+        LOGGER.info("jsprit search seed overridden via -D{}={}", JSPRIT_SEED_PROPERTY, seed);
     }
 
     /**
