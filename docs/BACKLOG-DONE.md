@@ -15,11 +15,14 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-28._
 
 - **1d Implementierung (U-Shift Kapsel-Tausch): alle 14 Tasks abgeschlossen** — ✅ Commits
   `48a41eb`..`31b323e` auf `hendrik`, vierzehn Tasks, jede mit eigenem Review-Pass und
-  vollständig behobenen Findings. Volle Regression grün: Java **434/434** (433 ohne
-  `LmdBaselineEndToEndTest`, das wegen seiner Laufzeit isoliert lief: 1/1 in 431,5 s) + Python-KPI-
-  Suite **240/240**; das Modular-Paket (52 Tests, Untermenge der 433) lief zusätzlich ohne `-q` —
-  saubere Ausgabe, keine Warnungen/Stacktraces außer den Tests' eigenen, gezielt ausgelösten
-  Negativpfaden (Conservation-Violation-Logging, Ghost-Tour, Expired-Pending).
+  vollständig behobenen Findings. Volle Regression grün: Java **433/433** (Chunk 1, alles außer
+  `LmdBaselineEndToEndTest`: **432/432**; Chunk 2, `LmdBaselineEndToEndTest` isoliert wegen seiner
+  Laufzeit: **1/1** — jeweils gegen eine geleerte `target/surefire-reports/`, damit die beiden
+  Zählungen sich nicht überschneiden können; Summe 433 deckt sich mit der statischen `@Test`-Zahl
+  über den ganzen `src/test/java`-Baum) + Python-KPI-Suite **240/240**; das Modular-Paket (52
+  Tests, Untermenge von Chunk 1) lief zusätzlich ohne `-q` — saubere Ausgabe, keine
+  Warnungen/Stacktraces außer den Tests' eigenen, gezielt ausgelösten Negativpfaden
+  (Conservation-Violation-Logging, Ghost-Tour, Expired-Pending).
   → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
   [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) (Status: implementiert).
   Konzeptparameter/Status: [BACKLOG](BACKLOG.md) `[H]` Modular; drei neue Paper-Limitations dazu:
