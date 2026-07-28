@@ -16,8 +16,9 @@ runs without event reconstruction (no_events) or without Plan-D-only
 series (drt_tour_distance/occ_km) simply render fewer tiles/charts."""
 import json
 
-from render import (_kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js,
-                     MODE_SLOTS, _donut)
+import pax_only
+from render import (_kpi, _kpi_source, _tile, _fmt_de, _fmt_pct, _panel, _series,
+                     chart_js, MODE_SLOTS, _donut)
 
 # German labels for the modal-split donut segments (chart 10); unknown mode
 # ids fall back to the raw kpi_name suffix.
@@ -38,6 +39,16 @@ _COST_TIP = (
 )
 
 
+def _tip_src(desc, kpis, name):
+    """Tooltip text plus the row's ACTUAL `source` column (E4). On a
+    Shared-Use run pax_only.apply_overrides swaps the canonical row for its
+    pax-only correction, so hardcoding "drt_customer_stats" here would cite
+    the wrong basis exactly on the runs where the basis matters. Rows without
+    a source (reduced test fixtures) get the plain description."""
+    src = _kpi_source(kpis, name)
+    return desc + ((" Quelle: " + src + ".") if src else "")
+
+
 def _tiles(data):
     kpis = data.kpis
     t = []
@@ -46,7 +57,8 @@ def _tiles(data):
     v = _kpi(kpis, "modal_share_drt")
     if v is not None:
         t.append(_tile(_fmt_pct(v), "DRT-Modal-Anteil",
-                        tip="Anteil DRT an allen Wegen (modestats, letzte Iteration)."))
+                        tip=_tip_src("Anteil DRT an allen Wegen (letzte Iteration).",
+                                     kpis, "modal_share_drt")))
 
     # 2. DRT-Fahrten [sub: drt_passengers Pax]
     v = _kpi(kpis, "drt_rides")
@@ -54,7 +66,8 @@ def _tiles(data):
         pax = _kpi(kpis, "drt_passengers")
         sub = (_fmt_de(pax) + " Pax") if pax is not None else ""
         t.append(_tile(_fmt_de(v), "DRT-Fahrten", sub,
-                        tip="Bediente DRT-Legs (rides aus drt_customer_stats, letzte Iteration)."))
+                        tip=_tip_src("Bediente DRT-Legs (letzte Iteration).",
+                                     kpis, "drt_rides")))
 
     # 3. Wartezeit (Median) [sub: wait_p95]
     v = _kpi(kpis, "wait_median")
@@ -62,8 +75,8 @@ def _tiles(data):
         p95 = _kpi(kpis, "wait_p95")
         sub = ("P95: " + _fmt_de(p95 / 60.0, 1) + " min") if p95 is not None else ""
         t.append(_tile(_fmt_de(v / 60.0, 1) + " min", "Wartezeit (Median)", sub,
-                        tip="Fahrgast-Wartezeit von Anfrage-Submission bis Einstieg "
-                            "(drt_legs waitTime), Median."))
+                        tip=_tip_src("Fahrgast-Wartezeit von Anfrage-Submission bis "
+                                     "Einstieg, Median.", kpis, "wait_median")))
 
     # 4. Wartezeit (Ø) [sub: wait_below_15min "< 15 min"]
     v = _kpi(kpis, "wait_mean")
@@ -71,8 +84,8 @@ def _tiles(data):
         w15 = _kpi(kpis, "wait_below_15min")
         sub = (_fmt_pct(w15) + " < 15 min") if w15 is not None else ""
         t.append(_tile(_fmt_de(v / 60.0, 1) + " min", "Wartezeit (Ø)", sub,
-                        tip="Fahrgast-Wartezeit von Anfrage-Submission bis Einstieg "
-                            "(drt_legs waitTime), arithmetisches Mittel."))
+                        tip=_tip_src("Fahrgast-Wartezeit von Anfrage-Submission bis "
+                                     "Einstieg, arithmetisches Mittel.", kpis, "wait_mean")))
 
     # 5. Ablehnungsquote [sub: drt_rejections abs.]
     v = _kpi(kpis, "drt_rejection_rate")
@@ -80,8 +93,8 @@ def _tiles(data):
         rej = _kpi(kpis, "drt_rejections")
         sub = (_fmt_de(rej) + " abgelehnt") if rej is not None else ""
         t.append(_tile(_fmt_pct(v, 2), "Ablehnungsquote", sub,
-                        tip="rejections/(rides+rejections) aus den Ganzzahl-Spalten von "
-                            "drt_customer_stats (Anfragen ohne machbare Einfuegung)."))
+                        tip=_tip_src("rejections/(rides+rejections) -- Anfragen ohne "
+                                     "machbare Einfuegung.", kpis, "drt_rejection_rate")))
 
     # 6. Fahrzeuge
     v = _kpi(kpis, "drt_vehicles")
@@ -150,16 +163,16 @@ def _tiles(data):
     v = _kpi(kpis, "detour_factor")
     if v is not None:
         t.append(_tile(_fmt_de(v, 2), "Umwegfaktor",
-                        tip="Tatsaechlich gefahrene In-Vehicle-Distanz / direkte Netz-"
-                            "Distanz (Summe travelDistance_m / directTravelDistance_m aus "
-                            "drt_legs). 1,0 = umwegfrei."))
+                        tip=_tip_src("Tatsaechlich gefahrene In-Vehicle-Distanz / "
+                                     "direkte Netz-Distanz. 1,0 = umwegfrei.",
+                                     kpis, "detour_factor")))
 
     # 15. Ø Fahrtlänge (T1)
     v = _kpi(kpis, "drt_trip_distance_mean")
     if v is not None:
         t.append(_tile(_fmt_de(v, 1) + " km", "Ø Fahrtlänge",
-                        tip="Mittlere Fahrtdistanz je Fahrgast (drt_customer_stats "
-                            "distance_m_mean)."))
+                        tip=_tip_src("Mittlere Fahrtdistanz je Fahrgast.",
+                                     kpis, "drt_trip_distance_mean")))
 
     # 16. Tourdauer gesamt (T1) -- events only
     v = _kpi(kpis, "drt_tour_hours_total")
@@ -578,6 +591,19 @@ def build_tab(data, uid, compact=False, map_block=None):
             conv_charts.append(c)
         h, j = _render_group("Konvergenz", conv_charts)
         if h:
+            # E2: kpi_iterations.csv reads drt_customer_stats for EVERY iteration
+            # unfiltered (there is no per-iteration parcel identity to filter on,
+            # see pax_only's KNOWN-GAP note), so on a Shared-Use run these series
+            # include parcel-agents and their LEVELS contradict the pax-only tiles
+            # above. The banner sits between the <h2> and the charts so the group
+            # cannot be screenshot without it. Baseline runs carry no
+            # CONTAMINATION_KPI row -> no banner, page unchanged.
+            if _kpi(kpis, pax_only.CONTAMINATION_KPI) is not None:
+                banner = ('<div class="warnbanner">&#9888; Iterationsreihen enthalten '
+                          'Paket-Agenten (drt_customer_stats, nicht pax-bereinigt) '
+                          '&mdash; Niveaus sind mit den pax-bereinigten Kacheln oben '
+                          'nicht vergleichbar.</div>')
+                h = h.replace("</h2>", "</h2>" + banner, 1)
             groups_html.append(h)
             groups_js.append(j)
 
