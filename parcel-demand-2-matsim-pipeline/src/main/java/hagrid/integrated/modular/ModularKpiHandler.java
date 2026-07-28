@@ -14,8 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToIntFunction;
@@ -64,13 +66,19 @@ import java.util.function.ToIntFunction;
  * this distinction visible to anyone consuming the CSV without reading this class.</p>
  *
  * <p><b>{@code freight_vehicle_hours} excludes incomplete excursions.</b> It is
- * Σ over COMPLETED tours only of {@code (completedAt − dispatchedAt) / 3600} — the
- * "vehicle-hours withdrawn from passenger service" ingredient of design §4. A tour that was
- * dispatched but never reached COMPLETED (see {@code tours_dispatched_incomplete}) has no
- * completion timestamp to subtract from, so it is excluded, NOT charged some estimated partial
- * duration. This exclusion biases the metric DOWNWARD exactly when the fleet is most saturated
- * (many excursions stranded incomplete at day end) — documented here rather than left for a
- * reader to rediscover from the code.</p>
+ * Σ over tours that are BOTH DISPATCHED and COMPLETED of
+ * {@code (completedAt − dispatchedAt) / 3600} — the "vehicle-hours withdrawn from passenger
+ * service" ingredient of design §4. A tour that was dispatched but never reached COMPLETED (see
+ * {@code tours_dispatched_incomplete}) has no completion timestamp to subtract from, so it is
+ * excluded, NOT charged some estimated partial duration. This exclusion biases the metric
+ * DOWNWARD exactly when the fleet is most saturated (many excursions stranded incomplete at day
+ * end) — documented here rather than left for a reader to rediscover from the code. The
+ * {@code dispatched} filter (Task 9 review, Finding 1) exists because {@code dispatchedAt} /
+ * {@code completedAt} default to {@code Double.NaN}: a tour that somehow reached COMPLETED
+ * without a prior DISPATCHED — an accounting anomaly, not something this class assumes cannot
+ * happen — would otherwise poison the ENTIRE sum to {@code NaN} via {@code DoubleStream.sum()},
+ * silently wiping out every other tour's real contribution, not just the offending one. The
+ * deadhead/service sums use the same {@code dispatched} filter for the same reason.</p>
  *
  * <p><b>Conservation identities (design §4; assert in test, log — never throw — at shutdown):</b>
  * <ol>
@@ -95,16 +103,27 @@ import java.util.function.ToIntFunction;
  * reach COMPLETED without DISPATCHED, or lets a STOP_SERVED accumulate against a tour that was
  * PLANNED but never DISPATCHED (see the dedicated test for exactly that scenario).</p>
  *
- * <p><b>Ambiguity #4 (a non-PLANNED phase with no preceding PLANNED):</b> the dispatcher
- * guarantees PLANNED precedes every other phase for a given tour id (Tasks 3–8 invariant). Rather
- * than let a blind {@code computeIfAbsent} silently manufacture a zero-{@code parcelsPlanned}
- * accumulator for such an event — which would corrupt every downstream identity with no trace of
- * WHY — {@link #handleEvent} asserts the invariant directly and throws
- * {@link IllegalStateException} at the point of injection. This is a genuinely-impossible-in-
- * production defensive check (the guarantee is enforced upstream), kept cheap and loud rather
- * than omitted, exactly like the shutdown-time conservation log it complements: it catches a
- * DIFFERENT failure mode (an utterly unknown tour id) that the conservation identities above
- * cannot see, since those only compare aggregate counts among tours that WERE seen.</p>
+ * <p><b>Non-negativity of the two residuals (Task 9 review, Minor 2):</b> because identities 1
+ * and 3 are tautological by construction (previous paragraph), a tour double-counted into more
+ * than one mutually-exclusive bucket (e.g. flagged BOTH {@code expired} and {@code dispatched})
+ * would silently drive {@code tours_pending_eod} / {@code parcels_pending_eod} NEGATIVE without
+ * tripping any of the five stated identities — the one failure mode the identity set structurally
+ * cannot see. {@link #logConservationViolationIfAny} therefore also logs (separately, loud but
+ * non-fatal, same as everything else here) whenever either residual goes negative.</p>
+ *
+ * <p><b>A non-PLANNED phase with no preceding PLANNED (ambiguity #4; downgraded by Task 9
+ * review, Finding 2):</b> the dispatcher guarantees PLANNED precedes every other phase for a
+ * given tour id (Tasks 3–8 invariant). Originally this was enforced by throwing
+ * {@link IllegalStateException} at the point of injection, on the reasoning that a blind
+ * {@code computeIfAbsent} silently manufacturing a zero-{@code parcelsPlanned} accumulator would
+ * corrupt every downstream identity with no trace of why. Review correctly identified that this
+ * throw contradicts the class's own "loud but NON-FATAL" contract: Task 9 does not own the
+ * PLANNED-precedes-everything precondition and cannot keep it true by itself, so throwing mid-run
+ * for an upstream (Tasks 3–8) regression would convert "a wrong number with nothing to contradict
+ * it" into "no CSV at all, mid-run, after hours of compute" — strictly worse. {@link #handleEvent}
+ * now logs the anomaly ONCE per offending tour id (via {@link #unknownTourIdsLogged}, so a
+ * systemic regression cannot flood the log for the rest of the run), drops the event, and lets the
+ * shutdown-time conservation check make the resulting imbalance loud instead.</p>
  */
 public final class ModularKpiHandler implements ModularTourEventHandler, ShutdownListener {
 
@@ -130,6 +149,13 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
 
     /** CLEARED on {@link #reset(int)} — the 1c {@code dd34b23} per-iteration lesson. */
     private final Map<String, TourStat> byTour = new LinkedHashMap<>();
+    /**
+     * Tour ids for which a non-PLANNED phase with no preceding PLANNED has already been logged
+     * (Task 9 review, Finding 2) — logged ONCE per offending tour id, not once per event, so a
+     * systemic regression cannot flood the log for the rest of the run. CLEARED on
+     * {@link #reset(int)} along with {@link #byTour}.
+     */
+    private final Set<String> unknownTourIdsLogged = new LinkedHashSet<>();
     private final Path outputCsv;
 
     @Inject
@@ -140,6 +166,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
     @Override
     public void reset(int iteration) {
         byTour.clear();
+        unknownTourIdsLogged.clear();
     }
 
     @Override
@@ -150,13 +177,25 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         } else {
             s = byTour.get(event.getTourId());
             if (s == null) {
-                // Ambiguity #4 (see class javadoc): fail loud at the point of injection instead
-                // of silently manufacturing a zero-parcelsPlanned accumulator that would corrupt
-                // every conservation identity below with no trace of why.
-                throw new IllegalStateException("ModularTourEvent phase " + event.getPhase()
-                        + " for tour '" + event.getTourId() + "' arrived with no preceding PLANNED"
-                        + " event - violates the dispatcher's PLANNED-precedes-everything guarantee"
-                        + " (Tasks 3-8).");
+                // Downgraded from a throw to a logged anomaly (Task 9 review, Finding 2): this
+                // class's own contract - and the brief's global constraint - is "loud but
+                // NON-FATAL", precisely so a run that already spent hours computing still gets a
+                // CSV even when the accounting looks wrong. Throwing here for a precondition this
+                // class does not own and cannot itself keep true (the dispatcher's
+                // PLANNED-precedes-everything guarantee, Tasks 3-8) would convert "a wrong number
+                // with nothing to contradict it" into "no CSV at all, mid-run, after hours of
+                // compute" - strictly worse. Logged ONCE per offending tour id (not once per
+                // event, see #unknownTourIdsLogged) so a systemic regression cannot flood the log;
+                // the event itself is dropped (nothing sensible to accumulate against), and the
+                // shutdown-time conservation check is what makes the resulting imbalance loud.
+                if (unknownTourIdsLogged.add(event.getTourId())) {
+                    LOG.error("ModularTourEvent phase {} for tour '{}' arrived with no preceding"
+                            + " PLANNED event - violates the dispatcher's"
+                            + " PLANNED-precedes-everything guarantee (Tasks 3-8). Dropping this"
+                            + " event; the shutdown conservation check will flag the resulting"
+                            + " imbalance.", event.getPhase(), event.getTourId());
+                }
+                return;
             }
         }
         switch (event.getPhase()) {
@@ -217,8 +256,15 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         double serviceKmPlanned = sumD(s -> s.dispatched, s -> s.serviceMeters) / 1000.0;
         // Excludes incomplete excursions by construction (filter s.completed) - see class javadoc
         // for why that biases the metric downward exactly when the fleet is most saturated.
+        // ALSO filters s.dispatched (Task 9 review, Finding 1): dispatchedAt/completedAt default
+        // to Double.NaN, so a tour that somehow reached COMPLETED without a prior DISPATCHED (an
+        // accounting anomaly the conservation identities are built to flag, not something this
+        // class assumes cannot happen) would otherwise yield NaN, and DoubleStream.sum()
+        // propagates a single NaN term to the WHOLE-RUN value, silently wiping out every other
+        // tour's real contribution. The deadhead/service sums above already guard on s.dispatched
+        // for exactly this reason; this brings freight_vehicle_hours into line with them.
         double freightVehicleHours = byTour.values().stream()
-                .filter(s -> s.completed)
+                .filter(s -> s.completed && s.dispatched)
                 .mapToDouble(s -> (s.completedAt - s.dispatchedAt) / 3600.0)
                 .sum();
         long toursCompletedLate = count(s -> s.completedLate);
@@ -285,6 +331,17 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                     + "parcelsDispatchConserves={} deltaConserves={}",
                     toursConserve, toursDispatchConserves, parcelsConserve,
                     parcelsDispatchConserves, deltaConserves);
+        }
+        // Minor 2 (Task 9 review): identities 1/3 above are tautological by construction (see
+        // class javadoc) - a tour double-counted into more than one bucket (e.g. both EXPIRED and
+        // DISPATCHED) would silently drive a *_pending_eod residual NEGATIVE without tripping any
+        // of the five identities. This is the one hole the identity set structurally cannot see,
+        // so it gets its own explicit, independent check.
+        if (toursPendingEod < 0 || parcelsPendingEod < 0) {
+            LOG.error("Modular KPI pending_eod residual is NEGATIVE - some tour (or its parcels)"
+                    + " was counted in more than one mutually-exclusive bucket (e.g. both expired"
+                    + " and dispatched). toursPendingEod={} parcelsPendingEod={}",
+                    toursPendingEod, parcelsPendingEod);
         }
     }
 
