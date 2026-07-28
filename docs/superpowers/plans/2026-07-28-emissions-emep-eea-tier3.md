@@ -16,7 +16,7 @@
 - Faktor-Provenance in jeder Quellenangabe: „EMEP/EEA Guidebook 2025, App. 4 (Okt 2025, COPERT 5.9.1)".
 - **Gotcha:** Spalte `Reduction Factor [%]` im xlsx enthält **Bruchteile, nicht Prozent** (NOx Euro 7 = 0.282175 ≙ 28,2 %). Formel: `EF = (α·v² + β·v + γ + δ/v) / (ε·v² + ζ·v + η) · (1 − RF)`, v geclampt auf [Min Speed, Max Speed]. Validiert gegen die mitgelieferte EF(v=80)-Kontrollspalte (EC N1-III Diesel Euro 7 DPF+SCR: 2.7322 MJ/km).
 - Klassenmapping (User-entschieden 2026-07-28): **beide Flotten N1-III Diesel Euro 7, Technologie DPF+SCR**; BEV-Arm: N1-III Battery electric Euro 7 (nur EC-Kurve).
-- Xlsx-Quelle: `C:\Users\Hendrik Bimmermann\Downloads\1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx` — wird NICHT committet (Größe); committet werden die extrahierten CSVs + `data/README.md` mit URL/Version/Download-Datum.
+- Xlsx-Quelle: `parcel-demand-2-matsim-pipeline/hagrid-input/emissions/1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx` (2026-07-28 aus `~/Downloads` dorthin verlegt; Provenance-Tabelle: `hagrid-input/emissions/SOURCES.md`) — wird NICHT committet (Größe, wie der übrige `hagrid-input`-Inhalt); committet werden die extrahierten CSVs + `data/README.md` mit URL/Version/Download-Datum.
 - Tests laufen aus `parcel-demand-2-matsim-pipeline/analysis/kpi/`: `python -u -m pytest tests/<file> -v`.
 - Git: auf Branch `hendrik` committen; Commit-Messages enden mit `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
