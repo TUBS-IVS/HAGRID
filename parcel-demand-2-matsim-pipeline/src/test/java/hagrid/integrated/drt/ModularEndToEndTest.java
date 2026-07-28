@@ -1,13 +1,9 @@
 package hagrid.integrated.drt;
 
-import hagrid.integrated.freight.LausitzFreightPreprocessor;
-import hagrid.integrated.freight.LmdTestShapefiles;
 import hagrid.integrated.modular.Modular;
 import hagrid.integrated.modular.ModularDispatchModule;
 import hagrid.integrated.modular.ModularFreightTour;
-import hagrid.integrated.modular.ModularTourConverter;
 import hagrid.integrated.modular.ModularTourEvent;
-import hagrid.integrated.modular.ModularVehicleTypes;
 import hagrid.simulation.DrtScenarioBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +13,6 @@ import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.events.handler.PersonEntersVehicleEventHandler;
-import org.matsim.api.core.v01.network.Network;
 import org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams;
 import org.matsim.contrib.drt.optimizer.rebalancing.RebalancingParams;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
@@ -28,19 +23,10 @@ import org.matsim.core.controler.Controler;
 import org.matsim.core.events.EventsUtils;
 import org.matsim.core.events.MatsimEventsReader;
 import org.matsim.core.events.handler.BasicEventHandler;
-import org.matsim.core.network.NetworkUtils;
-import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
-import org.matsim.core.network.io.NetworkWriter;
 import org.matsim.core.population.PopulationUtils;
-import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
-import org.matsim.freight.carriers.CarrierVehicleTypes;
-import org.matsim.freight.carriers.Carriers;
 import org.matsim.testcases.MatsimTestUtils;
-import org.matsim.vehicles.VehicleType;
-import org.matsim.vehicles.VehicleUtils;
 
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -133,11 +119,6 @@ class ModularEndToEndTest {
     @RegisterExtension
     public MatsimTestUtils utils = new MatsimTestUtils();
 
-    /** Service-area square: 0..2000. All fixture nodes are inside (100..1000). */
-    private static final double AREA_SIZE = 2000.0;
-    private static final int FLEET_SIZE = 4;
-    /** 1d baseline seat count (the capsule swap trades these seats for cargo volume). */
-    private static final int PAX_CAPACITY = 10;
     /** SHORT literal run id: keeps the native DrtZonalWaitTimesAnalyzer's shutdown geopackage path
      *  well under the Windows ~255-char limit (see SharedUseEndToEndTest.java:105-113). */
     private static final String RUN_ID = "MODULAR_E2E";
@@ -161,75 +142,18 @@ class ModularEndToEndTest {
     @DisplayName("capsules swap, parcels leave on DRT vehicles, KPI CSV conserves, no carriers")
     void runsModularThroughOneIteration() throws Exception {
         Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
-        Files.createDirectories(dir);
 
-        // ---- shared raw fixtures (identical to MarriedBaselineEndToEndTest) ----
-        Network rawNet = DrtE2eFixtures.buildGrid();
-        Path rawNetFile = dir.resolve("raw_network.xml.gz");
-        new NetworkWriter(rawNet).write(rawNetFile.toString());
-        Path rawPlansFile = dir.resolve("raw_plans.xml.gz");
-        PopulationUtils.writePopulation(DrtE2eFixtures.buildDemand(), rawPlansFile.toString());
-        Path shpFile = dir.resolve("service-area.shp");
-        DrtE2eFixtures.writeSquareShapefile(shpFile, AREA_SIZE);
-        Path depotCsv = dir.resolve("depots.csv");
-        Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
-
-        // ---- freight side: van type (cost donor for the capsule) + tiny PANDA-like demand ----
-        CarrierVehicleTypes types = new CarrierVehicleTypes();
-        VehicleType van = VehicleUtils.createVehicleType(Id.create("ct_cep_size_m", VehicleType.class));
-        van.getCapacity().setOther(165);
-        van.setNetworkMode("car");
-        van.getCostInformation().setCostsPerMeter(0.0004).setCostsPerSecond(0.0).setFixedCost(170.0);
-        types.getVehicleTypes().put(van.getId(), van);
-        Path typesFile = dir.resolve("vans.xml");
-        new CarrierVehicleTypeWriter(types).write(typesFile.toString());
-
-        Path demandShp = dir.resolve("demand.shp");
-        LmdTestShapefiles.writeDemand(demandShp,
-                new double[][]{{300, 200}, {800, 600}},
-                new long[]{3, 2},    // dhl B2C parcels
-                new long[]{1, 0},    // dhl B2B parcels
-                new long[]{0, 0});   // hermes: none
-
-        // ---- offline jsprit half: runModular (capsule type, 3.5 h cap, no waves) ----
-        Path carriersOut = dir.resolve("modular_carriers_routed.xml");
-        LausitzFreightPreprocessor.runModular(demandShp.toString(), depotCsv.toString(),
-                rawNetFile.toString(), typesFile.toString(), carriersOut.toString(),
-                /*jspritIterations*/ 1, shpFile.toString(), Modular.DEFAULT_MAX_TOUR_DURATION_S);
-        assertThat(carriersOut).exists();
-
-        // ---- DRT side: production preprocessor (drt-tagged net, person plans, fleet) ----
-        Path drtNetFile = dir.resolve("drt_network.xml.gz");
-        Path clippedPlans = dir.resolve("clipped_plans.xml.gz");
-        Path fleetFile = dir.resolve("fleet.xml.gz");
-        LausitzDrtPreprocessor.run(
-                rawNetFile.toString(), rawPlansFile.toString(), shpFile.toString(),
-                depotCsv.toString(), drtNetFile.toString(), clippedPlans.toString(),
-                fleetFile.toString(), FLEET_SIZE, PAX_CAPACITY,
-                /*serviceBegin*/ 0.0, /*serviceEnd*/ 86400.0);
-
-        URL cfgUrl = getClass().getClassLoader().getResource("lausitz-native-like.config.xml");
-        assertThat(cfgUrl)
-                .as("test fixture lausitz-native-like.config.xml must be on the test classpath")
-                .isNotNull();
+        // ---- staging (Task 12 review, Minor 1): shared with ModularControlArmTest so both tests'
+        // validity rests on ONE recipe, not two copies that could silently drift apart. ----
+        ModularE2eStaging staging = ModularE2eStaging.stage(dir);
         Path matsimOut = dir.resolve("matsim");
 
-        Scenario scenario = DrtScenarioBuilder.build(cfgUrl.toString(), drtNetFile.toString(),
-                clippedPlans.toString(), shpFile.toString(), fleetFile.toString(),
+        Scenario scenario = DrtScenarioBuilder.build(staging.cfgUrl.toString(),
+                staging.drtNetFile.toString(), staging.clippedPlans.toString(),
+                staging.shpFile.toString(), staging.fleetFile.toString(),
                 matsimOut.toString(), RUN_ID, /*lastIteration*/ 1);
 
-        // ---- tours: read the routed carriers, convert against the car + DRT networks ----
-        Carriers routed = ModularTourConverter.read(carriersOut.toString(),
-                ModularVehicleTypes.createCapsuleTypes(typesFile.toString()));
-        Network carNet = LausitzFreightPreprocessor.carNetwork(
-                NetworkUtils.readNetwork(rawNetFile.toString()));
-        // Exactly how DvrpGlobalRoutingNetworkProvider builds the modal DVRP network the fleet's
-        // Link references come from (TransportModeNetworkFilter on the dvrp networkModes, NO
-        // cleaning) - so the tour link ids the splicer resolves are the injected network's own.
-        Network drtNet = NetworkUtils.createNetwork();
-        new TransportModeNetworkFilter(NetworkUtils.readNetwork(drtNetFile.toString()))
-                .filter(drtNet, Set.of(TransportMode.drt));
-        List<ModularFreightTour> tours = ModularTourConverter.convert(routed, carNet, drtNet);
+        List<ModularFreightTour> tours = staging.tours;
         // EXACTLY one tour, not merely "at least one" (Task 10 review, Item 4): the excursion-window
         // collection below (excursionStart/End/Vehicle) is last-wins across the modularTour event
         // stream, which is correct for one tour but with two would let the "window" span both tours
