@@ -148,6 +148,28 @@ public final class SimulationRunnerUtils {
         // (Task 10 / D10 (e)). Harmless default for every other concept (none inject parcels).
         boolean noParcels = bool(map.getOrDefault("noParcels", "false"), "noParcels");
 
+        // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
+        // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold
+        // and noParcels are deliberately NOT encoded in the runId, so two DRT_SHAREDUSE sweep
+        // points differing only in chi (or noParcels) with the same/no tag would silently
+        // destroy each other's outputs. Require the tag to encode the sweep point instead of
+        // auto-mangling the runId (run-dir naming conventions must stay stable).
+        boolean isSharedUse;
+        try {
+            isSharedUse = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                    == hagrid.HagridConfig.Scenario.DRT_SHAREDUSE;
+        } catch (IllegalArgumentException ex) {
+            isSharedUse = false;
+        }
+        if (isSharedUse && tag.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "DRT_SHAREDUSE requires a non-blank tag: chiThreshold/noParcels are not part"
+                            + " of the runId (CONCEPT_date[_tag]) and MATSim deletes an existing"
+                            + " output directory, so two sweep points differing only in chi would"
+                            + " silently overwrite each other. Encode the sweep point in the tag,"
+                            + " e.g. tag=chi600 or tag=chi0noparcels.");
+        }
+
         // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
         boolean requiresLausitz;
         try {

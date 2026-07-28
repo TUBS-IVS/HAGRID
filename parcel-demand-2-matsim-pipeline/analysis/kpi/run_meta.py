@@ -29,6 +29,12 @@ class RunMeta:
     #: silently suppresses every economics cost KPI) nor operation_mode (defaults
     #: to "conventional"), so callers must be able to see which one they got.
     meta_source: str = "run_metadata.json"
+    #: DRT_SHAREDUSE sweep coordinates (I2/M5): chiThreshold/noParcels are NOT
+    #: part of the runId, so run_metadata.json is the only machine-readable
+    #: binding. None on old metadata files (pre-2026-07 writer) and on the
+    #: dir-name fallback -- both simply predate the fields.
+    chi_threshold: Optional[float] = None
+    no_parcels: Optional[bool] = None
 
 
 def load_run_meta(run_dir):
@@ -43,7 +49,8 @@ def load_run_meta(run_dir):
             matsim_iterations=int(j["matsim_iterations"]),
             jsprit_iterations=int(j["jsprit_iterations"]),
             fleet_size=j.get("fleet_size"), prefix=j["run_id"],
-            meta_source="run_metadata.json")
+            meta_source="run_metadata.json",
+            chi_threshold=j.get("chi_threshold"), no_parcels=j.get("no_parcels"))
     # writeRunMetadataSafely swallows any writer failure, so a missing file is a
     # normal (and easy to miss) outcome of a completed run. Say so loudly: the
     # degraded metadata silently changes which KPIs get emitted at all.
