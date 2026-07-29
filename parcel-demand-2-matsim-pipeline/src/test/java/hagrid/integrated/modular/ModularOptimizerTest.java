@@ -10,10 +10,14 @@ import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.NetworkFactory;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.contrib.drt.optimizer.DrtOptimizer;
+import org.matsim.contrib.drt.passenger.DrtRequest;
 import org.matsim.contrib.drt.schedule.DrtStayTask;
+import org.matsim.contrib.drt.schedule.DrtStayTaskEndTimeCalculator;
+import org.matsim.contrib.drt.schedule.DrtStopTask;
 import org.matsim.contrib.drt.schedule.DrtTaskFactory;
 import org.matsim.contrib.drt.schedule.DrtTaskFactoryImpl;
 import org.matsim.contrib.drt.scheduler.DrtScheduleInquiry;
+import org.matsim.contrib.drt.stops.StopTimeCalculator;
 import org.matsim.contrib.dvrp.fleet.DvrpVehicle;
 import org.matsim.contrib.dvrp.fleet.DvrpVehicleImpl;
 import org.matsim.contrib.dvrp.fleet.Fleet;
@@ -42,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * VERIFY-SOURCE (drt-2025.0-sources.jar, read directly for this task - see task-8-report.md):
@@ -127,6 +132,88 @@ class ModularOptimizerTest {
 
         assertThat(swap.getEndTime()).isEqualTo(swap.getBeginTime() + Modular.RETOOLING_S);
         assertThat(downstream.getBeginTime()).isEqualTo(swap.getEndTime());
+    }
+
+    /**
+     * Belt-2 CME guard (review Finding 1 / J-F8). {@code enforceIntendedDurations} iterates
+     * {@code List.copyOf(schedule.getTasks())} (ModularOptimizer.java:135) precisely because the
+     * timing updater it calls mid-loop can trigger the NATIVE {@code
+     * DrtStayTaskEndTimeCalculator}'s {@code REMOVE_STAY_TASK} branch: a plain, non-last STAY
+     * whose old end time has been overtaken by the ripple is silently REMOVED from the schedule's
+     * live backing list. Iterating that live (unmodifiable-VIEW-over-the-same-ArrayList) list
+     * directly would then throw {@code ConcurrentModificationException} on the very next {@code
+     * Iterator.next()} - this test builds exactly that scenario.
+     *
+     * <p>Fixture (4 tasks, all on one link): idx0 {@code DrtStayTask(0,1000)} [current, PERFORMED
+     * by this call's own {@code nextTask()} advance]; idx1 {@code ModularCapacityChangeTask
+     * (1000,1015)} [CORRUPTED - 15s, should be {@code RETOOLING_S}=420 - becomes current/STARTED
+     * after the advance]; idx2 {@code DrtStayTask(1015,1020)} [a plain, non-last, "delayed" STAY
+     * - its old end 1020 is overtaken once idx1's fix pushes the ripple's {@code newBeginTime} to
+     * 1420]; idx3 {@code DrtStayTask(1020,5000)} [trailing STAY, always last]. Uses the REAL
+     * {@link ModularStayTaskEndTimeCalculator} wrapping the REAL native {@link
+     * DrtStayTaskEndTimeCalculator} (not the "dumb" calculator {@link #enforceIntendedDuration()}
+     * uses) - belt 1 deliberately delegates a plain {@code DrtStayTask} straight through to the
+     * native calculator, and it is the native calculator's own {@code REMOVE_STAY_TASK} branch
+     * this test needs.</p>
+     *
+     * <p><b>MUTATION EVIDENCE (task-6-report.md has both runs verbatim):</b> temporarily
+     * reverting {@code List.copyOf(schedule.getTasks())} to plain {@code schedule.getTasks()} at
+     * {@code ModularOptimizer.java:135} makes this test FAIL with {@code
+     * ConcurrentModificationException}; restoring makes it PASS again.</p>
+     */
+    @Test
+    @DisplayName("enforceIntendedDurations survives a downstream REMOVE_STAY_TASK ripple mid-loop "
+            + "(belt-2 CME guard, review Finding 1 / J-F8)")
+    void enforceIntendedDurationsSurvivesDownstreamStayRemoval() {
+        DvrpVehicle vehicle = fixtureVehicleForCmeGuard();
+        Schedule schedule = vehicle.getSchedule();
+        Task swap = schedule.getTasks().get(1);          // corrupted: duration 15s, should be RETOOLING_S
+        Task delayedStay = schedule.getTasks().get(2);   // will be REMOVED by the ripple
+        Task trailingStay = schedule.getTasks().get(3);  // always-last STAY
+
+        StopTimeCalculator neverInvokedStopCalculator = new StopTimeCalculator() {
+            @Override
+            public double initEndTimeForPickup(DvrpVehicle v, double beginTime, DrtRequest request) {
+                throw new UnsupportedOperationException("no STOP task in this fixture");
+            }
+
+            @Override
+            public double updateEndTimeForPickup(DvrpVehicle v, DrtStopTask stop, double insertionTime,
+                                                  DrtRequest request) {
+                throw new UnsupportedOperationException("no STOP task in this fixture");
+            }
+
+            @Override
+            public double initEndTimeForDropoff(DvrpVehicle v, double beginTime, DrtRequest request) {
+                throw new UnsupportedOperationException("no STOP task in this fixture");
+            }
+
+            @Override
+            public double updateEndTimeForDropoff(DvrpVehicle v, DrtStopTask stop, double insertionTime,
+                                                  DrtRequest request) {
+                throw new UnsupportedOperationException("no STOP task in this fixture");
+            }
+
+            @Override
+            public double shiftEndTime(DvrpVehicle v, DrtStopTask stop, double beginTime) {
+                throw new UnsupportedOperationException("no STOP task in this fixture");
+            }
+        };
+        ScheduleTimingUpdater.StayTaskEndTimeCalculator calculator = new ModularStayTaskEndTimeCalculator(
+                new DrtStayTaskEndTimeCalculator(neverInvokedStopCalculator));
+        ScheduleTimingUpdater updater = new ScheduleTimingUpdater(timer, calculator, DriveTaskUpdater.NOOP);
+        RecordingDispatcher dispatcher = buildDispatcher(null);
+        // callUpdateBeforeNextTask=false: this test isolates belt 2's OWN ripple call; the
+        // delegate here only advances the schedule (idx0 -> PERFORMED, idx1 -> current/STARTED).
+        RecordingDelegate delegate = new RecordingDelegate(null, updater, false, true);
+        ModularOptimizer optimizer = new ModularOptimizer(delegate, dispatcher, updater, timer);
+
+        timer.setTime(1000.0);
+        assertThatCode(() -> optimizer.nextTask(vehicle)).doesNotThrowAnyException();
+
+        assertThat(swap.getEndTime()).isEqualTo(swap.getBeginTime() + Modular.RETOOLING_S);
+        assertThat(schedule.getTasks().contains(delayedStay)).as("delayed STAY removed by the ripple").isFalse();
+        assertThat(trailingStay.getBeginTime()).isEqualTo(swap.getEndTime());
     }
 
     @Test
@@ -265,6 +352,33 @@ class ModularOptimizerTest {
         schedule.addTask(new ModularCapacityChangeTask(1000.0, 1015.0, link,
                 loadType.getEmptyLoad(), "t", false));
         schedule.addTask(new DrtStayTask(1015.0, 2000.0, link));
+        return vehicle;
+    }
+
+    /**
+     * idx0 = DrtStayTask(0,1000) [current, STARTED]; idx1 = ModularCapacityChangeTask(1000,1015)
+     * [CORRUPTED - 15s, should be RETOOLING_S=420]; idx2 = DrtStayTask(1015,1020) [plain,
+     * non-last, "delayed" STAY - overtaken once idx1's fix ripples a newBeginTime of 1420 past
+     * its old end 1020]; idx3 = DrtStayTask(1020,5000) [trailing STAY, always last]. Everything
+     * on one link (no router needed). See {@link #enforceIntendedDurationsSurvivesDownstreamStayRemoval()}.
+     */
+    private DvrpVehicle fixtureVehicleForCmeGuard() {
+        DvrpLoadType loadType = new IntegerLoadType("passengers");
+        ImmutableDvrpVehicleSpecification spec = ImmutableDvrpVehicleSpecification.newBuilder()
+                .id(Id.create("drt_cme", DvrpVehicle.class))
+                .startLinkId(link.getId())
+                .capacity(10)
+                .serviceBeginTime(0.0)
+                .serviceEndTime(5000.0)
+                .build();
+        DvrpVehicle vehicle = new DvrpVehicleImpl(spec, link);
+        Schedule schedule = vehicle.getSchedule();
+        schedule.addTask(new DrtStayTask(0.0, 1000.0, link));
+        schedule.nextTask(); // PLANNED -> STARTED, current = idx0
+        schedule.addTask(new ModularCapacityChangeTask(1000.0, 1015.0, link,
+                loadType.getEmptyLoad(), "t", false));
+        schedule.addTask(new DrtStayTask(1015.0, 1020.0, link));
+        schedule.addTask(new DrtStayTask(1020.0, 5000.0, link));
         return vehicle;
     }
 

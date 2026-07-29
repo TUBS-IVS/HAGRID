@@ -82,6 +82,11 @@ import java.util.function.ToIntFunction;
  * silently wiping out every other tour's real contribution, not just the offending one. The
  * deadhead/service sums use the same {@code dispatched} filter for the same reason.</p>
  *
+ * <p><b>C8 late convention.</b> "Late" always means: event time (dwell END for {@code
+ * STOP_SERVED}, swap-back end for {@code COMPLETED}) strictly after {@code
+ * Modular.DELIVERY_DAY_END_S} (21:00) - the same convention for both {@code
+ * tours_completed_late} and {@code parcels_served_late} below.</p>
+ *
  * <p><b>⚠ The km metrics and {@code freight_vehicle_hours} are over DIFFERENT TOUR SETS</b>
  * (review Minor 6). {@code deadhead_km_planned} / {@code service_km_planned} filter on
  * {@code dispatched} alone; {@code freight_vehicle_hours} filters on

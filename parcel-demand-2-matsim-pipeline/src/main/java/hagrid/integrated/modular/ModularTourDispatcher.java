@@ -45,12 +45,14 @@ import java.util.stream.Collectors;
  * check and the splicer's feasibility check are NOT the same test, and a tour can pass the first
  * while failing the second on every attempt until it expires:
  * <ul>
- *   <li>expiry (here, {@code :95}) uses {@link ModularFreightTour#plannedDuration()} — jsprit's
+ *   <li>expiry (here, {@code :121}) uses {@link ModularFreightTour#plannedDuration()} — jsprit's
  *       sum over the <b>car</b> network, with no approach leg;</li>
  *   <li>the splicer ({@link ModularTourScheduler#schedule}) uses the actual routed completion on
  *       the <b>DRT</b> network <i>plus</i> the approach leg from wherever the candidate vehicle
- *       happens to be — always larger, and systematically so wherever DRT routing diverges from
- *       jsprit's.</li>
+ *       happens to be — the pre-check omits the approach leg (guaranteed optimistic in that one
+ *       respect); beyond that, jsprit's car-network time and the DRT-routed time are NOT ordered
+ *       — near latestEnd the EXPIRED bucket can absorb tours the splicer would still have
+ *       accepted (METHODS-LOG 2.18).</li>
  * </ul>
  * A splicer rejection therefore emits {@link ModularTourEvent.Phase#SPLICE_REJECTED} (once per
  * tour) and feeds {@code tours_rejected_at_splice}. Without it the tour later trips expiry and is
