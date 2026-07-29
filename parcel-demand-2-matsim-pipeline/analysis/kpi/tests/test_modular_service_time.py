@@ -200,9 +200,12 @@ def test_freight_windows_bracket_each_excursion_separately():
     assert drt_service_time.freight_windows([]) == []
 
 
-def test_modular_rows_publish_the_components_and_the_contamination_marker(tmp_path):
-    """The freight time must be VISIBLE, not merely no longer misfiled -- and the KPIs that
-    stay contaminated must say so in the CSV, not only in a docstring."""
+def test_modular_rows_publish_the_freight_time_components(tmp_path):
+    """The freight time must be VISIBLE, not merely no longer misfiled. The
+    contamination marker itself has moved out of `_modular_rows` (review C1 --
+    it is now gated on the `modular` CSV-path flag alone, see
+    test_modular_marker_rows_name_the_kpis_and_the_correction_recipe below), so
+    this function's own return value is just the four component rows now."""
     fl = drt_service_time.reconstruct(str(_events(tmp_path, _excursion_day())), None)["fleet"]
 
     rows = extract_drt._modular_rows(fl)
@@ -213,14 +216,29 @@ def test_modular_rows_publish_the_components_and_the_contamination_marker(tmp_pa
     assert by_name["drt_retooling_hours_total"]["value"] == pytest.approx(RETOOLING_S / 3600.0)
     assert by_name["drt_freight_hours_total"]["value"] == pytest.approx(
         (FREIGHT_DRIVE_S + FREIGHT_STOP_S + RETOOLING_S) / 3600.0)
+    assert extract_drt.MODULAR_CONTAMINATION_KPI not in by_name
+
+
+def test_modular_marker_rows_name_the_kpis_and_the_correction_recipe():
+    """Review I2/I3: the marker's source text carries one correction verb per
+    KPI (subtract / rescale / not recoverable / not corrected), not the old
+    flat 'subtract drt_freight_hours_total' recipe that was wrong for 3 of the
+    4 window KPIs. Review C1: `_modular_marker_rows` takes no `fl` at all --
+    the marker is independent of whether events were reconstructed."""
+    rows = extract_drt._modular_marker_rows()
+    by_name = {r["kpi_name"]: r for r in rows}
 
     marker = by_name[extract_drt.MODULAR_CONTAMINATION_KPI]
     assert marker["kpi_group"] == "meta"
-    # the two uncorrectable drt_vehicle_stats KPIs the review calls out by name must appear
+    # the two never-corrected drt_vehicle_stats KPIs the review calls out by name must appear
     assert "drt_empty_ratio" in marker["source"]
     assert "drt_dp_over_dt" in marker["source"]
-    # and the corrected ones must be distinguishable from them, not lumped together
-    assert "CORRECTED" in marker["source"]
-    assert "NOT CORRECTABLE" in marker["source"]
+    assert "rescale" in marker["source"]
+    assert "not recoverable" in marker["source"]
+    assert "not corrected" in marker["source"]
     assert marker["value"] == (len(extract_drt.MODULAR_UNCORRECTABLE)
                                + len(extract_drt.MODULAR_FREIGHT_IN_WINDOW))
+
+    secondary = by_name["modular_secondary_contaminated"]
+    assert secondary["kpi_group"] == "meta"
+    assert secondary["value"] == len(extract_drt.MODULAR_SECONDARY_CONTAMINATED)

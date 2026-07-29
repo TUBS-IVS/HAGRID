@@ -197,3 +197,43 @@ def test_drt_less_run_still_gets_lmd_link_geometry(tmp_path):
     # the freight links alone (tours/stops additionally need the carriers XML,
     # which this fixture has no counterpart for).
     assert md["lmd"]["heat"], md["lmd"]
+
+
+def _write_modular_stats(run_dir, prefix):
+    """A conforming modular_tour_stats.csv (every conservation identity holds) so
+    extract_modular.extract runs clean -- the point of this fixture is exercising
+    has_modular_stats()/build()'s marker wiring, not extract_modular's own
+    identity checks."""
+    lines = ["metric;value",
+             "tours_planned;10", "tours_expired_pending;2", "tours_dispatched;7",
+             "tours_completed;6", "tours_dispatched_incomplete;1", "tours_pending_eod;1",
+             "parcels_planned;500", "parcels_expired_pending;80", "parcels_dispatched;400",
+             "parcels_served;350", "parcels_dispatched_unserved;50", "parcels_pending_eod;20",
+             "delta_parcels;150", "swaps_completed;13", "retooling_hours;1.516",
+             "deadhead_km_planned;42.5", "service_km_planned;120.0",
+             "freight_vehicle_hours;21.75",
+             "tours_completed_late;1", "parcels_served_late;12",
+             "tours_rejected_at_splice;3"]
+    (Path(run_dir) / (prefix + ".modular_tour_stats.csv")).write_text("\n".join(lines))
+
+
+def test_no_events_build_still_carries_the_modular_contamination_marker(tmp_path):
+    """Review C1's exact reproduced failure, as an integration pin: a
+    modular_tour_stats.csv on disk (has_modular_stats() -> True) makes this a 1d
+    Modular run, and that fact must reach kpis_long.csv even when --no-events
+    means build() never reconstructs a single event (recon stays None
+    throughout). Before the fix, the marker lived only inside the
+    recon-available branch of extract_drt.extract, so this exact build wrote
+    every contaminated KPI (drt_vehicle_km, drt_empty_ratio, ...) with NO
+    provenance row at all."""
+    d = tmp_path / "drtrun_modular_copy"
+    shutil.copytree(FIX, d)
+    _write_modular_stats(d, "DRT_TEST")
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert ";meta;modular_contaminated_kpis;" in long_txt
+    assert ";meta;modular_secondary_contaminated;" in long_txt
+    # events never ran -- the *_pax rows need recon and must stay absent
+    assert "_pax;" not in long_txt

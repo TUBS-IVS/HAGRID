@@ -72,9 +72,16 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
         except Exception as e:
             print("[build] freight provider parse skipped: " + str(e))  # ASCII only
 
+    # Computed ONCE (review C1/I2/I3 fixwave): this is the CSV-path contamination
+    # signal extract_drt needs to emit its marker/`*_pax` rows independent of
+    # whether events were reconstructed for THIS build (drt_cache/recon can be
+    # None on a --no-events build even though the run itself is a 1d Modular run).
+    modular = extract_modular.has_modular_stats(run_dir, meta)
+
     rows = []
     if is_drt:
-        rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet, recon=recon)
+        rows += extract_drt.extract(run_dir, meta.prefix, fleet_file=fleet, recon=recon,
+                                     modular=modular)
     if has_freight:
         rows += extract_freight.extract(run_dir, meta.prefix, pf=pf)
     for predicate, extract_fn in EXTRACTORS:
