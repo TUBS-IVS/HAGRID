@@ -503,6 +503,68 @@ class ModularKpiHandlerTest {
     }
 
     /**
+     * Self-review finding: the main test above ({@link #planTimeMetricsAppendedAfterToursRejectedAtSplice})
+     * cannot actually tell "grouped per depot, then maxed" apart from "one global bucket over every
+     * swap regardless of depot" - its two depots' swap windows never overlap in time, so both
+     * implementations happen to produce the same peak=2. This test forces the two apart: depotA and
+     * depotB each get exactly ONE swap, but both swaps end at the SAME instant, so their intervals
+     * are IDENTICAL and DO overlap in absolute time. Per-depot grouping (correct) gives peak 1 at
+     * EACH depot, so the max across depots is 1; a global-bucket bug that ignores depot separation
+     * would see two overlapping intervals and wrongly report 2.
+     */
+    @Test
+    @DisplayName("Task 1: peak_concurrent_swaps is maxed PER DEPOT, not over one global bucket "
+            + "across depots (two different depots' simultaneous swaps must not combine)")
+    void peakConcurrentSwapsIsPerDepotNotGlobal(@TempDir Path tmp) throws Exception {
+        Id<Link> depotA = Id.createLinkId("depotA");
+        Id<Link> depotB = Id.createLinkId("depotB");
+        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0,
+                Map.of("a_t0", depotA, "b_t0", depotB));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
+
+        // Same absolute swap-end time at TWO DIFFERENT depots - a global (depot-blind) sweep would
+        // see these as two overlapping intervals (peak 2); per-depot grouping keeps them apart
+        // (peak 1 at depotA, peak 1 at depotB, max across depots = 1).
+        handler.handleEvent(ModularTourEvent.planned(100, "a_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "a_t0", vehId));
+        handler.handleEvent(ModularTourEvent.planned(100, "b_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "b_t0", vehId2));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("peak_concurrent_swaps"))
+                .as("two DIFFERENT depots' simultaneous swaps must NOT combine into one bucket")
+                .isEqualTo(1);
+    }
+
+    /**
+     * Self-review finding: no existing test puts a swap interval's END exactly on another's START,
+     * the one instant the tie-break rule (process interval-END before interval-START at equal
+     * timestamps) actually matters. A flipped tie-break (START before END) would wrongly report 2
+     * here instead of 1.
+     */
+    @Test
+    @DisplayName("Task 1: back-to-back swaps whose intervals touch (one's end == the next's start) "
+            + "do NOT count as concurrent (tie-break: END processed before START)")
+    void peakConcurrentSwapsTieBreakEndBeforeStart(@TempDir Path tmp) throws Exception {
+        Id<Link> depot = Id.createLinkId("depot");
+        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, Map.of("t_touch", depot));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
+
+        // swap 1 occupies [30000 - 420, 30000] = [29580, 30000]; swap 2 occupies
+        // [30420 - 420, 30420] = [30000, 30420] - swap 1's END is exactly swap 2's START.
+        handler.handleEvent(ModularTourEvent.planned(100, "t_touch", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "t_touch", vehId));
+        handler.handleEvent(ModularTourEvent.swapDone(30000 + Modular.RETOOLING_S, "t_touch", vehId));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("peak_concurrent_swaps"))
+                .as("touching (not overlapping) intervals must NOT count as concurrent")
+                .isEqualTo(1);
+    }
+
+    /**
      * Ambiguity resolution (defensive): a SWAP_DONE for a tourId absent from
      * {@code planStats.depotByTourId()} must not crash or drop the swap - it is grouped under the
      * synthetic depot key {@code "unknown"} instead, so it still contributes to
