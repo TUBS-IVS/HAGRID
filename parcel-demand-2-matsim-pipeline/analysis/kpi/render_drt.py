@@ -62,14 +62,16 @@ _MODULAR_BADGE_HTML = ('<div class="warnbanner">enthaelt Frachtanteil, '
                         's. METHODS-LOG 2.14</div>')
 
 #: Exactly the tiles review found publishing 1d MODULAR freight-contaminated
-#: values with no marker: extract_drt.MODULAR_UNCORRECTABLE's drt_vehicle_km/
-#: drt_empty_ratio share ONE tile (#7, "Fahrzeug-km") and fleet_utilisation_by_trips
-#: (drt_dp_over_dt has no tile at all), plus extract_drt.MODULAR_FREIGHT_IN_WINDOW
-#: in full. Kept as its own literal here (not derived from those two extract_drt
-#: tuples): which KPIs get a DASHBOARD badge is a render decision, not extract_drt's
-#: correction bookkeeping, even though today the two happen to agree.
+#: values with no marker: extract_drt.MODULAR_UNCORRECTABLE's drt_vehicle_km
+#: (its tile, #7 "Fahrzeug-km", also carries drt_empty_ratio as a sub-line --
+#: one tile, one call site, so only the tile's own KPI name is listed here;
+#: drt_dp_over_dt has no tile at all) and fleet_utilisation_by_trips, plus
+#: extract_drt.MODULAR_FREIGHT_IN_WINDOW in full. Kept as its own literal here
+#: (not derived from those two extract_drt tuples): which KPIs get a DASHBOARD
+#: badge is a render decision, not extract_drt's correction bookkeeping, even
+#: though today the two happen to agree.
 _MODULAR_BADGE_KPIS = frozenset((
-    "drt_vehicle_km", "drt_empty_ratio", "fleet_utilisation_by_trips",
+    "drt_vehicle_km", "fleet_utilisation_by_trips",
     "service_ratio_active", "fleet_utilisation_by_time", "mean_pax_aboard",
     "drt_tour_hours_total",
 ))

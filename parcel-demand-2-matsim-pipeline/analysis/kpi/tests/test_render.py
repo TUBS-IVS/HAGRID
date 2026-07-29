@@ -394,22 +394,30 @@ def test_comparison_page_meta_notes_below_table_with_run_label_prefix(tmp_path):
     notes_idx = html.index("Hinweise")
     assert notes_idx > table_idx
 
-    # a comparison of baseline-only runs carries no Hinweise block at all
+    # a comparison of baseline-only runs carries no Hinweise block at all -- and
+    # since render_comparison_page also renders each run's per-run tab via
+    # build_tab(compact=True), whose _tiles() runs unconditionally, pin the tile
+    # badge/sub-line absent there too (a regression could reintroduce it on this
+    # page without ever touching render_run_page's own baseline test).
     runs_baseline = [{"label": "Lauf A", "scenario": "DRT_BASELINE", "data": data_a}]
     html_baseline = render.render_comparison_page(runs_baseline, title="Vergleich")
     assert "Hinweise" not in html_baseline
+    assert CONTAMINATION_BADGE not in html_baseline
+    assert "pax-bereinigt" not in html_baseline
 
 
 def test_meta_notes_escapes_html_special_characters():
     kpis = pd.DataFrame([
-        {"kpi_group": "meta", "kpi_name": "some_marker", "value": "a<b&c",
+        {"kpi_group": "meta", "kpi_name": "marker<&>", "value": "a<b&c",
          "unit": "u<1>", "source": "a<b&c"},
     ])
 
     html = render._meta_notes(kpis)
 
+    assert "marker<&>" not in html
     assert "a<b&c" not in html
     assert "u<1>" not in html
+    assert "marker&lt;&amp;&gt;" in html   # kpi_name escaped too, not just value/source
     assert html.count("a&lt;b&amp;c") == 2   # value + source, both escaped
     assert "u&lt;1&gt;" in html
 
