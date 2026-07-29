@@ -12,14 +12,14 @@ parcels_served;350
 parcels_dispatched_unserved;50
 parcels_pending_eod;20
 delta_parcels;150
-tours_completed_late;1
-parcels_served_late;12
-tours_rejected_at_splice;3
 swaps_completed;12
 retooling_hours;1.4
 deadhead_km_planned;42.5
 service_km_planned;120.0
 freight_vehicle_hours;21.75
+tours_completed_late;1
+parcels_served_late;12
+tours_rejected_at_splice;3
 parcels_demand;530
 parcels_unassigned_jsprit;30
 parcels_missed_overlay;10
