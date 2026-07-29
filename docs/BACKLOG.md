@@ -204,7 +204,8 @@ Das Nachfrage-Niveau-Band ist gemessen und der Proxy-Fix ist durch → Ergebniss
 Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise in
 [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleibt:
 
-- **`[S]` Entscheiden, ob der exogene Altersterm übernommen wird (K6)** — die CV-Batterie auf
+- **`[S]` Exogener Altersterm (K6) — vertagt, Einwohnerzahl bleibt wie sie ist**
+  (User-Entscheidung 2026-07-29: erstmal lassen) — die CV-Batterie auf
   dem Zensus-Prädiktor (2026-07-29) erfüllt **beide** präregistrierten K6-Bedingungen: die
   exogene Variante kostet in-region nichts (−0,01 pp, verbessert minimal), und die gefittete
   Variante stimmt jetzt im Vorzeichen zu (`a65plus` = 0,59 × `a18_49` statt 1,5 ×). Nach der
