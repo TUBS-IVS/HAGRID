@@ -5,6 +5,7 @@ geometry, no plotly — Chart.js 4 (vendored, ~205 KB) is the only script.
 
 Palette = validated dataviz reference palette (categorical slots fixed order;
 sequential blue; ink/grid tokens), light + dark via prefers-color-scheme."""
+import html
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -293,7 +294,13 @@ def _meta_notes(kpis):
     run_meta_degraded, fleet_file_missing) as a small "Hinweise" block -- they
     never fit the ["passenger", ..., "channel"] table loop, so before this
     block they were written to the CSV but invisible on the page. Baseline
-    runs carry no meta rows -> empty string, page byte-identical."""
+    runs carry no meta rows -> empty string, page byte-identical.
+
+    Review M11: name/value/unit/source are all `html.escape`d -- a `source`
+    string is free text (e.g. a hand-written correction recipe) and was
+    previously interpolated raw, so an untrusted/typo'd row containing "<" or
+    "&" would have broken the "Hinweise" markup instead of just displaying
+    oddly."""
     if kpis.empty:
         return ""
     meta = kpis[kpis["kpi_group"] == "meta"]
@@ -301,8 +308,9 @@ def _meta_notes(kpis):
         return ""
     items = []
     for _, r in meta.iterrows():
-        items.append("<li><b>" + str(r["kpi_name"]) + "</b>: " + str(r["value"])
-                     + " " + str(r["unit"]) + " &mdash; " + str(r["source"]) + "</li>")
+        items.append("<li><b>" + html.escape(str(r["kpi_name"])) + "</b>: "
+                     + html.escape(str(r["value"])) + " " + html.escape(str(r["unit"]))
+                     + " &mdash; " + html.escape(str(r["source"])) + "</li>")
     return ('<h2>Hinweise</h2><div class="panel">'
             '<ul style="margin:0;padding-left:18px">' + "".join(items) + "</ul></div>")
 
@@ -543,6 +551,31 @@ def render_run_page(data, title, maps=None):
     return render_page(title, body, body_js, extra_head=maps.get("head", ""))
 
 
+def _meta_notes_for_runs(runs):
+    """Union of every run's meta rows, each `kpi_name` prefixed with "<run
+    label>: " (Task 4, review I4): before this, a contamination marker (e.g.
+    `meta/modular_contaminated_kpis`) only ever surfaced on that RUN's own
+    page via `_meta_notes` -- the comparison page (the page that actually
+    produces the cross-scenario figures a reader/paper cites) had no
+    provenance channel of its own. Reuses `_meta_notes` verbatim (same
+    escaping, same "Hinweise" markup) by renaming rows before concatenation,
+    rather than teaching it a second, per-run code path. "" when no run
+    carries any meta row (every baseline-only comparison)."""
+    frames = []
+    for r in runs:
+        kpis = r["data"].kpis
+        if kpis.empty:
+            continue
+        meta = kpis[kpis["kpi_group"] == "meta"].copy()
+        if not len(meta):
+            continue
+        meta["kpi_name"] = r["label"] + ": " + meta["kpi_name"].astype(str)
+        frames.append(meta)
+    if not frames:
+        return ""
+    return _meta_notes(pd.concat(frames, ignore_index=True))
+
+
 def render_comparison_page(runs, title):
     """runs: list of dicts {label, scenario, data (RunData)}.
 
@@ -634,7 +667,12 @@ def render_comparison_page(runs, title):
     table = ('<h2>Alle KPIs im Vergleich</h2><div class="panel tablewrap">'
              '<table class="kpis">' + header + "".join(body_rows) + "</table></div>")
 
-    cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table
+    # Task 4 (review I4): the marker payload belongs on the page that produces
+    # the cross-scenario figures -- below the union table, not buried in a
+    # per-run tab a reader may never open.
+    notes = _meta_notes_for_runs(runs)
+
+    cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table + notes
 
     # per-run tabs: real compact DRT/LMD tab builders, gated by presence
     # exactly like render_run_page's has_drt/has_lmd.

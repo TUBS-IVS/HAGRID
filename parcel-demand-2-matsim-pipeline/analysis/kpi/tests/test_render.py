@@ -4,6 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pandas as pd
+
 from build_kpis import build
 import render
 
@@ -224,3 +226,223 @@ def test_modular_kpis_are_rendered_in_the_table(tmp_path):
 
     assert "swaps_completed" in html
     assert ">modular<" in html
+
+
+# --- Task 4 (1d paper-readiness fixwave): contamination banner on tiles,
+# marker payload on the comparison page, secondary badges (review I1/I8/I4/M11) ---
+
+CONTAMINATION_BADGE = "enthaelt Frachtanteil, s. METHODS-LOG 2.14"
+
+
+def _with_kpi_row(data, kpi_name, value, kpi_group="system", unit="h", source="events"):
+    """Append one synthesized KPI row, following the `_with_meta_row` pattern
+    above -- the drtrun fixture (no_events=True) carries none of the
+    event-reconstruction-only KPIs the affected tiles need."""
+    row = data.kpis.iloc[0].copy()
+    row["kpi_group"] = kpi_group
+    row["kpi_name"] = kpi_name
+    row["value"] = value
+    row["unit"] = unit
+    row["source"] = source
+    data.kpis.loc[len(data.kpis)] = row
+    return data
+
+
+def _with_modular_marker(data, source="subtract: drt_tour_hours_total | rescale x tour/(tour-freight)"):
+    """Append the meta/modular_contaminated_kpis provenance row, mimicking
+    extract_drt._modular_marker_rows on a DRT_MODULAR run."""
+    import extract_drt
+    return _with_kpi_row(data, extract_drt.MODULAR_CONTAMINATION_KPI, 8,
+                         kpi_group="meta", unit="kpis", source=source)
+
+
+def _with_secondary_marker(data):
+    """Append the meta/modular_secondary_contaminated provenance row."""
+    return _with_kpi_row(
+        data, "modular_secondary_contaminated", 8, kpi_group="meta", unit="kpis",
+        source="kpi_distributions.csv (...) and kpi_vehicles.csv (...); see METHODS-LOG 2.14")
+
+
+def test_baseline_run_page_has_no_contamination_badges(tmp_path):
+    # Pin: without either marker row, no badge string appears anywhere --
+    # existing (pre-Task-4) pages must render unchanged.
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    data = render.load_run_data(out)
+    html = render.render_run_page(data, title="DRT_TEST")
+    assert CONTAMINATION_BADGE not in html
+    assert "Frachtexkursionen erscheinen als leere Fahrten" not in html
+    assert "pax-bereinigt" not in html
+
+
+def test_contamination_badge_on_affected_tiles_near_vehicle_km_tile(tmp_path):
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    data = render.load_run_data(out)
+    _with_modular_marker(data)
+    _with_kpi_row(data, "service_ratio_active", 0.42, unit="share")
+    _with_kpi_row(data, "service_ratio_active_pax", 0.55, unit="share")
+    _with_kpi_row(data, "fleet_utilisation_by_time", 0.30, unit="share")
+    _with_kpi_row(data, "fleet_utilisation_by_time_pax", 0.40, unit="share")
+    _with_kpi_row(data, "fleet_utilisation_by_trips", 0.28, unit="share")
+    _with_kpi_row(data, "mean_pax_aboard", 0.9, kpi_group="passenger", unit="pax")
+    _with_kpi_row(data, "mean_pax_aboard_pax", 1.2, kpi_group="passenger", unit="pax")
+    _with_kpi_row(data, "drt_tour_hours_total", 100.0, unit="h")
+    _with_kpi_row(data, "drt_tour_hours_total_pax", 80.0, unit="h")
+
+    html = render.render_run_page(data, title="DRT_TEST")
+
+    # one badge for each of the 6 affected tiles (drt_vehicle_km/drt_empty_ratio
+    # share ONE tile): Fahrzeug-km, Service-Zeit (aktiv), Auslastung (Fahrten),
+    # Auslastung (Zeit), Ø Pax an Bord, Tourdauer gesamt.
+    assert html.count(CONTAMINATION_BADGE) == 6
+    veh_km_idx = html.index("Fahrzeug-km")
+    first_badge_idx = html.index(CONTAMINATION_BADGE)
+    assert veh_km_idx < first_badge_idx < veh_km_idx + 400   # badge sits right after the tile
+    # *_pax companions render as the tile's sub-line
+    assert "pax-bereinigt: 55,0 %" in html
+    assert "pax-bereinigt: 40,0 %" in html
+    assert "pax-bereinigt: 1,20" in html
+    assert "pax-bereinigt: 80,0 h" in html
+
+
+def test_contamination_badge_absent_without_marker_even_with_pax_rows(tmp_path):
+    # A run carrying the *_pax rows but NOT the marker (e.g. Task-3-only CSV
+    # from a build that predates Task 4) must not show any badge.
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    data = render.load_run_data(out)
+    _with_kpi_row(data, "drt_tour_hours_total", 100.0, unit="h")
+    _with_kpi_row(data, "drt_tour_hours_total_pax", 80.0, unit="h")
+
+    html = render.render_run_page(data, title="DRT_TEST")
+
+    assert CONTAMINATION_BADGE not in html
+    assert "pax-bereinigt: 80,0 h" in html   # sub-line is independent of the badge
+
+
+CONTAMINATION_BADGE_HTML = '<div class="warnbanner">' + CONTAMINATION_BADGE + '</div>'
+
+
+def test_contamination_badge_helper_is_kpi_name_gated():
+    # Unit-level: `_contamination_badge` must not fire for an unrelated KPI
+    # name even when the marker row IS present (defends every future call
+    # site against copy-paste passing the wrong name).
+    import extract_drt
+    import render_drt
+    kpis = pd.DataFrame([
+        {"kpi_group": "meta", "kpi_name": extract_drt.MODULAR_CONTAMINATION_KPI,
+         "value": 8, "unit": "kpis", "source": "x"},
+    ])
+    assert render_drt._contamination_badge(kpis, "drt_vehicle_km") == CONTAMINATION_BADGE_HTML
+    assert render_drt._contamination_badge(kpis, "drt_rides") == ""
+
+
+def test_secondary_badge_on_occ_tourduration_and_vehicle_charts():
+    import render_drt
+
+    kpis = pd.DataFrame([
+        {"kpi_group": "meta", "kpi_name": "modular_secondary_contaminated",
+         "value": 8, "unit": "kpis", "source": "kpi_distributions.csv"},
+    ])
+    distributions = pd.DataFrame([
+        {"series": "drt_tour_duration", "bin_lo": 0, "bin_hi": 1, "value": 3, "unit": "h"},
+        {"series": "occ_time", "bin_lo": 0, "bin_hi": 0, "value": 0.3, "unit": "share"},
+        {"series": "occ_time", "bin_lo": 1, "bin_hi": 1, "value": 0.7, "unit": "share"},
+    ])
+    vehicles = pd.DataFrame([{"role": "drt", "vehicle_id": "veh1", "occupied_h": 5.5}])
+    data = render.RunData(kpis=kpis, ts=pd.DataFrame(columns=["series", "hour", "value"]),
+                          provider=pd.DataFrame(), iterations=pd.DataFrame(),
+                          distributions=distributions, vehicles=vehicles)
+
+    html, js = render_drt.build_tab(data, uid="drt")
+
+    assert html.count(CONTAMINATION_BADGE) == 3   # occ chart + tour-duration chart + vehicle chart
+    for anchor_text in ("Besetzungs-Dekomposition", "Aktive Tourdauer je Fahrzeug",
+                        "Besetzte Zeit je Fahrzeug"):
+        idx = html.index(anchor_text)
+        assert CONTAMINATION_BADGE in html[idx:idx + 600]
+
+
+def test_secondary_badge_absent_without_marker():
+    import render_drt
+
+    kpis = pd.DataFrame(columns=["kpi_group", "kpi_name", "value", "unit", "source"])
+    distributions = pd.DataFrame([
+        {"series": "drt_tour_duration", "bin_lo": 0, "bin_hi": 1, "value": 3, "unit": "h"},
+    ])
+    vehicles = pd.DataFrame([{"role": "drt", "vehicle_id": "veh1", "occupied_h": 5.5}])
+    data = render.RunData(kpis=kpis, ts=pd.DataFrame(columns=["series", "hour", "value"]),
+                          provider=pd.DataFrame(), iterations=pd.DataFrame(),
+                          distributions=distributions, vehicles=vehicles)
+
+    html, js = render_drt.build_tab(data, uid="drt")
+
+    assert CONTAMINATION_BADGE not in html
+
+
+def test_comparison_page_meta_notes_below_table_with_run_label_prefix(tmp_path):
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    data_a = render.load_run_data(out)
+    data_b = render.load_run_data(out)
+    _with_modular_marker(data_b, source="drt_source_marker_xyz")
+    runs = [{"label": "Lauf A", "scenario": "DRT_BASELINE", "data": data_a},
+            {"label": "Lauf B", "scenario": "DRT_MODULAR", "data": data_b}]
+
+    html = render.render_comparison_page(runs, title="Vergleich")
+
+    assert "drt_source_marker_xyz" in html
+    assert "Lauf B: " in html
+    table_idx = html.index("Alle KPIs im Vergleich")
+    notes_idx = html.index("Hinweise")
+    assert notes_idx > table_idx
+
+    # a comparison of baseline-only runs carries no Hinweise block at all
+    runs_baseline = [{"label": "Lauf A", "scenario": "DRT_BASELINE", "data": data_a}]
+    html_baseline = render.render_comparison_page(runs_baseline, title="Vergleich")
+    assert "Hinweise" not in html_baseline
+
+
+def test_meta_notes_escapes_html_special_characters():
+    kpis = pd.DataFrame([
+        {"kpi_group": "meta", "kpi_name": "some_marker", "value": "a<b&c",
+         "unit": "u<1>", "source": "a<b&c"},
+    ])
+
+    html = render._meta_notes(kpis)
+
+    assert "a<b&c" not in html
+    assert "u<1>" not in html
+    assert html.count("a&lt;b&amp;c") == 2   # value + source, both escaped
+    assert "u&lt;1&gt;" in html
+
+
+def test_maps_drt_vehicle_layer_gains_legend_caption_when_marker_present(tmp_path):
+    import maps
+    import render_maps
+
+    run = tmp_path / "MINI_run"
+    run.mkdir()
+    analysis = run / "analysis"
+    analysis.mkdir()
+    (analysis / "kpis_long.csv").write_text(
+        "run_id;study_area;scenario;operation_mode;kpi_group;kpi_name;value;unit;source\n"
+        "MINI;x;DRT_MODULAR;y;meta;modular_contaminated_kpis;8;kpis;test\n",
+        encoding="utf-8")
+
+    data = maps.build_map_data(run, "MINI")
+    assert data["drt"]["modular_contaminated"] is True
+
+    blocks = render_maps.build_blocks(data, uid="m0")
+    assert "Frachtexkursionen erscheinen als leere Fahrten" in blocks["drt"]["html"]
+
+
+def test_maps_drt_vehicle_layer_no_caption_when_marker_absent(tmp_path):
+    import maps
+    import render_maps
+
+    run = tmp_path / "MINI_run"
+    run.mkdir()
+
+    data = maps.build_map_data(run, "MINI")
+    assert data["drt"]["modular_contaminated"] is False
+
+    blocks = render_maps.build_blocks(data, uid="m0")
+    assert "Frachtexkursionen erscheinen als leere Fahrten" not in blocks["drt"]["html"]

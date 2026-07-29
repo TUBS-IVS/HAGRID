@@ -57,10 +57,19 @@ def _options(pairs, all_value, all_label):
     return "".join(opts)
 
 
+#: Legend caption for the DRT vehicle layer on a 1d MODULAR run (Task 4,
+#: METHODS-LOG 2.14): freight excursions are occupancy-0 throughout (D2's
+#: passenger lockout), so on the map they are indistinguishable from an
+#: ordinary empty DRT drive -- this line is the only place a reader is told so.
+_MODULAR_MAP_CAPTION = "Frachtexkursionen erscheinen als leere Fahrten"
+
+
 def _drt_html(drt, uid):
     veh_opts = _options(list((drt.get("vehicles") or {}).keys()), "__all__", "Alle")
+    caption = ('<div style="font-size:11px;color:var(--muted);margin:-4px 0 8px">'
+               + _MODULAR_MAP_CAPTION + "</div>") if drt.get("modular_contaminated") else ""
     return (
-        '<div class="panel"><div style="' + _CTRL_STYLE + '">'
+        '<div class="panel">' + caption + '<div style="' + _CTRL_STYLE + '">'
         '<label>Fahrzeug <select id="drt_sel_' + uid + '">' + veh_opts + "</select></label>"
         '<label><input type="checkbox" id="drt_depots_' + uid + '" checked> Depots</label>'
         '<label><input type="checkbox" id="drt_heatpu_' + uid + '"> Heatmap Einstiege</label>'
