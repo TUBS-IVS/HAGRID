@@ -1,0 +1,14 @@
+{
+  "run_id": "MODULAR_TEST",
+  "run_dir_name": "modularrun",
+  "scenario": "DRT_MODULAR",
+  "study_area": "lausitz_hoyerswerda",
+  "operation_mode": "conventional",
+  "tag": "",
+  "sim_date": "13052025",
+  "matsim_iterations": 1,
+  "jsprit_iterations": 1,
+  "fleet_size": 120,
+  "drt_with_freight": true,
+  "created": "2026-07-29T00:00:00"
+}

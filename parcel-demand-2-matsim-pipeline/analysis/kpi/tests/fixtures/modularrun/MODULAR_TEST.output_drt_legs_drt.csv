@@ -1,0 +1,5 @@
+submissionTime;departureTime;personId;requestId;vehicleId;fromLinkId;fromX;fromY;toLinkId;toX;toY;waitTime;arrivalTime;inVehicleTravelTime;travelDistance_m;directTravelDistance_m;fareForLeg;earliestDepartureTime;latestDepartureTime;latestArrivalTime
+25000;25200;p1;drt_1;drt_veh_1;l1;0;0;l2;1;1;300;26000;800;5000;4000;2.6;25000;26100;27000
+25500;25900;p2;drt_2;drt_veh_1;l1;0;0;l2;1;1;400;26800;900;5200;4100;2.6;25500;26600;27500
+29000;29100;p3;drt_3;drt_veh_2;l3;0;0;l4;1;1;100;29900;800;4900;4000;2.6;29000;30100;31000
+36100;36400;p4;drt_4;drt_veh_2;l3;0;0;l4;1;1;300;37200;800;4900;4000;2.6;36100;37300;38200
