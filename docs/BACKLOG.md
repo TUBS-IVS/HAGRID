@@ -204,9 +204,25 @@ Das Nachfrage-Niveau-Band ist gemessen und der Proxy-Fix ist durch → Ergebniss
 Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise in
 [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleibt:
 
-- **`[M]` CV-Batterie nach dem B8-Fix nachziehen** — Bootstrap-KI, Segment-, Cross-Carrier- und
-  Transfer-Check im PANDA-README sind noch OSM-Zahlen. Nur der blinde Hannover-wMAPE (9,8 %) ist
-  neu gemessen. _(added 2026-07-27)_
+- **`[S]` Entscheiden, ob der exogene Altersterm übernommen wird (K6)** — die CV-Batterie auf
+  dem Zensus-Prädiktor (2026-07-29) erfüllt **beide** präregistrierten K6-Bedingungen: die
+  exogene Variante kostet in-region nichts (−0,01 pp, verbessert minimal), und die gefittete
+  Variante stimmt jetzt im Vorzeichen zu (`a65plus` = 0,59 × `a18_49` statt 1,5 ×). Nach der
+  eigenen Regel wäre er zu übernehmen. **Dafür:** Präregistrierung einhalten, und die Lausitz
+  ist +11,8 pp stärker 50+ — der Term korrigiert genau diesen Transferunterschied.
+  **Dagegen:** die Zustimmung kommt aus einer Randlösung (`a50_64` genau 0) auf kollinearen
+  Altersspalten, die gefittete Variante ist blind schlechter (+0,25/+0,42 pp), und der Effekt
+  ist mit **−1,3 %** (mild) bzw. −1,8 % (strong) klein gegen das ±10-%-Band. **Kosten:**
+  Neuexport der drei Level + Restaging + Band neu (3 × ~1 h 40) — praktisch dieselbe
+  Entscheidung wie der Punkt unten, also am besten zusammen entscheiden.
+  Details: `PANDA/docs/transferability.md` → B10, [METHODS-LOG](METHODS-LOG.md) §2.9.
+  _(added 2026-07-29)_
+- **`[S]` Bake-off-Doku nachziehen oder als OSM-Ära kennzeichnen** — `PANDA/docs/`
+  `bakeoff_model_selection.md` ist der einzige Teil der Validierung, der *nicht* auf dem
+  Zensus-Prädiktor neu gerechnet ist (die Batterie ist es, → §2.9). Der Verdikt-Teil
+  („Demografie/Haushalte/Packstationen tragen kein übertragbares Signal") ist plausibel
+  unberührt, aber die Zahlen sind alt. Entweder `studies/bakeoff.py` neu laufen lassen oder
+  eine Kopfzeile setzen. _(added 2026-07-29)_
 - **`[M]` Zustellquoten-Abweichung von −14 % aufklären** — systematisch in beiden Bandarmen,
   hebt sich in Vergleichen weg, macht aber jede *absolut* berichtete Zustellquote zu optimistisch.
   Einstieg: `CarrierGenerator.adjustDeliveryRatesConsideringB2B:252`,

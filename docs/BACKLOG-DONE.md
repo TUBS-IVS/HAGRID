@@ -13,6 +13,23 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-29._
 
 ## 2026-07-29
 
+- **CV-Batterie auf dem Zensus-Prädiktor neu gerechnet** (war `[M]`, offen seit 2026-07-27) —
+  ✅ alle acht `studies/run_cv*.py` in PANDA neu gelaufen, Exit 0, Artefakte neu geschrieben;
+  die überholten OSM-Ära-Artefakte liegen unangetastet in `PANDA/archive/cv_pre_zensus/`
+  (sie sind gitignored, existierten also nur auf Platte — daher kopiert, nicht überschrieben).
+  **Vorprüfung, ohne die keine Zahl gilt:** ein Refit auf `.spatial_cache/df_plz.parquet`
+  reproduziert `fitted_params.json` bitgenau (max. relative Abweichung 0) — mehrere Skripte
+  lesen das Parquet direkt statt über `init_data()`, ein stiller Cache-Vintage-Fehler wäre
+  sonst nicht unterscheidbar von einem echten Ergebnis.
+  Ergebnis und Konsequenzen: [METHODS-LOG](METHODS-LOG.md) **§2.9**, zwei Zurückziehungen
+  **§3.7** (Cross-Carrier) und **§3.2** (Nachtrag: Strukturrichtung), Details und Reproduktion
+  `PANDA/docs/transferability.md` → **B10**. PANDA-README auf Zensus-Zahlen umgestellt.
+  Zwei Skript-Nebenfunde mitbehoben: `run_cv_robustness.py:119` druckte den Skill als
+  **hartcodierte** „+36 %"-Überschrift (jetzt interpoliert), und `run_cv_transfer.py` gab die
+  in B4b längst zurückgezogene Aussage aus, der Ankerabstand sei eine *untere Schranke*
+  (jetzt: offene Fehlerrichtung). Beides Zahlen, die als gemessen aussahen und es nicht waren.
+  Neu daraus im BACKLOG: die K6-Entscheidung und die Bake-off-Doku.
+
 - **1d Whole-Branch-Review: Fix-Wave abgeschlossen** — ✅ Commit
   `fix(modular): correct DRT system-KPI contamination, publish modular group, record limitations
   (final review)` auf `hendrik`. Die vierzehn Task-Reviews konnten querschnittliche Fehler nicht
