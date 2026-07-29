@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-07-28._
+_Zuletzt aktualisiert: 2026-07-29._
 
 ---
 
@@ -67,22 +67,64 @@ Zahlen, Signal-Rausch-Tabelle, Seed-Schalter und der Nachbau-Gotcha:
 - Zu bauen: Run-Fächer über `-Dhagrid.jsprit.seed`, Aggregation (Mittelwert + Min/Max + Streuung)
   in die KPI-Extraktion, Ausweisung im Dashboard.
 - Alternative verworfen: Iterations-Hochlauf (`jspritIter=1000` ≈ 4 h pro Carrier, ~20 h je Arm).
+- **1d explizit einbeziehen (Review 2026-07-29):** der 1d-Validierungsplan enthält null
+  Replikation, obwohl alle Frachtgeometrie-KPIs am §2.1-Rauschboden hängen. Im Methods-Kapitel
+  gepaart vs. ungepaart deklarieren: θ-Sweep innerhalb eines Caps = gepaart auf einer
+  Realisierung (trägt), Cap-Vergleich 12600↔25200 = zwei unabhängige jsprit-Solves (trägt ohne
+  Bänder nicht) → [METHODS-LOG](METHODS-LOG.md) §2.17.
 
 ### `[H]` Modular / U-Shift (Szenario 1d)
 
 Kapsel-Tausch, Offline-jsprit + Pax-Priorität. **Status: Implementierung fertig (2026-07-28),
 Ausführung offen.** 14 Tasks auf `hendrik`, jede mit eigenem Review-Pass und behobenen Findings,
-volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleibt ausschließlich die
+volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleiben die
 **Run-Arbeit**: 10-Sitze-Re-Baseline, Idle-Threshold-Sweep, 7,0-h-Kontrollarm sowie die
 Entscheidung zum prädiktiven Dispatch-Gate (θ_hist, s. Medium-Sektion) — dazu die
-zurückgestellte Sensitivitätsidee unten. POC läuft auf dem aktuellen PANDA-Stand; die gematchte
-Baseline braucht es erst für die Paper-Runs.
+zurückgestellte Sensitivitätsidee unten — **sowie die Nacharbeiten aus dem
+Paper-Readiness-Review 2026-07-29** (nächster Block). POC läuft auf dem aktuellen PANDA-Stand;
+die gematchte Baseline braucht es erst für die Paper-Runs.
 → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
 [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) ·
 [Spike](superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md)
 Konzeptparameter und ihre Begründung: [METHODS-LOG](METHODS-LOG.md) §1.2.
 _(added 2026-07-14, aktualisiert 2026-07-28)_
 
+- **Paper-Readiness-Review 2026-07-29** — drei unabhängige Reviewer-Läufe (Java / Methodik /
+  Python-KPI; Volltexte in `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/paper-review/`,
+  **untracked**), tragende Findings vor Eintrag am Code verifiziert. Keine Architektur-Defekte;
+  alles Export-, Doku- und Test-Arbeit. Substanz → [METHODS-LOG](METHODS-LOG.md) §2.16–§2.23
+  plus Ergänzungen §2.13/§2.14. Offene Arbeit, priorisiert:
+  - **`[H]` δ-Zensur schließen (VOR dem θ-Sweep):** `parcels_unassigned_jsprit` in
+    `modular_tour_stats.csv` + Identity 0, oder bei der Tour-Konversion laut scheitern, wenn die
+    gerouteten Carrier Unassigned-Attribute tragen. Ohne das können die Cap-Arme verschiedene
+    Nachfrage-Nenner haben, unsichtbar → §2.16.
+  - **`[H]` Kontaminations-Fixwelle 2:** Marker-Gate von Event- auf CSV-/Szenario-Signal
+    (`--no-events` publiziert heute **markerlos**, reproduziert; verliert auch
+    `meta/fleet_file_missing`); Comparison-Page rendert Marker-Payload nicht und chartet
+    `drt_vehicle_km` als Headline-Balken; Kachel-`warnbanner` (Shared-Use-Präzedenz in derselben
+    Datei); Korrekturrezept auf Reskalierung korrigieren; „unkorrigierbar"-Wortlaut in Code +
+    §2.14 richtigstellen; Provenance-Kanal für die vier unmarkierten Sekundär-Konsumenten
+    (Distributions/Vehicles/occ_km/Karte) → §2.14-Ergänzung.
+  - **`[M]` Test-Härtung (billig, hochwirksam):** depot-lokales Dispatch-Fixture für das
+    `<=`-Fenster (Mutation `<` bleibt heute grün!); Identity-/Shares-Sum-Checks in
+    `extract_modular`; Unclosed-Window-Zähler vs. `tours_dispatched_incomplete`;
+    Belt-2-CME-Pinning-Test (Revert auf Live-View bleibt grün); `OptimizerRebindGuard`-Feuerpfad;
+    ein echtes 1d-e2e-Fixture (CSV **und** Events — heute testet alles nur den
+    `no_events`-Pfad); Policy für fehlende vs. leere `modular_tour_stats.csv` (leer = Crash,
+    fehlend = still).
+  - **`[M]` Paper-Exporte (alles vorhandene Information):** `max_parcels_per_tour` (D8-Beleg,
+    §2.22); B2B/B2C je Stop (Versprechens-Zerlegung, §2.21); `parcels_missed_overlay` (§2.21);
+    δ-Dekompositions-Rohzähler als eigene KPI-Zeilen (heute nur zwei Shares);
+    `plannedDuration` je Tour (Expiry-Scatter, §2.18); Peak-Swaps je Depot (§2.19); stündliche
+    Pax-Degradation (Warte-/Rejection-Zeitreihe 1d vs. Baseline — der Surge ist ein
+    Stunden-Phänomen, die KPIs sind Tagesaggregate).
+  - **`[L]` Kleinkram:** Javadoc-Rot (`ModularTourDispatcher:48` „:95"→:121; Event-Feld „stop
+    count" ist Paketzahl); +INF-Guard beim Kostenspender (`ModularVehicleTypes:30`);
+    Re-Routing-Cache für festhängende pendende Touren; Depot-CSV im Modular-Input-Precheck;
+    `tour_completion_rate` clampen + 0,0-für-undefiniert auf dem θ=1,0-Arm kenntlich machen;
+    `_meta_notes`-HTML-Escape; `RE_TIME`-Wortgrenze; `geometry`-Euklid- statt Link-Länge;
+    Legacy-`drt-headline`-Dashboard entscheiden (KeyError auf conditional keys; löschen oder
+    fixen).
 - **Zurückgestellte Sensitivitätsidee (User 2026-07-27):** jsprit-Tourplanung als **EIN Pool**
   (ein Carrier, Fahrzeuge an allen 7 Depots, freie Depotwahl je Paket = stärkstes
   Einheitsunternehmen) und/oder beide Varianten als Zerlegung Konsolidierungs- vs.
@@ -145,6 +187,12 @@ _(Prio-Vorschlag: eng an Nachhaltigkeit gekoppelt.)_ _(added 2026-07-14)_
   pauschal mit Verweis Currie/Fournier (User-Erinnerung) vs. 408.000 € Literatur-Benchmark /
   35,25 € pro Fahrt (Legacy-Python) vs. die 68 €/25 €-Platzhalterkarten. Aufgedeckt beim
   Plan-D-maps Task-10 §5-Legacy-Vergleich (married250). _(added 2026-07-17)_
+- **Subtask: 1d-Kostenallokation (Review 2026-07-29):** `drt_cost_per_ride_placeholder` lädt auf
+  einem 1d-Run 100 % der Flottenkosten auf die Passagiere, obwohl ein Teil der Flottenzeit
+  Pakete zustellt — die Modularitätskosten je Fahrt sind überzeichnet, ein Fracht-Kostenkredit
+  fehlt; Kapsel-/Swap-Station-Kapital und Handling fehlen ganz. Beim Neubau der Kostenfunktion
+  die Allokationsregel Fracht↔Pax explizit entscheiden (Zeitanteile aus
+  `drt_freight_hours_total` liegen vor). _(added 2026-07-29)_
 
 ---
 
