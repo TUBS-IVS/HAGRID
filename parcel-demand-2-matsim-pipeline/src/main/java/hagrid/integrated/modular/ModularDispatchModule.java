@@ -24,6 +24,7 @@ import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.contrib.dvrp.schedule.DriveTaskUpdater;
 import org.matsim.contrib.dvrp.schedule.ScheduleTimingUpdater;
 import org.matsim.core.api.experimental.events.EventsManager;
+import org.matsim.core.controler.OutputDirectoryHierarchy;
 import org.matsim.core.mobsim.framework.MobsimTimer;
 import org.matsim.core.router.costcalculators.TravelDisutilityFactory;
 import org.matsim.core.router.util.TravelDisutility;
@@ -164,13 +165,18 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
      *  exceeds this; 1.0 is the never-dispatch control arm, 0.0 dispatches whenever any vehicle
      *  is idle. */
     private final double idleThreshold;
+    /** Task 1: plan-time accounting the module hands the KPI handler (see {@link #install}'s
+     *  provider binding, below - {@link ModularKpiHandler} is no longer {@code @Inject}-
+     *  constructed because Guice has no binding for this plain, caller-supplied record). */
+    private final ModularPlanStats planStats;
 
     public ModularDispatchModule(DrtConfigGroup drtCfg, List<ModularFreightTour> tours,
-                                 double idleThreshold) {
+                                 double idleThreshold, ModularPlanStats planStats) {
         super(drtCfg.getMode());
         this.drtCfg = drtCfg;
         this.tours = List.copyOf(tours);
         this.idleThreshold = idleThreshold;
+        this.planStats = planStats;
     }
 
     @Override
@@ -188,7 +194,17 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
         // by tour id, and Task 4 tour ids are carrier-scoped), but they would be a silent SUM across
         // modes, not per-mode KPIs. 1d is single-mode (drt) by design; a multi-mode variant must make
         // this binding modal and put the mode in the filename.
-        bind(ModularKpiHandler.class).asEagerSingleton();
+        //
+        // Task 1: ModularKpiHandler's ctor now also takes ModularPlanStats - a plain,
+        // caller-supplied record Guice has no binding for, so it can no longer be @Inject-
+        // constructed. bind(...).toProvider(...) resolves OutputDirectoryHierarchy through Guice
+        // (via a Provider, since it is not available yet at install() time) and closes over this
+        // module's OWN planStats field - the module "holds the stats", per design.
+        com.google.inject.Provider<OutputDirectoryHierarchy> controlerIOProvider =
+                binder().getProvider(OutputDirectoryHierarchy.class);
+        bind(ModularKpiHandler.class)
+                .toProvider(() -> new ModularKpiHandler(controlerIOProvider.get(), planStats))
+                .asEagerSingleton();
         addEventHandlerBinding().to(ModularKpiHandler.class);
         addControlerListenerBinding().to(ModularKpiHandler.class);
 

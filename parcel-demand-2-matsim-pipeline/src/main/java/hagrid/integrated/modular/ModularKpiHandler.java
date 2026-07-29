@@ -1,8 +1,9 @@
 package hagrid.integrated.modular;
 
-import com.google.inject.Inject;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
 import org.matsim.core.controler.OutputDirectoryHierarchy;
 import org.matsim.core.controler.events.ShutdownEvent;
 import org.matsim.core.controler.listener.ShutdownListener;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -165,6 +167,10 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         double serviceMeters;
         double dispatchedAt = Double.NaN;
         double completedAt = Double.NaN;
+        // Task 1 (review F7, peak_concurrent_swaps): every SWAP_DONE's event time, appended in
+        // handleEvent's SWAP_DONE case alongside the plain swaps++ counter. A swap occupies
+        // [time - Modular.RETOOLING_S, time] (SWAP_DONE fires at the swap's END, not its start).
+        final List<Double> swapTimes = new ArrayList<>();
     }
 
     /** CLEARED on {@link #reset(int)} — the 1c {@code dd34b23} per-iteration lesson. */
@@ -176,17 +182,30 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      * {@link #reset(int)} along with {@link #byTour}.
      */
     private final Set<String> unknownTourIdsLogged = new LinkedHashSet<>();
+    /**
+     * Task 1 (defensive, ambiguity resolution): tour ids whose SWAP_DONE arrived with no depot in
+     * {@link #planStats}'s {@code depotByTourId} map already logged once, so a systemic mismatch
+     * (e.g. the map built against a different tour list) cannot flood the log. Their swaps are
+     * still counted, grouped under the synthetic key {@code "unknown"} - never dropped, never a
+     * crash. CLEARED on {@link #reset(int)} along with {@link #byTour}.
+     */
+    private final Set<String> unknownDepotTourIdsLogged = new LinkedHashSet<>();
     private final Path outputCsv;
+    /** Task 1: plan-time accounting (demand/unassigned/missed/max-load/depot-by-tour), computed
+     *  once by {@link ModularTourConverter#planStats} right after {@code convert} and handed in by
+     *  {@link ModularDispatchModule} - this handler never touches a {@code Carriers} object. */
+    private final ModularPlanStats planStats;
 
-    @Inject
-    public ModularKpiHandler(OutputDirectoryHierarchy controlerIO) {
+    public ModularKpiHandler(OutputDirectoryHierarchy controlerIO, ModularPlanStats planStats) {
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
+        this.planStats = planStats;
     }
 
     @Override
     public void reset(int iteration) {
         byTour.clear();
         unknownTourIdsLogged.clear();
+        unknownDepotTourIdsLogged.clear();
     }
 
     @Override
@@ -236,7 +255,10 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 s.deadheadMeters = event.getDeadheadMeters();
                 s.serviceMeters = event.getServiceMeters();
             }
-            case SWAP_DONE -> s.swaps++;
+            case SWAP_DONE -> {
+                s.swaps++;
+                s.swapTimes.add(event.getTime());
+            }
             case STOP_SERVED -> {
                 s.parcelsServed += event.getParcels();
                 if (event.getTime() > Modular.DELIVERY_DAY_END_S) {
@@ -323,7 +345,15 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 "parcels_served_late;" + parcelsServedLate,
                 // APPENDED, never inserted (review Finding 3): the twenty names above and their
                 // order are a published contract Task 13's extractor and its tests read.
-                "tours_rejected_at_splice;" + toursRejectedAtSplice));
+                "tours_rejected_at_splice;" + toursRejectedAtSplice,
+                // Task 1 (review F1/F3/F5/F7, METHODS-LOG 2.16): five MORE metrics appended after
+                // tours_rejected_at_splice, in this exact order - the twenty-one names above are
+                // untouched and keep their positions; nothing here may ever be inserted earlier.
+                "parcels_demand;" + planStats.parcelsDemand(),
+                "parcels_unassigned_jsprit;" + planStats.parcelsUnassignedJsprit(),
+                "parcels_missed_overlay;" + planStats.parcelsMissedOverlay(),
+                "max_parcels_per_tour;" + planStats.maxParcelsPerTour(),
+                "peak_concurrent_swaps;" + peakConcurrentSwaps()));
         try {
             Path parent = outputCsv.getParent();
             if (parent != null) {
@@ -384,5 +414,68 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
 
     private double sumD(Predicate<TourStat> p, ToDoubleFunction<TourStat> f) {
         return byTour.values().stream().filter(p).mapToDouble(f).sum();
+    }
+
+    /**
+     * Task 1 (review F7): {@code peak_concurrent_swaps} = the max, over depots, of the max
+     * number of swaps simultaneously "in progress" at that depot at any instant of the run. A
+     * SWAP_DONE fires at the swap's END (design D-none: there is no separate SWAP_STARTED event),
+     * so swap {@code k} ending at {@code t} is taken to occupy {@code [t - RETOOLING_S, t]}.
+     * Depot is resolved per tour via {@link #planStats}'s {@code depotByTourId} - a tour id that
+     * map does not know (defensive; should not happen for any tour this handler's own PLANNED
+     * event created) is grouped under the synthetic key {@code "unknown"} and logged ONCE, never
+     * dropped and never a crash (ambiguity resolution, mirroring
+     * {@link #unknownTourIdsLogged}'s flood-guard).
+     */
+    private long peakConcurrentSwaps() {
+        Map<String, List<Double>> swapEndTimesByDepot = new LinkedHashMap<>();
+        for (Map.Entry<String, TourStat> entry : byTour.entrySet()) {
+            TourStat s = entry.getValue();
+            if (s.swapTimes.isEmpty()) {
+                continue;
+            }
+            String tourId = entry.getKey();
+            Id<Link> depot = planStats.depotByTourId().get(tourId);
+            String depotKey;
+            if (depot != null) {
+                depotKey = depot.toString();
+            } else {
+                depotKey = "unknown";
+                if (unknownDepotTourIdsLogged.add(tourId)) {
+                    LOG.warn("SWAP_DONE for tour '{}' has no depot in planStats.depotByTourId() -"
+                            + " counting its {} swap(s) under the synthetic depot key 'unknown'"
+                            + " for peak_concurrent_swaps.", tourId, s.swapTimes.size());
+                }
+            }
+            swapEndTimesByDepot.computeIfAbsent(depotKey, k -> new ArrayList<>()).addAll(s.swapTimes);
+        }
+        long peak = 0;
+        for (List<Double> endTimes : swapEndTimesByDepot.values()) {
+            peak = Math.max(peak, maxConcurrentSwaps(endTimes));
+        }
+        return peak;
+    }
+
+    /**
+     * Classic sweep-line over interval endpoints for ONE depot's swap-end times. Each swap ending
+     * at {@code t} occupies {@code [t - RETOOLING_S, t]}; at a tie timestamp an interval END is
+     * processed BEFORE an interval START (achieved by sorting the -1 delta ahead of the +1 delta
+     * at equal times), so two back-to-back swaps - one's end exactly equal to the next's start -
+     * do NOT count as concurrent.
+     */
+    private static long maxConcurrentSwaps(List<Double> swapEndTimes) {
+        List<double[]> deltas = new ArrayList<>();
+        for (double end : swapEndTimes) {
+            deltas.add(new double[] {end - Modular.RETOOLING_S, 1});
+            deltas.add(new double[] {end, -1});
+        }
+        deltas.sort(Comparator.<double[]>comparingDouble(d -> d[0]).thenComparingDouble(d -> d[1]));
+        long running = 0;
+        long peak = 0;
+        for (double[] delta : deltas) {
+            running += (long) delta[1];
+            peak = Math.max(peak, running);
+        }
+        return peak;
     }
 }

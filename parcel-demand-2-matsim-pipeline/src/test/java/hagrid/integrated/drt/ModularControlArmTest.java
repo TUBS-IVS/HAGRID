@@ -214,8 +214,8 @@ class ModularControlArmTest {
             DrtConfigGroup drtCfg = MultiModeDrtConfigGroup.get(scenario.getConfig())
                     .getModalElements().iterator().next();
             // LAST overriding module (SharedUseModule convention) - theta=1.0, the control arm.
-            controler.addOverridingModule(
-                    new ModularDispatchModule(drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL));
+            controler.addOverridingModule(new ModularDispatchModule(
+                    drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL, staging.stats));
         }
         controler.run();
     }
@@ -242,8 +242,8 @@ class ModularControlArmTest {
         DrtConfigComposer.installModules(controler, DEPOT_COORDS, RETURN_START_S,
                 PER_DEPOT_CAPACITY, DEMAND_ESTIMATION_PERIOD_S);
         if (withModule) {
-            controler.addOverridingModule(
-                    new ModularDispatchModule(drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL));
+            controler.addOverridingModule(new ModularDispatchModule(
+                    drtCfg, staging.tours, IDLE_THRESHOLD_CONTROL, staging.stats));
         }
         controler.run();
     }

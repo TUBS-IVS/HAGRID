@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
 import org.matsim.contrib.dvrp.fleet.DvrpVehicle;
 import org.matsim.core.config.groups.ControllerConfigGroup;
 import org.matsim.core.controler.OutputDirectoryHierarchy;
@@ -57,10 +58,10 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("delta decomposition + conservation identities from a mixed event sequence")
     void aggregatesAndConserves(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
         // tour A: planned -> dispatched -> 2 stops (3+2 parcels) -> completed (both swaps)
         handler.handleEvent(ModularTourEvent.planned(100, "dhl_t0", 5));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "dhl_t0", vehId, 5, 2500.0, 4200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "dhl_t0", vehId, 5, 2500.0, 4200.0, 1500.0, 1800.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "dhl_t0", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "dhl_t0", vehId, 3));
         handler.handleEvent(ModularTourEvent.stopServed(500, "dhl_t0", vehId, 2));
@@ -71,14 +72,14 @@ class ModularKpiHandlerTest {
         handler.handleEvent(ModularTourEvent.expired(700, "dhl_t1", 4));
         // tour C: planned -> dispatched -> 1 of 2 stops served, never completed (EOD)
         handler.handleEvent(ModularTourEvent.planned(100, "gls_t0", 7));
-        handler.handleEvent(ModularTourEvent.dispatched(800, "gls_t0", vehId2, 7, 1000.0, 2000.0));
+        handler.handleEvent(ModularTourEvent.dispatched(800, "gls_t0", vehId2, 7, 1000.0, 2000.0, 1500.0, 1800.0));
         handler.handleEvent(ModularTourEvent.swapDone(900, "gls_t0", vehId2));
         handler.handleEvent(ModularTourEvent.stopServed(950, "gls_t0", vehId2, 4));
         // tour D: planned, still pending at EOD
         handler.handleEvent(ModularTourEvent.planned(100, "gls_t1", 2));
         // tour E: completes LATE (after 21:00 = 75600) - C8 marker case
         handler.handleEvent(ModularTourEvent.planned(100, "hermes_t0", 2));
-        handler.handleEvent(ModularTourEvent.dispatched(70000, "hermes_t0", vehId, 2, 500.0, 800.0));
+        handler.handleEvent(ModularTourEvent.dispatched(70000, "hermes_t0", vehId, 2, 500.0, 800.0, 1500.0, 1800.0));
         handler.handleEvent(ModularTourEvent.swapDone(70600, "hermes_t0", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(75900, "hermes_t0", vehId, 2));
         handler.handleEvent(ModularTourEvent.swapDone(76000, "hermes_t0", vehId));
@@ -135,10 +136,12 @@ class ModularKpiHandlerTest {
 
         // Exactly the metric names the brief mandates, no more, no less - Task 13's extractor is
         // written against this exact set. 20 originally + tours_rejected_at_splice APPENDED by
-        // the whole-branch review (Finding 3); the twenty and their order are unchanged.
-        assertThat(csv).hasSize(21);
+        // the whole-branch review (Finding 3), + 5 more APPENDED by Task 1 (paper-readiness
+        // review F1/F3/F5/F7): 26 total. The twenty-one and their order are unchanged; position
+        // 20 is still tours_rejected_at_splice, since the five new ones land AFTER it.
+        assertThat(csv).hasSize(26);
         assertThat(List.copyOf(csv.keySet()).get(20))
-                .as("appended LAST so no existing column position shifts")
+                .as("appended LAST (before Task 1) so no existing column position shifts")
                 .isEqualTo("tours_rejected_at_splice");
     }
 
@@ -157,7 +160,7 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("Finding 3: tours_rejected_at_splice counts splicer refusals, not pending expiries")
     void spliceRejectionIsCountedSeparatelyFromExpiry(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         handler.handleEvent(ModularTourEvent.planned(100, "t_rejected", 5));
         handler.handleEvent(ModularTourEvent.spliceRejected(200, "t_rejected", vehId, 5));
@@ -168,7 +171,7 @@ class ModularKpiHandlerTest {
         // rejected once, then a nearer vehicle turned up: rejected AND dispatched, no contradiction
         handler.handleEvent(ModularTourEvent.planned(100, "t_late_fit", 3));
         handler.handleEvent(ModularTourEvent.spliceRejected(200, "t_late_fit", vehId, 3));
-        handler.handleEvent(ModularTourEvent.dispatched(400, "t_late_fit", vehId2, 3, 10.0, 20.0));
+        handler.handleEvent(ModularTourEvent.dispatched(400, "t_late_fit", vehId2, 3, 10.0, 20.0, 0.0, 0.0));
 
         handler.notifyShutdown(fixtureShutdownEvent());
 
@@ -186,11 +189,11 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("reset(iteration) clears per-iteration state - CSV reflects ONLY the final iteration")
     void resetClearsState(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         // iteration 0: tour A - planned, dispatched, one stop served, 2 swaps, completed.
         handler.handleEvent(ModularTourEvent.planned(100, "dhl_t0", 9));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "dhl_t0", vehId, 9, 500.0, 900.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "dhl_t0", vehId, 9, 500.0, 900.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "dhl_t0", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "dhl_t0", vehId, 9));
         handler.handleEvent(ModularTourEvent.swapDone(500, "dhl_t0", vehId));
@@ -218,9 +221,9 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("C8 boundary: exactly DELIVERY_DAY_END_S is ON TIME, not late (strict >, not >=)")
     void lateThresholdIsStrictlyGreaterThan(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
         handler.handleEvent(ModularTourEvent.planned(100, "t_boundary", 3));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "t_boundary", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_boundary", vehId, 3, 100.0, 200.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "t_boundary", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(Modular.DELIVERY_DAY_END_S, "t_boundary", vehId, 3));
         handler.handleEvent(ModularTourEvent.swapDone(Modular.DELIVERY_DAY_END_S, "t_boundary", vehId));
@@ -236,9 +239,9 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("C8 lateness is judged per-EVENT, not smeared from the tour's own late completion")
     void lateClassificationIsPerEventNotPerTour(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
         handler.handleEvent(ModularTourEvent.planned(100, "t_mixed", 5));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "t_mixed", vehId, 5, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_mixed", vehId, 5, 100.0, 200.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "t_mixed", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "t_mixed", vehId, 5));    // well on-time
         handler.handleEvent(ModularTourEvent.swapDone(76200, "t_mixed", vehId));
@@ -258,7 +261,7 @@ class ModularKpiHandlerTest {
     @DisplayName("Review Finding 2: a non-PLANNED phase for an unknown tour id is logged, not "
             + "thrown, and does not corrupt any other tour's counts")
     void nonPlannedPhaseForUnknownTourIsLoggedNotThrown(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         // ghost_tour never had a PLANNED - originally this threw IllegalStateException. Review
         // Finding 2: that throw contradicted the class's own "loud but non-fatal" contract (Task
@@ -276,7 +279,7 @@ class ModularKpiHandlerTest {
 
         // A perfectly ordinary tour fed afterward must be entirely unaffected.
         handler.handleEvent(ModularTourEvent.planned(100, "t_ok", 3));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "t_ok", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "t_ok", vehId, 3));
         handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
@@ -295,11 +298,11 @@ class ModularKpiHandlerTest {
     @DisplayName("conservation check is loud but non-fatal, and catches a stray STOP_SERVED "
             + "against a never-dispatched tour that ambiguity #4's guard alone cannot")
     void conservationViolationDoesNotPreventCsvWrite(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         // t_ok: a perfectly ordinary, fully-conserving tour.
         handler.handleEvent(ModularTourEvent.planned(100, "t_ok", 3));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "t_ok", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "t_ok", vehId, 3));
         handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
@@ -318,7 +321,7 @@ class ModularKpiHandlerTest {
                 .doesNotThrowAnyException();
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(21);
+        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(26);
 
         double dispatched = csv.get("parcels_dispatched");
         double served = csv.get("parcels_served");
@@ -339,12 +342,12 @@ class ModularKpiHandlerTest {
     @DisplayName("Review Finding 1: freight_vehicle_hours excludes a tour that reached COMPLETED "
             + "without DISPATCHED, instead of poisoning the whole-run sum with NaN")
     void freightVehicleHoursExcludesCompletedWithoutDispatched(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         // t_ok: a normal, fully-dispatched-and-completed tour with real vehicle-hours (500 -> 200
         // = 300s) to withdraw from passenger service.
         handler.handleEvent(ModularTourEvent.planned(100, "t_ok", 3));
-        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0));
+        handler.handleEvent(ModularTourEvent.dispatched(200, "t_ok", vehId, 3, 100.0, 200.0, 0.0, 0.0));
         handler.handleEvent(ModularTourEvent.swapDone(300, "t_ok", vehId));
         handler.handleEvent(ModularTourEvent.stopServed(400, "t_ok", vehId, 3));
         handler.handleEvent(ModularTourEvent.swapDone(500, "t_ok", vehId));
@@ -369,7 +372,7 @@ class ModularKpiHandlerTest {
     @Test
     @DisplayName("Minor 1: no events at all still writes a complete, well-formed, all-zero CSV")
     void noEventsWritesAllZeroCsv(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         handler.notifyShutdown(fixtureShutdownEvent());
 
@@ -377,10 +380,10 @@ class ModularKpiHandlerTest {
         assertThat(Files.exists(path)).as("CSV must be written even for a legitimately freight-free run").isTrue();
         List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
         assertThat(lines.get(0)).isEqualTo("metric;value");
-        assertThat(lines).as("header + all 21 metrics").hasSize(22);
+        assertThat(lines).as("header + all 26 metrics").hasSize(27);
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).hasSize(21);
+        assertThat(csv).hasSize(26);
         csv.values().forEach(v -> assertThat(v).isEqualTo(0.0));
     }
 
@@ -388,7 +391,7 @@ class ModularKpiHandlerTest {
     @DisplayName("Minor 2: a tour counted as BOTH expired and dispatched drives a pending_eod "
             + "residual negative - the one hole the five identities structurally cannot see")
     void doubleCountedTourDrivesResidualNegative(@TempDir Path tmp) throws Exception {
-        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), zeroPlanStats());
 
         // t_double: PLANNED, then BOTH expired AND dispatched - an accounting anomaly no single
         // event-phase check can rule out (nothing enforces mutual exclusivity between the two
@@ -397,7 +400,7 @@ class ModularKpiHandlerTest {
         // stated identities (1 == 1 + 1 + (-1) still "holds" arithmetically).
         handler.handleEvent(ModularTourEvent.planned(100, "t_double", 5));
         handler.handleEvent(ModularTourEvent.expired(200, "t_double", 5));
-        handler.handleEvent(ModularTourEvent.dispatched(300, "t_double", vehId, 5, 10.0, 20.0));
+        handler.handleEvent(ModularTourEvent.dispatched(300, "t_double", vehId, 5, 10.0, 20.0, 0.0, 0.0));
 
         assertThatCode(() -> handler.notifyShutdown(fixtureShutdownEvent()))
                 .as("loud but non-fatal - a negative residual must still not prevent the CSV write")
@@ -406,6 +409,129 @@ class ModularKpiHandlerTest {
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
         assertThat(csv.get("tours_pending_eod")).as("1 planned - 1 expired - 1 dispatched = -1").isEqualTo(-1);
         assertThat(csv.get("parcels_pending_eod")).as("5 planned - 5 expired - 5 dispatched = -5").isEqualTo(-5);
+    }
+
+    /**
+     * Task 1 (paper-readiness review F1/F3/F5/F7, METHODS-LOG 2.16): {@link ModularKpiHandler}'s
+     * ctor now also takes a {@link ModularPlanStats}, so the five new CSV metrics must be present
+     * for every run - including ones that never touch plan-time accounting. This test pins their
+     * VALUES and their exact append position, both directly (the brief's literal
+     * {@code containsSubsequence} sketch) and via a full-arithmetic reconstruction of the
+     * pre-existing 21 lines (append-only pin: the original metrics' own computation must be
+     * byte-for-byte untouched by this change, not merely equal after floating-point rounding).
+     *
+     * <p>The two SWAP_DONE events on "dhl_t0" at t=30000/30200 occupy
+     * {@code [29580,30000]}/{@code [29780,30200]} at the SAME depot - they overlap (29780 &lt;
+     * 30000) so {@code peak_concurrent_swaps} must be 2, not 1 (which a same-tour-only or
+     * no-overlap-detection implementation would wrongly produce) and not 3 (which counting the
+     * second depot's independent swap into the same bucket would wrongly produce - the max is
+     * taken PER DEPOT, then maxed across depots, never summed across depots).
+     */
+    @Test
+    @DisplayName("Task 1: parcels_demand/unassigned/missed/max_parcels_per_tour/peak_concurrent_swaps "
+            + "appended after tours_rejected_at_splice, in order, without disturbing the original 21")
+    void planTimeMetricsAppendedAfterToursRejectedAtSplice(@TempDir Path tmp) throws Exception {
+        Id<Link> depotA = Id.createLinkId("depotA");
+        Id<Link> depotB = Id.createLinkId("depotB");
+        ModularPlanStats stats = new ModularPlanStats(15, 2, 1, 8,
+                Map.of("dhl_t0", depotA, "gls_t0", depotB));
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
+
+        // dhl_t0 (depotA): two swaps 200s apart - overlapping intervals, peak 2 at this depot.
+        handler.handleEvent(ModularTourEvent.planned(100, "dhl_t0", 5));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "dhl_t0", vehId));
+        handler.handleEvent(ModularTourEvent.swapDone(30200, "dhl_t0", vehId));
+        // gls_t0 (depotB): one swap alone - peak 1 at this depot.
+        handler.handleEvent(ModularTourEvent.planned(100, "gls_t0", 3));
+        handler.handleEvent(ModularTourEvent.swapDone(50000, "gls_t0", vehId2));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+        List<String> lines = Files.readAllLines(
+                tmp.resolve("TESTRUN.modular_tour_stats.csv"), StandardCharsets.UTF_8);
+
+        // Brief's literal sketch: the five new metrics appear, IN ORDER, after the append-only
+        // twenty-first metric.
+        assertThat(lines).containsSubsequence(
+                "tours_rejected_at_splice;0",
+                "parcels_demand;15",
+                "parcels_unassigned_jsprit;2",
+                "parcels_missed_overlay;1",
+                "max_parcels_per_tour;8",
+                "peak_concurrent_swaps;2");
+
+        // Append-only pin, strengthened beyond containsSubsequence: the 21 pre-existing lines are
+        // reconstructed here from the SAME arithmetic ModularKpiHandler uses (not hand-typed
+        // literals, to sidestep floating-point string-representation guesswork) and compared
+        // line-for-line - a reordering, an inserted metric, or a changed formula for any of the
+        // original 21 would be caught here even if it happened to still contain the five new
+        // lines somewhere in the file.
+        long swaps = 3;    // 2 (dhl_t0) + 1 (gls_t0)
+        List<String> expectedOriginal21 = List.of(
+                "metric;value",
+                "tours_planned;" + 2,
+                "tours_expired_pending;" + 0,
+                "tours_dispatched;" + 0,
+                "tours_completed;" + 0,
+                "tours_dispatched_incomplete;" + 0,
+                "tours_pending_eod;" + 2,
+                "parcels_planned;" + 8,
+                "parcels_expired_pending;" + 0,
+                "parcels_dispatched;" + 0,
+                "parcels_served;" + 0,
+                "parcels_dispatched_unserved;" + 0,
+                "parcels_pending_eod;" + 8,
+                "delta_parcels;" + 8,
+                "swaps_completed;" + swaps,
+                "retooling_hours;" + (swaps * Modular.RETOOLING_S / 3600.0),
+                "deadhead_km_planned;" + 0.0,
+                "service_km_planned;" + 0.0,
+                "freight_vehicle_hours;" + 0.0,
+                "tours_completed_late;" + 0,
+                "parcels_served_late;" + 0,
+                "tours_rejected_at_splice;" + 0);
+        assertThat(lines.subList(0, 22))
+                .as("the 21 pre-existing metrics (plus header) must be byte-identical to before")
+                .isEqualTo(expectedOriginal21);
+        assertThat(lines.subList(22, lines.size()))
+                .as("exactly the five new metrics, nothing else, in the mandated order")
+                .containsExactly(
+                        "parcels_demand;15",
+                        "parcels_unassigned_jsprit;2",
+                        "parcels_missed_overlay;1",
+                        "max_parcels_per_tour;8",
+                        "peak_concurrent_swaps;2");
+    }
+
+    /**
+     * Ambiguity resolution (defensive): a SWAP_DONE for a tourId absent from
+     * {@code planStats.depotByTourId()} must not crash or drop the swap - it is grouped under the
+     * synthetic depot key {@code "unknown"} instead, so it still contributes to
+     * {@code peak_concurrent_swaps}.
+     */
+    @Test
+    @DisplayName("Task 1: SWAP_DONE for a tourId with no depot in planStats is grouped under "
+            + "'unknown' and counted, never crashes")
+    void swapDoneForUnmappedTourIdCountsUnderSyntheticUnknownDepot(@TempDir Path tmp) throws Exception {
+        ModularPlanStats emptyDepotMap = new ModularPlanStats(0, 0, 0, 0, Map.of());
+        ModularKpiHandler handler =
+                new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), emptyDepotMap);
+
+        handler.handleEvent(ModularTourEvent.planned(100, "t_no_depot", 3));
+        handler.handleEvent(ModularTourEvent.swapDone(200, "t_no_depot", vehId));
+
+        assertThatCode(() -> handler.notifyShutdown(fixtureShutdownEvent()))
+                .doesNotThrowAnyException();
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("peak_concurrent_swaps"))
+                .as("the lone swap still counts, grouped under the synthetic 'unknown' depot")
+                .isEqualTo(1);
+    }
+
+    /** Task 1: a zero-valued fixture for tests that exercise the ORIGINAL 21 metrics only and do
+     *  not care about plan-time accounting - keeps every pre-existing test's all-zero-append
+     *  invariant intact without repeating this literal at every call site. */
+    private static ModularPlanStats zeroPlanStats() {
+        return new ModularPlanStats(0, 0, 0, 0, Map.of());
     }
 
     // -------------------------------------------------------------------------

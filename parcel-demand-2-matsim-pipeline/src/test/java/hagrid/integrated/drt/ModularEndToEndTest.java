@@ -196,7 +196,8 @@ class ModularEndToEndTest {
         DrtConfigComposer.installModules(controler, List.of(new Coord(500.0, 500.0)),
                 RETURN_START_S, /*perDepotCapacity*/ 4.0, DEMAND_ESTIMATION_PERIOD_S);
         // LAST overriding module, after installModules (the SharedUseModule ordering).
-        controler.addOverridingModule(new ModularDispatchModule(drtCfg, tours, IDLE_THRESHOLD));
+        controler.addOverridingModule(
+                new ModularDispatchModule(drtCfg, tours, IDLE_THRESHOLD, staging.stats));
 
         // ---- (a) the run completes: Guice / validator / runtime / schedule-integrity proof ----
         controler.run();

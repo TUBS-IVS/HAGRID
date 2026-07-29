@@ -156,16 +156,23 @@ class ModularTest {
     @Test
     @DisplayName("event round-trips its attributes")
     void eventAttributes() {
+        // Task 1 (paper-readiness review): dispatched() gains plannedDurationS/routedDurationS -
+        // ADDITIVE attributes (regex-based Python consumers reading deadheadMeters/serviceMeters
+        // by name are unaffected).
         ModularTourEvent e = ModularTourEvent.dispatched(3600.0, "dhl_t0",
-                Id.create("drt_1", DvrpVehicle.class), 12, 2500.0, 4200.0);
+                Id.create("drt_1", DvrpVehicle.class), 12, 2500.0, 4200.0, 1500.0, 1800.0);
         assertThat(e.getEventType()).isEqualTo(ModularTourEvent.EVENT_TYPE);
+        assertThat(e.getPlannedDurationS()).isEqualTo(1500.0);
+        assertThat(e.getRoutedDurationS()).isEqualTo(1800.0);
         assertThat(e.getAttributes())
                 .containsEntry("tourId", "dhl_t0")
                 .containsEntry("phase", "DISPATCHED")
                 .containsEntry("vehicle", "drt_1")
                 .containsEntry("parcels", "12")
                 .containsEntry("deadheadMeters", "2500.0")
-                .containsEntry("serviceMeters", "4200.0");
+                .containsEntry("serviceMeters", "4200.0")
+                .containsEntry("plannedDurationS", "1500.0")
+                .containsEntry("routedDurationS", "1800.0");
     }
 
     // --- fixture helpers ---

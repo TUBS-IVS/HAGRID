@@ -4,6 +4,7 @@ import hagrid.integrated.freight.LausitzFreightPreprocessor;
 import hagrid.integrated.freight.LmdTestShapefiles;
 import hagrid.integrated.modular.Modular;
 import hagrid.integrated.modular.ModularFreightTour;
+import hagrid.integrated.modular.ModularPlanStats;
 import hagrid.integrated.modular.ModularTourConverter;
 import hagrid.integrated.modular.ModularVehicleTypes;
 import org.matsim.api.core.v01.Id;
@@ -54,15 +55,20 @@ final class ModularE2eStaging {
     final Path fleetFile;
     final URL cfgUrl;
     final List<ModularFreightTour> tours;
+    /** Task 1: plan-time accounting, computed the same way {@code SimulationRunnerUtils}' modular
+     *  branch does (right after {@code convert}), so both e2e tests can pass it straight into
+     *  {@code ModularDispatchModule}'s new ctor param. */
+    final ModularPlanStats stats;
 
     private ModularE2eStaging(Path shpFile, Path drtNetFile, Path clippedPlans, Path fleetFile,
-                               URL cfgUrl, List<ModularFreightTour> tours) {
+                               URL cfgUrl, List<ModularFreightTour> tours, ModularPlanStats stats) {
         this.shpFile = shpFile;
         this.drtNetFile = drtNetFile;
         this.clippedPlans = clippedPlans;
         this.fleetFile = fleetFile;
         this.cfgUrl = cfgUrl;
         this.tours = tours;
+        this.stats = stats;
     }
 
     /**
@@ -143,7 +149,9 @@ final class ModularE2eStaging {
         new TransportModeNetworkFilter(NetworkUtils.readNetwork(drtNetFile.toString()))
                 .filter(drtNet, Set.of(TransportMode.drt));
         List<ModularFreightTour> tours = ModularTourConverter.convert(routed, carNet, drtNet);
+        // Task 1: same call SimulationRunnerUtils' modular branch makes right after convert().
+        ModularPlanStats stats = ModularTourConverter.planStats(routed, tours);
 
-        return new ModularE2eStaging(shpFile, drtNetFile, clippedPlans, fleetFile, cfgUrl, tours);
+        return new ModularE2eStaging(shpFile, drtNetFile, clippedPlans, fleetFile, cfgUrl, tours, stats);
     }
 }

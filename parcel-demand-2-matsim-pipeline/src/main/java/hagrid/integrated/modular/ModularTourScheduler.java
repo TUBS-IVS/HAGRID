@@ -41,9 +41,17 @@ import java.util.Optional;
  */
 public class ModularTourScheduler {
 
-    /** Planned-km split of one dispatched excursion (KPI payload for the DISPATCHED event). */
+    /**
+     * Planned-km split of one dispatched excursion (KPI payload for the DISPATCHED event).
+     *
+     * @param routedDurationS Task 1 (paper-readiness review): the excursion's actual routed
+     *                        length on the DRT network, {@code plannedCompletion - now} (the
+     *                        dispatch-time "now" passed to {@link #schedule}) - i.e. the SAME
+     *                        {@code completion} variable this method already computes for its own
+     *                        envelope check, reused verbatim rather than re-derived.
+     */
     public record ScheduledExcursion(double deadheadMeters, double serviceMeters,
-                                     double plannedCompletion) {}
+                                     double plannedCompletion, double routedDurationS) {}
 
     private final Network network;
     private final TravelTime travelTime;
@@ -174,7 +182,7 @@ public class ModularTourScheduler {
         schedule.addTask(taskFactory.createStayTask(vehicle, completion,
                 Math.max(vehicle.getServiceEndTime(), completion), depot));
 
-        return Optional.of(new ScheduledExcursion(deadhead, service, completion));
+        return Optional.of(new ScheduledExcursion(deadhead, service, completion, completion - now));
     }
 
     /**
