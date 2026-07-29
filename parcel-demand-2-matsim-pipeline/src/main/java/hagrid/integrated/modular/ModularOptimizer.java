@@ -107,7 +107,17 @@ public class ModularOptimizer implements DrtOptimizer {
      * Belt 2 (spike §3.1): if the timing update the delegate just ran undershot an intended
      * freight duration, push the end back out and ripple the shift downstream
      * (DrtServiceTaskOptimizer pattern). Runs on tasks from the (new, just-started) current task
-     * onward - i.e. every task not yet PERFORMED, matching "any upcoming freight task".
+     * onward - i.e. every task not yet PERFORMED, matching "any upcoming freight task" - WITH ONE
+     * EXCLUSION (review J-F6). A {@link ModularCapacityChangeTask} that IS the current (RUNNING)
+     * task is still visited by the loop below and has its {@code endTime} field rewritten here,
+     * but that rewrite cannot reach the agent already executing it: {@code
+     * DrtActionCreator.createAction} (VERIFY-SOURCE, drt-2025.0-sources.jar) builds the task's
+     * {@code VehicleCapacityChangeActivity} exactly ONCE, at task-start, from {@code
+     * task.getEndTime()} captured as a plain, final {@code double} constructor argument - a later
+     * {@code setEndTime} call on that same task object is invisible to the already-built
+     * activity. So this method only actually FIXES an undershoot on a capacity-change task that
+     * is still PLANNED (not yet started); on one that is already RUNNING the field write is a
+     * cosmetic no-op against a schedule the agent has already stopped consulting.
      */
     private void enforceIntendedDurations(DvrpVehicle vehicle) {
         Schedule schedule = vehicle.getSchedule();

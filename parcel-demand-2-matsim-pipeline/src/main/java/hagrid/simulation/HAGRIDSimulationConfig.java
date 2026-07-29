@@ -871,6 +871,7 @@ public class HAGRIDSimulationConfig {
                     == HagridConfig.Scenario.DRT_MODULAR;
             if (isDrtWithFreight() || modular) {
                 checkFile(Path.of(getLmdDemandShapefile()), "LMD demand shapefile", missing);
+                checkFile(Path.of(getLmdDepotCsv()), "LMD depot CSV", missing);
                 checkFile(Path.of(getLmdVehicleTypes()), "LMD vehicle types", missing);
                 checkFile(Path.of(getLausitzNetworkRaw()), "Lausitz network (raw, jsprit routing)", missing);
             }

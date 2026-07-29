@@ -32,7 +32,7 @@ public final class ModularTourEvent extends Event {
     private final String tourId;
     private final Phase phase;
     private final Id<DvrpVehicle> vehicleId;   // null for PLANNED / EXPIRED
-    private final int parcels;                 // tour total (PLANNED/EXPIRED/DISPATCHED) or stop count (STOP_SERVED); 0 otherwise
+    private final int parcels;                 // tour total (PLANNED/EXPIRED/DISPATCHED) or the PARCEL count of that stop (STOP_SERVED); 0 otherwise
     private final double deadheadMeters;        // DISPATCHED only: approach + return legs
     private final double serviceMeters;         // DISPATCHED only: inter-stop legs
     // Task 1 (paper-readiness review F1/F3/F5/F7): ADDITIVE, DISPATCHED-only fields - existing

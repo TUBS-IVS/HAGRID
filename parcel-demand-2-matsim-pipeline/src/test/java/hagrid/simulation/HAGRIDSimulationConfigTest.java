@@ -84,6 +84,48 @@ class HAGRIDSimulationConfigTest {
     }
 
     /**
+     * Task 6 review (depot-CSV pre-check): the modular-specific branch
+     * ({@code isDrtWithFreight() || modular}) checks the LMD demand shapefile / vehicle types /
+     * raw network trio and now ALSO checks the depot CSV there directly, mirroring the same
+     * {@code requireFile}-style call used for the demand shapefile. Note this does not change
+     * observable behaviour today: the depot CSV was (and still is) already required
+     * unconditionally for every {@code isDrtScenario()} concept a few lines above the modular
+     * branch, so DRT_MODULAR already could not pass without it. This test pins the modular
+     * branch's OWN, now-independent requirement — defense-in-depth against a future edit to that
+     * generic check silently dropping depot-CSV coverage for DRT_MODULAR specifically — by
+     * stubbing every other required file (the 8 non-depot DRT stubs plus the LMD trio) and
+     * deliberately leaving ONLY the depot CSV absent.
+     */
+    @Test
+    @DisplayName("modularRequiresDepotCsv — DRT_MODULAR missing only the depot CSV still aborts naming it")
+    void modularRequiresDepotCsv(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = modularConfig(20);
+            createStub(tempDir, cfg.getDrtNetworkClipped());
+            createStub(tempDir, cfg.getPassengerPlansClipped());
+            createStub(tempDir, cfg.getDrtFleetFile());
+            createStub(tempDir, cfg.getDrtServiceAreaShapefile());
+            createStub(tempDir, cfg.getLausitzBaseConfig());
+            createStub(tempDir, cfg.getLausitzTransitScheduleRaw());
+            createStub(tempDir, cfg.getLausitzTransitVehiclesRaw());
+            createStub(tempDir, cfg.getLausitzVehicleTypes());
+            createStub(tempDir, cfg.getLmdDemandShapefile());
+            createStub(tempDir, cfg.getLmdVehicleTypes());
+            createStub(tempDir, cfg.getLausitzNetworkRaw());
+            // Deliberately NOT stubbed: cfg.getLmdDepotCsv() — the one file this test proves is
+            // still required.
+            DrtInputsFingerprint.write(cfg, Path.of(cfg.getDrtInputsFingerprint()));
+
+            assertThatThrownBy(cfg::validateInputFiles)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("LMD depot CSV");
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /**
      * Inputs present but never fingerprinted (prepared before this guard existed). Existence
      * alone must NOT be accepted — otherwise the run silently uses artifacts whose provenance
      * is unknown.
