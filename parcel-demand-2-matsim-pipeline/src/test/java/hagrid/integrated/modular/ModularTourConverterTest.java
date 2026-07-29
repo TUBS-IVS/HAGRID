@@ -2,6 +2,7 @@ package hagrid.integrated.modular;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
@@ -10,8 +11,11 @@ import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierPlan;
+import org.matsim.freight.carriers.CarrierPlanWriter;
+import org.matsim.freight.carriers.CarrierPlanXmlReader;
 import org.matsim.freight.carriers.CarrierService;
 import org.matsim.freight.carriers.CarrierVehicle;
+import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.Carriers;
 import org.matsim.freight.carriers.CarriersUtils;
 import org.matsim.freight.carriers.ScheduledTour;
@@ -19,6 +23,7 @@ import org.matsim.freight.carriers.Tour;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -261,6 +266,124 @@ class ModularTourConverterTest {
         assertThat(stats.parcelsMissedOverlay()).isZero();
         assertThat(stats.maxParcelsPerTour()).isZero();
         assertThat(stats.depotByTourId()).isEmpty();
+    }
+
+    /**
+     * Review finding (coverage gap): the two {@code planStats} tests above build their
+     * {@code Carriers} purely in-memory via {@code putIntAttr} - they never exercise the
+     * production path, which ALWAYS calls {@code planStats} on a {@code Carriers} read back from
+     * disk via {@code CarrierPlanXmlReader} ({@code SimulationRunnerUtils.java:397}, mirrored by
+     * {@code ModularE2eStaging}/{@code LausitzFreightPreprocessorTest}). {@code intAttr}'s
+     * {@code instanceof Integer} fast path was therefore only ever proven against attributes set
+     * directly in memory, not against whatever boxed type an XML round-trip actually produces.
+     *
+     * <p>This test writes the SAME two-carrier fixture to disk via {@link CarrierPlanWriter} -
+     * the exact writer {@code CarriersUtils.writeCarriers} (and therefore
+     * {@code LausitzFreightPreprocessor.runModular}) uses in production - reads it back via
+     * {@link CarrierPlanXmlReader}, and asserts {@code planStats} returns the SAME sums as the
+     * in-memory equivalent computed from the pre-round-trip {@code Carriers}. The explicit
+     * {@code isInstanceOf(Integer.class)} assertion below pins the type actually observed after
+     * the round-trip (see the task report for what came back) BEFORE {@code intAttr} ever sees
+     * it, so a future MATSim upgrade that changed the round-tripped boxed type would fail loudly
+     * HERE with a clear message - not silently inside {@code intAttr}'s own defensive
+     * {@code instanceof Number} fallback, which would still tolerate a Long but NOT a String
+     * (which is not a {@code Number} and would silently fall back to contributing 0).
+     */
+    @Test
+    @DisplayName("planStats: sums survive the production XML round-trip (CarrierPlanWriter -> "
+            + "CarrierPlanXmlReader), not just in-memory attributes")
+    void planStatsSumsSurviveCarrierXmlRoundTrip(@TempDir Path tmp) throws Exception {
+        Network carNet = buildCarNet();
+        Network drtNet = buildDrtNet();
+
+        CarrierService dhlBig = CarrierService.Builder
+                .newInstance(Id.create("dhl_0", CarrierService.class), Id.createLinkId("car_2"))
+                .setCapacityDemand(8).setServiceDuration(300.0).build();
+        Carriers carriers = new Carriers();
+        addOneTourCarrier(carriers, "dhl", Id.createLinkId("car_1"), 8 * 3600.0, 17 * 3600.0, List.of(dhlBig));
+        putIntAttr(carriers, "dhl", "numberOfParcels", 10);
+        putIntAttr(carriers, "dhl", "unassignedParcels", 2);
+        putIntAttr(carriers, "dhl", "missedParcels", 1);
+        // CarrierPlanXmlWriterV2_1 needs BOTH of these to actually round-trip (buildScheduledTour
+        // only embeds the vehicle/service into the ScheduledTour itself, never registers them on
+        // the carrier - every other planStats test skips this because it never round-trips
+        // through XML): (1) carrierCapabilities/vehicles must be non-empty (schema-enforced), (2)
+        // every service the tour references must ALSO be in carrier.getServices(), or the writer
+        // logs "not available in the list of services" and omits the service definition entirely,
+        // which then throws a NullPointerException deep in the reader's state machine on read-back.
+        registerCarrierVehicleForXmlRoundTrip(carriers, "dhl", Id.createLinkId("car_1"), 17 * 3600.0);
+        registerServicesForXmlRoundTrip(carriers, "dhl", List.of(dhlBig));
+
+        CarrierService glsService = CarrierService.Builder
+                .newInstance(Id.create("gls_0", CarrierService.class), Id.createLinkId("car_2"))
+                .setCapacityDemand(5).setServiceDuration(300.0).build();
+        addOneTourCarrier(carriers, "gls", Id.createLinkId("car_1"), 8 * 3600.0, 17 * 3600.0, List.of(glsService));
+        putIntAttr(carriers, "gls", "numberOfParcels", 5);
+        putIntAttr(carriers, "gls", "unassignedParcels", 0);
+        putIntAttr(carriers, "gls", "missedParcels", 0);
+        registerCarrierVehicleForXmlRoundTrip(carriers, "gls", Id.createLinkId("car_1"), 17 * 3600.0);
+        registerServicesForXmlRoundTrip(carriers, "gls", List.of(glsService));
+
+        // Ground truth: computed from the PRE-round-trip Carriers, so the round-tripped result
+        // below is compared against a freshly-computed value, not a literal that could silently
+        // drift from the fixture above.
+        List<ModularFreightTour> inMemoryTours = ModularTourConverter.convert(carriers, carNet, drtNet);
+        ModularPlanStats inMemoryStats = ModularTourConverter.planStats(carriers, inMemoryTours);
+
+        // Round-trip through the ACTUAL production writer/reader pair.
+        Path carriersFile = tmp.resolve("carriers_roundtrip.xml");
+        new CarrierPlanWriter(carriers).write(carriersFile.toString());
+
+        CarrierVehicleTypes capsuleType = new CarrierVehicleTypes();
+        VehicleType type = VehicleUtils.createVehicleType(Id.create("ushift_cargo_capsule", VehicleType.class));
+        capsuleType.getVehicleTypes().put(type.getId(), type);
+        Carriers roundTripped = new Carriers();
+        new CarrierPlanXmlReader(roundTripped, capsuleType).readFile(carriersFile.toString());
+
+        // Pin the ACTUAL boxed type BEFORE intAttr ever sees it (see javadoc above).
+        Object roundTrippedNumberOfParcels = roundTripped.getCarriers()
+                .get(Id.create("dhl", Carrier.class)).getAttributes().getAttribute("numberOfParcels");
+        assertThat(roundTrippedNumberOfParcels)
+                .as("the type CarrierPlanXmlReader hands intAttr for an int-valued attribute")
+                .isInstanceOf(Integer.class);
+
+        List<ModularFreightTour> roundTrippedTours =
+                ModularTourConverter.convert(roundTripped, carNet, drtNet);
+        ModularPlanStats roundTrippedStats =
+                ModularTourConverter.planStats(roundTripped, roundTrippedTours);
+
+        assertThat(roundTrippedStats.parcelsDemand())
+                .isEqualTo(inMemoryStats.parcelsDemand()).isEqualTo(15);
+        assertThat(roundTrippedStats.parcelsUnassignedJsprit())
+                .isEqualTo(inMemoryStats.parcelsUnassignedJsprit()).isEqualTo(2);
+        assertThat(roundTrippedStats.parcelsMissedOverlay())
+                .isEqualTo(inMemoryStats.parcelsMissedOverlay()).isEqualTo(1);
+    }
+
+    /** Registers a "ushift_cargo_capsule" vehicle (same id scheme as {@link #buildScheduledTour}'s
+     *  {@code provider + "_v0"}) into the carrier's {@code CarrierCapabilities} - needed ONLY for
+     *  an actual XML round-trip: {@link CarrierPlanWriter}'s schema rejects an empty
+     *  {@code vehicles} element, but {@code buildScheduledTour}'s vehicle lives solely inside the
+     *  {@code ScheduledTour}, which every other (in-memory-only) planStats test never notices. */
+    private static void registerCarrierVehicleForXmlRoundTrip(Carriers carriers, String provider,
+            Id<Link> depotLink, double latestEnd) {
+        VehicleType type = VehicleUtils.createVehicleType(Id.create("ushift_cargo_capsule", VehicleType.class));
+        CarrierVehicle vehicle = CarrierVehicle.Builder
+                .newInstance(Id.createVehicleId(provider + "_v0"), depotLink, type)
+                .setLatestEnd(latestEnd).build();
+        CarriersUtils.addCarrierVehicle(
+                carriers.getCarriers().get(Id.create(provider, Carrier.class)), vehicle);
+    }
+
+    /** Registers each service on {@code carrier.getServices()} - required for an actual XML
+     *  round-trip (see the call site's comment); {@code buildScheduledTour} only ever schedules a
+     *  service INTO the tour, never onto the carrier's own service map. */
+    private static void registerServicesForXmlRoundTrip(Carriers carriers, String provider,
+            List<CarrierService> services) {
+        Carrier carrier = carriers.getCarriers().get(Id.create(provider, Carrier.class));
+        for (CarrierService s : services) {
+            carrier.getServices().put(s.getId(), s);
+        }
     }
 
     private static void putIntAttr(Carriers carriers, String provider, String key, int value) {
