@@ -303,14 +303,16 @@ class SharedUseKpiHandlerTest {
 
         List<String> lines = Files.readAllLines(iterations, StandardCharsets.UTF_8);
         assertThat(lines).hasSize(3);
-        assertThat(lines.get(0)).isEqualTo(
-                "iteration;segments_submitted;segments_delivered;segments_delivered_late;"
-                        + "segments_window_expired;segments_pending_open;parcels_submitted;"
-                        + "parcels_delivered;parcels_delivered_late;parcels_undelivered");
+        // Pinned to the constant, not a copy of it: the header grows when instrumentation is
+        // added (the M6 χ counters did exactly that) and a duplicated literal only reports the
+        // growth as a failure without checking anything the constant does not already say.
+        assertThat(lines.get(0)).isEqualTo(SharedUseKpiHandler.ITERATIONS_HEADER);
+        // Trailing 0;0;0 = the three M6 χ counters; this handler was built with an unwired
+        // ChiGateStats, so nothing was ever blocked.
         assertThat(lines.get(1)).as("iteration 0: parcelA (load 5) delivered in-window")
-                .isEqualTo("0;1;1;0;0;0;5;5;0;0");
+                .isEqualTo("0;1;1;0;0;0;5;5;0;0;0;0;0");
         assertThat(lines.get(2)).as("iteration 1: parcelB (load 3) pending_open, no iter-0 leakage")
-                .isEqualTo("1;1;0;0;0;1;3;0;0;3");
+                .isEqualTo("1;1;0;0;0;1;3;0;0;3;0;0;0");
     }
 
     @Test
@@ -353,6 +355,107 @@ class SharedUseKpiHandlerTest {
         // load-weighting must reflect the 5:1 parcel-count split instead.
         assertThat(Double.parseDouble(m.get("share_channel_door"))).isCloseTo(5.0 / 6.0, within(1e-9));
         assertThat(Double.parseDouble(m.get("share_channel_locker"))).isCloseTo(1.0 / 6.0, within(1e-9));
+    }
+
+    // ---- M6 χ-gate attribution ----------------------------------------------
+
+    @Test
+    @DisplayName("M6: only the chi-blocked expired segment is attributed to chi; attempts and distinct segments are separate counters")
+    void chiGateCountersAttributeTheExpiredBucket() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        // Both windows close before the last event time (50000) -> both expired. Only ONE of
+        // them was ever chi-blocked; the other failed for an unrelated reason (no vehicle).
+        // This is the whole point of the counter: segments_window_expired alone cannot tell
+        // the two apart, and segments_rejected_final stays 0 for both.
+        Person blockedP = personWithWindow(population, "parcel_dhl_1_B2C", 2, "DOOR", 45000.0);
+        Person unblockedP = personWithWindow(population, "parcel_dhl_2_B2C", 1, "DOOR", 45000.0);
+        Person deliveredP = personWithWindow(population, "parcel_dhl_3_B2C", 1, "DOOR", 60000.0);
+
+        ChiGateStats stats = new ChiGateStats();
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(), stats);
+
+        handler.handleEvent(submitted(1000.0, Id.create("b", Request.class), blockedP.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("u", Request.class), unblockedP.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), deliveredP.getId()));
+        handler.handleEvent(droppedOff(50000.0, Id.create("d", Request.class), deliveredP.getId()));
+
+        // The gate evaluates many insertion candidates per request per dispatch round, so one
+        // segment contributes MANY attempts but exactly one distinct segment.
+        stats.recordBlocked(blockedP.getId());
+        stats.recordBlocked(blockedP.getId());
+        stats.recordBlocked(blockedP.getId());
+        // A blocked segment that later got delivered anyway must still count as a blocked
+        // segment, but must NOT show up in the expired attribution.
+        stats.recordBlocked(deliveredP.getId());
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+
+        assertThat(m.get("segments_window_expired")).isEqualTo("2");
+        assertThat(m.get("segments_window_expired_chi_blocked"))
+                .as("only the blocked one - the other expired for unrelated reasons").isEqualTo("1");
+        assertThat(m.get("chi_blocked_insertion_attempts"))
+                .as("evaluation counter: 3 for the blocked segment + 1 for the delivered one").isEqualTo("4");
+        assertThat(m.get("chi_blocked_segments"))
+                .as("distinct segments, not attempts").isEqualTo("2");
+        assertThat(m.get("segments_rejected_final"))
+                .as("a chi-blocked parcel is NEVER terminally rejected - that is why the counters exist")
+                .isEqualTo("0");
+    }
+
+    @Test
+    @DisplayName("M6: reset(int) clears the chi counters so every reported count is per-iteration")
+    void chiGateCountersResetPerIteration() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person parcel = personWithWindow(population, "parcel_dhl_1_B2C", 2, "DOOR", 45000.0);
+
+        ChiGateStats stats = new ChiGateStats();
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(), stats);
+
+        stats.recordBlocked(parcel.getId());
+        assertThat(stats.blockedAttempts()).isEqualTo(1);
+        assertThat(stats.blockedSegmentCount()).isEqualTo(1);
+
+        handler.reset(1);
+
+        assertThat(stats.blockedAttempts()).as("carrying attempts across iterations would sum the whole run").isZero();
+        assertThat(stats.blockedSegmentCount()).isZero();
+        assertThat(stats.wasBlocked(parcel.getId())).isFalse();
+    }
+
+    @Test
+    @DisplayName("M6: the chi counters reach the per-iteration series file too")
+    void chiGateCountersInIterationRow() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person expired = personWithWindow(population, "parcel_dhl_1_B2C", 2, "DOOR", 45000.0);
+        Person delivered = personWithWindow(population, "parcel_dhl_2_B2C", 1, "DOOR", 60000.0);
+
+        ChiGateStats stats = new ChiGateStats();
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(), stats);
+
+        handler.handleEvent(submitted(1000.0, Id.create("e", Request.class), expired.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), delivered.getId()));
+        handler.handleEvent(droppedOff(50000.0, Id.create("d", Request.class), delivered.getId()));
+        stats.recordBlocked(expired.getId());
+        stats.recordBlocked(expired.getId());
+
+        Path iterations = Path.of(utils.getOutputDirectory()).resolve("iters.csv");
+        handler.appendIterationRow(7, iterations);
+
+        List<String> lines = Files.readAllLines(iterations, StandardCharsets.UTF_8);
+        assertThat(lines.get(0)).isEqualTo(SharedUseKpiHandler.ITERATIONS_HEADER);
+        String[] header = lines.get(0).split(";");
+        String[] values = lines.get(1).split(";");
+        assertThat(values).as("every header column must be filled").hasSameSizeAs(header);
+        Map<String, String> rowByName = new LinkedHashMap<>();
+        for (int i = 0; i < header.length; i++) {
+            rowByName.put(header[i], values[i]);
+        }
+        assertThat(rowByName.get("iteration")).isEqualTo("7");
+        assertThat(rowByName.get("chi_blocked_insertion_attempts")).isEqualTo("2");
+        assertThat(rowByName.get("chi_blocked_segments")).isEqualTo("1");
+        assertThat(rowByName.get("segments_window_expired_chi_blocked")).isEqualTo("1");
     }
 
     // -------------------------------------------------------------------------

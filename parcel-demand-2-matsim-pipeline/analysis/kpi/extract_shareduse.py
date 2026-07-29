@@ -83,6 +83,16 @@ def extract(run_dir, prefix):
     stat("channel", "segments_pending_open", int, "segments")
     stat("channel", "segments_rejected_final", int, "segments")
     stat("channel", "segments_pending_eod", int, "segments")
+    # M6 χ-gate instrumentation. These answer "does the χ threshold bind at all", which
+    # segments_rejected_final CANNOT: a χ-blocked parcel is never terminally rejected, it
+    # retries until its window closes and then drops with no event, landing in
+    # segments_window_expired next to segments that failed for unrelated reasons. Absent from
+    # every run before 2026-07-29, hence tolerant (stat()) like the rest.
+    # chi_blocked_insertion_attempts counts EVALUATIONS (many per request per dispatch round),
+    # so it is an order-of-magnitude signal only -- never use it as a rate denominator.
+    stat("channel", "chi_blocked_insertion_attempts", int, "attempts")
+    stat("channel", "chi_blocked_segments", int, "segments")
+    stat("channel", "segments_window_expired_chi_blocked", int, "segments")
     stat("channel", "undelivered_rate", float, "share")
     stat("channel", "delivery_rate_total", float, "share")
     stat("channel", "share_channel_door", float, "share")
