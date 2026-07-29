@@ -57,6 +57,13 @@ import java.util.Set;
  * ({@link ParcelOnlyRetryQueue#getRequestsToRetryNow}), so it can never be tallied directly
  * from events the way {@code segments_rejected_final} is.</p>
  *
+ * <p><b>χ-gate attribution (M6):</b> the three {@code chi_*} /
+ * {@code segments_window_expired_chi_blocked} metrics come from {@link ChiGateStats} and are
+ * DIAGNOSTIC — they are subsets/attempt counts, NOT buckets of the conservation identity above.
+ * They exist because the identity alone cannot answer "did χ cause this": a χ-blocked parcel is
+ * never terminally rejected and lands in {@code segments_window_expired} together with segments
+ * that failed for entirely different reasons. See {@link ChiGateStats}.</p>
+ *
  * <p><b>Honest δ decomposition (I1):</b> a χ-starved parcel is NEVER terminally rejected -
  * it retries until its own delivery window closes, then drops silently on the retrieval path,
  * so {@code segments_rejected_final} captures only genuine hard rejects (which are ~always 0
@@ -112,7 +119,9 @@ public final class SharedUseKpiHandler implements
     static final String ITERATIONS_FILE_NAME = "shareduse_channel_stats_iterations.csv";
     static final String ITERATIONS_HEADER = "iteration;segments_submitted;segments_delivered;"
             + "segments_delivered_late;segments_window_expired;segments_pending_open;"
-            + "parcels_submitted;parcels_delivered;parcels_delivered_late;parcels_undelivered";
+            + "parcels_submitted;parcels_delivered;parcels_delivered_late;parcels_undelivered;"
+            + "chi_blocked_insertion_attempts;chi_blocked_segments;"
+            + "segments_window_expired_chi_blocked";
 
     // Static population snapshots (run-invariant - NOT cleared on reset). Built STRICTLY:
     // see ParcelAttributes for why a missing attribute aborts instead of defaulting.
@@ -133,9 +142,22 @@ public final class SharedUseKpiHandler implements
 
     private final Path outputCsv;
     private final Path outputIterationsCsv;
+    /** χ-gate instrumentation (M6): shared controller-scope counters written by the gate. */
+    private final ChiGateStats chiGateStats;
+
+    /**
+     * Test-only: an unwired {@link ChiGateStats} whose counters therefore stay at 0. Production
+     * wiring goes through the {@link Inject} constructor with {@link SharedUseModule}'s shared
+     * singleton — the counters are meaningless unless the SAME instance reaches the gate.
+     */
+    SharedUseKpiHandler(Population population, OutputDirectoryHierarchy controlerIO) {
+        this(population, controlerIO, new ChiGateStats());
+    }
 
     @Inject
-    public SharedUseKpiHandler(Population population, OutputDirectoryHierarchy controlerIO) {
+    public SharedUseKpiHandler(Population population, OutputDirectoryHierarchy controlerIO,
+                               ChiGateStats chiGateStats) {
+        this.chiGateStats = chiGateStats;
         // STRICT snapshots (ParcelAttributes): previously a parcel-person without a LOAD
         // attribute silently contributed 0 parcels to parcels_submitted/_delivered, and an
         // unattributed CHANNEL landed in the DOOR bucket - both produce a plausible CSV that
@@ -168,6 +190,10 @@ public final class SharedUseKpiHandler implements
         deliveredAt.clear();
         rejectedFinal.clear();
         lastEventTime = 0.0;
+        // The χ counters share this lifecycle deliberately: notifyIterationEnds has already
+        // written the row that reports them (it fires BEFORE this reset), so clearing here
+        // makes every reported χ count per-iteration, exactly like the segment counters.
+        chiGateStats.reset();
     }
 
     // ---- events ---------------------------------------------------------------------
@@ -251,7 +277,10 @@ public final class SharedUseKpiHandler implements
                         + ";" + t.segmentsDeliveredLate + ";" + t.segmentsWindowExpired
                         + ";" + t.segmentsPendingOpen + ";" + t.parcelsSubmitted
                         + ";" + t.parcelsDelivered + ";" + t.parcelsDeliveredLate
-                        + ";" + (t.parcelsSubmitted - t.parcelsDelivered));
+                        + ";" + (t.parcelsSubmitted - t.parcelsDelivered)
+                        + ";" + chiGateStats.blockedAttempts()
+                        + ";" + chiGateStats.blockedSegmentCount()
+                        + ";" + t.segmentsWindowExpiredChiBlocked);
                 w.newLine();
             }
         } catch (IOException e) {
@@ -300,6 +329,14 @@ public final class SharedUseKpiHandler implements
                 writeMetric(w, "segments_rejected_final", t.segmentsRejectedFinal);
                 writeMetric(w, "segments_window_expired", t.segmentsWindowExpired);
                 writeMetric(w, "segments_pending_open", t.segmentsPendingOpen);
+                // M6 χ-gate instrumentation (see ChiGateStats): segments_rejected_final == 0
+                // does NOT mean the gate is inactive, so these three are the only evidence of
+                // whether χ binds. Attempts is an EVALUATION counter (many per request per
+                // dispatch round) - an order-of-magnitude signal, never a rate denominator.
+                writeMetric(w, "chi_blocked_insertion_attempts", chiGateStats.blockedAttempts());
+                writeMetric(w, "chi_blocked_segments", chiGateStats.blockedSegmentCount());
+                writeMetric(w, "segments_window_expired_chi_blocked",
+                        t.segmentsWindowExpiredChiBlocked);
                 writeMetric(w, "segments_pending_eod", segmentsPendingEod);
                 writeMetric(w, "parcels_injected", parcelsInjected);
                 writeMetric(w, "parcels_submitted", t.parcelsSubmitted);
@@ -377,6 +414,13 @@ public final class SharedUseKpiHandler implements
                 // purely deadline-passed vs sim-ended-first.
                 if (windowEnd <= lastEventTime) {
                     t.segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
+                    // M6 attribution: was χ ever implicated in this segment's failure at all?
+                    // Necessary-not-sufficient (a segment blocked once early may have failed
+                    // later for an unrelated reason), but a near-zero count is a clean
+                    // exoneration of the threshold. See ChiGateStats.
+                    if (chiGateStats.wasBlocked(personId)) {
+                        t.segmentsWindowExpiredChiBlocked++;
+                    }
                 } else {
                     t.segmentsPendingOpen++;   // sim ended before the deadline
                 }
@@ -392,6 +436,8 @@ public final class SharedUseKpiHandler implements
         int segmentsDeliveredLate;
         int segmentsRejectedFinal;
         int segmentsWindowExpired;
+        /** Subset of segmentsWindowExpired that the χ-gate blocked at least once (M6). */
+        int segmentsWindowExpiredChiBlocked;
         int segmentsPendingOpen;
         int parcelsSubmitted;
         int parcelsDelivered;
@@ -399,6 +445,13 @@ public final class SharedUseKpiHandler implements
         int doorLoad;
         int lockerLoad;
         double timeToDeliverySumS;
+    }
+
+    /** Explicit long overload: without it a long argument widens to the double overload and
+     *  a large attempt count would serialize in scientific notation ("1.23E7"). */
+    private static void writeMetric(BufferedWriter w, String name, long value) throws IOException {
+        w.write(name + ";" + value);
+        w.newLine();
     }
 
     private static void writeMetric(BufferedWriter w, String name, int value) throws IOException {

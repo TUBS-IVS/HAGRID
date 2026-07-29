@@ -1,5 +1,7 @@
 package hagrid.integrated.shareduse;
 
+import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.population.Person;
 import org.matsim.contrib.drt.optimizer.insertion.InsertionCostCalculator;
 import org.matsim.contrib.drt.optimizer.insertion.InsertionGenerator.Insertion;
 import org.matsim.contrib.drt.optimizer.insertion.InsertionDetourTimeCalculator.DetourTimeInfo;
@@ -51,6 +53,12 @@ import org.matsim.contrib.dvrp.load.DvrpLoadType;
  *
  * <p>Passenger requests pass through untouched (never gated); a kept parcel insertion
  * returns the delegate's own cost unchanged so the insertion search still ranks it.
+ *
+ * <p><b>Instrumentation.</b> Every block is reported to {@link ChiGateStats}. Without it
+ * a blocked parcel leaves no trace anywhere: it goes back to the retry queue and, if it never
+ * gets in, is dropped past its window with no rejection event, so it is indistinguishable in
+ * the KPIs from a segment that simply found no vehicle. See {@link ChiGateStats} for why
+ * {@code segments_rejected_final == 0} does NOT mean the gate is inactive.
  */
 public final class ChiGateInsertionCostCalculator implements InsertionCostCalculator {
 
@@ -61,11 +69,13 @@ public final class ChiGateInsertionCostCalculator implements InsertionCostCalcul
     private final InsertionCostCalculator delegate;
     private final double chiThreshold;
     private final int parcelDimensionIndex;
+    private final ChiGateStats stats;
 
     public ChiGateInsertionCostCalculator(InsertionCostCalculator delegate, double chiThreshold,
-                                          DvrpLoadType loadType) {
+                                          DvrpLoadType loadType, ChiGateStats stats) {
         this.delegate = delegate;
         this.chiThreshold = chiThreshold;
+        this.stats = stats;
         this.parcelDimensionIndex = loadType.getDimensions().indexOf(PARCEL_DIMENSION);
         if (this.parcelDimensionIndex < 0) {
             throw new IllegalArgumentException("DvrpLoadType has no '" + PARCEL_DIMENSION
@@ -75,23 +85,49 @@ public final class ChiGateInsertionCostCalculator implements InsertionCostCalcul
         }
     }
 
+    /**
+     * Convenience constructor for tests that do not assert on the counters; production wiring
+     * ({@link SharedUseModule}) MUST pass the shared controller-scope {@link ChiGateStats}, or
+     * the χ counters read 0 on every run while the gate is in fact firing.
+     */
+    ChiGateInsertionCostCalculator(InsertionCostCalculator delegate, double chiThreshold,
+                                   DvrpLoadType loadType) {
+        this(delegate, chiThreshold, loadType, new ChiGateStats());
+    }
+
     /** A DRT request is a parcel iff any of its passenger ids is a parcel-person. */
     static boolean isParcel(DrtRequest request) {
-        return request.getPassengerIds().stream()
-                .anyMatch(id -> SharedUse.isParcelPerson(id.toString()));
+        return firstParcelPerson(request) != null;
+    }
+
+    /**
+     * The request's parcel-person id, or null for a pax request. Parcel requests are
+     * single-person, so the first match is THE segment's person — the key the counters and
+     * {@link SharedUseKpiHandler}'s expired-bucket attribution both use.
+     */
+    private static Id<Person> firstParcelPerson(DrtRequest request) {
+        for (Id<Person> id : request.getPassengerIds()) {
+            if (SharedUse.isParcelPerson(id.toString())) {
+                return id;
+            }
+        }
+        return null;
     }
 
     @Override
     public double calculate(DrtRequest drtRequest, Insertion insertion, DetourTimeInfo detourTimeInfo) {
-        if (!isParcel(drtRequest)) {
+        Id<Person> parcelPerson = firstParcelPerson(drtRequest);
+        if (parcelPerson == null) {
             return delegate.calculate(drtRequest, insertion, detourTimeInfo);
         }
         if (chiThreshold < 0) {
+            stats.recordBlocked(parcelPerson);
             return INFEASIBLE_SOLUTION_COST; // hard-closed: no parcel ever boards
         }
         double detourOnly = Math.max(0.0,
                 detourTimeInfo.getTotalTimeLoss() - ownDwellSeconds(drtRequest));
         if (detourOnly > chiThreshold) {
+            stats.recordBlocked(parcelPerson);
             return INFEASIBLE_SOLUTION_COST;
         }
         return delegate.calculate(drtRequest, insertion, detourTimeInfo);

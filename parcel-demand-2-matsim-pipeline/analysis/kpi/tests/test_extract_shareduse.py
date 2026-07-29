@@ -47,6 +47,40 @@ def test_registered_in_build_kpis_extractors():
     assert (es.has_shareduse_stats, es.extract) in build_kpis.EXTRACTORS
 
 
+def test_chi_gate_counters_emitted_when_present(tmp_path):
+    """M6 chi-gate instrumentation: the three counters that answer whether chi
+    binds at all. segments_rejected_final CANNOT answer it -- a chi-blocked
+    parcel is never terminally rejected, it expires its window silently."""
+    _seed_stats(tmp_path, PREFIX)
+    stats = tmp_path / (PREFIX + ".shareduse_channel_stats.csv")
+    stats.write_text(stats.read_text(encoding="utf-8")
+                     + "chi_blocked_insertion_attempts;41234\n"
+                     + "chi_blocked_segments;77\n"
+                     + "segments_window_expired_chi_blocked;12\n", encoding="utf-8")
+
+    k = _rows_by_name(es.extract(tmp_path, PREFIX))
+
+    assert k["chi_blocked_insertion_attempts"]["kpi_group"] == "channel"
+    assert k["chi_blocked_insertion_attempts"]["value"] == 41234
+    assert k["chi_blocked_insertion_attempts"]["unit"] == "attempts", \
+        "an EVALUATION counter, not a segment count -- the unit must say so"
+    assert k["chi_blocked_segments"]["value"] == 77
+    assert k["chi_blocked_segments"]["unit"] == "segments"
+    assert k["segments_window_expired_chi_blocked"]["value"] == 12
+    assert k["segments_window_expired_chi_blocked"]["kpi_group"] == "channel"
+
+
+def test_chi_gate_counters_absent_on_pre_instrumentation_runs():
+    """Runs finished before 2026-07-29 have no chi_* lines. They must drop the
+    three rows, never KeyError -- the whole channel block would be lost."""
+    k = _rows_by_name(es.extract(FIX, PREFIX))
+
+    for name in ("chi_blocked_insertion_attempts", "chi_blocked_segments",
+                 "segments_window_expired_chi_blocked"):
+        assert name not in k
+    assert k["segments_window_expired"]["value"] == 0, "the rest of the block still extracts"
+
+
 def test_channel_and_freight_rows_from_stats_csv():
     """Values pinned to the exact 'metric;value' lines from Task 7's
     SharedUseKpiHandlerTest#tracksSegmentsAndWritesCsv fixture (post

@@ -99,6 +99,12 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
         // via the native DVRP passenger events and writes shareduse_channel_stats.csv at
         // shutdown. Controller-scope singleton (not modal): the handler keys everything by
         // request id / person id itself, so it never needs a modal binding.
+        // M6 χ-gate instrumentation. Controller-scope singleton BECAUSE the gate is rebuilt in
+        // the QSim child injector every iteration: counters living on the gate would be thrown
+        // away before the KPI handler could read them. The gate writes, the handler reads and
+        // resets — so both MUST receive this same instance.
+        bind(ChiGateStats.class).asEagerSingleton();
+
         bind(SharedUseKpiHandler.class).asEagerSingleton();
         addEventHandlerBinding().to(SharedUseKpiHandler.class);
         addControlerListenerBinding().to(SharedUseKpiHandler.class);
@@ -152,7 +158,10 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
                                         drtCfg.addOrGetDrtOptimizationConstraintsParams()
                                                 .addOrGetDefaultDrtOptimizationConstraintsSet()),
                                 chiThreshold,
-                                getter.getModal(DvrpLoadType.class))));
+                                getter.getModal(DvrpLoadType.class),
+                                // Controller-scope singleton, visible from the QSim child
+                                // injector (same resolution path as DvrpLoadType above).
+                                getter.get(ChiGateStats.class))));
 
                 // Parcel-only pending queue: pax rejections stay native-immediate; parcels retry
                 // until the global maxRequestAge OR their own per-request delivery window (M5).

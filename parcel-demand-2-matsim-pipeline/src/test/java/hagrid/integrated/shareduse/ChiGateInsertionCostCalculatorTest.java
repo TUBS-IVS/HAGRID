@@ -15,7 +15,9 @@ import org.matsim.contrib.dvrp.optimizer.Request;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The χ-gate rejects a PARCEL insertion whose DETOUR-ONLY time loss exceeds χ
@@ -168,6 +170,72 @@ class ChiGateInsertionCostCalculatorTest {
         var gate = gate(42.0, 600.0);
         assertEquals(InsertionCostCalculator.INFEASIBLE_SOLUTION_COST,
                 gate.calculate(request("parcel_dhl_1_B2C"), null, detour(700.0)));
+    }
+
+    // ---- M6 instrumentation ---------------------------------------------------------
+
+    @Test
+    @DisplayName("M6: a blocked parcel insertion is recorded (attempts + distinct segment)")
+    void blockedInsertionIsRecorded() {
+        ChiGateStats stats = new ChiGateStats();
+        var gate = new ChiGateInsertionCostCalculator((req, ins, detour) -> 0.0, 600.0, LOAD_TYPE, stats);
+
+        // Same request (same parcel-person) blocked twice: 2 attempts, 1 distinct segment.
+        gate.calculate(parcelRequest(2), null, detour(ownDwell(2) + 700.0));
+        gate.calculate(parcelRequest(2), null, detour(ownDwell(2) + 900.0));
+
+        assertEquals(2L, stats.blockedAttempts());
+        assertEquals(1, stats.blockedSegmentCount());
+        assertTrue(stats.wasBlocked(Id.createPersonId("parcel_dhl_1_B2C")));
+    }
+
+    @Test
+    @DisplayName("M6: an ACCEPTED parcel insertion is not recorded (the counter must not just track parcel traffic)")
+    void acceptedInsertionIsNotRecorded() {
+        ChiGateStats stats = new ChiGateStats();
+        var gate = new ChiGateInsertionCostCalculator((req, ins, detour) -> 5.0, 600.0, LOAD_TYPE, stats);
+
+        gate.calculate(parcelRequest(2), null, detour(ownDwell(2) + 100.0));
+
+        assertEquals(0L, stats.blockedAttempts());
+        assertEquals(0, stats.blockedSegmentCount());
+    }
+
+    @Test
+    @DisplayName("M6: a passenger request is never recorded (it is never gated)")
+    void paxIsNotRecorded() {
+        ChiGateStats stats = new ChiGateStats();
+        var gate = new ChiGateInsertionCostCalculator((req, ins, detour) -> 1.0, 600.0, LOAD_TYPE, stats);
+
+        gate.calculate(request("p42"), null, detour(99_999.0));
+
+        assertEquals(0L, stats.blockedAttempts());
+    }
+
+    @Test
+    @DisplayName("M6: hard-closed mode (chi < 0) records its blocks too")
+    void hardClosedModeIsRecorded() {
+        ChiGateStats stats = new ChiGateStats();
+        var gate = new ChiGateInsertionCostCalculator((req, ins, detour) -> 1.0, -1.0, LOAD_TYPE, stats);
+
+        assertEquals(InsertionCostCalculator.INFEASIBLE_SOLUTION_COST,
+                gate.calculate(parcelRequest(3), null, detour(0.0)));
+        assertEquals(1L, stats.blockedAttempts());
+        assertEquals(1, stats.blockedSegmentCount());
+    }
+
+    @Test
+    @DisplayName("M6: reset clears both counters")
+    void resetClearsCounters() {
+        ChiGateStats stats = new ChiGateStats();
+        var gate = new ChiGateInsertionCostCalculator((req, ins, detour) -> 0.0, 600.0, LOAD_TYPE, stats);
+        gate.calculate(parcelRequest(2), null, detour(ownDwell(2) + 700.0));
+
+        stats.reset();
+
+        assertEquals(0L, stats.blockedAttempts());
+        assertEquals(0, stats.blockedSegmentCount());
+        assertFalse(stats.wasBlocked(Id.createPersonId("parcel_dhl_1_B2C")));
     }
 
     @Test
