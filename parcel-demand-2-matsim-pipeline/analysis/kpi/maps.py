@@ -17,6 +17,12 @@ build_map_data() assembles:
     KPI in kpis_long.csv (extract_drt sources it from the DVRP fleet file);
     DEFAULT_CAP only when that KPI is absent, which means the fleet file was
     not found for this run.
+  - drt.modular_contaminated: bool, read from kpis_long.csv the same way as
+    drt.cap -- True when the `meta/modular_contaminated_kpis` marker row is
+    present (Task 3/4, METHODS-LOG 2.14). render_maps.py's vehicle layer uses
+    it to add one legend caption line: on a 1d MODULAR run the freight
+    excursions on a passenger vehicle are occupancy-0, so they render on the
+    map exactly like an ordinary empty DRT drive.
   - center: mean of whatever WGS84 points are available, falling back to
     Hoyerswerda.
   - lmd: always present; stays `{}` unless a `fev` (FreightEvents) is
@@ -170,6 +176,31 @@ def _read_cap(run_dir, default=DEFAULT_CAP):
     except Exception as e:
         print("[maps] cap KPI read skipped: " + str(e))  # ASCII only
     return default
+
+
+#: Mirrors extract_drt.MODULAR_CONTAMINATION_KPI's VALUE ("modular_contaminated_kpis")
+#: as its own local literal -- same precedent as CAP_KPI above: maps.py reads
+#: kpis_long.csv directly by name rather than importing extract_drt.
+MODULAR_MARKER_KPI = "modular_contaminated_kpis"
+
+
+def _read_modular_marker(run_dir):
+    """Whether this run's kpis_long.csv carries the meta/modular_contaminated_kpis
+    provenance row (Task 3/4, METHODS-LOG 2.14: on a 1d MODULAR run freight
+    excursions on the SAME vehicles appear as ordinary empty DRT drives on the
+    map). Same read pattern as `_read_cap` -- independent of build_map_data's
+    other args, since kpis_long.csv always lives at <run_dir>/analysis/. False
+    (not a missing key) when the CSV/row is absent, so callers can test the
+    flag directly without a `.get(...) is not None` dance."""
+    path = Path(run_dir) / "analysis" / "kpis_long.csv"
+    if not path.exists():
+        return False
+    try:
+        df = pd.read_csv(path, sep=";")
+        return bool((df["kpi_name"].astype(str) == MODULAR_MARKER_KPI).any())
+    except Exception as e:
+        print("[maps] modular marker read skipped: " + str(e))  # ASCII only
+    return False
 
 
 # --------------------------------------------------------------- optional layers
@@ -381,6 +412,7 @@ def build_map_data(run_dir, prefix, veh_path=None, link_geo=None, fev=None,
         "pu": pu,
         "do": do,
         "cap": _read_cap(run_dir),
+        "modular_contaminated": _read_modular_marker(run_dir),
     }
 
     sa = _service_area(run_dir)

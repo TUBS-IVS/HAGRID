@@ -16,6 +16,7 @@ runs without event reconstruction (no_events) or without Plan-D-only
 series (drt_tour_distance/occ_km) simply render fewer tiles/charts."""
 import json
 
+import extract_drt
 import pax_only
 from render import (_kpi, _kpi_source, _tile, _fmt_de, _fmt_pct, _panel, _series,
                      chart_js, MODE_SLOTS, _donut)
@@ -47,6 +48,56 @@ def _tip_src(desc, kpis, name):
     a source (reduced test fixtures) get the plain description."""
     src = _kpi_source(kpis, name)
     return desc + ((" Quelle: " + src + ".") if src else "")
+
+
+# ---------------------------------------------------------------------------
+# 1d MODULAR contamination banner (Task 4, review I1/I8/I4 -- METHODS-LOG
+# 2.14 points 3-4). Same `warnbanner` CSS class/pattern as the Konvergenz-
+# group banner below (:~700), reused rather than re-invented: on a run
+# without either meta marker row (baseline/Shared-Use/LMD/no-events builds
+# that predate Task 3) both helpers return "" and every affected tile/chart
+# renders byte-identical to before.
+# ---------------------------------------------------------------------------
+_MODULAR_BADGE_HTML = ('<div class="warnbanner">enthaelt Frachtanteil, '
+                        's. METHODS-LOG 2.14</div>')
+
+#: Exactly the tiles review found publishing 1d MODULAR freight-contaminated
+#: values with no marker: extract_drt.MODULAR_UNCORRECTABLE's drt_vehicle_km/
+#: drt_empty_ratio share ONE tile (#7, "Fahrzeug-km") and fleet_utilisation_by_trips
+#: (drt_dp_over_dt has no tile at all), plus extract_drt.MODULAR_FREIGHT_IN_WINDOW
+#: in full. Kept as its own literal here (not derived from those two extract_drt
+#: tuples): which KPIs get a DASHBOARD badge is a render decision, not extract_drt's
+#: correction bookkeeping, even though today the two happen to agree.
+_MODULAR_BADGE_KPIS = frozenset((
+    "drt_vehicle_km", "drt_empty_ratio", "fleet_utilisation_by_trips",
+    "service_ratio_active", "fleet_utilisation_by_time", "mean_pax_aboard",
+    "drt_tour_hours_total",
+))
+
+
+def _contamination_badge(kpis, kpi_name):
+    """The warnbanner badge for one tile's KPI, or "" when either the tile's
+    KPI is not one of the affected `_MODULAR_BADGE_KPIS` (a coding mistake at
+    the call site should never leak a badge onto an unrelated tile) or the
+    `meta/modular_contaminated_kpis` marker row (Task 3, extract_drt) is
+    absent from this run's kpis (baseline/Shared-Use/LMD runs, or a 1d run
+    whose CSVs predate Task 3)."""
+    if kpi_name not in _MODULAR_BADGE_KPIS:
+        return ""
+    if _kpi(kpis, extract_drt.MODULAR_CONTAMINATION_KPI) is None:
+        return ""
+    return _MODULAR_BADGE_HTML
+
+
+def _secondary_contamination_badge(kpis):
+    """Same badge, gated on the SECONDARY marker (meta/modular_secondary_contaminated,
+    Task 3) instead of the primary one -- for the chart/table consumers
+    (kpi_distributions.csv's occupancy decomposition + tour-duration series,
+    kpi_vehicles.csv's per-vehicle occupied time) that carry no provenance
+    channel of their own (METHODS-LOG 2.14 point 4)."""
+    if _kpi(kpis, "modular_secondary_contaminated") is None:
+        return ""
+    return _MODULAR_BADGE_HTML
 
 
 def _tiles(data):
@@ -110,7 +161,8 @@ def _tiles(data):
         sub = (_fmt_pct(empty_ratio) + " Leeranteil") if empty_ratio is not None else ""
         t.append(_tile(_fmt_de(v, 1) + " km", "Fahrzeug-km", sub,
                         tip="Fahrzeugkm aus MATSim drt_vehicle_stats (totalDistance, "
-                            "autoritativ)."))
+                            "autoritativ).")
+                 + _contamination_badge(kpis, "drt_vehicle_km"))
 
     # 8. Personen-km
     v = _kpi(kpis, "drt_passenger_km")
@@ -120,12 +172,15 @@ def _tiles(data):
                             "Distanz aller Fahrgaeste inkl. Pooling-Umweg "
                             "(drt_vehicle_stats totalPassengerDistanceTraveled)."))
 
-    # 9. Service-Zeit (aktiv) -- events only
+    # 9. Service-Zeit (aktiv) -- events only [sub: service_ratio_active_pax]
     v = _kpi(kpis, "service_ratio_active")
     if v is not None:
-        t.append(_tile(_fmt_pct(v), "Service-Zeit (aktiv)",
+        pax_v = _kpi(kpis, "service_ratio_active_pax")
+        sub = ("pax-bereinigt: " + _fmt_pct(pax_v)) if pax_v is not None else ""
+        t.append(_tile(_fmt_pct(v), "Service-Zeit (aktiv)", sub,
                         tip="Zeit mit >=1 Fahrgast an Bord / aktive Dienstzeit (erste "
-                            "Abfahrt bis letzte Aufgabe je Fzg), aus Event-Rekonstruktion."))
+                            "Abfahrt bis letzte Aufgabe je Fzg), aus Event-Rekonstruktion.")
+                 + _contamination_badge(kpis, "service_ratio_active"))
 
     # 10. Service-Zeit (Schicht) -- events only
     v = _kpi(kpis, "service_ratio_shift")
@@ -134,30 +189,37 @@ def _tiles(data):
                         tip="Zeit mit >=1 Fahrgast an Bord / Dienstfenster aus der "
                             "Flottendatei (Schicht), aus Event-Rekonstruktion."))
 
-    # 11. Auslastung (Fahrten) (T1)
+    # 11. Auslastung (Fahrten) (T1) -- not correctable (MODULAR_UNCORRECTABLE)
     v = _kpi(kpis, "fleet_utilisation_by_trips")
     if v is not None:
         t.append(_tile(_fmt_pct(v), "Auslastung (Fahrten)",
                         tip="Mittel von (Passagiere/Kapazitaet) ueber alle Konstant-"
                             "Besetzungs-Segmente, je Segment gleich gewichtet, aus "
-                            "Event-Rekonstruktion."))
+                            "Event-Rekonstruktion.")
+                 + _contamination_badge(kpis, "fleet_utilisation_by_trips"))
 
-    # 12. Auslastung (Zeit) -- events only
+    # 12. Auslastung (Zeit) -- events only [sub: fleet_utilisation_by_time_pax]
     v = _kpi(kpis, "fleet_utilisation_by_time")
     if v is not None:
-        t.append(_tile(_fmt_pct(v), "Auslastung (Zeit)",
+        pax_v = _kpi(kpis, "fleet_utilisation_by_time_pax")
+        sub = ("pax-bereinigt: " + _fmt_pct(pax_v)) if pax_v is not None else ""
+        t.append(_tile(_fmt_pct(v), "Auslastung (Zeit)", sub,
                         tip="Zeitgewichtetes Mittel der Besetzung ueber Segmente "
-                            "konstanter Belegung, aus Event-Rekonstruktion."))
+                            "konstanter Belegung, aus Event-Rekonstruktion.")
+                 + _contamination_badge(kpis, "fleet_utilisation_by_time"))
 
-    # 13. Ø Pax an Bord -- events only
+    # 13. Ø Pax an Bord -- events only [sub: mean_pax_aboard_pax]
     v = _kpi(kpis, "mean_pax_aboard")
     if v is not None:
-        t.append(_tile(_fmt_de(v, 2), "Ø Pax an Bord (Fzg-Sicht)",
+        pax_v = _kpi(kpis, "mean_pax_aboard_pax")
+        sub = ("pax-bereinigt: " + _fmt_de(pax_v, 2)) if pax_v is not None else ""
+        t.append(_tile(_fmt_de(v, 2), "Ø Pax an Bord (Fzg-Sicht)", sub,
                         tip="FAHRZEUG-Sicht: zeitgewichtetes Mittel der Fahrgaeste an Bord "
                             "ueber die aktive Tourzeit INKL. Leerfahrten (Belegung 0) -- "
                             "daher systematisch niedrig. Nicht mit dem Sharing-Faktor "
                             "(Fahrgast-Sicht, nur besetzte Zeit) verwechseln. Aus "
-                            "Event-Rekonstruktion."))
+                            "Event-Rekonstruktion.")
+                 + _contamination_badge(kpis, "mean_pax_aboard"))
 
     # 14. Umwegfaktor
     v = _kpi(kpis, "detour_factor")
@@ -174,13 +236,16 @@ def _tiles(data):
                         tip=_tip_src("Mittlere Fahrtdistanz je Fahrgast.",
                                      kpis, "drt_trip_distance_mean")))
 
-    # 16. Tourdauer gesamt (T1) -- events only
+    # 16. Tourdauer gesamt (T1) -- events only [sub: drt_tour_hours_total_pax]
     v = _kpi(kpis, "drt_tour_hours_total")
     if v is not None:
-        t.append(_tile(_fmt_de(v, 1) + " h", "Tourdauer gesamt",
+        pax_v = _kpi(kpis, "drt_tour_hours_total_pax")
+        sub = ("pax-bereinigt: " + _fmt_de(pax_v, 1) + " h") if pax_v is not None else ""
+        t.append(_tile(_fmt_de(v, 1) + " h", "Tourdauer gesamt", sub,
                         tip="Summe der aktiven Tourzeit ueber die Flotte (erste Abfahrt "
                             "bis letzte Aufgabe je Fzg; naechtliches Depot-Parken "
-                            "ausgeklammert), aus Event-Rekonstruktion."))
+                            "ausgeklammert), aus Event-Rekonstruktion.")
+                 + _contamination_badge(kpis, "drt_tour_hours_total"))
 
     # 17. Fahrzeit gesamt (T1) -- events only
     v = _kpi(kpis, "drt_drive_hours_total")
@@ -463,11 +528,22 @@ def _vehicle_chart(vehicles, cid, title="Besetzte Zeit je Fahrzeug [h]", height=
     return (title, cid, cfg, height)
 
 
-def _render_group(title_h2, charts, toggle=None):
+def _render_group(title_h2, charts, toggle=None, badge_titles=None):
     """Wrap a list of (title, cid, cfg, height) chart tuples (+ optional
     toggle spec from `_feeder_toggle`) in a `<h2>` + `.grid2` section. Empty
-    groups (no charts, no toggle) render nothing."""
-    panels = [_panel(t, cid, h) for t, cid, _cfg, h in charts]
+    groups (no charts, no toggle) render nothing.
+
+    `badge_titles` (Task 4 secondary contamination, review I1): an optional
+    set of chart titles that get `_MODULAR_BADGE_HTML` appended right after
+    their own panel -- unlike the primary-marker tiles, secondary
+    contamination does not affect every chart in a group (e.g. Verteilungen
+    also has the uncontaminated wait-time chart), so the badge is attached
+    per-panel here rather than once after the `<h2>` the way the existing
+    Konvergenz banner works. None/empty (the default) -> no change, so every
+    existing call site stays byte-identical."""
+    badge_titles = badge_titles or frozenset()
+    panels = [_panel(t, cid, h) + (_MODULAR_BADGE_HTML if t in badge_titles else "")
+              for t, cid, _cfg, h in charts]
     js = [chart_js(cid, cfg) for _, cid, cfg, _h in charts]
     if toggle is not None:
         ttitle, cid, btn_id, cfgA, cfgB, height = toggle
@@ -501,6 +577,17 @@ def build_tab(data, uid, compact=False, map_block=None):
 
     kpis, ts = data.kpis, data.ts
     dist, iters, vehicles = data.distributions, data.iterations, data.vehicles
+
+    # Task 4 secondary contamination (review I1, METHODS-LOG 2.14 point 4):
+    # the occupancy decomposition chart, the tour-duration distribution chart
+    # and the per-vehicle chart all read kpi_distributions.csv/kpi_vehicles.csv,
+    # which carry no provenance channel of their own -- see
+    # `_secondary_contamination_badge`. "" (marker absent) -> empty set below
+    # -> every panel unchanged.
+    secondary_titles = (
+        {"Aktive Tourdauer je Fahrzeug [h]", "Besetzungs-Dekomposition",
+         "Besetzte Zeit je Fahrzeug [h]"}
+        if _secondary_contamination_badge(kpis) else frozenset())
 
     groups_html, groups_js = [], []
 
@@ -546,7 +633,7 @@ def build_tab(data, uid, compact=False, map_block=None):
                          "c_tdist_" + uid)   # Plan D series -- guarded, absent until then
         if c:
             dist_charts.append(c)
-        h, j = _render_group("Verteilungen", dist_charts)
+        h, j = _render_group("Verteilungen", dist_charts, badge_titles=secondary_titles)
         if h:
             groups_html.append(h)
             groups_js.append(j)
@@ -560,7 +647,7 @@ def build_tab(data, uid, compact=False, map_block=None):
     c = _modal_chart(kpis, "c_modal_" + uid)
     if c:
         occ_modal_charts.append(c)
-    h, j = _render_group("Besetzung & Modal Split", occ_modal_charts)
+    h, j = _render_group("Besetzung & Modal Split", occ_modal_charts, badge_titles=secondary_titles)
     if h:
         groups_html.append(h)
         groups_js.append(j)
@@ -612,7 +699,7 @@ def build_tab(data, uid, compact=False, map_block=None):
         c = _vehicle_chart(vehicles, "c_veh_" + uid)
         if c:
             veh_charts.append(c)
-        h, j = _render_group("Service-Zeit Detail", veh_charts)
+        h, j = _render_group("Service-Zeit Detail", veh_charts, badge_titles=secondary_titles)
         if h:
             groups_html.append(h)
             groups_js.append(j)
