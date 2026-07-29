@@ -340,11 +340,17 @@ Prädiktor neu gerechnet, mit dem auch exportiert wird (PANDA B10; Vorprüfung: 
   Ankerabstand ist mit **+0,8 %** erledigt; **die Begründung für das Band ist damit nicht
   mehr der Ankerabstand, sondern das ±29-pp-Prognoseintervall der Extrapolationskurve an
   Hoyerswerdas Betriebspunkt.** Am Band selbst ändert das nichts.
-- **Neue offene Entscheidung:** das präregistrierte Alterskriterium **K6 ist jetzt erfüllt**
-  (die gefittete Variante stimmt im Vorzeichen zu, die exogene kostet in-region nichts).
-  Nach der eigenen Regel wäre ein exogener Altersterm zu übernehmen → **−1,3 % Niveau**,
-  also ein Neuexport und ein neues Band. BACKLOG-Punkt; bis dahin exportiert PANDA
-  unverändert ohne Altersterm.
+- **Altersterm: K6 erfüllt, Übernahme bewusst vertagt** (User-Entscheidung 2026-07-29). Das
+  präregistrierte Kriterium ist jetzt in beiden Bedingungen erfüllt — die gefittete Variante
+  stimmt im Vorzeichen zu (`a65plus` = 0,59 × `a18_49` statt 1,5 ×), die exogene kostet
+  in-region nichts (−0,01 pp). Nach der eigenen Regel wäre der exogene Term zu übernehmen;
+  **entschieden ist, ihn erstmal nicht zu nehmen**, weil (a) die Zustimmung aus einer
+  Randlösung (`a50_64` genau 0) auf kollinearen Altersspalten kommt und die gefittete
+  Variante blind schlechter ist, und (b) der Effekt mit **−1,3 %** klein gegen das ±10-%-Band
+  ist, aber Neuexport + neues Band kosten würde. **Für das Paper heißt das: die
+  Einwohnerzahl geht ungewichtet ins Modell, und die Demografie wird als Sensitivität
+  berichtet (−1,3 bis −1,8 % des Lausitz-Niveaus), nicht als Korrektur.** Wiederaufnahme
+  nur zusammen mit einem ohnehin fälligen Neuexport → BACKLOG.
 - **Verschobene Abhängigkeit, als Limitation zu führen:** das Modell ist nach B8 überwiegend
   ein **Flächenmodell** — Wohn-GF trägt zwei Drittel des prognostizierten Totals, der
   Einwohner-Term ein Viertel (OSM-Ära: 71 % Einwohner). Der Transfer hängt damit primär an
