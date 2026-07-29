@@ -270,7 +270,9 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   (a) Plan D **Karten** (depot-siting / vehicle-tours in die Tabs);
   (b) zwei bewusst verschobene Datenschicht-KPIs: **`occ_km`** = gefahrene km je Besetzungslevel
   (braucht Netzwerk-km-Rekonstruktion; Legacy `dist_by_occ` aus `build_drt_dashboard.py`
-  portieren — `_occ_chart` rendert die Serie bereits, sie wird nur nicht emittiert) und
+  portieren — Skript geloescht 2026-07-29, Stand in Git-Historie: Parent von
+  b639ff30198eafa692b151705be4d073d6f98a5d — `_occ_chart` rendert die Serie bereits, sie wird nur
+  nicht emittiert) und
   **ausgelieferte Pakete/h** (Join Freight-Service-actstart-Event → Carrier-Plan-Demand;
   `_hourly_provider_stack` hängt schon bereit);
   (c) **1d-Modular-Karten, sobald 1d-Runs existieren:** C8-Late-Metriken
@@ -327,7 +329,8 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
     (`rail_stops` fehlte im `map_data.json` — Producer gab still `None` zurück, Ursache nie
     isoliert). **Wieder einbauen, wenn die Case-Study-Area erweitert wird**; dabei die
     stille-`None`-Ursache mit-fixen und den Layer nur zeigen, wenn Daten vorhanden.
-    Port-Referenz: Legacy `build_drt_dashboard.py:260-289`. _(added 2026-07-20)_
+    Port-Referenz: Legacy `build_drt_dashboard.py:260-289` (Skript geloescht 2026-07-29, Stand in
+    Git-Historie: Parent von b639ff30198eafa692b151705be4d073d6f98a5d). _(added 2026-07-20)_
 
 - **`[M]` hagrid-input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
   letzter manueller Transfer-Schritt für "läuft auf jedem neuen PC". Geplant:
