@@ -478,7 +478,8 @@ Java-Emissionspunkte verifiziert, Baseline bitgleich), aber:
    sind echte DVRP-Fahrten mit `LinkEnterEvent`s (`ModularTourScheduler.java:151,161,171`) —
    exakt die Events, aus denen MATSims `DrtVehicleDistanceStats` die kontaminierten Zahlen
    überhaupt erzeugt; das Repo rekonstruiert Link-Distanzen selbst schon zweimal
-   (`geometry.reconstruct_drt_paths`, `drt-headline/build_vehicle_tours.py`). Eine
+   (`geometry.reconstruct_drt_paths`, `drt-headline/build_vehicle_tours.py` — Skript geloescht
+   2026-07-29, Stand in Git-Historie: Parent von b639ff30198eafa692b151705be4d073d6f98a5d). Eine
    Fenster-Korrektur der drei km-KPIs wäre baubar; entschieden ist, sie (bislang) nicht zu bauen,
    weil sie eine Selbstrechnung an die Stelle der autoritativen MATSim-CSV setzte. Vorher zu
    fixen wäre ohnehin: `geometry` misst Euklid-Knotendistanz, nicht `link.getLength()`.
