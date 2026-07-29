@@ -150,7 +150,8 @@ public class ModularTourDispatcher {
                 it.remove();
                 events.processEvent(ModularTourEvent.dispatched(now, tour.tourId(),
                         vehicle.getId(), tour.totalParcels(),
-                        excursion.get().deadheadMeters(), excursion.get().serviceMeters()));
+                        excursion.get().deadheadMeters(), excursion.get().serviceMeters(),
+                        tour.plannedDuration(), excursion.get().routedDurationS()));
             } else if (spliceRejected.add(tour.tourId())) {
                 // Review Finding 3: this branch used to be EMPTY - no event, no log, no counter.
                 // The tour stayed pending and, when it later tripped the expiry check, was

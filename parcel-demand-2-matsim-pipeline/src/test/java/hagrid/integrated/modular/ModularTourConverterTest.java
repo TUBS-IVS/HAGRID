@@ -186,6 +186,88 @@ class ModularTourConverterTest {
                 .containsExactly(0, 2);
     }
 
+    /**
+     * Task 1 (paper-readiness review F1/F3, METHODS-LOG 2.16): {@code planStats} sums plan-time
+     * carrier attributes that {@code convert()} never looks at, so delta_parcels stops being
+     * measured against a jsprit-censored demand base. dhl's numbers are conservation-identity-0
+     * consistent by construction (10 == 8 planned + 2 unassigned) so this test does not
+     * incidentally exercise the identity-0 LOG.error path - that is covered separately by
+     * {@link ModularKpiHandlerTest} at the CSV layer; here the point is purely the summation and
+     * derivation logic.
+     */
+    @Test
+    @DisplayName("planStats: sums numberOfParcels/unassignedParcels/missedParcels across carriers; "
+            + "derives maxParcelsPerTour and depotByTourId from the converted tour list")
+    void planStatsSumsCarrierAttributesAndDerivesTourStats() {
+        Network carNet = buildCarNet();
+        Network drtNet = buildDrtNet();
+
+        CarrierService dhlBig = CarrierService.Builder
+                .newInstance(Id.create("dhl_0", CarrierService.class), Id.createLinkId("car_2"))
+                .setCapacityDemand(8).setServiceDuration(300.0).build();
+        Carriers carriers = new Carriers();
+        addOneTourCarrier(carriers, "dhl", Id.createLinkId("car_1"), 8 * 3600.0, 17 * 3600.0, List.of(dhlBig));
+        putIntAttr(carriers, "dhl", "numberOfParcels", 10);
+        putIntAttr(carriers, "dhl", "unassignedParcels", 2);
+        putIntAttr(carriers, "dhl", "missedParcels", 1);
+
+        CarrierService glsService = CarrierService.Builder
+                .newInstance(Id.create("gls_0", CarrierService.class), Id.createLinkId("car_2"))
+                .setCapacityDemand(5).setServiceDuration(300.0).build();
+        addOneTourCarrier(carriers, "gls", Id.createLinkId("car_1"), 8 * 3600.0, 17 * 3600.0, List.of(glsService));
+        putIntAttr(carriers, "gls", "numberOfParcels", 5);
+        putIntAttr(carriers, "gls", "unassignedParcels", 0);
+        putIntAttr(carriers, "gls", "missedParcels", 0);
+
+        List<ModularFreightTour> tours = ModularTourConverter.convert(carriers, carNet, drtNet);
+        ModularPlanStats stats = ModularTourConverter.planStats(carriers, tours);
+
+        assertThat(stats.parcelsDemand()).isEqualTo(15);
+        assertThat(stats.parcelsUnassignedJsprit()).isEqualTo(2);
+        assertThat(stats.parcelsMissedOverlay()).isEqualTo(1);
+        assertThat(stats.maxParcelsPerTour())
+                .isEqualTo(tours.stream().mapToInt(ModularFreightTour::totalParcels).max().orElse(0));
+        // Strengthened beyond the brief's literal "containsKeys(tours.get(0).tourId())": the
+        // ambiguity-resolution contract is EVERY converted tour, not just the first, so a
+        // depotByTourId that silently dropped tour 2+ would still pass the weaker check.
+        assertThat(stats.depotByTourId())
+                .as("depotByTourId must map EVERY converted tour, not just the first")
+                .hasSize(tours.size())
+                .containsKeys(tours.get(0).tourId());
+        tours.forEach(t -> assertThat(stats.depotByTourId().get(t.tourId())).isEqualTo(t.depotLink()));
+    }
+
+    /**
+     * Step 1's second brief case: a carrier with NO attributes at all must not throw (defensive
+     * {@code getAttribute(...) == null} handling) and must contribute 0 to every sum - no WARN
+     * required. The "ghost" carrier also has no plan at all (mirrors a carrier demand-file entry
+     * that ended up with zero services), so it also contributes zero tours and the conservation
+     * identity holds trivially (0 == 0 + 0) - deliberately NOT set up to trip the identity-0
+     * LOG.error, since that path is a different, already-covered concern.
+     */
+    @Test
+    @DisplayName("planStats: a carrier with no attributes at all contributes 0 to every sum, no WARN needed")
+    void planStatsCarrierWithNoAttributesContributesZero() {
+        Carriers carriers = new Carriers();
+        Carrier ghost = CarriersUtils.createCarrier(Id.create("ghost", Carrier.class));
+        carriers.addCarrier(ghost);   // no addPlan() -> no selected plan -> convert() skips it
+
+        List<ModularFreightTour> tours = ModularTourConverter.convert(carriers, buildCarNet(), buildDrtNet());
+        assertThat(tours).isEmpty();
+
+        ModularPlanStats stats = ModularTourConverter.planStats(carriers, tours);
+        assertThat(stats.parcelsDemand()).isZero();
+        assertThat(stats.parcelsUnassignedJsprit()).isZero();
+        assertThat(stats.parcelsMissedOverlay()).isZero();
+        assertThat(stats.maxParcelsPerTour()).isZero();
+        assertThat(stats.depotByTourId()).isEmpty();
+    }
+
+    private static void putIntAttr(Carriers carriers, String provider, String key, int value) {
+        carriers.getCarriers().get(Id.create(provider, Carrier.class)).getAttributes()
+                .putAttribute(key, value);
+    }
+
     // ---- fixtures ----
 
     /** 2-node line a(0,0)->b(1000,0); one link each direction, ids "car_1"/"car_2". */

@@ -328,6 +328,18 @@ class ModularTourDispatcherTest {
                 .isEqualTo(expected.deadheadMeters());
         assertThat(dispatched.get(0).getServiceMeters()).as("service (inter-stop legs)")
                 .isEqualTo(expected.serviceMeters());
+        // Task 1: plannedDurationS is jsprit's car-network figure (tour.plannedDuration()),
+        // routedDurationS is the splicer's own routedDurationS (completion - dispatch "now") -
+        // pinned against the SAME twin-scheduled excursion as deadhead/service above, and against
+        // each other's inequality, since a transposition here would be just as invisible to any
+        // single-sided check as the deadhead/service one this test already exists to catch.
+        assertThat(dispatched.get(0).getPlannedDurationS()).as("plannedDurationS (jsprit car-network)")
+                .isEqualTo(tour.plannedDuration());
+        assertThat(dispatched.get(0).getRoutedDurationS()).as("routedDurationS (splicer, DRT-routed)")
+                .isEqualTo(expected.routedDurationS());
+        assertThat(dispatched.get(0).getRoutedDurationS())
+                .as("routed (DRT, includes the approach leg) must exceed jsprit's car-network figure")
+                .isGreaterThan(dispatched.get(0).getPlannedDurationS());
     }
 
     /**

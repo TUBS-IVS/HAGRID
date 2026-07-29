@@ -16,7 +16,9 @@ import org.matsim.freight.carriers.Tour;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Converts routed {@code CarrierPlan}s ({@code LausitzFreightPreprocessor.runModular} output)
@@ -73,6 +75,68 @@ public final class ModularTourConverter {
                     }
                 });
         return tours;
+    }
+
+    /**
+     * Task 1 (paper-readiness review F1/F3/F5/F7, METHODS-LOG.md &sect;2.16): plan-time
+     * accounting over the ROUTED carriers (before any dispatch happens), so that parcels jsprit
+     * could not fit into any tour under the current cap no longer vanish from every downstream
+     * number. Null-safe by design: a carrier missing an attribute (never routed through
+     * {@code recordUnassignedJobs} / {@code LmdCarrierBuilder.buildCore}, e.g. a legacy fixture)
+     * contributes 0 to every sum, no warning - mirroring {@code extract_freight}'s own tolerance
+     * for a missing attribute.
+     *
+     * <p>Conservation identity 0 ({@code parcelsDemand ==} parcels actually planned into
+     * {@code tours} {@code + parcelsUnassignedJsprit}) is checked here and logged loudly but
+     * NON-FATALLY on mismatch - an empty-tour skip in {@link #convert} (ambiguity #4) can
+     * legitimately cause one, and this class never aborts a run for an accounting anomaly (user
+     * decision: count + warn loudly, never abort).
+     */
+    public static ModularPlanStats planStats(Carriers carriers, List<ModularFreightTour> tours) {
+        long parcelsDemand = 0;
+        long parcelsUnassignedJsprit = 0;
+        long parcelsMissedOverlay = 0;
+        // Sorted by id, same as convert() - not load-bearing for the sums (commutative), but kept
+        // consistent with this class's stated determinism invariant for anyone reading logs.
+        for (Carrier carrier : carriers.getCarriers().values().stream()
+                .sorted(Comparator.comparing(c -> c.getId().toString())).toList()) {
+            parcelsDemand += intAttr(carrier, "numberOfParcels");
+            parcelsUnassignedJsprit += intAttr(carrier, "unassignedParcels");
+            parcelsMissedOverlay += intAttr(carrier, "missedParcels");
+        }
+
+        int maxParcelsPerTour = tours.stream().mapToInt(ModularFreightTour::totalParcels)
+                .max().orElse(0);
+        Map<String, Id<Link>> depotByTourId = new LinkedHashMap<>();
+        for (ModularFreightTour tour : tours) {
+            depotByTourId.put(tour.tourId(), tour.depotLink());
+        }
+
+        long plannedFromTours = tours.stream().mapToInt(ModularFreightTour::totalParcels).sum();
+        if (parcelsDemand != plannedFromTours + parcelsUnassignedJsprit) {
+            LOG.error("Modular plan-stats conservation identity 0 VIOLATED: parcelsDemand={} != "
+                    + "plannedFromTours={} + parcelsUnassignedJsprit={} (sum={}) - an empty-tour "
+                    + "skip in convert() can legitimately cause this (see its javadoc); CSV is "
+                    + "still written, this is loud but non-fatal.",
+                    parcelsDemand, plannedFromTours, parcelsUnassignedJsprit,
+                    plannedFromTours + parcelsUnassignedJsprit);
+        }
+        if (parcelsUnassignedJsprit > 0) {
+            LOG.warn("jsprit left {} parcels UNPLANNED under the current tour cap - delta_parcels"
+                    + " is measured against the post-assignment base; see METHODS-LOG 2.16",
+                    parcelsUnassignedJsprit);
+        }
+
+        return new ModularPlanStats(parcelsDemand, parcelsUnassignedJsprit, parcelsMissedOverlay,
+                maxParcelsPerTour, depotByTourId);
+    }
+
+    /** Null-safe int carrier attribute read: an absent attribute contributes 0, never throws. */
+    private static int intAttr(Carrier carrier, String key) {
+        Object v = carrier.getAttributes().getAttribute(key);
+        if (v instanceof Integer i) return i;
+        if (v instanceof Number n) return n.intValue();
+        return 0;
     }
 
     /**

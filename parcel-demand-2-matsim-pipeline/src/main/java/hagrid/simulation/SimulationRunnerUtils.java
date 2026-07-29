@@ -396,11 +396,19 @@ public final class SimulationRunnerUtils {
                         .filter(drtNet, java.util.Set.of(org.matsim.api.core.v01.TransportMode.drt));
                 java.util.List<hagrid.integrated.modular.ModularFreightTour> tours =
                         hagrid.integrated.modular.ModularTourConverter.convert(routed, carNet, drtNet);
+                // Task 1 (paper-readiness review F1/F3/F5/F7, METHODS-LOG 2.16): plan-time
+                // accounting computed ONCE right after convert(), same pattern ModularEndToEndTest
+                // / ModularE2eStaging use, and handed into the module so ModularKpiHandler can
+                // publish parcels_demand/parcels_unassigned_jsprit/parcels_missed_overlay/
+                // max_parcels_per_tour/peak_concurrent_swaps without ever touching Carriers itself.
+                hagrid.integrated.modular.ModularPlanStats planStats =
+                        hagrid.integrated.modular.ModularTourConverter.planStats(routed, tours);
                 controler.addOverridingModule(new hagrid.integrated.modular.ModularDispatchModule(
-                        drtCfg, tours, cfg.getIdleThreshold()));
-                LOG.info("MODULAR run '{}' (DRT fleet {}, {} freight tours, idleThreshold={}, cap={}s).",
+                        drtCfg, tours, cfg.getIdleThreshold(), planStats));
+                LOG.info("MODULAR run '{}' (DRT fleet {}, {} freight tours, idleThreshold={}, cap={}s,"
+                        + " unassigned={}).",
                         cfg.getRunId(), cfg.getFleetSize(), tours.size(), cfg.getIdleThreshold(),
-                        cfg.getMaxTourDurationSeconds());
+                        cfg.getMaxTourDurationSeconds(), planStats.parcelsUnassignedJsprit());
             } else {
                 LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             }
