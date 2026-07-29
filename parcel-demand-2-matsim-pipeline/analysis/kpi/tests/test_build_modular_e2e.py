@@ -54,7 +54,14 @@ def test_full_chain_with_events_carries_marker_freight_hours_pax_rows_and_badge(
     assert ";meta;modular_contaminated_kpis;" in long_txt
     assert ";meta;modular_secondary_contaminated;" in long_txt
     assert ";system;drt_freight_hours_total;" in long_txt
-    assert "_pax;" in long_txt
+    # A named row, not just the "_pax;" suffix: drt_tour_hours_total_pax is the one
+    # unconditional *_pax row (_modular_pax_rows emits it whenever there is freight time to
+    # subtract, before the tour_h > freight_h guard that gates the other three).
+    assert ";system;drt_tour_hours_total_pax;" in long_txt
+    # The fixture's conserving 26-metric modular_tour_stats.csv must stay conserving -- a
+    # future edit that breaks one of extract_modular's five identities must fail LOUDLY here,
+    # not leave the two assertions above silently green over a corrupted fixture.
+    assert "modular_identity_violated" not in long_txt
 
     html = (out / "kpi_dashboard.html").read_text(encoding="utf-8")
     assert CONTAMINATION_BADGE in html
@@ -73,3 +80,5 @@ def test_no_events_build_still_carries_the_marker_but_not_the_event_derived_rows
     assert ";meta;modular_secondary_contaminated;" in long_txt
     assert "_pax;" not in long_txt
     assert ";system;drt_freight_hours_total;" not in long_txt
+    # Same conserving-fixture guard as the events build above -- must hold on this path too.
+    assert "modular_identity_violated" not in long_txt

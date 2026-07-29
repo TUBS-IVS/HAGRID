@@ -246,7 +246,7 @@ def test_open_freight_windows_is_zero_key_present_on_a_baseline_run(tmp_path):
     assert fl["open_freight_windows"] == 0
 
 
-def test_re_time_word_boundary_skips_a_leading_endtime_attribute(tmp_path):
+def test_re_time_word_boundary_skips_a_leading_endtime_attribute():
     """The review's probe: `time="([^"]+)"` (no word boundary) matches the tail of
     `endtime="55"` before it ever reaches the real `time="..."` attribute later on the same
     line -- reading the swap's scheduled END time as its event time. `\\btime="` must skip
