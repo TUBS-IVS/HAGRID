@@ -317,11 +317,43 @@ mit Zustellpunkt-/Adressdaten — die nicht offen und damit nicht übertragbar s
 Szenarienvergleich ist das der einzige Nachfragefehler-Kanal, der sich *nicht* herauskürzt, weil
 die Konzepte unterschiedlich auf Raum reagieren (χ-Gate bei Shared-Use).
 
-### 2.9 CV-Batterie ist noch auf OSM-Zahlen
+### 2.9 CV-Batterie auf dem Zensus-Prädiktor: was das Nachfragemodell jetzt trägt
 
-`offen` · 2026-07-27 · Bootstrap-KI, Segment-, Cross-Carrier- und Transfer-Check im PANDA-README
-sind nach dem B8-Fix **nicht** nachgezogen. Der blinde Hannover-wMAPE (9,8 %) ist neu gemessen,
-der Rest der Batterie nicht.
+`trägt` · 2026-07-29 (war `offen` seit 2026-07-27) · Die komplette Batterie ist auf dem
+Prädiktor neu gerechnet, mit dem auch exportiert wird (PANDA B10; Vorprüfung: der
+`.spatial_cache`-Refit reproduziert `fitted_params.json` exakt). Für die Studie relevant:
+
+- **Besser geworden, aber nicht in anderer Größenordnung:** blind 9,8 % wMAPE (KI 7,2–12,9),
+  Median-|Δ| 6,1 % statt 8,2 %. Die ±10 % des Bandes decken das KI weiter ab (§1.3).
+- **Neu belastbar:** das Skill-KI gegen eine Pro-Kopf-Baseline **schließt die Null aus**
+  (+39 %, KI [+10 ; +52], P(>0) 99,5 %; vorher +36 % mit KI [−9 ; +51]). Der Satz „das Modell
+  schlägt *Pakete ∝ Einwohner* nachweisbar" ist jetzt tragfähig — vorher war er es nicht.
+- **Sub-PLZ-Grenze unverändert:** ρ 0,56 (100 m) / 0,87 (300 m) / 0,92 (500 m). Die
+  ≳300-m-Lesart aus §2.8 bleibt genau so stehen; die Bevölkerungsgewichtung ist bei 100 m
+  weiter die bessere (ρ 0,65) — das Gebäudegewicht rechtfertigt sich nur über B2B in
+  einwohnerlosen Gewerbezellen.
+- **Zurückgezogen:** der Cross-Carrier-Transferbefund → §3.7.
+- **Zurückgezogen:** „die Lausitz ist pro Kopf EFH-lastiger" → §3.2 (Nachtrag).
+- **Kriterien-Bewegung:** das ländliche Skill-Kriterium (K3) ist nicht mehr rot — Punkt-
+  schätzungen begünstigen das Modell in fünf von sechs Holdouts, ein KI schließt die Null
+  aus (vorher keins). Nicht durchgängig grün: fünf KIs kreuzen weiter die Null. Der
+  Ankerabstand ist mit **+0,8 %** erledigt; **die Begründung für das Band ist damit nicht
+  mehr der Ankerabstand, sondern das ±29-pp-Prognoseintervall der Extrapolationskurve an
+  Hoyerswerdas Betriebspunkt.** Am Band selbst ändert das nichts.
+- **Neue offene Entscheidung:** das präregistrierte Alterskriterium **K6 ist jetzt erfüllt**
+  (die gefittete Variante stimmt im Vorzeichen zu, die exogene kostet in-region nichts).
+  Nach der eigenen Regel wäre ein exogener Altersterm zu übernehmen → **−1,3 % Niveau**,
+  also ein Neuexport und ein neues Band. BACKLOG-Punkt; bis dahin exportiert PANDA
+  unverändert ohne Altersterm.
+- **Verschobene Abhängigkeit, als Limitation zu führen:** das Modell ist nach B8 überwiegend
+  ein **Flächenmodell** — Wohn-GF trägt zwei Drittel des prognostizierten Totals, der
+  Einwohner-Term ein Viertel (OSM-Ära: 71 % Einwohner). Der Transfer hängt damit primär an
+  der Zensus-2022-Gebäudeaufnahme samt Leerstandskorrektur.
+- **Nicht nachgezogen:** der Kandidaten-Bake-off (`PANDA/docs/bakeoff_model_selection.md`).
+  Wer dessen Tabelle zitiert, zitiert OSM-Ära-Zahlen.
+
+Reproduktion: die acht `studies/run_cv*.py` in PANDA, Reihenfolge und Artefakte in
+`PANDA/docs/transferability.md` → B10. Überholte Artefakte: `PANDA/archive/cv_pre_zensus/`.
 
 ### 2.10 `share_channel_locker` ist keine Variable
 
@@ -684,6 +716,15 @@ Setzung war, kommt jetzt aus den Daten.
 Reproduktion: `python -u studies/run_efh_validation.py`, Details `PANDA/docs/transferability.md`
 → B7/B8.
 
+**Nachtrag 2026-07-29 (B10): auch die *Richtung* der Strukturaussage war falsch, nicht nur ihre
+Größe.** Die Termzerlegung oben stammt aus dem OSM-Prädiktor. Auf Zensus-Flächen hat die Lausitz
+pro Kopf **weniger** EFH- (0,79× statt 2,16×) und **mehr** MFH-Fläche (1,12× statt 0,70×) als die
+Region Hannover, und der EFH-Term trägt dort **31,4 %** gegen **37,1 %** in Hannover — er
+über-trägt also nicht mehr, sondern unter-trägt. Für Hoyerswerda (Plattenbaustadt; EFH-Anteil der
+Wohnfläche 0,41 statt OSM-seitig 0,82) ist das die plausible Beschreibung. Damit entfällt auch das
+Erklärbild „in Hannover heißt EFH-lastig *wohlhabender Vorort*, in Hoyerswerda *Dorf*" — es
+beschrieb einen Datenfehler, keine Siedlungsstruktur.
+
 ### 3.3 „1c Task 4 braucht `drt-extensions` / den MOIA-Fork"
 
 `zurückgezogen` · 2026-07-24 · Verwechslung von Core und Extension. Das 2D-Kapazitäts-Plumbing
@@ -739,6 +780,31 @@ Events-vorhanden-Indikator. Das ist jetzt als Kommentar an der Bedingung und als
 zweites Mal aufgeschrieben wird. Der eigentliche Grund, warum `tours`/`stops` bei so einem Lauf
 leer aussehen können, ist ein **anderer**: ohne `output_carriers.xml.gz` gibt es kein
 Carrier-Match, und ungematchte Fahrzeuge werden bewusst weggelassen.
+
+### 3.7 „Das Wohnstruktur-Signal ist über Carrier-Grenzen übertragbar (+21 % Skill auf Hermes)"
+
+`zurückgezogen` · 2026-07-29 (B10)
+
+**Geglaubt** (2026-07-24, OSM-Prädiktor): der auf DHL gefittete B2C-Teil (Einwohner + EFH/MFH)
+sagt die räumliche Verteilung eines **nie gefitteten** zweiten Carriers (Hermes, ~rein B2C)
+**+21 % besser** vorher als eine reine Bevölkerungsbasis (P(Skill > 0) ≈ 0,83). Gelesen als Beleg,
+dass das Siedlungsstruktur-Signal echt und übertragbar ist und kein DHL-Artefakt.
+
+**Gemessen** (2026-07-29, Zensus-Prädiktor): Skill **−3,5**, 95-%-KI **[−62 ; +33]**,
+P(Skill > 0) = **41 %**. Kein messbarer Vorteil mehr — und zwar in *keine* Richtung, das KI
+umschließt die Null breit. Plausibler Mechanismus: die Zensus-Netto-Wohnfläche korreliert
+deutlich stärker mit der Einwohnerzahl als die alte OSM-Bruttofläche, deren
+`building=yes`-Fallback gerade *nicht* bevölkerungsproportional war — es bleibt weniger Signal,
+das **zusätzlich** zur Bevölkerung etwas erklärt.
+
+**Es bleibt:** (a) die Decke-Kennzahl ist prädiktorunabhängig und unverändert — die
+Pro-Kopf-Muster der beiden Carrier stimmen nur moderat überein (r ≈ 0,31, KI 0,16–0,60), ein
+großer Teil des DHL-Residuums ist also echt carrier-spezifisch. (b) Der B2B-Teil überträgt
+korrekt **nicht** auf einen reinen B2C-Carrier (−36 % statt vorher −6 %) — der B2C/B2B-Split
+trifft eine echte strukturelle Unterscheidung. (c) Die Übertragbarkeit **über den Raum** ist
+unberührt und sogar besser belegt (§2.9: Skill-KI ohne Null). Was fehlt, ist der Beleg über
+**Carrier**-Grenzen. Für diese Studie ist das kein tragender Baustein — sie überträgt räumlich,
+nicht carrierweise —, aber der Satz darf so nicht mehr im Text stehen.
 
 ---
 
