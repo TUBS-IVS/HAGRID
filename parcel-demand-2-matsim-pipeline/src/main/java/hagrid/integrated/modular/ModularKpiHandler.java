@@ -63,9 +63,11 @@ import java.util.function.ToIntFunction;
  *
  * <p><b>These are PLANNED kilometres, not travelled kilometres.</b> {@code deadhead_km_planned}
  * and {@code service_km_planned} are computed from dispatch-time routing (the DISPATCHED event's
- * payload), not reconstructed from mobsim travel events — there is no such event stream for
- * freight legs (D7). The {@code _planned} suffix on the metric name exists specifically to keep
- * this distinction visible to anyone consuming the CSV without reading this class.</p>
+ * payload), not reconstructed from mobsim travel events. Freight DRIVES are real DVRP drives that
+ * DO emit {@code LinkEnterEvent}s (review I3); what does not exist is (a) native passenger-engine
+ * events for freight STOPS and (b) a per-task distance breakdown in {@code drt_vehicle_stats}. The
+ * {@code _planned} suffix on the metric name exists because these two metrics stay dispatch-time
+ * routing BY DECISION, not for lack of a travel-event stream (METHODS-LOG 2.14).</p>
  *
  * <p><b>{@code freight_vehicle_hours} excludes incomplete excursions.</b> It is
  * Σ over tours that are BOTH DISPATCHED and COMPLETED of
@@ -255,8 +257,9 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 s.dispatchedAt = event.getTime();
                 // Deadhead/service split convention - see class javadoc: deadheadMeters is
                 // approach+return ONLY; serviceMeters already includes the depot->first-stop leg.
-                // Both are PLANNED (dispatch-time routing) kilometres, not travelled ones (D7: no
-                // travel-event stream exists for freight legs) - hence the "_planned" CSV names.
+                // Both are PLANNED (dispatch-time routing) kilometres, not travelled ones - freight
+                // DRIVES do emit LinkEnterEvents (review I3), but these two stay dispatch-time
+                // routing BY DECISION (METHODS-LOG 2.14) - hence the "_planned" CSV names.
                 s.deadheadMeters = event.getDeadheadMeters();
                 s.serviceMeters = event.getServiceMeters();
             }

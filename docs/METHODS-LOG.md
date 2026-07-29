@@ -569,7 +569,11 @@ scheitern, wenn die gerouteten Carrier Unassigned tragen.
 
 **Behoben 2026-07-29** (Commits `9e4d9da`/`20bdd4e`): `parcels_demand` + `parcels_unassigned_jsprit`
 + `parcels_missed_overlay` stehen jetzt in `modular_tour_stats.csv`, Identity 0 ist geprüft — in
-Java als WARN (nie Abbruch, User-Entscheidung) und identisch in Python.
+Java als WARN (nie Abbruch, User-Entscheidung) und identisch in Python. Java-Identity-0
+(Toursummen-Basis, Konversionszeit) und Python-Identity-0 (PLANNED-Event-Basis, Extraktionszeit)
+können in der Randkonfiguration QSim-Ende vor ~07:16 (Tour nie aktiviert) auseinanderfallen — dann
+warnt Java, Python sieht eine kleinere parcels_planned-Basis; im Produktionssetup (QSim bis 36:00)
+unerreichbar.
 
 ### 2.17 1d Modular: was ein Einzellauf trägt — gepaarte vs. ungepaarte Vergleiche
 

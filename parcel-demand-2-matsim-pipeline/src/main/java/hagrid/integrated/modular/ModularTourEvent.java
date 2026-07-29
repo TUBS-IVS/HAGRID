@@ -77,10 +77,12 @@ public final class ModularTourEvent extends Event {
      *                         §4.3/C4, METHODS-LOG 2.18).
      * @param routedDurationS  the splicer's actual routed excursion length on the DRT network
      *                         ({@code ScheduledExcursion#routedDurationS()}) - always &gt;=
-     *                         approach + service + return + 2x retooling, and systematically
-     *                         larger than {@code plannedDurationS} wherever DRT routing diverges
-     *                         from jsprit's car-network routing (the same divergence
-     *                         {@code tours_rejected_at_splice} exists to surface).
+     *                         approach + service + return + 2x retooling (it includes the
+     *                         approach leg that {@code plannedDurationS} omits); beyond that the
+     *                         two are NOT ordered - jsprit's car-network time and the DRT-routed
+     *                         time can fall either way (link snapping can shorten legs too), the
+     *                         same divergence {@code tours_rejected_at_splice} exists to surface
+     *                         (METHODS-LOG 2.18).
      */
     public static ModularTourEvent dispatched(double time, String tourId, Id<DvrpVehicle> vehicle,
                                               int parcels, double deadheadMeters, double serviceMeters,

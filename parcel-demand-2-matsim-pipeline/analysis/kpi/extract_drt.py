@@ -38,8 +38,9 @@ into totalDistance/emptyRatio/d_p_d_t before this code ever sees the CSV, but
 freight DRIVES are real DVRP drives that DO emit LinkEnterEvents
 (ModularTourScheduler.java:151,161,171) -- the same events MATSim's own
 DrtVehicleDistanceStats used to build these very numbers, and this repo
-already reconstructs per-link distances twice elsewhere
-(geometry.reconstruct_drt_paths, drt-headline/build_vehicle_tours.py). A
+already reconstructs per-link distances elsewhere
+(geometry.reconstruct_drt_paths; formerly also
+drt-headline/build_vehicle_tours.py, deleted 2026-07-29, see git history). A
 window correction of these three is buildable in principle; it is not built
 because a self-computed number would replace MATSim's authoritative CSV.
 (D7's request-side claim stays true and is a separate fact, not the reason
