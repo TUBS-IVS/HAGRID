@@ -79,38 +79,65 @@ def has_modular_stats(run_dir, meta):
     return (Path(run_dir) / (meta.prefix + ".modular_tour_stats.csv")).exists()
 
 
+#: The 13 counters an extraction cannot proceed without (the ones identities 1-5 are built
+#: from). Present in every modular_tour_stats.csv since Task 9 -- old 21-metric format and
+#: the new 26-metric one alike -- so a lookup failure here means the file itself is
+#: unreadable (0 bytes / header-only), not a downstream bug.
+_REQUIRED_FIELDS = (
+    "tours_planned", "tours_expired_pending", "tours_dispatched", "tours_completed",
+    "tours_dispatched_incomplete", "tours_pending_eod",
+    "parcels_planned", "parcels_expired_pending", "parcels_dispatched", "parcels_served",
+    "parcels_dispatched_unserved", "parcels_pending_eod", "delta_parcels",
+)
+
+
 def extract(run_dir, prefix):
     csv_path = Path(run_dir) / (prefix + ".modular_tour_stats.csv")
     try:
+        # Review Important 1: the try/except below must cover ONLY the CSV read and the
+        # lookup of the 13 required fields -- exactly what can legitimately fail on a 0-byte
+        # or header-only file (M1). Everything past this point (the optional Task-1 block,
+        # ratio omission, identity checks, row assembly) runs OUTSIDE the try, in
+        # _rows_from_stats below, so a genuine bug there (e.g. a future KeyError from a typo'd
+        # metric name) raises for real instead of being silently relabelled
+        # "modular_stats_unreadable" -- the exact failure mode this narrowing exists to rule
+        # out.
         stats = dict(pd.read_csv(csv_path, sep=";").values)
-        return _rows_from_stats(stats)
+        core = {name: int(stats[name]) for name in _REQUIRED_FIELDS}
     except (pd.errors.EmptyDataError, KeyError) as exc:
         # Review M1: degrade like every other optional input (meta/fleet_file_missing,
         # meta/run_meta_degraded) rather than crash build_kpis. A 0-byte file raises
         # EmptyDataError at read_csv time; a header-only file parses to {} and then raises
-        # KeyError the moment any required metric is looked up below.
+        # KeyError on the first required-field lookup above.
+        # Review Minor 2: str(exc) can in principle carry non-ASCII bytes (e.g. from a
+        # corrupted metric name) -- guard the CSV/console-bound "source" field explicitly
+        # rather than relying on the exception text always being ASCII.
+        reason = str(exc).encode("ascii", "replace").decode("ascii")
         return [row("meta", "modular_stats_unreadable", 1, "flag",
                      "modular_tour_stats.csv unreadable (" + type(exc).__name__ + ": "
-                     + str(exc) + ") - no modular KPI rows emitted, review M1")]
+                     + reason + ") - no modular KPI rows emitted, review M1")]
+    return _rows_from_stats(stats, core)
 
 
-def _rows_from_stats(stats):
+def _rows_from_stats(stats, core):
     # All counts, not measurements -- ints throughout (ambiguity resolution: identity checks
-    # compare ints exactly, including identity 5's delta_parcels).
-    tours_planned = int(stats["tours_planned"])
-    tours_expired_pending = int(stats["tours_expired_pending"])
-    tours_dispatched = int(stats["tours_dispatched"])
-    tours_completed = int(stats["tours_completed"])
-    tours_dispatched_incomplete = int(stats["tours_dispatched_incomplete"])
-    tours_pending_eod = int(stats["tours_pending_eod"])
+    # compare ints exactly, including identity 5's delta_parcels). Pulled from `core` (already
+    # int-cast inside extract()'s try/except, review Important 1) rather than re-looked-up
+    # here, so this function never raises the KeyError the try/except exists to catch.
+    tours_planned = core["tours_planned"]
+    tours_expired_pending = core["tours_expired_pending"]
+    tours_dispatched = core["tours_dispatched"]
+    tours_completed = core["tours_completed"]
+    tours_dispatched_incomplete = core["tours_dispatched_incomplete"]
+    tours_pending_eod = core["tours_pending_eod"]
 
-    parcels_planned = int(stats["parcels_planned"])
-    parcels_expired_pending = int(stats["parcels_expired_pending"])
-    parcels_dispatched = int(stats["parcels_dispatched"])
-    parcels_served = int(stats["parcels_served"])
-    parcels_dispatched_unserved = int(stats["parcels_dispatched_unserved"])
-    parcels_pending_eod = int(stats["parcels_pending_eod"])
-    delta = int(stats["delta_parcels"])
+    parcels_planned = core["parcels_planned"]
+    parcels_expired_pending = core["parcels_expired_pending"]
+    parcels_dispatched = core["parcels_dispatched"]
+    parcels_served = core["parcels_served"]
+    parcels_dispatched_unserved = core["parcels_dispatched_unserved"]
+    parcels_pending_eod = core["parcels_pending_eod"]
+    delta = core["delta_parcels"]
 
     # UNDISPATCHED, not "expired" (review Minor 7): this bucket is expired_pending PLUS
     # pending_eod -- parcels whose tour never got onto a vehicle, whether because its
