@@ -11,19 +11,25 @@
 # band is therefore no longer a bias correction but a SYMMETRIC sensitivity around a
 # central level that is now anchored:
 #
-#   low     = x0.90   5,430 parcels  (hagrid-input/.../demand/level_low)
-#   central = x1.00   6,024 parcels  (.../demand/level_central)
-#   high    = x1.10   6,622 parcels  (.../demand/level_high)
+#   low     = x0.90   5,461 parcels  (hagrid-input/.../demand/level_low)
+#   central = x1.00   6,058 parcels  (.../demand/level_central)
+#   high    = x1.10   6,642 parcels  (.../demand/level_high)
 #
 # +/-10 % covers the anchor's own imprecision (itself a modelled, not measured,
 # quantity) plus the blind model error (bootstrap CI 7.5-13 % wMAPE). The two-sided
 # band also makes the demand elasticity two-sided; the previous pair could only
 # measure the response downwards.
 #
-# The superseded OSM-proxy levels are kept as level_osm_central / level_osm_low --
-# they are the inputs behind the band result committed in 14e1c9c. The run TAG is
-# bandz_* (z = Zensus) so those runs' outputs (LMD_BASELINE_13052025_band_*) survive
-# untouched instead of being overwritten by a same-named rerun.
+# Superseded inputs are archived, never overwritten, because committed results point at
+# them: level_osm_* are the OSM-proxy levels behind the band result in 14e1c9c, and
+# level_ctrsnap_* are the Zensus levels behind the bandz_* results -- they still placed
+# residual demand by centroid snap (fixed 2026-07-28, PANDA distribution.py). The counts
+# above are the post-fix exports; the bandz_* numbers on record came from level_ctrsnap_*.
+# Re-running the band on the fixed inputs is a separate decision: the fix moves 12.6 % of
+# the parcels spatially at an unchanged level, and the km-based KPIs sit at or below the
+# measured solver noise floor anyway (seed test, 2026-07-28).
+#
+# The run TAG carries the level so output directories preserve which input produced them.
 #
 # HagridPaths.lmdDemandShapefile() is hard-wired to one path, so the active level
 # is copied into place before each run. The level is carried in the run TAG, so
