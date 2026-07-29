@@ -60,6 +60,13 @@ per-stop dwell stays parameterised so that plan only flips parameters); Opt 1 mo
   already handles), and rebalancing needs no pax-only estimator variant (no phantom depot departures).
 - **D8 — 216-parcel capsule capacity is documented as never binding.** 216 × 2 min = 7.2 h pure dwell
   exceeds any cap ≤ 7 h; time always binds first. Stated in methodology, not hidden in a vehicle file.
+  **Correction 2026-07-29** (Paper-Readiness-Review; METHODS-LOG §2.22): this arithmetic ignores
+  the 15-min per-stop dwell cap (`LmdCarrierBuilder:176-178,212`) — a stop with 81 parcels (the
+  observed maximum, METHODS-LOG §2.8) costs 15 min of dwell, not 162 min, so three such stops
+  already exceed 216 parcels within 45 min of dwell. Revised statement: **capacity binds rarely;
+  `max_parcels_per_tour` is exported per run as evidence (Task 1 of the paper-readiness fixwave,
+  commit `9e4d9da`); where capacity does bind, it acts conservatively against 1d** (more, shorter
+  tours → more swaps/deadhead) — not "never binding".
 
 ## 3. Architecture
 
@@ -235,3 +242,10 @@ concretisations against this design during planning/implementation, all accepted
   double update silently undid the belt's repair on every task transition. The implemented order
   is: capture the previous task, delegate, then enforce intended durations, then notify. The
   drt-extensions template the plan derived its draft from carries the same latent bug.
+
+- **C10 (found during the Paper-Readiness-Review, 2026-07-29; recorded here retroactively, see
+  METHODS-LOG §2.23) — the dispatcher's look-ahead (§3.3's `submissionTime` formula, §5 table row
+  "Look-ahead") is realised as a **flat 420 + 420 s** (retooling time both ways), not the routed
+  approach-time estimator this design's §3.3/§4.3 wording implied. Falls under C4 (no consequence):
+  under the no-dispatch-waves envelope, every tour is already pending from ≈07:16, well before its
+  `plannedTourStart`, so the flat estimate never changes which requests are eligible.

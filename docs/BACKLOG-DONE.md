@@ -13,6 +13,43 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-29._
 
 ## 2026-07-29
 
+- **1d Paper-Readiness-Fixwave (2026-07-29)** — ✅ acht Tasks auf `hendrik`, abgearbeitet gegen die
+  drei Paper-Readiness-Reviewer-Läufe (Java/Methodik/Python-KPI, → [BACKLOG](BACKLOG.md) 1d).
+  Plan: `superpowers/plans/2026-07-29-1d-paper-readiness-fixwave.md` (Commit `bbc8591`). Commits
+  und Test-Endstand je Task:
+  - **T1** `9e4d9da`/`9ba086d`/`a97d7b0` — δ-Zähler `parcels_demand`/`parcels_unassigned_jsprit`/
+    `parcels_missed_overlay`, `max_parcels_per_tour`, `peak_concurrent_swaps`, Identity 0,
+    DISPATCHED-Event-Attribute `plannedDurationS`/`routedDurationS`. **64/64.**
+  - **T2** `20bdd4e`/`0b1d068` — `extract_modular`: Rohzähler, alle Identities in Python,
+    Omit- statt 0,0-Konvention, CSV-Policy. **260/260.**
+  - **T3** `48bff7c` — Kontaminationsmarker szenario-/CSV-gebunden (übersteht `--no-events`),
+    Korrekturrezept berichtigt, `*_pax`-Zeilen, „unkorrigierbar" → „nicht korrigiert",
+    `fleet_utilisation_by_trips` als unkorrigierbar umklassifiziert. **271/271.**
+  - **T4** `5fee8f1`/`f8561ca` — Kachel-Kontaminationsbanner, pax-bereinigte Sublines,
+    Comparison-Page rendert den Marker-Payload, `_meta_notes` HTML-escaped, Sekundär-Badges auf
+    occ-Chart/Tourdauer-Chart/`_vehicle_chart`, Karten-Legendenzeile. **281/281.**
+  - **T5** `5a8d88f`/`e200053` — depot-lokales `<=`-Fenster-Fixture (mutation-verifiziert),
+    `open_freight_windows`-Diagnostik + Meta-Row, `RE_TIME`-Wortgrenze, echtes 1d-e2e-Fixture
+    (CSV **und** Events). **289/289.**
+  - **T6** `2c00e8d` — Belt-2-CME-Pinning-Test (mutation-verifiziert), `OptimizerRebindGuard`-
+    Feuertest, +INF-Donor-Guard, Depot-CSV-Precheck, Javadoc-Korrekturen (inkl. F2-Softening +
+    C8-late-Konvention). **19/19** (betroffene Java-Klassen inkl. beider e2e-Tests).
+  - **T7** `b639ff3`/`e12776d` — drei Legacy-`drt-headline`-Dashboards gelöscht
+    (`build_drt_dashboard.py`, `build_dashboard.py`, `build_vehicle_tours.py`); Doku-Referenzen
+    darauf annotiert statt gelöscht. **289/289** (Python-Vollsuite, Rerun nach Löschung).
+  **Hannover-Legacy-Gate beim Dashboard-Löschen unabhängig re-verifiziert sauber** — Gate-Beweis
+  (kein Live-Import/-Aufruf außerhalb von `analysis/drt-headline/` selbst, `hagrid_output_analysis/**`
+  und alle Hannover-`.bat`-Skripte referenzfrei) wurde vom Reviewer eigenständig nachvollzogen, nicht
+  nur vom Implementierer behauptet.
+  **Zwei mutation-verifizierte Test-Pins als Beweisdetail:** (1) das depot-lokale `<=`-Fenster in
+  `test_modular_service_time.py` — vor der Mutation (`a <= t0 < b`) grün, nach der Mutation zu
+  `a < t0 < b` schlägt `retooling_s == 840.0` mit `420.0` fehl (T5); (2) der Belt-2-CME-Pinning-Test
+  in `ModularOptimizerTest` — mit dem produktiven `List.copyOf(...)`-Belt grün, nach dessen
+  Entfernung schlägt der Test mit `Tests run: 1, Failures: 1` fehl (T6).
+  Konsequenzen für die Zahlen → [METHODS-LOG](METHODS-LOG.md) §2.13/§2.14/§2.16/§2.18/§2.21–§2.23;
+  offene Nacharbeit (Parkungen P1/P2, F2-Kommentar-Duplikat, Re-Routing-Cache, 1c-21:00-Umbau,
+  KPI-Landschaft-Konsolidierung) → [BACKLOG](BACKLOG.md).
+
 - **CV-Batterie auf dem Zensus-Prädiktor neu gerechnet** (war `[M]`, offen seit 2026-07-27) —
   ✅ alle acht `studies/run_cv*.py` in PANDA neu gelaufen, Exit 0, Artefakte neu geschrieben;
   die überholten OSM-Ära-Artefakte liegen unangetastet in `PANDA/archive/cv_pre_zensus/`
