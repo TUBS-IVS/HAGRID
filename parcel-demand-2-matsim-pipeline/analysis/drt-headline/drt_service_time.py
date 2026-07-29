@@ -51,7 +51,7 @@ Reusable by the dashboard builder; runnable standalone for a quick numeric check
 import os, re, gzip, sys
 
 RE_TYPE = re.compile(r'type="([^"]+)"')
-RE_TIME = re.compile(r'time="([^"]+)"')
+RE_TIME = re.compile(r'\btime="([^"]+)"')
 RE_VEH  = re.compile(r'\bvehicle="([^"]+)"')
 RE_DVEH = re.compile(r'dvrpVehicle="([^"]+)"')
 RE_PERS = re.compile(r'person="([^"]+)"')
@@ -337,6 +337,13 @@ def reconstruct(events_path, fleet_file=None):
     modular_freight_seen = bool(windows_by_veh) or any(
         d.get("FREIGHT_DRIVE", 0.0) or d.get("FREIGHT_STOP", 0.0)
         for d in task_time.values())
+    #: I7: a window open to +inf is a tour DISPATCHED but never COMPLETED -- exactly
+    #: `tours_dispatched_incomplete` from modular_tour_stats.csv. Summed across every
+    #: vehicle (not just flagged per-vehicle) so a single fleet-level number can be
+    #: cross-checked against that CSV column; a mismatch means a modularTour mark was lost
+    #: or reordered somewhere between Java and here.
+    open_freight_windows = sum(1 for windows in windows_by_veh.values()
+                                for (_, b) in windows if b == float("inf"))
 
     # integrate occupancy (>=1) over time per vehicle
     occupied_time = {}
@@ -461,6 +468,7 @@ def reconstruct(events_path, fleet_file=None):
         "retooling_s": retooling_s,
         "freight_s": freight_s,
         "modular_freight_seen": modular_freight_seen,
+        "open_freight_windows": open_freight_windows,
         "tour_s": tour_s,
         "waiting_s": waiting_s,
         "seg_time": fleet_seg_time,

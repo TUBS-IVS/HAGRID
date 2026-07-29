@@ -314,10 +314,17 @@ def _modular_rows(fl):
     difference between them and the tour span would just be an unexplained gap.
     They are also the `drt_freight_hours_total` that `_modular_pax_rows` below
     subtracts/rescales against.
+
+    A fifth, CONDITIONAL row (review I7) rides along: `meta/modular_open_freight_windows`,
+    emitted only when `drt_service_time.reconstruct` found at least one excursion window
+    still open at +inf (a DISPATCHED with no matching COMPLETED). That count should equal
+    `tours_dispatched_incomplete` from modular_tour_stats.csv; a mismatch means a modularTour
+    mark was lost or reordered between Java and here, which would otherwise silently turn the
+    rest of that vehicle's day into unflagged freight.
     """
     if not fl.get("modular_freight_seen"):
         return []
-    return [
+    rows = [
         row("system", "drt_freight_drive_hours_total",
             fl["freight_drive_s"] / 3600.0, "h", "events(MODULAR_FREIGHT_DRIVE)"),
         row("system", "drt_freight_dwell_hours_total",
@@ -330,6 +337,18 @@ def _modular_rows(fl):
         row("system", "drt_freight_hours_total",
             fl["freight_s"] / 3600.0, "h", "events(freight drive + dwell + retooling)"),
     ]
+    # Review I7: an unbalanced modularTour mark (a DISPATCHED with no matching COMPLETED)
+    # otherwise turns a vehicle's remainder-of-day into freight with no diagnostic anywhere
+    # in kpis_long.csv -- this is the only place that count becomes visible. Emitted only
+    # when > 0 (same discipline as every other meta row here): a baseline/Shared-Use/LMD run,
+    # or a 1d run where every excursion closed cleanly, keeps exactly the rows it had before.
+    open_windows = fl.get("open_freight_windows", 0)
+    if open_windows > 0:
+        rows.append(row(
+            "meta", "modular_open_freight_windows", open_windows, "windows",
+            "expected == tours_dispatched_incomplete from modular_tour_stats.csv;"
+            " mismatch means lost/reordered modularTour marks"))
+    return rows
 
 
 def _modular_pax_rows(fl, mean_pax_aboard):

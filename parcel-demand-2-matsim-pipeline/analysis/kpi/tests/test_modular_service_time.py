@@ -185,6 +185,78 @@ def test_incomplete_excursion_keeps_its_freight_time_out_of_waiting(tmp_path):
     assert fl["modular_freight_seen"] is True
 
 
+def test_depot_local_swap_out_stop_starting_exactly_at_dispatch_is_retooling(tmp_path):
+    """Review I5: a vehicle already AT the depot when dispatched has no approach drive --
+    its swap-out STOP task starts in the EXACT same simstep as the DISPATCHED mark, at the
+    window's open boundary. `_classify` (drt_service_time.py:211) tests `a <= t0 < b`: the
+    open boundary `a` is INCLUSIVE, so this boundary task is inside the window. Mutating
+    that to `a < t0 < b` pushes this 420 s of capsule retooling back out into `stop_s` as an
+    ordinary passenger stop -- silently, with every OTHER test in this module still green,
+    because every other fixture's swap starts strictly after its approach drive."""
+    lines = []
+    lines += _task(0, 1000, "STAY")               # idle at the depot, no approach drive
+    lines += _tour_event(1000, "DISPATCHED")
+    lines += _task(1000, 1420, "STOP")             # swap OUT -- starts AT t0 == window open
+    lines += _task(1420, 1540, "MODULAR_FREIGHT_STOP")
+    lines += _task(1540, 1960, "STOP")             # swap BACK
+    lines += _tour_event(1960, "COMPLETED")
+    lines += _task(1960, 2000, "STAY")
+
+    fl = drt_service_time.reconstruct(str(_events(tmp_path, lines)), None)["fleet"]
+
+    assert fl["retooling_s"] == pytest.approx(840.0)
+    assert fl["stop_s"] == 0.0
+
+
+def test_open_freight_windows_counts_unclosed_excursions_across_the_fleet(tmp_path):
+    """I7: a tour DISPATCHED but never COMPLETED leaves its vehicle's window open to +inf
+    (see `freight_windows`'s docstring) -- that is exactly `tours_dispatched_incomplete`, and
+    it must be countable from the reconstruction alone, summed over every vehicle, not just
+    read off one of them."""
+    lines = []
+    # drt_0: dispatched, never completed -> ONE open window
+    lines += _tour_event(1000, "DISPATCHED", veh="drt_0", tour="t0")
+    lines += _task(1000, 1100, "MODULAR_FREIGHT_DRIVE", veh="drt_0")
+    lines += _task(1100, 1520, "STOP", veh="drt_0")
+    # drt_1: dispatched AND completed -> closed, contributes nothing
+    lines += _tour_event(2000, "DISPATCHED", veh="drt_1", tour="t1")
+    lines += _task(2000, 2100, "MODULAR_FREIGHT_DRIVE", veh="drt_1")
+    lines += _task(2100, 2520, "STOP", veh="drt_1")
+    lines += _tour_event(2600, "COMPLETED", veh="drt_1", tour="t1")
+
+    fl = drt_service_time.reconstruct(str(_events(tmp_path, lines)), None)["fleet"]
+
+    assert fl["open_freight_windows"] == 1
+
+
+def test_open_freight_windows_is_zero_when_every_excursion_closed(tmp_path):
+    fl = drt_service_time.reconstruct(str(_events(tmp_path, _excursion_day())), None)["fleet"]
+    assert fl["open_freight_windows"] == 0
+
+
+def test_open_freight_windows_is_zero_key_present_on_a_baseline_run(tmp_path):
+    """Always present in the fleet dict (0 when none), never merely absent -- so a reader
+    can `fl["open_freight_windows"]` unconditionally instead of needing a `.get(..., 0)`."""
+    lines = []
+    lines += _task(0, 100, "STAY")
+    lines += _task(100, 200, "DRIVE")
+
+    fl = drt_service_time.reconstruct(str(_events(tmp_path, lines)), None)["fleet"]
+
+    assert fl["open_freight_windows"] == 0
+
+
+def test_re_time_word_boundary_skips_a_leading_endtime_attribute(tmp_path):
+    """The review's probe: `time="([^"]+)"` (no word boundary) matches the tail of
+    `endtime="55"` before it ever reaches the real `time="..."` attribute later on the same
+    line -- reading the swap's scheduled END time as its event time. `\\btime="` must skip
+    straight past it."""
+    line = ('<event endtime="55" type="dvrpTaskStarted" time="7.0" dvrpVehicle="drt_0" '
+            'taskType="STOP" dvrpMode="drt"/>')
+    m = drt_service_time.RE_TIME.search(line)
+    assert m.group(1) == "7.0"
+
+
 def test_freight_windows_bracket_each_excursion_separately():
     """Two excursions on one vehicle, the second dispatched in the very simstep the first
     completed. Sorting must close before it opens, or the two merge into one window and the
@@ -217,6 +289,37 @@ def test_modular_rows_publish_the_freight_time_components(tmp_path):
     assert by_name["drt_freight_hours_total"]["value"] == pytest.approx(
         (FREIGHT_DRIVE_S + FREIGHT_STOP_S + RETOOLING_S) / 3600.0)
     assert extract_drt.MODULAR_CONTAMINATION_KPI not in by_name
+    # _excursion_day's one excursion COMPLETEs -> no open window -> no diagnostic row
+    assert "modular_open_freight_windows" not in by_name
+
+
+def test_modular_rows_emit_the_open_freight_window_diagnostic_only_when_nonzero(tmp_path):
+    """Review I7: an unbalanced modularTour mark (DISPATCHED, never COMPLETED) must surface
+    as its own named meta row -- not merely as a number a reader would have to notice is
+    missing from `tours_dispatched_incomplete`."""
+    fl_closed = drt_service_time.reconstruct(
+        str(_events(tmp_path, _excursion_day(), name="closed.txt")), None)["fleet"]
+    assert fl_closed["open_freight_windows"] == 0
+    rows_closed = {r["kpi_name"] for r in extract_drt._modular_rows(fl_closed)}
+    assert "modular_open_freight_windows" not in rows_closed
+
+    lines = []
+    lines += _task(100, 200, "DRIVE")
+    lines += _tour_event(1000, "DISPATCHED")
+    lines += _task(1000, 1100, "MODULAR_FREIGHT_DRIVE")
+    lines += _task(1100, 1520, "STOP")
+    # ... no COMPLETED -> the window stays open to +inf
+    fl_open = drt_service_time.reconstruct(
+        str(_events(tmp_path, lines, name="open.txt")), None)["fleet"]
+    assert fl_open["open_freight_windows"] == 1
+
+    rows_open = extract_drt._modular_rows(fl_open)
+    by_name = {r["kpi_name"]: r for r in rows_open}
+    marker = by_name["modular_open_freight_windows"]
+    assert marker["kpi_group"] == "meta"
+    assert marker["value"] == 1
+    assert marker["unit"] == "windows"
+    assert "tours_dispatched_incomplete" in marker["source"]
 
 
 def test_modular_marker_rows_name_the_kpis_and_the_correction_recipe():

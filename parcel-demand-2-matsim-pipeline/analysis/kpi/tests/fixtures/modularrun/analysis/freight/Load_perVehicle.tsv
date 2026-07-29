@@ -1,0 +1,4 @@
+vehicleId	vehicleTypeId	capacity	maxLoad	maxLoadPercentage	handledDemand	load state during tour
+freight_dhl_veh_1	ct_cep_size_m	165	120	72.7	120	[...]
+freight_dhl_veh_2	ct_cep_size_s	100	90	90.0	90	[...]
+freight_ups_veh_1	ct_cep_size_l	230	200	86.9	200	[...]
