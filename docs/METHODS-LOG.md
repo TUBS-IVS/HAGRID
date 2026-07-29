@@ -74,6 +74,14 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-29._
   → [1d-Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md)
 
 - **Zeitfenster je Sendungstyp: B2B 07:30–17:00, B2C 07:30–20:00** — `trägt` · 2026-07-20 (M5)
+  → revidiert 2026-07-29: 21:00-Vereinheitlichung, s. u.
+
+- **Einheitliches Lieferfenster bis 21:00 für 1c UND 1d** — User-Entscheidung · 2026-07-29
+  1d bleibt beim Fenster 07:30–21:00 (s. o., C4). 1c wird auf dasselbe Fenster angehoben —
+  M5s B2B 07:30–17:00 / B2C 07:30–20:00 entfällt damit als Zielzustand; Umsetzung ist ein neuer
+  `[H]`-Punkt in [BACKLOG](BACKLOG.md) unter Shared-Use. **Konsequenz:** die laufenden/fertigen
+  1c-Läufe `chid600`, `base10c` und die bisherigen χ-Sweep-Punkte fahren noch die alten
+  M5-Fenster und sind für Headline-Vergleiche gegen 1d **nach der Umsetzung neu zu fahren**.
 
 - **Joint-Cost-Allokation: marginale Attribution** — `trägt` · 2026-07-20 (M11)
   Paketkosten = akzeptierter `totalTimeLoss` × Fahrzeug-Zeitrate + Zustell-km × km-Rate
@@ -428,6 +436,8 @@ Unabhängigkeitsbeweis gelesen werden (betrifft auch R5).
 Fahrzeug kehrt nie zurück, also ist `freight_vehicle_hours_clamped` =
 Σ min(completedAt, Tagesende) − dispatchedAt aus demselben Ereignisstrom konstruierbar. „Kein
 Abschluss-Zeitstempel" begründet den Bias nicht, sie dokumentiert nur die gewählte Definition.
+**Annotation 2026-07-29:** der geklammerte Schätzer (`freight_vehicle_hours_clamped`) ist weiterhin
+**nicht gebaut** — bewusst nicht Teil dieser Welle.
 
 ### 2.14 1d Modular: fahrzeugseitige System-KPIs sind frachtkontaminiert (D7 war zu weit gefasst)
 
@@ -483,23 +493,37 @@ Java-Emissionspunkte verifiziert, Baseline bitgleich), aber:
    Fenster-Korrektur der drei km-KPIs wäre baubar; entschieden ist, sie (bislang) nicht zu bauen,
    weil sie eine Selbstrechnung an die Stelle der autoritativen MATSim-CSV setzte. Vorher zu
    fixen wäre ohnehin: `geometry` misst Euklid-Knotendistanz, nicht `link.getLength()`.
+   **Behoben 2026-07-29 (`48bff7c`):** der Wortlaut im Code ist korrigiert (`unkorrigierbar` →
+   `nicht korrigiert`); die tatsächliche km-Korrektur bleibt weiterhin **bewusst** nicht gebaut —
+   an dieser Entscheidung ändert sich nichts.
 2. **Das „von Hand korrigierbar"-Rezept (Subtraktion) stimmt nur für `drt_tour_hours_total`.**
    `service_ratio_active`, `fleet_utilisation_by_time`, `mean_pax_aboard` brauchen eine
    **Reskalierung** × `tour_h / (tour_h − freight_h)` (funktioniert nur, weil Exkursionen
    garantiert occupancy-0 sind); `fleet_utilisation_by_trips` ist aus den veröffentlichten KPIs
    **gar nicht** rückrechenbar (Segment-Zählung; Fracht-only-Fahrzeuge erzeugen ein
    unveröffentlichtes Level-0-Segment).
+   **Behoben 2026-07-29 (`48bff7c`):** das Rezept ist korrigiert, und die `*_pax`-Zusatzzeilen für
+   die reskalierbaren KPIs werden jetzt mechanisch mit emittiert; `fleet_utilisation_by_trips`
+   ist dabei explizit als **unkorrigierbar** umklassifiziert (nicht bloß „schwierig").
 3. **Der Marker selbst ist zerbrechlich:** `meta/modular_contaminated_kpis` wird nur auf dem
    Event-Pfad geschrieben (`extract_drt.py:149/194`). Ein `--no-events`-Build oder ein Run ohne
    aufgehobene `output_events.xml.gz` publiziert alle kontaminierten KPIs **ohne jeden Marker**
    (end-to-end reproduziert); die Comparison-Page verliert den Marker-*Payload* und chartet
    `drt_vehicle_km` zugleich als Headline-Balken; die Run-Kacheln tooltippen „autoritativ" ohne
    Banner, obwohl die `warnbanner`-Präzedenz (Shared-Use) in derselben Datei existiert.
+   **Behoben 2026-07-29:** der Marker ist jetzt CSV-/szenario-gebunden statt Event-gebunden und
+   übersteht `--no-events` (`48bff7c`); die Comparison-Page rendert den Marker-Payload wieder, und
+   die Run-Kacheln tragen das Kontaminations-Banner (`5fee8f1`).
 4. **Vier weitere Konsumenten sind kontaminiert und unmarkiert** — ihre CSVs haben keinen
    Provenance-Kanal: `drt_tour_duration`-Verteilung, `occ_time`/`occ_segments`,
    `occ_km`/`drt_tour_distance` (+ `veh_km` in `build_kpis`), `kpi_vehicles.csv`
    `active_h`/`ratio_active`. Visuell dazu: die Karte zeichnet Exkursionen als *leere
    Pax-Touren*.
+   **Behoben 2026-07-29 (`5fee8f1`):** neue Meta-Row `modular_secondary_contaminated` plus
+   Render-Badges auf dem occ-Chart, dem Tourdauer-Chart und `_vehicle_chart`, dazu eine
+   Legendenzeile auf der Karte. **Nicht gebadged, bewusste Scope-Grenze (Task-4-Adjudikation):**
+   der `drt_tour_distance`-Verteilungschart — steht als Plan-Level-Scope-Entscheidung offen,
+   nicht als übersehener Fall.
 
 Behebung als Paket → BACKLOG „Kontaminations-Fixwelle 2". Bis dahin gilt verschärft: **keine
 fahrzeugseitige 1d-Zahl aus Dashboard oder Sekundär-CSVs ins Paper übernehmen, ohne diesen
@@ -543,6 +567,10 @@ gemessene Wert „Unassigned = 0" (§1.3) stammt vom **7,5-h**-Cap der Van-Typen
 (`parcels_demand == parcels_planned + parcels_unassigned_jsprit`), oder bei der Konversion laut
 scheitern, wenn die gerouteten Carrier Unassigned tragen.
 
+**Behoben 2026-07-29** (Commits `9e4d9da`/`20bdd4e`): `parcels_demand` + `parcels_unassigned_jsprit`
++ `parcels_missed_overlay` stehen jetzt in `modular_tour_stats.csv`, Identity 0 ist geprüft — in
+Java als WARN (nie Abbruch, User-Entscheidung) und identisch in Python.
+
 ### 2.17 1d Modular: was ein Einzellauf trägt — gepaarte vs. ungepaarte Vergleiche
 
 `trägt` · 2026-07-29. Jede 1d-Frachtgeometrie-Kennzahl (`deadhead_km_planned`,
@@ -576,6 +604,11 @@ Sweep, der das Hauptinstrument ist. Wirkung vermutlich klein (nur das schrumpfen
 Quantifizierung `plannedDuration` je Tour ins CSV exportieren (Scatter geplant vs. geroutet).
 Rand dazu (Perf, nicht Korrektheit): eine festhängende pendende Tour wird jeden offenen Simstep
 komplett neu geroutet (N+2 Router-Queries pro Angebot).
+
+**Annotation 2026-07-29 (`2c00e8d`):** der Javadoc-Overclaim in `ModularTourDispatcher.java` ist
+entschärft. **Aber** derselbe Wortlaut existiert weiterhin als **Code-Kommentar** (nicht Javadoc)
+in `ModularTourDispatcher.dispatch()` (~:164-165) — das war explizit außerhalb des Datei-Scopes
+dieser Task (nur `:44-59`, s. Task-6-Bericht). Als `[L]`-Backlog-Einzeiler erfasst.
 
 ### 2.19 1d Modular: Kapsel- und Swap-Infrastruktur ist unbeschränkt modelliert
 
@@ -614,12 +647,20 @@ Sensitivität, BACKLOG.)
    CSV ihn folglich nicht ausweist. Entweder Fenster an M5 angleichen (eine Zeile am
    `runModular`-Aufruf, C4 neu argumentieren) oder Versprechens-Tabelle ins Methods-Kapitel und
    Querschnittsclaims auf versprechens-robuste KPIs beschränken.
+   **Annotation 2026-07-29:** durch die 21:00-Entscheidung (§1.2) ersetzt sich die
+   Versprechens-Asymmetrie 1c↔1d — sobald 1c auf 21:00 umgebaut ist (BACKLOG `[H]`), fahren
+   beide dasselbe Fenster. Die Baseline (08:00–20:00) bleibt davon unberührt verschieden → der
+   Baseline-Vergleichs-Caveat oben **bleibt** in voller Stärke stehen. Der B2B/B2C-je-Stop-Export
+   als versprechens-robuste Zerlegung ist damit **obsolet** (bewusst nicht gebaut).
 2. **Netto vs. Brutto:** die Baseline-`delivery_rate` rechnet Not-at-home-Misses heraus
    (`extract_freight.py:126`); 1d würfelt **dasselbe Overlay** (`runModular:202-205`,
    deterministischer Seed), aber `parcels_served` zählt Zustell*versuche* brutto — kein 1d-KPI
    verrechnet die Misses (`extract_modular.py` kennt sie nicht). Jede Tabelle
    Baseline-Zustellquote neben 1d-served/planned vergleicht netto gegen brutto. Solange zudem
    §2.5 (−14 %-Quotenrätsel) offen ist: **keine absoluten Zustellquoten berichten, nur Deltas.**
+   **Annotation 2026-07-29 (`9e4d9da`):** `parcels_missed_overlay` wird jetzt exportiert — eine
+   Netto-Rechnung für 1d ist damit möglich. Die §2.5-Quarantäne für *absolute* Zustellquoten
+   bleibt unverändert bestehen.
 3. **1c↔1d-Confound:** 1c fährt 8 Sitze + 20 Paketslots (M1), 1d 10 Sitze (D3) — beides einzeln
    richtig entschieden, zusammen heißt es: jeder **direkte** 1c↔1d-Pax-Vergleich vermengt
    Mechanismus- und Kapazitätseffekt (20 % Sitzdifferenz). Vergleichsdesign sternförmig über die
@@ -648,6 +689,10 @@ Sensitivität, BACKLOG.)
    Falls sie bindet, wirkt es konservativ gegen 1d (mehr, kürzere Touren → mehr Swaps/Deadhead).
    D8 umformulieren: „bindet selten; wo doch, konservativ" — nicht „nie", solange die eigene
    Dwell-Regel die Rechnung widerlegt.
+   **Annotation 2026-07-29 (`9e4d9da`):** `max_parcels_per_tour` wird jetzt je Run exportiert —
+   der D8-Beleg liegt damit pro Lauf vor, statt NEEDS-RUN zu bleiben. Design-Spec-D8 ist
+   entsprechend umformuliert (→ [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md)
+   §10 D8).
 
 ### 2.23 1d Modular: Definitionskonventionen fürs Methods-Kapitel
 
@@ -669,6 +714,12 @@ jede dieser Konventionen ändert, wie eine Zahl zu lesen ist:
 - **Look-ahead:** flach 420 + 420 s statt des im Parent-Spec angedachten gerouteten
   Anfahrt-Schätzers — faktisch Konkretisierung **C10** (unter C4 folgenlos, weil alle Touren ab
   ~07:16 pending sind); im Design-Spec nachtragen.
+
+**Annotation 2026-07-29:** C10 ist im Design-Spec nachgetragen
+(→ [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) §10); die
+„late"-Konvention (STOP_SERVED am Dwell-Ende, `tours_completed_late` vs. `parcels_served_late`)
+steht jetzt auch im `ModularKpiHandler`-Javadoc (`2c00e8d`); die `open_freight_windows`-Diagnostik
+für offen gebliebene Fracht-Fenster existiert (`5a8d88f`, Meta-Row in `extract_drt._modular_rows`).
 
 ---
 

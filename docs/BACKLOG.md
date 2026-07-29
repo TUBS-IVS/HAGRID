@@ -37,6 +37,11 @@ Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
 → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md) ·
 [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md) _(added 2026-07-14)_
 
+- **Offen: 1c-Lieferfenster auf 07:30–21:00 anheben (User-Entscheidung 2026-07-29)** — zieht die
+  1d-Vereinheitlichung nach ([METHODS-LOG](METHODS-LOG.md) §1.2); ersetzt M5 (B2B 07:30–17:00 /
+  B2C 07:30–20:00) als Zielfenster. **Konsequenz:** die laufenden/fertigen 1c-Läufe `chid600`,
+  `base10c` und die bisherigen χ-Sweep-Punkte fahren noch die alten M5-Fenster und sind für
+  Headline-Vergleiche gegen 1d nach der Umsetzung **neu zu fahren**. _(added 2026-07-29)_
 - **🔄 Läuft (gestartet 2026-07-28, Sim-PC, detached):** `chid600` (χ=600, neue
   Detour-only-Semantik, level_central, fleet120, iter150) → informiert die
   **χ-Sweep-Rasterentscheidung**; danach automatisch `base10c` (10-Sitzer married-Baseline,
@@ -89,42 +94,30 @@ die gematchte Baseline braucht es erst für die Paper-Runs.
 Konzeptparameter und ihre Begründung: [METHODS-LOG](METHODS-LOG.md) §1.2.
 _(added 2026-07-14, aktualisiert 2026-07-28)_
 
-- **Paper-Readiness-Review 2026-07-29** — drei unabhängige Reviewer-Läufe (Java / Methodik /
-  Python-KPI; Volltexte in `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/paper-review/`,
-  **untracked**), tragende Findings vor Eintrag am Code verifiziert. Keine Architektur-Defekte;
-  alles Export-, Doku- und Test-Arbeit. Substanz → [METHODS-LOG](METHODS-LOG.md) §2.16–§2.23
-  plus Ergänzungen §2.13/§2.14. Offene Arbeit, priorisiert:
-  - **`[H]` δ-Zensur schließen (VOR dem θ-Sweep):** `parcels_unassigned_jsprit` in
-    `modular_tour_stats.csv` + Identity 0, oder bei der Tour-Konversion laut scheitern, wenn die
-    gerouteten Carrier Unassigned-Attribute tragen. Ohne das können die Cap-Arme verschiedene
-    Nachfrage-Nenner haben, unsichtbar → §2.16.
-  - **`[H]` Kontaminations-Fixwelle 2:** Marker-Gate von Event- auf CSV-/Szenario-Signal
-    (`--no-events` publiziert heute **markerlos**, reproduziert; verliert auch
-    `meta/fleet_file_missing`); Comparison-Page rendert Marker-Payload nicht und chartet
-    `drt_vehicle_km` als Headline-Balken; Kachel-`warnbanner` (Shared-Use-Präzedenz in derselben
-    Datei); Korrekturrezept auf Reskalierung korrigieren; „unkorrigierbar"-Wortlaut in Code +
-    §2.14 richtigstellen; Provenance-Kanal für die vier unmarkierten Sekundär-Konsumenten
-    (Distributions/Vehicles/occ_km/Karte) → §2.14-Ergänzung.
-  - **`[M]` Test-Härtung (billig, hochwirksam):** depot-lokales Dispatch-Fixture für das
-    `<=`-Fenster (Mutation `<` bleibt heute grün!); Identity-/Shares-Sum-Checks in
-    `extract_modular`; Unclosed-Window-Zähler vs. `tours_dispatched_incomplete`;
-    Belt-2-CME-Pinning-Test (Revert auf Live-View bleibt grün); `OptimizerRebindGuard`-Feuerpfad;
-    ein echtes 1d-e2e-Fixture (CSV **und** Events — heute testet alles nur den
-    `no_events`-Pfad); Policy für fehlende vs. leere `modular_tour_stats.csv` (leer = Crash,
-    fehlend = still).
-  - **`[M]` Paper-Exporte (alles vorhandene Information):** `max_parcels_per_tour` (D8-Beleg,
-    §2.22); B2B/B2C je Stop (Versprechens-Zerlegung, §2.21); `parcels_missed_overlay` (§2.21);
-    δ-Dekompositions-Rohzähler als eigene KPI-Zeilen (heute nur zwei Shares);
-    `plannedDuration` je Tour (Expiry-Scatter, §2.18); Peak-Swaps je Depot (§2.19); stündliche
-    Pax-Degradation (Warte-/Rejection-Zeitreihe 1d vs. Baseline — der Surge ist ein
-    Stunden-Phänomen, die KPIs sind Tagesaggregate).
-  - **`[L]` Kleinkram:** Javadoc-Rot (`ModularTourDispatcher:48` „:95"→:121; Event-Feld „stop
-    count" ist Paketzahl); +INF-Guard beim Kostenspender (`ModularVehicleTypes:30`);
-    Re-Routing-Cache für festhängende pendende Touren; Depot-CSV im Modular-Input-Precheck;
-    `tour_completion_rate` clampen + 0,0-für-undefiniert auf dem θ=1,0-Arm kenntlich machen;
-    `_meta_notes`-HTML-Escape; `RE_TIME`-Wortgrenze; `geometry`-Euklid- statt Link-Länge;
-    Legacy-`drt-headline`-Dashboard entscheiden (KeyError auf conditional keys; löschen oder
-    fixen).
+- **Paper-Readiness-Review 2026-07-29 — Fixwelle abgearbeitet.** Drei unabhängige
+  Reviewer-Läufe (Java / Methodik / Python-KPI; Volltexte
+  `.superpowers/sdd/2026-07-27-1d-modular-capsule-swap/paper-review/`, **untracked**) fanden keine
+  Architektur-Defekte, nur Export-/Doku-/Test-Arbeit — abgearbeitet in einer eigenen 8-Task-Welle
+  (Plan `superpowers/plans/2026-07-29-1d-paper-readiness-fixwave.md`). Erledigt: `[H]`
+  δ-Zensur schließen, `[H]` Kontaminations-Fixwelle 2, `[M]` Test-Härtung, `[M]` Paper-Exporte
+  (bis auf zwei Ausnahmen: B2B/B2C je Stop wurde durch die 21:00-Fenster-Entscheidung **obsolet**;
+  stündliche Pax-Degradation ist als **Befund** notiert, nicht gebaut — `kpi_timeseries.csv` deckt
+  sie schon ab, `drt_wait_mean`/Rejections liegen stündlich vor) sowie fast alle `[L]`-Einzeiler
+  (Ausnahmen unten). Nachweis, Commits und Test-Endstände je Task →
+  [BACKLOG-DONE](BACKLOG-DONE.md); Konsequenzen für die Zahlen →
+  [METHODS-LOG](METHODS-LOG.md) §2.13/§2.14/§2.16/§2.18/§2.21–§2.23. Offen bleibt:
+  - **`[M]` `fleet_file_missing` recon-frei + modular-gebunden emittieren** (Task-3-Parkung P1:
+    auf einem `--no-events`-Build wird die Flag nie geschrieben; Reviewer-Option (c) = ein
+    reconstruction-unabhängiger, nur ans Modular-Szenario gebundener Check).
+  - **`[M]` `mean_pax_aboard`-pax-Äquivalenztest mit unabhängiger Segment-Herleitung** (Task-3-
+    Parkung P2: der bestehende Test rechnet mit derselben Formel wie die Produktion und
+    diskriminiert daher nicht).
+  - **`[L]` F2-Kommentar-Duplikat in `ModularTourDispatcher.dispatch()` (~:164-165) entschärfen**
+    — derselbe Overclaim-Text wie im Javadoc, aber als Code-Kommentar außerhalb des in Task 6
+    behobenen Scopes.
+  - **`[L]` Re-Routing-Cache für festhängende pendende Touren** (Perf, nicht Korrektheit).
+  Die echte km-Korrektur der fahrzeugseitigen KPIs bleibt bewusst **kein** Backlog-Punkt —
+  Entscheidung und Begründung stehen in [METHODS-LOG](METHODS-LOG.md) §2.14.
 - **Zurückgestellte Sensitivitätsidee (User 2026-07-27):** jsprit-Tourplanung als **EIN Pool**
   (ein Carrier, Fahrzeuge an allen 7 Depots, freie Depotwahl je Paket = stärkstes
   Einheitsunternehmen) und/oder beide Varianten als Zerlegung Konsolidierungs- vs.
@@ -239,6 +232,11 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Headline-Runs. Kosten: 3 × ~1 h 40. _(added 2026-07-28)_
 
 ### Sonstige Medium-Punkte
+
+- **`[M]` KPI-Landschaft konsolidieren** — ein Konzept für Kontaminations-Marker,
+  `*_pax`-Zusatzzeilen, `pax_only`-Overrides und Meta-Rows, bevor weitere Szenarien dazukommen
+  (User 2026-07-29: „damit wir nicht irgendwann in den Dashboards ein KPI-Chaos haben").
+  _(added 2026-07-29)_
 
 - **`[M]` 1d: Prädiktiver Dispatch-Gate (θ_hist) aus Vor-Iterations-Nachfrage** — User-Idee
   2026-07-28 (1d-Grilling): dem Modular-Dispatcher historische Anfragen-/Rejection-Raten pro
