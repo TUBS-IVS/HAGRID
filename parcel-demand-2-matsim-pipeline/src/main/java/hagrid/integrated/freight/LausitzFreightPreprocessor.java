@@ -62,6 +62,12 @@ public final class LausitzFreightPreprocessor {
     private static final long MISSED_DELIVERY_SEED = 4711L;
 
     /**
+     * Base seed for the per-provider tour-retime RNG ({@link LmdTourRetimer}). Separate from
+     * {@link #MISSED_DELIVERY_SEED} so the retime draws never shift the missed-delivery overlay.
+     */
+    private static final long TOUR_RETIME_SEED = 20260730L;
+
+    /**
      * Dispatch waves: mirrors HAGRID CEP {@code VehicleSchedule.SIMPLE_STAGGERED}.
      * One vehicle per van type is created at each hour so jsprit can assign morning
      * and afternoon demand to the appropriate wave instead of all starting at 08:00.
@@ -148,8 +154,12 @@ public final class LausitzFreightPreprocessor {
             carriers.addCarrier(carrier);
         }
 
-        // 5. route each carrier offline with HAGRID's custom jsprit algorithm (see routeWithDurationCap)
-        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations);
+        // 5. route each carrier offline with HAGRID's custom jsprit algorithm (see routeWithDurationCap),
+        //    then stagger the INFINITE-fleet clone tours onto individual per-tour departures
+        //    (LmdTourRetimer; root cause 2026-07-30: all clones of a template share one jittered second)
+        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations,
+                HAGRIDRouterUtils.MAXROUTEDURATION,
+                c -> new Random(TOUR_RETIME_SEED + c.getId().toString().hashCode()));
 
         // 6. write the routed carriers (ensure the parent directory exists first)
         try {
@@ -278,10 +288,25 @@ public final class LausitzFreightPreprocessor {
     /**
      * Same as {@link #routeWithDurationCap(Carriers, Network, CarrierVehicleTypes, int)} but with an
      * explicit route-duration cap (seconds), e.g. the 1d DRT_MODULAR path's shorter 12600s (3.5h)
-     * capsule-swap tour cap instead of the 25200s (7h) driver-shift default.
+     * capsule-swap tour cap instead of the 25200s (7h) driver-shift default. No tour retiming
+     * (modular + legacy callers keep their departures exactly as jsprit scheduled them).
      */
     static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
                                      int jspritIterations, int maxRouteDurationSeconds) {
+        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations, maxRouteDurationSeconds,
+                null);
+    }
+
+    /**
+     * Same as {@link #routeWithDurationCap(Carriers, Network, CarrierVehicleTypes, int, int)} plus an
+     * optional per-carrier RNG factory for {@link LmdTourRetimer}: when non-null, every routed plan's
+     * wave-template clone tours are staggered onto individual per-tour departures and the plan is
+     * re-routed so leg times stay consistent with the shifted departures. LMD_BASELINE {@code run()}
+     * passes the factory; the modular path deliberately does not (no waves there by design C4).
+     */
+    static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
+                                     int jspritIterations, int maxRouteDurationSeconds,
+                                     java.util.function.Function<Carrier, Random> tourRetimeRng) {
         NetworkBasedTransportCosts netBasedCosts = NetworkBasedTransportCosts.Builder
                 .newInstance(network, vehicleTypes.getVehicleTypes().values())
                 .setTimeSliceWidth(1800)
@@ -296,6 +321,10 @@ public final class LausitzFreightPreprocessor {
             recordUnassignedJobs(carrier, solution);
             CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
             NetworkRouter.routePlan(plan, netBasedCosts);
+            if (tourRetimeRng != null) {
+                LmdTourRetimer.retime(carrier, plan, tourRetimeRng.apply(carrier), maxRouteDurationSeconds);
+                NetworkRouter.routePlan(plan, netBasedCosts);
+            }
             carrier.addPlan(plan);
             carrier.setSelectedPlan(plan);
         }

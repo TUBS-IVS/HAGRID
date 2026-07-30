@@ -249,19 +249,16 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Freight↔Rejections über Iterationen. **Entscheidung: erst nach den ersten 1d-Läufen mit dem
   einfachen θ-Gate** (User akzeptiert den 07:16-Surge bewusst, Ergebnisse ansehen). _(added 2026-07-28)_
 
-- **`[M]` LMD Dispatch-Stunden besser streuen** — Abfahrtszeiten der LMD-Fahrzeuge sollten
-  gleichmäßiger über den Tag/die Wellen gestreut werden statt sich auf einzelne Minuten/Stunden
-  zu häufen. Bereits bekannt: legacy Hannover kollabiert 171/187 Carrier auf EIN Vehicle-Template
-  trotz ≥2 verfügbarer (jsprit klont früheste/billigste Kopie bei `FleetSize.INFINITE`); Lausitz'
-  4-Kopien-pro-Welle (`VEHICLES_PER_TYPE_PER_WAVE`) ist zwar stärker gegen Kollaps als legacy,
-  aber echte Pro-Fahrzeug-Streuung bräuchte `FleetSize.FINITE` oder einen Vehicle-Nutzungs-/
-  Tour-Count-Term im jsprit-Objective — siehe [[project_lausitz_drt_freight]] „LMD stagger" Fund.
-  _(added 2026-07-21)_
-  - **Update 2026-07-28 (1d-Grilling, User):** die Wave-Mechanik generell nochmal prüfen.
-    1d/DRT_MODULAR umgeht sie ab sofort komplett (explizites Fenster 07:30–21:00, keine
-    Wave-Herleitung, kein Jitter) → betrifft nur noch LMD_BASELINE/married. Beim Anfassen:
-    Delegate-Muster aus 1d-Task-1 wahren (neue Parameter nur über neue Overloads, Legacy
-    delegiert), sonst Baseline-Regression.
+- **`[S]` LMD 14:00-Welle quasi tot (Restpunkt des Dispatch-Stagger-Fixes)** — Zweitbefund der
+  Root-Cause-Analyse 2026-07-30 (→ [BACKLOG-DONE](BACKLOG-DONE.md) „LMD Dispatch-Stunden besser
+  streuen"): in `LMD_BASELINE_13052025_bandz_central_seed1234` fahren 61/62 Touren in der
+  Morgenwelle (1× 13:54) — jsprit deckt bei `FleetSize.INFINITE` die gesamte Nachfrage mit
+  Morgen-Klonen ab, weil die kleine Region ins Morgen-Betriebsfenster passt. Der `LmdTourRetimer`
+  spreizt nur Abfahrten, er verschiebt keine Touren zwischen Wellen. Echte Zwei-Wellen-Struktur
+  bräuchte `FleetSize.FINITE` mit Flottengrößen-Heuristik pro Welle (Option 2 der Analyse;
+  User-Entscheidung 2026-07-30: Option 1/Retimer reicht vorerst, Baseline-Drift vermeiden).
+  Beim Anfassen weiterhin: Delegate-Muster wahren (neue Parameter nur über neue Overloads).
+  _(added 2026-07-30)_
 
 - **`[M]` Run-Dashboard v2 — Plan D (Karten) + zurückgestellte KPIs** — B ✅ (gepusht), C ✅ (lokal),
   Plan-D **Visual-Polish** ✅ (lokal, 2026-07-16). **Offen:**

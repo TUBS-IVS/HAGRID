@@ -206,8 +206,9 @@ public final class LmdCarrierBuilder {
         return carrier;
     }
 
-    /** Legacy Hannover jitter widths ({@code CarrierVehicleFactory.getTimeShift}), in minutes. */
-    private static double jitterSigmaMinutes(VehicleType vanType) {
+    /** Legacy Hannover jitter widths ({@code CarrierVehicleFactory.getTimeShift}), in minutes.
+     *  Package-private: {@link LmdTourRetimer} reuses the same sigmas for its per-tour draws. */
+    static double jitterSigmaMinutes(VehicleType vanType) {
         String id = vanType.getId().toString().toLowerCase();
         return id.endsWith("_l") ? 5.0 : 15.0;
     }
