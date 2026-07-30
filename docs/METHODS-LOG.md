@@ -102,12 +102,36 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-30._
 - **Zeitfenster je Sendungstyp: B2B 07:30–17:00, B2C 07:30–20:00** — `trägt` · 2026-07-20 (M5)
   → revidiert 2026-07-29: 21:00-Vereinheitlichung, s. u.
 
-- **Einheitliches Lieferfenster bis 21:00 für 1c UND 1d** — User-Entscheidung · 2026-07-29
-  1d bleibt beim Fenster 07:30–21:00 (s. o., C4). 1c wird auf dasselbe Fenster angehoben —
-  M5s B2B 07:30–17:00 / B2C 07:30–20:00 entfällt damit als Zielzustand; Umsetzung ist ein neuer
-  `[H]`-Punkt in [BACKLOG](BACKLOG.md) unter Shared-Use. **Konsequenz:** die laufenden/fertigen
-  1c-Läufe `chid600`, `base10c` und die bisherigen χ-Sweep-Punkte fahren noch die alten
-  M5-Fenster und sind für Headline-Vergleiche gegen 1d **nach der Umsetzung neu zu fahren**.
+- **Einheitliches Lieferfenster 07:30–21:00 für ALLE DREI Arme** — User-Entscheidung · 2026-07-29,
+  auf die Baseline erweitert 2026-07-30 · umgesetzt 2026-07-30
+  1d fuhr 07:30–21:00 schon (C4). 1c und die **Baseline** sind nachgezogen; eine einzige Konstante
+  (`hagrid.integrated.DeliveryDay`) ist jetzt die Quelle für alle drei, weil pro-Szenario-Konstanten
+  genau das Auseinanderdriften einladen, das hier aufgefallen ist.
+  **Vorher standen drei verschiedene Fenster im Code:**
+
+  | Arm | vorher | jetzt |
+  |---|---|---|
+  | Baseline (`LmdCarrierBuilder`) | 08:00–20:00 | 07:30–21:00 |
+  | 1c Shared-Use (`SharedUse`) | B2B 07:30–**17:00** / B2C 07:30–**20:00** | 07:30–21:00, ohne Typ-Split |
+  | 1d Modular (`Modular`) | 07:30–21:00 | unverändert |
+
+  **Warum die Baseline mit muss (Befund 2026-07-30):** die integrierten Szenarien werden *gegen*
+  die Baseline gemessen. Ein engeres Baseline-Fenster ist kein neutraler Unterschied — weniger
+  Zustellzeit heißt systematisch niedrigere Zustellquote, also wäre ein Teil des
+  „Integrationsvorteils" ein Fenster-Artefakt gewesen. Die Entscheidung vom 29.07. nannte nur 1c
+  und 1d; die Baseline war eine Lücke, nicht eine bewusste Ausnahme.
+  **Limitation, die ins Methods-Kapitel gehört:** 21:00 gilt auch für **B2B**, und ein
+  Geschäftsempfänger ist um 21:00 nicht da. Bewusster Tausch — Vergleichbarkeit über die Arme
+  schlägt Realismus je Sendungstyp, und 1d hatte diese Eigenschaft konstruktiv schon (sein
+  Tagesfenster unterscheidet B2B/B2C nicht). Das Fenster begrenzt den *Servicebeginn*; Stopp und
+  Rückfahrt liegen danach, die letzte Zustellung fällt also etwas vor 21:00.
+  **Konsequenz für bestehende Läufe:** `chid600`/`chid600i` (1c, alte M5-Fenster), `base10c`
+  (Baseline, 08:00–20:00) sowie **alle älteren Baseline-Läufe** sind für Headline-Vergleiche
+  **neu zu fahren**. Die 1d-Läufe (`ctrl1d`, `m1d050`) sind nicht betroffen — sie fuhren 21:00
+  bereits.
+  **Nicht angetastet:** das Hannover-Fenster (`HagridConfig.Routing.deliveryWindowStartHour/EndHour`
+  = 8/20). Es ist eine separate Studie; eine Angleichung hätte alle 51 Läufe der
+  Kapazitäts-Sensitivität unvergleichbar gemacht.
 
 - **Joint-Cost-Allokation: marginale Attribution** — `trägt` · 2026-07-20 (M11)
   Paketkosten = akzeptierter `totalTimeLoss` × Fahrzeug-Zeitrate + Zustell-km × km-Rate
