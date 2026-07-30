@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-29._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-30._
 
 ---
 
@@ -51,6 +51,32 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-29._
   Keine neue Dependency. `drt-extensions/services` = Ein-Stopp-Vorlage zum Abschreiben,
   `reconfiguration` = nur `onPrepareSim` — beide ungeeignet für den laufenden Tausch.
   → [1d-Spike](superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md)
+
+- **Konzeptparameter leben in `HAGRIDSimulationConfig` + Szenario-Konstanten, nicht in einem
+  zentralen Config-Objekt** — `trägt` · 2026-07-30 (Design D8, zweimal angewandt)
+  `IntegratedScenarioConfig` war als Parameter-Objekt der integrierten Szenarien entworfen
+  (Foundations-Plan 2026-06-18, Task 4), hat aber **nie einen Run erreicht**: 1c führte
+  `chiThreshold`, 1d `idleThreshold`/`maxTourDurationSeconds` bewusst über
+  `HAGRIDSimulationConfig` (+ CLI) und legte die festen Werte nach `Modular` — explizit, um
+  doppeltes Config-Plumbing zu vermeiden (D8). Damit standen sieben Parameter zweimal im Code, eine
+  gepflegte und eine ungepflegte Quelle; `depotCount=3` war schon sachlich überholt (`DepotNetwork`
+  nimmt die Depot-Liste, ein Zählparameter existiert nicht), `b2cLockerShare=0.7` parametrisierte
+  ein Phase-2-Feature mit struktureller 0 (§2.10). **Konsequenz 2026-07-30:** Duplikate entfernt,
+  Klasse auf den Autonomie-Kern (Design-Spec §4.4) eingedampft und im Javadoc als unverdrahtet
+  deklariert. **Kein Zahleneffekt** — die Klasse war produktionstot, keine berichtete Zahl hat je
+  aus ihr gelesen. Neue Konzeptparameter gehen künftig denselben Weg.
+
+- **Der Autonomie-Switch ist kein Config-Task** — `trägt` · 2026-07-30 (Befund; Umsetzung vertagt)
+  Die vier gekoppelten §4.4-Effekte der Design-Spec landen an **vier verschiedenen Stellen**:
+  Speed-Cap = Fahrzeug-`maximumVelocity`; **Autobahn-Ausschluss = mode-restringiertes Netz +
+  `MultimodalNetworkCleaner`**, nicht der Speed-Cap (die Spec ist explizit: ein gedeckeltes
+  Fahrzeug würde auf dem Autobahn-Link nur kriechen, der Router könnte ihn weiter wählen — dazu die
+  Konnektivitätsprüfung, dass Zone und alle Depots ohne Autobahn erreichbar bleiben);
+  Roboter-Dwell wirkt in der jsprit-Tourplanung **und** der DRT-Stop-Dauer; die Labour-Abschaltung
+  sitzt vollständig in `analysis/kpi/economics.py` und fällt damit mit dem Neubau der
+  Kostenfunktion zusammen (§2.6). Für die Zahlen: bis der Switch gebaut ist, sind **alle** Läufe
+  konventionell — `RunMetadataWriter` schreibt `operation_mode="conventional"` hart, und das ist
+  korrekt, kein stiller Fallback. Ein Autonomie-Ergebnis ist bislang **nicht** berichtet worden.
 
 - **χ-Gate ist Detour-only** — `trägt` · 2026-07-27 (Review-Fund F1, kritisch)
   `ChiGateInsertionCostCalculator` zieht die **stoppeigene Dwell-Zeit** vor dem χ-Vergleich ab;
@@ -241,9 +267,50 @@ konvergiert, Tourengeometrie nicht.**
 
 `trägt` · 2026-07-28 · **Betrifft direkt die distanzbasierten Emissionen.**
 Ausreichend für Flotten- und Kostenaussagen; nicht für Fahrleistung, km/Paket oder
-distanzbasierte Emissionen. Ein Iterations-Hochlauf ist teuer: `jspritIter=1000` braucht
-**~4 h pro Carrier**, also ~20 h je Arm (Messung nach 2 von 7 Carriern in 5,8 h abgebrochen).
-Gewählte Antwort: Multi-Run-Mittelung statt Iterations-Hochlauf (§1.5).
+distanzbasierte Emissionen.
+
+**⚠️ Kostenannahme korrigiert 2026-07-30 (die Zahl trug nicht, der Befund trägt).** Die
+ursprüngliche Fassung nannte „~4 h pro Carrier, also ~20 h je Arm" auf Basis einer nach 2 von 7
+Carriern abgebrochenen Messung. Aus dem `base10c`-Lauf (night1d-Batch, 29./30.07.) ist die
+jsprit-Phase jetzt **vollständig** ausgelesen — jsprit loggt seinen Algorithmus-Start je Carrier
+als JVM-Laufzeit, damit ist die Phase exakt zerlegbar:
+
+| Carrier | Jobs | @`jspritIter=100` | ×10 (obere Schranke, s. u.) |
+|---|---|---|---|
+| 1 (größter) | 824 | 22,3 min | ≤ 3,7 h |
+| 2 | 599 | 11,2 min | ≤ 1,9 h |
+| 3 | 457 | 10,1 min | ≤ 1,7 h |
+| 4 | 398 | 8,2 min | ≤ 1,4 h |
+| 5 | 356 | 7,9 min | ≤ 1,3 h |
+| 6 | 198 | 2,4 min | ≤ 0,4 h |
+| 7 | 143 | 2,0 min | ≤ 0,3 h |
+| **Σ (7 Lausitz-Carrier)** | **2.975** | **64 min** | **≤ 10,7 h** |
+
+**Laufzeit skaliert mit `jobs^1,4`** (gemessen, nicht geschätzt: die Exponentenschätzung ist über
+drei unabhängige Carrier-Paare stabil — 824/143, 824/398, 599/198 ergeben 1,38 / 1,38 / 1,40).
+Superlinear, aber **nicht** quadratisch.
+
+⚠️ **Die ×10-Spalte ist eine obere Schranke, keine Prognose.** `configureAlgorithm` hängt ein
+`IterationWithoutImprovementTermination` an, dessen Geduld selbst von der Iterationszahl abhängt
+(`calculateNoImprovementThreshold`: `min(iters/4, round(14·ln iters))` → **25** bei 100, **97** bei
+1000). Bei `maxIter=100` haben alle 7 Carrier die Marke 64 überschritten (jsprit loggt in
+Zweierpotenzen, also ≥64 und ≤100) — das Budget wurde praktisch ausgeschöpft. Bei `maxIter=1000`
+ist offen, ob die Suche 1000 Iterationen läuft oder nach einigen Hundert abbricht; damit liegt der
+echte Wert **irgendwo zwischen ~4 h und ~10,7 h**. Sauber messbar nur direkt — genau das tut die
+3-Seed-Sonde auf Carrier 1 (BACKLOG).
+
+Gegenprobe: `base10c` startete 23:29:12, `ITERATION 0 BEGINS` um 00:34:39 → 65,5 min bis zur
+MATSim-Schleife. Der Rest des Laufs (150 MATSim-Iterationen) sind ~4 h 50.
+**Fehlerursache der alten Zahl:** linear vom *größten* Carrier hochgerechnet. Die Carrier sind
+extrem ungleich (Faktor 11 zwischen Nr. 1 und Nr. 7, deckt sich mit §2.1: dhl 24 Touren, ups 4);
+die beiden größten ergeben @1000 zusammen 5,6 h — das *ist* die abgebrochene 5,8-h-Messung, und
+„4 h pro Carrier" war Carrier 1 allein. → Zurückziehung §3.8.
+
+**Folge für die gewählte Antwort:** Multi-Run-Mittelung (§1.5) bleibt richtig, aber die
+Verwerfung des Iterations-Hochlaufs stand auf einer 2× zu hohen Zahl und ist **neu zu bewerten** —
+zumal die Carrier in `LausitzFreightPreprocessor.routeWithDurationCap` strikt **sequenziell** auf
+einem Thread gelöst werden (BACKLOG-Punkt Carrier-Parallelisierung); parallel fällt die Wall-Clock
+auf den größten Carrier, also ~3,7 h statt 10,7 h.
 
 ### 2.3 χ ist eine untere Schranke, nicht der Umweg
 
@@ -378,7 +445,10 @@ selbst ist bewusst Phase 2 (§4.5); relevant hier, weil das Javadoc etwas andere
 **Annotation 2026-07-28:** das irreführende Javadoc ist korrigiert
 (`integrated/shareduse/DeliveryChannelResolver.java:10-20` — nicht `integrated/freight/`, wie im
 BACKLOG stand); es benennt jetzt die strukturelle 0 und dass die Aktivierung eine Codeänderung am
-Aufrufer braucht, nicht bloß eine Standortdatei. Der Befund selbst trägt unverändert.
+Aufrufer braucht, nicht bloß eine Standortdatei.
+**Annotation 2026-07-30:** die zweite Stelle, die einen Locker-Anteil suggerierte, ist ebenfalls
+weg — `IntegratedScenarioConfig.b2cLockerShare = 0.7` (unverdrahtet, s. §1.1) ist entfernt. Der
+Befund selbst trägt unverändert.
 
 ### 2.11 1d Modular: Rebalancing-Konfiguration in den Validierungstests ist fixture-getuned
 
@@ -867,6 +937,43 @@ trifft eine echte strukturelle Unterscheidung. (c) Die Übertragbarkeit **über 
 unberührt und sogar besser belegt (§2.9: Skill-KI ohne Null). Was fehlt, ist der Beleg über
 **Carrier**-Grenzen. Für diese Studie ist das kein tragender Baustein — sie überträgt räumlich,
 nicht carrierweise —, aber der Satz darf so nicht mehr im Text stehen.
+
+### 3.8 „`jspritIter=1000` kostet ~4 h pro Carrier, also ~20 h je Arm"
+
+`zurückgezogen` · 2026-07-30 (User-Einwand aus der Hannover-Empirie)
+
+**Geglaubt** (§2.2, 2026-07-28): ein Iterations-Hochlauf auf 1000 jsprit-Iterationen kostet ~4 h
+pro Carrier und damit ~20 h je Szenario-Arm — deshalb verworfen zugunsten der Multi-Run-Mittelung.
+Grundlage: eine nach **2 von 7 Carriern in 5,8 h abgebrochene** Messung, linear hochgerechnet.
+
+**Gemessen** (2026-07-30, vollständige Phasenzerlegung aus dem `base10c`-Log, Tabelle in §2.2):
+die jsprit-Phase über **alle 7** Lausitz-Carrier dauert bei `jspritIter=100` **64 min**, @1000
+also **höchstens 10,7 h** (obere Schranke — die Iterationsgeduld skaliert mitsamt der
+Iterationszahl, s. §2.2) — jedenfalls nicht 20 h. Die alte Zahl entstand durch lineare
+Extrapolation vom **größten** Carrier auf alle sieben, bei einem Größenfaktor von 11 zwischen
+Nr. 1 (824 Jobs) und Nr. 7 (143 Jobs). Rekonstruktion: Carrier 1 ×10 = 3,7 h (= die „4 h pro
+Carrier"), Carrier 1+2 ×10 = 5,6 h (= die abgebrochene 5,8-h-Messung).
+
+**Auslöser der Prüfung:** die Hannover-Sensitivitätsläufe fahren `jsprit=1000` bei **201**
+Carriern in ~7 h pro Lauf — mit der alten Zahl unvereinbar. **Zwei Faktoren lösen das auf:**
+1. **Hannover parallelisiert, Lausitz nicht.** Der Legacy-`Router` löst Carrier auf Worker-Threads
+   (`ThreadingType`, `forkJoinPool.submit(...parallelStream...)`, `Executors.newFixedThreadPool` —
+   `Router.java:420,517`); `LausitzFreightPreprocessor.routeWithDurationCap:313` ist eine
+   sequenzielle `for`-Schleife auf dem Main-Thread. Das ist vermutlich der größere der beiden
+   Faktoren — und es heißt zugleich, dass der parallele Carrier-Pfad **produktiv erprobt** ist
+   (201 Carrier, gleiche `NetworkBasedTransportCosts`-Klasse) → BACKLOG-Punkt.
+2. **Jobs pro Carrier statt Carrier-Anzahl.** Laufzeit ∝ `jobs^1,4` (§2.2) ⇒ Aufteilen ist billig,
+   Poolen teuer. Hannover verteilt ~97.500 Pakete auf 201 kleine Probleme, Lausitz poolt weniger
+   Pakete auf 7 regionsweite (2.975 Jobs, davon 824 in einem einzigen). **Dieselbe strukturelle
+   Ursache** wie bei der LMD-Abfahrts-Gruppierung (BACKLOG-DONE 2026-07-30) — dort 7 regionsweite
+   vs. 187 kleine Carrier.
+
+**Es bleibt:** §2.2 selbst — `jspritIter=100` genügt für km-KPIs nicht (der Rauschboden §2.1 ist
+gemessen und davon unberührt). **Nicht** mehr belastbar ist die *Begründung*, mit der der
+Iterations-Hochlauf verworfen wurde; die Abwägung Hochlauf ↔ Multi-Run ist bei 10,7 h (bzw. ~3,7 h
+mit parallelisierten Carriern) neu zu führen. Lehre fürs Nächste: Extrapolation über
+ungleichgroße Einheiten nie linear, und eine abgebrochene Messung nie als Kostenzahl zitieren
+ohne den Abbruch mitzuführen.
 
 ---
 

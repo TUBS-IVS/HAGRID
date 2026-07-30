@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-07-29._
+_Zuletzt aktualisiert: 2026-07-30._
 
 ---
 
@@ -71,7 +71,18 @@ Zahlen, Signal-Rausch-Tabelle, Seed-Schalter und der Nachbau-Gotcha:
 
 - Zu bauen: Run-Fächer über `-Dhagrid.jsprit.seed`, Aggregation (Mittelwert + Min/Max + Streuung)
   in die KPI-Extraktion, Ausweisung im Dashboard.
-- Alternative verworfen: Iterations-Hochlauf (`jspritIter=1000` ≈ 4 h pro Carrier, ~20 h je Arm).
+- **Alternative „Iterations-Hochlauf" ist NEU ZU BEWERTEN (2026-07-30)** — sie war mit „~20 h je
+  Arm" verworfen, und diese Zahl ist zurückgezogen: gemessen sind **10,7 h** je Arm @1000
+  (~3,7 h mit parallelisierten Carriern) → [METHODS-LOG](METHODS-LOG.md) §2.2/§3.8.
+- **Reihenfolge-Präzisierung (2026-07-30):** für die **Kalibrierung** ist der Fächer *nicht*
+  Voraussetzung — der χ-Sweep (1c) enthält überhaupt kein jsprit (`DRT_SHAREDUSE` überspringt es,
+  `SimulationRunnerUtils:322`), und der θ-Sweep innerhalb eines Caps ist ein **gepaarter**
+  Vergleich auf einer Realisierung (§2.17). Bänder braucht: absolute km-/Stunden-Niveaus, der
+  Cap-Vergleich 12600↔25200, Headline-Vergleich und die distanzbasierten Emissionen.
+- **Vorgeschaltete Messung (offen, billig):** ob `jspritIter=1000` die km-Streuung überhaupt
+  kollabiert, ist **nie gemessen** (die Messung wurde abgebrochen, §3.8). 3 Seeds @1000 auf dem
+  größten Carrier (~11 h sequenziell, jsprit-only — km direkt aus dem routed Carrier-XML, kein
+  MATSim nötig) entscheiden zwischen zwei völlig verschiedenen Paper-Runplänen.
 - **1d explizit einbeziehen (Review 2026-07-29):** der 1d-Validierungsplan enthält null
   Replikation, obwohl alle Frachtgeometrie-KPIs am §2.1-Rauschboden hängen. Im Methods-Kapitel
   gepaart vs. ungepaart deklarieren: θ-Sweep innerhalb eines Caps = gepaart auf einer
@@ -280,6 +291,30 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   [D-Karten](superpowers/plans/2026-07-13-run-dashboard-v2-planD-maps.md)
   _(added 2026-07-14, aktualisiert 2026-07-28)_
 
+- **`[M]` Carrier-Parallelisierung in `routeWithDurationCap`** — die 7 Lausitz-Carrier werden in
+  einer sequenziellen `for`-Schleife auf dem Main-Thread gelöst
+  ([LausitzFreightPreprocessor.java:313](parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java#L313));
+  im Log laufen alle sieben hintereinander auf `HAGRIDSimulationRunner.main()`. Parallel fällt die
+  Wall-Clock auf den größten Carrier: **10,7 h → ~3,7 h** @`jspritIter=1000`
+  (Messung → [METHODS-LOG](METHODS-LOG.md) §2.2). Obergrenze ist damit ~2,9× (Amdahl: Carrier 1
+  ist 35 % der Phase) → 3–4 Threads genügen, mehr bringt nichts.
+  **Voraussetzungen geprüft 2026-07-30 (beide grün):**
+  (a) *Determinismus bleibt* — jeder Carrier baut seinen eigenen Algorithmus und bekommt eine
+  **frische `Random`-Instanz** (`HAGRIDRouterUtils.applySeedOverride:233`, `builder.setRandom(new
+  Random(seed))`; das Javadoc hält den Per-Carrier-Charakter explizit fest). Kein geteilter RNG →
+  kein Ordering-Effekt.
+  (b) *Der geteilte `NetworkBasedTransportCosts` ist thread-safe by design* — Klassen-Javadoc
+  „can be used with multiple threads", `costCache` und `routerCache` sind `ConcurrentHashMap`,
+  Router-Instanzen pro `Thread.threadId()`.
+  **⚠️ Eine reale Lücke:** `NetworkBasedTransportCosts:514` `matsimVehicles` ist eine **plain
+  `HashMap`**, die im Kostenpfad lazy beschrieben wird (`:796` get / `:801` put) — unsynchronisiert.
+  Werte sind idempotent aus `typeId` abgeleitet (also keine falschen Distanzen), aber ein
+  gleichzeitiger Resize kann Einträge verlieren oder werfen. Liegt in **unserem Fork** →
+  Einzeiler `HashMap`→`ConcurrentHashMap` als Teil dieses Punktes mitfixen (und upstream melden).
+  **Für den Seed-Fächer ist Prozess-Parallelität die bessere Wahl** (N Seeds = N unabhängige JVMs,
+  kein geteilter Zustand); Carrier-Parallelität lohnt für die *Latenz eines einzelnen* Laufs.
+  _(added 2026-07-30)_
+
 - **`[M]` jsprit-Upgrade 1.8 → 2.x + modulare Operatorauswahl** — Freight-VRP läuft auf
   `jsprit.version=1.8` (`pom.xml:24`), Default-Algorithmus (Algorithm-File im Config leer),
   aufgerufen via `CarriersUtils.runJsprit`. Idee (Kollege Chatty): auf 2.0 heben — mehr Ruin-/
@@ -332,10 +367,22 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Download-on-first-run mit URL-Liste + Checksums; HAGRID-only-Dateien via
   Uni-Share/Release-Assets. _(added 2026-07-14)_
 
-- **`[M]` Autonomie-Switch-Plan** — §4.4 (Arbeit aus / Roboter-Dwell / Speed-Cap /
-  Autobahn-Ausschluss), orthogonal über beide integrierten Szenarien. Plan **nach** 1c+1d.
-  Integrationspunkt: das bislang unverdrahtete `IntegratedScenarioConfig` (s. u.).
-  _(added 2026-07-14)_
+- **`[M]` Autonomie-Switch-Plan** — Labour aus / Roboter-Dwell / Speed-Cap / Autobahn-Ausschluss,
+  orthogonal über beide integrierten Szenarien. **User-Entscheidung 2026-07-30: nicht von
+  unmittelbarer Relevanz — bleibt liegen** (Plan weiter erst nach 1c+1d).
+  ⚠️ Das „§4.4" dieses Themas meint die **Design-Spec**, nicht METHODS-LOG §4.4 (= AESA/SOS) —
+  → [Design-Spec §4.4](superpowers/specs/2026-06-17-lausitz-drt-freight-integration-design.md).
+  - **Vorarbeit ✅ 2026-07-30:** `IntegratedScenarioConfig` ist auf genau diese vier Effekte
+    eingedampft (sieben duplizierte Konzeptparameter raus) und deklariert sich selbst als
+    unverdrahtet → [BACKLOG-DONE](BACKLOG-DONE.md).
+  - **Offen: der Rest-Kern.** Er erreicht weiter keinen Run. Kommt der Switch, ist die Klasse sein
+    Integrationsort; kommt er nie, ist sie zu **löschen** — es geht nichts verloren, alle
+    Begründungen (Rudolph-80/20-Anker, U-Shift-30-km/h-Floor, Sensitivität → 50 km/h,
+    Motorway-Ausschluss) stehen in der Design-Spec §4.4/§6.1/§6.3.
+  - **Kein Config-Verdrahtungs-Task** — die vier Effekte landen an vier verschiedenen Stellen
+    (Netz-Preprocessing, jsprit, DRT-Stop-Dauer, Kostenfunktion); Aufwandsschwerpunkt und
+    Begründung: [METHODS-LOG](METHODS-LOG.md) §1.1.
+  _(added 2026-07-14, aktualisiert 2026-07-30)_
 
 - **`[M]` Karten-Dropdowns/-Controls noch nicht manuell durchgeklickt** — Plan-D-maps Task 9 hat
   nur Ladezeit/Größe im Browser bestätigt (6.1 MB, married250, "fast & responsive"); die
@@ -353,8 +400,10 @@ scharfen Befunde sowie M2 und M6 sind erledigt → [BACKLOG-DONE](BACKLOG-DONE.m
 die verbleibenden. Positiv-Befund am Rande: im gesamten `integrated`-Baum wirft **jedes** `catch`
 weiter — dort gibt es kein Exception-Swallowing.
 
-**Reihenfolge:** zwei Punkte hängen an einer Nutzer-Entscheidung (unten mit **ENTSCHEIDUNG
-OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
+**Reihenfolge:** ein Punkt hängt an einer Nutzer-Entscheidung (unten mit **ENTSCHEIDUNG OFFEN**);
+der Rest ist mechanisch und kann jederzeit am Stück laufen. Der frühere zweite
+(`IntegratedScenarioConfig`) ist 2026-07-30 in der Substanz erledigt — der Restentscheid hängt am
+`[M]` Autonomie-Switch-Plan und steht dort.
 
 - **`[M]` Mechanischer Restblock (keine Entscheidung nötig)** — in einem Rutsch erledigbar:
   Kompositions-Zweig in `DrtConfigComposer:63` loggen · Depot-Zonen-Fallback in
@@ -366,16 +415,6 @@ OFFEN**); der Rest ist mechanisch und kann jederzeit am Stück laufen.
   Jeder Einzelpunkt steht unten bzw. unter Low mit `file:line`.
   **Bewusst ausgenommen:** M8 (Kostenbasis-Provenance in `extract_freight.py`) — das sitzt in
   `economics.py`, das laut `[H]` Kostenfunktion ohnehin ersetzt wird. _(added 2026-07-27)_
-
-- **`[M]` `IntegratedScenarioConfig` entscheiden** — _(Locker-Javadoc ✅ 2026-07-28 korrigiert →
-  [BACKLOG-DONE](BACKLOG-DONE.md); der Rest ist offen.)_
-  `IntegratedScenarioConfig` (mit `b2cLockerShare=0.7`, Autonomie-Dwell-Faktor,
-  Labour-Kosten, Retooling-Zeit) wird **nur vom eigenen Test** referenziert und erreicht keinen
-  Run — liest sich aber wie aktive Konfiguration. Verwandt: `[M]` Autonomie-Switch-Plan (dort ist
-  `operation_mode` in `RunMetadataWriter.java:31` hart auf `"conventional"`).
-  **⚠️ ENTSCHEIDUNG OFFEN (gestellt 2026-07-27):** kommt der Autonomie-Switch (§4.4) in 1c/1d, ist
-  `IntegratedScenarioConfig` sein designierter Ort → **verdrahten**; kommt er nicht → **löschen**.
-  _(added 2026-07-27)_
 
 - **`[M]` Ungeschützter Kompositions-Zweig im DRT-Config-Aufbau** — `DrtConfigComposer.java:63`
   `if (multi.getModalElements().isEmpty())`: bringt die Base-Config je ein `drt`-Element mit, wird

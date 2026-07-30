@@ -13,6 +13,31 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
 
 ## 2026-07-30
 
+- **`IntegratedScenarioConfig` auf den Autonomie-Kern eingedampft** (war `[M]` „`IntegratedScenarioConfig`
+  entscheiden", Fallback-Audit 2026-07-27) — ✅ als Vorarbeit für den vertagten Autonomie-Switch
+  (User 2026-07-30: Autonomie nicht von unmittelbarer Relevanz, bleibt im Backlog).
+  **Befund:** die Klasse war nicht bloß unverdrahtet, sondern eine **zweite, ungepflegte Quelle**
+  für sieben Werte, die längst produktiv anderswo leben — `retoolingTimeSeconds`/
+  `freightLookAheadSeconds`/`idleThreshold` (= `Modular.RETOOLING_S`/`FREIGHT_LOOKAHEAD_S`/
+  `DEFAULT_IDLE_THRESHOLD`), `idleThreshold`+`fleetSize` (`HAGRIDSimulationConfig` + CLI),
+  `vehicleTimeCostPerHour` (`analysis/kpi/economics.py`), `depotCount=3` (sachlich überholt:
+  `DepotNetwork` nimmt die Depot-Liste), `b2cLockerShare=0.7` (Phase-2-Feature mit struktureller 0,
+  METHODS-LOG §2.10).
+  **Umsetzung:** die sieben Felder samt Buildern, Validierungen und Testfällen entfernt; übrig
+  bleiben `OperationMode` + Labour-Rate + Dwell-Faktor + Speed-Cap + Road-Exclusion und die vier
+  `effective*`-Helper, also genau die Design-Spec-§4.4-Effekte. Neues Klassen-Javadoc deklariert
+  **NOT WIRED** (inkl. `RunMetadataWriter`s hartem `operation_mode="conventional"`) und listet für
+  jeden entfernten Parameter sein lebendes Zuhause, damit ihn niemand wieder hinzufügt.
+  Die verbleibende Doppelung `cargoLabourCostPerHour` ↔ `economics.py:LABOUR_EUR_PER_H` ist bewusst
+  und benannt: `effectiveLabourCostPerHour()` braucht die Rate, und die Kostenfunktion wird ohnehin
+  neu gebaut (METHODS-LOG §2.6).
+  **Nachweis:** `IntegratedScenarioConfigTest` 7/7 grün (Defaults 1, Mode-Helper 3 — inkl. neuem
+  50-km/h-Sensitivitätsfall —, Validierung 3); der Test-Compile des gesamten Moduls lief mit durch
+  und bestätigt, dass **kein** anderer Aufrufer an den entfernten Gettern hing (der Grep vorab
+  ergab: nur der eigene Test referenzierte die Klasse überhaupt). Kein Zahleneffekt — die Klasse
+  war produktionstot. Konsequenz und künftige Regel → [METHODS-LOG](METHODS-LOG.md) §1.1;
+  Restentscheid (verdrahten vs. löschen) hängt am Autonomie-Switch → [BACKLOG](BACKLOG.md).
+
 - **LMD Dispatch-Stunden besser streuen — Lausitz-Abfahrts-Gruppierung** (war `[M]`, offen seit
   2026-07-21) — ✅ Root Cause identifiziert und per `LmdTourRetimer` gefixt (Commit `00c3b3a`
   auf `hendrik`).
