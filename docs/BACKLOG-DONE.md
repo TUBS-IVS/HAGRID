@@ -13,6 +13,28 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
 
 ## 2026-07-30
 
+- **1000-Iterationen-Konvergenzsonde: Ergebnis NEIN** (war Vorbedingung des `[H]`
+  Multi-Run-Aggregation) — ✅ gemessen, 3 Seeds × größter Carrier (`dhl`, 875 Services),
+  `jspritIter=1000`, Dev-PC, Java 21.0.10, ~5 h Wall-Clock parallel.
+  **Ergebnis:** km 586,2 / 576,0 / 542,9 → Spanne **7,61 %**; Touren 19/19/19 → **0,00 %**. Bei 1000
+  Iterationen ist die km-Streuung also **nicht kleiner** als der 6,5-%-Rauschboden bei 100 (§2.1).
+  Der Iterations-Hochlauf ist damit **nicht zu teuer, sondern wirkungslos** — ein stärkeres Argument
+  als die zurückgezogene Kostenzahl (§3.8), und der Multi-Seed-Fächer ist die einzige Antwort.
+  **Drei Nebenbefunde:** (a) der **Flottenmix** ist seed-instabil bei konstanter Tourenzahl
+  (`_s` 6–8 / `_m` 10–13 / `_l` 0–1 von 19) → zusätzlicher Rauschkanal für größenklassenabhängige
+  Emissionsfaktoren; (b) `_s`=100 trägt ~⅓ der Touren, `HagridPaths.java:337` („m/l only") ist
+  falsch → `[M]`-Entscheid faktisch gefallen; (c) 19/19 Touren in der Morgenwelle **auch mit dem
+  21:00-Fenster** → bestätigt „14:00-Welle tot" unabhängig vom Fensterende.
+  **Laufzeit gemessen:** Setup 3,8 min + jsprit ~5,0 h für **einen** Carrier — meine ×10-Hochrechnung
+  (3,7 h) war ~35 % zu niedrig; auf Armebene wird bewusst nicht mehr extrapoliert.
+  **Nachweis/Reproduktion:** `-Dhagrid.jsprit.onlyCarrier=largest` + `-Dhagrid.jsprit.seed=…`,
+  `concept=LMD_BASELINE,maxIter=0,jspritIter=1000`; km aus den `<route>`-Linklisten des routed
+  Carrier-XML gegen 474.453 Netz-Linklängen, **0 nicht auflösbare Links**; `jspritIterations=1000`
+  und `unassignedJobs=0` in allen drei XMLs verifiziert. Zahlen und Vorbehalte (n=3, ein Carrier,
+  andere Maschine) → [METHODS-LOG](METHODS-LOG.md) §2.1/§2.2/§3.8.
+  **Nebenbei aufgedeckt:** alle drei Läufe starben **nach** jsprit am Windows-Filelock auf dem
+  eigenen `hagrid.log` → neuer `[M]`-Punkt in [BACKLOG](BACKLOG.md).
+
 - **Lieferfenster über alle drei Arme auf 07:30–21:00 vereinheitlicht** (war `[H]` „1c-Lieferfenster
   anheben", User-Entscheidung 2026-07-29, auf die Baseline erweitert 2026-07-30) — ✅ umgesetzt,
   volle Modul-Suite **466 Tests grün**.
