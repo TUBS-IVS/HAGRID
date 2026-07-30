@@ -7,9 +7,40 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-07-29._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
 
 ---
+
+## 2026-07-30
+
+- **LMD Dispatch-Stunden besser streuen — Lausitz-Abfahrts-Gruppierung** (war `[M]`, offen seit
+  2026-07-21) — ✅ Root Cause identifiziert und per `LmdTourRetimer` gefixt (lokal auf `hendrik`,
+  noch nicht committet).
+  **Root Cause (Run-Evidenz, 2026-07-30):** nicht die Jitter-Logik (Hannover und Lausitz jittern
+  identisch pro Vehicle-Template), sondern **Carrier-Granularität × jsprit-INFINITE-Cloning**:
+  jsprit klont pro Provider×Van-Typ EIN Template, jeder Klon erbt dessen exakte Jitter-Sekunde.
+  Legacy Hannover versteckt das hinter 187 Carriern (501 Templates, 488 distinkte Startzeiten in
+  `BASECASE_13052025_delivery_carriers.xml`, 1–3 Touren je Carrier); Lausitz hat 7 regionsweite
+  Carrier → `bandz_central_seed1234`: 62 Touren auf 16 Templates, bis zu 14 Touren zur
+  identischen Sekunde (14× dhl_s_h8_v2 @ 07:41:32). Mehr Kopien (`VEHICLES_PER_TYPE_PER_WAVE`)
+  helfen NICHT — jsprit bevorzugt weiter die billigste Kopie.
+  **Fix (Option 1, User-Entscheidung 2026-07-30):** `LmdTourRetimer` — post-jsprit bekommt jede
+  Wellen-Template-Tour (`..._h<h>_v<n>`) einen frischen Gauss-Draw um ihre Wellen-Stunde (gleiche
+  Sigmas wie legacy `CarrierVehicleFactory.getTimeShift`) auf einer eigenen Vehicle-Kopie mit
+  wellenrelativem Fenster; Abfahrt geclampt, sodass die geplante Tour bis 21:00 endet; danach
+  Plan-Re-Routing (`NetworkRouter`), Stoppfolgen/jsprit-Lösung byte-unangetastet. Deterministisch
+  (eigener `TOUR_RETIME_SEED` + Provider-Hash, content-sortierte Draw-Reihenfolge — Missed-
+  Delivery-Overlay unverschoben). Verdrahtet NUR im LMD_BASELINE-`run()`-Pfad über eine neue
+  `routeWithDurationCap`-Overload (Delegate-Muster gewahrt; `runModular`/1d und Nicht-Wellen-
+  Vehicles wie `_day_v0` unverändert — per Test gepinnt).
+  **Beweis:** `LmdTourRetimerTest` 4/4 (Spread auf distinkte Sekunden, Determinismus,
+  21:00-Clamp, Modular-Passthrough), **mutation-verifiziert** (No-op-Mutation im Retimer →
+  2 Failures: „Expected size: 3 but was: 1", Clamp-Erwartung 52200.0); `LmdCarrierBuilderTest`
+  6/6, `LausitzFreightPreprocessorTest` 6/6 (das `run()`-e2e liest das retimte Carrier-XML
+  wieder ein → neue Vehicles korrekt in den Capabilities registriert), `FreightRunComposerTest`
+  3/3. Restpunkt (14:00-Welle quasi tot; echte Zwei-Wellen-Struktur bräuchte FINITE-Fleet)
+  → [BACKLOG](BACKLOG.md). Achtung Lesehinweis: alle LMD_BASELINE-Läufe VOR diesem Fix zeigen
+  die gruppierten Abfahrten.
 
 ## 2026-07-29
 
