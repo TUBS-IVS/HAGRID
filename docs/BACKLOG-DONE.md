@@ -13,6 +13,49 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
 
 ## 2026-07-30
 
+- **Lieferfenster über alle drei Arme auf 07:30–21:00 vereinheitlicht** (war `[H]` „1c-Lieferfenster
+  anheben", User-Entscheidung 2026-07-29, auf die Baseline erweitert 2026-07-30) — ✅ umgesetzt,
+  volle Modul-Suite **466 Tests grün**.
+  **Befund beim Umsetzen (der eigentliche Wert des Tasks):** es standen **drei** verschiedene Fenster
+  im Code — Baseline `LmdCarrierBuilder` 08:00–20:00, 1c `SharedUse` B2B 17:00 / B2C 20:00, 1d
+  `Modular` 07:30–21:00. Nur 1c anzuheben hätte die **Baseline** zum Ausreißer gemacht: 30 min später
+  Start, 1 h früher Schluss als beide integrierten Szenarien — und die Baseline ist der Arm, *gegen*
+  den sie gemessen werden. Weniger Zustellzeit ⇒ systematisch niedrigere Zustellquote ⇒ ein Teil des
+  „Integrationsvorteils" wäre ein Fenster-Artefakt gewesen. Die Entscheidung vom 29.07. nannte nur
+  1c und 1d; die Baseline war eine Lücke.
+  **Umsetzung:** neue Klasse `hagrid.integrated.DeliveryDay` (`START_S`/`END_S`) als einzige Quelle;
+  `Modular.DELIVERY_DAY_*`, `SharedUse.WINDOW_END_S`/`SUBMIT_FROM_S`, `LmdCarrierBuilder`
+  `DAY_START`/`DAY_END`/`LATEST_VEHICLE_END` und `LmdTourRetimer.LATEST_VEHICLE_END` delegieren
+  dorthin statt die Zahlen zu wiederholen — die Duplizierung war die Driftursache. Die
+  B2B/B2C-Verzweigung in `ParcelAgentGenerator:106` ist **entfernt** (nicht totgelegt);
+  `B2B_WINDOW_END_S`/`B2C_WINDOW_END_S` sind durch ein `WINDOW_END_S` ersetzt, fünf Testdateien
+  mitgezogen.
+  **Nachweis:** neuer `DeliveryDayTest` (4 Fälle) — prüft die Konstanten, dass 1d und 1c delegieren,
+  per Reflection dass die beiden Typ-Konstanten nicht zurückkehren, und baut einen **echten**
+  Baseline-Carrier um das Fenster **an den Services** zu assertieren (fällt also auch, wenn es aus
+  anderem Grund nicht mehr durchreicht). Volle Suite 466/0/0.
+  **Guardrail:** Hannover bleibt bei 8/20 (`HagridConfig.Routing.deliveryWindowStartHour/EndHour`) —
+  eine Angleichung hätte die 51 Läufe der Kapazitäts-Sensitivität unvergleichbar gemacht.
+  **Konsequenz → [BACKLOG](BACKLOG.md):** `base10c` und `chid600`/`chid600i` neu fahren, Baseline
+  zuerst. Limitation (21:00 gilt auch für B2B) und Vorher/Nachher-Tabelle →
+  [METHODS-LOG](METHODS-LOG.md) §1.2.
+
+- **Ein-Carrier-Routing-Schalter `hagrid.jsprit.onlyCarrier`** — ✅ Vorarbeit für die
+  1000-Iterationen-Sonde (§2.2/§3.8). `-Dhagrid.jsprit.onlyCarrier=largest` (oder exakte Carrier-ID)
+  routet nur einen Carrier; `largest` = meiste Services, Gleichstand über die ID gebrochen
+  (deterministisch, keine ID-Recherche nötig). Auf Lausitz kostet der größte Carrier allein ~35 %
+  der jsprit-Phase (824 von 2.975 Jobs) statt 100 %.
+  **Zwei Fail-safes:** (a) eine ID ohne Treffer **wirft** samt Liste der verfügbaren Carrier — ein
+  stiller Nicht-Treffer hätte eine leere Carrier-Datei erzeugt, die sich wie ein fertiger Lauf liest;
+  (b) die übrigen Carrier werden aus dem Container **entfernt**, nicht bloß ungeroutet gelassen —
+  `CarriersUtils.writeCarriers` persistiert den ganzen Container, sechs planlose Carrier neben einem
+  gerouteten hätten sich downstream wie ein vollständiger Lauf gelesen und dem `CarrierModule`
+  Carrier ohne Plan übergeben. Dazu eine WARN-Zeile, die die Unvollständigkeit explizit benennt.
+  **Nachweis:** `LausitzCarrierSelectionTest` 5/5 — darunter der tragende Fall
+  `filteringDoesNotChangeTheResult`: die Lösung des gefilterten Carriers ist identisch (Tourenzahl
+  **und** jsprit-Score) zu der, die er im vollen Set bekommt. Bricht der, überträgt das
+  Sondenergebnis nicht mehr. Volle Suite 466/0/0.
+
 - **`IntegratedScenarioConfig` auf den Autonomie-Kern eingedampft** (war `[M]` „`IntegratedScenarioConfig`
   entscheiden", Fallback-Audit 2026-07-27) — ✅ als Vorarbeit für den vertagten Autonomie-Switch
   (User 2026-07-30: Autonomie nicht von unmittelbarer Relevanz, bleibt im Backlog).

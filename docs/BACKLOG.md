@@ -37,11 +37,14 @@ Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
 → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md) ·
 [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md) _(added 2026-07-14)_
 
-- **Offen: 1c-Lieferfenster auf 07:30–21:00 anheben (User-Entscheidung 2026-07-29)** — zieht die
-  1d-Vereinheitlichung nach ([METHODS-LOG](METHODS-LOG.md) §1.2); ersetzt M5 (B2B 07:30–17:00 /
-  B2C 07:30–20:00) als Zielfenster. **Konsequenz:** die laufenden/fertigen 1c-Läufe `chid600`,
-  `base10c` und die bisherigen χ-Sweep-Punkte fahren noch die alten M5-Fenster und sind für
-  Headline-Vergleiche gegen 1d nach der Umsetzung **neu zu fahren**. _(added 2026-07-29)_
+- **✅ 1c-Lieferfenster auf 07:30–21:00 angehoben (2026-07-30)** — dabei fiel auf, dass auch die
+  **Baseline** mit muss (fuhr 08:00–20:00, also enger als beide integrierten Szenarien → verzerrte
+  den Zustellquoten-Vergleich zu ihren Lasten). Alle drei Arme hängen jetzt an einer Konstante
+  `DeliveryDay` → [BACKLOG-DONE](BACKLOG-DONE.md), [METHODS-LOG](METHODS-LOG.md) §1.2.
+- **`[H]` Offen: Baseline + 1c neu fahren** — Folge der Fenster-Vereinheitlichung. Betroffen:
+  `base10c` (Baseline, 08:00–20:00), `chid600`/`chid600i` (1c, alte M5-Fenster) und alle älteren
+  Baseline-Läufe. **Nicht** betroffen: `ctrl1d`/`m1d050` (fuhren 21:00 schon). Reihenfolge: erst
+  Baseline neu (sie ist Referenz für 1c *und* 1d), dann die 1c-Punkte. _(added 2026-07-30)_
 - **🔄 Läuft (gestartet 2026-07-28, Sim-PC, detached):** `chid600` (χ=600, neue
   Detour-only-Semantik, level_central, fleet120, iter150) → informiert die
   **χ-Sweep-Rasterentscheidung**; danach automatisch `base10c` (10-Sitzer married-Baseline,
