@@ -139,7 +139,7 @@ class SharedUseDispatchTest {
         PopulationUtils.putSubpopulation(p, SharedUse.PARCEL_SUBPOPULATION);
         p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, 3);
         p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE, SharedUse.segmentDwellSeconds(3));
-        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.B2C_WINDOW_END_S);
+        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.WINDOW_END_S);
         // Must mirror ParcelAgentGenerator's FULL attribute set: ParcelAttributes validates all
         // four at module install, so a fixture missing one describes a population that cannot
         // occur in a real run (and used to be papered over by a DOOR default in the KPI handler).

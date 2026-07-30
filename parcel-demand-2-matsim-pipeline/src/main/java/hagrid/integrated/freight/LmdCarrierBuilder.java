@@ -40,12 +40,18 @@ import java.util.Random;
  */
 public final class LmdCarrierBuilder {
 
-    /** Whole-day service time window for the delivery stops (08:00-20:00). */
-    private static final double DAY_START = 8 * 3600;
-    private static final double DAY_END = 20 * 3600;
+    /**
+     * Whole-day service time window for the delivery stops: <b>07:30-21:00</b>, the delivery day
+     * shared by all three Lausitz arms ({@link hagrid.integrated.DeliveryDay}). Was 08:00-20:00
+     * until 2026-07-30 — a narrower window than 1c and 1d, which biased every delivery-rate
+     * comparison against the Baseline (the arm the integrated scenarios are measured against).
+     * <b>All Baseline runs produced before that change are comparison-invalid</b> (METHODS-LOG §1.2).
+     */
+    private static final double DAY_START = hagrid.integrated.DeliveryDay.START_S;
+    private static final double DAY_END = hagrid.integrated.DeliveryDay.END_S;
 
-    /** Absolute cap on any vehicle's operating end (Hannover parity: 21:00). */
-    private static final double LATEST_VEHICLE_END = 21 * 3600;
+    /** Absolute cap on any vehicle's operating end: the vehicle must be back by the day's end. */
+    private static final double LATEST_VEHICLE_END = hagrid.integrated.DeliveryDay.END_S;
 
     /**
      * Jittered vehicle copies per van type per dispatch wave. With {@code FleetSize.INFINITE}
