@@ -74,18 +74,20 @@ Zahlen, Signal-Rausch-Tabelle, Seed-Schalter und der Nachbau-Gotcha:
 
 - Zu bauen: Run-Fächer über `-Dhagrid.jsprit.seed`, Aggregation (Mittelwert + Min/Max + Streuung)
   in die KPI-Extraktion, Ausweisung im Dashboard.
-- **Alternative „Iterations-Hochlauf" ist NEU ZU BEWERTEN (2026-07-30)** — sie war mit „~20 h je
-  Arm" verworfen, und diese Zahl ist zurückgezogen: gemessen sind **10,7 h** je Arm @1000
-  (~3,7 h mit parallelisierten Carriern) → [METHODS-LOG](METHODS-LOG.md) §2.2/§3.8.
+- **✅ Alternative „Iterations-Hochlauf" ist endgültig erledigt (gemessen 2026-07-30)** — und zwar
+  aus dem besseren Grund: **sie wirkt nicht.** 3 Seeds @`jspritIter=1000` auf dem größten Carrier
+  ergeben **7,61 % km-Spanne bei 0,00 % Tourenspanne** — also keine Verbesserung gegenüber dem
+  6,5-%-Rauschboden bei 100 Iterationen. Damit ist **der Multi-Seed-Fächer die einzige Antwort**,
+  nicht bloß die billigere. → [METHODS-LOG](METHODS-LOG.md) §2.1/§2.2/§3.8.
 - **Reihenfolge-Präzisierung (2026-07-30):** für die **Kalibrierung** ist der Fächer *nicht*
   Voraussetzung — der χ-Sweep (1c) enthält überhaupt kein jsprit (`DRT_SHAREDUSE` überspringt es,
   `SimulationRunnerUtils:322`), und der θ-Sweep innerhalb eines Caps ist ein **gepaarter**
   Vergleich auf einer Realisierung (§2.17). Bänder braucht: absolute km-/Stunden-Niveaus, der
   Cap-Vergleich 12600↔25200, Headline-Vergleich und die distanzbasierten Emissionen.
-- **Vorgeschaltete Messung (offen, billig):** ob `jspritIter=1000` die km-Streuung überhaupt
-  kollabiert, ist **nie gemessen** (die Messung wurde abgebrochen, §3.8). 3 Seeds @1000 auf dem
-  größten Carrier (~11 h sequenziell, jsprit-only — km direkt aus dem routed Carrier-XML, kein
-  MATSim nötig) entscheiden zwischen zwei völlig verschiedenen Paper-Runplänen.
+- **✅ Vorgeschaltete Messung erledigt (2026-07-30)** — die Frage „kollabiert `jspritIter=1000` die
+  km-Streuung?" ist mit **nein** beantwortet (s. o.). Der Paper-Runplan ist damit entschieden:
+  Iterationen wie gehabt, **Streuung über Seeds ausweisen**. Reproduktionsrezept und Vorbehalte
+  (n=3, ein Carrier, andere Maschine) → [METHODS-LOG](METHODS-LOG.md) §2.2.
 - **1d explizit einbeziehen (Review 2026-07-29):** der 1d-Validierungsplan enthält null
   Replikation, obwohl alle Frachtgeometrie-KPIs am §2.1-Rauschboden hängen. Im Methods-Kapitel
   gepaart vs. ungepaart deklarieren: θ-Sweep innerhalb eines Caps = gepaart auf einer
@@ -271,6 +273,10 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   spreizt nur Abfahrten, er verschiebt keine Touren zwischen Wellen. Echte Zwei-Wellen-Struktur
   bräuchte `FleetSize.FINITE` mit Flottengrößen-Heuristik pro Welle (Option 2 der Analyse;
   User-Entscheidung 2026-07-30: Option 1/Retimer reicht vorerst, Baseline-Drift vermeiden).
+  **Auf frischen Daten bestätigt (3-Seed-Sonde 2026-07-30): 19 von 19 Touren in der Morgenwelle,
+  in allen drei Läufen — und zwar bereits mit dem auf 21:00 erweiterten Fenster.** Mehr Zeit am
+  Abend hat die Nachmittagswelle also *nicht* wiederbelebt; das Argument „Region passt ins
+  Morgenfenster" trägt unabhängig vom Fensterende.
   Beim Anfassen weiterhin: Delegate-Muster wahren (neue Parameter nur über neue Overloads).
   _(added 2026-07-30)_
 
@@ -426,15 +432,31 @@ der Rest ist mechanisch und kann jederzeit am Stück laufen. Der frühere zweite
   auch nichts. Vorschlag: gewählten Zweig loggen, oder werfen wenn nicht-leer aber die erwarteten
   Keys fehlen. _(added 2026-07-27)_
 
-- **`[M]` `ct_cep_size_s` im LMD-Flottenmix — ja oder nein? ENTSCHEIDUNG OFFEN.**
-  `lmd-vehicle-types.xml` enthält drei Van-Typen und **alle drei werden eingesetzt** (je 56
-  Fahrzeuge in `married250` verifiziert), obwohl `HagridPaths.java:337` „ct_cep_size_m / _l only"
-  dokumentiert. Kein Fallback, aber ein realer Effekt auf den Flotten-Mix — und damit auf den
-  **LMD-Vergleichsarm**, gegen den Shared-Use gemessen wird (deshalb von `[L]` auf `[M]`
-  hochgestuft). Entweder `_s` bewusst aufnehmen → Doku korrigieren, oder aus der Typdatei
-  entfernen → die LMD-Zahlen ändern sich und die married-Runs müssten neu. Nebeneffekt:
-  `LmdCarrierBuilder.jitterSigmaMinutes:160-163` gibt `_s` per Durchfall die 15-Min-Sigma des
-  „m"-Zweigs. _(added 2026-07-27)_
+- **`[M]` `ct_cep_size_s` im LMD-Flottenmix — Entscheidung faktisch gefallen, Doku nachziehen.**
+  `lmd-vehicle-types.xml` enthält drei Van-Typen (`_s`=100 / `_m`=165 / `_l`=230 Pakete) und alle
+  drei stehen jsprit zur Verfügung, obwohl `HagridPaths.java:337` „ct_cep_size_m / _l only"
+  dokumentiert. **Auf frischen Daten gemessen (3-Seed-Sonde 2026-07-30, Touren je Typ):**
+  `_s` trägt **6–8 von 19** Touren, `_m` 10–13, `_l` nur **0–1**. `_s` ist damit kein Randartefakt,
+  sondern rund ein Drittel des Arms — die Doku ist einfach falsch, `_s` bleibt. **Zu tun:** nur noch
+  `HagridPaths.java:337` korrigieren; ein Entfernen aus der Typdatei stünde einem realen Drittel des
+  Flottenmix entgegen. Nebeneffekt bleibt: `LmdCarrierBuilder.jitterSigmaMinutes:160-163` gibt `_s`
+  per Durchfall die 15-Min-Sigma des „m"-Zweigs.
+  **Und ein neuer Befund:** der Mix selbst ist **seed-instabil** bei konstanter Tourenzahl
+  (19/19/19) → zusätzlicher Rauschkanal für die größenklassenabhängigen Emissionsfaktoren,
+  → [METHODS-LOG](METHODS-LOG.md) §2.1. _(added 2026-07-27, gemessen 2026-07-30)_
+
+- **`[M]` Windows: `LMD_BASELINE` stirbt nach jsprit am eigenen Logfile** — MATSims
+  `OutputDirectoryHierarchy` löscht mit `deleteDirectoryIfExists` sein Output-Verzeichnis, in dem
+  HAGRID zuvor sein eigenes **offenes** `logs/hagrid.log` angelegt hat (`SimulationRunnerUtils`
+  Log-Setup, Pfad `hagrid-matsim-output/<runId>_iter…/logs/hagrid.log`). Auf Windows ist eine
+  offene Datei nicht löschbar → `FileSystemException` → `CreationException: Unable to create
+  injector`. **Alle drei Sondenläufe 2026-07-30 sind daran gestorben** — die jsprit-Phase war
+  jeweils fertig und das routed Carrier-XML geschrieben, die Messung also unbeschädigt.
+  ⚠️ **Zu prüfen, bevor jemand einen LMD-Lauf plant:** das müsste **jeden** `LMD_BASELINE`-Lauf auf
+  Windows treffen. Verdacht: frühere LMD-Läufe sind an derselben Stelle gestorben, ohne dass es
+  auffiel, weil das gewünschte jsprit-Ergebnis zu dem Zeitpunkt schon auf der Platte lag. Fix-Idee:
+  HAGRIDs Log-Verzeichnis **außerhalb** des MATSim-Output-Verzeichnisses anlegen (oder den Appender
+  erst nach `new Controler(...)` anhängen). _(added 2026-07-30)_
 
 - **`[M]` Depot-Zonenzuordnung ohne Warnung** — `ReturnToDepotRebalancingModule.java:94-106`:
   ein Depot außerhalb aller Rebalancing-Zonen hängt sich still an die nächstgelegene

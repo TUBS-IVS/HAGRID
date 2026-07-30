@@ -287,6 +287,27 @@ Mechanismus: die Zielfunktion ist **fixkostendominiert (81 %)** → jsprit optim
 Fahrzeugzahl (saubere +4-Schritte) und behandelt Distanz als schwachen Term. **Fahrzeugzahl
 konvergiert, Tourengeometrie nicht.**
 
+**Annotation 2026-07-30 — unabhängig reproduziert bei `jspritIter=1000`, und ein neuer Kanal.**
+Die 1000-Iterationen-Sonde (§2.2) fand auf einem Carrier über 3 Seeds **7,61 % km-Spanne bei
+0,00 % Tourenspanne** und, mit Mischsatz gerechnet, **~0,7 % Gesamtkosten-Spanne** — die
+Signal-Rausch-Struktur dieses Abschnitts (−6,5 % km / −0,8 % Kosten) ist damit auf anderer
+Konfiguration und zehnfacher Iterationszahl bestätigt.
+**Zusätzlich instabil ist der FLOTTENMIX**, nicht nur die Geometrie. Touren je Van-Typ
+(`_s`=100 / `_m`=165 / `_l`=230 Pakete):
+
+| Seed | `_s` | `_m` | `_l` | Σ Touren |
+|---|---|---|---|---|
+| 4711 | 6 | 13 | 0 | 19 |
+| 1234 | 8 | 10 | 1 | 19 |
+| 9876 | 6 | 12 | 1 | 19 |
+
+Die **Anzahl** steht bombenfest, die **Größenverteilung** verschiebt sich. Konsequenz, die noch
+nirgends berücksichtigt ist: Emissionsfaktoren hängen in der EMEP/EEA-Zuordnung an der
+Fahrzeuggrößenklasse (§1.4), also propagiert der instabile Mix als **zusätzlicher Rauschkanal in
+die Emissions-KPIs — oben auf die km-Instabilität**. Für den `[H]`-Nachhaltigkeitspunkt heißt das:
+der Multi-Seed-Fächer ist auch dort Pflicht, und die Faktor-Sensitivität je Größenklasse muss
+gegen diese Streuung gestellt werden.
+
 ### 2.2 `jspritIter=100` genügt nicht für km-basierte KPIs
 
 `trägt` · 2026-07-28 · **Betrifft direkt die distanzbasierten Emissionen.**
@@ -314,14 +335,18 @@ als JVM-Laufzeit, damit ist die Phase exakt zerlegbar:
 drei unabhängige Carrier-Paare stabil — 824/143, 824/398, 599/198 ergeben 1,38 / 1,38 / 1,40).
 Superlinear, aber **nicht** quadratisch.
 
-⚠️ **Die ×10-Spalte ist eine obere Schranke, keine Prognose.** `configureAlgorithm` hängt ein
-`IterationWithoutImprovementTermination` an, dessen Geduld selbst von der Iterationszahl abhängt
-(`calculateNoImprovementThreshold`: `min(iters/4, round(14·ln iters))` → **25** bei 100, **97** bei
-1000). Bei `maxIter=100` haben alle 7 Carrier die Marke 64 überschritten (jsprit loggt in
-Zweierpotenzen, also ≥64 und ≤100) — das Budget wurde praktisch ausgeschöpft. Bei `maxIter=1000`
-ist offen, ob die Suche 1000 Iterationen läuft oder nach einigen Hundert abbricht; damit liegt der
-echte Wert **irgendwo zwischen ~4 h und ~10,7 h**. Sauber messbar nur direkt — genau das tut die
-3-Seed-Sonde auf Carrier 1 (BACKLOG).
+⚠️ **Die ×10-Spalte war eine obere Schranke und ist zu niedrig — gemessen 2026-07-30.** Grund für
+die Unsicherheit: `configureAlgorithm` hängt ein `IterationWithoutImprovementTermination` an, dessen
+Geduld selbst von der Iterationszahl abhängt (`calculateNoImprovementThreshold`:
+`min(iters/4, round(14·ln iters))` → **25** bei 100, **97** bei 1000).
+
+**Sonde (3 Seeds × größter Carrier, `jspritIter=1000`, Dev-PC, Java 21.0.10):** Setup 3,8 min,
+jsprit-Phase **~5,0 h** für **einen** Carrier (875 Services). Meine ×10-Hochrechnung sagte 3,7 h —
+also **~35 % zu niedrig**. Die Annahme, die Kostenmatrix-Aufwärmung sei ein großer, nicht
+skalierender Einmalblock, war falsch: sie verteilt sich über die frühen Iterationen.
+**Hochrechnung auf einen ganzen Arm wird hier bewusst NICHT mehr gemacht** — genau dieser Schritt
+hat die zurückgezogene 20-h-Zahl erzeugt (§3.8). Festzuhalten ist nur: der größte Carrier allein
+kostet auf dieser Maschine ~5 h, und der Dev-PC-Laptop ist nicht der Sim-PC.
 
 Gegenprobe: `base10c` startete 23:29:12, `ITERATION 0 BEGINS` um 00:34:39 → 65,5 min bis zur
 MATSim-Schleife. Der Rest des Laufs (150 MATSim-Iterationen) sind ~4 h 50.
@@ -330,11 +355,31 @@ extrem ungleich (Faktor 11 zwischen Nr. 1 und Nr. 7, deckt sich mit §2.1: dhl 2
 die beiden größten ergeben @1000 zusammen 5,6 h — das *ist* die abgebrochene 5,8-h-Messung, und
 „4 h pro Carrier" war Carrier 1 allein. → Zurückziehung §3.8.
 
-**Folge für die gewählte Antwort:** Multi-Run-Mittelung (§1.5) bleibt richtig, aber die
-Verwerfung des Iterations-Hochlaufs stand auf einer 2× zu hohen Zahl und ist **neu zu bewerten** —
-zumal die Carrier in `LausitzFreightPreprocessor.routeWithDurationCap` strikt **sequenziell** auf
-einem Thread gelöst werden (BACKLOG-Punkt Carrier-Parallelisierung); parallel fällt die Wall-Clock
-auf den größten Carrier, also ~3,7 h statt 10,7 h.
+**Folge für die gewählte Antwort — jetzt auf dem besseren Argument (gemessen 2026-07-30):** der
+Iterations-Hochlauf ist verworfen, weil er **nicht wirkt**, nicht weil er teuer ist. Die Sonde
+misst bei `jspritIter=1000` auf einem Carrier über 3 Seeds:
+
+| Seed | Plan-km | Touren |
+|---|---|---|
+| 4711 | 586,2 | 19 |
+| 1234 | 576,0 | 19 |
+| 9876 | 542,9 | 19 |
+
+**km-Spanne (max−min)/Mittel = 7,61 %** bei **0,00 % Tourenspanne**. Die Streuung bei 1000
+Iterationen ist damit **nicht kleiner** als der 6,5-%-Rauschboden bei 100 (§2.1) — dieselbe
+Größenordnung. Der Mechanismus aus §2.1 ist exakt reproduziert: **Fahrzeugzahl konvergiert,
+Tourengeometrie nicht.** Mehr Iterationen können das nicht heilen, weil die Zielfunktion
+fixkostendominiert ist und Distanz ein schwacher Term bleibt.
+⇒ **Der Multi-Seed-Fächer (§1.5) ist keine Bequemlichkeit, sondern die einzige Antwort.**
+Vorbehalte: n=3 (die 7,61 % sind eine Spannweite aus drei Ziehungen, keine Streuungsschätzung),
+ein Carrier statt Arm (auf Armebene kann sich über 7 Carrier etwas wegkürzen), andere Maschine.
+Die *qualitative* Aussage trägt trotzdem. Reproduktion: Sonde via
+`-Dhagrid.jsprit.onlyCarrier=largest` + `-Dhagrid.jsprit.seed=…`, km aus den `<route>`-Linklisten
+des routed Carrier-XML gegen die Netz-Linklängen (0 nicht auflösbare Links).
+
+**Nebenbei bestätigt:** die Carrier werden in `routeWithDurationCap` strikt **sequenziell** auf
+einem Thread gelöst (BACKLOG-Punkt Carrier-Parallelisierung) — für die Sonde irrelevant (ein
+Carrier), für Armläufe der Hebel.
 
 ### 2.3 χ ist eine untere Schranke, nicht der Umweg
 
@@ -993,11 +1038,18 @@ Carriern in ~7 h pro Lauf — mit der alten Zahl unvereinbar. **Zwei Faktoren l�
    vs. 187 kleine Carrier.
 
 **Es bleibt:** §2.2 selbst — `jspritIter=100` genügt für km-KPIs nicht (der Rauschboden §2.1 ist
-gemessen und davon unberührt). **Nicht** mehr belastbar ist die *Begründung*, mit der der
-Iterations-Hochlauf verworfen wurde; die Abwägung Hochlauf ↔ Multi-Run ist bei 10,7 h (bzw. ~3,7 h
-mit parallelisierten Carriern) neu zu führen. Lehre fürs Nächste: Extrapolation über
-ungleichgroße Einheiten nie linear, und eine abgebrochene Messung nie als Kostenzahl zitieren
-ohne den Abbruch mitzuführen.
+gemessen und davon unberührt). Zurückgezogen ist allein die **Kostenzahl**.
+
+**Annotation 2026-07-30 (Abwägung erledigt, anderes Ergebnis als erwartet):** die Abwägung
+Hochlauf ↔ Multi-Run musste gar nicht über Kosten entschieden werden. Die Sonde zeigt, dass 1000
+Iterationen die km-Streuung **nicht kollabieren** (7,61 % gegen 6,5 % bei 100, §2.2) — der
+Iterations-Hochlauf ist also nicht „zu teuer", sondern **wirkungslos**. Das ersetzt die
+zurückgezogene Begründung durch eine stärkere und billiger zu verteidigende. Nebenbei war auch mein
+Ersatzwert (≤10,7 h je Arm) zu optimistisch: gemessen ~5,0 h für den größten Carrier **allein**.
+**Lehre, zweifach bestätigt:** Extrapolation über ungleichgroße Einheiten nie linear; eine
+abgebrochene Messung nie als Kostenzahl zitieren ohne den Abbruch mitzuführen; und wenn eine
+Entscheidung an einer Zahl hängt, die nie gemessen wurde, ist die Messung billiger als die
+Debatte.
 
 ---
 
