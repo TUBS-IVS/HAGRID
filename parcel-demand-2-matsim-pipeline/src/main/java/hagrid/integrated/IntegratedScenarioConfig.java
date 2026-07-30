@@ -4,13 +4,37 @@ import java.util.List;
 import java.util.OptionalDouble;
 
 /**
- * Parameters for the integrated DRT-freight scenarios (Shared-Use, Modular).
+ * The autonomy "operation mode" switch (design spec section 4.4) for the integrated DRT-freight
+ * scenarios. Its four coupled effects — labour cost, delivery dwell factor, max-speed cap,
+ * motorway exclusion — are exposed via the {@code effective*} helpers so callers never branch on
+ * the mode themselves. Defaults are grounded in spec sections 4.4 / 6.1 / 6.3, which remain the
+ * authoritative source for the reasoning behind each value.
  *
- * <p>Defaults are taken from the design spec
- * (docs/superpowers/specs/2026-06-17-lausitz-drt-freight-integration-design.md). Many are
- * calibration levers. The autonomy "operation mode" (spec section 4.4) is an orthogonal switch
- * whose four coupled effects — labour cost, delivery dwell factor, max-speed cap, motorway
- * exclusion — are exposed via the {@code effective*} helpers so callers never branch on the mode.</p>
+ * <p><b>NOT WIRED — reads as configuration but reaches no run.</b> Nothing outside this class's own
+ * test references it. The autonomy switch is deliberately deferred (user decision 2026-07-30, see
+ * docs/BACKLOG.md); the autonomy follow-up plan is this class's designated integration point. Do
+ * not read a run's numbers as if any value here applied — {@code RunMetadataWriter} hardcodes
+ * {@code operation_mode = "conventional"}.</p>
+ *
+ * <p><b>Scope is the autonomy switch only (thinned 2026-07-30).</b> Seven concept parameters that
+ * used to sit here were a second, unmaintained source for values that already live elsewhere and
+ * were removed to stop them diverging. Do not re-add them — the established path (design D8, applied
+ * by both 1c and 1d) is {@code HAGRIDSimulationConfig} for CLI-tunable parameters plus a per-scenario
+ * constants class for fixed ones:</p>
+ * <ul>
+ *   <li>{@code retoolingTimeSeconds}, {@code freightLookAheadSeconds}, {@code idleThreshold}
+ *       → {@code Modular.RETOOLING_S} / {@code FREIGHT_LOOKAHEAD_S} / {@code DEFAULT_IDLE_THRESHOLD}</li>
+ *   <li>{@code idleThreshold}, {@code fleetSize} → {@code HAGRIDSimulationConfig} (+ CLI)</li>
+ *   <li>{@code vehicleTimeCostPerHour} → {@code analysis/kpi/economics.py}</li>
+ *   <li>{@code depotCount} → not a count at all; {@code DepotNetwork} takes the depot list itself</li>
+ *   <li>{@code b2cLockerShare} → structurally 0: {@code ParcelAgentGenerator} passes an empty locker
+ *       list, lockers are Phase 2 (METHODS-LOG section 2.10)</li>
+ * </ul>
+ *
+ * <p>{@link #getCargoLabourCostPerHour()} is the one remaining value mirrored elsewhere
+ * ({@code economics.py} {@code LABOUR_EUR_PER_H}); it stays because
+ * {@link #effectiveLabourCostPerHour()} is one of the four section-4.4 effects. Wiring the switch
+ * means reconciling the two — the cost function is being rebuilt anyway (METHODS-LOG section 2.6).</p>
  */
 public final class IntegratedScenarioConfig {
 
@@ -19,45 +43,24 @@ public final class IntegratedScenarioConfig {
 
     private final OperationMode operationMode;
     private final double cargoLabourCostPerHour;   // EUR/h, applied when CONVENTIONAL
-    private final double vehicleTimeCostPerHour;    // EUR/h, technical (energy/capital/maintenance)
     private final double deliveryDwellFactorAutonomous; // >1.0, robot is slower at the door
     private final double autonomousMaxSpeedKmh;     // vehicle maximumVelocity cap when AUTONOMOUS
     private final List<String> excludedRoadTypes;   // road classes barred when AUTONOMOUS
-    private final double retoolingTimeSeconds;      // Modular capsule swap (pure swap only)
-    private final double freightLookAheadSeconds;   // Modular submission look-ahead base
-    private final double idleThreshold;             // Modular passenger-first dispatch gate [0,1]
-    private final int depotCount;                   // parameterised depots (pickup / swap)
-    private final double b2cLockerShare;            // Shared-Use B2C share routed to Packstation [0,1]
-    private final int fleetSize;                    // calibration lever
 
     private IntegratedScenarioConfig(Builder b) {
         this.operationMode = b.operationMode;
         this.cargoLabourCostPerHour = b.cargoLabourCostPerHour;
-        this.vehicleTimeCostPerHour = b.vehicleTimeCostPerHour;
         this.deliveryDwellFactorAutonomous = b.deliveryDwellFactorAutonomous;
         this.autonomousMaxSpeedKmh = b.autonomousMaxSpeedKmh;
         this.excludedRoadTypes = List.copyOf(b.excludedRoadTypes);
-        this.retoolingTimeSeconds = b.retoolingTimeSeconds;
-        this.freightLookAheadSeconds = b.freightLookAheadSeconds;
-        this.idleThreshold = b.idleThreshold;
-        this.depotCount = b.depotCount;
-        this.b2cLockerShare = b.b2cLockerShare;
-        this.fleetSize = b.fleetSize;
     }
 
     // --- raw getters ---
     public OperationMode getOperationMode() { return operationMode; }
     public double getCargoLabourCostPerHour() { return cargoLabourCostPerHour; }
-    public double getVehicleTimeCostPerHour() { return vehicleTimeCostPerHour; }
     public double getDeliveryDwellFactorAutonomous() { return deliveryDwellFactorAutonomous; }
     public double getAutonomousMaxSpeedKmh() { return autonomousMaxSpeedKmh; }
     public List<String> getExcludedRoadTypes() { return excludedRoadTypes; }
-    public double getRetoolingTimeSeconds() { return retoolingTimeSeconds; }
-    public double getFreightLookAheadSeconds() { return freightLookAheadSeconds; }
-    public double getIdleThreshold() { return idleThreshold; }
-    public int getDepotCount() { return depotCount; }
-    public double getB2cLockerShare() { return b2cLockerShare; }
-    public int getFleetSize() { return fleetSize; }
 
     // --- operation-mode helpers (spec section 4.4) ---
     public boolean isAutonomous() { return operationMode == OperationMode.AUTONOMOUS; }
@@ -88,36 +91,18 @@ public final class IntegratedScenarioConfig {
     public static final class Builder {
         private OperationMode operationMode = OperationMode.CONVENTIONAL;
         private double cargoLabourCostPerHour = 20.0;   // ~80% of 25 EUR/h gross (Rudolph anchor)
-        private double vehicleTimeCostPerHour = 5.0;     // ~20% technical
         private double deliveryDwellFactorAutonomous = 1.5; // provisional; calibration lever
         private double autonomousMaxSpeedKmh = 30.0;     // U-Shift floor; sensitivity to 50
         private List<String> excludedRoadTypes = List.of("motorway", "motorway_link");
-        private double retoolingTimeSeconds = 420.0;     // 7 min pure swap
-        private double freightLookAheadSeconds = 420.0;  // base; effective = approach + swap
-        private double idleThreshold = 0.50;             // Paper 1 starting point
-        private int depotCount = 3;                       // 2-3 parameterised depots
-        private double b2cLockerShare = 0.7;             // provisional; calibration lever
-        private int fleetSize = 50;                       // calibration lever (P95 <= 7 min)
 
         public Builder operationMode(OperationMode v) { this.operationMode = v; return this; }
         public Builder cargoLabourCostPerHour(double v) { this.cargoLabourCostPerHour = v; return this; }
-        public Builder vehicleTimeCostPerHour(double v) { this.vehicleTimeCostPerHour = v; return this; }
         public Builder deliveryDwellFactorAutonomous(double v) { this.deliveryDwellFactorAutonomous = v; return this; }
         public Builder autonomousMaxSpeedKmh(double v) { this.autonomousMaxSpeedKmh = v; return this; }
         public Builder excludedRoadTypes(List<String> v) { this.excludedRoadTypes = List.copyOf(v); return this; }
-        public Builder retoolingTimeSeconds(double v) { this.retoolingTimeSeconds = v; return this; }
-        public Builder freightLookAheadSeconds(double v) { this.freightLookAheadSeconds = v; return this; }
-        public Builder idleThreshold(double v) { this.idleThreshold = v; return this; }
-        public Builder depotCount(int v) { this.depotCount = v; return this; }
-        public Builder b2cLockerShare(double v) { this.b2cLockerShare = v; return this; }
-        public Builder fleetSize(int v) { this.fleetSize = v; return this; }
 
         public IntegratedScenarioConfig build() {
-            require(idleThreshold >= 0.0 && idleThreshold <= 1.0, "idleThreshold must be in [0,1]");
-            require(b2cLockerShare >= 0.0 && b2cLockerShare <= 1.0, "b2cLockerShare must be in [0,1]");
-            require(depotCount >= 1, "depotCount must be >= 1");
-            require(fleetSize >= 1, "fleetSize must be >= 1");
-            require(retoolingTimeSeconds >= 0.0, "retoolingTimeSeconds must be >= 0");
+            require(cargoLabourCostPerHour >= 0.0, "cargoLabourCostPerHour must be >= 0");
             require(deliveryDwellFactorAutonomous >= 1.0, "deliveryDwellFactorAutonomous must be >= 1.0");
             require(autonomousMaxSpeedKmh > 0.0, "autonomousMaxSpeedKmh must be > 0");
             return new IntegratedScenarioConfig(this);
