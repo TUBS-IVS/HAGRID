@@ -14,8 +14,8 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
 ## 2026-07-30
 
 - **LMD Dispatch-Stunden besser streuen — Lausitz-Abfahrts-Gruppierung** (war `[M]`, offen seit
-  2026-07-21) — ✅ Root Cause identifiziert und per `LmdTourRetimer` gefixt (lokal auf `hendrik`,
-  noch nicht committet).
+  2026-07-21) — ✅ Root Cause identifiziert und per `LmdTourRetimer` gefixt (Commit `00c3b3a`
+  auf `hendrik`).
   **Root Cause (Run-Evidenz, 2026-07-30):** nicht die Jitter-Logik (Hannover und Lausitz jittern
   identisch pro Vehicle-Template), sondern **Carrier-Granularität × jsprit-INFINITE-Cloning**:
   jsprit klont pro Provider×Van-Typ EIN Template, jeder Klon erbt dessen exakte Jitter-Sekunde.
