@@ -78,6 +78,29 @@ public class HAGRIDRouterUtils {
     public static final String JSPRIT_SEED_PROPERTY = "hagrid.jsprit.seed";
 
     /**
+     * Diagnostic switch that restricts offline routing to a SINGLE carrier, e.g.
+     * {@code -Dhagrid.jsprit.onlyCarrier=largest}. Accepts either an exact carrier id or the literal
+     * {@code largest} (most services; ties broken by id, so the pick is deterministic).
+     *
+     * <p>Why this exists: a jsprit seed- or iteration-probe wants the carrier that dominates the
+     * runtime, not the whole set. On Lausitz the largest of the 7 carriers is ~35 % of the jsprit
+     * phase (824 of 2.975 jobs, METHODS-LOG §2.2), so probing it alone costs roughly a third of a
+     * full arm. This is sound because carriers are routed independently — each builds its own
+     * algorithm with its own RNG, and the shared {@code NetworkBasedTransportCosts} is a
+     * deterministic memoisation — so the single-carrier solution equals the one that carrier would
+     * get inside a full run (pinned by {@code LausitzCarrierSelectionTest}).
+     *
+     * <p><b>The resulting carrier file is deliberately INCOMPLETE</b> and must never feed a scenario
+     * comparison. Left unset (the production default) every carrier is routed; a value that matches
+     * no carrier fails loudly rather than routing nothing, because an empty carrier file would read
+     * as a finished run.
+     */
+    public static final String JSPRIT_ONLY_CARRIER_PROPERTY = "hagrid.jsprit.onlyCarrier";
+
+    /** The literal accepted by {@link #JSPRIT_ONLY_CARRIER_PROPERTY} to pick the biggest carrier. */
+    public static final String ONLY_CARRIER_LARGEST = "largest";
+
+    /**
      * Configures the routing algorithm (no U-turn penalty).
      *
      * @param vrp          The vehicle routing problem.

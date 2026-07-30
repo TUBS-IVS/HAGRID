@@ -36,6 +36,8 @@ import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.vehicles.VehicleType;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -269,6 +271,60 @@ public final class LausitzFreightPreprocessor {
     }
 
     /**
+     * The carriers {@link #routeWithDurationCap} actually routes: all of them by default, or the one
+     * selected by {@link HAGRIDRouterUtils#JSPRIT_ONLY_CARRIER_PROPERTY} (exact id or
+     * {@code largest}) when that diagnostic switch is set. See the property's javadoc for why a
+     * single-carrier run is a valid probe and why its output must not feed a comparison.
+     *
+     * @throws IllegalArgumentException if the switch is set but matches no carrier — routing nothing
+     *                                  would silently produce an empty carrier file
+     */
+    static Collection<Carrier> selectCarriersToRoute(Carriers carriers) {
+        String raw = System.getProperty(HAGRIDRouterUtils.JSPRIT_ONLY_CARRIER_PROPERTY);
+        if (raw == null || raw.isBlank()) {
+            return carriers.getCarriers().values();
+        }
+        String wanted = raw.trim();
+        // Materialise before mutating the container below - getCarriers().values() is a live view.
+        List<Carrier> all = List.copyOf(carriers.getCarriers().values());
+
+        Carrier picked;
+        if (HAGRIDRouterUtils.ONLY_CARRIER_LARGEST.equalsIgnoreCase(wanted)) {
+            // Tie-break on the id so "largest" is deterministic even with equal service counts.
+            picked = all.stream()
+                    .max(Comparator.comparingInt((Carrier c) -> c.getServices().size())
+                            .thenComparing(c -> c.getId().toString()))
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            HAGRIDRouterUtils.JSPRIT_ONLY_CARRIER_PROPERTY + "=" + wanted
+                                    + " but there are no carriers to choose from"));
+        } else {
+            picked = all.stream()
+                    .filter(c -> c.getId().toString().equals(wanted))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            HAGRIDRouterUtils.JSPRIT_ONLY_CARRIER_PROPERTY + "=" + wanted
+                                    + " matches no carrier. Available: "
+                                    + all.stream().map(c -> c.getId().toString()).sorted().toList()));
+        }
+
+        // Drop the others from the container as well. writeCarriers() persists whatever is in it, so
+        // leaving 6 plan-less carriers next to 1 routed one would (a) read downstream as a complete
+        // run and (b) hand the CarrierModule carriers without a selected plan. One carrier instead of
+        // seven makes the incompleteness structurally obvious.
+        for (Carrier c : all) {
+            if (!c.getId().equals(picked.getId())) {
+                carriers.getCarriers().remove(c.getId());
+            }
+        }
+        LOG.warn("DIAGNOSTIC {}={}: routing ONLY carrier '{}' ({} services) and DROPPING {} other "
+                        + "carrier(s) from the run. The resulting carrier file is INCOMPLETE - it must "
+                        + "not feed a scenario comparison or any reported KPI.",
+                HAGRIDRouterUtils.JSPRIT_ONLY_CARRIER_PROPERTY, wanted, picked.getId(),
+                picked.getServices().size(), all.size() - 1);
+        return List.of(picked);
+    }
+
+    /**
      * Routes every carrier offline with HAGRID's custom jsprit algorithm
      * ({@link HAGRIDRouterUtils#configureAlgorithm}), mirroring {@code hagrid.demand.Router#routeCarrier}.
      *
@@ -312,7 +368,7 @@ public final class LausitzFreightPreprocessor {
                 .setTimeSliceWidth(1800)
                 .build();
         int iters = Math.max(1, jspritIterations);
-        for (Carrier carrier : carriers.getCarriers().values()) {
+        for (Carrier carrier : selectCarriersToRoute(carriers)) {
             int serviceCount = carrier.getServices().size();
             VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
             VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
