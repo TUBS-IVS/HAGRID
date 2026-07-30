@@ -31,7 +31,7 @@ class ParcelAttributesTest {
         p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, load);
         p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE, SharedUse.segmentDwellSeconds(load));
         p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, channel);
-        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.B2C_WINDOW_END_S);
+        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.WINDOW_END_S);
         pop.addPerson(p);
         return p;
     }
@@ -54,7 +54,7 @@ class ParcelAttributesTest {
         assertThat(ParcelAttributes.channels(pop))
                 .containsEntry(Id.createPersonId("parcel_dhl_2_B2B"), "LOCKER");
         assertThat(ParcelAttributes.windowEnds(pop))
-                .containsEntry(Id.createPersonId("parcel_dhl_1_B2C"), SharedUse.B2C_WINDOW_END_S);
+                .containsEntry(Id.createPersonId("parcel_dhl_1_B2C"), SharedUse.WINDOW_END_S);
     }
 
     @Test

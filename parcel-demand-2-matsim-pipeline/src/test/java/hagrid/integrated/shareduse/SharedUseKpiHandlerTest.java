@@ -472,7 +472,7 @@ class SharedUseKpiHandlerTest {
         Person p = population.getFactory().createPerson(Id.createPersonId(id));
         p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, load);
         p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, channel);
-        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.B2C_WINDOW_END_S);
+        p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, SharedUse.WINDOW_END_S);
         p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE, SharedUse.segmentDwellSeconds(load));
         population.addPerson(p);
         return p;

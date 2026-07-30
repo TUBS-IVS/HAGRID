@@ -17,9 +17,11 @@ public final class Modular {
 
     /** Delivery day (plan C4 revised, user 2026-07-28): parcels arrive at the depot overnight,
      *  same-day delivery 07:30-21:00 is what counts - NO dispatch waves in 1d. Used as the
-     *  jsprit vehicle operating window AND the service-start time window. */
-    public static final double DELIVERY_DAY_START_S = 7.5 * 3600.0;   // 07:30
-    public static final double DELIVERY_DAY_END_S = 21 * 3600.0;      // 21:00
+     *  jsprit vehicle operating window AND the service-start time window.
+     *  Since 2026-07-30 this is the delivery day of ALL THREE arms, so it delegates to the single
+     *  source of truth ({@link hagrid.integrated.DeliveryDay}) instead of restating the numbers. */
+    public static final double DELIVERY_DAY_START_S = hagrid.integrated.DeliveryDay.START_S;
+    public static final double DELIVERY_DAY_END_S = hagrid.integrated.DeliveryDay.END_S;
 
     /** Pure capsule-swap (retooling) duration, spec §6.1: 7 min. */
     public static final double RETOOLING_S = 420.0;

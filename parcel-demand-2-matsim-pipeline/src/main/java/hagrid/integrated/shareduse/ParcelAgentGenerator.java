@@ -102,8 +102,10 @@ public final class ParcelAgentGenerator {
                 // all visiting the same physical depot/segment point (dense point -> multiple visits).
                 List<Integer> subLoads = splitLoad(d.getAmount());
                 String channel = resolver.resolve(d).name();
-                double windowEnd = d.getParcelType() == Delivery.ParcelType.B2B
-                        ? SharedUse.B2B_WINDOW_END_S : SharedUse.B2C_WINDOW_END_S;
+                // One deadline for every parcel type, and the same one the Baseline and 1d use
+                // (user decision 2026-07-30). The earlier B2B/B2C branch is gone: it made 1c
+                // stricter than the arms it is compared against. See DeliveryDay.
+                double windowEnd = SharedUse.WINDOW_END_S;
 
                 for (int part = 0; part < subLoads.size(); part++) {
                     int subLoad = subLoads.get(part);

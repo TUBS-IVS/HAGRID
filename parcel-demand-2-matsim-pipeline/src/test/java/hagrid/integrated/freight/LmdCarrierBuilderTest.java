@@ -192,7 +192,9 @@ class LmdCarrierBuilderTest {
             assertThat(v.getEarliestStartTime()).isEqualTo(27000.0);
             assertThat(v.getLatestEndTime()).isEqualTo(75600.0);
         });
-        // services carry the ALIGNED start window (C4 revised: 07:30-21:00, not DAY_START/DAY_END)
+        // services carry the ALIGNED start window (C4 revised: 07:30-21:00). Since the 2026-07-30
+        // unification DAY_START/DAY_END hold the same values, but this test deliberately passes them
+        // EXPLICITLY - it pins that buildSingleWindow honours its arguments rather than the constants.
         modular.getServices().values().forEach(s -> {
             assertThat(s.getServiceStaringTimeWindow().getStart()).isEqualTo(27000.0);
             assertThat(s.getServiceStaringTimeWindow().getEnd()).isEqualTo(75600.0);

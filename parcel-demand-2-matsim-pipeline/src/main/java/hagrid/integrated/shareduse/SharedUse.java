@@ -19,10 +19,19 @@ public final class SharedUse {
     public static final double MAX_PICKUP_DURATION_S = 600.0;   // cap depot load time
     public static final int DURATION_PER_PARCEL_MIN = 2;    // parity: LmdCarrierBuilder (door delivery)
     public static final int MAX_DURATION_PER_STOP_MIN = 15; // parity: LmdCarrierBuilder
-    public static final double SUBMIT_FROM_S = 7.5 * 3600.0; // 07:30 earliest delivery/submission (rev. 2026-07-20)
+    /** 07:30 earliest delivery/submission (rev. 2026-07-20), = the shared delivery-day start. */
+    public static final double SUBMIT_FROM_S = hagrid.integrated.DeliveryDay.START_S;
+    /** Latest request SUBMISSION (not a deadline): requests trickle in over the morning. */
     public static final double SUBMIT_TO_S = 10 * 3600.0;
-    public static final double B2B_WINDOW_END_S = 17 * 3600.0;   // business-hours recipient presence
-    public static final double B2C_WINDOW_END_S = 20 * 3600.0;   // home recipient, wider window
+
+    /**
+     * Delivery deadline, 21:00 — the SAME for B2B and B2C and the same as the Baseline and 1d
+     * (user decision 2026-07-30, {@link hagrid.integrated.DeliveryDay}). Replaces the earlier
+     * per-type split (B2B 17:00 / B2C 20:00), which made 1c stricter than the arms it is compared
+     * against. The per-parcel {@link #WINDOW_END_ATTRIBUTE} stays — the retry queue and KPI handler
+     * read it per parcel — it is merely uniform now.
+     */
+    public static final double WINDOW_END_S = hagrid.integrated.DeliveryDay.END_S;
 
     private SharedUse() {
     }

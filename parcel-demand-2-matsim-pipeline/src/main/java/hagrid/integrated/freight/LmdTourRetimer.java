@@ -44,7 +44,7 @@ final class LmdTourRetimer {
     private static final Pattern WAVE_TEMPLATE_ID = Pattern.compile("_h(\\d+)_v\\d+$");
 
     /** Absolute cap on any vehicle's operating end (Hannover parity: 21:00). */
-    private static final double LATEST_VEHICLE_END = 21 * 3600.0;
+    private static final double LATEST_VEHICLE_END = hagrid.integrated.DeliveryDay.END_S;
 
     private LmdTourRetimer() {}
 
