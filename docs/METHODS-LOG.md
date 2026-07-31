@@ -1277,10 +1277,73 @@ seiner **Kapazitätsbindung** wegen, nicht seines Gewichts wegen. Die kg·km-Kon
 GLEC ist für **Güterfahrzeuge** entwickelt, wo alle Nutzlast Fracht ist; in einem Mischfahrzeug
 verliert ihre Begründung an Kraft.
 
-**Status: Entscheidung steht (User 2026-07-31: Masse als Basis, D als Boden), aber sie ist jetzt
-bezifferbar und gehört dem User erneut vorgelegt.** Umgesetzt ist beides, beide Anteile werden
-immer als Paar emittiert (`alloc_share_parcels_mass` / `_slots`). Solange die Wahl offen bleibt, ist
-die einzige unstrittige Zahl der **allokationsfreie Systemwert** `total_*`.
+**Interner Benchmark — und eine externe Validierung der Faktorkette.** Mit denselben Faktoren
+gerechnet liefert der *konventionelle* Baseline-Lauf (`bandz_central`, 5627 zugestellte Pakete,
+1243,8 kg CO₂e-WTW) **221 g CO₂e/Paket** (Diesel) bzw. **77 g** in der BEV-Variante. Bienzeisler et
+al. (2026) berichten für **ländliche** Kategorien **188 g** (ohne) und **239 g** (mit
+Industrieeinfluss) bei einem Netzmittel von 136 g — die Lausitz ist ländlich, unsere 221 g liegen
+**genau in diesem Band**. Das ist eine unabhängige externe Bestätigung der Kette
+Tier-3-Kurve × N1-Segment × WTW und gehört als solche ins Paper.
+
+Damit lässt sich die Basiswahl gegen einen *eigenen* Maßstab stellen:
+
+| Basis | Frachtanteil | g CO₂e/Paket | vs. eigene konventionelle Baseline (221 g) |
+|---|---|---|---|
+| Masse | 0,90 % | 20 | **0,09×** — Integration senkt um 91 % |
+| Slots | 23,64 % | 531 | **2,40×** — Integration *verdreifacht* |
+| — | **9,85 %** | 221 | Parität (rechnerischer Break-even-Anteil) |
+
+**Die beiden Basen drehen also das Vorzeichen der Kernaussage.** Damit ist die Intensität je Paket
+in 1c **keine Messung, sondern eine Umformulierung der Konventionswahl** — sie darf nicht als
+Ergebnis geführt werden. Der Paritätsanteil **9,85 %** ist die informativere Größe: er sagt, wo die
+Break-even-Konvention liegt, ohne eine zu behaupten.
+
+**Warum die Massenbasis instabil ist — und warum das die Szenarienvergleichbarkeit trifft**
+(User-Einwand 2026-07-31, nachgerechnet): der Anteil hängt von der **Zahl der Mitfahrenden** ab, also
+von einer für das Paket exogenen Größe.
+
+| Beladung | Frachtanteil Masse | Frachtanteil Slots |
+|---|---|---|
+| 0 Pax / 20 Pakete | 1,000 | 1,000 |
+| 2 Pax / 20 Pakete | 0,171 | 0,800 |
+| 8 Pax / 20 Pakete | 0,049 | 0,500 |
+| 8 Pax / 5 Pakete | 0,013 | 0,200 |
+
+Über die Spanne 0 Pax/20 Pakete → 8 Pax/5 Pakete schwankt die Massenbasis um **Faktor 78,6**, die
+Slot-Basis um **5,0** — die Masse verstärkt die Mitfahrer-Abhängigkeit also **15,7-fach**. Das ist
+genau die Dimension, die zwischen unseren Szenarien **variiert** (§2.25: −15 % Pax-Bedienung bei
+vollem Frachtbetrieb), womit die Massenbasis die Intensität je Paket über Szenarien hinweg
+**unvergleichbar** macht. *Innerhalb* eines Laufs ist die Streuung dagegen unkritisch (je Fahrzeug
+Q3/Q1: Masse 1,7 / Slots 1,6; VarKoeff 0,55 / 0,45) — alle 120 Fahrzeuge haben ähnliche Mischungen.
+Das Problem ist der Szenarienvergleich, nicht die Fahrzeugheterogenität.
+
+**Die eigentliche Auflösung: die zwei Basen beantworten zwei verschiedene Fragen.**
+- **Massenbasis ≈ marginale Frage** („was kostet es, Pakete auf eine ohnehin fahrende DRT zu
+  legen?"). In 1c ist die Antwort **konstruktiv nahe null**: das χ-Gate lässt eine Einfügung nur zu,
+  wenn ihr Umweg die eigene Standzeit nicht übersteigt (`ChiGateInsertionCostCalculator`), Pakete
+  verursachen also fast keine Zusatzstrecke. Die 20 g sind damit **keine Fehlrechnung**, sondern eine
+  zufällig gute Näherung der marginalen Antwort — die Konstanten treffen sie, ohne sie herzuleiten.
+- **Slot-Basis ≈ Fair-Share-Frage** („welcher Anteil der Systemlast gehört buchhalterisch zum
+  Paket?"). Sie bindet den Anteil an die **Kapazitätsbindung**, also an das, was das Fahrzeug
+  tatsächlich fahren lässt — und trägt keine externe Massenannahme und keinen Datentransfer.
+
+**Keine der Basen verteilt Leerfahrten nach Verursachung.** Das ist der berechtigte Kern des
+User-Einwands: in 1d ist das gelöst (Regimesplit nach Task-Fenstern, §1.4), in 1c nicht. Eine
+verursachungsgerechte Zurechnung gäbe Paketen in 1c wegen des χ-Gates ≈0 — sie fiele also mit der
+marginalen Antwort zusammen, nicht mit der Fair-Share-Antwort.
+
+**Empfehlung fürs Paper (Entscheidung offen, User):**
+1. `total_*` allokationsfrei führen — unverändert der Boden.
+2. **Keine** einzelne Zahl „g CO₂e je Paket" für 1c. Stattdessen die **Bandbreite mit beiden
+   benannten Basen** plus den Paritätsanteil 9,85 %.
+3. Die marginale Aussage **qualitativ** und mit dem χ-Gate begründen statt sie zu bepreisen: „im
+   Shared-Use-Regime fahren Pakete konstruktionsbedingt nahezu umwegfrei mit".
+4. Falls innerhalb der Bandbreite geführt werden muss, **Slot-Basis zuerst** — szenariodefiniert,
+   annahmenfrei, 15,7-fach stabiler gegen die Größe, die zwischen den Szenarien variiert; Masse als
+   Sensitivität daneben.
+
+Umgesetzt ist beides, beide Anteile werden immer als Paar emittiert
+(`alloc_share_parcels_mass` / `_slots`).
 
 **Kontamination quantifiziert (dieselbe Messung):** von 258.780 Link-Einträgen tragen **20,4 %
 Pakete** an Bord, **9,9 % beides gleichzeitig** (Pax *und* Paket — genau das Pooling, um das es in
