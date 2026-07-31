@@ -37,6 +37,10 @@ RE_TYPE = re.compile(r'type="([^"]+)"')
 RE_LINK = re.compile(r'link="([^"]+)"')
 RE_VEHICLE = re.compile(r'\bvehicle="([^"]+)"')
 RE_PERSON = re.compile(r'person="([^"]+)"')
+RE_TIME = re.compile(r'\btime="([^"]+)"')
+
+# Java: hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON_PREFIX
+PARCEL_PERSON_PREFIX = "parcel_"
 
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
 
@@ -50,15 +54,33 @@ class LinkGeo:
     length_m: float
 
 
-def reconstruct_drt_paths(drt_cache):
-    """Port of build_drt_dashboard.py:91-124. `drt_cache` is a plain-text
-    (not gzipped) events cache already filtered to "drt_"-containing lines
-    (see events_cache.ensure_caches). Returns (veh_path, used_links):
-      veh_path[vehicle_id] = [(link_id, occupancy_at_entry), ...]
+def reconstruct_drt_paths_detailed(drt_cache):
+    """Single-pass parse of the (pre-filtered, "drt_"-only) events cache into
+    per-vehicle link paths with SEPARATE occupancy counters and the event
+    time. Returns (veh_path, used_links):
+      veh_path[vehicle_id] = [(link_id, occ_pax, occ_parcels, t), ...]
       used_links = set of all link ids seen via "entered link"
+
+    Two things this resolves that the plain 2-tuple form cannot:
+
+    - In the 1c shared-use arm parcels are modelled as PERSONS
+      (SharedUse.PARCEL_PERSON_PREFIX = "parcel_", see
+      ParcelAgentGenerator), so they raise the same
+      PersonEntersVehicle/PersonLeavesVehicle events as passengers. A single
+      counter therefore conflates freight and pax there. The split is free:
+      the person id carries it.
+    - `t` (the "entered link" time) lets a caller intersect the link path
+      with DVRP task windows, which is how the modular (1d) freight arm
+      separates freight km from pax km.
+
     Occupancy is captured at the moment a link is entered; the driver
-    (person == vehicle) never contributes to occupancy."""
-    occ = {}
+    (person == vehicle) never contributes.
+
+    See reconstruct_drt_paths() for the historical 2-tuple projection that
+    the map/distance consumers use.
+    """
+    occ_p = {}          # passengers aboard
+    occ_c = {}          # parcels aboard (1c only; always 0 elsewhere)
     veh_path = {}
     used_links = set()
     with open(drt_cache, "r", encoding="utf-8") as f:
@@ -72,18 +94,49 @@ def reconstruct_drt_paths(drt_cache):
                 ml = RE_LINK.search(line)
                 if mv and ml and mv.group(1).startswith("drt_"):
                     v = mv.group(1)
-                    veh_path.setdefault(v, []).append((ml.group(1), occ.get(v, 0)))
+                    mtm = RE_TIME.search(line)
+                    t = float(mtm.group(1)) if mtm else 0.0
+                    veh_path.setdefault(v, []).append(
+                        (ml.group(1), occ_p.get(v, 0), occ_c.get(v, 0), t))
                     used_links.add(ml.group(1))
-            elif et == "PersonEntersVehicle":
+            elif et in ("PersonEntersVehicle", "PersonLeavesVehicle"):
                 mv = RE_VEHICLE.search(line)
                 mp = RE_PERSON.search(line)
-                if mv and mp and mv.group(1).startswith("drt_") and mp.group(1) != mv.group(1):
-                    occ[mv.group(1)] = occ.get(mv.group(1), 0) + 1
-            elif et == "PersonLeavesVehicle":
-                mv = RE_VEHICLE.search(line)
-                mp = RE_PERSON.search(line)
-                if mv and mp and mv.group(1).startswith("drt_") and mp.group(1) != mv.group(1):
-                    occ[mv.group(1)] = max(0, occ.get(mv.group(1), 0) - 1)
+                if not (mv and mp) or not mv.group(1).startswith("drt_"):
+                    continue
+                v, p = mv.group(1), mp.group(1)
+                if p == v:                      # driver
+                    continue
+                book = occ_c if p.startswith(PARCEL_PERSON_PREFIX) else occ_p
+                if et == "PersonEntersVehicle":
+                    book[v] = book.get(v, 0) + 1
+                else:
+                    book[v] = max(0, book.get(v, 0) - 1)
+    return veh_path, used_links
+
+
+def reconstruct_drt_paths(drt_cache):
+    """Port of build_drt_dashboard.py:91-124. `drt_cache` is a plain-text
+    (not gzipped) events cache already filtered to "drt_"-containing lines
+    (see events_cache.ensure_caches). Returns (veh_path, used_links):
+      veh_path[vehicle_id] = [(link_id, occupancy_at_entry), ...]
+      used_links = set of all link ids seen via "entered link"
+    Occupancy is captured at the moment a link is entered; the driver
+    (person == vehicle) never contributes to occupancy.
+
+    This is a projection of reconstruct_drt_paths_detailed(): occupancy is
+    pax + parcels, which is exactly the legacy semantics (the legacy counter
+    never distinguished them). Kept as its own entry point so the map and
+    distance consumers -- maps._build_vehicles, polyline_runs,
+    build_kpis' veh_km/occ_km loop -- stay on 2-tuples.
+
+    CAVEAT for the 1c arm: because parcels are persons there, this
+    occupancy is freight + pax MIXED. Everything built on it (occ_km,
+    occ_segments, occ_time, the occupancy map) inherits that; see
+    METHODS-LOG 2.26. Use the detailed variant when the split matters."""
+    detailed, used_links = reconstruct_drt_paths_detailed(drt_cache)
+    veh_path = {v: [(lid, pax + parcels) for lid, pax, parcels, _t in path]
+                for v, path in detailed.items()}
     return veh_path, used_links
 
 

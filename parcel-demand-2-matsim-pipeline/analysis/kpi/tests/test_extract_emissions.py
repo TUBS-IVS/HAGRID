@@ -101,3 +101,117 @@ def test_freight_arm_missing_tsv_returns_none(tmp_path):
     import emissions_emep as em
     import extract_emissions as ee
     assert ee.freight_arm(tmp_path, em.load_factors()) is None
+
+
+# --- Task 5b: modular freight arm ----------------------------------------
+
+NETWORK_XML = """<?xml version="1.0" encoding="utf-8"?>
+<network>
+<nodes>
+<node id="n1" x="0" y="0"/><node id="n2" x="1000" y="0"/><node id="n3" x="1800" y="0"/>
+</nodes>
+<links>
+<link id="l1" from="n1" to="n2" length="1200.0" freespeed="13.9" capacity="600" permlanes="1"/>
+<link id="l2" from="n2" to="n3" length="800.0" freespeed="13.9" capacity="600" permlanes="1"/>
+</links>
+</network>
+"""
+
+
+def _network(tmp_path):
+    import gzip
+    p = tmp_path / "TEST.output_network.xml.gz"
+    with gzip.open(p, "wt", encoding="utf-8") as f:
+        f.write(NETWORK_XML)
+    return p
+
+
+def test_load_link_lengths_uses_the_network_length_attribute(tmp_path):
+    """Die Netzwerk-Laenge, NICHT die Euklid-Naeherung aus
+    geometry.load_link_geometry -- die ist ~3 % zu kurz (l1: 1200 m
+    Attribut vs. 1000 m Luftlinie)."""
+    import extract_emissions as ee
+    ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
+    assert ll == {"l1": pytest.approx(1200.0), "l2": pytest.approx(800.0)}
+
+
+def test_freight_windows_parsed_from_dvrp_task_events(tmp_path):
+    """Reale Event-Typnamen sind dvrpTaskStarted/dvrpTaskEnded (verifiziert
+    an m1d050), NICHT 'task started'/'task ended' wie im Plan skizziert -
+    und sie stehen im drt-Cache, nicht im freight-Cache (der ist in allen
+    1d-Laeufen 0 Bytes)."""
+    import extract_emissions as ee
+    ev = tmp_path / "TEST.drt_events_filtered.txt"
+    ev.write_text(
+        '<event time="3600.0" type="dvrpTaskStarted" person="drt_1" '
+        'link="l1" dvrpVehicle="drt_1" taskType="MODULAR_FREIGHT_DRIVE" '
+        'taskIndex="7" dvrpMode="drt"  />\n'
+        '<event time="7200.0" type="dvrpTaskEnded" person="drt_1" '
+        'link="l2" dvrpVehicle="drt_1" taskType="MODULAR_FREIGHT_DRIVE" '
+        'taskIndex="7" dvrpMode="drt"  />\n'
+        '<event time="8000.0" type="dvrpTaskStarted" person="drt_1" '
+        'dvrpVehicle="drt_1" taskType="STAY" dvrpMode="drt"  />\n'
+        '<event time="9000.0" type="dvrpTaskEnded" person="drt_1" '
+        'dvrpVehicle="drt_1" taskType="STAY" dvrpMode="drt"  />\n',
+        encoding="utf-8")
+    assert ee.freight_windows(ev) == {"drt_1": [(3600.0, 7200.0)]}
+
+
+def test_freight_windows_ignores_plain_drive_and_stop_tasks(tmp_path):
+    """DRIVE/STOP sind Pax-Tasks; nur MODULAR_FREIGHT_* ist Fracht. Ohne
+    diese Trennung waere der ganze DRT-Betrieb als Fracht gebucht."""
+    import extract_emissions as ee
+    ev = tmp_path / "TEST.drt_events_filtered.txt"
+    ev.write_text(
+        '<event time="100.0" type="dvrpTaskStarted" dvrpVehicle="drt_1" '
+        'taskType="DRIVE" dvrpMode="drt"  />\n'
+        '<event time="300.0" type="dvrpTaskEnded" dvrpVehicle="drt_1" '
+        'taskType="DRIVE" dvrpMode="drt"  />\n'
+        '<event time="300.0" type="dvrpTaskStarted" dvrpVehicle="drt_1" '
+        'taskType="STOP" dvrpMode="drt"  />\n',
+        encoding="utf-8")
+    assert ee.freight_windows(ev) == {}
+
+
+def test_modular_freight_arm_splits_km_by_window(tmp_path):
+    """Nur die km INNERHALB der Freight-Fenster zaehlen als Fracht; der
+    Rest bleibt Pax. Das ist der Distanzsplit, den drt_vehicle_km nicht
+    hat (METHODS-LOG 2.14, 'not corrected')."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    # 4-Tupel (link, occ_pax, occ_parcels, t): l1 vor dem Fenster, l2+l1 drin
+    veh_path_ts = {"drt_1": [("l1", 0, 0, 100.0), ("l2", 0, 0, 4000.0),
+                             ("l1", 0, 0, 5000.0)]}
+    windows = {"drt_1": [(3600.0, 7200.0)]}
+    ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
+    totals, detail = ee.modular_freight_arm(veh_path_ts, windows, ll, fac)
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["km"] == pytest.approx(2.0)          # l2 + l1 = 800 + 1200 m
+    assert d["fleet"] == "freight_modular"
+    assert d["vehicle_type"] == "drt_modular"
+    assert d["segment"] == "N1-III"
+    # Geschwindigkeit = Freight-km / Summe der Fensterdauern (3600 s = 1 h)
+    assert d["v_kmh"] == pytest.approx(2.0)
+    assert totals["diesel"]["CO2E_WTW"] > 0
+
+
+def test_modular_freight_arm_empty_without_windows():
+    import emissions_emep as em
+    import extract_emissions as ee
+    totals, detail = ee.modular_freight_arm(
+        {"drt_1": [("l1", 0, 0, 100.0)]}, {}, {"l1": 500.0},
+        em.load_factors())
+    assert detail == [] and totals["diesel"]["CO2E_WTW"] == 0.0
+
+
+def test_modular_freight_arm_skips_links_missing_from_the_network():
+    """Ein Link ohne Geometrie darf nicht als 0 km durchlaufen und die
+    Geschwindigkeit verzerren -- er wird uebersprungen."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    veh = {"drt_1": [("ghost", 0, 0, 4000.0), ("l1", 0, 0, 4100.0)]}
+    _, detail = ee.modular_freight_arm(veh, {"drt_1": [(3600.0, 7200.0)]},
+                                       {"l1": 1000.0}, em.load_factors())
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["km"] == pytest.approx(1.0)
