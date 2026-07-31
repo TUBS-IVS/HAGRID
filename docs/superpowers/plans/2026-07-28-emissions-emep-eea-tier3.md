@@ -1065,7 +1065,95 @@ git commit -m "feat(emissions): modular freight arm - km split by MODULAR_FREIGH
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
-> **Offen, User-Entscheidung nötig (blockiert Task 7 nicht):** Zurechnung der Emissionen des gemeinsam genutzten Fahrzeugs auf „Freight" vs. „Pax". Dieser Task liefert den *regime-basierten* Split (Fenster). Alternative und aus meiner Sicht ökonomisch aussagekräftiger: **inkrementell gegen `ctrl1d`** (Fracht bekommt die Mehr-km gegenüber dem Pax-only-Kontrafaktum). Für 1c (Co-Riding, gleichzeitig) trägt der Fensteransatz nicht — dort fehlt zusätzlich die Paket-km-Quelle (`chid600i` hat kein `analysis/freight/`). Bis zur Entscheidung: Systemsumme ohne Split als robuster Rückfall immer mitberichten.
+> **Zurechnung — entschieden 2026-07-31** (METHODS-LOG §1.4): **1d = dieser Regimesplit**, restfrei und innerhalb eines Laufs gemessen. Die zwischenzeitlich erwogene inkrementelle Variante gegen `ctrl1d` ist **verworfen** (METHODS-LOG §3.9: Differenz liegt im Rauschband und trägt das falsche Vorzeichen, weil die Fracht Pax verdrängt statt km zu addieren). **1c** bekommt statt des Fensteransatzes die massenbasierte Aufteilung aus Task 5c. Allokationsfreie Systemsumme (`total_*`) wird in beiden Armen immer mitberichtet.
+
+---
+
+### Task 5c: Massenbasierte Zurechnung + spezifische Intensitäten (1c) **[NEU, Rev. B]**
+
+**Entscheidung, die dieser Task umsetzt** (User 2026-07-31, METHODS-LOG §1.4/§2.24): allokationsfreie Systemsumme als Boden, dazu Aufteilung nach **Masse an Bord je Link** für CO₂e je Paket und je Fahrgast. Konvention **kg·km** (Masse × Linklänge), analog tkm-Allokation in EN 16258 / GLEC — dieselbe Norm, die für die WTT-Kette schon zitiert wird. Leerfahrten haben keine kg·km-Basis und werden proportional zu den kg·km-Anteilen des Fahrzeugtages verteilt (GLEC-Konvention).
+
+**Warum nicht marginal:** siehe METHODS-LOG §2.24 Option M — Java-Eingriff + 1c-Rerun, und Grenzkosten summieren sich nicht zum Ganzen. Die Massenbasis ist direkt gemessen und summiert konstruktionsgemäß auf.
+
+**Files:**
+- Modify: `analysis/kpi/geometry.py` — `occ` in Pax- und Paketzähler trennen
+- Modify: `analysis/kpi/extract_emissions.py`
+- Modify: `analysis/kpi/data/emep_supplement.csv` — Massenkonstanten
+- Test: `analysis/kpi/tests/test_extract_emissions.py`, `tests/test_geometry.py`
+
+**Interfaces:**
+- `geometry.reconstruct_drt_paths` liefert Pfadeinträge mit **getrennten Zählern**: `(link_id, occ_pax, occ_parcels, t)`. Trennung über `person_id.startswith("parcel_")` (Java-Konstante `SharedUse.PARCEL_PERSON_PREFIX`).
+- Produces: `mass_split(occ_pax, occ_parcels, sup) -> (share_pax, share_parcels)` und `allocate_by_mass(detail, veh_path, sup) -> rows` mit den KPI-Zeilen `co2e_wtw_per_parcel` [kg/Paket], `co2e_wtw_per_pax` [kg/Fahrgast], `alloc_share_parcels_mass`, `alloc_share_parcels_slots` [share].
+- Neue Supplement-Keys: `kg_per_parcel_mean`, `kg_per_passenger`, `slots_per_seat_equiv`.
+
+- [ ] **Step 1: Vorabprüfungen (kein Code).** Drei Dinge klären und Ergebnis hier notieren:
+  1. **`NEEDS-SOURCE` Paket-Mittelmasse.** Die Lausitz-Carrier schreiben **kein** `weights`-Attribut (0 Treffer in `..._lmd_carriers_routed.xml`); verfügbar ist nur `capacityDemand` = Paketanzahl. Die Mittelmasse ist also eine Setzung und braucht eine Quelle (deutsche KEP-Referenzstatistik, z. B. BIEK-KEP-Studie). **Nicht selbst setzen.** Ohne Quelle: Task nur mit deklarierter Spanne implementieren und im Paper als Spanne berichten.
+  2. **Weisen die bestehenden 1c-Occupancy-KPIs die Paket-Kontamination aus?** `occ` zählt in 1c Pakete mit (METHODS-LOG §2.26). Falls nicht ausgewiesen, ist das ein **eigener Befund für den 1c-Arm** (`occ_km`, `occ_segments`, `occ_time`, Occupancy-Karte) und gehört zuerst dort dokumentiert — nicht als Nebenprodukt der Emissionsrechnung.
+  3. **Konsumenten von `veh_path` prüfen.** Die Tupelerweiterung berührt `veh_km`, `occ_km_shares`, `maps` und Task 5b/6. Indexzugriff statt Entpackung ist die Regel (Task 6 ist schon so umgestellt).
+
+- [ ] **Step 2: Failing Tests schreiben**
+
+```python
+# an tests/test_extract_emissions.py anhängen
+def test_mass_split_uses_kg_km_shares():
+    import extract_emissions as ee
+    sup = {"kg_per_parcel_mean": 2.5, "kg_per_passenger": 80.0}
+    # 20 Pakete (50 kg) gegen 1 Fahrgast (80 kg)
+    sp, spc = ee.mass_split(1, 20, sup)
+    assert spc == pytest.approx(50.0 / 130.0)
+    assert sp + spc == pytest.approx(1.0)
+    # nichts an Bord -> keine Basis, Aufrufer muss umlegen
+    assert ee.mass_split(0, 0, sup) == (0.0, 0.0)
+
+def test_mass_split_sensitivity_to_parcel_mass_is_reported():
+    """Die Aufteilung haengt an einer Konstante, die NICHT im Modell steht
+    (METHODS-LOG 2.26) -- der Test haelt die Groessenordnung der
+    Empfindlichkeit fest, damit sie im Paper nicht untergeht."""
+    import extract_emissions as ee
+    base = {"kg_per_passenger": 80.0}
+    low = ee.mass_split(2, 50, dict(base, kg_per_parcel_mean=1.5))[1]
+    high = ee.mass_split(2, 50, dict(base, kg_per_parcel_mean=4.0))[1]
+    assert low < 0.35 < 0.55 < high          # 32 % vs 56 %
+
+def test_empty_legs_allocated_proportionally():
+    """GLEC-Konvention: Leerfahrten tragen keine kg*km-Basis und werden
+    ueber die geladenen kg*km des Fahrzeugtages verteilt -- die Summe der
+    zugerechneten Emissionen muss die Gesamtemission treffen."""
+    import extract_emissions as ee
+    # ein Link geladen, ein Link leer
+    path = [("l1", 1, 20, 100.0), ("l2", 0, 0, 200.0)]
+    link_len = {"l1": 1000.0, "l2": 1000.0}
+    sup = {"kg_per_parcel_mean": 2.5, "kg_per_passenger": 80.0}
+    alloc = ee.allocate_vehicle_by_mass(path, link_len, 100.0, sup)
+    assert alloc["pax"] + alloc["parcels"] == pytest.approx(100.0)
+    # der Leer-Link erbt die Anteile des geladenen
+    assert alloc["parcels"] / 100.0 == pytest.approx(50.0 / 130.0)
+
+def test_specific_intensity_rows(tmp_path):
+    import extract_emissions as ee
+    rows = ee.intensity_rows(alloc={"pax": 300.0, "parcels": 700.0},
+                             n_pax=150, n_parcels=1400)
+    by = {r["kpi_name"]: r for r in rows}
+    assert by["co2e_wtw_per_pax"]["value"] == pytest.approx(2.0)
+    assert by["co2e_wtw_per_parcel"]["value"] == pytest.approx(0.5)
+    assert by["co2e_wtw_per_parcel"]["unit"] == "kg"
+    assert "kg_per_parcel_mean" in by["co2e_wtw_per_parcel"]["source"]
+```
+
+- [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`.
+
+- [ ] **Step 4: Implementieren.** `mass_split` bildet die kg·km-Anteile; `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die gesetzte kg-Zahl, METHODS-LOG §2.26).
+
+- [ ] **Step 5: PASS + Gegenprobe.** Zwei Invarianten am Realdatenlauf prüfen: (a) zugerechnete Summe == `total_co2e_wtw` bis auf Rundung; (b) `alloc_share_parcels_mass` und `_slots` als Paar berichten — divergieren sie um mehr als ~10 Prozentpunkte, ist das ein Paper-relevanter Befund und keine Rundung.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add analysis/kpi/geometry.py analysis/kpi/extract_emissions.py analysis/kpi/data/emep_supplement.csv analysis/kpi/tests/
+git commit -m "feat(emissions): mass-based freight/pax allocation (kg*km, GLEC convention) + specific intensities
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
 
 ---
 
@@ -1632,7 +1720,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - **Multi-Seed-Aggregation (Mittel/Min/Max über ≥10 Runs)** — Reporting-Schritt zur Paper-Auswertung; die per-Run-KPIs aus diesem Plan sind die Inputs dafür.
 - **Kaltstart-Implementierung** — nur falls Task-9-Bound ≥ 5 % (dann eigener Backlog-Punkt).
 - **Sensitivitäts-Faktorsätze** (Urban Bus Midi ≤15 t für DRT; HDT Rigid ≤7,5 t für `ct_cep_size_l`) — datenseitig vorbereitet (Tool-Filter erweitern), aber nicht verdrahtet. Falls die HDT-Variante später kommt: der Guidebook-**Default ist 50 % Last**, nicht 0 % — die Vergleichszeile ist `Load = 0.5` (4,666 MJ/km bei 30 km/h, 0 % Steigung), nicht 4,387.
-- **Zuladungsbasierte Skalierung** — geprüft 2026-07-31 und verworfen, siehe Global Constraints. Nicht als „später nachziehen" im Backlog führen, sondern als methodische Entscheidung im METHODS-LOG: EMEP bietet für LCV keine Lastdimension, und eine Mischung mit STREAM-Verhältnissen (wie in `src/hagrid_output_analysis/config.py`) hat keinen definierten Nullpunkt. Wer das ändern will, muss die **gesamte** Rechnung auf STREAM umstellen — dann fallen Geschwindigkeitskurve, BEV-Arm und der SPN23/CH4/N2O-Vektor weg.
+- **Zuladungsbasierte Skalierung der Emissionsfaktoren** — geprüft 2026-07-31 und verworfen, siehe Global Constraints. **Nicht zu verwechseln mit Task 5c:** dort wird Masse zur *Zurechnung* einer berechneten Emission auf Fracht und Pax benutzt (eine Buchungsfrage), nicht zur *Skalierung des Emissionsfaktors* (eine Frage an die Faktorquelle, die EMEP für LCV nicht beantwortet). Die beiden dürfen im Paper nicht vermischt werden. Nicht als „später nachziehen" im Backlog führen, sondern als methodische Entscheidung im METHODS-LOG: EMEP bietet für LCV keine Lastdimension, und eine Mischung mit STREAM-Verhältnissen (wie in `src/hagrid_output_analysis/config.py`) hat keinen definierten Nullpunkt. Wer das ändern will, muss die **gesamte** Rechnung auf STREAM umstellen — dann fallen Geschwindigkeitskurve, BEV-Arm und der SPN23/CH4/N2O-Vektor weg.
 - **Ladeprofil-Rekonstruktion** — entfällt mit der Zuladungsentscheidung. (Nebenbefund für den Fall, dass es je gebraucht wird: `analysis/freight/Load_perVehicle.tsv` ist in **jedem** geprüften Lauf nur Header — MATSims CarriersAnalysis schreibt die Spalte `load state during tour` nicht.)
 - **Dashboard-Karten/-Kacheln für Emissionen** — die KPI-Tabellen-Ansicht (Task 8) reicht fürs Paper; hübsche Environment-Kacheln sind Dashboard-v2-Folgearbeit.
 - **`hagrid_output_analysis/`** — bleibt komplett unangetastet (Kollegen-Freeze).

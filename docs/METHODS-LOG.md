@@ -282,8 +282,7 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
   niedrig; ein 10-sitziger Sprinter Tourer *ist* mechanisch ein N1-III-Sprinter mit Sitzen.
   Im Paper mit diesen drei Zahlen ausschreiben.
 
-- **Emissionszurechnung Freight ↔ Pax bei gemeinsam genutzten Fahrzeugen** — `trägt` für 1d,
-  **offen für 1c** · 2026-07-31
+- **Emissionszurechnung Freight ↔ Pax bei gemeinsam genutzten Fahrzeugen** — `trägt` · 2026-07-31
   **1d (modular):** Regimesplit, vollständig durch die Tasksequenz bestimmt. km innerhalb der
   `MODULAR_FREIGHT_DRIVE`-Fenster → Fracht, übrige km → Pax; Anfahrt zum Depot → Fracht, Fahrt
   vom Depot zum nächsten Fahrgast → Pax. Erschöpfend und ohne Rest: jeder km landet auf genau
@@ -291,9 +290,21 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
   freight window)"), erzeugt also keine km. **Voraussetzung:** `drt_vehicle_km` trägt bisher
   keinen Freight/Pax-Kanal (§2.14, „not corrected") — der Distanzsplit entsteht erst im
   Emissions-Extractor (Plan Task 5b).
-  **1c (Co-Riding):** eine marginale Zurechnung („Umwege durch Parcel-Insertion → Parcel, Rest →
-  Pax") ist **nicht ohne Java-Eingriff und 1c-Rerun** erreichbar, siehe §2.24. Bis dahin gilt
-  `total_*` (allokationsfrei) als die berichtbare Größe.
+  **1c (Co-Riding), User-Entscheidung 2026-07-31:** **zweistufig — allokationsfreie Systemsumme
+  als Boden, plus massenbasierte Aufteilung je Link für spezifische Intensitäten.**
+  (a) *Boden:* `total_*` wird immer berichtet, dazu die beiden Extremzurechnungen als Bandbreite.
+  (b) *Aufteilung:* die Emissionen eines Links werden nach der **Masse an Bord** aufgeteilt —
+  Paketmasse gegen Fahrgastmasse. Für CO₂e je Paket bzw. je Fahrgast durch die jeweils bediente
+  Menge teilen. Konvention: Verteilung über **kg·km** (Masse × Linklänge), analog zur
+  tkm-Allokation in EN 16258 / GLEC Framework, die im Projekt für die WTT-Kette ohnehin zitiert
+  wird. Leerfahrten (nichts an Bord) haben keine kg·km-Basis und werden proportional zu den
+  kg·km-Anteilen des Fahrzeugtages verteilt — ebenfalls GLEC-Konvention.
+  *Warum nicht marginal:* eine marginale Zurechnung („Umwege durch Parcel-Insertion → Parcel")
+  bräuchte Java-Eingriff und 1c-Rerun (§2.24, Option M) und würde sich am Ende nicht zum Ganzen
+  summieren. Die Massenbasis ist direkt gemessen, summiert konstruktionsgemäß auf und ist
+  rauschunempfindlich — im Gegensatz zu den verworfenen Differenzverfahren (§3.9).
+  *Preis, ausdrücklich mitzuführen:* die Aufteilung hängt an zwei Konstanten, von denen eine nicht
+  im Modell steht — siehe §2.26.
   **Pax-Zuladung ist irrelevant:** `mean_pax_aboard_pax` = 1,60 → ~128 kg auf ~2100 kg = +6 %
   Masse → **~1,2 %** Energie. Unter dem Rauschboden.
 
@@ -1069,10 +1080,11 @@ summieren, 1c-Rerun. Relativ zu A/B ist diese Variante **besser gestellt, nicht 
 misst pro Insertion *innerhalb eines Laufs*, bildet also keine Differenz zweier Läufe und erbt
 keinen Replanning-Drift. Es bleibt der nicht-summierende Verbundrest.
 
-**Empfehlung (Stand 2026-07-31):** **direkt gemessene Größen schlagen Differenzen zweier Läufe.**
-D als Boden immer mitberichten; C dazu, wenn spezifische Intensitäten (kg CO₂e je Paket / je
-Fahrgast) gebraucht werden, mit deklarierter Basis; M nur, wenn eine *marginale* Aussage zwingend
-ist. A und B nicht verwenden.
+**Entschieden (User, 2026-07-31): D als Boden + C mit Masse als Basis.** Spezifische Intensitäten
+(CO₂e je Paket / je Fahrgast) sind als potenziell wertvoll eingestuft, also wird C implementiert,
+nicht nur vorgehalten. M bleibt vorgehalten für den Fall, dass eine echte Marginalaussage verlangt
+wird. A und B nicht verwenden (§3.9). Leitsatz: **direkt gemessene Größen schlagen Differenzen
+zweier Läufe.** Caveats der Massenbasis: §2.26.
 
 Verwandt: §2.3 („χ ist eine untere Schranke, nicht der Umweg"), §2.4 (was bei Pax-KPIs unter
 Co-Riding unkorrigierbar bleibt), §2.17 (gepaarte vs. ungepaarte Vergleiche), §2.25
@@ -1114,6 +1126,51 @@ Endzustand ist ein anderes Gleichgewicht, nicht dieselbe Pax-Nachfrage mit Frach
 4. **NEEDS-CHECK:** wie viel des Pax-Rückgangs ist Abwanderung (Modenwahl) und wie viel
    Ablehnung (`rejections`)? `drt_customer_stats` je Lauf gegenrechnen — die Unterscheidung
    ändert die Interpretation erheblich.
+
+### 2.26 Massenbasierte Emissionszurechnung: was daran Modelldaten sind und was Setzung
+
+`trägt` · 2026-07-31, zur Entscheidung in §1.4 (Option C). Zwei Befunde, die beim Verifizieren der
+Datenlage aufgefallen sind und die Aussagekraft der Aufteilung begrenzen:
+
+**1. Die Paketmasse steht NICHT im Lausitz-Modell.**
+Es gibt einen Pfad dafür — `enrich_vehicle_spatial()` in
+[`hagrid_output_analysis/analysis.py:412-418`](../parcel-demand-2-matsim-pipeline/src/hagrid_output_analysis/analysis.py#L412-L418)
+liest ein `weights`-Attribut je Carrier-Service und leitet daraus `total_weight`,
+`avg_weight_per_parcel`, `emissions_per_kg` ab. Dieses Attribut wird von den Lausitz-Carriern aber
+**nicht geschrieben**: in `..._lmd_carriers_routed.xml` gibt es **0 Treffer** für `name="weights"`.
+Verfügbar ist nur `capacityDemand`, also die Paket-**Anzahl** (Verteilung im geprüften Lauf:
+2070 × 1, 489 × 2, 209 × 3, 119 × 4, 71 × 5 …). Der `weights`-Pfad ist Hannover-Erbe
+(Notebook-Port), nicht Lausitz-Funktionalität.
+
+**Konsequenz:** die Paketmasse ist `Anzahl × angenommene Mittelmasse`. Damit hängt die Aufteilung
+an **zwei Konstanten**, von denen eine nicht im Modell steht:
+  Paket-Anteil ≈ (n_Pakete · kg_Paket) / (n_Pakete · kg_Paket + n_Pax · kg_Pax)
+Die Empfindlichkeit ist erheblich. Bei 1,6 Fahrgästen an Bord (`mean_pax_aboard_pax`, gemessen) und
+kg_Pax = 80: bei 20 Paketen à 2,5 kg bekommt die Fracht ~28 %, bei 99 Paketen à 2,5 kg ~66 %. Eine
+**Sensitivität über kg_Paket ist daher nicht optional, sondern Teil des Ergebnisses.** Die
+Mittelmasse braucht eine Quelle (deutsche KEP-Referenzstatistik, z. B. BIEK-KEP-Studie) —
+`NEEDS-SOURCE`, nicht selbst setzen.
+
+**Alternative Basis als Pflicht-Sensitivität:** **Kapazitätsanteile** statt Masse. In 1c hat das
+Fahrzeug 8 Sitze und 20 Paketslots (§2.21), die Äquivalenz ist also **szenariodefiniert** statt
+erfunden. Das ist bei der Willkür-Frage stärker als eine angenommene kg-Zahl und sollte neben der
+Massenvariante berichtet werden. Beide summieren konstruktionsgemäß auf; sie unterscheiden sich nur
+in der Gewichtung.
+
+**2. Die Belegungsrekonstruktion vermischt in 1c Pakete und Fahrgäste.**
+[`geometry.reconstruct_drt_paths`](../parcel-demand-2-matsim-pipeline/analysis/kpi/geometry.py#L53-L87)
+zählt `occ` als einfachen Zähler über `PersonEntersVehicle`/`PersonLeavesVehicle` für alle
+`drt_`-Fahrzeuge außer dem Fahrer. In 1c sind Pakete als **Parcel-Personen** modelliert
+(`SharedUse.PARCEL_PERSON_PREFIX = "parcel_"`), erzeugen also dieselben Events. Der `occ`-Wert je
+Link ist in 1c damit **Fahrgäste + Pakete gemischt**.
+
+Das ist zweierlei: (a) ein **Vorbefund für die bestehenden 1c-Belegungs-KPIs** — alles, was auf
+`occ` aufbaut (Occupancy-Karte, `occ_km`, `occ_segments`, `occ_time`), ist im 1c-Arm entsprechend
+kontaminiert, analog zu §2.4 auf der Zeitseite; (b) genau der Hebel, den C braucht: die Trennung
+ist trivial, weil die Person-ID sie trägt. Zwei Zähler statt einem, Fallunterscheidung auf
+`person_id.startswith("parcel_")`. **Vor der Implementierung prüfen**, ob die 1c-Occupancy-KPIs
+diese Kontamination schon irgendwo ausweisen — falls nicht, ist es ein eigener Befund und gehört
+in die Limitations des 1c-Arms, nicht nur in die Emissionsrechnung.
 
 ---
 
