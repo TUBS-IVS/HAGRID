@@ -1183,8 +1183,52 @@ B2B-Struktur unterscheiden sich. Als deklarierter Transfer führen, nicht als de
 | 99 (`max_parcels_per_tour`) | 163,1 kg | 56,0 % |
 
 Der Frachtanteil ist also stark von der Beladung abhängig und wechselt erst jenseits von ~78
-Paketen die Mehrheit. Der Haushalts-/Gewerbe-Kontrast bewegt ihn dagegen nur um ~1–2 Prozentpunkte
-— die Aufteilung ist gegen die Paketmasse selbst weit weniger empfindlich als gegen die Beladung.
+Paketen die Mehrheit. Der Haushalts-/Gewerbe-Kontrast bewegt ihn dagegen nur um ~1–2 Prozentpunkte.
+
+**Zweite Quelle, und sie korrigiert die eben gezogene Entwarnung** (User 2026-07-31): Rajendran &
+Harper (2021), *Simulation-based algorithm for determining best package delivery alternatives under
+three criteria: Time, cost and sustainability*, Transportation Research Interdisciplinary
+Perspectives: Sendungsgewicht **1–350 lbs = 0,454–158,757 kg**, „over 50 % of the weight being less
+than 5 lbs" (**2,268 kg**). Dort wird die Wirkung der Verteilung ebenfalls über eine
+Sensitivitätsanalyse behandelt.
+
+Was diese Quelle leistet und was nicht:
+- **Sie bestätigt die Schiefe unabhängig** — Mehrheit leicht, langer Oberschwanz bis ~159 kg. Das
+  stützt den Mittelwert-statt-Median-Punkt oben aus einer zweiten Erhebung.
+- **Sie liefert keinen Mittelwert.** Nur Spanne und ein „>50 % unter 5 lbs". Sie kann Amarals
+  1,6478 kg als Punktwert also nicht ersetzen.
+- **Sie zeigt, dass die Konstante kontextabhängig ist.** Amarals Median liegt bei 0,695 kg,
+  Rajendrans Median liegt bei ≤ 2,268 kg — die US-Verteilung ist also deutlich schwerer. Überträgt
+  man Amarals Schiefe (Mittel/Median = 2,37) auf Rajendrans Medianobergrenze, ergibt das ein
+  **Mittel-Oberbracket von ~5,4 kg**. ⚠️ **Das ist eine abgeleitete Größe, keine gemessene** —
+  nirgends in Rajendran & Harper steht ein Mittelwert. Nur als Größenordnung verwenden, nie als
+  Ergebniszahl zitieren.
+
+**Korrektur der Entwarnung:** *innerhalb* von Amaral ist die Aufteilung tatsächlich
+beladungsgetrieben (B2C↔B2B: 1–2 Pp). **Über Kontexte hinweg gilt das Gegenteil:**
+
+| Pakete an Bord | 1,6478 kg (Amaral, BR) | ~5,4 kg (Bracket, US-Kontext) | Spanne |
+|---|---|---|---|
+| 10 | 11,4 % | 29,6 % | 18 Pp |
+| 20 | 20,5 % | 45,7 % | 25 Pp |
+| 50 | 39,2 % | 67,8 % | **29 Pp** |
+| 99 | 56,0 % | 80,6 % | 25 Pp |
+
+Ein einzelner Massenwert kann die Aufteilung also nicht tragen. **Berichtsregel:** die
+Aufteilungsanteile (`alloc_share_parcels_mass`) müssen **immer neben** den spezifischen Intensitäten
+stehen, und die kapazitätsbasierte Variante (`alloc_share_parcels_slots`) daneben — die ist
+szenariodefiniert (20 Paketslots / 8 Sitze) und hängt an **keiner** externen Massenannahme. Für ein
+deutsches Szenario ohne deutsche Paketmassen-Quelle ist das ein Argument, die Slot-Basis als
+*primär* und die Massenbasis als Sensitivität zu führen — Entscheidung liegt beim User, die
+Umsetzung emittiert beide ohnehin.
+
+**Alle Aufteilungskonstanten sind reine Post-Processing-Größen.** `kg_per_parcel_*`,
+`kg_per_passenger` und `slots_per_seat_equiv` gehen weder in die Simulation noch in den
+Emissionsfaktor (EMEP hat für LCV keine Lastdimension, §1.4) noch in die Fahrleistung ein. Eine
+Änderung — etwa `kg_per_passenger` von 80 auf 85 — ist ein Edit in `emep_supplement.csv` plus
+`build_kpis.py`-Neulauf auf vorhandenem Output, Minuten statt Stunden, **kein Sim-Rerun**. `total_*`
+bleibt dabei unverändert; es bewegen sich nur die Anteile und die spezifischen Intensitäten. Damit
+ist die Sensitivitätsanalyse billig und es gibt keinen Grund, sie nicht als Band zu berichten.
 
 **`kg_per_passenger` = 80 kg ist eine Setzung**, keine Quelle: gängige Konvention im
 Straßenverkehr, ohne Gepäck. Da nur das **Verhältnis** kg_Paket/kg_Pax die Aufteilung bestimmt,

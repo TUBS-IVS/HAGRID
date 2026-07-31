@@ -473,7 +473,8 @@ bev_brake_mult,0.50,factor,"assumption: regenerative braking (lit. range 0.3-0.7
 kg_per_parcel_b2c,1.5922,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean weight, deliveries to households (BRAZILIAN dataset, declared transfer). MEAN not median: total on-board mass = n x mean; median 0.6950 would understate by 58 %"
 kg_per_parcel_b2b,1.8160,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean weight, deliveries to businesses (same caveats)"
 kg_per_parcel_pooled,1.6478,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean over all deliveries; fallback when a shipment's channel is unresolved (count reported separately)"
-kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel_* drives the allocation, so this weighs as much as the sourced parcel mass"
+kg_per_parcel_upper_bracket,5.3798,kg,"DERIVED order-of-magnitude upper bracket for the cross-context sensitivity, NOT a measured mean: Rajendran & Harper 2021 (TRIP) report 1-350 lbs with >50 % under 5 lbs (median <= 2.268 kg) but no mean; 2.268 x Amaral's skew ratio 2.37. Never cite as a result value"
+kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel_* drives the allocation, so this weighs as much as the sourced parcel mass. Pure post-processing: changing it needs no sim rerun and leaves total_* unchanged"
 slots_per_seat_equiv,2.5,slots/seat,"scenario-defined capacity equivalence for the alternative allocation basis: 20 parcel slots / 8 seats (1c vehicle); sensitivity companion to the mass basis"
 ev_range_km_low,150.0,km,"pessimistic real-world winter range, e-LCV (sweep threshold; discriminating: 0-13.4% tour exceedance across the 12 freight runs, 2026-07-31)"
 ev_range_km_mid,200.0,km,"mid real-world range, e-LCV (sweep threshold)"
@@ -1134,22 +1135,45 @@ def test_mass_split_differentiates_b2c_and_b2b():
     mix = ee.mass_split(2, {"b2c": 25, "b2b": 25}, sup)[1]
     assert b2c < mix < b2b
 
-def test_mass_split_is_driven_by_load_not_by_parcel_mass():
-    """METHODS-LOG 2.26: die Aufteilung ist gegen die BELADUNG weit
-    empfindlicher als gegen die Paketmasse. Der Test haelt beides fest,
-    damit die Sensitivitaet im Paper nicht der falschen Groesse
-    zugeschrieben wird."""
+def test_mass_split_load_vs_in_source_mass_sensitivity():
+    """METHODS-LOG 2.26: INNERHALB von Amaral ist die Aufteilung
+    beladungsgetrieben. Der Test haelt beides fest, damit die Sensitivitaet
+    im Paper nicht der falschen Groesse zugeschrieben wird."""
     import extract_emissions as ee
     sup = _sup()
-    # Beladung: 10 -> 99 Pakete verschiebt den Frachtanteil um ~45 Pp
+    # Beladung: 10 -> 99 Pakete verschiebt den Frachtanteil um ~44 Pp
     lo = ee.mass_split(1.6, {"b2c": 10}, sup)[1]
     hi = ee.mass_split(1.6, {"b2c": 99}, sup)[1]
     assert lo == pytest.approx(0.111, abs=0.005)
     assert hi == pytest.approx(0.552, abs=0.005)
-    # Paketmasse: b2c -> b2b bei gleicher Beladung nur ~1-2 Pp
+    # Paketmasse innerhalb der Quelle: b2c -> b2b nur ~1-2 Pp
     span = abs(ee.mass_split(1.6, {"b2b": 50}, sup)[1]
                - ee.mass_split(1.6, {"b2c": 50}, sup)[1])
     assert span < 0.04
+
+def test_mass_split_cross_context_band_is_wide():
+    """...UEBER Kontexte hinweg gilt das Gegenteil (METHODS-LOG 2.26):
+    Amaral (BR) 1.6478 kg gegen das abgeleitete US-Oberbracket ~5.38 kg
+    verschiebt den Frachtanteil bei 50 Paketen um ~29 Pp. Deshalb muss der
+    Aufteilungsanteil IMMER neben der Intensitaet berichtet werden."""
+    import extract_emissions as ee
+    sup = _sup()
+    base = ee.mass_split(1.6, {"b2c": 50}, sup)[1]
+    upper = ee.mass_split(1.6, {"b2c": 50},
+                          dict(sup, kg_per_parcel_b2c=5.3798))[1]
+    assert base == pytest.approx(0.383, abs=0.005)
+    assert upper == pytest.approx(0.678, abs=0.005)
+    assert upper - base > 0.25          # keine Entwarnung ueber Kontexte
+
+def test_slot_basis_needs_no_external_mass():
+    """Die Slot-Basis ist szenariodefiniert (20 Paketslots / 8 Sitze) und
+    haengt an KEINER Massenannahme -- deshalb ist sie die Pflicht-Begleitung
+    und ggf. die bessere Primaerbasis (METHODS-LOG 2.26)."""
+    import extract_emissions as ee
+    sup = _sup()
+    a = ee.slot_split(1.6, {"b2c": 50}, sup)[1]
+    b = ee.slot_split(1.6, {"b2c": 50}, dict(sup, kg_per_parcel_b2c=5.3798))[1]
+    assert a == pytest.approx(b)        # invariant gegen die Massenkonstante
 
 def test_mass_split_rejects_median_style_understatement():
     """Waechter gegen den Median-Griff: 0.6950 kg (Median) statt 1.6478
