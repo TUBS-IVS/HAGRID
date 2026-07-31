@@ -1,25 +1,3 @@
-- [x] **Step 5: Realdaten-Smoke — VIER Läufe statt zwei, und sie haben zwei echte Defekte gefunden**
-
-Der Plan sah `base10c` + `m1d010` vor. Gelaufen sind vier, weil jede Armkombination einen eigenen Datenpfad trifft und drei davon lokal verfügbar waren (`base10c`s `analysis/freight/` fehlte lokal und wurde vom Sim-PC nachgeholt — die Provider-Gegenprobe meldet keine unmatched Carrier, die TSVs passen also zum lokalen Lauf):
-
-| Lauf | Arme | `total_co2e_wtw` [kg] | Rest | `segment_km_share_n1_ii` |
-|---|---|---|---|---|
-| `bandz_central` | freight | 1243,76 (BEV 435,44) | — | 0,925937 |
-| `base10c` | freight + drt | 14163,9 | nur CSV-Rundung | 0,925937 |
-| `m1d050` | drt + freight_modular | 12709,6 (12706,1 + 3,52) | nur CSV-Rundung | *(abwesend)* |
-| `chid600w21` | drt (1c) | 12726,7 | — | *(abwesend)* |
-
-Gegenprobe zu den Task-7-Erwartungen, jetzt durch die KPI-Schicht statt per Direktaufruf: `bandz_central` reproduziert **jede** Zahl (1243,761 / 435,435 / 542,570 g NOx / 316,610 g PM10 / 13128,405 MJ, 126 Detailzeilen = 63 Fahrzeuge x 2 Antriebe). `base10c` liefert die im Plan erwarteten 63 Touren / **6252,1 km** / 0,926 — identisch zu `bandz_central`, weil beide denselben deterministischen jsprit-Plan fahren. `m1d050`: `ev_range_max_km_freight_modular` = **13,4946 km**, exakt die in Task 5b validierten 13,5 km. `chid600w21`: **20,20 g CO2e/Paket** (Masse) bei Massenanteil **0,90 %** vs. Slotanteil **23,64 %** — die Zahlen aus METHODS-LOG 2.26, jetzt aus dem regulären Build.
-
-**Defekt 1 — falscher Event-Cache (siehe Abweichung 3 oben).** Ohne den `m1d050`-Smoke wäre der 1d-Arm dauerhaft leer geblieben, ohne eine einzige Fehlermeldung.
-
-**Defekt 2 — `segment_km_share_*` war über ALLE Flotten gerechnet und damit unbrauchbar.** Auf `base10c` wiegt der DRT-Arm die Vans 47953 : 6252 km aus, also kam `n1_ii` = **0,107** heraus — für denselben LMD-Plan, der auf `bandz_central` **0,926** liest. Zwei unvergleichbare Zahlen für einen identischen Fahrzeugmix. Ursache: DRT und `freight_modular` tragen beide die feste Ersetzung `DRT_SEGMENT = N1-III`, ihr Anteil ist konstruktionsbedingt 1,0 und damit keine Aussage. Der Anteil wird jetzt nur über die konventionelle Van-Flotte gebildet (`_MIX_FLEETS = ("freight",)`) und **fehlt** auf Pax-only- und 1d-Läufen, statt dort eine Scheinaussage zu emittieren. Damit ist der KPI wieder das, wofür er gedacht war: Mixverschiebung von Fahrleistungsänderung trennen.
-
-**Zwei weitere Korrekturen aus denselben Läufen (keine Bugs, aber irreführende Ausgaben):**
-
-- **`ev_range_exceed_drt_*` trug dieselbe Quellenangabe wie die Freight-Zeilen.** Auf `base10c` steht 3,2 % (Freight, je **Tour**) neben 96,7 % (DRT, je **Fahrzeugtag**) — wer das nebeneinander liest, schließt „DRT ist nicht elektrifizierbar". Eine Tour ist eine zusammenhängende Schicht, ein Fahrzeugtag enthält lange STAY-Phasen, in denen geladen werden kann. Jede Flotte hat jetzt ihre eigene Provenance (`_RANGE_SRC`), die sagt, was **eine** Einheit ist und was der Anteil nicht heißt. Der Vorbehalt muss in der Zeile stehen: wer `kpis_long.csv` liest, sieht kein Dokument. Die Ladefenster-Analyse geht in den Backlog (Task 9).
-- **Zurechnungszeilen ohne Paket-kg·km-Basis.** Im 1d-Arm fahren Pakete als Kapsel, nicht als Paket-*Personen*, also ist `occ_parcels` überall 0 und `alloc_share_parcels_mass` wäre 0 — die Behauptung, die Fracht dieses Laufs sei emissionsfrei. Ohne Basis entsteht jetzt keine Zeile; `_served_quantities` gated zusätzlich auf `has_shareduse_stats`, sodass Aufrufer- und Datenseite unabhängig prüfen.
-
 # EMEP/EEA Tier-3 Emissions (Lausitz KPI-Stack) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -98,7 +76,7 @@ Die Bezugsmasse ist **je Typ eine ausgewiesene Annahme** — sie ist die Größe
 - `powertrain` ∈ {`diesel`,`bev`}; **`segment` ∈ {`N1-I`,`N1-II`,`N1-III`}**; `pollutant` ∈ {`CO`,`NOx`,`VOC`,`PM Exhaust`,`EC`,`CH4`,`SPN23`} (diesel) bzw. {`EC`} (bev). `unit`: `g/km` außer `EC`→`MJ/km`, `SPN23`→`#/km`. `rf` als Bruchteil.
 - **Alle drei Segmente werden extrahiert**, auch das aktuell nicht zugeordnete N1-I. Grund: die Klassenzuordnung soll eine Datenzeile sein, keine Code-Änderung — und N1-I ist der Sensitivitäts-Nachbar von N1-II (Energie praktisch identisch: 2,157 vs. 2,183 MJ/km @30 km/h, NOx aber Faktor 1,67 auseinander).
 
-- [ ] **Step 1: Failing Test schreiben** — Transform-Funktion wird gegen einen In-Memory-DataFrame getestet (kein xlsx im Test nötig):
+- [x] **Step 1: Failing Test schreiben** — Transform-Funktion wird gegen einen In-Memory-DataFrame getestet (kein xlsx im Test nötig):
 
 ```python
 # tests/test_emissions_emep.py
@@ -164,12 +142,12 @@ def test_transform_keeps_all_three_n1_segments():
         assert len(sel) == 1, seg
 ```
 
-- [ ] **Step 2: Test laufen lassen, Fehlschlag bestätigen**
+- [x] **Step 2: Test laufen lassen, Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v` (aus `analysis/kpi/`)
 Expected: FAIL — `ModuleNotFoundError: emep_factor_extract`
 
-- [ ] **Step 3: Tool implementieren**
+- [x] **Step 3: Tool implementieren**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -252,12 +230,12 @@ if __name__ == "__main__":
     main(sys.argv[1])
 ```
 
-- [ ] **Step 4: Test laufen lassen, PASS bestätigen**
+- [x] **Step 4: Test laufen lassen, PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Tool einmal real ausführen und CSV erzeugen**
+- [x] **Step 5: Tool einmal real ausführen und CSV erzeugen**
 
 Run (aus `analysis/kpi/`):
 `python -u emep_factor_extract.py "../../hagrid-input/emissions/1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx"`
@@ -275,7 +253,7 @@ Ebenso: `PM Exhaust` = 0.000142 in allen drei Segmenten (DPF → keine Segmentdi
 
 Weiter aufgefallen und unkritisch: `vmin`/`vmax` variieren **je Pollutant und Segment** (N1-I meist 10–130; N1-II/III 5–110 für CO/VOC/SPN23, 5–140 NOx, 5–100 PM, 5–130 EC). Das Clamping in `ef(v)` ist deshalb korrekt pro Koeffizientensatz und nicht global.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/emep_factor_extract.py analysis/kpi/data/emep_hot_factors.csv analysis/kpi/tests/test_emissions_emep.py
@@ -296,7 +274,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: `data/emep_hot_factors.csv` (Task-1-Schema).
 - Produces: `emissions_emep.load_factors(data_dir=None) -> dict` mit Struktur `{"diesel": {segment: {pollutant: coef}}, "bev": {segment: {"EC": coef}}, "sup": {}}` — **eine Ebene tiefer als Rev. A** (`segment` ∈ {`N1-I`,`N1-II`,`N1-III`}). `sup` füllt Task 3; `coef` = dict mit float-Keys `alpha,beta,gamma,delta,epsilon,zita,hta,rf,vmin,vmax,ef_check_v,ef_check` + str `unit`. — `emissions_emep.ef(v_kmh, coef) -> float` unverändert.
 
-- [ ] **Step 1: Failing Tests anhängen** — der Regressionstest validiert JEDE committete Zeile gegen die mitgelieferte EF(80)-Kontrollspalte:
+- [x] **Step 1: Failing Tests anhängen** — der Regressionstest validiert JEDE committete Zeile gegen die mitgelieferte EF(80)-Kontrollspalte:
 
 ```python
 # an tests/test_emissions_emep.py anhängen
@@ -348,12 +326,12 @@ def test_segment_ordering_at_tour_speed():
     assert pm["N1-I"] == pytest.approx(pm["N1-III"])
 ```
 
-- [ ] **Step 2: Fehlschlag bestätigen**
+- [x] **Step 2: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: FAIL — `ModuleNotFoundError: emissions_emep`
 
-- [ ] **Step 3: Modul implementieren**
+- [x] **Step 3: Modul implementieren**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -410,12 +388,12 @@ def ef(v_kmh, coef):
     return (num / den) * (1.0 - coef["rf"])
 ```
 
-- [ ] **Step 4: PASS bestätigen**
+- [x] **Step 4: PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: PASS (alle 24 Zeilen reproduzieren die Kontrollspalte; falls eine Zeile mit rel=1e-6 scheitert, prüfen ob das Tool volle Zellpräzision exportiert hat — `to_csv` ohne `float_format` behält volle Präzision, das ist gewollt)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/kpi/emissions_emep.py analysis/kpi/tests/test_emissions_emep.py
@@ -457,7 +435,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
   **Nicht guidebook-basiert und weiterhin extern zu zitieren:** `wtt_co2e_g_per_mj_diesel` (JEC WTW v5), `grid_co2e_g_per_mj` (UBA-Strommix), `gwp_ch4`/`gwp_n2o` (IPCC AR6 GWP100: CH4 fossil 29.8, N2O 273). Diese vier sind Systemgrenzen-Parameter, nicht Guidebook-Größen (METHODS-LOG §1.4).
 
-- [ ] **Step 2: Failing Test anhängen**
+- [x] **Step 2: Failing Test anhängen**
 
 ```python
 # an tests/test_emissions_emep.py anhängen
@@ -511,12 +489,12 @@ def test_nonexhaust_bases_are_segment_resolved_as_the_source_has_them():
     assert sup["tsp_road_g_per_km_n1_ii"] == pytest.approx(0.0210)
 ```
 
-- [ ] **Step 3: Fehlschlag bestätigen**
+- [x] **Step 3: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py::test_supplement_present_and_plausible -v`
 Expected: FAIL — `emep_supplement.csv` fehlt (leeres `sup`)
 
-- [ ] **Step 4: CSV schreiben** (Werte ggf. per Step-1-Verifikation korrigiert; `source` dann entsprechend präzisieren):
+- [x] **Step 4: CSV schreiben** (Werte ggf. per Step-1-Verifikation korrigiert; `source` dann entsprechend präzisieren):
 
 ```csv
 name,value,unit,source
@@ -654,12 +632,12 @@ war zum Redaktionsstand nicht moeglich. Der Strassenabrieb ist mit
 Qualitaetscode C-D als "highly uncertain" gekennzeichnet.
 ```
 
-- [ ] **Step 5: PASS bestätigen**
+- [x] **Step 5: PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: PASS (alle Tests, auch die aus Task 1/2)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/data/emep_supplement.csv analysis/kpi/data/README.md analysis/kpi/tests/test_emissions_emep.py
@@ -681,7 +659,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Produces: `non_exhaust_pm10(km, v_kmh, powertrain, segment, sup) -> (tyre_g, brake_g, road_g)`.
   > **Korrigiert gegenüber Rev. B (Step-1-Verifikation 2026-07-31):** hier stand „kein `segment`-Argument, die Non-Exhaust-Basen sind für LCV nicht segmentiert — bewusste Asymmetrie". Das ist widerlegt: Tab. 3-4/3-8 gruppieren N1-II+III, Tab. 3-6 trennt alle drei Segmente. `segment` ist Pflichtargument, die Asymmetrie entfällt. Segment→Key: `segment.lower().replace("-", "_")`.
 
-- [ ] **Step 1: Failing Tests anhängen**
+- [x] **Step 1: Failing Tests anhängen**
 
 ```python
 # an tests/test_emissions_emep.py anhängen
@@ -764,12 +742,12 @@ def test_non_exhaust_speed_correction_piecewise():
     assert b == pytest.approx(0.0211 * 0.980 * 1.67)
 ```
 
-- [ ] **Step 2: Fehlschlag bestätigen**
+- [x] **Step 2: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: FAIL — `vehicle_emissions` nicht definiert
 
-- [ ] **Step 3: Implementieren** (an `emissions_emep.py` anhängen):
+- [x] **Step 3: Implementieren** (an `emissions_emep.py` anhängen):
 
 ```python
 EXHAUST_KEYS = ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O",
@@ -876,12 +854,12 @@ def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
     return out
 ```
 
-- [ ] **Step 4: PASS bestätigen**
+- [x] **Step 4: PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/kpi/emissions_emep.py analysis/kpi/tests/test_emissions_emep.py
@@ -904,7 +882,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Produces: `extract_emissions.freight_arm(run_dir, fac) -> (totals, detail)` — `totals[powertrain][key] = float` (Summen über alle Touren, Keys wie `vehicle_emissions`), `detail` = Liste von dicts `{fleet:"freight", entity: vehicleId, vehicle_type, segment, km, v_kmh, powertrain, <alle Emissions-Keys>}`. Später von Task 7 (`extract`) konsumiert.
 - Produces: `segment_for_type(type_id, capacity=None) -> str` — die Zuordnungsregel aus den Global Constraints, **eine Funktion statt eines Exact-ID-Dicts**. Rev.-A-Grund für die Änderung: [`CarrierVehicleFactory.java:204-210`](../../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/demand/CarrierVehicleFactory.java#L204-L210) erzeugt Fahrzeugtypen zur Laufzeit (`ct_cep_<cap>_m` für Kapa ≤165, `ct_cep_<cap>_l` darüber). Ein Exact-ID-Dict hätte den gesamten Hannover-Kapazitätssweep in den „unmapped → skipped"-Zweig geschickt, also stillschweigend auf null Emissionen.
 
-- [ ] **Step 1: Failing Test schreiben** (Fixture-TSV wird per tmp_path erzeugt):
+- [x] **Step 1: Failing Test schreiben** (Fixture-TSV wird per tmp_path erzeugt):
 
 ```python
 # tests/test_extract_emissions.py
@@ -996,12 +974,12 @@ def test_freight_arm_missing_tsv_returns_none(tmp_path):
     assert ee.freight_arm(tmp_path, em.load_factors()) is None
 ```
 
-- [ ] **Step 2: Fehlschlag bestätigen**
+- [x] **Step 2: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_extract_emissions.py -v`
 Expected: FAIL — `ModuleNotFoundError: extract_emissions`
 
-- [ ] **Step 3: Implementieren**
+- [x] **Step 3: Implementieren**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1134,7 +1112,7 @@ def freight_arm(run_dir, fac):
 
   Alle drei geprüften Läufe: BEV liegt bei 34–35 % des Diesel-CO₂e-WTW; alle Tourmittelgeschwindigkeiten liegen unter 40 km/h, also im Plateau beider Abrieb-Speedkorrekturen.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
@@ -1181,7 +1159,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
   Konsequenz für die Signatur: `veh_path_ts` sind die **4-Tupel** der Detailvariante, nicht die im Plan skizzierten 3-Tupel — eine dritte Tupelform hätte niemandem genützt.
 
-- [ ] **Step 2: Failing Tests anhängen**
+- [x] **Step 2: Failing Tests anhängen**
 
 ```python
 # an tests/test_extract_emissions.py anhängen
@@ -1226,9 +1204,9 @@ def test_modular_freight_arm_empty_without_windows():
     assert detail == [] and totals["diesel"]["CO2E_WTW"] == 0.0
 ```
 
-- [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`, erwartet `AttributeError: freight_windows`.
+- [x] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`, erwartet `AttributeError: freight_windows`.
 
-- [ ] **Step 4: Implementieren.** `freight_windows` parst die `*.freight_events_filtered.txt` (in allen 1d-Läufen vorhanden) auf `taskType="MODULAR_FREIGHT_DRIVE"`-Start/Ende je `dvrpVehicle`. `modular_freight_arm` summiert die Link-Längen der Pfadeinträge, deren Zeitstempel in ein Fenster fällt, und nimmt als Geschwindigkeit `km / Σ Fensterdauer`. **Sanity-Anker gegen `modular_tour_stats.csv`:** die rekonstruierten Freight-km müssen in der Größenordnung von `service_km_planned + deadhead_km_planned` liegen (m1d010: 5616,5 km). Weicht es um >10 % ab, ist der Fensterschnitt falsch — dann laut abbrechen, nicht runden.
+- [x] **Step 4: Implementieren.** `freight_windows` parst die `*.freight_events_filtered.txt` (in allen 1d-Läufen vorhanden) auf `taskType="MODULAR_FREIGHT_DRIVE"`-Start/Ende je `dvrpVehicle`. `modular_freight_arm` summiert die Link-Längen der Pfadeinträge, deren Zeitstempel in ein Fenster fällt, und nimmt als Geschwindigkeit `km / Σ Fensterdauer`. **Sanity-Anker gegen `modular_tour_stats.csv`:** die rekonstruierten Freight-km müssen in der Größenordnung von `service_km_planned + deadhead_km_planned` liegen (m1d010: 5616,5 km). Weicht es um >10 % ab, ist der Fensterschnitt falsch — dann laut abbrechen, nicht runden.
 
 - [x] **Step 5: PASS + Realdaten-Gegenprobe (2026-07-31) — meterexakt.** Gegenprobe lokal an **`m1d050`** gefahren (der einzige lokal verfügbare 1d-Lauf mit tatsächlich disponierter Tour; `m1d010`/`m1d040` liegen auf dem Sim-PC):
 
@@ -1273,7 +1251,7 @@ def test_modular_freight_arm_empty_without_windows():
 
   **Und die Fensterrekonstruktion ist jetzt über drei Größenordnungen validiert:** die Abweichung gegen `service_km_planned + deadhead_km_planned` ist in **allen fünf** fertigen Läufen ±0,00 %, von 13,5 km bis 5616,5 km. Der im Plan gesetzte 10-%-Toleranzanker war um Größenordnungen zu locker.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
@@ -1317,11 +1295,11 @@ Zwei statistische Festlegungen, die im Code als Kommentar mitmüssen:
 - **Mittelwert, nicht Median.** Gebraucht wird die Gesamtmasse an Bord, `Σ Gewichte = n × Mittelwert`; der Mittelwert ist dafür der unverzerrte Schätzer. Die Verteilung ist stark rechtsschief (Amaral-Median 0,6950 kg = 42 % des Mittels) — wer „robustheitshalber" den Median nimmt, unterschätzt die Paketmasse um 58 %.
 - **Q1/Q3 aus Tab. 1 sind kein Sensitivitätsband für den Mittelwert** (das ist die Streuung einzelner Sendungen). Plausibles Band auf den Mittelwert: **1,3–2,5 kg**.
 
-- [ ] **Step 1: Vorabprüfungen (kein Code).** Zwei Dinge klären und Ergebnis hier notieren:
+- [x] **Step 1: Vorabprüfungen (kein Code).** Zwei Dinge klären und Ergebnis hier notieren:
   1. **Weisen die bestehenden 1c-Occupancy-KPIs die Paket-Kontamination aus?** `occ` zählt in 1c Pakete mit (METHODS-LOG §2.26). Falls nicht ausgewiesen, ist das ein **eigener Befund für den 1c-Arm** (`occ_km`, `occ_segments`, `occ_time`, Occupancy-Karte) und gehört zuerst dort dokumentiert — nicht als Nebenprodukt der Emissionsrechnung.
   2. **Konsumenten von `veh_path` prüfen.** Die Tupelerweiterung berührt `veh_km`, `occ_km_shares`, `maps` und Task 5b/6. Indexzugriff statt Entpackung ist die Regel (Task 6 ist schon so umgestellt).
 
-- [ ] **Step 2: Failing Tests schreiben**
+- [x] **Step 2: Failing Tests schreiben**
 
 ```python
 # an tests/test_extract_emissions.py anhängen
@@ -1399,13 +1377,13 @@ def test_specific_intensity_rows(tmp_path):
     assert "kg_per_passenger" in by["co2e_wtw_per_parcel"]["source"]
 ```
 
-- [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`.
+- [x] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`.
 
-- [ ] **Step 4: Implementieren.** `mass_split(n_pax, n_parcels, sup)` bildet die kg·km-Anteile und **validiert die Konstante beim Laden** (`kg_per_parcel` unterhalb des plausiblen Bandes, also < 1,3 kg ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „kg_per_parcel=1.65 (assumption; Amaral et al. 2026 TR-E Tab.1 + Rajendran & Harper 2021 + Mohri et al., none German - declared transfer); kg_per_passenger=80 is a setting".
+- [x] **Step 4: Implementieren.** `mass_split(n_pax, n_parcels, sup)` bildet die kg·km-Anteile und **validiert die Konstante beim Laden** (`kg_per_parcel` unterhalb des plausiblen Bandes, also < 1,3 kg ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „kg_per_parcel=1.65 (assumption; Amaral et al. 2026 TR-E Tab.1 + Rajendran & Harper 2021 + Mohri et al., none German - declared transfer); kg_per_passenger=80 is a setting".
 
-- [ ] **Step 5: PASS + Gegenprobe.** Zwei Invarianten am Realdatenlauf prüfen: (a) zugerechnete Summe == `total_co2e_wtw` bis auf Rundung; (b) `alloc_share_parcels_mass` und `_slots` als Paar berichten — divergieren sie um mehr als ~10 Prozentpunkte, ist das ein Paper-relevanter Befund und keine Rundung.
+- [x] **Step 5: PASS + Gegenprobe.** Zwei Invarianten am Realdatenlauf prüfen: (a) zugerechnete Summe == `total_co2e_wtw` bis auf Rundung; (b) `alloc_share_parcels_mass` und `_slots` als Paar berichten — divergieren sie um mehr als ~10 Prozentpunkte, ist das ein Paper-relevanter Befund und keine Rundung.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/geometry.py analysis/kpi/extract_emissions.py analysis/kpi/data/emep_supplement.csv analysis/kpi/tests/
@@ -1432,7 +1410,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 >
 > **Verifiziert an m1d050:** Pax-Arm 47.146,35 km + Freight-Arm 13,49 km = 47.159,85 km = Gesamtpfad, **Residuum −0,0000 km**. Ohne den Ausschluss lägen die Freight-km doppelt in `total_*`. In `m1d050` wären das nur 2,61 von 12.710 kg CO₂e (0,02 %), weil dort eine einzige Tour lief — bei realistischer Beladung (`m1d010`: 5616,5 Freight-km gegen ~47.000 DRT-km) wären es **rund 12 %**. Also material, nicht kosmetisch. Ein Test hält die Restfreiheit fest (`test_drt_arm_excludes_freight_km_so_the_arms_do_not_double_count`).
 
-- [ ] **Step 1: Failing Tests anhängen**
+- [x] **Step 1: Failing Tests anhängen**
 
 ```python
 # an tests/test_extract_emissions.py anhängen
@@ -1484,12 +1462,12 @@ def test_drt_arm_skips_vehicle_without_drive_time():
     assert detail == [] and totals["diesel"]["CO2E_WTW"] == 0.0
 ```
 
-- [ ] **Step 2: Fehlschlag bestätigen**
+- [x] **Step 2: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_extract_emissions.py -v`
 Expected: FAIL — `load_link_lengths` nicht definiert
 
-- [ ] **Step 3: Implementieren** (an `extract_emissions.py` anhängen; Imports `gzip` + `xml.etree.ElementTree as ET` oben ergänzen):
+- [x] **Step 3: Implementieren** (an `extract_emissions.py` anhängen; Imports `gzip` + `xml.etree.ElementTree as ET` oben ergänzen):
 
 ```python
 def load_link_lengths(network_gz, used_links):
@@ -1532,12 +1510,12 @@ def drt_arm(veh_path, recon, link_len, fac):
 
 **Hinweis:** `sum(... for p in path)` statt `for lid, _occ in path` — Task 5b erweitert die Pfadeinträge ggf. auf `(link_id, occ, t)`; Indexzugriff bleibt dann gültig.
 
-- [ ] **Step 4: PASS bestätigen**
+- [x] **Step 4: PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_extract_emissions.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
@@ -1561,7 +1539,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - **EV-Reichweiten-Sweep (Rev. B):** `ev_range_max_km_<label>`, `ev_range_p95_km_<label>` [km] wie bisher, aber die Überschreitungsanteile **je Schwelle**: `ev_range_exceed_<fleet>_150`, `_200`, `_250` [share]. Statt eines Pass/Fail-Werts also eine Kurve über drei Stützstellen.
 - **Zusätzliche Transparenz-Rows:** `segment_km_share_n1_ii`, `segment_km_share_n1_iii` [share] — km-Anteil je Segment über alle abgedeckten Flotten. Grund: der Fahrzeugmix ist jsprit-Ergebnis und schwankt zwischen Läufen erheblich (base10c 93 % `size_s`; `localdepots_stagger` 100 % `size_m`). Ohne diese Rows ist im Paper nicht rekonstruierbar, wie viel eines CO₂-Deltas aus dem Mix statt aus der Fahrleistung kommt — genau die Verwechslung, die die Segmentdifferenzierung überhaupt nötig macht.
 
-- [ ] **Step 1: Failing Tests anhängen**
+- [x] **Step 1: Failing Tests anhängen**
 
 ```python
 # an tests/test_extract_emissions.py anhängen
@@ -1638,12 +1616,12 @@ def test_write_detail(tmp_path):
     assert "RUN1" in txt and "freight_dhl_veh_a_1" in txt
 ```
 
-- [ ] **Step 2: Fehlschlag bestätigen**
+- [x] **Step 2: Fehlschlag bestätigen**
 
 Run: `python -u -m pytest tests/test_extract_emissions.py -v`
 Expected: FAIL — `extract` nicht definiert
 
-- [ ] **Step 3: Implementieren** (an `extract_emissions.py` anhängen):
+- [x] **Step 3: Implementieren** (an `extract_emissions.py` anhängen):
 
 ```python
 SRC = ("EMEP/EEA GB 2023 - Update 2025, App.4 Tier-3 (Okt 2025, "
@@ -1810,7 +1788,7 @@ def write_detail(detail, meta, path):
 
   **ACHTUNG, asymmetrischer Befund — nicht überinterpretieren:** auf der DRT-Seite liegt die Überschreitung bei 150 km bei **95,8 %** (längster Fahrzeugtag 527 km, Mittel ~393 km/Fahrzeug). Das ist **kein** „DRT ist nicht elektrifizierbar": ein Freight-*Tour* ist eine zusammenhängende Schicht, ein DRT-*Fahrzeugtag* enthält lange `STAY`-Phasen, in denen geladen werden könnte. Die beiden Zahlen sind also **nicht dieselbe Größe** und dürfen nicht nebeneinander als Vergleich stehen. Sauber wäre eine Ladefenster-Analyse (längster Fahrblock zwischen zwei ausreichend langen STAY-Phasen) — **nicht in diesem Plan**, gehört als eigener Punkt in den Backlog. Bis dahin: die DRT-Reichweiten-Rows nur als *Fahrleistung je Fahrzeugtag* interpretieren, nicht als Reichweitenaussage.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
@@ -1877,21 +1855,29 @@ Achtung Reihenfolge-Detail: `network = run_dir / (meta.prefix + ".output_network
 Run: `python -u -m pytest tests/ -v` (aus `analysis/kpi/`)
 Expected: PASS — insbesondere `test_build_kpis.py`, `test_render.py` und `test_real_married250.py` bleiben grün (der Geometrie-Block ist nur verschoben, nicht verändert; `environment` ist eine additive Gruppe).
 
-- [ ] **Step 5: Realdaten-Smoke gegen einen vorhandenen Run**
+- [x] **Step 5: Realdaten-Smoke — VIER Läufe statt zwei, und sie haben zwei echte Defekte gefunden**
 
-Zwei Läufe, weil sie unterschiedliche Datenpfade treffen (beide auf dem Sim-PC unter `C:\Users\Simrechner\Documents\GitHub\HAGRID\...`):
+Der Plan sah `base10c` + `m1d010` vor. Gelaufen sind vier, weil jede Armkombination einen eigenen Datenpfad trifft und drei davon lokal verfügbar waren (`base10c`s `analysis/freight/` fehlte lokal und wurde vom Sim-PC nachgeholt — die Provider-Gegenprobe meldet keine unmatched Carrier, die TSVs passen also zum lokalen Lauf):
 
-1. **`base10c`** — konventioneller Arm, window-vereinheitlicht, hat `analysis/freight/`:
-   `python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_BASELINE_13052025_base10c_iter150_jsprit100`
-   Erwartete Gegenprobe gegen die verifizierten Ist-Werte: 63 Touren, 6252 km, v̄ 36,4 km/h, `segment_km_share_n1_ii` ≈ **0,926** (56 Fahrzeuge / 5789 km auf `size_s`), `ev_range_max_km_freight_tour` ≈ **158,8**, `ev_range_exceed_freight_150` ≈ **0,032** (2 von 63), `_200` und `_250` = 0.
-2. **`m1d010`** — modularer Arm, kein `analysis/freight/`:
-   `python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_MODULAR_13052025_m1d010_iter150_jsprit100`
-   Erwartet: `freight_modular_*`-Zeilen vorhanden; rekonstruierte Freight-km in der Größenordnung **5616,5 km** (= `service_km_planned` 4002,6 + `deadhead_km_planned` 1614,0 aus `modular_tour_stats.csv`). Abweichung >10 % ⇒ Fensterschnitt aus Task 5b ist falsch.
+| Lauf | Arme | `total_co2e_wtw` [kg] | Rest | `segment_km_share_n1_ii` |
+|---|---|---|---|---|
+| `bandz_central` | freight | 1243,76 (BEV 435,44) | — | 0,925937 |
+| `base10c` | freight + drt | 14163,9 | nur CSV-Rundung | 0,925937 |
+| `m1d050` | drt + freight_modular | 12709,6 (12706,1 + 3,52) | nur CSV-Rundung | *(abwesend)* |
+| `chid600w21` | drt (1c) | 12726,7 | — | *(abwesend)* |
 
-Danach je Lauf: `grep "environment" <run-dir>/analysis/kpis_long.csv | head -40`
-Expected: Zeilen vorhanden (**nicht** „emissions skipped"), Sanity `freight_co2e_wtw` grob 0,2–0,4 kg/km × Freight-km; `kpi_emissions_vehicles.csv` existiert, hat eine `segment`-Spalte und 2×(Entities) Zeilen.
+Gegenprobe zu den Task-7-Erwartungen, jetzt durch die KPI-Schicht statt per Direktaufruf: `bandz_central` reproduziert **jede** Zahl (1243,761 / 435,435 / 542,570 g NOx / 316,610 g PM10 / 13128,405 MJ, 126 Detailzeilen = 63 Fahrzeuge x 2 Antriebe). `base10c` liefert die im Plan erwarteten 63 Touren / **6252,1 km** / 0,926 — identisch zu `bandz_central`, weil beide denselben deterministischen jsprit-Plan fahren. `m1d050`: `ev_range_max_km_freight_modular` = **13,4946 km**, exakt die in Task 5b validierten 13,5 km. `chid600w21`: **20,20 g CO2e/Paket** (Masse) bei Massenanteil **0,90 %** vs. Slotanteil **23,64 %** — die Zahlen aus METHODS-LOG 2.26, jetzt aus dem regulären Build.
 
-- [ ] **Step 6: Commit**
+**Defekt 1 — falscher Event-Cache (siehe Abweichung 3 oben).** Ohne den `m1d050`-Smoke wäre der 1d-Arm dauerhaft leer geblieben, ohne eine einzige Fehlermeldung.
+
+**Defekt 2 — `segment_km_share_*` war über ALLE Flotten gerechnet und damit unbrauchbar.** Auf `base10c` wiegt der DRT-Arm die Vans 47953 : 6252 km aus, also kam `n1_ii` = **0,107** heraus — für denselben LMD-Plan, der auf `bandz_central` **0,926** liest. Zwei unvergleichbare Zahlen für einen identischen Fahrzeugmix. Ursache: DRT und `freight_modular` tragen beide die feste Ersetzung `DRT_SEGMENT = N1-III`, ihr Anteil ist konstruktionsbedingt 1,0 und damit keine Aussage. Der Anteil wird jetzt nur über die konventionelle Van-Flotte gebildet (`_MIX_FLEETS = ("freight",)`) und **fehlt** auf Pax-only- und 1d-Läufen, statt dort eine Scheinaussage zu emittieren. Damit ist der KPI wieder das, wofür er gedacht war: Mixverschiebung von Fahrleistungsänderung trennen.
+
+**Zwei weitere Korrekturen aus denselben Läufen (keine Bugs, aber irreführende Ausgaben):**
+
+- **`ev_range_exceed_drt_*` trug dieselbe Quellenangabe wie die Freight-Zeilen.** Auf `base10c` steht 3,2 % (Freight, je **Tour**) neben 96,7 % (DRT, je **Fahrzeugtag**) — wer das nebeneinander liest, schließt „DRT ist nicht elektrifizierbar". Eine Tour ist eine zusammenhängende Schicht, ein Fahrzeugtag enthält lange STAY-Phasen, in denen geladen werden kann. Jede Flotte hat jetzt ihre eigene Provenance (`_RANGE_SRC`), die sagt, was **eine** Einheit ist und was der Anteil nicht heißt. Der Vorbehalt muss in der Zeile stehen: wer `kpis_long.csv` liest, sieht kein Dokument. Die Ladefenster-Analyse geht in den Backlog (Task 9).
+- **Zurechnungszeilen ohne Paket-kg·km-Basis.** Im 1d-Arm fahren Pakete als Kapsel, nicht als Paket-*Personen*, also ist `occ_parcels` überall 0 und `alloc_share_parcels_mass` wäre 0 — die Behauptung, die Fracht dieses Laufs sei emissionsfrei. Ohne Basis entsteht jetzt keine Zeile; `_served_quantities` gated zusätzlich auf `has_shareduse_stats`, sodass Aufrufer- und Datenseite unabhängig prüfen.
+
+- [x] **Step 6: Commit** — `87523e1`. Abweichend vom Snippet: `common.py` war schon in Task 5c committet und `render.py` blieb unberührt (Step 2 entfiel); dafür kamen `extract_emissions.py`, `geometry.py` und vier Test-Dateien dazu.
 
 ```bash
 git add analysis/kpi/common.py analysis/kpi/build_kpis.py analysis/kpi/render.py
@@ -1962,8 +1948,10 @@ Gerechnet, nicht geschätzt: EMEP/EEA Gl. (10) in der Euro-6+-Fassung (β Tab. 3
 - Tier-3-Kurven auf Trip-/Tour-Mittelgeschwindigkeit angewandt (COPERT-
   Intention), nicht auf Link-Ebene; Stop&Go-Differenzierung unterhalb der
   Kurvenaufloesung entfaellt (laendlicher Raum: unkritisch fuer Deltas).
-- Kaltstart nicht modelliert: Bound = <X> % (NOx), <Y> % (CO2) je Tour
+- Kaltstart nicht modelliert: Bound = 5,6 % (NOx), 0,9 % (CO2) je Tour
   (COLD_EMISSIONS_PARAMETERS, 1 Start/Tour, 10 C) -- siehe Step-1-Rechnung.
+  [Platzhalter nachtraeglich gefuellt, damit hier keine offene Stelle
+  stehenbleibt; maßgeblich bleibt data/README.md.]
 - Idle an Servicestopps: Engine-off-Annahme (Auslieferung/Boarding).
 - Euro-7-Faktoren aus Grenzwerten projiziert (Norm ab ~2026/27).
 - km-Kanal traegt jsprit-Heuristik-Rauschen (~6.5 % Boden, Seed-Messung
