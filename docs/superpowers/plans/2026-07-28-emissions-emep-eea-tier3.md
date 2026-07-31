@@ -247,7 +247,11 @@ Expected: `wrote .../data/emep_hot_factors.csv (24 rows)` — 3 Segmente × 7 Di
 | N1-II | 1.910160 | 0.093489 | 0.842321 |
 | N1-III | **2.732177** | 0.093489 | 1.169166 |
 
-Ebenso: NOx `rf` ≈ 0.282175, `PM Exhaust` = 0.000142 in allen drei Segmenten (DPF → keine Segmentdifferenzierung).
+Ebenso: `PM Exhaust` = 0.000142 in allen drei Segmenten (DPF → keine Segmentdifferenzierung).
+
+> **Befund beim Realdurchlauf (2026-07-31), korrigiert gegen die Plan-Erwartung:** der NOx-`rf` ist **nicht** in allen drei Segmenten 0.282175 — N1-I trägt **0.92**, N1-II/III 0.282175. Das ist kein Extraktionsfehler: die mitgelieferte EF(80)-Kontrollspalte (N1-I NOx 0.038473) ist mit genau diesem `rf` konsistent, Task 2 prüft das gegen `ef_check`. Konsequenz für die Sensitivitätsaussage in den Interfaces oben: der NOx-Abstand N1-I ↔ N1-II (Faktor 1,67 bei 30 km/h) entsteht **überwiegend aus dem Reduktionsfaktor**, nicht aus der Rohkurve. Wer N1-I je als Segment zuordnet, ordnet damit auch eine andere Nachbehandlungsannahme zu — im Paper zu benennen, falls N1-I benutzt wird (aktuell wird es nicht, s. Klassenmapping).
+
+Weiter aufgefallen und unkritisch: `vmin`/`vmax` variieren **je Pollutant und Segment** (N1-I meist 10–130; N1-II/III 5–110 für CO/VOC/SPN23, 5–140 NOx, 5–100 PM, 5–130 EC). Das Clamping in `ef(v)` ist deshalb korrekt pro Koeffizientensatz und nicht global.
 
 - [ ] **Step 6: Commit**
 
