@@ -1146,99 +1146,70 @@ Verfügbar ist nur `capacityDemand`, also die Paket-**Anzahl** (Verteilung im ge
 an **zwei Konstanten**:
   Paket-Anteil = (n_Pakete · kg_Paket) / (n_Pakete · kg_Paket + n_Pax · kg_Pax)
 
-**Quelle gesetzt (User 2026-07-31), `NEEDS-SOURCE` erledigt:** Amaral et al. (2026), *Empirical
-analysis of e-commerce delivery operations: from parcels to tours*, Transportation Research Part E,
-Tab. 1. Mittelmasse **1,6478 kg** über alle Sendungen; differenziert **1,5922 kg** an Haushalte und
-**1,8160 kg** an Gewerbe. Da HAGRID B2C und B2B ohnehin trennt (B2B-Anteil ist
-Optimierer-Constraint), wird die **differenzierte** Variante verwendet und die gepoolte 1,6478 nur
-als Rückfall, wenn der Kanal einer Sendung nicht bekannt ist.
+**Paketmasse = 1,65 kg, festgezurrte Annahme (User-Entscheidung 2026-07-31).** Ein einziger Wert,
+absichtlich gerundet — die Rundung signalisiert Annahme, nicht Messung. Drei Quellen stützen
+dieselbe Größenordnung:
 
-**Wichtig — Mittelwert ist hier die richtige Statistik, nicht der Median.** Die Verteilung ist
-stark rechtsschief (Mittel 1,6478 vs. Median 0,6950 kg, Verhältnis 2,37; Std.abw. 3,0797, also
-~1,9× der Mittelwert). Die Zurechnung braucht aber die **Gesamtmasse an Bord**, und
-`Σ Einzelgewichte = n × Mittelwert` — der Mittelwert ist dafür der unverzerrte Schätzer, die Schiefe
-schlägt nur auf die Varianz der Schätzung durch, nicht auf den Erwartungswert. Bei tausenden
-Sendungen je Lauf ist das Aggregat gut bestimmt. **Falle:** wer hier „robustheitshalber" zum Median
-greift, unterschätzt die Gesamtpaketmasse um **58 %** und drückt den Frachtanteil entsprechend.
-
-**Zweite Falle — Q1/Q3 sind KEIN Sensitivitätsband für den Mittelwert.** Tab. 1 gibt Q1 = 0,30 und
-Q3 = 1,625 kg, das ist die Streuung *einzelner Sendungen*. Als Spanne auf den Mittelwert eingesetzt
-wäre das ein statistischer Fehler, der nach Rigorosität aussieht. Das zulässige quellinterne Band
-ist der Haushalts-/Gewerbe-Kontrast **1,5922–1,8160 kg**; darüber hinaus ist nur der
-Transfer-Vorbehalt (unten) ein Grund für eine breitere Spanne.
-
-**Transfer-Vorbehalt, im Paper zu benennen:** die Quelle ist ein **brasilianischer**
-E-Commerce-Datensatz (Werte in BRL). Angewendet wird sie auf ein deutsches, ländliches Szenario.
-1,6 kg liegt im plausiblen Bereich für KEP allgemein, aber Sendungsmix, Retourenanteil und
-B2B-Struktur unterscheiden sich. Als deklarierter Transfer führen, nicht als deutsche Kennzahl.
-
-**Empfindlichkeit mit den gesetzten Werten** (bei 1,6 Fahrgästen an Bord = 128 kg, gemessen als
-`mean_pax_aboard_pax`):
-
-| Pakete an Bord | Paketmasse | Frachtanteil |
+| Quelle | Kontext | Aussage |
 |---|---|---|
-| 10 | 16,5 kg | 11,4 % |
-| 20 | 33,0 kg | 20,5 % |
-| 50 | 82,4 kg | 39,2 % |
-| 99 (`max_parcels_per_tour`) | 163,1 kg | 56,0 % |
+| Amaral et al. (2026), TR Part E, Tab. 1 | Brasilien, E-Commerce | Mittel **1,6478 kg** (Haushalte 1,5922 / Gewerbe 1,8160); Median 0,6950; Std.abw. 3,0797 |
+| Rajendran & Harper (2021), TRIP | USA, Paketzustellung | 1–350 lbs = 0,454–158,757 kg; >50 % unter 5 lbs (2,268 kg); **kein Mittelwert angegeben** |
+| Mohri et al., *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers* | Crowdshipping/ÖPNV | Paketmassen **0,5–5 kg** |
 
-Der Frachtanteil ist also stark von der Beladung abhängig und wechselt erst jenseits von ~78
-Paketen die Mehrheit. Der Haushalts-/Gewerbe-Kontrast bewegt ihn dagegen nur um ~1–2 Prozentpunkte.
+Amaral liefert den einzigen gemessenen Mittelwert und damit den Punktwert; die beiden anderen
+bestätigen die Größenordnung. **Kein Kanal-Split** (B2C/B2B): der Kontrast beträgt 3,2 Pp am
+Aufteilungsanteil und liegt damit innerhalb der Unsicherheit der Annahme selbst — differenzieren
+wäre Scheingenauigkeit. Eine Konstante, `kg_per_parcel = 1.65`.
 
-**Zweite Quelle, und sie korrigiert die eben gezogene Entwarnung** (User 2026-07-31): Rajendran &
-Harper (2021), *Simulation-based algorithm for determining best package delivery alternatives under
-three criteria: Time, cost and sustainability*, Transportation Research Interdisciplinary
-Perspectives: Sendungsgewicht **1–350 lbs = 0,454–158,757 kg**, „over 50 % of the weight being less
-than 5 lbs" (**2,268 kg**). Dort wird die Wirkung der Verteilung ebenfalls über eine
-Sensitivitätsanalyse behandelt.
+**Zurückgezogen: mein Oberbracket von ~5,4 kg.** Es entstand als Rajendrans Median-*Obergrenze*
+(2,268) × Amarals Schiefeverhältnis (2,37), also als Schranke auf eine Schranke. Mohris Spanne
+0,5–5 kg **schließt es aus** — ein Mittel von 5,4 kg läge über dem berichteten Maximum. Damit fällt
+auch die daraus gezogene Warnung („29 Pp Spanne über Kontexte"): das plausible Band auf den
+Mittelwert ist **1,3–2,5 kg**, am Aufteilungsanteil ~16 Pp bei 50 Paketen. Material, aber kein
+Regimewechsel.
 
-Was diese Quelle leistet und was nicht:
-- **Sie bestätigt die Schiefe unabhängig** — Mehrheit leicht, langer Oberschwanz bis ~159 kg. Das
-  stützt den Mittelwert-statt-Median-Punkt oben aus einer zweiten Erhebung.
-- **Sie liefert keinen Mittelwert.** Nur Spanne und ein „>50 % unter 5 lbs". Sie kann Amarals
-  1,6478 kg als Punktwert also nicht ersetzen.
-- **Sie zeigt, dass die Konstante kontextabhängig ist.** Amarals Median liegt bei 0,695 kg,
-  Rajendrans Median liegt bei ≤ 2,268 kg — die US-Verteilung ist also deutlich schwerer. Überträgt
-  man Amarals Schiefe (Mittel/Median = 2,37) auf Rajendrans Medianobergrenze, ergibt das ein
-  **Mittel-Oberbracket von ~5,4 kg**. ⚠️ **Das ist eine abgeleitete Größe, keine gemessene** —
-  nirgends in Rajendran & Harper steht ein Mittelwert. Nur als Größenordnung verwenden, nie als
-  Ergebniszahl zitieren.
+**Mittelwert, nicht Median — das bleibt die eigentliche Falle.** Gebraucht wird die Gesamtmasse an
+Bord, und `Σ Gewichte = n × Mittelwert`; der Mittelwert ist dafür der unverzerrte Schätzer. Die
+Verteilung ist stark rechtsschief (Amaral: Median 0,6950 = 42 % des Mittels), die Schiefe schlägt
+aber nur auf die Varianz der Schätzung durch, nicht auf den Erwartungswert. Wer hier
+„robustheitshalber" zum Median greift, unterschätzt die Paketmasse um 58 %. Ebenso: **Q1/Q3 aus
+Amarals Tab. 1 sind kein Sensitivitätsband für den Mittelwert** — das ist die Streuung einzelner
+Sendungen.
 
-**Korrektur der Entwarnung:** *innerhalb* von Amaral ist die Aufteilung tatsächlich
-beladungsgetrieben (B2C↔B2B: 1–2 Pp). **Über Kontexte hinweg gilt das Gegenteil:**
+**Transfer-Vorbehalt, im Paper zu benennen:** keine der drei Quellen ist deutsch (Amaral
+Brasilien/BRL, Rajendran USA). Als deklarierter Transfer führen, nicht als deutsche Kennzahl. Eine
+deutsche KEP-Referenz würde den Punkt erledigen.
 
-| Pakete an Bord | 1,6478 kg (Amaral, BR) | ~5,4 kg (Bracket, US-Kontext) | Spanne |
+**Empfindlichkeit** (bei 1,6 Fahrgästen an Bord = 128 kg, gemessen als `mean_pax_aboard_pax`):
+
+| Pakete an Bord | 1,30 kg | **1,65 kg** | 2,50 kg |
 |---|---|---|---|
-| 10 | 11,4 % | 29,6 % | 18 Pp |
-| 20 | 20,5 % | 45,7 % | 25 Pp |
-| 50 | 39,2 % | 67,8 % | **29 Pp** |
-| 99 | 56,0 % | 80,6 % | 25 Pp |
+| 10 | 9,2 % | **11,4 %** | 16,3 % |
+| 20 | 16,9 % | **20,5 %** | 28,1 % |
+| 50 | 33,7 % | **39,2 %** | 49,4 % |
+| 99 (`max_parcels_per_tour`) | 50,1 % | **56,1 %** | 65,9 % |
 
-Ein einzelner Massenwert kann die Aufteilung also nicht tragen. **Berichtsregel:** die
-Aufteilungsanteile (`alloc_share_parcels_mass`) müssen **immer neben** den spezifischen Intensitäten
-stehen, und die kapazitätsbasierte Variante (`alloc_share_parcels_slots`) daneben — die ist
-szenariodefiniert (20 Paketslots / 8 Sitze) und hängt an **keiner** externen Massenannahme. Für ein
-deutsches Szenario ohne deutsche Paketmassen-Quelle ist das ein Argument, die Slot-Basis als
-*primär* und die Massenbasis als Sensitivität zu führen — Entscheidung liegt beim User, die
-Umsetzung emittiert beide ohnehin.
+Der Frachtanteil wird primär von der **Beladung** getrieben (10 → 99 Pakete: ~45 Pp) und sekundär
+von der Massenannahme (~16 Pp im Band). Bei der Annahme kippt die Mehrheit jenseits von ~78 Paketen
+zur Fracht. **Berichtsregel:** `alloc_share_parcels_mass` immer neben den spezifischen Intensitäten
+ausweisen — nie eine kg-CO₂e-je-Paket-Zahl ohne den Anteil, aus dem sie kommt.
 
-**Alle Aufteilungskonstanten sind reine Post-Processing-Größen.** `kg_per_parcel_*`,
+**`kg_per_passenger` = 80 kg ist eine Setzung**, keine Quelle (gängige Straßenverkehrskonvention,
+ohne Gepäck). Da nur das **Verhältnis** kg_Paket/kg_Pax die Aufteilung bestimmt, wiegt sie genauso
+schwer wie die belegte Paketmasse — beide zusammen ausweisen.
+
+**Alle Aufteilungskonstanten sind reine Post-Processing-Größen.** `kg_per_parcel`,
 `kg_per_passenger` und `slots_per_seat_equiv` gehen weder in die Simulation noch in den
 Emissionsfaktor (EMEP hat für LCV keine Lastdimension, §1.4) noch in die Fahrleistung ein. Eine
 Änderung — etwa `kg_per_passenger` von 80 auf 85 — ist ein Edit in `emep_supplement.csv` plus
 `build_kpis.py`-Neulauf auf vorhandenem Output, Minuten statt Stunden, **kein Sim-Rerun**. `total_*`
-bleibt dabei unverändert; es bewegen sich nur die Anteile und die spezifischen Intensitäten. Damit
-ist die Sensitivitätsanalyse billig und es gibt keinen Grund, sie nicht als Band zu berichten.
+bleibt unverändert; es bewegen sich nur die Anteile und die spezifischen Intensitäten. Die
+Sensitivitätsanalyse ist damit billig — es gibt keinen Grund, sie nicht als Band zu berichten.
 
-**`kg_per_passenger` = 80 kg ist eine Setzung**, keine Quelle: gängige Konvention im
-Straßenverkehr, ohne Gepäck. Da nur das **Verhältnis** kg_Paket/kg_Pax die Aufteilung bestimmt,
-wiegt diese Setzung genauso schwer wie die belegte Paketmasse — beide zusammen ausweisen.
-
-**Alternative Basis als Pflicht-Sensitivität:** **Kapazitätsanteile** statt Masse. In 1c hat das
+**Alternative Basis als Pflicht-Begleitung:** **Kapazitätsanteile** statt Masse. In 1c hat das
 Fahrzeug 8 Sitze und 20 Paketslots (§2.21), die Äquivalenz ist also **szenariodefiniert** statt
-erfunden. Das ist bei der Willkür-Frage stärker als eine angenommene kg-Zahl und sollte neben der
-Massenvariante berichtet werden. Beide summieren konstruktionsgemäß auf; sie unterscheiden sich nur
-in der Gewichtung.
+gesetzt und hängt an keiner externen Massenannahme. Neben der Massenvariante berichten; beide
+summieren konstruktionsgemäß auf und unterscheiden sich nur in der Gewichtung.
 
 **2. Die Belegungsrekonstruktion vermischt in 1c Pakete und Fahrgäste.**
 [`geometry.reconstruct_drt_paths`](../parcel-demand-2-matsim-pipeline/analysis/kpi/geometry.py#L53-L87)

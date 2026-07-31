@@ -470,10 +470,7 @@ pm10_frac_brake,0.98,fraction,"EMEP/EEA GB 1.A.3.b.vi mass fraction PM10 of TSP,
 pm10_frac_road,0.50,fraction,"EMEP/EEA GB 1.A.3.b.vii mass fraction PM10 of TSP, road"
 bev_tyre_mult,1.15,factor,"assumption: BEV mass penalty on tyre wear (lit. range 1.1-1.2); sensitivity param"
 bev_brake_mult,0.50,factor,"assumption: regenerative braking (lit. range 0.3-0.7); sensitivity param"
-kg_per_parcel_b2c,1.5922,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean weight, deliveries to households (BRAZILIAN dataset, declared transfer). MEAN not median: total on-board mass = n x mean; median 0.6950 would understate by 58 %"
-kg_per_parcel_b2b,1.8160,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean weight, deliveries to businesses (same caveats)"
-kg_per_parcel_pooled,1.6478,kg,"Amaral et al. 2026, TR Part E, Tab. 1 - mean over all deliveries; fallback when a shipment's channel is unresolved (count reported separately)"
-kg_per_parcel_upper_bracket,5.3798,kg,"DERIVED order-of-magnitude upper bracket for the cross-context sensitivity, NOT a measured mean: Rajendran & Harper 2021 (TRIP) report 1-350 lbs with >50 % under 5 lbs (median <= 2.268 kg) but no mean; 2.268 x Amaral's skew ratio 2.37. Never cite as a result value"
+kg_per_parcel,1.65,kg,"ASSUMPTION, deliberately rounded (user 2026-07-31). Order of magnitude supported by three sources: Amaral et al. 2026 TR-E Tab.1 mean 1.6478 kg (only measured mean; BRAZILIAN data, declared transfer); Rajendran & Harper 2021 TRIP 1-350 lbs, >50 % under 5 lbs (no mean given); Mohri et al. 0.5-5 kg. MEAN not median - total on-board mass = n x mean; Amaral median 0.6950 would understate by 58 %. Plausible band on the mean 1.3-2.5 kg (~16 pp on the allocation share at 50 parcels)"
 kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel_* drives the allocation, so this weighs as much as the sourced parcel mass. Pure post-processing: changing it needs no sim rerun and leaves total_* unchanged"
 slots_per_seat_equiv,2.5,slots/seat,"scenario-defined capacity equivalence for the alternative allocation basis: 20 parcel slots / 8 seats (1c vehicle); sensitivity companion to the mass basis"
 ev_range_km_low,150.0,km,"pessimistic real-world winter range, e-LCV (sweep threshold; discriminating: 0-13.4% tour exceedance across the 12 freight runs, 2026-07-31)"
@@ -1089,100 +1086,70 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - `geometry.reconstruct_drt_paths` liefert Pfadeinträge mit **getrennten Zählern**: `(link_id, occ_pax, occ_parcels, t)`. Trennung über `person_id.startswith("parcel_")` (Java-Konstante `SharedUse.PARCEL_PERSON_PREFIX`).
-- Produces: `mass_split(occ_pax, occ_parcels, sup) -> (share_pax, share_parcels)` und `allocate_by_mass(detail, veh_path, sup) -> rows` mit den KPI-Zeilen `co2e_wtw_per_parcel` [kg/Paket], `co2e_wtw_per_pax` [kg/Fahrgast], `alloc_share_parcels_mass`, `alloc_share_parcels_slots` [share].
-- Neue Supplement-Keys: `kg_per_parcel_b2c`, `kg_per_parcel_b2b`, `kg_per_parcel_pooled`, `kg_per_passenger`, `slots_per_seat_equiv`.
+- Produces: `mass_split(n_pax, n_parcels, sup) -> (share_pax, share_parcels)` und `allocate_by_mass(detail, veh_path, sup) -> rows` mit den KPI-Zeilen `co2e_wtw_per_parcel` [kg/Paket], `co2e_wtw_per_pax` [kg/Fahrgast], `alloc_share_parcels_mass`, `alloc_share_parcels_slots` [share].
+- Neue Supplement-Keys: `kg_per_parcel`, `kg_per_passenger`, `slots_per_seat_equiv`.
 
-**Massenkonstanten (Quelle gesetzt 2026-07-31):** Amaral et al. (2026), *Empirical analysis of e-commerce delivery operations: from parcels to tours*, Transportation Research Part E, Tab. 1 — **1,5922 kg** an Haushalte, **1,8160 kg** an Gewerbe, **1,6478 kg** gepoolt (Rückfall bei unbekanntem Kanal). Da HAGRID B2C/B2B trennt, wird differenziert gerechnet. `kg_per_passenger = 80` bleibt eine **Setzung** ohne Quelle.
+**Massenkonstanten (2026-07-31): `kg_per_parcel = 1.65`, eine Konstante, absichtlich gerundet.** Größenordnung durch drei Quellen gestützt (Amaral et al. 2026 TR-E Tab. 1: Mittel 1,6478 kg — der einzige gemessene Mittelwert; Rajendran & Harper 2021 TRIP: 1–350 lbs, >50 % unter 5 lbs, kein Mittelwert; Mohri et al.: 0,5–5 kg). **Kein B2C/B2B-Split** — der Kontrast (1,5922 vs. 1,8160) macht 3,2 Pp am Aufteilungsanteil aus und liegt innerhalb der Unsicherheit der Annahme selbst; differenzieren wäre Scheingenauigkeit. `kg_per_passenger = 80` bleibt eine **Setzung** ohne Quelle. Details und Vorbehalte: METHODS-LOG §2.26.
 
-Zwei statistische Festlegungen, die im Code als Kommentar mitmüssen (Begründung in METHODS-LOG §2.26):
-- **Mittelwert, nicht Median.** Gebraucht wird die Gesamtmasse an Bord, `Σ Gewichte = n × Mittelwert`; der Mittelwert ist dafür der unverzerrte Schätzer. Die Verteilung ist stark rechtsschief (Median 0,6950 kg = 42 % des Mittels) — wer „robustheitshalber" den Median nimmt, unterschätzt die Paketmasse um 58 %.
-- **Q1/Q3 aus Tab. 1 sind kein Sensitivitätsband für den Mittelwert** (das ist die Streuung einzelner Sendungen). Zulässiges quellinternes Band ist der Haushalts-/Gewerbe-Kontrast 1,5922–1,8160 kg.
+Zwei statistische Festlegungen, die im Code als Kommentar mitmüssen:
+- **Mittelwert, nicht Median.** Gebraucht wird die Gesamtmasse an Bord, `Σ Gewichte = n × Mittelwert`; der Mittelwert ist dafür der unverzerrte Schätzer. Die Verteilung ist stark rechtsschief (Amaral-Median 0,6950 kg = 42 % des Mittels) — wer „robustheitshalber" den Median nimmt, unterschätzt die Paketmasse um 58 %.
+- **Q1/Q3 aus Tab. 1 sind kein Sensitivitätsband für den Mittelwert** (das ist die Streuung einzelner Sendungen). Plausibles Band auf den Mittelwert: **1,3–2,5 kg**.
 
-- [ ] **Step 1: Vorabprüfungen (kein Code).** Drei Dinge klären und Ergebnis hier notieren:
-  1. **Kanalzuordnung je Sendung.** Für die differenzierten Massen muss je Service bekannt sein, ob B2C oder B2B. Prüfen, ob das Attribut vorliegt (`SharedUse.CHANNEL_ATTRIBUTE = "parcelChannel"` für 1c; für die Carrier-Seite `DeliveryChannelResolver` bzw. das Service-Attribut). Ist der Kanal nicht auflösbar, `kg_per_parcel_pooled` verwenden **und die Zahl der so behandelten Sendungen als Row ausweisen** — nicht still poolen.
-  2. **Weisen die bestehenden 1c-Occupancy-KPIs die Paket-Kontamination aus?** `occ` zählt in 1c Pakete mit (METHODS-LOG §2.26). Falls nicht ausgewiesen, ist das ein **eigener Befund für den 1c-Arm** (`occ_km`, `occ_segments`, `occ_time`, Occupancy-Karte) und gehört zuerst dort dokumentiert — nicht als Nebenprodukt der Emissionsrechnung.
-  3. **Konsumenten von `veh_path` prüfen.** Die Tupelerweiterung berührt `veh_km`, `occ_km_shares`, `maps` und Task 5b/6. Indexzugriff statt Entpackung ist die Regel (Task 6 ist schon so umgestellt).
+- [ ] **Step 1: Vorabprüfungen (kein Code).** Zwei Dinge klären und Ergebnis hier notieren:
+  1. **Weisen die bestehenden 1c-Occupancy-KPIs die Paket-Kontamination aus?** `occ` zählt in 1c Pakete mit (METHODS-LOG §2.26). Falls nicht ausgewiesen, ist das ein **eigener Befund für den 1c-Arm** (`occ_km`, `occ_segments`, `occ_time`, Occupancy-Karte) und gehört zuerst dort dokumentiert — nicht als Nebenprodukt der Emissionsrechnung.
+  2. **Konsumenten von `veh_path` prüfen.** Die Tupelerweiterung berührt `veh_km`, `occ_km_shares`, `maps` und Task 5b/6. Indexzugriff statt Entpackung ist die Regel (Task 6 ist schon so umgestellt).
 
 - [ ] **Step 2: Failing Tests schreiben**
 
 ```python
 # an tests/test_extract_emissions.py anhängen
 def _sup():
-    # Amaral et al. 2026, TR Part E, Tab. 1; kg_per_passenger ist Setzung
-    return {"kg_per_parcel_b2c": 1.5922, "kg_per_parcel_b2b": 1.8160,
-            "kg_per_parcel_pooled": 1.6478, "kg_per_passenger": 80.0}
+    # kg_per_parcel: Annahme 1.65 (METHODS-LOG 2.26); kg_per_passenger: Setzung
+    return {"kg_per_parcel": 1.65, "kg_per_passenger": 80.0,
+            "slots_per_seat_equiv": 2.5}
 
 def test_mass_split_uses_kg_km_shares():
     import extract_emissions as ee
-    # 20 B2C-Pakete (31.844 kg) gegen 1 Fahrgast (80 kg)
-    sp, spc = ee.mass_split(1, {"b2c": 20}, _sup())
-    assert spc == pytest.approx(31.844 / 111.844)
+    # 20 Pakete (33.0 kg) gegen 1 Fahrgast (80 kg)
+    sp, spc = ee.mass_split(1, 20, _sup())
+    assert spc == pytest.approx(33.0 / 113.0)
     assert sp + spc == pytest.approx(1.0)
     # nichts an Bord -> keine Basis, Aufrufer muss umlegen
-    assert ee.mass_split(0, {}, _sup()) == (0.0, 0.0)
+    assert ee.mass_split(0, 0, _sup()) == (0.0, 0.0)
 
-def test_mass_split_differentiates_b2c_and_b2b():
-    """Tab. 1 gibt getrennte Mittel (1.5922 Haushalt / 1.8160 Gewerbe);
-    HAGRID trennt die Kanaele ohnehin, also differenziert rechnen."""
+def test_mass_split_is_load_driven_first_mass_second():
+    """METHODS-LOG 2.26: die Beladung treibt den Frachtanteil (~45 Pp von
+    10 auf 99 Pakete), die Massenannahme im plausiblen Band 1.3-2.5 kg
+    zweitrangig (~16 Pp). Der Test haelt beide Groessenordnungen fest,
+    damit die Sensitivitaet nicht der falschen Groesse zugeschrieben wird."""
     import extract_emissions as ee
     sup = _sup()
-    b2c = ee.mass_split(2, {"b2c": 50}, sup)[1]
-    b2b = ee.mass_split(2, {"b2b": 50}, sup)[1]
-    assert b2b > b2c                          # 41.5 % vs 38.3 %
-    assert b2c == pytest.approx(0.383, abs=0.005)
-    assert b2b == pytest.approx(0.415, abs=0.005)
-    # gemischt liegt dazwischen
-    mix = ee.mass_split(2, {"b2c": 25, "b2b": 25}, sup)[1]
-    assert b2c < mix < b2b
-
-def test_mass_split_load_vs_in_source_mass_sensitivity():
-    """METHODS-LOG 2.26: INNERHALB von Amaral ist die Aufteilung
-    beladungsgetrieben. Der Test haelt beides fest, damit die Sensitivitaet
-    im Paper nicht der falschen Groesse zugeschrieben wird."""
-    import extract_emissions as ee
-    sup = _sup()
-    # Beladung: 10 -> 99 Pakete verschiebt den Frachtanteil um ~44 Pp
-    lo = ee.mass_split(1.6, {"b2c": 10}, sup)[1]
-    hi = ee.mass_split(1.6, {"b2c": 99}, sup)[1]
-    assert lo == pytest.approx(0.111, abs=0.005)
-    assert hi == pytest.approx(0.552, abs=0.005)
-    # Paketmasse innerhalb der Quelle: b2c -> b2b nur ~1-2 Pp
-    span = abs(ee.mass_split(1.6, {"b2b": 50}, sup)[1]
-               - ee.mass_split(1.6, {"b2c": 50}, sup)[1])
-    assert span < 0.04
-
-def test_mass_split_cross_context_band_is_wide():
-    """...UEBER Kontexte hinweg gilt das Gegenteil (METHODS-LOG 2.26):
-    Amaral (BR) 1.6478 kg gegen das abgeleitete US-Oberbracket ~5.38 kg
-    verschiebt den Frachtanteil bei 50 Paketen um ~29 Pp. Deshalb muss der
-    Aufteilungsanteil IMMER neben der Intensitaet berichtet werden."""
-    import extract_emissions as ee
-    sup = _sup()
-    base = ee.mass_split(1.6, {"b2c": 50}, sup)[1]
-    upper = ee.mass_split(1.6, {"b2c": 50},
-                          dict(sup, kg_per_parcel_b2c=5.3798))[1]
-    assert base == pytest.approx(0.383, abs=0.005)
-    assert upper == pytest.approx(0.678, abs=0.005)
-    assert upper - base > 0.25          # keine Entwarnung ueber Kontexte
+    lo = ee.mass_split(1.6, 10, sup)[1]
+    hi = ee.mass_split(1.6, 99, sup)[1]
+    assert lo == pytest.approx(0.114, abs=0.005)
+    assert hi == pytest.approx(0.561, abs=0.005)
+    band = (ee.mass_split(1.6, 50, dict(sup, kg_per_parcel=2.50))[1]
+            - ee.mass_split(1.6, 50, dict(sup, kg_per_parcel=1.30))[1])
+    assert band == pytest.approx(0.157, abs=0.01)
+    assert (hi - lo) > 2.5 * band       # Beladung dominiert die Massenannahme
 
 def test_slot_basis_needs_no_external_mass():
     """Die Slot-Basis ist szenariodefiniert (20 Paketslots / 8 Sitze) und
     haengt an KEINER Massenannahme -- deshalb ist sie die Pflicht-Begleitung
-    und ggf. die bessere Primaerbasis (METHODS-LOG 2.26)."""
+    (METHODS-LOG 2.26)."""
     import extract_emissions as ee
     sup = _sup()
-    a = ee.slot_split(1.6, {"b2c": 50}, sup)[1]
-    b = ee.slot_split(1.6, {"b2c": 50}, dict(sup, kg_per_parcel_b2c=5.3798))[1]
+    a = ee.slot_split(1.6, 50, sup)[1]
+    b = ee.slot_split(1.6, 50, dict(sup, kg_per_parcel=2.50))[1]
     assert a == pytest.approx(b)        # invariant gegen die Massenkonstante
 
 def test_mass_split_rejects_median_style_understatement():
-    """Waechter gegen den Median-Griff: 0.6950 kg (Median) statt 1.6478
-    (Mittel) wuerde die Paketmasse um 58 % unterschaetzen. Der Loader darf
-    keinen Wert unter dem Haushaltsmittel akzeptieren."""
+    """Waechter gegen den Median-Griff: 0.6950 kg (Amaral-Median) statt des
+    Mittels wuerde die Paketmasse um 58 % unterschaetzen. Der Loader lehnt
+    Werte unterhalb des plausiblen Bandes (1.3 kg) ab."""
     import extract_emissions as ee
     with pytest.raises(ValueError):
-        ee.mass_split(1.6, {"b2c": 50},
-                      dict(_sup(), kg_per_parcel_b2c=0.6950))
+        ee.mass_split(1.6, 50, dict(_sup(), kg_per_parcel=0.6950))
 
 def test_empty_legs_allocated_proportionally():
     """GLEC-Konvention: Leerfahrten tragen keine kg*km-Basis und werden
@@ -1190,12 +1157,12 @@ def test_empty_legs_allocated_proportionally():
     zugerechneten Emissionen muss die Gesamtemission treffen."""
     import extract_emissions as ee
     # ein Link geladen, ein Link leer
-    path = [("l1", 1, {"b2c": 20}, 100.0), ("l2", 0, {}, 200.0)]
+    path = [("l1", 1, 20, 100.0), ("l2", 0, 0, 200.0)]
     link_len = {"l1": 1000.0, "l2": 1000.0}
     alloc = ee.allocate_vehicle_by_mass(path, link_len, 100.0, _sup())
     assert alloc["pax"] + alloc["parcels"] == pytest.approx(100.0)
     # der Leer-Link erbt die Anteile des geladenen
-    assert alloc["parcels"] / 100.0 == pytest.approx(31.844 / 111.844)
+    assert alloc["parcels"] / 100.0 == pytest.approx(33.0 / 113.0)
 
 def test_specific_intensity_rows(tmp_path):
     import extract_emissions as ee
@@ -1212,7 +1179,7 @@ def test_specific_intensity_rows(tmp_path):
 
 - [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`.
 
-- [ ] **Step 4: Implementieren.** `mass_split(n_pax, parcels_by_channel, sup)` bildet die kg·km-Anteile und **validiert die Konstanten beim Laden** (`kg_per_parcel_*` unterhalb des Haushaltsmittels ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „Amaral et al. 2026 TR-E Tab. 1 (parcel mass, BRAZILIAN dataset - declared transfer); kg_per_passenger=80 is a setting".
+- [ ] **Step 4: Implementieren.** `mass_split(n_pax, parcels_by_channel, sup)` bildet die kg·km-Anteile und **validiert die Konstanten beim Laden** (`kg_per_parcel_*` unterhalb des Haushaltsmittels ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „kg_per_parcel=1.65 (assumption; Amaral et al. 2026 TR-E Tab.1 + Rajendran & Harper 2021 + Mohri et al., none German - declared transfer); kg_per_passenger=80 is a setting".
 
 - [ ] **Step 5: PASS + Gegenprobe.** Zwei Invarianten am Realdatenlauf prüfen: (a) zugerechnete Summe == `total_co2e_wtw` bis auf Rundung; (b) `alloc_share_parcels_mass` und `_slots` als Paar berichten — divergieren sie um mehr als ~10 Prozentpunkte, ist das ein Paper-relevanter Befund und keine Rundung.
 
