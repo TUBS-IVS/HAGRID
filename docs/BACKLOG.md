@@ -136,29 +136,50 @@ _(added 2026-07-14, aktualisiert 2026-07-28)_
 ### `[H]` Nachhaltigkeitsparameter einbauen
 
 Emissions-/CO₂-/Energie-KPIs und -Parameter ins Modell + Dashboard. Berührt Autonomie-Switch
-(E-Antrieb) und die Kostenfunktion. **Status: Plan geschrieben 2026-07-28, noch nicht ausgeführt.**
-→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md) (9 Tasks: Faktor-Extraktion,
-Tier-3-Kern, Freight-/DRT-Arm, BEV, EV-Range-Gate, `build_kpis`-Integration, Kaltstart-Bound;
-SOS-Layer + Multi-Seed-Aggregation bewusst ausgeklammert).
+(E-Antrieb) und die Kostenfunktion. **Status: Plan 2026-07-28 AUSGEFÜHRT (Tasks 1–9), 2026-07-31.**
+→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md). Ergebnis: KPI-Gruppe
+`environment` in `build_kpis` (drei Arme freight / freight_modular / drt, Diesel + BEV,
+Non-Exhaust segmentdifferenziert, EV-Reichweiten-Sweep, `kpi_emissions_vehicles.csv`).
 Methodenwahl, Klassenmapping, Systemgrenze und Caveats: [METHODS-LOG](METHODS-LOG.md)
-§1.4/§2.7. _(added 2026-07-14)_
+§1.4/§2.7/§2.26–§2.29; Faktor-Provenance und Limitations-Rohtext:
+`analysis/kpi/data/README.md`. _(added 2026-07-14, abgeschlossen 2026-07-31)_
 
-- **Konkrete Arbeitsschritte aus der Faktor-Sichtung:** ~~Appendix-4-xlsx ins Repo legen +
-  Quellentabelle~~ ✅ 2026-07-28 (`hagrid-input/emissions/` + `SOURCES.md`, Binaries bleiben
-  untracked — [BACKLOG-DONE](BACKLOG-DONE.md)); noch **offen** dort: Kapitel 1.A.3.b.vi–vii
-  (Non-Exhaust) nachladen · DRT-/Pkw-Klassen in der Pipeline ergänzen (bisher
-  freight-only) · unbelegte Idle-/Kaltstart-Parameter belegen · `_l`-Van optional einmal als HDT
-  „Rigid ≤7,5 t" gegenrechnen (ausgewiesene Bandbreite statt versteckter Annahme).
+- ~~**Konkrete Arbeitsschritte aus der Faktor-Sichtung**~~ ✅ 2026-07-31 vollständig in den Plan
+  überführt und dort erledigt: Appendix-4-xlsx + `SOURCES.md`, Kapitel 1.A.3.b.vi–vii
+  (Non-Exhaust) nachgeladen und segmentaufgelöst umgesetzt, DRT-Klasse ergänzt (M2 → N1-III,
+  deklarierter Transfer), Kaltstart quantifiziert (siehe eigener Punkt unten).
+  **Bleibt offen:** `_l`-Van optional einmal als HDT „Rigid ≤7,5 t" gegenrechnen (ausgewiesene
+  Bandbreite statt versteckter Annahme) · Midi-Bus als Alternativsubstitution für die DRT-Flotte ·
+  Multi-Seed-Aggregation über ≥10 Runs (Reporting-Werkzeug, erst bei der Paper-Auswertung).
+- **`[H]` Kaltstart-Zuschlag implementieren (~0,5 d)** — die Bound-Rechnung aus Task 9 hat die
+  5-%-Schwelle gerissen: NOx auf der Frachtseite **+5,6 %** (ta = 10 °C; Band 4,7–6,0 % über
+  ltrip 8–15 km; +6,6 % bei 0 °C), DRT **+1,4 % je Kaltstart**. CO₂/Energie < 1 %, also unkritisch.
+  Solange der Zuschlag fehlt, sind **alle berichteten NOx-Zahlen eine Untergrenze** — die
+  Abweichung ist einseitig. Umsetzung: EMEP/EEA Gl. (10) in der Euro-6+-Fassung
+  (β Tab. 3-39 · bc Tab. 3-46 · Q aus `COLD_EMISSIONS_PARAMETERS`), ein Kaltstart je Tour bzw.
+  Fahrzeugtag, Kaltdistanz 3,5 km/Start. Formeln, Zahlen und der ausgewiesene ltrip-Transfer
+  stehen fertig in `analysis/kpi/data/README.md` (Abschnitt „Kaltstart"). _(added 2026-07-31)_
+- **`[M]` Ladefenster-Analyse für die DRT-Elektrifizierbarkeit (~0,5–1 d)** — die
+  `ev_range_exceed_drt_*`-Zeilen sind **keine** Elektrifizierbarkeitsaussage: eine Freight-Tour
+  ist eine zusammenhängende Schicht, ein DRT-Fahrzeugtag nicht. Auf `base10c` stehen 3,2 %
+  (Fracht, je Tour) neben 96,7 % (DRT, je Fahrzeugtag) — nebeneinander gelesen ergibt das die
+  falsche Schlussfolgerung. Die belastbare Größe ist der **längste Fahrblock zwischen zwei
+  ausreichend langen STAY-Phasen**; die DVRP-Task-Events liefern beides bereits
+  (`dvrpTaskStarted/Ended`, taskType STAY, im DRT-Event-Cache). Erst damit ist die Frage
+  „ist DRT hier elektrifizierbar?" überhaupt beantwortbar. Bis dahin trägt jede Flotte ihre
+  Einheit-Definition in der Provenance-Spalte. _(added 2026-07-31)_
 - **⚠️ Constraint:** `hagrid_output_analysis/emissions.py` **nicht anfassen** (Kollegen-Paper,
   Abstimmung frühestens ~2026-08-11) → Kopie der tragenden Logik nach `analysis/kpi/`.
-  Begründung: [METHODS-LOG](METHODS-LOG.md) §1.4.
-- **`[H]` EV-Reichweiten-Gate** — sobald Baseline-Runs **aller drei Szenarien** stehen: prüfen, ob
-  bei einzelnen Touren die EV-Reichweite limitierend wäre. **Falls ja, darf EV nicht reines
-  Postprocessing bleiben** (kippt die Entscheidung in METHODS-LOG §1.4). Check ist billig
-  (Post-Processing auf vorhandenen Outputs): Verteilung Tages-km je Fahrzeug (Max/P95) aus
-  `drt_vehicle_stats` bzw. jsprit-Tourlängen gegen konservative Real-Reichweite (~250 km Winter,
-  e-LCV-Klasse).
-  Einordnung: **LMD = geringes Risiko** (eine Tour/Tag ≤7,5 h, Depot-Übernachtladung — CEP ist der
+  Begründung: [METHODS-LOG](METHODS-LOG.md) §1.4. Eingehalten: der Emissionskanal liegt
+  vollständig in `analysis/kpi/{emissions_emep,extract_emissions}.py`.
+- **`[H]` EV-Reichweiten-Gate — FRACHTSEITE BEANTWORTET 2026-07-31, DRT-Seite offen.**
+  Umgesetzt als **Sweep** (150/200/250 km) statt Einzel-Gate, weil das ursprünglich geplante
+  250-km-Gate in **jedem** Lauf 0 % liefert und damit ein Nullresultat berichtet, das wie eine
+  Prüfung aussieht. Befund Fracht: längste Tour 183 km über alle Läufe, bei 250 km 0 %, bei
+  150 km 0–13,4 % → **nicht reichweitenbegrenzt**, EV darf Postprocessing bleiben (METHODS-LOG
+  §1.4 hält). Die DRT-Seite ist mit diesen Zeilen **nicht** beantwortet (Fahrzeugtag ≠ Schicht)
+  → eigener Punkt „Ladefenster-Analyse" oben.
+  Ursprüngliche Einordnung, weiterhin gültig: **LMD = geringes Risiko** (eine Tour/Tag ≤7,5 h, Depot-Übernachtladung — CEP ist der
   Lehrbuchfall der Flotten-Elektrifizierung); **DRT = der riskante Kandidat** (ganztägiger Betrieb,
   ländliche Distanzen — aber Return-to-Depot-Rebalancing schafft natürliche
   Opportunity-Charging-Fenster).
