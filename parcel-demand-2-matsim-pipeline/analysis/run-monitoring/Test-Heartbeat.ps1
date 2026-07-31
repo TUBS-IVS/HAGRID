@@ -48,7 +48,7 @@ Write-Host 'State round-trip'
 $statePath = Join-Path $tmp 'state.json'
 $empty = Read-HeartbeatState $statePath
 Assert-Equal $null $empty.LastLogPath 'absent state file yields empty defaults'
-Write-HeartbeatState $statePath @{ LastLogPath='a.log'; LastWriteTicks=1234L; LastLength=7L; CompletionAnnounced=$true; EventPendingRearm=$false }
+Write-HeartbeatState $statePath @{ LastLogPath='a.log'; LastWriteTicks=1234L; LastLength=7L; CompletionAnnounced=$true; EventPendingRearm=$false } | Out-Null
 $loaded = Read-HeartbeatState $statePath
 Assert-Equal 'a.log' $loaded.LastLogPath 'path round-trips'
 Assert-Equal 1234 $loaded.LastWriteTicks 'ticks round-trip'
@@ -155,7 +155,7 @@ Assert-Equal $true ($line3 -like '*advanced=True*') 'cycle3: appended log yields
 $stateForReset = Read-HeartbeatState $hbStatePath
 $stateForReset.CompletionAnnounced = $true
 $stateForReset.EventPendingRearm   = $true
-Write-HeartbeatState $hbStatePath $stateForReset
+Write-HeartbeatState $hbStatePath $stateForReset | Out-Null
 
 # Batch change: a second, NEWER log file appears (matches the pattern). This is
 # the assertion that catches Finding 2: CompletionAnnounced must reset to false
@@ -180,6 +180,64 @@ $st5 = Get-Content -LiteralPath $hbStatePath -Raw | ConvertFrom-Json
 Assert-Equal $false ([bool]$st5.CompletionAnnounced) 'completion marker present but ping cannot succeed: CompletionAnnounced stays false (Finding 3)'
 $tailLines5 = Get-Content -LiteralPath $hbLocalLog -Tail 2
 Assert-Equal $true (($tailLines5 -join ' ') -like '*announce FAILED*') 'failed announce is logged for visibility, not silently swallowed (Finding 3)'
+
+Write-Host ''
+Write-Host 'Write-HeartbeatState fails closed (review Finding C3)'
+# A failed state write must not let the progress ping go green forever: with the
+# OLD code, Set-Content had no -ErrorAction Stop and the script set no
+# $ErrorActionPreference, so the failure was silently swallowed, Invoke-Heartbeat
+# still returned 0, and next cycle Read-HeartbeatState would return empty
+# defaults -> $previous = $null -> "first ever observation counts as progress" ->
+# the progress ping fires every cycle forever regardless of whether the
+# simulation is actually still running. Realistic trigger: C: fills during a
+# multi-day sweep, which usually kills the run too.
+#
+# Send-HealthcheckPing is shadowed (same technique as, and same lexical
+# isolation lesson learned from, the Get-Process shadow in
+# Test-ResumeSweep.ps1's review fix round) to RECORD which URLs were pinged
+# without touching the network, because the existing unroutable-URL trick
+# cannot distinguish "the progress ping was skipped" from "the progress ping
+# was attempted and failed" - both return $false either way.
+& {
+    $script:PingedUrls = New-Object System.Collections.Generic.List[string]
+    function Send-HealthcheckPing {
+        param([string]$BaseUrl, [string]$Suffix = '', [string]$Body = '')
+        if (-not [string]::IsNullOrWhiteSpace($BaseUrl)) { $script:PingedUrls.Add($BaseUrl) }
+        return $false
+    }
+
+    $c3Root = Join-Path $tmp 'c3'
+    New-Item -ItemType Directory -Path $c3Root -Force | Out-Null
+    $c3LogDir = Join-Path $c3Root 'logs'
+    New-Item -ItemType Directory -Path $c3LogDir -Force | Out-Null
+    Set-Content -Path (Join-Path $c3LogDir 'stepB_run.log') -Value 'x' -Encoding Ascii
+
+    # A FILE sitting where the state directory should be: Set-Content underneath it
+    # cannot succeed, deterministically reproducing a "cannot persist state"
+    # failure without needing to actually fill a disk.
+    $c3Blocker = Join-Path $c3Root 'blocker'
+    Set-Content -Path $c3Blocker -Value 'not a directory' -Encoding Ascii
+    $c3StatePath = Join-Path $c3Blocker 'state.json'
+    $c3LocalLog = Join-Path $c3Root 'heartbeat.log'
+
+    $c3CfgPath = Join-Path $c3Root 'cfg.json'
+    $c3CfgObj = [ordered]@{
+        AliveUrl         = 'https://127.0.0.1:9/alive'
+        ProgressUrl      = 'https://127.0.0.1:9/progress'
+        SweepFinishedUrl = 'https://127.0.0.1:9/finished'
+        LogDir           = $c3LogDir
+        LogPattern       = '*.log'
+        StatePath        = $c3StatePath
+        LocalLogPath     = $c3LocalLog
+    }
+    ($c3CfgObj | ConvertTo-Json) | Set-Content -Path $c3CfgPath -Encoding Ascii
+
+    Invoke-Heartbeat $c3CfgPath | Out-Null
+
+    Assert-Equal $true  ($script:PingedUrls -contains 'https://127.0.0.1:9/alive') 'C3: alive ping still fires even when state cannot be persisted (liveness is unconditional)'
+    Assert-Equal $false ($script:PingedUrls -contains 'https://127.0.0.1:9/progress') 'C3: progress ping is SKIPPED when state persistence fails (fail closed, not green-while-dead)'
+    Assert-Equal $true  ((Get-Content -LiteralPath $c3LocalLog -Raw) -like '*could not persist*') 'C3: the persistence failure is logged loudly, not swallowed'
+}
 
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
