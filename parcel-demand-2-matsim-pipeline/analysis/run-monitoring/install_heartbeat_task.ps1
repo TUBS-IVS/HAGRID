@@ -28,40 +28,86 @@ function Test-CmdletsAvailable {
     return ,$missing
 }
 
+function Test-ContainsReplacePlaceholder {
+    # Duplicated from resume_sweep.ps1 (review Finding I2 residual): recurses into
+    # array values too, not just top-level strings. hc-config.json has no array
+    # keys today, but the check is written generically so a future one is covered
+    # for free rather than by inertia.
+    param($Value)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) { return ($Value -like '*REPLACE*') }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        foreach ($item in $Value) {
+            if (Test-ContainsReplacePlaceholder $item) { return $true }
+        }
+        return $false
+    }
+    return $false
+}
+
 function Test-HeartbeatConfigForInstall {
     # Pure validation (no network, no side effects) so it is directly unit-testable
-    # against fixture objects. The actual reachability PING happens separately,
-    # inside Install-HeartbeatTask, since a real network call cannot be unit-tested.
+    # against fixture objects. The actual reachability PING and the StatePath/
+    # LocalLogPath writability PROBE happen separately, inside Install-HeartbeatTask,
+    # since both need real I/O that cannot be unit-tested here.
     param($Cfg)
     $problems = @()
     foreach ($prop in $Cfg.PSObject.Properties) {
-        if ($prop.Value -is [string] -and $prop.Value -like '*REPLACE*') {
-            $problems += "$($prop.Name) still contains an unfilled REPLACE placeholder: $($prop.Value)"
+        if (Test-ContainsReplacePlaceholder $prop.Value) {
+            $problems += "$($prop.Name) still contains an unfilled REPLACE placeholder"
         }
     }
     foreach ($urlKey in @('AliveUrl','ProgressUrl','SweepFinishedUrl')) {
         $val = $Cfg.$urlKey
         if ([string]::IsNullOrWhiteSpace($val)) { $problems += "$urlKey is empty" }
     }
-    # Review Finding I5: the shipped default LogPattern '*.log' is unsafe - real log
-    # directories hold hagrid.log, dozens of rotated hagrid-<date>-N.log(.gz), and
-    # *.console.log from unrelated batches, so "newest .log" is not reliably the
-    # sweep's driver log. Only let it through if it happens to be unambiguous
-    # RIGHT NOW (exactly one match in LogDir); the template ships a REPLACE
-    # placeholder instead of '*.log' specifically so a wide pattern cannot ship
-    # silently even by inertia.
+    # Review Finding I5 (residual): a blacklist of specific wide spellings ('*.log')
+    # missed equally wide patterns like '*', '*.*', '*log*', '*.log*'. The property
+    # actually being protected is "this pattern identifies the sweep's driver log
+    # unambiguously", so check THAT directly: refuse any pattern matching more than
+    # one existing file in LogDir right now. Zero matches is allowed through (e.g.
+    # installing before the sweep's first run has written anything yet) - only
+    # AMBIGUITY (more than one candidate) is refused. Mirrors Read-HeartbeatConfig's
+    # own empty-defaults-to-'*.log' behavior so validation reflects what will
+    # actually run.
     $logPattern = [string]$Cfg.LogPattern
-    if ($logPattern -eq '*.log') {
+    if ([string]::IsNullOrWhiteSpace($logPattern)) { $logPattern = '*.log' }
+    if (-not (Test-ContainsReplacePlaceholder $logPattern)) {
         $logDir = [string]$Cfg.LogDir
         $matchCount = 0
         if (Test-Path -LiteralPath $logDir) {
-            $matchCount = @(Get-ChildItem -LiteralPath $logDir -Filter '*.log' -File -ErrorAction SilentlyContinue).Count
+            $matchCount = @(Get-ChildItem -LiteralPath $logDir -Filter $logPattern -File -ErrorAction SilentlyContinue).Count
         }
-        if ($matchCount -ne 1) {
-            $problems += "LogPattern is the unsafe wide default '*.log' and LogDir currently has $matchCount matching file(s) (need exactly 1 to be unambiguous) - narrow LogPattern, e.g. 'stepB_*.log'"
+        if ($matchCount -gt 1) {
+            $problems += "LogPattern '$logPattern' matches $matchCount files in LogDir right now - too wide to reliably identify the sweep's driver log; narrow it, e.g. 'stepB_*.log' (a single match is fine; zero is fine too, e.g. before the sweep has started)"
         }
     }
     return ,$problems
+}
+
+function Test-PathWritable {
+    # Review Finding C3 (residual): StatePath (and LocalLogPath) were never
+    # validated for writability, only presence-of-a-string. An unwritable
+    # StatePath (typo, wrong drive, permissions) makes Write-HeartbeatState fail on
+    # EVERY cycle, which - after the C3 fix - makes Invoke-Heartbeat fail CLOSED
+    # and skip the progress ping every cycle: from abroad that is indistinguishable
+    # from a real stall, and the only available response (a colleague power-
+    # cycling the machine) triggers auto-resume, which deletes the in-flight tag's
+    # partial output. Probed here by actually writing a sibling file and reading it
+    # back, not just presence-of-a-string, and before anything is registered.
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    try {
+        $dir = Split-Path -Parent $Path
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+        $probe = "$Path.writetest"
+        Set-Content -LiteralPath $probe -Value 'probe' -Encoding Ascii -ErrorAction Stop
+        $readBack = (Get-Content -LiteralPath $probe -Raw -ErrorAction Stop).Trim()
+        Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+        return ($readBack -eq 'probe')
+    } catch {
+        return $false
+    }
 }
 
 function Install-HeartbeatTask {
@@ -111,6 +157,17 @@ function Install-HeartbeatTask {
         }
     }
 
+    # Review Finding C3 (residual): probe StatePath and LocalLogPath for actual
+    # writability (write + read back a sibling file) before registering anything -
+    # not just that the config contains a non-empty string.
+    foreach ($pathKey in @('StatePath','LocalLogPath')) {
+        $p = [string]$hcCfg.$pathKey
+        if (-not (Test-PathWritable $p)) {
+            throw "hc-config.json: $pathKey ('$p') is not writable (probed by writing and reading back a sibling file) - fix the path or permissions before installing"
+        }
+        Write-Host "verified $pathKey is writable"
+    }
+
     $target = Join-Path $ToolsDir 'heartbeat.ps1'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'heartbeat.ps1') -Destination $target -Force
     Write-Host "deployed $target"
@@ -158,6 +215,15 @@ function Install-HeartbeatTask {
     $localLogPath = [string]$hcCfg.LocalLogPath
     if ($localLogPath -and (Test-Path -LiteralPath $localLogPath)) {
         $lastLine = Get-Content -LiteralPath $localLogPath -Tail 1
+        # Review Finding C3 (residual): the install-time writability PROBE can pass
+        # while the actual Task Scheduler service context still cannot write (a
+        # different session/permissions than this installer's own session) - so
+        # this readback must FAIL, not just warn, when the heartbeat's own first
+        # real cycle reports stateSaved=False. Printing that line and calling it
+        # success was itself part of the residual defect.
+        if ($lastLine -like '*stateSaved=False*') {
+            throw "heartbeat local log reports stateSaved=False on its first real run ($lastLine) - StatePath is not actually writable in the Task Scheduler's own context, even though the install-time probe passed. Fix StatePath before leaving this machine unattended: a state-write failure makes the progress check fail closed - i.e. FALSE stall alarms on a healthy machine, whose only available remedy from abroad (a colleague power-cycling it) triggers auto-resume and deletes the in-flight tag's partial output."
+        }
         Write-Host "heartbeat local log confirms it ran: $lastLine"
     } else {
         Write-Host "WARNING: could not yet confirm the task actually ran - $localLogPath has no content yet. Check manually (Get-Content the local log, or Get-ScheduledTaskInfo)."

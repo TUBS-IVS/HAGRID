@@ -35,7 +35,30 @@ foreach ($f in @($heartbeatInstaller, $resumeInstaller)) {
 # top-level param() is deliberately non-Mandatory for exactly this reason, and the
 # real work is behind the "$MyInvocation.InvocationName -ne '.'" guard.
 . $heartbeatInstaller
+
+Write-Host ''
+Write-Host 'Test-ContainsReplacePlaceholder, install_heartbeat_task.ps1 copy (review Finding I2 residual)'
+# The original scan only inspected [string] values, so an ARRAY containing a
+# REPLACE entry (e.g. resume-config's Tags) passed through unnoticed. Each
+# installer duplicates its own copy of this helper (independent deployability,
+# same convention as Write-LocalLog); tested here right after THIS file's
+# dot-source, before install_resume_task.ps1's identical copy overwrites the
+# function of the same name.
+Assert-Equal $false (Test-ContainsReplacePlaceholder 'https://hc-ping.com/real-uuid') 'a real URL string is not flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder 'https://hc-ping.com/REPLACE-WITH-ALIVE-UUID') 'a placeholder URL string is flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder @('30v3', 'REPLACE-WITH-REAL-TAG-2')) 'an array containing a REPLACE entry is flagged (recurses into arrays, not just top-level strings)'
+Assert-Equal $false (Test-ContainsReplacePlaceholder @('30v3', '40v3')) 'an array of real values is not flagged'
+
 . $resumeInstaller
+
+Write-Host ''
+Write-Host 'Test-ContainsReplacePlaceholder, install_resume_task.ps1 copy (review Finding I2 residual)'
+# Same checks again, now exercising resume's own (separately maintained, textually
+# identical) copy of the function, which is the one active after this dot-source.
+Assert-Equal $false (Test-ContainsReplacePlaceholder 'C:\real\app.jar') 'a real path string is not flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder 'REPLACE-WITH-SHADED-JAR-PATH') 'a placeholder path string is flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder @('30v3', 'REPLACE-WITH-REAL-TAG-2')) 'an array containing a REPLACE entry is flagged (recurses into arrays, not just top-level strings)'
+Assert-Equal $false (Test-ContainsReplacePlaceholder @('30v3', '40v3', '50v3')) 'a full, real tag array is not flagged'
 
 Write-Host ''
 Write-Host 'Get-Command smoke test (review Finding I7): every *-ScheduledTask* cmdlet either installer calls must actually exist'
@@ -77,20 +100,45 @@ $emptyUrlHc = [PSCustomObject](New-ValidHcCfgHash $hcLogDir)
 $emptyUrlHc.ProgressUrl = ''
 Assert-Equal $true ((Test-HeartbeatConfigForInstall $emptyUrlHc).Count -gt 0) 'an empty required URL is flagged'
 
-# Review Finding I5: the unsafe wide default must be rejected UNLESS it happens to
-# be unambiguous (exactly one matching file) right now.
-$wideHcAmbiguous = [PSCustomObject](New-ValidHcCfgHash $hcLogDir)
-$wideHcAmbiguous.LogPattern = '*.log'
+# Review Finding I5 (residual): a blacklist of specific wide spellings ('*.log')
+# missed equally wide patterns ('*', '*.*', '*log*', '*.log*'). The fixed check
+# refuses ANY pattern matching more than one existing file in LogDir, regardless
+# of its literal spelling - tested here with several different wide spellings,
+# not just the one the original blacklist happened to name.
 Set-Content -Path (Join-Path $hcLogDir 'hagrid.log') -Value 'x' -Encoding Ascii
 Set-Content -Path (Join-Path $hcLogDir 'stepB_run1.log') -Value 'x' -Encoding Ascii
-Assert-Equal $true ((Test-HeartbeatConfigForInstall $wideHcAmbiguous).Count -gt 0) "LogPattern='*.log' with 2 matching files in LogDir is flagged as ambiguous"
+foreach ($widePattern in @('*.log', '*', '*.*')) {
+    $wideHcAmbiguous = [PSCustomObject](New-ValidHcCfgHash $hcLogDir)
+    $wideHcAmbiguous.LogPattern = $widePattern
+    Assert-Equal $true ((Test-HeartbeatConfigForInstall $wideHcAmbiguous).Count -gt 0) "LogPattern='$widePattern' with 2+ matching files in LogDir is flagged as ambiguous (not a blacklist of spellings - the actual property protected is 'matches more than one file')"
+}
 
 $hcLogDirSingle = Join-Path $tmp 'logs_single'
 New-Item -ItemType Directory -Path $hcLogDirSingle -Force | Out-Null
 Set-Content -Path (Join-Path $hcLogDirSingle 'only_one.log') -Value 'x' -Encoding Ascii
-$wideHcUnambiguous = [PSCustomObject](New-ValidHcCfgHash $hcLogDirSingle)
-$wideHcUnambiguous.LogPattern = '*.log'
-Assert-Equal 0 (Test-HeartbeatConfigForInstall $wideHcUnambiguous).Count "LogPattern='*.log' with exactly 1 matching file in LogDir is allowed through"
+foreach ($widePattern in @('*.log', '*', '*.*')) {
+    $wideHcUnambiguous = [PSCustomObject](New-ValidHcCfgHash $hcLogDirSingle)
+    $wideHcUnambiguous.LogPattern = $widePattern
+    Assert-Equal 0 (Test-HeartbeatConfigForInstall $wideHcUnambiguous).Count "LogPattern='$widePattern' with exactly 1 matching file in LogDir is allowed through (single-match escape hatch)"
+}
+
+$hcLogDirEmpty = Join-Path $tmp 'logs_empty'
+New-Item -ItemType Directory -Path $hcLogDirEmpty -Force | Out-Null
+$wideHcNoMatches = [PSCustomObject](New-ValidHcCfgHash $hcLogDirEmpty)
+$wideHcNoMatches.LogPattern = '*.log'
+Assert-Equal 0 (Test-HeartbeatConfigForInstall $wideHcNoMatches).Count 'LogPattern with ZERO matching files (e.g. installing before the sweep has started) is allowed through - only ambiguity (more than one) is refused'
+
+Write-Host ''
+Write-Host 'Test-PathWritable (review Finding C3 residual: StatePath/LocalLogPath were never probed for writability)'
+$writableTarget = Join-Path $tmp 'writable\hb-state.json'
+Assert-Equal $true (Test-PathWritable $writableTarget) 'a path under a creatable directory is writable'
+Assert-Equal $false (Test-PathWritable '') 'an empty path is not writable'
+# A FILE sitting where the parent directory should be: nothing can be created
+# underneath it - the same deterministic-failure technique used elsewhere in this
+# test suite to simulate an unwritable location without needing to fill a real disk.
+$blockerFile = Join-Path $tmp 'blocker_for_writable_test'
+Set-Content -Path $blockerFile -Value 'not a directory' -Encoding Ascii
+Assert-Equal $false (Test-PathWritable (Join-Path $blockerFile 'hb-state.json')) 'a path whose parent is actually a FILE is not writable'
 
 Write-Host ''
 Write-Host 'Test-ResumeLogInvariant (install_resume_task.ps1, review Finding C7)'

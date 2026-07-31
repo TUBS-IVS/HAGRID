@@ -159,6 +159,27 @@ function Test-CanLaunch {
     return $true
 }
 
+function Test-ContainsReplacePlaceholder {
+    # Review Finding I2 residual (PARTIAL in the final review): the original
+    # REPLACE scan only inspected [string] values, so an ARRAY like
+    # Tags: ["REPLACE-WITH-REAL-TAG-1", ...] passed unchanged. Consequence: a
+    # resume-config.json left with placeholder tags installed green, and at the
+    # next boot triggered a full ~6h Step A re-run followed by a Step B launch
+    # that fails every tag (RESUME_FAILED at least reports it honestly rather
+    # than lying, but a week of compute is still gone). This recurses into any
+    # enumerable (array) value, checking each element, not just top-level strings.
+    param($Value)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) { return ($Value -like '*REPLACE*') }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        foreach ($item in $Value) {
+            if (Test-ContainsReplacePlaceholder $item) { return $true }
+        }
+        return $false
+    }
+    return $false
+}
+
 function Test-ResumeConfigValid {
     # Review Finding I2: a config typo or a half-filled config must fail loudly
     # (exit 2), not silently exit 0 having done nothing - which is indistinguishable
@@ -180,8 +201,8 @@ function Test-ResumeConfigValid {
             $problems += "missing or empty required key: $key"
             continue
         }
-        if ($val -is [string] -and $val -like '*REPLACE*') {
-            $problems += "key '$key' still contains an unfilled REPLACE placeholder: $val"
+        if (Test-ContainsReplacePlaceholder $val) {
+            $problems += "key '$key' still contains an unfilled REPLACE placeholder"
         }
     }
     if (@($Cfg.Tags).Count -eq 0) { $problems += 'Tags is empty - nothing to resume' }
