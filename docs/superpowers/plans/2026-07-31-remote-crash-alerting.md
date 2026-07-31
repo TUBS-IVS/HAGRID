@@ -1174,7 +1174,13 @@ function Select-RemainingTags {
     foreach ($tag in $Tags) {
         if (-not (Test-TagComplete $OutputRoot $RunIdPrefix $tag $Suffix)) { $remaining += $tag }
     }
-    return $remaining
+    # The unary comma is load-bearing: `return $remaining` UNROLLS a single-element
+    # array into a bare string, so with exactly one tag left - the normal state near
+    # the end of a sweep - the caller's $remaining[0] yields the tag's first
+    # CHARACTER. The partial-output directory then resolves to a path that does not
+    # exist and is never deleted, so the resumed run writes on top of a crashed
+    # run's debris. Verified empirically during the Task 8 review.
+    return ,$remaining
 }
 
 function Test-StepAComplete {
@@ -1190,8 +1196,14 @@ function Test-StepAComplete {
 }
 
 function New-StepBBatch {
-    param([string]$Path, [string[]]$Tags, [string]$JavaExe, [string]$Jar, [string]$WorkDir)
-    # WriteAllLines with explicit CRLF: Write/Edit strip CRLF and cmd then misparses.
+    # $ArgTemplate is REQUIRED and carries a {TAG} placeholder, e.g.
+    # 'concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true'.
+    # Deliberately NOT defaulted: hardcoding the sweep config here is how a
+    # boot-triggered script silently relaunches a sweep with last month's
+    # parameters, and no test can catch that drift.
+    param([string]$Path, [string[]]$Tags, [string]$JavaExe, [string]$Jar, [string]$WorkDir,
+          [Parameter(Mandatory=$true)][string]$ArgTemplate)
+    # WriteAllText with explicit CRLF: Write/Edit strip CRLF and cmd then misparses.
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add('@echo off')
     $lines.Add('setlocal')
@@ -1200,7 +1212,8 @@ function New-StepBBatch {
     $index = 1
     foreach ($tag in $Tags) {
         $lines.Add("echo ===== RESUME $index/$($Tags.Count) tag=$tag %time% =====")
-        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner concept=basecase,date=2025-05-13,tag=$tag,maxIter=150,jspritIter=1000,writeDashboard=true")
+        $runArgs = $ArgTemplate.Replace('{TAG}', $tag)
+        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner $runArgs")
         $lines.Add("echo RESUME${index}_EXIT=%ERRORLEVEL%")
         $index++
     }
@@ -1305,7 +1318,7 @@ function Invoke-ResumeSweep {
 
     Set-Content -LiteralPath $lock -Value 'stepB' -Encoding Ascii
     $bat = $cfg.GeneratedBatPath
-    New-StepBBatch $bat $remaining $cfg.JavaExe $cfg.Jar $cfg.WorkDir
+    New-StepBBatch $bat $remaining $cfg.JavaExe $cfg.Jar $cfg.WorkDir $cfg.ArgTemplate
 
     # start_detached.ps1 wraps cmd /c "cmd > log 2>&1" and sets CurrentDirectory; a
     # direct WMI call would put the redirect outside the cmd string and the run would
@@ -1384,6 +1397,8 @@ Required keys, with the sim-PC values for the v3 sweep:
   "WorkDir": "C:\\Users\\Simrechner\\Documents\\GitHub\\HAGRID\\parcel-demand-2-matsim-pipeline",
   "JavaExe": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.8.9-hotspot\\bin\\java.exe",
   "Jar": "REPLACE-WITH-SHADED-JAR-PATH",
+  "_ArgTemplate_comment": "Step B CLI args with a {TAG} placeholder. Lives here, not hardcoded in the script, so a boot-triggered resume cannot silently relaunch the sweep with stale parameters. Keep in sync with the sweep actually running.",
+  "ArgTemplate": "concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true",
   "GeneratedBatPath": "C:\\Users\\Simrechner\\hagrid-tools\\run_resume.bat",
   "ResumeLog": "hagrid-output\\logs\\resume_sweep.log",
   "StartDetached": "C:\\Users\\Simrechner\\hagrid-tools\\start_detached.ps1",
