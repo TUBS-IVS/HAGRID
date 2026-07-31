@@ -407,3 +407,111 @@ def test_intensity_rows_skip_division_by_zero():
     names = {r["kpi_name"] for r in rows}
     assert "co2e_wtw_per_pax" in names
     assert "co2e_wtw_per_parcel" not in names
+
+
+# --- Task 7: KPI rows, EV range sweep, detail CSV -------------------------
+
+def _rows_by_name(rows):
+    return {r["kpi_name"]: r for r in rows}
+
+
+def test_extract_freight_only_run(tmp_path):
+    import extract_emissions as ee
+    rows, detail = ee.extract(_run_dir(tmp_path), "test")
+    by = _rows_by_name(rows)
+    assert all(r["kpi_group"] == "environment" for r in rows)
+    assert "freight_co2e_wtw" in by and "freight_co2e_wtw_bev" in by
+    assert "total_co2e_wtw" in by
+    assert by["freight_co2e_wtw"]["unit"] == "kg"
+    assert by["freight_nox"]["unit"] == "g"
+    # Rev. B: Sweep-Rows statt Einzel-Gate, plus Mix-Transparenz
+    for thr in (150, 200, 250):
+        assert "ev_range_exceed_freight_" + str(thr) in by
+    assert "ev_range_exceed_freight" not in by      # kein Einzelwert mehr
+    assert by["segment_km_share_n1_iii"]["value"] == pytest.approx(1.0)
+    assert by["segment_km_share_n1_ii"]["value"] == pytest.approx(0.0)
+    assert "2023 - Update 2025" in by["freight_co2e_wtw"]["source"]
+    assert "drt_co2e_wtw" not in by                     # kein DRT-Input uebergeben
+    # EV-Sweep: Touren sind 120/60 km -> bei 150/200/250 km alle 0
+    assert by["ev_range_max_km_freight_tour"]["value"] == pytest.approx(120.0)
+    for thr in (150, 200, 250):
+        assert by["ev_range_exceed_freight_" + str(thr)]["value"] == 0.0
+    assert "EMEP/EEA" in by["freight_co2e_wtw"]["source"]
+    # BEV-Arm hat konstruktionsbedingt kein TTW-CO2
+    assert "freight_co2e_ttw_bev" not in by and "freight_co2_bev" not in by
+
+
+def test_extract_sweep_resolves_at_the_low_threshold(tmp_path, monkeypatch):
+    """Die untere Schwelle muss greifen koennen -- genau das leistet der
+    250-km-Einzelwert aus Rev. A nicht (0 % in allen realen Laeufen)."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    fac["sup"]["ev_range_km_low"] = 100.0        # Tour 1 (120 km) reisst
+    monkeypatch.setattr(em, "load_factors", lambda data_dir=None: fac)
+    rows, _ = ee.extract(_run_dir(tmp_path), "test")
+    by = _rows_by_name(rows)
+    assert by["ev_range_exceed_freight_100"]["value"] == pytest.approx(0.5)
+    assert by["ev_range_exceed_freight_250"]["value"] == 0.0
+
+
+def test_extract_mixed_fleet_reports_segment_shares(tmp_path):
+    """base10c-Situation im Kleinen: gemischte Flotte -> die km-Anteile je
+    Segment muessen im KPI-Kanal auftauchen, sonst ist ein CO2-Delta nicht
+    in Mix- und Fahrleistungsanteil zerlegbar."""
+    import extract_emissions as ee
+    fr = tmp_path / "analysis" / "freight"
+    fr.mkdir(parents=True)
+    rows_in = [
+        ["a", "dhl", "ct_cep_size_s", 1, 0, 0, 90000.0, 90.0, 10800, 3.0,
+         0, 3.6e-4, 154.41, 0, 32.4, 186.8],
+        ["b", "dhl", "ct_cep_size_m", 2, 0, 0, 30000.0, 30.0, 3600, 1.0,
+         0, 3.7e-4, 171.78, 0, 11.2, 183.0],
+    ]
+    pd.DataFrame(rows_in, columns=TSV_COLS).to_csv(
+        fr / "TimeDistance_perVehicle.tsv", sep="\t", index=False)
+    rows, _ = ee.extract(tmp_path, "test")
+    by = _rows_by_name(rows)
+    assert by["segment_km_share_n1_ii"]["value"] == pytest.approx(0.75)
+    assert by["segment_km_share_n1_iii"]["value"] == pytest.approx(0.25)
+
+
+def test_extract_emits_intensities_only_when_counts_are_supplied(tmp_path):
+    """Die Aufteilungs-Rows brauchen bediente Mengen, die der Extractor
+    nicht selbst kennt (build_kpis liefert sie). Ohne Mengen darf keine
+    Intensitaet erscheinen -- lieber gar keine Zahl als eine mit falschem
+    Nenner."""
+    import extract_emissions as ee
+    ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
+    veh_path = {"drt_1": [("l1", 1, 20, 10.0), ("l2", 1, 20, 20.0)]}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    common = dict(recon=recon, veh_path=veh_path,
+                  network_gz=_network(tmp_path))
+    rows_no, _ = ee.extract(tmp_path, "test", **common)
+    assert "co2e_wtw_per_parcel" not in _rows_by_name(rows_no)
+    rows_yes, _ = ee.extract(tmp_path, "test", n_pax=40, n_parcels=500,
+                             **common)
+    by = _rows_by_name(rows_yes)
+    assert by["co2e_wtw_per_parcel"]["unit"] == "kg"
+    assert "alloc_share_parcels_mass" in by
+    assert "alloc_share_parcels_slots" in by
+    # die Zurechnung darf die allokationsfreie Summe nicht verletzen
+    tot = by["total_co2e_wtw"]["value"]
+    parts = (by["co2e_wtw_per_pax"]["value"] * 40
+             + by["co2e_wtw_per_parcel"]["value"] * 500)
+    assert parts == pytest.approx(tot, rel=1e-9)
+    assert ll["l1"] == 1200.0        # Fixture-Anker
+
+
+def test_write_detail(tmp_path):
+    import extract_emissions as ee
+
+    class Meta:
+        run_id = "RUN1"
+    rows, detail = ee.extract(_run_dir(tmp_path), "test")
+    out = tmp_path / "kpi_emissions_vehicles.csv"
+    ee.write_detail(detail, Meta(), out)
+    txt = out.read_text(encoding="utf-8")
+    assert txt.splitlines()[0].startswith(
+        "run_id;fleet;entity;vehicle_type;segment;km;v_kmh;powertrain")
+    assert "RUN1" in txt and "freight_dhl_veh_a_1" in txt
