@@ -81,6 +81,13 @@ function Write-HeartbeatState {
 
 function Read-HeartbeatConfig {
     param([Parameter(Mandatory=$true)][string]$Path)
+    # Unlike Read-HeartbeatState, this THROWS on a missing/unreadable config
+    # rather than tolerating it. That is deliberate, not an oversight: a
+    # heartbeat that cannot read its config cannot ping anything, so the
+    # "alive" check simply goes quiet and alarms - a loud, correct failure.
+    # Do not "fix" this into silent tolerance (e.g. returning defaults); that
+    # would turn a loud failure into a silent one, which is the exact class
+    # of bug this whole feature exists to prevent.
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "heartbeat config not found: $Path"
     }
@@ -136,9 +143,19 @@ function Invoke-Heartbeat {
     if ($state.LastLogPath) {
         $previous = @{ Path = $state.LastLogPath
                        LastWriteTicks = $state.LastWriteTicks
-                       LastLength = $state.LastLength }
+                       Length = $state.LastLength }
     }
     $advanced = Test-ProgressAdvanced $previous $current
+
+    # A new batch (new log file matching the pattern) must not inherit the
+    # previous batch's completion state: otherwise batch B's own final
+    # sentinel would never be announced because CompletionAnnounced already
+    # latched true from batch A and never gets reset. Part B's auto-resume
+    # starting a fresh batch after a crash depends on this reset.
+    if ($current -and $state.LastLogPath -and $current.Path -ne $state.LastLogPath) {
+        $state.CompletionAnnounced = $false
+        $state.EventPendingRearm   = $false
+    }
 
     # 3. Completion. A finished sweep must not decay into a false stall alarm, so
     #    from the completion marker onward progress is pinged unconditionally.
@@ -155,18 +172,32 @@ function Invoke-Heartbeat {
     # The meaning lives in the CHECK NAME (sweep-finished), not in the body: the docs
     # do not state that an attached body reaches the notification. The body is sent
     # anyway because it is useful in the check's Events list.
+    #
+    # Both branches below only flip their state flag when the ping actually
+    # succeeded. A dropped announcement or a dropped re-arm must retry on the
+    # next cycle rather than being marked done-when-it-wasn't: a single
+    # network blip on exactly the one cycle that fires the one-shot announce
+    # must not permanently lose that notification.
     if ($complete -and -not $state.CompletionAnnounced) {
         $name = if ($current) { Split-Path $current.Path -Leaf } else { 'unknown' }
-        Send-HealthcheckPing $cfg.SweepFinishedUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)" | Out-Null
-        $state.CompletionAnnounced = $true
-        $state.EventPendingRearm   = $true
-        Write-LocalLog $cfg.LocalLogPath 'event: batch completion announced'
+        $sent = Send-HealthcheckPing $cfg.SweepFinishedUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)"
+        if ($sent) {
+            $state.CompletionAnnounced = $true
+            $state.EventPendingRearm   = $true
+            Write-LocalLog $cfg.LocalLogPath 'event: batch completion announced'
+        } else {
+            Write-LocalLog $cfg.LocalLogPath 'event: batch completion announce FAILED, will retry next cycle'
+        }
     } elseif ($state.EventPendingRearm) {
         # Re-arm on the NEXT cycle, not immediately, so the down-notification is
         # never racing an up-notification.
-        Send-HealthcheckPing $cfg.SweepFinishedUrl '' '' | Out-Null
-        $state.EventPendingRearm = $false
-        Write-LocalLog $cfg.LocalLogPath 'sweep-finished check re-armed'
+        $rearmed = Send-HealthcheckPing $cfg.SweepFinishedUrl '' ''
+        if ($rearmed) {
+            $state.EventPendingRearm = $false
+            Write-LocalLog $cfg.LocalLogPath 'sweep-finished check re-armed'
+        } else {
+            Write-LocalLog $cfg.LocalLogPath 'sweep-finished re-arm FAILED, will retry next cycle'
+        }
     }
 
     if ($current) {
@@ -181,6 +212,14 @@ function Invoke-Heartbeat {
 }
 
 # Entry point when invoked as a script (not dot-sourced by the tests).
-if ($MyInvocation.InvocationName -ne '.' -and $args.Count -ge 1) {
-    exit (Invoke-Heartbeat $args[0])
+if ($MyInvocation.InvocationName -ne '.') {
+    if ($args.Count -ge 1) {
+        exit (Invoke-Heartbeat $args[0])
+    } else {
+        # Without this, a misconfigured Task Scheduler action (missing the
+        # config-path argument) exits with an unspecified code and looks like
+        # a successful no-op run instead of a visible misconfiguration.
+        Write-Host 'usage: heartbeat.ps1 <path-to-hc-config.json>'
+        exit 2
+    }
 }

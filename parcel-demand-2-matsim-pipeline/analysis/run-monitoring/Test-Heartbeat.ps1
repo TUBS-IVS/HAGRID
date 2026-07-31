@@ -94,6 +94,93 @@ Write-Host 'Send-HealthcheckPing is failure-tolerant'
 Assert-Equal $false (Send-HealthcheckPing 'https://127.0.0.1:9' '' '') 'unreachable endpoint returns false, no throw'
 Assert-Equal $false (Send-HealthcheckPing '' '' '') 'empty url returns false'
 
+Write-Host 'Invoke-Heartbeat integration'
+# Drives the main loop across several synthetic cycles. The three URLs point at
+# an unroutable address so Send-HealthcheckPing always returns $false and no
+# real network call happens - assertions are on the STATE FILE and LOCAL LOG,
+# which is what the main loop actually writes, not on ping success. This is the
+# level Task 4's review found two Critical wiring bugs at (state-key mismatch
+# and a completion flag that never resets), which no leaf-function unit test
+# could see.
+$hbRoot     = Join-Path $tmp 'hb'
+New-Item -ItemType Directory -Path $hbRoot | Out-Null
+$hbLogDir   = Join-Path $hbRoot 'logs'
+New-Item -ItemType Directory -Path $hbLogDir | Out-Null
+$hbStatePath = Join-Path $hbRoot 'state.json'
+$hbLocalLog  = Join-Path $hbRoot 'heartbeat.log'
+$hbCfgPath   = Join-Path $hbRoot 'cfg.json'
+$hbCfgObj = [ordered]@{
+    AliveUrl         = 'https://127.0.0.1:9/alive'
+    ProgressUrl      = 'https://127.0.0.1:9/progress'
+    SweepFinishedUrl = 'https://127.0.0.1:9/finished'
+    LogDir           = $hbLogDir
+    LogPattern       = '*.log'
+    StatePath        = $hbStatePath
+    LocalLogPath     = $hbLocalLog
+}
+($hbCfgObj | ConvertTo-Json) | Set-Content -LiteralPath $hbCfgPath -Encoding Ascii
+
+# Cycle 1: fresh log. State should record its path/ticks/length.
+$run1 = Join-Path $hbLogDir 'stepB_run1.log'
+Set-Content -Path $run1 -Value 'start' -Encoding Ascii
+# Resolve to the actual filesystem FullName (not the raw Join-Path string): on
+# this machine $env:TEMP itself expands to an 8.3 short name, while .NET's
+# FullName (what Get-NewestLogState records) returns the long form. Comparing
+# against the resolved name avoids a spurious mismatch unrelated to any finding.
+$run1Full = (Get-Item -LiteralPath $run1).FullName
+Invoke-Heartbeat $hbCfgPath | Out-Null
+$st1 = Get-Content -LiteralPath $hbStatePath -Raw | ConvertFrom-Json
+Assert-Equal $run1Full $st1.LastLogPath 'cycle1: state records the fresh log path'
+$len1 = [long](Get-Item $run1).Length
+Assert-Equal $len1 ([long]$st1.LastLength) 'cycle1: state records the log length'
+
+# Cycle 2: log UNCHANGED. This is the assertion that catches Finding 1: with the
+# $previous.Length / $state.LastLength key mismatch, [long]$Previous.Length was
+# always 0 and the length check fired unconditionally, so "advanced" never went
+# quiet even though nothing changed.
+Start-Sleep -Milliseconds 200
+Invoke-Heartbeat $hbCfgPath | Out-Null
+$line2 = Get-Content -LiteralPath $hbLocalLog -Tail 1
+Assert-Equal $true ($line2 -like '*advanced=False*') 'cycle2: unchanged log yields advanced=False (guards the Length/LastLength key mismatch)'
+
+# Cycle 3: log grows. Progress must go green again.
+Add-Content -Path $run1 -Value 'more' -Encoding Ascii
+Start-Sleep -Milliseconds 200
+Invoke-Heartbeat $hbCfgPath | Out-Null
+$line3 = Get-Content -LiteralPath $hbLocalLog -Tail 1
+Assert-Equal $true ($line3 -like '*advanced=True*') 'cycle3: appended log yields advanced=True'
+
+# Simulate a prior REAL batch completion (network worked back then): hand-set the
+# flags the way a successful cycle would have left them, still pointed at run1.
+$stateForReset = Read-HeartbeatState $hbStatePath
+$stateForReset.CompletionAnnounced = $true
+$stateForReset.EventPendingRearm   = $true
+Write-HeartbeatState $hbStatePath $stateForReset
+
+# Batch change: a second, NEWER log file appears (matches the pattern). This is
+# the assertion that catches Finding 2: CompletionAnnounced must reset to false
+# for the new batch, or its own completion would never be announced.
+Start-Sleep -Milliseconds 1100
+$run2 = Join-Path $hbLogDir 'stepB_run2.log'
+Set-Content -Path $run2 -Value 'batch b start' -Encoding Ascii
+$run2Full = (Get-Item -LiteralPath $run2).FullName
+Invoke-Heartbeat $hbCfgPath | Out-Null
+$st4 = Get-Content -LiteralPath $hbStatePath -Raw | ConvertFrom-Json
+Assert-Equal $run2Full $st4.LastLogPath 'batch change: state now tracks the new (newest) log'
+Assert-Equal $false ([bool]$st4.CompletionAnnounced) 'batch change: CompletionAnnounced resets to false on new log path (guards Finding 2)'
+Assert-Equal $false ([bool]$st4.EventPendingRearm) 'batch change: EventPendingRearm resets to false on new log path'
+
+# Completion marker present, but the ping cannot succeed (unroutable URL): per
+# the FIXED semantics (Finding 3), CompletionAnnounced must stay false so the
+# announcement retries on a later cycle instead of being marked done-when-it-wasn't.
+Add-Content -Path $run2 -Value '===== RESUME_DONE 31.07.2026 =====' -Encoding Ascii
+Start-Sleep -Milliseconds 200
+Invoke-Heartbeat $hbCfgPath | Out-Null
+$st5 = Get-Content -LiteralPath $hbStatePath -Raw | ConvertFrom-Json
+Assert-Equal $false ([bool]$st5.CompletionAnnounced) 'completion marker present but ping cannot succeed: CompletionAnnounced stays false (Finding 3)'
+$tailLines5 = Get-Content -LiteralPath $hbLocalLog -Tail 2
+Assert-Equal $true (($tailLines5 -join ' ') -like '*announce FAILED*') 'failed announce is logged for visibility, not silently swallowed (Finding 3)'
+
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
 Write-Host "`nAll heartbeat tests passed"; exit 0
