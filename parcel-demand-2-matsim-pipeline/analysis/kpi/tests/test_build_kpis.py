@@ -275,3 +275,101 @@ def test_readable_fleet_file_leaves_no_flag_in_the_csv(tmp_path):
 
     long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
     assert "fleet_file_missing" not in long_txt
+
+
+# --- Task 8: emissions wiring (group "environment") -----------------------
+
+_TD_HEADER = ("vehicleId\tcarrierId\tvehicleTypeId\ttourId\ttourDuration[s]\t"
+              "tourDuration[h]\ttravelDistance[m]\ttravelDistance[km]\t"
+              "travelTime[s]\ttravelTime[h]\tcostPerSecond[EUR/s]\t"
+              "costPerMeter[EUR/m]\tfixedCosts[EUR]\tvarCostsTime[EUR]\t"
+              "varCostsDist[EUR]\ttotalCosts[EUR]")
+
+
+def _drtrun_with_per_vehicle_tsv(tmp_path, type_a="ct_cep_size_s",
+                                 type_b="ct_cep_size_l"):
+    """drtrun + the one file the emissions freight arm reads. The tracked
+    fixture deliberately ships only TimeDistance_perCarrier.tsv (see
+    test_build_writes_all_csvs), so the per-VEHICLE file is added here in a
+    tmp copy: 90 km at 30 km/h on `type_a`, 60 km at 30 km/h on `type_b`."""
+    d = tmp_path / "drtrun_emis"
+    shutil.copytree(FIX, d)
+    lines = [_TD_HEADER,
+             "veh_a\tdhl\t" + type_a + "\t1\t10800\t3.0\t90000.0\t90.0\t"
+             "10800\t3.0\t0\t3.6e-4\t154.41\t0\t32.4\t186.8",
+             "veh_b\tdhl\t" + type_b + "\t2\t7200\t2.0\t60000.0\t60.0\t"
+             "7200\t2.0\t0\t3.9e-4\t189.15\t0\t23.2\t212.4"]
+    (d / "analysis" / "freight" / "TimeDistance_perVehicle.tsv").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8")
+    return d
+
+
+def test_build_emits_environment_rows_into_the_canonical_csvs(tmp_path):
+    """The emissions call sits BEFORE kpi_writer.write_long -- otherwise the
+    rows exist in memory and reach neither kpis_long.csv nor the dashboard,
+    which is the same failure mode that hid the whole `modular` group
+    (render.table_groups docstring). Assert the CSV and the HTML, not the
+    return value."""
+    d = _drtrun_with_per_vehicle_tsv(tmp_path)
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert ";environment;freight_co2e_wtw;" in long_txt
+    assert ";environment;freight_co2e_wtw_bev;" in long_txt
+    assert ";environment;total_co2e_wtw;" in long_txt
+    assert ";environment;freight_pm10_nonexhaust;" in long_txt
+    # Mixflotte: 90 von 150 km auf size_s (N1-II) -- ohne diesen Kanal ist
+    # ein CO2-Delta nicht in Mix- und Fahrleistungsanteil zerlegbar.
+    share = [ln for ln in long_txt.splitlines()
+             if ";environment;segment_km_share_n1_ii;" in ln]
+    assert len(share) == 1, long_txt
+    assert abs(float(share[0].split(";")[6]) - 0.6) < 1e-9, share
+
+    # nicht stillschweigend uebersprungen
+    assert "emissions_skipped" not in long_txt
+
+    # Gruppe erscheint auch auf der Seite, die ein Leser oeffnet
+    html = (out / "kpi_dashboard.html").read_text(encoding="utf-8")
+    assert "freight_co2e_wtw" in html
+
+
+def test_build_writes_the_per_vehicle_emissions_detail_csv(tmp_path):
+    d = _drtrun_with_per_vehicle_tsv(tmp_path)
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    p = out / "kpi_emissions_vehicles.csv"
+    assert p.exists()
+    lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if ln]
+    head = lines[0].split(";")
+    assert head[:8] == ["run_id", "fleet", "entity", "vehicle_type",
+                        "segment", "km", "v_kmh", "powertrain"]
+    # 2 Fahrzeuge x 2 Antriebe -- der BEV-Arm ist keine Variante, sondern
+    # eine eigene Zeile je Fahrzeug
+    assert len(lines) == 5, lines
+    segs = {ln.split(";")[4] for ln in lines[1:]}
+    assert segs == {"N1-II", "N1-III"}
+
+
+def test_build_records_an_emissions_failure_as_a_meta_row(tmp_path):
+    """Rev.-B-Einwand gegen den Catch-all: ein unbekannter Fahrzeugtyp wirft
+    ValueError aus segment_for_type, und ein blosser print haette den Lauf
+    OHNE Umwelt-KPIs durchlaufen lassen, ohne dass die CSV das verraet. Der
+    Fehlschlag muss in kpis_long.csv landen (und damit im Hinweis-Block),
+    genau wie run_meta_degraded."""
+    d = _drtrun_with_per_vehicle_tsv(tmp_path, type_a="ct_van_of_the_future")
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    skipped = [ln for ln in long_txt.splitlines()
+               if ";meta;emissions_skipped;" in ln]
+    assert len(skipped) == 1, long_txt
+    assert "ValueError" in skipped[0]
+    assert "ct_van_of_the_future" in skipped[0]
+    assert ";environment;" not in long_txt
+    # graceful: der Rest des Builds bleibt vollstaendig
+    assert ";passenger;drt_rides;9171;" in long_txt
+    assert (out / "kpi_distributions.csv").exists()
+    assert not (out / "kpi_emissions_vehicles.csv").exists()

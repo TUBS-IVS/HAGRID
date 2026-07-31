@@ -414,6 +414,30 @@ def _percentile(sorted_vals, q):
     return sorted_vals[i]
 
 
+#: What ONE entity of each fleet is, and therefore what its exceedance share
+#: may and may not be read as. The three fleets look comparable in the CSV
+#: (`ev_range_exceed_<fleet>_150`) and are NOT: measured on base10c, freight
+#: exceeds 150 km on 3.2 % of tours while DRT exceeds it on 96.7 % of
+#: vehicle-days. Reading that as "DRT cannot be electrified" is wrong, and the
+#: caveat has to travel with the row rather than live in a doc -- a reader of
+#: kpis_long.csv never sees the doc.
+_RANGE_SRC = {
+    "drt": ("per VEHICLE-DAY km vs ev_range_km_* (emep_supplement.csv). NOT "
+            "an electrification verdict: a vehicle-day is not a continuous "
+            "shift -- it contains STAY phases in which charging is possible. "
+            "Comparable to the freight rows only after a charging-window "
+            "analysis (BACKLOG)"),
+    "freight": ("per TOUR km vs ev_range_km_* (emep_supplement.csv). One "
+                "tour IS one continuous shift (depot to depot), so an "
+                "exceedance here is a genuine range constraint"),
+    "freight_modular": ("per VEHICLE-DAY FREIGHT km vs ev_range_km_* "
+                        "(emep_supplement.csv). A component, not a range "
+                        "requirement: the same vehicle also drives pax km "
+                        "outside the MODULAR_FREIGHT_DRIVE windows -- the "
+                        "day's total is ev_range_*_drt"),
+}
+
+
 def _range_rows(detail, sup):
     """EV range SWEEP (Rev. B): per DRT vehicle-day / per freight tour km
     against three thresholds instead of one gate.
@@ -425,6 +449,9 @@ def _range_rows(detail, sup):
     the run). Reporting the curve keeps the real finding "freight
     electrification is not range-constrained here" falsifiable instead of
     vacuous.
+
+    Each fleet carries its OWN provenance string (_RANGE_SRC) because the
+    denominator differs in kind, not just in value.
     """
     rows = []
     for fleet, label in (("drt", "drt"), ("freight", "freight_tour"),
@@ -433,7 +460,7 @@ def _range_rows(detail, sup):
                      if d["fleet"] == fleet and d["powertrain"] == "diesel")
         if not kms:
             continue
-        src = "per-entity km vs ev_range_km_* (emep_supplement.csv)"
+        src = _RANGE_SRC[fleet]
         rows += [row("environment", "ev_range_max_km_" + label,
                      max(kms), "km", src),
                  row("environment", "ev_range_p95_km_" + label,
@@ -448,20 +475,40 @@ def _range_rows(detail, sup):
     return rows
 
 
+#: The only fleet whose segment mix is a RESULT: the conventional vans, where
+#: jsprit picks freely from the offered types (FleetSize.INFINITE).
+#:
+#: "drt" and "freight_modular" are both excluded because both carry the SAME
+#: fixed declared M2 -> N1-III substitution (DRT_SEGMENT) -- a share computed
+#: over them is 1.0 by construction, i.e. a statement about a constant. The
+#: dilution this avoids was measured on base10c, where the DRT arm outweighs the
+#: vans ~4:1 in km (47953 vs 6252): including it reported n1_ii = 0.107 for the
+#: very same LMD plan that reads 0.926 on the freight-only run bandz_central.
+#: Two incomparable numbers for one identical vehicle mix is worse than none.
+_MIX_FLEETS = ("freight",)
+
+
 def _segment_share_rows(detail):
-    """km share per N1 segment -- makes the (endogenous, jsprit-chosen)
-    vehicle mix auditable, so a CO2 delta can be attributed to routing vs.
-    to a shifted fleet mix. See the plan's Task-7 interfaces."""
-    diesel = [d for d in detail if d["powertrain"] == "diesel"]
+    """km share per N1 segment over the conventional van fleet -- makes the
+    (endogenous, jsprit-chosen) mix auditable, so a CO2 delta can be attributed
+    to routing vs. to a shifted fleet mix. See the plan's Task-7 interfaces.
+
+    Absent on pax-only AND on modular (1d) runs: neither has a van mix, and
+    n1_iii = 1.0 from a fixed substitution would read like a finding."""
+    diesel = [d for d in detail if d["powertrain"] == "diesel"
+              and d["fleet"] in _MIX_FLEETS]
     total = sum(d["km"] for d in diesel)
     if total <= 0:
         return []
+    src = ("sum km per N1 segment / total km of fleet(s) "
+           + "/".join(_MIX_FLEETS) + " (diesel arm) -- the CONVENTIONAL VAN "
+           "fleet, where jsprit picks the type. DRT and modular are excluded: "
+           "their segment is a fixed substitution, not a result")
     rows = []
     for seg, suffix in (("N1-II", "n1_ii"), ("N1-III", "n1_iii")):
         km = sum(d["km"] for d in diesel if d["segment"] == seg)
         rows.append(row("environment", "segment_km_share_" + suffix,
-                        km / total, "share",
-                        "sum km per N1 segment / total km (diesel arm)"))
+                        km / total, "share", src))
     return rows
 
 
@@ -478,8 +525,20 @@ def _intensity_rows_for_drt(veh_path, link_len, drt_detail, n_pax, n_parcels,
     parcel by a factor ~26 (mass 0.90 % vs slot 23.64 % freight share on the
     measured 1c run), which is why both shares are always emitted as a pair
     and why total_* stays the uncontested figure. METHODS-LOG 2.26.
+
+    SCENARIO GUARD: mass allocation is a 1c construct, because only there do
+    parcels ride as PERSONS (PARCEL_PERSON_PREFIX) and therefore show up in
+    occ_parcels. In 1d they ride as a capsule, so occ_parcels is 0 on every
+    link and the emitted alloc_share_parcels_mass would be 0 -- i.e. the
+    claim "this run's freight is emission-free" on a run that clearly hauls
+    freight. No parcel kg*km basis therefore means no allocation row at all;
+    1d's honest decomposition is the regime split (freight_modular_* vs
+    drt_*), which extract() already emits.
     """
     if not (n_pax or n_parcels):
+        return []
+    if not any(len(entry) > 2 and entry[2]
+               for path in veh_path.values() for entry in path):
         return []
     alloc = {"pax": 0.0, "parcels": 0.0}
     by_veh = {d["entity"]: d["CO2E_WTW"] for d in drt_detail
@@ -495,7 +554,7 @@ def _intensity_rows_for_drt(veh_path, link_len, drt_detail, n_pax, n_parcels,
 
 
 def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
-            freight_events=None, n_pax=None, n_parcels=None):
+            drt_task_events=None, n_pax=None, n_parcels=None):
     """Emission KPI rows + per-entity detail for one run.
 
     Three arms, each optional depending on what the run produced:
@@ -507,6 +566,14 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
     (they are reused, never recomputed here). n_pax/n_parcels are the served
     quantities for the 1c allocation rows; omit them and those rows are
     skipped rather than divided by a guessed denominator.
+
+    `drt_task_events` is the *.drt_events_filtered.txt cache -- the DVRP task
+    events live there, NOT in the freight cache (freight_windows docstring).
+    The parameter was called `freight_events` and that name cost the wiring
+    step a silent zero: passing the (0-byte) freight cache yields no windows,
+    so freight_modular_* vanishes and its km are booked as pax km instead --
+    a plausible-looking result with no error anywhere. The name now says which
+    file it wants.
 
     GAP GESCHLOSSEN (2026-07-31, war: "KNOWN GAP METHODS-LOG 2.14"). Der
     Plan notierte hier, der "drt"-Arm ueberlappe im 1d-Fall die modularen
@@ -529,8 +596,8 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
         used = {p[0] for path in veh_path.values() for p in path}
         link_len = load_link_lengths(network_gz, used)
         # Fenster VOR dem DRT-Arm bestimmen: sie sind dessen Ausschlussmenge.
-        if freight_events is not None:
-            windows = freight_windows(freight_events)
+        if drt_task_events is not None:
+            windows = freight_windows(drt_task_events)
         arms["drt"] = drt_arm(veh_path, recon, link_len, fac,
                               exclude_windows=windows)
         if windows:

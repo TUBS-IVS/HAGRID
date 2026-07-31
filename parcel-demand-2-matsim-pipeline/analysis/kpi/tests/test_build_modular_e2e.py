@@ -16,6 +16,7 @@ modestats, output_trips, output_drt_legs/rejections, the freight carriers XML + 
     closes exactly for this vehicle -- see test_modular_service_time.py for the arithmetic
     this mirrors.
 """
+import pytest
 import shutil
 import sys
 from pathlib import Path
@@ -82,3 +83,90 @@ def test_no_events_build_still_carries_the_marker_but_not_the_event_derived_rows
     assert ";system;drt_freight_hours_total;" not in long_txt
     # Same conserving-fixture guard as the events build above -- must hold on this path too.
     assert "modular_identity_violated" not in long_txt
+
+
+# --- Task 8: the 1d emissions regime split, end to end -------------------
+
+#: Link entries placed so that two fall INSIDE MODULAR_FREIGHT_DRIVE windows
+#: ([1000,1100], [1520,1600], [1720,1800] in the fixture's event stream) and
+#: two fall inside plain pax DRIVE tasks. 5 km each side, by construction.
+_LINK_EVENTS = [(150.0, "e1"), (1050.0, "e2"), (1550.0, "e3"), (2350.0, "e4")]
+_LINK_M = {"e1": 1000.0, "e2": 2000.0, "e3": 3000.0, "e4": 4000.0}
+_FREIGHT_KM = (_LINK_M["e2"] + _LINK_M["e3"]) / 1000.0      # 5.0
+_PAX_KM = (_LINK_M["e1"] + _LINK_M["e4"]) / 1000.0          # 5.0
+
+_NETWORK_XML = """<?xml version="1.0" encoding="utf-8"?>
+<network name="modular_e2e">
+<nodes>
+<node id="q1" x="864000.0" y="5705000.0"/>
+<node id="q2" x="864500.0" y="5705100.0"/>
+<node id="q3" x="865000.0" y="5705050.0"/>
+<node id="q4" x="865600.0" y="5705200.0"/>
+<node id="q5" x="866300.0" y="5705400.0"/>
+</nodes>
+<links>
+<link id="e1" from="q1" to="q2" length="1000.0" freespeed="16.6" capacity="1000" permlanes="1" oneway="1" modes="car"/>
+<link id="e2" from="q2" to="q3" length="2000.0" freespeed="16.6" capacity="1000" permlanes="1" oneway="1" modes="car"/>
+<link id="e3" from="q3" to="q4" length="3000.0" freespeed="16.6" capacity="1000" permlanes="1" oneway="1" modes="car"/>
+<link id="e4" from="q4" to="q5" length="4000.0" freespeed="16.6" capacity="1000" permlanes="1" oneway="1" modes="car"/>
+</links>
+</network>
+"""
+
+
+def _add_links_and_network(d):
+    """Give the modular fixture a link path + a matching network, so the
+    emissions arms have km to work with. Done in the tmp copy (not in the
+    tracked fixture) to leave every existing assertion on it untouched."""
+    import gzip
+
+    ev = d / "MODULAR_TEST.output_events.xml.gz"
+    with gzip.open(ev, "rt", encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    extra = ['<event time="' + str(t) + '" type="entered link" link="' + lid
+             + '" vehicle="drt_veh_1"/>' for t, lid in _LINK_EVENTS]
+    body = lines[:-1] + extra + [lines[-1]]
+    with gzip.open(ev, "wt", encoding="utf-8") as f:
+        f.write("\n".join(body) + "\n")
+    with gzip.open(d / "MODULAR_TEST.output_network.xml.gz", "wt",
+                   encoding="utf-8") as f:
+        f.write(_NETWORK_XML)
+    return d
+
+
+def test_modular_emissions_split_freight_from_pax_km_without_residue(tmp_path):
+    """REGRESSION on a silent-zero wiring bug, twice made: the
+    MODULAR_FREIGHT_DRIVE windows live in the *drt* events cache (DVRP tasks on
+    drt_* vehicles), while the freight cache is 0 bytes on every 1d run.
+    Handing the freight cache to the extractor produces NO error -- the
+    freight_modular_* rows just vanish and their km are booked as pax km, which
+    looks entirely plausible in the CSV.
+
+    The discriminating assertion is therefore the km SPLIT, not the presence of
+    rows: with the wrong cache, drt km is 10.0 and freight km 0."""
+    d = _add_links_and_network(_copy_fixture(tmp_path))
+
+    out = build(d, no_events=False, out_dir=tmp_path / "out")
+
+    det = (out / "kpi_emissions_vehicles.csv").read_text(encoding="utf-8")
+    rows = [ln.split(";") for ln in det.splitlines()[1:] if ln]
+    km = {r[1]: float(r[5]) for r in rows if r[7] == "diesel"}
+    assert km["freight_modular"] == pytest.approx(_FREIGHT_KM)
+    assert km["drt"] == pytest.approx(_PAX_KM)
+
+    v = {}
+    for line in (out / "kpis_long.csv").read_text(encoding="utf-8").splitlines():
+        f = line.split(";")
+        if len(f) > 7 and f[4] == "environment":
+            v[f[5]] = float(f[6])
+    # The split is exact in memory; the tolerance is the CSV's 6 significant
+    # digits (pm10_nonexhaust: 0.495255 written vs 0.495256 summed), not slack
+    # in the arithmetic. A mis-split would be off by ~100 %, not 1e-6.
+    for metric in ("co2e_wtw", "energy_final", "pm10_nonexhaust"):
+        assert v["drt_" + metric] + v["freight_modular_" + metric] == \
+            pytest.approx(v["total_" + metric], rel=1e-5), metric
+    # 1d hauls freight as a capsule, not as parcel PERSONS -> no mass basis
+    assert "alloc_share_parcels_mass" not in v
+    # ... and no van mix either: both 1d fleets carry the fixed N1-III
+    # substitution, so a share over them would be 1.0 by construction
+    assert "segment_km_share_n1_iii" not in v

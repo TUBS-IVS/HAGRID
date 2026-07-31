@@ -115,6 +115,19 @@ def reconstruct_drt_paths_detailed(drt_cache):
     return veh_path, used_links
 
 
+def project_paths(detailed):
+    """4-tuple paths -> legacy 2-tuple paths (occupancy = everyone aboard).
+
+    The projection rule has two call sites: reconstruct_drt_paths() below and
+    build_kpis, which reconstructs ONCE in the detailed form (the emissions
+    extractor needs the pax/parcel split and the timestamps) and projects for
+    the map/distance consumers. A second inline `pax + parcels` copy over
+    there is how the two occupancy semantics would drift apart, so the rule
+    lives here."""
+    return {v: [(lid, pax + parcels) for lid, pax, parcels, _t in path]
+            for v, path in detailed.items()}
+
+
 def reconstruct_drt_paths(drt_cache):
     """Port of build_drt_dashboard.py:91-124. `drt_cache` is a plain-text
     (not gzipped) events cache already filtered to "drt_"-containing lines
@@ -135,9 +148,7 @@ def reconstruct_drt_paths(drt_cache):
     occ_segments, occ_time, the occupancy map) inherits that; see
     METHODS-LOG 2.26. Use the detailed variant when the split matters."""
     detailed, used_links = reconstruct_drt_paths_detailed(drt_cache)
-    veh_path = {v: [(lid, pax + parcels) for lid, pax, parcels, _t in path]
-                for v, path in detailed.items()}
-    return veh_path, used_links
+    return project_paths(detailed), used_links
 
 
 def freight_used_links(fev):
