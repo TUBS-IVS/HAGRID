@@ -482,7 +482,10 @@ unattended infrastructure should not depend on installing Pester 5."
 
 **Interfaces:**
 - Consumes: `Get-NewestLogState`, `Test-ProgressAdvanced`, `Test-BatchComplete`, `Read-HeartbeatState`, `Write-HeartbeatState` from Task 3; the grace number from Task 2
-- Produces: `Send-HealthcheckPing([string]$BaseUrl, [string]$Suffix, [string]$Body)` -> `[bool]`; `Read-HeartbeatConfig([string]$Path)` -> hashtable with keys `AliveUrl`, `ProgressUrl`, `SweepFinishedUrl`, `LogDir`, `StatePath`, `LocalLogPath`; `Invoke-Heartbeat([string]$ConfigPath)` -> `[int]`. Task 5 invokes `Invoke-Heartbeat`.
+- Produces: `Send-HealthcheckPing([string]$BaseUrl, [string]$Suffix, [string]$Body)` -> `[bool]`; `Read-HeartbeatConfig([string]$Path)` -> hashtable with keys `AliveUrl`, `ProgressUrl`, `SweepFinishedUrl`, `LogDir`, `LogPattern`, `StatePath`, `LocalLogPath`; `Invoke-Heartbeat([string]$ConfigPath)` -> `[int]`. Task 5 invokes `Invoke-Heartbeat`.
+- **Modifies** Task 3's `Get-NewestLogState` to take an optional pattern: `Get-NewestLogState([string]$LogDir, [string]$Pattern = '*.log')`. Existing single-argument callers and tests keep working.
+
+**Added after the Task 3 review (2026-07-31) — why `LogPattern` exists.** The Task 3 review surfaced that a generic `_EXIT=` completion marker latched "batch complete" after the first of ten runs, which would have blinded stall detection for ~90% of a sweep. That marker is fixed, but a second instance of the same class remains: **`hagrid-output\logs\` holds logs from different batches side by side** (the Hannover sweep, the Lausitz `nightbc.console.log`, older runs). If the Hannover sweep stalls while some *other* batch's log — carrying that batch's legitimate final sentinel — happens to be the newest file, the heartbeat would latch completion on a foreign batch's success and stop watching. `LogPattern` lets each machine scope the watch to the batch that matters (e.g. `stepB_*.log`), which removes the class rather than narrowing one instance of it. Default `*.log` preserves current behaviour when unset.
 
 - [ ] **Step 1: Write the failing test (append to `Test-Heartbeat.ps1`, before the final failure check)**
 
@@ -502,6 +505,21 @@ $cfgPath = Join-Path $tmp 'cfg.json'
 $cfg = Read-HeartbeatConfig $cfgPath
 Assert-Equal 'https://hc-ping.com/aaaa-1111' $cfg.AliveUrl 'alive url parsed'
 Assert-Equal 'C:\logs' $cfg.LogDir 'log dir parsed'
+Assert-Equal '*.log' $cfg.LogPattern 'absent LogPattern defaults to *.log'
+
+Write-Host 'Get-NewestLogState honours a scoping pattern'
+# Guards the CLASS of bug the Task 3 review found: an unscoped watch can latch
+# completion on a FOREIGN batch's final sentinel and blind stall detection for
+# the rest of the sweep, with every check still showing green.
+$scoped = Join-Path $tmp 'scoped'
+New-Item -ItemType Directory -Path $scoped | Out-Null
+Set-Content -Path (Join-Path $scoped 'stepB_mine.log') -Value 'mine' -Encoding Ascii
+Start-Sleep -Milliseconds 1100
+Set-Content -Path (Join-Path $scoped 'nightbc.console.log') -Value 'foreign' -Encoding Ascii
+Assert-Equal 'nightbc.console.log' (Split-Path (Get-NewestLogState $scoped).Path -Leaf) 'unscoped picks the newest, foreign log'
+Assert-Equal 'stepB_mine.log' (Split-Path (Get-NewestLogState $scoped 'stepB_*.log').Path -Leaf) 'pattern excludes the foreign log'
+Assert-Equal $null (Get-NewestLogState $scoped 'nomatch_*.log') 'pattern matching nothing yields null'
+
 $threw = $false
 try { Read-HeartbeatConfig (Join-Path $tmp 'missing.json') } catch { $threw = $true }
 Assert-Equal $true $threw 'missing config throws (only fatal condition)'
@@ -522,6 +540,26 @@ Expected: FAIL — `Read-HeartbeatConfig` / `Send-HealthcheckPing` not recognize
 
 - [ ] **Step 3: Write the implementation (append to `heartbeat.ps1`)**
 
+Also widen `Get-NewestLogState` (from Task 3) to accept the pattern. Change its signature and its `Get-ChildItem` call:
+
+```powershell
+function Get-NewestLogState {
+    param([Parameter(Mandatory=$true)][string]$LogDir, [string]$Pattern = '*.log')
+    if (-not (Test-Path -LiteralPath $LogDir)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($Pattern)) { $Pattern = '*.log' }
+    $newest = Get-ChildItem -LiteralPath $LogDir -Filter $Pattern -File -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($null -eq $newest) { return $null }
+    return @{
+        Path           = $newest.FullName
+        LastWriteTicks = [long]$newest.LastWriteTimeUtc.Ticks
+        Length         = [long]$newest.Length
+    }
+}
+```
+
+Then append the rest:
+
 ```powershell
 function Read-HeartbeatConfig {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -534,6 +572,9 @@ function Read-HeartbeatConfig {
         ProgressUrl  = [string]$parsed.ProgressUrl
         SweepFinishedUrl = [string]$parsed.SweepFinishedUrl
         LogDir       = [string]$parsed.LogDir
+        # Scope the watch to one batch's logs. See the note above this task: an
+        # unscoped watch can latch completion on a FOREIGN batch's final sentinel.
+        LogPattern   = if ([string]::IsNullOrWhiteSpace($parsed.LogPattern)) { '*.log' } else { [string]$parsed.LogPattern }
         StatePath    = [string]$parsed.StatePath
         LocalLogPath = [string]$parsed.LocalLogPath
     }
@@ -572,7 +613,7 @@ function Invoke-Heartbeat {
     $aliveOk = Send-HealthcheckPing $cfg.AliveUrl '' ''
 
     # 2. Progress.
-    $current = Get-NewestLogState $cfg.LogDir
+    $current = Get-NewestLogState $cfg.LogDir $cfg.LogPattern
     $previous = $null
     if ($state.LastLogPath) {
         $previous = @{ Path = $state.LastLogPath
@@ -643,6 +684,8 @@ Create `hc-config.template.json`. Placeholder UUIDs only — the real file never
   "ProgressUrl": "https://hc-ping.com/REPLACE-WITH-PROGRESS-UUID",
   "SweepFinishedUrl": "https://hc-ping.com/REPLACE-WITH-SWEEP-FINISHED-UUID",
   "LogDir": "C:\\Users\\REPLACE\\Documents\\GitHub\\HAGRID\\parcel-demand-2-matsim-pipeline\\hagrid-output\\logs",
+  "_LogPattern_comment": "Scope the watch to ONE batch's logs, so a foreign batch's final sentinel cannot latch completion and blind stall detection. Leave as *.log only if this directory holds nothing else.",
+  "LogPattern": "*.log",
   "StatePath": "C:\\Users\\REPLACE\\hagrid-tools\\hb-state.json",
   "LocalLogPath": "C:\\Users\\REPLACE\\hagrid-tools\\heartbeat.log"
 }
