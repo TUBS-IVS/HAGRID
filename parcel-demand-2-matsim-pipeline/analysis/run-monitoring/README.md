@@ -57,3 +57,27 @@ and pushes to the phone. No VPN, no SSH, no Claude session involved.
   **The real config never enters git; this repo is public and ping URLs are capability URLs.**
 - `resume_sweep.ps1` / `install_resume_task.ps1` — Part B, boot-triggered auto-resume.
   Test: `powershell -File Test-ResumeSweep.ps1`.
+
+  **`resume-config.json`** — required by `resume_sweep.ps1` / `install_resume_task.ps1`,
+  never committed (this repo is public; a ping URL is a capability URL). Copy is
+  machine-local, e.g. `<toolsdir>\resume-config.json`. All paths must be absolute:
+  the script runs as SYSTEM, which has no user PATH and no mapped drives. Placeholder
+  values only below - never fill in real paths or ping UUIDs here.
+
+  | Key | Meaning |
+  |---|---|
+  | `LockPath` | Absolute path to the lock file. Presence blocks a launch (`Test-CanLaunch`); the script also refuses to launch onto a running `java.exe` even with no lock. |
+  | `Tags` | The full scenario tag list for this sweep, e.g. `["30v3", "40v3", "50v3"]`. **Must list the real tag set of the sweep actually running** - Step A is checked/re-run for all of them together, and Step B resumes whichever remain incomplete. |
+  | `RunIdPrefix` | The run-id prefix shared by every tag's output directory, e.g. `"BASECASE_13052025"`. |
+  | `Suffix` | The trailing part of each tag's output directory name, e.g. `"_iter150_jsprit1000"`. Directory pattern is `<RunIdPrefix>_<tag><Suffix>`. |
+  | `OutputRoot` | Absolute path to the directory holding one output folder per tag (used to detect completion and to delete a crashed tag's partial output before relaunch). |
+  | `CarrierRoot` | Absolute path to the directory holding each tag's routed delivery-carrier file (used to detect whether Step A finished). |
+  | `WorkDir` | Absolute path Step B's generated batch `cd /d`s into before running. |
+  | `JavaExe` | Absolute path to the JDK's `java.exe`. Pin the exact version actually installed - a mismatched hardcoded version elsewhere in the pipeline has caused launch failures before. |
+  | `Jar` | Absolute path to the actual shaded jar. Resolve this against the repo before installing; never leave a placeholder in the real config. |
+  | `ArgTemplate` | Step B's CLI arguments with a literal `{TAG}` placeholder, e.g. `"concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true"`. **Must be kept in sync with the sweep actually running** - a stale value here (old date, old iteration count) would relaunch with the wrong parameters, unattended, with nobody watching. |
+  | `GeneratedBatPath` | Absolute path where the resume script writes the batch file it generates for Step B. |
+  | `ResumeLog` | Path (relative to `WorkDir`, or absolute) for the resumed run's log output. |
+  | `StartDetached` | Absolute path to `start_detached.ps1` (or equivalent), used to launch Step B detached. A direct WMI call is not equivalent - it puts the output redirect outside the cmd string and the run never starts. |
+  | `StepALauncher` | Absolute path to the script/batch that re-runs Step A in full when it is found incomplete. |
+  | `ResumedUrl` | healthchecks.io ping URL for the `*-resumed-after-boot` check. Optional: if empty, no ping is sent. |

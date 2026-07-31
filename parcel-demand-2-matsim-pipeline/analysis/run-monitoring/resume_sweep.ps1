@@ -57,9 +57,15 @@ function New-StepBBatch {
     $lines.Add('echo ===== RESUME BATCH START %date% %time% =====')
     $index = 1
     foreach ($tag in $Tags) {
-        $args = $ArgTemplate.Replace('{TAG}', $tag)
+        # Named $batchArgs, not $args: the automatic $args variable is read by this
+        # same file's entry point ~90 lines below, and reusing the name here (even
+        # though it is harmless - PowerShell gives every function invocation its own
+        # fresh $args, and this function is always called with all six parameters
+        # bound positionally, so the local $args starts empty and the overwrite is
+        # invisible outside this function) would leave the next reader wondering.
+        $batchArgs = $ArgTemplate.Replace('{TAG}', $tag)
         $lines.Add("echo ===== RESUME $index/$($Tags.Count) tag=$tag %time% =====")
-        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner $args")
+        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner $batchArgs")
         $lines.Add("echo RESUME${index}_EXIT=%ERRORLEVEL%")
         $index++
     }
