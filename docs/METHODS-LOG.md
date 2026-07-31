@@ -1142,14 +1142,53 @@ Verfügbar ist nur `capacityDemand`, also die Paket-**Anzahl** (Verteilung im ge
 2070 × 1, 489 × 2, 209 × 3, 119 × 4, 71 × 5 …). Der `weights`-Pfad ist Hannover-Erbe
 (Notebook-Port), nicht Lausitz-Funktionalität.
 
-**Konsequenz:** die Paketmasse ist `Anzahl × angenommene Mittelmasse`. Damit hängt die Aufteilung
-an **zwei Konstanten**, von denen eine nicht im Modell steht:
-  Paket-Anteil ≈ (n_Pakete · kg_Paket) / (n_Pakete · kg_Paket + n_Pax · kg_Pax)
-Die Empfindlichkeit ist erheblich. Bei 1,6 Fahrgästen an Bord (`mean_pax_aboard_pax`, gemessen) und
-kg_Pax = 80: bei 20 Paketen à 2,5 kg bekommt die Fracht ~28 %, bei 99 Paketen à 2,5 kg ~66 %. Eine
-**Sensitivität über kg_Paket ist daher nicht optional, sondern Teil des Ergebnisses.** Die
-Mittelmasse braucht eine Quelle (deutsche KEP-Referenzstatistik, z. B. BIEK-KEP-Studie) —
-`NEEDS-SOURCE`, nicht selbst setzen.
+**Konsequenz:** die Paketmasse ist `Anzahl × Mittelmasse aus Literatur`. Damit hängt die Aufteilung
+an **zwei Konstanten**:
+  Paket-Anteil = (n_Pakete · kg_Paket) / (n_Pakete · kg_Paket + n_Pax · kg_Pax)
+
+**Quelle gesetzt (User 2026-07-31), `NEEDS-SOURCE` erledigt:** Amaral et al. (2026), *Empirical
+analysis of e-commerce delivery operations: from parcels to tours*, Transportation Research Part E,
+Tab. 1. Mittelmasse **1,6478 kg** über alle Sendungen; differenziert **1,5922 kg** an Haushalte und
+**1,8160 kg** an Gewerbe. Da HAGRID B2C und B2B ohnehin trennt (B2B-Anteil ist
+Optimierer-Constraint), wird die **differenzierte** Variante verwendet und die gepoolte 1,6478 nur
+als Rückfall, wenn der Kanal einer Sendung nicht bekannt ist.
+
+**Wichtig — Mittelwert ist hier die richtige Statistik, nicht der Median.** Die Verteilung ist
+stark rechtsschief (Mittel 1,6478 vs. Median 0,6950 kg, Verhältnis 2,37; Std.abw. 3,0797, also
+~1,9× der Mittelwert). Die Zurechnung braucht aber die **Gesamtmasse an Bord**, und
+`Σ Einzelgewichte = n × Mittelwert` — der Mittelwert ist dafür der unverzerrte Schätzer, die Schiefe
+schlägt nur auf die Varianz der Schätzung durch, nicht auf den Erwartungswert. Bei tausenden
+Sendungen je Lauf ist das Aggregat gut bestimmt. **Falle:** wer hier „robustheitshalber" zum Median
+greift, unterschätzt die Gesamtpaketmasse um **58 %** und drückt den Frachtanteil entsprechend.
+
+**Zweite Falle — Q1/Q3 sind KEIN Sensitivitätsband für den Mittelwert.** Tab. 1 gibt Q1 = 0,30 und
+Q3 = 1,625 kg, das ist die Streuung *einzelner Sendungen*. Als Spanne auf den Mittelwert eingesetzt
+wäre das ein statistischer Fehler, der nach Rigorosität aussieht. Das zulässige quellinterne Band
+ist der Haushalts-/Gewerbe-Kontrast **1,5922–1,8160 kg**; darüber hinaus ist nur der
+Transfer-Vorbehalt (unten) ein Grund für eine breitere Spanne.
+
+**Transfer-Vorbehalt, im Paper zu benennen:** die Quelle ist ein **brasilianischer**
+E-Commerce-Datensatz (Werte in BRL). Angewendet wird sie auf ein deutsches, ländliches Szenario.
+1,6 kg liegt im plausiblen Bereich für KEP allgemein, aber Sendungsmix, Retourenanteil und
+B2B-Struktur unterscheiden sich. Als deklarierter Transfer führen, nicht als deutsche Kennzahl.
+
+**Empfindlichkeit mit den gesetzten Werten** (bei 1,6 Fahrgästen an Bord = 128 kg, gemessen als
+`mean_pax_aboard_pax`):
+
+| Pakete an Bord | Paketmasse | Frachtanteil |
+|---|---|---|
+| 10 | 16,5 kg | 11,4 % |
+| 20 | 33,0 kg | 20,5 % |
+| 50 | 82,4 kg | 39,2 % |
+| 99 (`max_parcels_per_tour`) | 163,1 kg | 56,0 % |
+
+Der Frachtanteil ist also stark von der Beladung abhängig und wechselt erst jenseits von ~78
+Paketen die Mehrheit. Der Haushalts-/Gewerbe-Kontrast bewegt ihn dagegen nur um ~1–2 Prozentpunkte
+— die Aufteilung ist gegen die Paketmasse selbst weit weniger empfindlich als gegen die Beladung.
+
+**`kg_per_passenger` = 80 kg ist eine Setzung**, keine Quelle: gängige Konvention im
+Straßenverkehr, ohne Gepäck. Da nur das **Verhältnis** kg_Paket/kg_Pax die Aufteilung bestimmt,
+wiegt diese Setzung genauso schwer wie die belegte Paketmasse — beide zusammen ausweisen.
 
 **Alternative Basis als Pflicht-Sensitivität:** **Kapazitätsanteile** statt Masse. In 1c hat das
 Fahrzeug 8 Sitze und 20 Paketslots (§2.21), die Äquivalenz ist also **szenariodefiniert** statt
