@@ -614,11 +614,27 @@ function Invoke-Heartbeat {
 
     # 2. Progress.
     $current = Get-NewestLogState $cfg.LogDir $cfg.LogPattern
+
+    # A new batch writes a NEW log file. Reset the one-shot event flags so the
+    # next batch's completion is announced too - without this, the sweep-finished
+    # push fires only once for the entire life of the state file, and Part B's
+    # post-crash batch would complete in silence.
+    if ($current -and $state.LastLogPath -and $current.Path -ne $state.LastLogPath) {
+        $state.CompletionAnnounced = $false
+        $state.EventPendingRearm   = $false
+    }
+
+    # CAREFUL: the key here MUST be `Length`, matching what Test-ProgressAdvanced
+    # reads - NOT the state file's `LastLength`. PowerShell returns $null for a
+    # missing hashtable key without erroring, [long]$null is 0, and the comparison
+    # then degenerates to "Current.Length -gt 0" = always true for any non-empty
+    # log. That silently disables stall detection completely while every check
+    # stays green. This exact bug shipped in an earlier draft of this plan.
     $previous = $null
     if ($state.LastLogPath) {
         $previous = @{ Path = $state.LastLogPath
                        LastWriteTicks = $state.LastWriteTicks
-                       LastLength = $state.LastLength }
+                       Length = $state.LastLength }
     }
     $advanced = Test-ProgressAdvanced $previous $current
 
@@ -637,18 +653,28 @@ function Invoke-Heartbeat {
     # The meaning lives in the CHECK NAME (sweep-finished), not in the body: the docs
     # do not state that an attached body reaches the notification. The body is sent
     # anyway because it is useful in the check's Events list.
+    # Flip the flags ONLY on a confirmed send. Marking an event announced when the
+    # POST actually failed loses the one notification the researcher wanted, and
+    # there is no second chance for that batch. On failure the flag stays put and
+    # the next cycle retries.
     if ($complete -and -not $state.CompletionAnnounced) {
         $name = if ($current) { Split-Path $current.Path -Leaf } else { 'unknown' }
-        Send-HealthcheckPing $cfg.SweepFinishedUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)" | Out-Null
-        $state.CompletionAnnounced = $true
-        $state.EventPendingRearm   = $true
-        Write-LocalLog $cfg.LocalLogPath 'event: batch completion announced'
+        if (Send-HealthcheckPing $cfg.SweepFinishedUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)") {
+            $state.CompletionAnnounced = $true
+            $state.EventPendingRearm   = $true
+            Write-LocalLog $cfg.LocalLogPath 'event: batch completion announced'
+        } else {
+            Write-LocalLog $cfg.LocalLogPath 'event: completion announce FAILED, will retry next cycle'
+        }
     } elseif ($state.EventPendingRearm) {
         # Re-arm on the NEXT cycle, not immediately, so the down-notification is
         # never racing an up-notification.
-        Send-HealthcheckPing $cfg.SweepFinishedUrl '' '' | Out-Null
-        $state.EventPendingRearm = $false
-        Write-LocalLog $cfg.LocalLogPath 'sweep-finished check re-armed'
+        if (Send-HealthcheckPing $cfg.SweepFinishedUrl '' '') {
+            $state.EventPendingRearm = $false
+            Write-LocalLog $cfg.LocalLogPath 'sweep-finished check re-armed'
+        } else {
+            Write-LocalLog $cfg.LocalLogPath 'event: re-arm FAILED, will retry next cycle'
+        }
     }
 
     if ($current) {
@@ -663,8 +689,16 @@ function Invoke-Heartbeat {
 }
 
 # Entry point when invoked as a script (not dot-sourced by the tests).
-if ($MyInvocation.InvocationName -ne '.' -and $args.Count -ge 1) {
-    exit (Invoke-Heartbeat $args[0])
+if ($MyInvocation.InvocationName -ne '.') {
+    if ($args.Count -ge 1) {
+        exit (Invoke-Heartbeat $args[0])
+    } else {
+        # Fail loudly. A Task Scheduler action that omits the config path would
+        # otherwise look like a successful silent no-op run for as long as the
+        # alive grace window takes to notice.
+        Write-Host 'usage: heartbeat.ps1 <path-to-hc-config.json>'
+        exit 2
+    }
 }
 ```
 
@@ -1461,7 +1495,11 @@ No gaps.
 
 **Placeholder scan:** Three intentional fill-ins remain, each with a named source and an explicit instruction not to guess: the grace value (Task 2 Step 6 measures it, Task 2 Step 7 and Task 5 Step 1 consume it), the `Tags` array and `Jar` path in `resume-config.json` (Task 9 Step 3, resolved against the actual sweep definition). These are values that cannot exist before the measurement and the sweep exist. No "add error handling"-class placeholders.
 
-**Type consistency:** `Get-NewestLogState` returns `Path`/`LastWriteTicks`/`Length`; `Test-ProgressAdvanced` consumes exactly those three keys; the state file persists them as `LastLogPath`/`LastWriteTicks`/`LastLength` and `Invoke-Heartbeat` maps between the two shapes explicitly. `Test-TagComplete` and `Select-RemainingTags` share the `(OutputRoot, RunIdPrefix, Tag(s), Suffix)` parameter order. `Send-HealthcheckPing($BaseUrl, $Suffix, $Body)` is called with all three positionally throughout. `Invoke-ResumeSweep` deliberately re-implements the ping inline instead of dot-sourcing `heartbeat.ps1`, so the two deployed scripts have no cross-dependency.
+**Type consistency:** `Get-NewestLogState` returns `Path`/`LastWriteTicks`/`Length`; `Test-ProgressAdvanced` consumes exactly those three keys; the state file persists them as `LastLogPath`/`LastWriteTicks`/`LastLength` and `Invoke-Heartbeat` maps between the two shapes.
+
+> **⚠️ This self-review claim was WRONG when first written, and the Task 4 review caught it.** The original `Invoke-Heartbeat` code in this plan built `$previous` with the key `LastLength` instead of `Length`. PowerShell returns `$null` for a missing hashtable key without erroring, `[long]$null` is `0`, so the length comparison degenerated to `Current.Length -gt 0` — always true for any non-empty log. Stall detection would have been **completely** disabled while every check stayed green. Corrected above, with an inline warning at the call site and an integration test over several cycles that fails if the mix-up returns.
+>
+> The lesson worth keeping: asserting "the mapping is explicit" is not the same as checking it. Two hashtable shapes differing by a key prefix is exactly the defect a reading eye slides over, and in a language that does not error on missing keys it fails silently in the safe-looking direction. **Unit tests could not catch it either** — both Task 3's and Task 4's leaf functions were individually correct and fully green at 30/30. Only a test that exercises the wiring finds a wiring bug. `Test-TagComplete` and `Select-RemainingTags` share the `(OutputRoot, RunIdPrefix, Tag(s), Suffix)` parameter order. `Send-HealthcheckPing($BaseUrl, $Suffix, $Body)` is called with all three positionally throughout. `Invoke-ResumeSweep` deliberately re-implements the ping inline instead of dot-sourcing `heartbeat.ps1`, so the two deployed scripts have no cross-dependency.
 
 ## Open deviation from the spec — needs a decision
 
