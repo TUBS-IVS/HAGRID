@@ -412,14 +412,28 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `analysis/kpi/tests/test_emissions_emep.py` (erweitern)
 
 **Interfaces:**
-- Produces: `emep_supplement.csv` mit Spalten `name,value,unit,source` und exakt diesen `name`-Keys (von Task 4 konsumiert): `ttw_co2_g_per_mj_diesel`, `wtt_co2e_g_per_mj_diesel`, `grid_co2e_g_per_mj`, `gwp_ch4`, `gwp_n2o`, `n2o_g_per_km_diesel_lcv`, `tsp_tyre_g_per_km_lcv`, `tsp_brake_g_per_km_lcv`, `tsp_road_g_per_km_lcv`, `pm10_frac_tyre`, `pm10_frac_brake`, `pm10_frac_road`, `bev_tyre_mult`, `bev_brake_mult`, **`ev_range_km_low`, `ev_range_km_mid`, `ev_range_km_high`**.
+- Produces: `emep_supplement.csv` mit Spalten `name,value,unit,source` und exakt diesen `name`-Keys (von Task 4 konsumiert): `ttw_co2_g_per_mj_diesel`, `wtt_co2e_g_per_mj_diesel`, `grid_co2e_g_per_mj`, `gwp_ch4`, `gwp_n2o`, `n2o_g_per_km_diesel_lcv`, **je Segment** `tsp_tyre_g_per_km_n1_{i,ii,iii}`, `tsp_brake_g_per_km_n1_{i,ii,iii}`, `tsp_road_g_per_km_n1_{i,ii,iii}`, `pm10_frac_tyre`, `pm10_frac_brake`, `pm10_frac_road`, `bev_tyre_mult`, `bev_brake_mult`, `bev_road_mult`, **`ev_range_km_low`, `ev_range_km_mid`, `ev_range_km_high`**.
+- **Rev. B2 (Step-1-Verifikation):** die Non-Exhaust-Basen sind **segmentauflösend** (statt je einem `*_lcv`-Key nun drei je Abriebquelle). Die Gruppierung der Quelle — Tab. 3-4/3-8 fassen N1-II und N1-III zusammen, Tab. 3-6 trennt alle drei — wird **als Daten ausgeschrieben** (identische Werte für ii/iii), nicht in Code-Verzweigungen versteckt; die `source`-Spalte benennt die Gruppierung. Segment→Key ist damit `segment.lower().replace("-", "_")`.
 - **Rev. B:** `ev_range_km` (Einzelwert) ist durch **drei Schwellen** ersetzt. Begründung (Messung 2026-07-31 über 12 Läufe mit Freight-Touren): bei 250 km ist die Überschreitung in **jedem** Lauf 0 %, das Gate wäre wirkungslos. Längste Tour überhaupt 183,3 km; base10c: max 158,8, p95 139,3. Trennschärfe liegt allein bei ~150 km (dort 0–13,4 % je Lauf). Ein einzelner Wert würde ein Nullresultat produzieren, das nach Absicherung aussieht.
 
-- [ ] **Step 1: Kandidatenwerte gegen die Originalquellen verifizieren.** Die Werte unten sind fachlich begründete Kandidaten; VOR dem Commit jeden gegen die genannte Quelle prüfen und bei Abweichung korrigieren (Quelle gewinnt immer):
-  - Non-Exhaust-Basen + PM10-Anteile + Speed-Korrekturen: EMEP/EEA Guidebook, Kapitel **1.A.3.b.vi-vii** (Tyre/brake/road wear), PDF frei auf https://www.eea.europa.eu/en/analysis/publications/emep-eea-guidebook-2025 — Tier-2-Tabellen für LCV.
-  - N2O für Diesel-LCV Euro 6/7: Kapitel **1.A.3.b.i-iv** Hauptteil, N2O/NH3-Tabellen (Tier 2, g/km hot).
-  - WTT Diesel: JEC WTW v5 bzw. GLEC Framework v3; Netz-Intensität: UBA „CO2-Emissionsfaktor Strommix" (aktuellster Jahreswert).
-  - GWP100: IPCC AR6 (CH4 fossil 29.8, N2O 273).
+- [x] **Step 1: Kandidatenwerte gegen die Originalquellen verifiziert (2026-07-31).** Kapitel **1.A.3.b.vi-vii** war laut `hagrid-input/emissions/SOURCES.md` noch nicht heruntergeladen — nachgeholt (`1.A.3.b.vi-vii Road tyre and brake wear 2025.pdf`, 38 S., von der EEA-Kapitelseite; SOURCES.md nachziehen). Ergebnis: **vier Werte korrigiert, eine Plan-Entscheidung retrahiert.** „Quelle gewinnt" hat hier real gegriffen:
+
+  | Größe | Kandidat | **verifiziert** | Quelle |
+  |---|---|---|---|
+  | `ttw_co2_g_per_mj_diesel` | 74.2 (Handrechnung mit 42.7) | **74.22** | 3.169 kg CO2/kg Diesel ÷ **42.695** MJ/kg — beide aus dem Guidebook (CO2-je-kg-Fuel-Tabelle bzw. Tab. **3-28** „Default calorific and density values"). Damit ist der Wert quellenintern hergeleitet, nicht angenähert. B7 (Marktkraftstoff) ergäbe 3.144/42.32 ≈ 74.3 — Unterschied unter 0,1 %, deshalb der reine Fossilwert. |
+  | `n2o_g_per_km_diesel_lcv` | 0.010 (geschätzt) | **0.011** | Tab. **3-68** (Kap. 1.A.3.b.i-iv), „Diesel passenger cars and LCVs", Euro 7: urban cold 9 / **urban hot 11** / rural 4 / highway 4 mg/km. Es gibt keine Segmentauflösung. Gewählt: urban hot = konservativ (höchster Warmwert). Rural 4 mg/km ist die Untergrenze für die Sensitivität. |
+  | Bremsabrieb-Basis | 0.0117 „LCV" | **N1-I 0.0117 / N1-II 0.0155 / N1-III 0.0211** | Tab. **3-6**. Der Kandidat war der **N1-I**-Wert — für unsere Flotte (N1-II/III) also 32 % bzw. 80 % zu niedrig. |
+  | Straßenabrieb-Basis | 0.0150 „LCV" | **N1-I 0.0150 / N1-II+III 0.0210** | Tab. **3-8**. Ebenfalls der N1-I-Wert erwischt, +40 % für unsere Flotte. |
+  | Reifenabrieb-Basis | 0.0169 „LCV" | **N1-I 0.0107 / N1-II+III 0.0169** ✓ | Tab. **3-4**. Kandidat war richtig und ist der N1-II/III-Wert. |
+  | PM10-Anteile | 0.60 / 0.98 / 0.50 | **0.600 / 0.980 / 0.50** ✓ | Tab. **3-5** (Reifen), **3-7** (Bremse), **3-9** (Straße). |
+  | Speed-Korrekturen | wie im Plan-Code | ✓ **wörtlich bestätigt** | Gl. (5): `S_T = 1.39` (V<40), `−0.00974·V+1.78` (40–90), `0.902` (V>90), normiert auf 80 km/h. Gl. (8): `S_B = 1.67` (V<40), `−0.0270·V+2.75` (40–95), `0.185` (V>95), normiert auf 65 km/h. Straßenabrieb ist **geschwindigkeitsunabhängig** (Gl. 9). |
+  | `bev_tyre_mult` / `bev_brake_mult` | 1.15 / 0.50 (Annahmen) | **1.0841 / 0.2113** (+ neu `bev_road_mult` **1.1267**) | Nicht mehr Annahme: das Guidebook gibt für **Pkw** ICE- und BEV-Zeilen je Segment und erlaubt damit, das methodeneigene Verhältnis zu bilden — Medium-Pkw ICE→BEV: Reifen 0.0116/0.0107, Bremse 0.0030/0.0142, Straße 0.0169/0.0150. Physikalische Basis im Text: PMP-Reibbremsanteil **0.17** für Elektro, kombiniert mit der höheren WLTP-Fahrzeugmasse. Der bisher angenommene Bremswert 0.50 lag **Faktor 2,4 zu hoch**. |
+
+  **Retrahiert: „Non-Exhaust ist für LCV nicht segmentauflösbar."** Das war die Begründung dafür, `non_exhaust_pm10` ohne `segment`-Argument zu bauen (Task 4). Es ist falsch — Tab. 3-4/3-6/3-8 lösen LCV **nach N1-Segment** auf, die Bremse sogar dreifach. Konsequenz: `segment` wird Pflichtargument, und die im Plan als „bewusste Asymmetrie" beschriebene Stelle entfällt. Innerhalb unserer Flotte wirkt es real: N1-II→N1-III hebt den Bremsabrieb um **36 %**.
+
+  **Nebenbefund, der die Lastentscheidung zusätzlich stützt:** auch im Non-Exhaust-Kapitel ist die Lastkorrektur **HDV-only** — `LCF_T = 1.41 + 1.38·LF` (Gl. 4) und `LCF_B = 1 + 0.79·LF` (Gl. 7) gelten explizit nur für Trucks, Busse und Reisebusse. Für LCV gibt es auch hier keinen Lastparameter. Zweite unabhängige Belegstelle für die Begründung in den Global Constraints.
+
+  **Nicht guidebook-basiert und weiterhin extern zu zitieren:** `wtt_co2e_g_per_mj_diesel` (JEC WTW v5), `grid_co2e_g_per_mj` (UBA-Strommix), `gwp_ch4`/`gwp_n2o` (IPCC AR6 GWP100: CH4 fossil 29.8, N2O 273). Diese vier sind Systemgrenzen-Parameter, nicht Guidebook-Größen (METHODS-LOG §1.4).
 
 - [ ] **Step 2: Failing Test anhängen**
 
@@ -431,11 +445,12 @@ def test_supplement_present_and_plausible():
     required = ["ttw_co2_g_per_mj_diesel", "wtt_co2e_g_per_mj_diesel",
                 "grid_co2e_g_per_mj", "gwp_ch4", "gwp_n2o",
                 "n2o_g_per_km_diesel_lcv",
-                "tsp_tyre_g_per_km_lcv", "tsp_brake_g_per_km_lcv",
-                "tsp_road_g_per_km_lcv", "pm10_frac_tyre",
-                "pm10_frac_brake", "pm10_frac_road",
-                "bev_tyre_mult", "bev_brake_mult",
+                "pm10_frac_tyre", "pm10_frac_brake", "pm10_frac_road",
+                "bev_tyre_mult", "bev_brake_mult", "bev_road_mult",
                 "ev_range_km_low", "ev_range_km_mid", "ev_range_km_high"]
+    for src in ("tyre", "brake", "road"):
+        required += ["tsp_%s_g_per_km_n1_%s" % (src, s)
+                     for s in ("i", "ii", "iii")]
     for k in required:
         assert k in sup, k
     assert 65 < sup["ttw_co2_g_per_mj_diesel"] < 80      # ~74 g CO2/MJ Diesel TTW
@@ -444,11 +459,34 @@ def test_supplement_present_and_plausible():
     assert 25 < sup["gwp_ch4"] < 35 and 250 < sup["gwp_n2o"] < 300
     assert 0 < sup["pm10_frac_brake"] <= 1.0
     assert sup["bev_brake_mult"] < 1.0 < sup["bev_tyre_mult"]
+    assert sup["bev_road_mult"] > 1.0
     assert (sup["ev_range_km_low"] < sup["ev_range_km_mid"]
             < sup["ev_range_km_high"])
     # die untere Schwelle muss unter der laengsten gemessenen Tour (183 km)
     # liegen, sonst ist der Sweep in jedem Lauf trivial 0 (Messung 2026-07-31)
     assert sup["ev_range_km_low"] < 183.0
+
+def test_nonexhaust_bases_are_segment_resolved_as_the_source_has_them():
+    """Step-1-Verifikation 2026-07-31: die urspruengliche Plan-Annahme
+    'Non-Exhaust ist fuer LCV nicht segmentiert' ist FALSCH. Tab. 3-4/3-8
+    gruppieren N1-II+III, Tab. 3-6 trennt alle drei. Der Test haelt genau
+    diese Struktur fest -- er schlaegt an, wenn jemand die Werte wieder auf
+    einen LCV-Einheitswert zusammenzieht ODER die N1-I-Zeile erwischt
+    (das war der Originalfehler: 0.0117 bzw. 0.0150 sind N1-I-Werte)."""
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    # Reifen und Strasse: Quelle gruppiert II und III
+    assert sup["tsp_tyre_g_per_km_n1_ii"] == sup["tsp_tyre_g_per_km_n1_iii"]
+    assert sup["tsp_road_g_per_km_n1_ii"] == sup["tsp_road_g_per_km_n1_iii"]
+    # Bremse: Quelle trennt alle drei, streng steigend
+    b = [sup["tsp_brake_g_per_km_n1_" + s] for s in ("i", "ii", "iii")]
+    assert b[0] < b[1] < b[2]
+    assert b[2] / b[1] == pytest.approx(1.361, rel=0.01)   # II -> III: +36 %
+    # und die N1-I-Werte duerfen nicht die unserer Flotte sein
+    assert sup["tsp_brake_g_per_km_n1_i"] == pytest.approx(0.0117)
+    assert sup["tsp_brake_g_per_km_n1_ii"] == pytest.approx(0.0155)
+    assert sup["tsp_road_g_per_km_n1_i"] == pytest.approx(0.0150)
+    assert sup["tsp_road_g_per_km_n1_ii"] == pytest.approx(0.0210)
 ```
 
 - [ ] **Step 3: Fehlschlag bestätigen**
@@ -460,20 +498,27 @@ Expected: FAIL — `emep_supplement.csv` fehlt (leeres `sup`)
 
 ```csv
 name,value,unit,source
-ttw_co2_g_per_mj_diesel,74.2,g CO2/MJ,"3.169 kg CO2/kg / 42.7 MJ/kg Diesel; EMEP/EEA GB 1.A.3.b.i-iv fuel-based CO2"
-wtt_co2e_g_per_mj_diesel,18.9,g CO2e/MJ,"JEC WTW v5 diesel B7 upstream"
-grid_co2e_g_per_mj,105.6,g CO2e/MJ,"UBA Strommix DE ~380 g CO2e/kWh (Sensitivitaetsparameter, im Paper variieren)"
-gwp_ch4,29.8,kg CO2e/kg,"IPCC AR6 GWP100 fossil methane"
-gwp_n2o,273.0,kg CO2e/kg,"IPCC AR6 GWP100"
-n2o_g_per_km_diesel_lcv,0.010,g/km,"EMEP/EEA GB 1.A.3.b.i-iv Tier-2 N2O hot, diesel LCV Euro 6+ (VERIFY step 1)"
-tsp_tyre_g_per_km_lcv,0.0169,g/km,"EMEP/EEA GB 1.A.3.b.vi Tier-2 tyre wear TSP, LCV"
-tsp_brake_g_per_km_lcv,0.0117,g/km,"EMEP/EEA GB 1.A.3.b.vi Tier-2 brake wear TSP, LCV"
-tsp_road_g_per_km_lcv,0.0150,g/km,"EMEP/EEA GB 1.A.3.b.vii Tier-2 road surface wear TSP, LCV"
-pm10_frac_tyre,0.60,fraction,"EMEP/EEA GB 1.A.3.b.vi mass fraction PM10 of TSP, tyre"
-pm10_frac_brake,0.98,fraction,"EMEP/EEA GB 1.A.3.b.vi mass fraction PM10 of TSP, brake"
-pm10_frac_road,0.50,fraction,"EMEP/EEA GB 1.A.3.b.vii mass fraction PM10 of TSP, road"
-bev_tyre_mult,1.15,factor,"assumption: BEV mass penalty on tyre wear (lit. range 1.1-1.2); sensitivity param"
-bev_brake_mult,0.50,factor,"assumption: regenerative braking (lit. range 0.3-0.7); sensitivity param"
+ttw_co2_g_per_mj_diesel,74.22,g CO2/MJ,"derived inside the source: 3.169 kg CO2/kg diesel / 42.695 MJ/kg (GB ch. 1.A.3.b.i-iv, CO2-per-kg-fuel table + Tab. 3-28)"
+wtt_co2e_g_per_mj_diesel,18.9,g CO2e/MJ,"NOT a guidebook value: JEC WTW v5 diesel B7 upstream"
+grid_co2e_g_per_mj,105.6,g CO2e/MJ,"NOT a guidebook value: UBA Strommix DE ~380 g CO2e/kWh (Sensitivitaetsparameter)"
+gwp_ch4,29.8,kg CO2e/kg,"NOT a guidebook value: IPCC AR6 GWP100 fossil methane"
+gwp_n2o,273.0,kg CO2e/kg,"NOT a guidebook value: IPCC AR6 GWP100"
+n2o_g_per_km_diesel_lcv,0.011,g/km,"GB ch. 1.A.3.b.i-iv Tab. 3-68, diesel PC+LCV Euro 7: urban hot 11 mg/km (konservativ; rural 4 = Sensitivitaetsuntergrenze)"
+tsp_tyre_g_per_km_n1_i,0.0107,g/km,"GB ch. 1.A.3.b.vi Tab. 3-4, LCV (N1-I)"
+tsp_tyre_g_per_km_n1_ii,0.0169,g/km,"GB ch. 1.A.3.b.vi Tab. 3-4, LCV (N1-II, III) -- Quelle gruppiert II und III"
+tsp_tyre_g_per_km_n1_iii,0.0169,g/km,"GB ch. 1.A.3.b.vi Tab. 3-4, LCV (N1-II, III) -- Quelle gruppiert II und III"
+tsp_brake_g_per_km_n1_i,0.0117,g/km,"GB ch. 1.A.3.b.vi Tab. 3-6, LCV (N1-I)"
+tsp_brake_g_per_km_n1_ii,0.0155,g/km,"GB ch. 1.A.3.b.vi Tab. 3-6, LCV (N1-II) -- Bremstabelle trennt alle drei Segmente"
+tsp_brake_g_per_km_n1_iii,0.0211,g/km,"GB ch. 1.A.3.b.vi Tab. 3-6, LCV (N1-III) -- Bremstabelle trennt alle drei Segmente"
+tsp_road_g_per_km_n1_i,0.0150,g/km,"GB ch. 1.A.3.b.vii Tab. 3-8, LCV (N1-I), Qualitaetscode C-D"
+tsp_road_g_per_km_n1_ii,0.0210,g/km,"GB ch. 1.A.3.b.vii Tab. 3-8, LCV (N1-II, III), Qualitaetscode C-D"
+tsp_road_g_per_km_n1_iii,0.0210,g/km,"GB ch. 1.A.3.b.vii Tab. 3-8, LCV (N1-II, III), Qualitaetscode C-D"
+pm10_frac_tyre,0.600,fraction,"GB ch. 1.A.3.b.vi Tab. 3-5 mass fraction PM10 of TSP, tyre"
+pm10_frac_brake,0.980,fraction,"GB ch. 1.A.3.b.vi Tab. 3-7 mass fraction PM10 of TSP, brake"
+pm10_frac_road,0.50,fraction,"GB ch. 1.A.3.b.vii Tab. 3-9 mass fraction PM10 of TSP, road"
+bev_tyre_mult,1.0841,factor,"guidebook-internes ICE->BEV-Verhaeltnis Medium-Pkw: Tab. 3-4 0.0116/0.0107 (deklarierter Kategorientransfer, keine freie Annahme)"
+bev_brake_mult,0.2113,factor,"guidebook-internes ICE->BEV-Verhaeltnis Medium-Pkw: Tab. 3-6 0.0030/0.0142; physikalische Basis im Quelltext: PMP-Reibbremsanteil 0.17 fuer Elektro"
+bev_road_mult,1.1267,factor,"guidebook-internes ICE->BEV-Verhaeltnis Medium-Pkw: Tab. 3-8 0.0169/0.0150 (Masseeffekt auf Strassenabrieb)"
 kg_per_parcel,1.65,kg,"ASSUMPTION, deliberately rounded (user 2026-07-31). Order of magnitude supported by three sources: Amaral et al. 2026 TR-E Tab.1 mean 1.6478 kg (only measured mean; BRAZILIAN data, declared transfer); Rajendran & Harper 2021 TRIP 1-350 lbs, >50 % under 5 lbs (no mean given); Mohri et al. 0.5-5 kg. MEAN not median - total on-board mass = n x mean; Amaral median 0.6950 would understate by 58 %. Plausible band on the mean 1.3-2.5 kg (~16 pp on the allocation share at 50 parcels)"
 kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel drives the allocation, so this weighs as much as the sourced parcel mass. Pure post-processing: changing it needs no sim rerun and leaves total_* unchanged"
 slots_per_seat_equiv,2.5,slots/seat,"scenario-defined capacity equivalence for the alternative allocation basis: 20 parcel slots / 8 seats (1c vehicle); sensitivity companion to the mass basis"
@@ -535,11 +580,56 @@ nach Guidebook Tab. 2-1) ist eine benannte Annahme. Alternativen bei
 <=15 t (Default-Last 50 %) ~9,1 MJ/km.
 
 ## emep_supplement.csv
-Je Zeile Quelle in der `source`-Spalte. Euro-7-Faktoren sind aus
-Grenzwerten PROJIZIERT (Norm greift fuer LCV ab ~2026/27) - im Paper
-kennzeichnen. `ev_range_km_{low,mid,high}` sind Sweep-Schwellen, kein
-Pass/Fail-Gate: bei 250 km ist die Ueberschreitung in allen 12 geprueften
-Laeufen 0 % (laengste Tour 183 km), Trennschaerfe nur bei ~150 km.
+Je Zeile Quelle in der `source`-Spalte; Zeilen, die NICHT aus dem
+Guidebook stammen, beginnen mit "NOT a guidebook value" (WTT-Diesel,
+Strommix, GWP100). Euro-7-Faktoren sind aus Grenzwerten PROJIZIERT (Norm
+greift fuer LCV ab ~2026/27) - im Paper kennzeichnen.
+`ev_range_km_{low,mid,high}` sind Sweep-Schwellen, kein Pass/Fail-Gate:
+bei 250 km ist die Ueberschreitung in allen 12 geprueften Laeufen 0 %
+(laengste Tour 183 km), Trennschaerfe nur bei ~150 km.
+
+## Non-Exhaust (Kap. 1.A.3.b.vi-vii, verifiziert 2026-07-31)
+Quelle: `1.A.3.b.vi-vii Road tyre and brake wear 2025.pdf` (38 S., von der
+EEA-Kapitelseite, s. hagrid-input/emissions/SOURCES.md).
+
+TSP-Basen [g/km] je N1-Segment - die Quelle loest LCV SEHR WOHL nach
+Segment auf (die urspruengliche Plan-Annahme des Gegenteils ist retrahiert):
+
+| Abriebquelle | N1-I | N1-II | N1-III | Tabelle |
+|--------------|------|-------|--------|---------|
+| Reifen | 0.0107 | 0.0169 | 0.0169 | 3-4 (II+III gruppiert) |
+| Bremse | 0.0117 | 0.0155 | 0.0211 | 3-6 (alle drei getrennt) |
+| Strasse | 0.0150 | 0.0210 | 0.0210 | 3-8 (II+III gruppiert) |
+
+PM10-Anteil des TSP: Reifen 0.600 (Tab. 3-5), Bremse 0.980 (Tab. 3-7),
+Strasse 0.50 (Tab. 3-9).
+
+Geschwindigkeitskorrekturen (mittlere TRIP-Geschwindigkeit, nicht
+Konstantfahrt):
+  Gl. (5) Reifen: 1.39 fuer V<40; -0.00974*V+1.78 fuer 40<=V<=90; 0.902
+    fuer V>90. Normiert auf 80 km/h.
+  Gl. (8) Bremse: 1.67 fuer V<40; -0.0270*V+2.75 fuer 40<=V<=95; 0.185
+    fuer V>95. Normiert auf 65 km/h.
+  Strassenabrieb: KEINE Geschwindigkeitsabhaengigkeit (Gl. 9).
+Bei unseren ~30-36 km/h greifen also beide Plateauwerte, d. h. Bremsabrieb
+x1.67 und Reifenabrieb x1.39 gegenueber der Normierungsgeschwindigkeit.
+
+BEV: die Quelle hat keine BEV-Zeile fuer LCV, aber ICE- und BEV-Zeilen je
+Pkw-Segment. Verwendet wird das guidebook-interne Verhaeltnis des
+Medium-Pkw (Reifen 1.0841, Bremse 0.2113, Strasse 1.1267) als deklarierter
+Kategorientransfer. Physikalische Basis im Quelltext: PMP-Reibbremsanteil
+0.17 fuer Elektro, kombiniert mit hoeherer WLTP-Fahrzeugmasse.
+
+LASTKORREKTUR ist auch hier HDV-only: LCF_T = 1.41 + 1.38*LF (Gl. 4) und
+LCF_B = 1 + 0.79*LF (Gl. 7) gelten explizit nur fuer Trucks, Busse und
+Reisebusse. Fuer LCV existiert kein Lastparameter - zweite unabhaengige
+Belegstelle fuer die Lastentscheidung des Plans.
+
+Vorbehalt der Quelle selbst, im Paper zu nennen: die PM10/PM2.5-Werte der
+Reifentabelle sind laut Guidebook UEBERSCHAETZT (neuere Messungen finden
+den PM10-Anteil am Gesamtreifenabrieb deutlich unter 3 %); eine Revision
+war zum Redaktionsstand nicht moeglich. Der Strassenabrieb ist mit
+Qualitaetscode C-D als "highly uncertain" gekennzeichnet.
 ```
 
 - [ ] **Step 5: PASS bestätigen**

@@ -121,3 +121,54 @@ def test_segment_ordering_at_tour_speed():
     pm = {s: em.ef(30.0, fac["diesel"][s]["PM Exhaust"])
           for s in ("N1-I", "N1-II", "N1-III")}
     assert pm["N1-I"] == pytest.approx(pm["N1-III"])
+
+
+def test_supplement_present_and_plausible():
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    required = ["ttw_co2_g_per_mj_diesel", "wtt_co2e_g_per_mj_diesel",
+                "grid_co2e_g_per_mj", "gwp_ch4", "gwp_n2o",
+                "n2o_g_per_km_diesel_lcv",
+                "pm10_frac_tyre", "pm10_frac_brake", "pm10_frac_road",
+                "bev_tyre_mult", "bev_brake_mult", "bev_road_mult",
+                "ev_range_km_low", "ev_range_km_mid", "ev_range_km_high"]
+    for src in ("tyre", "brake", "road"):
+        required += ["tsp_%s_g_per_km_n1_%s" % (src, s)
+                     for s in ("i", "ii", "iii")]
+    for k in required:
+        assert k in sup, k
+    assert 65 < sup["ttw_co2_g_per_mj_diesel"] < 80      # ~74 g CO2/MJ Diesel TTW
+    assert 10 < sup["wtt_co2e_g_per_mj_diesel"] < 30
+    assert 0 < sup["n2o_g_per_km_diesel_lcv"] < 0.1
+    assert 25 < sup["gwp_ch4"] < 35 and 250 < sup["gwp_n2o"] < 300
+    assert 0 < sup["pm10_frac_brake"] <= 1.0
+    assert sup["bev_brake_mult"] < 1.0 < sup["bev_tyre_mult"]
+    assert sup["bev_road_mult"] > 1.0
+    assert (sup["ev_range_km_low"] < sup["ev_range_km_mid"]
+            < sup["ev_range_km_high"])
+    # die untere Schwelle muss unter der laengsten gemessenen Tour (183 km)
+    # liegen, sonst ist der Sweep in jedem Lauf trivial 0 (Messung 2026-07-31)
+    assert sup["ev_range_km_low"] < 183.0
+
+
+def test_nonexhaust_bases_are_segment_resolved_as_the_source_has_them():
+    """Step-1-Verifikation 2026-07-31: die urspruengliche Plan-Annahme
+    'Non-Exhaust ist fuer LCV nicht segmentiert' ist FALSCH. Tab. 3-4/3-8
+    gruppieren N1-II+III, Tab. 3-6 trennt alle drei. Der Test haelt genau
+    diese Struktur fest -- er schlaegt an, wenn jemand die Werte wieder auf
+    einen LCV-Einheitswert zusammenzieht ODER die N1-I-Zeile erwischt
+    (das war der Originalfehler: 0.0117 bzw. 0.0150 sind N1-I-Werte)."""
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    # Reifen und Strasse: Quelle gruppiert II und III
+    assert sup["tsp_tyre_g_per_km_n1_ii"] == sup["tsp_tyre_g_per_km_n1_iii"]
+    assert sup["tsp_road_g_per_km_n1_ii"] == sup["tsp_road_g_per_km_n1_iii"]
+    # Bremse: Quelle trennt alle drei, streng steigend
+    b = [sup["tsp_brake_g_per_km_n1_" + s] for s in ("i", "ii", "iii")]
+    assert b[0] < b[1] < b[2]
+    assert b[2] / b[1] == pytest.approx(1.361, rel=0.01)   # II -> III: +36 %
+    # und die N1-I-Werte duerfen nicht die unserer Flotte sein
+    assert sup["tsp_brake_g_per_km_n1_i"] == pytest.approx(0.0117)
+    assert sup["tsp_brake_g_per_km_n1_ii"] == pytest.approx(0.0155)
+    assert sup["tsp_road_g_per_km_n1_i"] == pytest.approx(0.0150)
+    assert sup["tsp_road_g_per_km_n1_ii"] == pytest.approx(0.0210)
