@@ -120,6 +120,10 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
   Zustellzeit heißt systematisch niedrigere Zustellquote, also wäre ein Teil des
   „Integrationsvorteils" ein Fenster-Artefakt gewesen. Die Entscheidung vom 29.07. nannte nur 1c
   und 1d; die Baseline war eine Lücke, nicht eine bewusste Ausnahme.
+  **Annotation 2026-07-31:** die hier prognostizierte Quoten-Verzerrung ist **nicht eingetreten** —
+  gemessen ist der Fenster-Effekt auf die Baseline-Zustellquote ≈ 0, das alte Fenster hat jsprit
+  nie gebunden (§3.10). Die Entscheidung trägt weiter, aber als Design-Hygiene (ein Versprechen,
+  eine Konstante), nicht als Fehlerkorrektur.
   **Limitation, die ins Methods-Kapitel gehört:** 21:00 gilt auch für **B2B**, und ein
   Geschäftsempfänger ist um 21:00 nicht da. Bewusster Tausch — Vergleichbarkeit über die Arme
   schlägt Realismus je Sendungstyp, und 1d hatte diese Eigenschaft konstruktiv schon (sein
@@ -132,6 +136,24 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
   **Nicht angetastet:** das Hannover-Fenster (`HagridConfig.Routing.deliveryWindowStartHour/EndHour`
   = 8/20). Es ist eine separate Studie; eine Angleichung hätte alle 51 Läufe der
   Kapazitäts-Sensitivität unvergleichbar gemacht.
+
+- **1d Idle-Threshold: operativer Bereich [0,1–0,3], kein Tier-2-Kostengate** — gemessen · 2026-07-31
+  θ-Sweep komplett (iter150, fleet120, ein Seed, gepaart auf einer jsprit-Realisierung — §2.17;
+  Referenzwerte 6020 Pakete / 127 Touren in jedem Punkt identisch): θ=0,1 → 5894 Pakete (97,9 %),
+  363 Fracht-Veh-h, Pax 7488 Rides (−16,6 %) · 0,15 → 4038 (67,1 %), 262 h, 8160 (−9,1 %) ·
+  0,2 → 2261 (37,6 %), 153 h, 8545 (−4,8 %) · 0,3 → 551 (9,2 %), 42 h, 8964 (im Band) ·
+  0,4 → 9 (0,15 %), 1,3 h · 0,5 → 1 Tour · 1,0 (Kontrolle) → 0. Wartezeit (~704–710 s) und
+  Rejections (<0,5 %) sind über die gesamte Kurve **θ-invariant**: der Integrationspreis läuft
+  vollständig über Mode-Choice-Nachfrageverlust (§2.25), ~proportional zu den
+  Fracht-Fahrzeugstunden. Dispatch fällt quasi-exponentiell; im Intervall [0,1–0,2] ist der
+  Trade-off lokal nahezu linear (0,15 liegt auf der Sehne: 67,1 % vs. 67,75 % interpoliert) —
+  θ dosiert dort praktisch stufenlos zwischen Paketleistung und Pax-Nachfrage.
+  **Konsequenzen:** θ≥0,4 ist de facto pax-only (zweiter Kontrollarm); ein prädiktives
+  Tier-2-Kostengate ist für die Headline **nicht nötig** (θ_hist bleibt Backlog-Option);
+  Verspätungen 0 und Erhaltungsidentitäten geschlossen in allen Punkten; einziger Sonderwert:
+  2 `tours_rejected_at_splice` bei θ=0,15 (alle anderen Punkte 0).
+  Läufe: `m1d010/015/020/030/040` + `ctrl1d`/`m1d050` (Sim-PC). Einzelseed-Vorbehalt für
+  absolute km-/Stunden-Niveaus bleibt (§2.1/§2.17); Cross-Machine-Demand-Vorbehalt → §2.30.
 
 - **Joint-Cost-Allokation: marginale Attribution** — `trägt` · 2026-07-20 (M11)
   Paketkosten = akzeptierter `totalTimeLoss` × Fahrzeug-Zeitrate + Zustell-km × km-Rate
@@ -967,6 +989,18 @@ Sensitivität, BACKLOG.)
    **Annotation 2026-07-29 (`9e4d9da`):** `parcels_missed_overlay` wird jetzt exportiert — eine
    Netto-Rechnung für 1d ist damit möglich. Die §2.5-Quarantäne für *absolute* Zustellquoten
    bleibt unverändert bestehen.
+   **Annotation 2026-07-31 (chid600w21/basew21 gemessen):** der 1c-Kanal hat **nirgends** ein
+   Overlay — weder Java-seitig (`LmdCarrierBuilder` ist der einzige Implementierungsort,
+   `shareduse/**` referenziert es nicht) noch in `extract_shareduse.py`. Das ist M10-konform
+   („raw 100 % in beiden Armen", 1c-Plan M10), aber die **KPI-Schicht mischt die Konventionen**:
+   `delivery_rate` der Baseline ist *netto* (Overlay als Miss verbucht, basew21 93,61 %),
+   `delivery_rate_total` von 1c ist *brutto/operativ* (chid600w21 93,72 %). Der
+   Beinahe-Gleichstand ist eine **Mechanismus-Koinzidenz** (Overlay ~6,4 % vs. χ-Gating ~6,3 % —
+   alle 218 verfallenen chid600w21-Segmente waren χ-geblockt), keine Parität. M10-konform
+   gelesen: Baseline operativ ≈ 100 % (`unassignedParcels=0`), 1c 93,7 % → die Integration
+   kostet ~6,3 pp Zustellquote. Für jede Vergleichstabelle gilt: je Arm dieselbe Konvention
+   (brutto/operativ überall, Overlay als separate Zeile) → BACKLOG `[M]`. §2.5-Quarantäne
+   (nur Deltas berichten) unverändert.
 3. **1c↔1d-Confound:** 1c fährt 8 Sitze + 20 Paketslots (M1), 1d 10 Sitze (D3) — beides einzeln
    richtig entschieden, zusammen heißt es: jeder **direkte** 1c↔1d-Pax-Vergleich vermengt
    Mechanismus- und Kapazitätseffekt (20 % Sitzdifferenz). Vergleichsdesign sternförmig über die
@@ -1549,6 +1583,20 @@ Aussage ist also nicht ein Artefakt der ltrip-Wahl.
 **Konsequenz:** Backlog-Punkt „Kaltstart-Zuschlag implementieren" (`[H]`, ~0,5 d) angelegt;
 Formeln und Sensitivitäten liegen rechenfertig in `analysis/kpi/data/README.md`.
 
+### 2.30 Demand-Input-Drift Dev-PC ↔ Sim-PC: 0,53 % verschiedene Nachfrage
+
+`trägt` · 2026-07-31. `hagrid-input/**` ist git-ignoriert und synchronisiert **nicht** über
+Maschinen: Dev-PC-Demand (MD5 `eb52b4fb`, Stand 2026-07-28 15:19) ≠ Sim-PC-Demand (`8c39f76c`,
+2026-07-28 10:23) → 6052 vs. 6020 Pakete (+0,53 %). **Intern konsistent** sind damit:
+Baseline↔1c (basew21/chid600w21, beide Dev-PC, 6052/6051 Pakete) und die komplette
+1d-θ-Kurve (alle Punkte Sim-PC, 6020). **Nicht exakt konsistent** ist jeder
+Baseline↔1d-Vergleich: die 0,53 % sind ein *Muster*-, nicht nur ein Niveau-Unterschied
+(anders platzierte Pakete). Optionen (Entscheidung offen, BACKLOG `[H]`):
+(a) Inputs synchronisieren + Gewinner-θ-Punkt (und ggf. Baseline) auf synchronisiertem Stand
+neu rechnen — sauber für die Paper-Headline; oder (b) 0,53 % als Caveat im Methods-Kapitel
+ausweisen — klein gegen das ±10-%-Nachfrageband und den 6,5-%-km-Rauschboden (§2.1).
+Der m1d015-Nachschuss lief bewusst **vor** jedem Sync, um die Kurve nicht intern zu brechen.
+
 ---
 
 ## 3 · Zurückgezogene Befunde
@@ -1771,6 +1819,21 @@ gleich" keine Annahme, die man kostenlos haben kann. Verallgemeinert für diesen
 gemessene Größen (Regimesplit, Anteile je Link, marginale Insertion) sind Differenzen zweier Läufe
 vorzuziehen**, weil letztere den kompletten Replanning-Drift erben. Der 1d-Regimesplit (§1.4) war
 von Anfang an die bessere Wahl; meine inkrementelle Alternative war ein Rückschritt.
+
+### 3.10 „Das engere Baseline-Fenster (08–20 Uhr) drückte die Zustellquote — ein Teil des Integrationsvorteils wäre ein Fenster-Artefakt"
+
+**Geglaubt** (2026-07-30, Begründung der Fenster-Vereinheitlichung, §1.2): weniger Zustellzeit ⇒
+systematisch niedrigere Baseline-Zustellquote ⇒ die Vereinheitlichung korrigiere einen realen
+Bias zu Lasten der Baseline.
+**Gemessen** (2026-07-31): base10c (08–20 Uhr) 93,47 % vs. basew21 (07:30–21 Uhr) 93,61 % —
++0,14 pp, innerhalb der 0,53-%-Demand-Drift (§2.30); `unassignedParcels=0` in **beiden**
+Läufen. Das alte Fenster hat jsprit **nie gebunden** — die Baseline-Zustellquote besteht
+vollständig aus dem kosmetischen Not-at-home-Overlay (M10), das vom Fenster unabhängig ist.
+**Was bleibt:** die 21:00-Vereinheitlichung selbst (§1.2) — als Design-Hygiene und
+Versprechens-Vergleichbarkeit (drei Lieferversprechen → eines, §2.21), nicht als
+Bias-Korrektur. Formulierungen wie „verzerrte den Zustellquoten-Vergleich zu Lasten der
+Baseline" sind zurückgezogen; alte Baseline-Läufe sind wegen des Fensters *nicht* falsch,
+wohl aber wegen Versprechens-Vergleichbarkeit und Demand-Stand neu zu fahren gewesen.
 
 ---
 
