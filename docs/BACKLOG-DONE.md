@@ -7,7 +7,74 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-07-30._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-07-31._
+
+---
+
+## 2026-07-31
+
+- **Die vier offenen 1d-Paper-Nacharbeiten abgeschlossen** (Rest der Fixwelle vom 2026-07-29:
+  Parkungen P1/P2, F2-Kommentar-Duplikat, Re-Routing) — ✅ umgesetzt, **301 KPI-Tests** grün und
+  die **volle Java-Modul-Suite** grün, inklusive `ModularEndToEndTest` (55 s) und
+  `ModularControlArmTest` (182 s), die den echten Dispatcher/Splicer-Pfad fahren.
+  Commits `c47fc80` (Python) und `d386e18` (Java), Branch `hendrik`, **nicht gepusht**.
+
+  - **P1 — `meta/fleet_file_missing` recon-frei.** Die Flag saß im
+    `recon is not None`-Zweig von `extract_drt.extract` und war damit genau auf den Builds
+    unerreichbar, die sie brauchen: ein `--no-events`-Build lässt die Kapazitäts-/Schicht-KPIs
+    ohnehin weg, ohne Flag stand in `kpis_long.csv` also nichts, was „dieser Lauf hat keine
+    Fleet-Datei" von „dieser Build hat keine Events rekonstruiert" trennt. Jetzt in
+    `_fleet_file_rows(fleet_file)`, gated auf die Fleet-Datei selbst. Prädikat ist
+    `drt_service_time.read_shift_windows` — bewusst dessen eigene `fleet_file_known`-Definition
+    statt einer Kopie, und bewusst **nicht** `os.path.exists`, das den Fall „Datei da, aber
+    kein parsbares `t_0`/`t_1`" verfehlt. Der `source`-Text nennt jetzt die fünf KPIs, die die
+    Flag kostet (ein Leser kann eine **Abwesenheit** nicht bemerken).
+    **Korrektur der alten Backlog-Formulierung:** „modular-gebunden" war falsch — die Flag ist
+    eine Eigenschaft *jedes* DRT-Laufs, nichts daran ist 1d-spezifisch. Gemeint war „dieselbe
+    Behandlung wie der Modular-Marker aus Review C1", und genau die ist es geworden.
+    **Nebenwirkung, bewusst:** `test_render`s Builds laufen jetzt über einen `_build_clean()`-
+    Helper mit lesbarer Fleet-Datei, sonst wäre „eine Baseline-Seite trägt keinen
+    Hinweise-Block" nicht mehr formulierbar. Realer Lauf ist davon nicht betroffen — der
+    schreibt seine Fleet-Datei immer.
+    **Nachweis:** Mutation (Flag zurück in den recon-Zweig) → 3 neue Tests rot; zusätzlich zwei
+    Integrations-Pins durch `build()` auf `kpis_long.csv`.
+
+  - **P2 — `mean_pax_aboard`/`_pax`-Äquivalenz mit unabhängiger Herleitung.** Alle bisherigen
+    Zusicherungen rechneten **dieselbe Formel** wie die Produktion; eine mutierte Formel mutierte
+    die Erwartung mit und der Test blieb grün. Die neuen Tests erreichen beide Zahlen über einen
+    zweiten Weg: Belegungs-Timeline sekundenweise materialisieren, dann arithmetisches Mittel.
+    Für `_pax` wird die I2-Kurzformel gegen **ihre eigene Begründung** geprüft — eine Exkursion
+    ist durchgehend belegungsfrei (D2-Lockout), also `freight_s` Sekunden aus dem 0-Pax-Eimer
+    entfernen und über die verbleibenden 5400 s neu mitteln. Zwei Fixture-Formen, plus explizite
+    Diskriminierung gegen unkorrigiert / invertierten Rescale / Subtraktion statt Rescale.
+    **Nachweis:** Mutation 1 (ungewichtetes Mittel über die Belegungsstufen) → 6 rot;
+    Mutation 2 (Rescale invertiert) → 4 rot, darunter jeweils die neuen Äquivalenztests.
+
+  - **F2-Kommentar-Duplikat entschärft.** Der Splice-Rejection-Zweig in
+    `ModularTourDispatcher.dispatch()` behauptete weiter, die Splicer-Zahl sei „always larger and
+    systematically so" — genau der Overclaim, den Task 6 im Javadoc zurückgezogen hatte. Task 6
+    war auf das Javadoc gescoped, also überlebte das Duplikat die Korrektur; **das ist die
+    Lehre**. Der Kommentar trägt jetzt nur noch das KPI-Zuordnungsargument (warum der Zweig
+    existiert) und verweist für den Mechanismus aufs Javadoc statt ihn zu wiederholen.
+
+  - **Re-Routing: als beweisbarer Kurzschluss gebaut, nicht als Cache.** Eine vom Splicer
+    abgelehnte Tour bleibt pendend und wird in jedem Simstep mit offenem Gate erneut angeboten —
+    bisher jedes Mal mit einer kompletten Kettenroutung (Anfahrt + Swap + N Stop-Legs + Rückweg)
+    für dasselbe Nein. Neu ist Schritt 0 in `ModularTourScheduler`: eine **zeitunabhängige
+    untere Schranke** (zwei Kapsel-Swaps + alle Servicezeiten + Free-Flow-Fahrzeit des Rings
+    Depot→Stops→Depot), einmal je Tour berechnet und gecacht. Reißt schon die Schranke das
+    Envelope, ist die Ablehnung **bewiesen** — gleiches Verdikt, unberührter Schedule.
+    **Bewusst nicht der im Backlog benannte Cache:** ein wiederverwendetes früheres Nein
+    unterstellt Monotonie in der Abfahrtszeit, die gebinnte DVRP-Fahrzeiten nicht garantieren
+    (Nicht-FIFO an Bin-Grenzen) — das könnte einen Splice verschlucken, der gepasst hätte. Die
+    Free-Flow-Schranke braucht diese Annahme nicht, nur „eine Linkfahrzeit liegt nie unter
+    `length/freespeed`"; deshalb minimiert ihr eigener Router **Fahrzeit**, nicht die injizierte
+    Disutility, und die Anfahrt bleibt außen vor (ein nichtnegativer Term weniger hält die
+    Schranke gültig und macht sie pro **Tour** cachebar statt pro (Tour, Fahrzeug, Position)).
+    **Nachweis:** 6 neue Scheduler-Tests, darunter 20 Wiedervorlagen einer hoffnungslosen Tour
+    mit **null** Routing-Lookups (zählender `TravelTime`-Decorator), kein Veto am exakten
+    Envelope-Rand, und ein differentieller Sweep über den Machbarkeits-Übergang, in dem
+    „Schranke lehnt ab" nie von „Routing lehnt ab" abweichen darf.
 
 ---
 

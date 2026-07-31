@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-07-30._
+_Zuletzt aktualisiert: 2026-07-31._
 
 ---
 
@@ -101,8 +101,10 @@ Ausführung offen.** 14 Tasks auf `hendrik`, jede mit eigenem Review-Pass und be
 volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleiben die
 **Run-Arbeit**: 10-Sitze-Re-Baseline, Idle-Threshold-Sweep, 7,0-h-Kontrollarm sowie die
 Entscheidung zum prädiktiven Dispatch-Gate (θ_hist, s. Medium-Sektion) — dazu die
-zurückgestellte Sensitivitätsidee unten — **sowie die Nacharbeiten aus dem
-Paper-Readiness-Review 2026-07-29** (nächster Block). POC läuft auf dem aktuellen PANDA-Stand;
+zurückgestellte Sensitivitätsidee unten. Die Nacharbeiten aus dem Paper-Readiness-Review
+2026-07-29 sind **vollständig abgearbeitet** (2026-07-31, nächster Block); 1d ist damit
+codeseitig paper-fertig, offen ist nur noch Rechenzeit.
+POC läuft auf dem aktuellen PANDA-Stand;
 die gematchte Baseline braucht es erst für die Paper-Runs.
 → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
 [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md) ·
@@ -121,17 +123,9 @@ _(added 2026-07-14, aktualisiert 2026-07-28)_
   sie schon ab, `drt_wait_mean`/Rejections liegen stündlich vor) sowie fast alle `[L]`-Einzeiler
   (Ausnahmen unten). Nachweis, Commits und Test-Endstände je Task →
   [BACKLOG-DONE](BACKLOG-DONE.md); Konsequenzen für die Zahlen →
-  [METHODS-LOG](METHODS-LOG.md) §2.13/§2.14/§2.16/§2.18/§2.21–§2.23. Offen bleibt:
-  - **`[M]` `fleet_file_missing` recon-frei + modular-gebunden emittieren** (Task-3-Parkung P1:
-    auf einem `--no-events`-Build wird die Flag nie geschrieben; Reviewer-Option (c) = ein
-    reconstruction-unabhängiger, nur ans Modular-Szenario gebundener Check).
-  - **`[M]` `mean_pax_aboard`-pax-Äquivalenztest mit unabhängiger Segment-Herleitung** (Task-3-
-    Parkung P2: der bestehende Test rechnet mit derselben Formel wie die Produktion und
-    diskriminiert daher nicht).
-  - **`[L]` F2-Kommentar-Duplikat in `ModularTourDispatcher.dispatch()` (~:164-165) entschärfen**
-    — derselbe Overclaim-Text wie im Javadoc, aber als Code-Kommentar außerhalb des in Task 6
-    behobenen Scopes.
-  - **`[L]` Re-Routing-Cache für festhängende pendende Touren** (Perf, nicht Korrektheit).
+  [METHODS-LOG](METHODS-LOG.md) §2.13/§2.14/§2.16/§2.18/§2.21–§2.23. Die vier danach noch
+  offenen Nacharbeiten (Parkungen P1/P2, F2-Kommentar-Duplikat, Re-Routing) sind **am
+  2026-07-31 erledigt** → [BACKLOG-DONE](BACKLOG-DONE.md).
   Die echte km-Korrektur der fahrzeugseitigen KPIs bleibt bewusst **kein** Backlog-Punkt —
   Entscheidung und Begründung stehen in [METHODS-LOG](METHODS-LOG.md) §2.14.
 - **Zurückgestellte Sensitivitätsidee (User 2026-07-27):** jsprit-Tourplanung als **EIN Pool**
