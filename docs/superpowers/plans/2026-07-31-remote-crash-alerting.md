@@ -15,7 +15,7 @@
 - **Windows PowerShell 5.1**, German locale, on both machines. No PS 7 syntax: no `??`, no `?.`, no ternary, no `&&`/`||` chaining, no `-AsHashtable`.
 - **Test framework: none.** Only Pester **3.4.0** is present (Windows-bundled); its assertion syntax differs from modern Pester and installing Pester 5 needs PSGallery plus admin on two machines. Unattended monitoring infrastructure must not carry that dependency. PowerShell tests therefore use a **dependency-free assertion harness** in each `Test-*.ps1` that counts failures and `exit 1`s. Python tests use pytest, matching `analysis/hannover-sweep/`.
 - **ASCII only** in all script output. The German console codepage is cp1252 and non-ASCII in output corrupts logs.
-- **Never write `.bat` files with Edit/Write** — it strips CRLF and cmd misparses. Use `[IO.File]::WriteAllLines` with explicit CRLF. Applies to the generated Step B batch in Task 8.
+- **Never write `.bat` files with Edit/Write** — it strips CRLF and cmd misparses. Use `[IO.File]::WriteAllText` (or `WriteAllLines`) with explicit `` `r`n `` line endings and ASCII encoding. Applies to the generated Step B batch in Task 8.
 - **Ping URLs are secrets and this repo is public.** UUIDs live only in `<toolsdir>\hc-config.json`, outside the repo. Only `hc-config.template.json` with placeholder UUIDs is committed. No UUID may appear in any committed file, commit message, or test fixture.
 - **Scheduled Tasks run as SYSTEM**: no user `PATH`, no mapped drives (notably no `T:`). Every path in every script must be absolute.
 - **Log timestamp format** (measured 2026-07-31): `2026-07-24 21:36:50 INFO  QSim:552 - ...`, i.e. `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(INFO|WARN|ERROR|DEBUG)`. Seconds resolution, no milliseconds. JVM unified-logging lines (`[0.004s][info][nmt]`) carry no wall clock and must be skipped, not parsed as gaps.
@@ -970,7 +970,8 @@ Optional and separately switchable. Only needed if a colleague's power-button pr
   - `Select-RemainingTags([string]$OutputRoot, [string]$RunIdPrefix, [string[]]$Tags, [string]$Suffix)` -> `[string[]]`
   - `Test-StepAComplete([string]$CarrierRoot, [string]$RunIdPrefix, [string[]]$Tags)` -> `[bool]`
   - `New-StepBBatch([string]$Path, [string[]]$Tags, [string]$JavaExe, [string]$Jar, [string]$WorkDir)` -> void, writes CRLF ASCII
-  - `Test-CanLaunch([string]$LockPath)` -> `[bool]`
+  - `Test-LockFree([string]$LockPath)` -> `[bool]` — pure, no system probe
+  - `Test-CanLaunch([string]$LockPath)` -> `[bool]` — `Test-LockFree` AND no running `java.exe`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1042,11 +1043,16 @@ Assert-Equal $true ($text -like '*RESUME_DONE*') 'completion marker present for 
 $nonAscii = ($bytes | Where-Object { $_ -gt 127 }).Count
 Assert-Equal 0 $nonAscii 'no non-ASCII bytes'
 
-Write-Host 'Test-CanLaunch'
+Write-Host 'Test-LockFree'
+# Deliberately tests the PURE lock predicate, not Test-CanLaunch: the latter also
+# probes for a running java.exe, so on a machine that happens to be running a sim it
+# would return $false and the test would fail for reasons unrelated to the code.
 $lock = Join-Path $tmp 'resume.lock'
-Assert-Equal $true  (Test-CanLaunch $lock) 'no lock means launchable'
+Assert-Equal $true  (Test-LockFree $lock) 'no lock means free'
 Set-Content -Path $lock -Value 'held' -Encoding Ascii
-Assert-Equal $false (Test-CanLaunch $lock) 'existing lock blocks launch'
+Assert-Equal $false (Test-LockFree $lock) 'existing lock blocks launch'
+# Test-CanLaunch must be false whenever the lock is held, regardless of java state.
+Assert-Equal $false (Test-CanLaunch $lock) 'held lock blocks Test-CanLaunch too'
 
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
@@ -1122,16 +1128,22 @@ function New-StepBBatch {
     [IO.File]::WriteAllText($Path, (($lines -join "`r`n") + "`r`n"), $encoding)
 }
 
+function Test-LockFree {
+    param([string]$LockPath)
+    # Pure predicate: no system probe, so it is deterministically testable.
+    return (-not (Test-Path -LiteralPath $LockPath))
+}
+
 function Test-CanLaunch {
     param([string]$LockPath)
-    if (Test-Path -LiteralPath $LockPath) { return $false }
+    if (-not (Test-LockFree $LockPath)) { return $false }
     $java = @(Get-Process java -ErrorAction SilentlyContinue)
     if ($java.Count -gt 0) { return $false }
     return $true
 }
 ```
 
-Note: the `java` check in `Test-CanLaunch` is a live-system probe, so the test only exercises the lock branch. That is deliberate — the lock is the part that can be wrong in a way tests catch.
+The split matters: `Test-CanLaunch` probes the live process table, so asserting it returns `$true` would fail on any machine that happens to be running a simulation — which both of these machines routinely are. The lock predicate is the part that can be wrong in a way tests catch, so it is isolated and tested directly.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
