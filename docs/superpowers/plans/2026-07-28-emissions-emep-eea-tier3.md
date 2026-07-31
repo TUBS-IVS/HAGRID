@@ -1102,12 +1102,17 @@ def freight_arm(run_dir, fac):
 
 **Hinweis zu `_capabilities`/`carriers_parse`:** die Funktionsnamen in `carriers_parse.py` vor der Implementierung verifizieren ([`test_carriers_parse.py`](../../parcel-demand-2-matsim-pipeline/analysis/kpi/tests/test_carriers_parse.py) zeigt `vt["ct_cep_size_s"].capacity == 100.0`, der Loader-Name kann abweichen). Fällt die Kapazitätsauflösung aus, resolven die drei benannten Typen weiterhin — nur der Hannover-Sweep bräuchte sie.
 
-- [ ] **Step 4: PASS bestätigen**
+- [x] **Step 4: PASS bestätigt** — 5/5 grün.
 
-Run: `python -u -m pytest tests/test_extract_emissions.py -v`
-Expected: PASS
+- [x] **Step 5: Gegenprobe am Realdatenlauf (2026-07-31).** Der lokal vorliegende Lauf, dessen Kennzahlen der Plan unter „base10c" führt, ist **`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`** — der Extractor reproduziert dessen Zahlen exakt: **63 Touren, 6252,1 km**, 93 % der km auf N1-II (`size_s`), v̄ 34,1–39,9 km/h. Ebenso reproduziert: `localdepots_stagger` = **100 % N1-III**. Damit ist die Endogenität des Mixes (§2.7) an zwei Läufen belegt und nicht nur behauptet.
 
-- [ ] **Step 5: Commit**
+  **Die Kernrechtfertigung der Segmentdifferenzierung hält am Realdatenlauf:** eine Einheitsklasse N1-III überschätzt die Freight-Energie um **+38,6 %** (13.128 → 18.202 MJ) — der Plan sagte „~39 %". Gegenrichtung: eine Einheitsklasse N1-II läge nur −3,1 % daneben, weil der Mix ohnehin überwiegend `size_s` ist. Das ist die eigentliche Aussage: **die Einheitsklasse wäre nicht ungenau, sondern systematisch in eine Richtung falsch.**
+
+  **Neuer Nebeneffekt, erst durch die Task-3-Korrektur messbar:** die Segmentdifferenzierung wirkt auch auf der PM-Seite mit **+16,8 %** (316,6 → 369,7 g PM10-Abrieb). Solange `non_exhaust_pm10` segmentblind war, wäre dieser Unterschied strukturell **0 %** gewesen — die Retraktion hat also nicht nur die Buchführung korrigiert, sondern einen realen Effekt sichtbar gemacht.
+
+  Alle drei geprüften Läufe: BEV liegt bei 34–35 % des Diesel-CO₂e-WTW; alle Tourmittelgeschwindigkeiten liegen unter 40 km/h, also im Plateau beider Abrieb-Speedkorrekturen.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
