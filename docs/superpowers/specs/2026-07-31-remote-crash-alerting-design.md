@@ -43,7 +43,9 @@ this design detects with certainty, which is exactly the failure mode under susp
 | Sim-PC uptime | 16 days (last boot 2026-07-15 04:37, the WU reboot) | `Win32_OperatingSystem.LastBootUpTime` |
 | Sim-PC Windows Update | paused until 2026-08-19 — covers the whole absence | recorded 2026-07-15, see `sim-pc-ivs2000` memory |
 | Dev-PC hardware | 63.5 GB RAM, 14 logical CPUs, 686 GB free, chassis type 10 = **notebook** | `Win32_ComputerSystem` / `Win32_Processor` |
-| Dev-PC Windows Update | **NOT paused** — caused the 2026-07-27 reboot, reboot window 02:00–08:00 | `PauseUpdatesExpiryTime` empty |
+| Dev-PC Windows Update | **paused 2026-07-30 → 2026-09-03** (quality *and* feature) — covers the absence | `PauseUpdatesExpiryTime` / `PauseQualityUpdatesEndTime` read 2026-07-31 |
+| Dev-PC sleep on AC | standby and hibernate both `0x0` = never | `powercfg /query SCHEME_CURRENT SUB_SLEEP` |
+| Dev-PC sleep on **battery** | standby `0xe10` = **1 h** — open risk, see §8.2 | same query, DC index |
 | Dev-PC Hannover inputs | present and complete (`hagrid-input/` incl. `demand/BASECASE_13052025`) | directory listing |
 | Dev-PC Hannover runs | none yet (no `BASECASE_*` output dirs) | directory listing |
 | healthchecks.io free tier | 20 checks, 100 log entries/check, no credit card | pricing page |
@@ -145,13 +147,18 @@ sanitised template with placeholder UUIDs is committed, under
 Configured on healthchecks.io, not on either PC. Nothing is installed on the sim-PC; it only
 makes outbound `curl` calls. This decouples the channel choice entirely from physical access.
 
-- **Signal** — primary. Available on the free tier; requires one-time number verification during
-  setup. To be confirmed working during setup, not assumed.
-- **Email** — secondary, redundant. Chosen because the user will check mail regularly anyway.
-  Note for the record: the user's original doubt about email was that the PC would need TU SMTP
-  credentials. It does not — the cloud service sends the mail, the PC only pings.
+- **Email** — primary and confirmed. The account is registered (2026-07-31) with the user's
+  private address, which is already configured on the phone, so this channel needs no further
+  setup and works out of the box. For the record: the user's original doubt about email was that
+  the PC would need TU SMTP credentials. It does not — the cloud service sends the mail, the PC
+  only pings.
+- **Signal** — optional second channel, recommended but not blocking. Available on the free tier;
+  needs a one-time number verification the user performs on their phone. Worth adding because
+  mail push on phones is often batched or silent, and a hard crash deserves a loud channel. If
+  skipped, the design still functions on email alone.
 
-Both channels are attached to all six checks.
+Whichever channels are enabled are attached to all six checks. A channel counts as verified only
+when a test message has actually arrived on the phone (§11.6) — configuring it is not verifying it.
 
 ## 6. Open measurement — the `progress` grace window
 
@@ -220,10 +227,14 @@ self-healing one.
 
 These address the failures that actually occurred, not hypothetical ones:
 
-1. **Pause Windows Update on the dev-PC.** Currently unpaused; it forced the 2026-07-27 reboot
-   and its reboot window is 02:00–08:00, i.e. it will recur within the absence.
-2. **Disable sleep/standby/disk-timeout on the dev-PC on AC** (`powercfg /change ... 0`). It is a
-   notebook, and laptop sleep is a known run-killer. The sim-PC is already set this way.
+1. **Windows Update on the dev-PC — DONE by the user 2026-07-30, paused to 2026-09-03** (verified
+   2026-07-31, quality and feature updates both). This closes the cause of the 2026-07-27 reboot.
+2. **Sleep on the dev-PC — AC already correct** (standby and hibernate `0x0` = never, verified).
+   **Open: the battery profile still standbys after 1 h** (`0xe10`). This matters because the
+   dev-PC's 2026-07-27 incident was a USB-C power-delivery glitch: if AC is lost unnoticed the
+   machine falls back to DC and sleeps, and the Windows standby timer keys off *user* inactivity,
+   not CPU load, so a running MATSim does not hold it awake. Recommended: set the DC timeouts to
+   never as well. Cheap, and it closes the path.
 3. **Sim-PC Windows Update pause already covers the window** (until 2026-08-19). No action.
 4. Note for the dev-PC: after a reboot it may halt at the Dell "incompatible battery / 15W
    charger" F1 prompt, which no remote mechanism can clear. Auto-resume on the dev-PC is
