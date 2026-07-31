@@ -12,13 +12,17 @@ import org.matsim.contrib.dvrp.schedule.Schedule;
 import org.matsim.contrib.dvrp.schedule.Schedules;
 import org.matsim.contrib.dvrp.schedule.StayTask;
 import org.matsim.contrib.dvrp.schedule.Task;
+import org.matsim.contrib.dvrp.router.TimeAsTravelDisutility;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
 import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
+import org.matsim.core.trafficmonitoring.FreeSpeedTravelTime;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -34,6 +38,12 @@ import java.util.Optional;
  * §3.3). Feasibility is decided by routing the WHOLE chain (approach + swap + every stop leg +
  * return + swap-back) before a single task is added or the trailing STAY is touched, so a
  * rejection leaves the schedule byte-identical to before the call.
+ *
+ * <p>Ahead of that routing sits one cheap filter, {@link #minimumChainDurationS}: a tour whose
+ * time-independent lower bound already overruns the envelope is rejected without routing. It
+ * changes no verdict - the bound proves what the routing would have concluded - and exists because
+ * the dispatcher re-offers each still-pending tour on every simstep its gate is open, so a tour
+ * that no longer fits was otherwise re-routed in full, once per simstep, until it expired.
  *
  * <p>Precondition (plan C3): the vehicle is IDLE (current task == trailing STAY). The dispatcher
  * only selects idle vehicles; the assert makes a violated assumption loud instead of corrupt.
@@ -58,6 +68,21 @@ public class ModularTourScheduler {
     private final LeastCostPathCalculator router;
     private final DrtTaskFactory taskFactory;
     private final DvrpLoadType loadType;
+
+    /**
+     * Free-flow twin of {@link #router}, for {@link #minimumChainDurationS} only. Built LAZILY:
+     * SpeedyALT preprocesses the whole network per instance, and this scheduler is constructed on
+     * every 1d QSim whether or not a single dispatch is ever attempted.
+     */
+    private LeastCostPathCalculator freeFlowRouter;
+    private final TravelTime freeFlowTravelTime = new FreeSpeedTravelTime();
+    /**
+     * tourId -&gt; {@link #minimumChainDurationS}. Plain HashMap on purpose: this class is bound
+     * asEagerSingleton in QSim scope precisely because its router is not thread-safe (WIRING
+     * INVARIANT 2), so there is no concurrent access to guard against, and a QSim-scoped instance
+     * means the cache cannot outlive the network/tour set it was computed against.
+     */
+    private final Map<String, Double> minChainDurationS = new HashMap<>();
 
     public ModularTourScheduler(Network network, TravelTime travelTime,
                                 TravelDisutility travelDisutility,
@@ -93,6 +118,20 @@ public class ModularTourScheduler {
 
         Link depot = resolveLink(tour.depotLink(), tour);
         double departure = Math.max(lastStay.getBeginTime(), now);
+        double envelope = Math.min(tour.latestEnd(), vehicle.getServiceEndTime());
+
+        // ---- 0. PROVABLE infeasibility: reach step 1's verdict without routing ----
+        // The dispatcher re-offers every still-pending tour on every simstep its idle-share gate
+        // is open, so a tour that no longer fits is re-routed - approach + swap + N stop legs +
+        // return, N up to a few hundred - once per simstep until it expires, every time only to
+        // reach the rejection at the end of step 1. minimumChainDurationS is a LOWER bound on the
+        // chain, so exceeding the envelope already at the bound PROVES the full routing would be
+        // rejected: same Optional.empty(), same untouched schedule, at the cost of one map lookup.
+        // Not a heuristic and not a cache of a previous verdict - see that method for why the
+        // bound holds regardless of how travel times move.
+        if (departure + minimumChainDurationS(tour) > envelope) {
+            return Optional.empty();
+        }
 
         // ---- 1. route the ENTIRE chain first: feasibility before any mutation ----
         Link from = lastStay.getLink();
@@ -147,7 +186,6 @@ public class ModularTourScheduler {
         double swapBackBegin = back.getArrivalTime();
         double completion = swapBackBegin + Modular.RETOOLING_S;
 
-        double envelope = Math.min(tour.latestEnd(), vehicle.getServiceEndTime());
         if (completion > envelope) {
             return Optional.empty();      // explicit reject - schedule untouched
         }
@@ -183,6 +221,71 @@ public class ModularTourScheduler {
                 Math.max(vehicle.getServiceEndTime(), completion), depot));
 
         return Optional.of(new ScheduledExcursion(deadhead, service, completion, completion - now));
+    }
+
+    /**
+     * A time-INDEPENDENT lower bound on how long {@code tour}'s excursion chain can possibly take,
+     * measured from its departure: two capsule swaps + every stop's jsprit service duration +
+     * the free-flow travel time of the depot -&gt; stop_1 -&gt; ... -&gt; stop_n -&gt; depot ring.
+     * Computed once per tour and cached.
+     *
+     * <p><b>Why this is a bound and not a guess.</b> Three properties have to hold, and each one
+     * is the reason for a specific choice here:
+     * <ol>
+     *   <li><b>Per link, free flow is the floor.</b> A MATSim link's travel time is never below
+     *       {@code length / freespeed}, so every leg's real (congested, event-updated) time is
+     *       &ge; its free-flow time. The free-flow router minimises TRAVEL TIME
+     *       ({@link TimeAsTravelDisutility} over {@link FreeSpeedTravelTime}), not the injected
+     *       disutility - otherwise it could return a time-expensive least-COST path and the
+     *       "floor" would not be one.</li>
+     *   <li><b>The approach leg is left out</b> - it is the only vehicle-dependent piece, and
+     *       dropping a non-negative term keeps the bound valid while making it cacheable per TOUR
+     *       instead of per (tour, vehicle, position) triple.</li>
+     *   <li><b>Time-independence</b> is what makes the bound usable as a re-offer filter at all:
+     *       it cannot move between simsteps, so a tour that fails {@code departure + bound &le;
+     *       envelope} once fails it at every later departure too. The alternative design - cache
+     *       the previous rejection and reuse it - would NOT be sound: DVRP travel times are
+     *       binned and therefore not strictly FIFO, so "it did not fit at 17:00" does not by
+     *       itself prove "it does not fit at 17:01".</li>
+     * </ol>
+     * Together: {@code departure + bound <= completion}, so {@code departure + bound > envelope}
+     * implies {@code completion > envelope}, which is exactly the rejection
+     * {@link #schedule}'s step 1 would reach. The comparison is strict on both sides, so an exact
+     * tie never short-circuits.
+     *
+     * <p>Package-private for the tests, which pin both directions: that a feasible tour is never
+     * vetoed (the bound must stay below the routed completion, including at the envelope boundary),
+     * and that a vetoed re-offer performs no routing at all.
+     */
+    double minimumChainDurationS(ModularFreightTour tour) {
+        Double cached = minChainDurationS.get(tour.tourId());
+        if (cached != null) {
+            return cached;
+        }
+        if (freeFlowRouter == null) {
+            freeFlowRouter = new SpeedyALTFactory().createPathCalculator(
+                    network, new TimeAsTravelDisutility(freeFlowTravelTime), freeFlowTravelTime);
+        }
+        Link depot = resolveLink(tour.depotLink(), tour);
+        // Departure 0 for every leg: with a time-independent travel time the leg times do not
+        // depend on when the chain starts, which is the whole point (see 3. above). VrpPaths is
+        // the same helper step 1 routes with, so both sides carry the same FIRST_LINK_TT and the
+        // same "includes the to-link" convention - a hand-rolled sum would not.
+        double travel = 0.0;
+        Link prev = depot;
+        for (ModularFreightTour.Stop stop : tour.stops()) {
+            Link stopLink = resolveLink(stop.link(), tour);
+            travel += VrpPaths.calcAndCreatePath(prev, stopLink, 0, freeFlowRouter,
+                    freeFlowTravelTime).getTravelTime();
+            prev = stopLink;
+        }
+        travel += VrpPaths.calcAndCreatePath(prev, depot, 0, freeFlowRouter, freeFlowTravelTime)
+                .getTravelTime();
+        double service = tour.stops().stream()
+                .mapToDouble(ModularFreightTour.Stop::serviceDuration).sum();
+        double bound = 2 * Modular.RETOOLING_S + service + travel;
+        minChainDurationS.put(tour.tourId(), bound);
+        return bound;
     }
 
     /**
