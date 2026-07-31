@@ -166,6 +166,59 @@ $hcCfgDefaultPattern = [PSCustomObject]@{ LogDir = 'C:\logs'; LogPattern = '' }
 $anyLogResumeCfg = [PSCustomObject]@{ ResumeLog = 'C:\logs\whatever.log'; WorkDir = 'C:\work' }
 Assert-Equal 0 (Test-ResumeLogInvariant $anyLogResumeCfg $hcCfgDefaultPattern).Count 'an empty LogPattern defaults to *.log, same as Read-HeartbeatConfig'
 
+Write-Host ''
+Write-Host 'Test-SystemVisiblePaths (session-scoped paths a SYSTEM task cannot resolve)'
+# Found 2026-07-31 while probing the sim-PC over SSH: the dev-PC has T:, S: and X:
+# mapped to \\ad.tu-bs.de\share\ivs\*, and a mapped drive letter belongs to ONE
+# interactive logon session. A Scheduled Task running as SYSTEM has no such session,
+# so every one of those letters is simply absent - Test-Path returns $false with no
+# error. A config path on T: would therefore install green and then fail at the next
+# boot, silently, which is the exact direction this whole feature exists to prevent.
+# Pure function: the local-drive set is injected, so the same assertions run
+# identically on the sim-PC (C: only) and the dev-PC (C: + three mappings).
+$localDrives = @('C')
+
+$visibleCfg = [PSCustomObject]@{
+    WorkDir = 'C:\work'; ResumeLog = 'stepB_resume.log'; Jar = 'build\libs\app.jar'
+    LocalLogPath = 'C:\tools\resume_sweep.log'
+}
+$visibleKeys = @('WorkDir','ResumeLog','Jar','LocalLogPath','NoSuchKey')
+Assert-Equal 0 (Test-SystemVisiblePaths $visibleCfg $visibleKeys $localDrives).Count 'all-local config: zero problems (relative paths and absent keys are skipped, not flagged)'
+
+foreach ($mapped in @('T:\hagrid\input', 't:\hagrid\input', 'S:\software\jdk\bin\java.exe')) {
+    $mappedCfg = [PSCustomObject]@{ WorkDir = $mapped }
+    $mappedProblems = Test-SystemVisiblePaths $mappedCfg @('WorkDir') $localDrives
+    Assert-Equal $true ($mappedProblems.Count -gt 0) "a path on mapped drive '$mapped' is flagged (case-insensitive)"
+    Assert-Equal $true (($mappedProblems -join ' ') -like '*WorkDir*') 'the problem names the offending config key'
+}
+
+$uncCfg = [PSCustomObject]@{ WorkDir = '\\ad.tu-bs.de\share\ivs\temp\hagrid' }
+$uncProblems = Test-SystemVisiblePaths $uncCfg @('WorkDir') $localDrives
+Assert-Equal $true ($uncProblems.Count -gt 0) 'a UNC path is flagged too - SYSTEM authenticates to a share as the MACHINE account, which has no rights on a user share'
+
+$emptyCfg = [PSCustomObject]@{ WorkDir = ''; ResumeLog = $null }
+Assert-Equal 0 (Test-SystemVisiblePaths $emptyCfg @('WorkDir','ResumeLog') $localDrives).Count 'empty and null values are skipped here - the REPLACE/emptiness checks own that failure mode'
+
+$twoBadCfg = [PSCustomObject]@{ WorkDir = 'T:\a'; LocalLogPath = 'X:\b' }
+Assert-Equal 2 (Test-SystemVisiblePaths $twoBadCfg @('WorkDir','LocalLogPath') $localDrives).Count 'every offending key is reported, not just the first'
+
+# The single-element-array unroll lesson (review Finding C4): a one-problem result
+# must still be an array, or the caller's $problems[0] yields the first CHARACTER of
+# the message. .Count alone does NOT catch this - PowerShell gives scalars a .Count of 1.
+$oneBad = Test-SystemVisiblePaths ([PSCustomObject]@{ WorkDir = 'T:\a' }) @('WorkDir') $localDrives
+Assert-Equal $true ($oneBad -is [array]) 'a ONE-problem result is still an array (not unrolled to a bare string)'
+
+Write-Host ''
+Write-Host 'Get-LocalFixedDriveLetters (the impure half, checked against this actual machine)'
+$actualLocal = Get-LocalFixedDriveLetters
+Assert-Equal $true ($actualLocal -contains 'C') 'C: is reported as locally visible'
+# Computed from this machine rather than hardcoded, so the assertion is meaningful on
+# the sim-PC (no mappings at all) and the dev-PC (T:, S:, X:) alike.
+$networkLetters = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=4' -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.DeviceID.TrimEnd(':').ToUpperInvariant() })
+$leaked = @($actualLocal | Where-Object { $networkLetters -contains $_ })
+Assert-Equal 0 $leaked.Count ("no mapped network drive leaks into the local set (this machine's mappings: $(if ($networkLetters.Count) { $networkLetters -join ',' } else { 'none' }))")
+
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
 Write-Host "`nAll installer tests passed"; exit 0

@@ -130,17 +130,49 @@ one machine's `hc-config.json` or `resume-config.json` on the other.
 
 ## 2. Verification that cannot be skipped
 
-**No Scheduled Task has ever been successfully registered by this code end to
-end.** The automated test suite (`Test-Installers.ps1`) deliberately stops short
-of calling either installer's real `Register-ScheduledTask` — that needs admin
-rights and a real config, neither available in an automated run — so it only
-proves the script parses, the cmdlet names exist, and the pure validation logic
-is correct. The one thing that *was* confirmed by actually registering a
-throwaway task was the trigger's repetition XML shape (empty `Duration` passes
-validation where an explicit `MaxValue` duration does not). Beyond that single
-point, every step below is being proven for the first time, for real, on the
-actual target machine. Nothing here is optional and nothing can be inferred from
-the code alone.
+The automated test suite (`Test-Installers.ps1`) deliberately stops short of
+calling either installer's real `Register-ScheduledTask`, so it only proves the
+scripts parse, the cmdlet names exist, and the pure validation logic is correct.
+Two things beyond that have now been confirmed on the real sim-PC (2026-07-31,
+over SSH):
+
+- **`Register-ScheduledTask` succeeds** with this code's exact trigger shape, as
+  `SYSTEM` / `Highest`, and `Get-ScheduledTask` reads back `Repetition.Interval`
+  `PT5M` with an **empty** `Repetition.Duration`. §2.1 below is therefore a
+  confirmation, not a first attempt.
+- **The SSH session is not UAC-filtered.** `IVS2000\Simrechner` is in
+  Administrators, and a Windows OpenSSH session for such an account carries a
+  full admin token — `IsInRole(Administrator)` returned `True`. So the whole of
+  section 1 can be done remotely; physical access is not required to install.
+
+Everything else below is still being proven for the first time. §2.2 (does the
+repetition re-fire) and §2.4 (does the At-startup trigger fire at a real boot)
+are the two that no amount of reading, testing, or registering can substitute.
+
+### 2.0 Commissioning over SSH only
+
+If you have no physical access, all of section 1 and §2.1–§2.3 work over
+`ssh sim`. Two things behave differently and both bite silently:
+
+- **Mapped network drives do not exist in an SSH session** — `Get-PSDrive` on the
+  sim-PC over SSH lists `C:` only. This is the *same* blind spot a `SYSTEM`
+  Scheduled Task has, which makes SSH a useful rehearsal: if a path works over
+  SSH it will generally work for the task. Both installers now refuse any config
+  path on a non-local drive letter or a UNC share for exactly this reason. On the
+  dev-PC this is a live hazard — `T:`, `S:` and `X:` are mapped to
+  `\\ad.tu-bs.de\share\ivs\*` and none of them exist for `SYSTEM`. Keep every
+  configured path on `C:`.
+- **Quote your remote commands via base64.** A local `$var` inside
+  `ssh sim "..."` is expanded by the *local* shell. Use
+  `powershell -NoProfile -EncodedCommand <base64-of-UTF16LE-script>`.
+
+The one step SSH cannot make safe is §2.4: `Restart-Computer` works remotely, but
+if the machine does not come back, nobody can press its power button until a
+workday. Do that reboot while you still have days of slack, not on departure day.
+Note also that **Wake-on-LAN is not a substitute** — it is armed on the sim-PC
+(`WakeOnMagicPacket=Enabled`, MAC `D8-5E-D3-01-CF-9A`), but the sim-PC is on
+`134.169.42.0/24` while the dev-PC is on a different subnet, and a PSU failure
+removes the standby rail the NIC needs anyway.
 
 ### 2.1 The repetition trigger is actually every 5 minutes, not once
 
