@@ -1252,6 +1252,41 @@ Emissionsfaktor (EMEP hat für LCV keine Lastdimension, §1.4) noch in die Fahrl
 bleibt unverändert; es bewegen sich nur die Anteile und die spezifischen Intensitäten. Die
 Sensitivitätsanalyse ist damit billig — es gibt keinen Grund, sie nicht als Band zu berichten.
 
+**GEMESSEN 2026-07-31 — die Basiswahl dominiert alles andere um Größenordnungen.** Erste
+Realdatenrechnung am 1c-Lauf `chid600w21` (Code-Validierung; die Zahlen selbst sind paperseitig
+ungültig, da vor der Lieferfenster-Vereinheitlichung). Zurechnung exakt aufgehend, Residuum
++0,000 kg von 12.726,7 kg CO₂e-WTW:
+
+| Basis | Frachtanteil | CO₂e je Paket | CO₂e je Pax-Fahrt |
+|---|---|---|---|
+| **Masse** (kg·km) | **0,90 %** | **0,0202 kg** | 1,722 kg |
+| **Slots** (Kapazität) | **23,64 %** | **0,5305 kg** | 1,327 kg |
+
+**Faktor 26 auf der Zahl, die wir berichten wollen.** Das ist keine Rundungsfrage, sondern der
+dominierende Unsicherheitsbeitrag — verglichen mit den ~16 Pp Band auf `kg_per_parcel` (oben) ist er
+um mehr als eine Größenordnung größer. Ursache ist strukturell und folgt direkt aus den Konstanten:
+**ein Paket ist massenseitig 1/48,5 eines Fahrgasts (1,65 vs. 80 kg), kapazitätsseitig aber 1/2,5**
+(1 Paketslot vs. 2,5 Slots/Sitz) — Faktor **19,4** in der Gewichtung je Einheit. Der *realisierte*
+Anteil hängt zusätzlich vom Beladungsmix des Laufs ab, Richtung und Größenordnung nicht.
+
+**Plausibilitätssignal, das gegen die Massenbasis spricht:** 0,0202 kg = **20 g CO₂e je Paket** liegt
+weit unter allem, was Last-Mile-Literatur berichtet (Größenordnung 100–1000 g); die Slot-Basis mit
+**531 g** liegt darin. Der Grund ist inhaltlich: bei einem *Personen*fahrzeug ist die Masse eines
+Fahrgasts (80 kg) ein schlechter Proxy für seinen Anteil an der Fahrleistung — das Fahrzeug fährt
+seiner **Kapazitätsbindung** wegen, nicht seines Gewichts wegen. Die kg·km-Konvention aus EN 16258 /
+GLEC ist für **Güterfahrzeuge** entwickelt, wo alle Nutzlast Fracht ist; in einem Mischfahrzeug
+verliert ihre Begründung an Kraft.
+
+**Status: Entscheidung steht (User 2026-07-31: Masse als Basis, D als Boden), aber sie ist jetzt
+bezifferbar und gehört dem User erneut vorgelegt.** Umgesetzt ist beides, beide Anteile werden
+immer als Paar emittiert (`alloc_share_parcels_mass` / `_slots`). Solange die Wahl offen bleibt, ist
+die einzige unstrittige Zahl der **allokationsfreie Systemwert** `total_*`.
+
+**Kontamination quantifiziert (dieselbe Messung):** von 258.780 Link-Einträgen tragen **20,4 %
+Pakete** an Bord, **9,9 % beides gleichzeitig** (Pax *und* Paket — genau das Pooling, um das es in
+1c geht). Der gemischte `occ`-Zähler betrifft also ein Fünftel der Fahrleistung, nicht einen
+Randfall. Siehe §2.28 zur Frage, ob die bestehenden 1c-KPIs das ausweisen.
+
 **Alternative Basis als Pflicht-Begleitung:** **Kapazitätsanteile** statt Masse. In 1c hat das
 Fahrzeug 8 Sitze und 20 Paketslots (§2.21), die Äquivalenz ist also **szenariodefiniert** statt
 gesetzt und hängt an keiner externen Massenannahme. Neben der Massenvariante berichten; beide
@@ -1354,6 +1389,38 @@ Qualitätscode A; das ist der Rahmen, in dem alle PM-Aussagen des Papers stehen.
 `LCF_T = 1,41 + 1,38·LF` (Gl. 4) und `LCF_B = 1 + 0,79·LF` (Gl. 7) gelten explizit nur für Trucks,
 Busse und Reisebusse; für LCV existiert kein Lastparameter. Damit steht die Begründung, warum die
 Zuladung nicht in den Faktor eingeht, auf **zwei unabhängigen Kapiteln** statt auf einem.
+
+### 2.28 1c: welche Occupancy-KPIs die Paket-Kontamination ausweisen — und welche nicht
+
+`trägt` · 2026-07-31. Vorabprüfung zu Plan Task 5c. Der Befund ist zweigeteilt, und das ist die
+eigentliche Aussage: **die Personenseite ist korrigiert, die Distanz-/Belegungsseite nicht.**
+
+**Korrigiert und dokumentiert.** `extract_shareduse.py` existiert genau deswegen: es leitet die
+Pax-KPIs (Rides, Wartezeiten) direkt aus der Leg-CSV neu ab, weil die MATSim-Aggregate
+`parcel_`-Personen mitzählen (Modul-Docstring Z. 2–7). Auch `distributions.py:66` schließt
+Paket-Legs aus der Wartezeitverteilung aus. Der Mechanismus ist also bekannt und an den Stellen
+adressiert, wo er Personen betrifft.
+
+**Nicht korrigiert und in der Ausgabe nicht gekennzeichnet:** `occ_km`, `occ_segments`, `occ_time`
+(alle `distributions.py`), `mean_pax_aboard` (`extract_drt.py:244`) und die Occupancy-Karte. Sie
+entstehen aus dem gemischten Zähler und tragen **keinen Hinweis in der eigenen KPI-Zeile**. Für den
+1c-Arm heißt „Ø Pax an Bord" faktisch „Ø Pax **plus Pakete** an Bord". Gemessen (§2.26):
+**20,4 % aller Link-Einträge tragen Pakete, 9,9 % beides** — der Fehler ist also kein Randfall.
+Das gehört in die Limitations des 1c-Arms, unabhängig von der Emissionsrechnung, und ist das
+Distanz-Pendant zum Zeit-Befund in §2.4.
+
+**Der als „vertagt" geführte 1c-KPI ist jetzt baubar.** `extract_shareduse.py` Z. 29–40 begründet
+das Weglassen von `system/freight_veh_km` damit, eine korrekte Zerlegung brauche
+„per-link, per-identity occupancy reconstruction … `geometry.reconstruct_drt_paths` only tracks an
+occupancy COUNT per link, not rider identity". Genau das leistet
+`geometry.reconstruct_drt_paths_detailed` seit Plan Task 5b. Der Blocker ist damit weg;
+**gebaut ist der KPI nicht** (außerhalb des Emissions-Plans), aber die Begründung für die Vertagung
+ist verfallen und sollte nicht weiter zitiert werden.
+
+**Nebenbei erledigt: NEEDS-CHECK zur χ-Obergrenze** (§2.24, Option D). Die Frage war, ob die Zahl
+der *angenommenen* Paketsegmente in den KPIs steht. Ja: `shareduse_channel_stats.csv` führt
+`segments_delivered` (im geprüften Lauf 2884, bei 3104 `segments_submitted` und 3127
+`segments_injected`). Die Obergrenze ist also ohne Java-Eingriff berechenbar.
 
 ---
 
