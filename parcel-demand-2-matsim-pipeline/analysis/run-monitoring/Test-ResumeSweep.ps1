@@ -147,6 +147,14 @@ Assert-Equal $true  (Test-LockStale $staleLock 12) 'a lock older than the config
 Assert-Equal $false (Test-LockStale $staleLock 24) 'the SAME lock is NOT stale against a longer threshold'
 Assert-Equal $false (Test-LockStale (Join-Path $tmp 'no_such.lock') 12) 'a nonexistent lock file is not "stale" - Test-LockFree already covers absence'
 
+Write-Host 'Test-ContainsReplacePlaceholder (review Finding I2 residual: the scan must recurse into arrays)'
+Assert-Equal $false (Test-ContainsReplacePlaceholder 'C:\real\path.jar') 'an ordinary string is not flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder 'C:\REPLACE-WITH-JAR-PATH.jar') 'a string containing REPLACE is flagged'
+Assert-Equal $false (Test-ContainsReplacePlaceholder @('30v3','40v3','50v3')) 'an array of real tags is not flagged'
+Assert-Equal $true  (Test-ContainsReplacePlaceholder @('30v3','REPLACE-WITH-REAL-TAG-2')) 'an array containing EVEN ONE REPLACE entry is flagged, not just top-level strings'
+Assert-Equal $false (Test-ContainsReplacePlaceholder $null) 'null is not flagged'
+Assert-Equal $false (Test-ContainsReplacePlaceholder 12)   'a non-string, non-enumerable value (e.g. a number) is not flagged'
+
 Write-Host 'Test-ResumeConfigValid (review Finding I2)'
 function New-ValidResumeCfgHash {
     return [ordered]@{
@@ -170,6 +178,15 @@ Assert-Equal $true ((Test-ResumeConfigValid ([PSCustomObject]$placeholderHash)).
 $emptyTagsHash = New-ValidResumeCfgHash
 $emptyTagsHash.Tags = @()
 Assert-Equal $true ((Test-ResumeConfigValid ([PSCustomObject]$emptyTagsHash)).Count -gt 0) 'an empty Tags array is flagged'
+
+# Review Finding I2 residual: a config left with placeholder tags used to install
+# green (the old scan only checked top-level strings) and would burn a full ~6h
+# Step A re-run plus a Step B launch that fails every tag at the next boot.
+$placeholderTagsHash = New-ValidResumeCfgHash
+$placeholderTagsHash.Tags = @('30v3', 'REPLACE-WITH-REAL-TAG-2')
+$placeholderTagsProblems = Test-ResumeConfigValid ([PSCustomObject]$placeholderTagsHash)
+Assert-Equal $true ($placeholderTagsProblems.Count -gt 0) 'a Tags array containing a REPLACE entry is rejected, not just a top-level string REPLACE'
+Assert-Equal $true (($placeholderTagsProblems -join ' ') -like '*Tags*') 'the rejected key is named as Tags'
 
 Assert-Equal $true ((Test-ResumeConfigValid $null).Count -gt 0) 'a null config (unparseable/missing file) is flagged, not silently accepted'
 

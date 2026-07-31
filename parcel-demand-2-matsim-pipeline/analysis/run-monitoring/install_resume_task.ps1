@@ -23,6 +23,24 @@ function Test-CmdletsAvailable {
     return ,$missing
 }
 
+function Test-ContainsReplacePlaceholder {
+    # Duplicated from resume_sweep.ps1 (review Finding I2 residual): the REPLACE
+    # scan must recurse into array values too, e.g. Tags: ["REPLACE-WITH-REAL-TAG-1",
+    # ...] - a top-level-strings-only scan let a config with placeholder tags
+    # install green, and at the next boot it would burn a full ~6h Step A re-run
+    # plus a Step B launch that fails every tag.
+    param($Value)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) { return ($Value -like '*REPLACE*') }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        foreach ($item in $Value) {
+            if (Test-ContainsReplacePlaceholder $item) { return $true }
+        }
+        return $false
+    }
+    return $false
+}
+
 function Test-ResumeLogInvariant {
     # Review Finding C7 (the subtlest finding in the review): a resumed run writes
     # its log4j output under its own run-output directory, NOT into the
@@ -92,9 +110,12 @@ function Install-ResumeTask {
     $resumeCfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 
     foreach ($prop in $resumeCfg.PSObject.Properties) {
-        if ($prop.Value -is [string] -and $prop.Value -like '*REPLACE*') {
-            throw "resume-config.json: $($prop.Name) still contains an unfilled REPLACE placeholder: $($prop.Value)"
+        if (Test-ContainsReplacePlaceholder $prop.Value) {
+            throw "resume-config.json: $($prop.Name) still contains an unfilled REPLACE placeholder"
         }
+    }
+    if (@($resumeCfg.Tags).Count -eq 0) {
+        throw 'resume-config.json: Tags is empty - nothing to resume'
     }
 
     # Review Finding C7: read BOTH configs and refuse to install if the invariant
@@ -129,7 +150,10 @@ function Install-ResumeTask {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force | Out-Null
     Write-Host "registered task $TaskName (at startup +${DelayMinutes}min, as SYSTEM)"
-    Write-Host 'NOT started now - it fires on the next boot. Verify with -DryRun first.'
+    # Review Finding 4 (documentation): the INSTALLER has no -DryRun switch - that
+    # belongs to resume_sweep.ps1 itself. Name the actual command, with its real
+    # config argument, so an operator can copy-paste it rather than guess.
+    Write-Host "NOT started now - it fires on the next boot. Verify first: powershell -NoProfile -ExecutionPolicy Bypass -File `"$target`" `"$configPath`" -DryRun"
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
