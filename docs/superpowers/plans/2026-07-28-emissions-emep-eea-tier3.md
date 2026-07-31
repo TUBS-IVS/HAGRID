@@ -1218,7 +1218,21 @@ def test_modular_freight_arm_empty_without_windows():
 
   **Definitionsentscheidung, die die Gegenprobe sichtbar macht:** die Geschwindigkeit ist **km / Σ Fensterdauer** = 13,495 / 0,3033 h = **44,5 km/h**. Die Alternative `freight_vehicle_hours` (0,57 h, inkl. `MODULAR_FREIGHT_STOP` und Retooling) ergäbe 23,7 km/h — Faktor 1,9 auf der Geschwindigkeit und damit ein anderer Punkt auf der Tier-3-Kurve. Gewählt ist die **Fahrzeit ohne Standzeit**, konsistent mit dem konventionellen Arm (`travelTime[s]` ist dort ebenfalls fahrzeitbereinigt) und mit der Engine-off-Annahme an Stopps.
 
-  **Nebenbefund für die Interpretation:** 44,5 km/h liegt **über 40 km/h**, also außerhalb des Abrieb-Plateaus, in dem die konventionellen Van-Touren (34–40 km/h) sitzen. Der modulare Freight-Leg ist schneller, weil er überwiegend Deadhead auf schnelleren Straßen ist und die Zustellstopps nicht in den DRIVE-Tasks liegen. Für den Armvergleich heißt das: die Abrieb-Geschwindigkeitskorrektur ist zwischen den Armen **nicht** identisch (Bremse 1,67 vs. ~1,55), das gehört in die Ergebnisdiskussion und darf nicht als Faktorfehler gelesen werden.
+  **Nebenbefund — ZURÜCKGEZOGEN, bevor er ins Ergebniskapitel kommt (2026-07-31).** Zuerst notiert war: „44,5 km/h liegt über 40 km/h, also außerhalb des Abrieb-Plateaus der Van-Touren; der modulare Leg ist schneller, weil überwiegend Deadhead — die Abrieb-Speedkorrektur ist zwischen den Armen nicht identisch." Das ist **auf n=1 gebaut** und die Begründung ist falsch.
+
+  Nachgemessene Zerlegung (mittlere Reisegeschwindigkeit = längengewichteter Freispeed × Realisierungsgrad):
+
+  | Flotte | km | Ist-Geschw. | längengew. Freispeed | Realisierungsgrad |
+  |---|---|---|---|---|
+  | 1d Freight-Leg (**n=1 Tour**) | 13,5 | 44,5 | **56,5** | **0,79** |
+  | 1d DRT-Pax | 47.146 | 37,5 | 43,5 | 0,86 |
+  | Konventionelle Van-Touren | 6.252 | 36,7 | 41,8 | 0,88 |
+
+  Der Unterschied kommt aus der **Straßenklasse** (+35 % Freispeed), **nicht** aus der Fahrdynamik — die wirkt sogar dagegen (0,79 vs. 0,88, der Freight-Leg realisiert *weniger* seiner Nominalgeschwindigkeit).
+
+  **Und die eigentliche Entwarnung:** die drei Fenster mappen exakt auf die Tourabschnitte — Fenster 2 = 6,532 km = `service_km_planned` (6,53166), Fenster 1+3 = 6,963 km = `deadhead_km_planned` (6,96289). Auch der **Service**-Abschnitt fährt mit 56,2 km/h Freispeed. Der Grund: `m1d050` stellt **genau ein Paket** zu, der Service-Leg ist also eine einzelne lange Anfahrt statt einer dichten Zustellrunde. Bei realistischer Beladung (`m1d010`: 5894 Pakete / 125 Touren, `max_parcels_per_tour` 99) sind die Zwischenstopp-Legs kurze Wohngebiets-Hops; erwartete Richtung: Geschwindigkeit **auf oder unter** Van-Niveau, damit zurück ins Plateau.
+
+  **NEEDS-CHECK (Sim-PC, `m1d010`):** Freight-Leg-Geschwindigkeit und längengewichteter Freispeed gegenrechnen. Erst danach darf überhaupt eine Aussage über Geschwindigkeitsunterschiede zwischen den Armen ins Paper. Bis dahin gilt: **kein** Armunterschied behauptet.
 
 - [ ] **Step 6: Commit**
 
