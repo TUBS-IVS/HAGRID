@@ -71,3 +71,53 @@ def test_transform_keeps_all_three_n1_segments():
         sel = out[(out["segment"] == seg) & (out["powertrain"] == "diesel")
                   & (out["pollutant"] == "NOx")]
         assert len(sel) == 1, seg
+
+
+def test_ef_reproduces_appendix_check_column_for_every_row():
+    import emissions_emep as em
+    fac = em.load_factors()
+    checked = 0
+    for pt in ("diesel", "bev"):
+        for seg, polls in fac[pt].items():
+            for poll, c in polls.items():
+                got = em.ef(c["ef_check_v"], c)
+                # rel=1e-4: validiert Formelstruktur + RF-als-Bruchteil (ein
+                # Prozent-Fehler laege ~39 % daneben); letzte Stellen der
+                # xlsx-Kontrollspalte koennen rundungsbedingt abweichen.
+                assert got == pytest.approx(c["ef_check"], rel=1e-4), (pt, seg, poll)
+                checked += 1
+    assert checked == 24            # 3 Segmente x (7 Diesel + 1 BEV)
+
+
+def test_ef_clamps_speed_to_curve_range():
+    import emissions_emep as em
+    fac = em.load_factors()
+    c = fac["diesel"]["N1-III"]["NOx"]        # vmin=5, vmax=140
+    assert em.ef(1.0, c) == em.ef(5.0, c)
+    assert em.ef(200.0, c) == em.ef(140.0, c)
+    assert em.ef(80.0, c) > 0
+
+
+def test_segment_ordering_at_tour_speed():
+    """Rev. B: die Segmentdifferenzierung ist der Kern des Plans -- die
+    Kernaussagen werden hier festgenagelt, damit ein Faktor-Reimport, der
+    sie kippt, laut scheitert. Werte verifiziert 2026-07-31 bei 30 km/h
+    (Tourmittelgeschwindigkeit der Laeufe: 36 km/h)."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    ec = {s: em.ef(30.0, fac["diesel"][s]["EC"])
+          for s in ("N1-I", "N1-II", "N1-III")}
+    assert ec["N1-I"] == pytest.approx(2.157, rel=2e-3)
+    assert ec["N1-II"] == pytest.approx(2.183, rel=2e-3)
+    assert ec["N1-III"] == pytest.approx(3.123, rel=2e-3)
+    # der einzige relevante Energie-Bruch liegt zwischen II und III (~43 %)
+    assert ec["N1-III"] / ec["N1-II"] == pytest.approx(1.43, rel=0.02)
+    # NOx: II und III sind identisch, der Bruch liegt zwischen I und II
+    nox = {s: em.ef(30.0, fac["diesel"][s]["NOx"])
+           for s in ("N1-I", "N1-II", "N1-III")}
+    assert nox["N1-II"] == pytest.approx(nox["N1-III"])
+    assert nox["N1-II"] / nox["N1-I"] == pytest.approx(1.67, rel=0.02)
+    # PM exhaust: DPF -> keine Segmentdifferenzierung
+    pm = {s: em.ef(30.0, fac["diesel"][s]["PM Exhaust"])
+          for s in ("N1-I", "N1-II", "N1-III")}
+    assert pm["N1-I"] == pytest.approx(pm["N1-III"])
