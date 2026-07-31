@@ -71,7 +71,8 @@ Four checks per machine, eight of the twenty free slots:
 | Check | Period / Grace | Alarm latency | Detects |
 |---|---|---|---|
 | `<pc>-alive` | 5 min / 15 min | ≤20 min | power-off, reboot, network loss, OS hang |
-| `<pc>-progress` | 30 min / see §6 | ≤~2 h | JVM crash with the machine still alive, hung run, stalled batch |
+| `sim-progress` | 15 min / 30 min | ~45 min | JVM crash with the machine still alive, hung run, stalled batch |
+| `dev-progress` | 30 min / 60 min | ~90 min | same, but deliberately looser — see §6 |
 | `<pc>-sweep-finished` | 30 d / 1 d | immediate | the batch completed normally |
 | `<pc>-resumed-after-boot` | 30 d / 1 d | immediate | auto-resume fired (Part B only) |
 
@@ -179,15 +180,37 @@ makes outbound `curl` calls. This decouples the channel choice entirely from phy
 Whichever channels are enabled are attached to all eight checks. A channel counts as verified only
 when a test message has actually arrived on the phone (§11.6) — configuring it is not verifying it.
 
-## 6. Open measurement — the `progress` grace window
+## 6. The `progress` grace window — MEASURED 2026-07-31
 
-The stall threshold must be derived, not guessed, or it will produce false alarms. The quiet
-candidate is the jsprit routing phase, which writes little while it runs.
+The stall threshold was derived, not guessed. **The guess was wrong by roughly a factor of 45.**
 
-**Method:** parse the timestamped lines of the existing `hagrid-output/logs/stepB_weekend_batch.log`
-(43 MB, ten complete real runs) and take the distribution of gaps between consecutive lines. Set
-the grace to a clear margin above the observed maximum legitimate gap. Provisional value 90–120
-min pending that measurement; the measured number replaces it during implementation.
+**Method:** parsed the timestamped lines of `hagrid-output/logs/stepB_weekend_batch.log` (43 MB,
+ten complete real runs) and of `stepA_weekend.log`, taking the distribution of gaps between
+consecutive lines.
+
+**Result:**
+
+| Sample | Phase | Timestamped lines | Largest legitimate gap |
+|---|---|---|---|
+| `stepB_weekend_batch.log` | Step B simulation, 10 runs, ~70 h | 293,511 | **81 s** (only 22 gaps > 60 s) |
+| `stepA_weekend.log` | Step A jsprit construction | — | **38 s** |
+| `hagrid.log` | application log4j | not measurable | different format (ms + thread tag) |
+
+**The premise behind the original 90–120 min provisional value was false:** the jsprit routing
+phase is not quiet, it logs continuously — and Step A is *quieter* in gap terms than Step B, the
+opposite of what was assumed.
+
+**Chosen values (user decision 2026-07-31), asymmetric by machine:**
+
+- **`sim-progress`: period 15 min, grace 30 min → alarm ~45 min.** A ~22× margin over the 81 s
+  maximum measured *on that exact machine*.
+- **`dev-progress`: period 30 min, grace 60 min → alarm ~90 min.** Deliberately twice as loose
+  because the dev-PC has never run a Hannover scenario: 63.5 GB against 128 GB means a tighter
+  heap where longer GC pauses are plausible but unmeasured. Tighten once it has produced its own
+  batch log.
+
+The asymmetry costs nothing — they are separate checks. Detection is now ~2.7× faster on the
+machine that matters than the spec originally planned, without narrowing the safety margin.
 
 ## 7. Component B — boot-triggered auto-resume (separately switchable)
 

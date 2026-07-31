@@ -227,8 +227,8 @@ def main(path):
           % (stats["max_gap_s"], stats["max_gap_s"] / 60.0, stats["max_gap_at"]))
     print("p99.9 quiet gap            : %d s (%.1f min)"
           % (stats["p999_gap_s"], stats["p999_gap_s"] / 60.0))
-    recommended = max(3600, int(stats["max_gap_s"] * 2))
-    print("RECOMMENDED progress grace : %d s (%.0f min) = max(60 min, 2x observed max)"
+    recommended = max(600, int(stats["max_gap_s"] * 20))
+    print("RECOMMENDED progress grace : %d s (%.0f min) = max(10 min, 20x observed max)"
           % (recommended, recommended / 60.0))
 
 
@@ -690,16 +690,20 @@ The dev-PC is the safe place to shake this out: its loss is already accepted, an
 
 This step is the user's; it needs their account. Exact settings — eight checks, "Simple" schedule:
 
-| Name | Period | Grace | Purpose |
-|---|---|---|---|
-| `sim-alive` | 5 min | 15 min | liveness |
-| `sim-progress` | 30 min | **value measured in Task 2** | run is advancing |
-| `sim-sweep-finished` | 30 days | 1 day | batch completed normally |
-| `sim-resumed-after-boot` | 30 days | 1 day | Part B fired |
-| `dev-alive` | 5 min | 15 min | liveness |
-| `dev-progress` | 30 min | **value measured in Task 2** | run is advancing |
-| `dev-sweep-finished` | 30 days | 1 day | batch completed normally |
-| `dev-resumed-after-boot` | 30 days | 1 day | Part B fired |
+| Name | Period | Grace | Alarm after | Purpose |
+|---|---|---|---|---|
+| `sim-alive` | 5 min | 15 min | ~20 min | liveness |
+| `sim-progress` | **15 min** | **30 min** | **~45 min** | run is advancing |
+| `sim-sweep-finished` | 30 days | 1 day | immediate | batch completed normally |
+| `sim-resumed-after-boot` | 30 days | 1 day | immediate | Part B fired |
+| `dev-alive` | 5 min | 15 min | ~20 min | liveness |
+| `dev-progress` | **30 min** | **60 min** | **~90 min** | run is advancing |
+| `dev-sweep-finished` | 30 days | 1 day | immediate | batch completed normally |
+| `dev-resumed-after-boot` | 30 days | 1 day | immediate | Part B fired |
+
+**Why the two machines differ (user decision 2026-07-31, from the Task 2 measurement):** across 293,511 timestamped lines spanning ten complete runs and ~70 h, the largest legitimate quiet gap on the **sim-PC** was **81 s** (Step A: 38 s; only 22 gaps exceeded 60 s at all). The sim-PC threshold is therefore set from evidence measured on that exact machine, giving a ~22× margin. The **dev-PC has never run a Hannover scenario**, has 63.5 GB against the sim-PC's 128 GB and thus a tighter heap where longer GC pauses are plausible but unmeasured — so its threshold is deliberately twice as generous. Because these are separate checks, the asymmetry is free. Tighten `dev-progress` to match once the dev-PC has produced its first Hannover batch log.
+
+This replaces the spec's original provisional 90–120 min, which rested on the assumption that the jsprit phase is quiet. It is not — it logs continuously.
 
 **Why one check per event instead of one generic `event` check:** healthchecks.io logs an attached POST body in the check's Events list, but the documentation nowhere states the body is included in the outgoing notification (verified 2026-07-31). Message text in the body would therefore have rested on undocumented behaviour. Encoding the meaning in the **check name** puts it in the notification subject, which is guaranteed. The body is still sent — useful when pulling the dashboard — but nothing depends on it.
 
