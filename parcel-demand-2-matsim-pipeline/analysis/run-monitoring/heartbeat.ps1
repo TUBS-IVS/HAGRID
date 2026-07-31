@@ -6,7 +6,14 @@
 # Dot-sourceable: defining functions must have no side effects.
 # ASCII output only - the console codepage is cp1252.
 
-$script:CompletionMarkers = @('batch done', 'BATCH DONE', '_EXIT=')
+# Final-only sentinels. A per-scenario or per-step exit marker such as
+# 'SCEN1_EXIT=0' or 'STEP1A_EXIT=0' appears mid-batch (e.g. after run 1 of 10)
+# and must NOT count as batch completion - only a final sentinel does. Do not
+# add '_EXIT=' (or any '*_EXIT=*' pattern) back to this list: the real
+# stepB_weekend_batch.log writes 'SCEN1_EXIT=0' about 7 hours into a ~70 hour
+# batch, which would make Test-BatchComplete return true almost immediately
+# and silently disable stall detection for the remaining ~90% of the run.
+$script:CompletionMarkers = @('batch done', 'RESUME_DONE', 'NIGHTBC_DONE')
 
 function Get-NewestLogState {
     param([Parameter(Mandatory=$true)][string]$LogDir)

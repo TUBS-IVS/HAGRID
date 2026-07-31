@@ -22,8 +22,13 @@ Assert-Equal $false (Test-ProgressAdvanced $base $null) 'losing the log is not p
 
 Write-Host 'Test-BatchComplete'
 Assert-Equal $true  (Test-BatchComplete @('=== weekend batch done 27.07.2026 ===')) 'batch done marker'
-Assert-Equal $true  (Test-BatchComplete @('SCEN10_EXIT=0')) 'scenario exit marker'
-Assert-Equal $true  (Test-BatchComplete @('noise','REDO70_EXIT=1','noise')) 'exit marker anywhere in tail'
+# Per-scenario/per-step exit markers appear mid-batch and must NOT count as completion.
+Assert-Equal $false (Test-BatchComplete @('SCEN1_EXIT=0')) 'scenario 1 exit marker is not batch completion'
+Assert-Equal $false (Test-BatchComplete @('SCEN10_EXIT=0')) 'scenario 10 exit marker is still not batch completion'
+Assert-Equal $false (Test-BatchComplete @('STEP1A_EXIT=0')) 'intermediate step exit marker is not batch completion'
+Assert-Equal $true  (Test-BatchComplete @('=== STEP B weekend batch done 27.07.2026 ===')) 'step B batch done marker'
+Assert-Equal $true  (Test-BatchComplete @('===== RESUME_DONE 31.07.2026 =====')) 'resume done sentinel'
+Assert-Equal $true  (Test-BatchComplete @('===== NIGHTBC_DONE 31.07.2026 =====')) 'nightbc done sentinel'
 Assert-Equal $false (Test-BatchComplete @('2026-07-24 21:36:50 INFO  QSim:552 - SIMULATION AT 13:00:00')) 'ordinary log line'
 Assert-Equal $false (Test-BatchComplete @()) 'empty tail'
 
