@@ -82,8 +82,8 @@ def main(path):
     print("p99.9 quiet gap            : %d s (%.1f min)"
           % (stats["p999_gap_s"], stats["p999_gap_s"] / 60.0))
     print("out-of-order lines dropped : %d" % stats["dropped"])
-    recommended = max(3600, int(stats["max_gap_s"] * 2))
-    print("RECOMMENDED progress grace : %d s (%.0f min) = max(60 min, 2x observed max)"
+    recommended = max(600, int(stats["max_gap_s"] * 20))
+    print("RECOMMENDED progress grace : %d s (%.0f min) = max(10 min, 20x observed max)"
           % (recommended, recommended / 60.0))
 
 
