@@ -515,3 +515,93 @@ def test_write_detail(tmp_path):
     assert txt.splitlines()[0].startswith(
         "run_id;fleet;entity;vehicle_type;segment;km;v_kmh;powertrain")
     assert "RUN1" in txt and "freight_dhl_veh_a_1" in txt
+
+
+def test_intensity_rows_need_a_parcel_km_basis(tmp_path):
+    """Die Massenzurechnung ist eine 1c-Konstruktion: dort fahren Pakete als
+    PERSONEN mit (PARCEL_PERSON_PREFIX) und tauchen deshalb in occ_parcels
+    auf. Im 1d-Arm reisen sie als Kapsel, occ_parcels ist ueberall 0 -- eine
+    dann emittierte alloc_share_parcels_mass = 0 wuerde behaupten, die
+    Fracht dieses Laufs sei emissionsfrei. Ohne kg*km-Basis auf der
+    Paketseite darf keine Zurechnungszeile entstehen; die Regimeaufteilung
+    (freight_modular_* vs. drt_*) ist dort die richtige Zerlegung."""
+    import extract_emissions as ee
+    veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    rows, _ = ee.extract(tmp_path, "test", recon=recon, veh_path=veh_path,
+                         network_gz=_network(tmp_path),
+                         n_pax=40, n_parcels=500)
+    by = _rows_by_name(rows)
+    assert "drt_co2e_wtw" in by                  # der Arm selbst rechnet weiter
+    assert "co2e_wtw_per_parcel" not in by
+    assert "co2e_wtw_per_pax" not in by
+    assert "alloc_share_parcels_mass" not in by
+    assert "alloc_share_parcels_slots" not in by
+
+
+def test_ev_range_rows_carry_their_entity_definition(tmp_path):
+    """Die drei Flotten sehen im CSV vergleichbar aus (ev_range_exceed_<fleet>
+    _150) und sind es nicht: auf base10c reisst Freight die 150 km bei 3,2 %
+    der TOUREN, DRT bei 96,7 % der FAHRZEUGTAGE. Wer das nebeneinander liest,
+    schliesst faelschlich "DRT ist nicht elektrifizierbar". Der Vorbehalt muss
+    in der Zeile stehen, nicht in einem Dokument -- wer kpis_long.csv liest,
+    sieht das Dokument nie."""
+    import extract_emissions as ee
+    veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    rows, _ = ee.extract(_run_dir(tmp_path), "test", recon=recon,
+                         veh_path=veh_path, network_gz=_network(tmp_path))
+    by = _rows_by_name(rows)
+    drt_src = by["ev_range_exceed_drt_150"]["source"]
+    fr_src = by["ev_range_exceed_freight_150"]["source"]
+    assert "VEHICLE-DAY" in drt_src and "charging" in drt_src
+    assert "NOT an electrification verdict" in drt_src
+    assert "TOUR" in fr_src and "continuous shift" in fr_src
+    assert drt_src != fr_src
+
+
+def test_segment_share_is_not_diluted_by_the_drt_fleet(tmp_path):
+    """Der Fahrzeugmix ist nur auf der FRACHTSEITE ein Ergebnis; das
+    DRT-Segment ist die feste M2->N1-III-Ersetzung. Auf base10c wog der
+    DRT-Arm die Vans etwa 4:1 aus, sodass n1_ii = 0,107 herauskam -- fuer
+    denselben LMD-Plan, der auf dem frachtreinen bandz_central 0,926 liest.
+    Zwei unvergleichbare Zahlen fuer einen identischen Mix sind schlechter
+    als keine, also darf ein hinzukommender DRT-Arm den Anteil NICHT
+    veraendern."""
+    import extract_emissions as ee
+    fr = tmp_path / "analysis" / "freight"
+    fr.mkdir(parents=True)
+    pd.DataFrame([
+        ["a", "dhl", "ct_cep_size_s", 1, 0, 0, 90000.0, 90.0, 10800, 3.0,
+         0, 3.6e-4, 154.41, 0, 32.4, 186.8],
+        ["b", "dhl", "ct_cep_size_m", 2, 0, 0, 30000.0, 30.0, 3600, 1.0,
+         0, 3.7e-4, 171.78, 0, 11.2, 183.0],
+    ], columns=TSV_COLS).to_csv(fr / "TimeDistance_perVehicle.tsv",
+                                sep="\t", index=False)
+    freight_only, _ = ee.extract(tmp_path, "test")
+    # derselbe Lauf plus ein DRT-Arm, dessen km die Vans deutlich uebersteigen
+    veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
+    with_drt, _ = ee.extract(tmp_path, "test",
+                             recon={"per_veh": {"drt_1": {"drive_s": 200.0}}},
+                             veh_path=veh_path, network_gz=_network(tmp_path))
+    a, b = _rows_by_name(freight_only), _rows_by_name(with_drt)
+    assert "drt_co2e_wtw" in b                       # der Arm ist wirklich da
+    assert b["segment_km_share_n1_ii"]["value"] == pytest.approx(0.75)
+    assert (b["segment_km_share_n1_ii"]["value"]
+            == pytest.approx(a["segment_km_share_n1_ii"]["value"]))
+    src = b["segment_km_share_n1_ii"]["source"]
+    assert "CONVENTIONAL VAN" in src and "DRT and modular are excluded" in src
+
+
+def test_segment_share_absent_on_a_pax_only_run(tmp_path):
+    """Ohne Frachtflotte gibt es keinen Mix zu berichten -- eine Zeile mit
+    n1_iii = 1,0 aus der festen DRT-Ersetzung waere eine Scheinaussage."""
+    import extract_emissions as ee
+    veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
+    rows, _ = ee.extract(tmp_path, "test",
+                         recon={"per_veh": {"drt_1": {"drive_s": 200.0}}},
+                         veh_path=veh_path, network_gz=_network(tmp_path))
+    by = _rows_by_name(rows)
+    assert "drt_co2e_wtw" in by
+    assert "segment_km_share_n1_ii" not in by
+    assert "segment_km_share_n1_iii" not in by

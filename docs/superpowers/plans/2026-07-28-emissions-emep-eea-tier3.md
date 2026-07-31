@@ -1,3 +1,25 @@
+- [x] **Step 5: Realdaten-Smoke — VIER Läufe statt zwei, und sie haben zwei echte Defekte gefunden**
+
+Der Plan sah `base10c` + `m1d010` vor. Gelaufen sind vier, weil jede Armkombination einen eigenen Datenpfad trifft und drei davon lokal verfügbar waren (`base10c`s `analysis/freight/` fehlte lokal und wurde vom Sim-PC nachgeholt — die Provider-Gegenprobe meldet keine unmatched Carrier, die TSVs passen also zum lokalen Lauf):
+
+| Lauf | Arme | `total_co2e_wtw` [kg] | Rest | `segment_km_share_n1_ii` |
+|---|---|---|---|---|
+| `bandz_central` | freight | 1243,76 (BEV 435,44) | — | 0,925937 |
+| `base10c` | freight + drt | 14163,9 | nur CSV-Rundung | 0,925937 |
+| `m1d050` | drt + freight_modular | 12709,6 (12706,1 + 3,52) | nur CSV-Rundung | *(abwesend)* |
+| `chid600w21` | drt (1c) | 12726,7 | — | *(abwesend)* |
+
+Gegenprobe zu den Task-7-Erwartungen, jetzt durch die KPI-Schicht statt per Direktaufruf: `bandz_central` reproduziert **jede** Zahl (1243,761 / 435,435 / 542,570 g NOx / 316,610 g PM10 / 13128,405 MJ, 126 Detailzeilen = 63 Fahrzeuge x 2 Antriebe). `base10c` liefert die im Plan erwarteten 63 Touren / **6252,1 km** / 0,926 — identisch zu `bandz_central`, weil beide denselben deterministischen jsprit-Plan fahren. `m1d050`: `ev_range_max_km_freight_modular` = **13,4946 km**, exakt die in Task 5b validierten 13,5 km. `chid600w21`: **20,20 g CO2e/Paket** (Masse) bei Massenanteil **0,90 %** vs. Slotanteil **23,64 %** — die Zahlen aus METHODS-LOG 2.26, jetzt aus dem regulären Build.
+
+**Defekt 1 — falscher Event-Cache (siehe Abweichung 3 oben).** Ohne den `m1d050`-Smoke wäre der 1d-Arm dauerhaft leer geblieben, ohne eine einzige Fehlermeldung.
+
+**Defekt 2 — `segment_km_share_*` war über ALLE Flotten gerechnet und damit unbrauchbar.** Auf `base10c` wiegt der DRT-Arm die Vans 47953 : 6252 km aus, also kam `n1_ii` = **0,107** heraus — für denselben LMD-Plan, der auf `bandz_central` **0,926** liest. Zwei unvergleichbare Zahlen für einen identischen Fahrzeugmix. Ursache: DRT und `freight_modular` tragen beide die feste Ersetzung `DRT_SEGMENT = N1-III`, ihr Anteil ist konstruktionsbedingt 1,0 und damit keine Aussage. Der Anteil wird jetzt nur über die konventionelle Van-Flotte gebildet (`_MIX_FLEETS = ("freight",)`) und **fehlt** auf Pax-only- und 1d-Läufen, statt dort eine Scheinaussage zu emittieren. Damit ist der KPI wieder das, wofür er gedacht war: Mixverschiebung von Fahrleistungsänderung trennen.
+
+**Zwei weitere Korrekturen aus denselben Läufen (keine Bugs, aber irreführende Ausgaben):**
+
+- **`ev_range_exceed_drt_*` trug dieselbe Quellenangabe wie die Freight-Zeilen.** Auf `base10c` steht 3,2 % (Freight, je **Tour**) neben 96,7 % (DRT, je **Fahrzeugtag**) — wer das nebeneinander liest, schließt „DRT ist nicht elektrifizierbar". Eine Tour ist eine zusammenhängende Schicht, ein Fahrzeugtag enthält lange STAY-Phasen, in denen geladen werden kann. Jede Flotte hat jetzt ihre eigene Provenance (`_RANGE_SRC`), die sagt, was **eine** Einheit ist und was der Anteil nicht heißt. Der Vorbehalt muss in der Zeile stehen: wer `kpis_long.csv` liest, sieht kein Dokument. Die Ladefenster-Analyse geht in den Backlog (Task 9).
+- **Zurechnungszeilen ohne Paket-kg·km-Basis.** Im 1d-Arm fahren Pakete als Kapsel, nicht als Paket-*Personen*, also ist `occ_parcels` überall 0 und `alloc_share_parcels_mass` wäre 0 — die Behauptung, die Fracht dieses Laufs sei emissionsfrei. Ohne Basis entsteht jetzt keine Zeile; `_served_quantities` gated zusätzlich auf `has_shareduse_stats`, sodass Aufrufer- und Datenseite unabhängig prüfen.
+
 # EMEP/EEA Tier-3 Emissions (Lausitz KPI-Stack) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -1807,27 +1829,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `analysis/kpi/render.py` (Zeile ~305: Gruppenliste der KPI-Tabelle)
 - Test: bestehende Suite + Realdaten-Smoke
 
-- [ ] **Step 1: `common.py` erweitern**
+- [x] **Step 1: `common.py` erweitern** — bereits in Task 5c erledigt (die `row()`-Assertion in `common.py` erzwang die Gruppe, sobald die ersten `environment`-Zeilen entstanden). Kein Nachtrag nötig.
 
-```python
-# alt:
-KPI_GROUPS = ("system", "passenger", "freight", "economic", "channel", "meta")
-# neu:
-KPI_GROUPS = ("system", "passenger", "freight", "economic", "channel",
-              "environment", "meta")
-```
+- [x] **Step 2: `render.py` Gruppenliste ergänzen — ENTFÄLLT.** Der Plan beschreibt einen Stand, den es nicht mehr gibt: `render.py` zählt die Gruppen nicht mehr in einem Literal auf, sondern **leitet sie aus `common.KPI_GROUPS` ab** (`table_groups()`, Z. 327). Genau dieser Umbau war die Reaktion darauf, dass die hardcodierte Liste einmal die komplette `modular`-Gruppe verschluckt hatte. `environment` erscheint damit ohne jede Änderung in der Tabelle, und der bestehende Test `test_table_groups_cover_every_canonical_kpi_group` beweist die Eigenschaft (nicht nur den Einzelfall). Verifiziert zusätzlich end-to-end: `assert "freight_co2e_wtw" in html`.
 
-- [ ] **Step 2: `render.py` Gruppenliste ergänzen** — in `render_kpi_table` (Z. ~305):
+**ABWEICHUNGEN in Step 3 (2026-07-31, alle aus den Realdaten-Smokes von Step 5 heraus):**
 
-```python
-# alt:
-    for grp in ["passenger", "system", "freight", "economic", "channel"]:
-# neu:
-    for grp in ["passenger", "system", "freight", "economic", "channel",
-                "environment"]:
-```
+1. **Reihenfolge:** der Block sitzt **nach** `pax_only.apply_overrides(rows)`, nicht davor. Grund: die 1c-Zurechnungszeilen brauchen die Nenner `drt_rides`/`parcels_delivered`, und `drt_rides` ist erst *nach* dem Override der paketfreie Wert. Davor wäre die Intensität je Pax mit der kontaminierten Fahrtenzahl gerechnet worden.
+2. **Einmal-Rekonstruktion statt zweimal:** `build_kpis` ruft jetzt `reconstruct_drt_paths_detailed()` (4-Tupel) und projiziert mit dem neuen `geometry.project_paths()` auf die 2-Tupel für Karten/`veh_km`/`occ_km`. Der Extractor braucht Zeitstempel (1d-Fensterschnitt) und den Paket/Pax-Split (1c-Zurechnung); ein zweiter Durchlauf über den ~95-MB-Cache wäre reine Verschwendung. Die Projektionsregel liegt in **einer** Funktion, weil sie nun zwei Aufrufer hat.
+3. **`freight_events=` → `drt_task_events=`, und der Plan-Snippet war falsch.** Der Snippet übergibt `*.freight_events_filtered.txt`. Der ist auf **jedem** 1d-Lauf 0 Byte groß; die `MODULAR_FREIGHT_DRIVE`-Tasks sind DVRP-Tasks auf `drt_*`-Fahrzeugen und liegen im **DRT**-Cache. Der Fehler wirft nichts: die `freight_modular_*`-Zeilen verschwinden lautlos und ihre km werden als Pax-km verbucht. Gemessen auf `m1d050`: `drt_co2e_wtw` 12708,7 statt 12706,1 + 2,6 Fracht. Derselbe Datei-Verwechsler war schon in Task 5b passiert — der Parameter heißt deshalb jetzt nach der Datei, die er will, und ein e2e-Test (`test_modular_emissions_split_freight_from_pax_km_without_residue`) prüft den **km-Split**, nicht die Zeilenpräsenz. Mutationsprobe: mit dem Freight-Cache verdrahtet schlägt er mit `KeyError: 'freight_modular'` fehl.
+4. **`emissions_skipped`-Meta-Zeile** statt nur `print` (die Rev.-B-Anmerkung unten verlangte den Exception-Typ; das reicht nicht). Ein `print` scrollt weg, und die CSV eines Laufs ohne Umwelt-KPIs sähe aus wie die eines Laufs, für den es keine gibt. Die Zeile trägt `type(e).__name__ + ": " + str(e)` und erscheint damit auch im „Hinweise"-Block des Dashboards — dieselbe Konvention wie `run_meta_degraded`.
 
-- [ ] **Step 3: `build_kpis.py` umbauen.** Der Geometrie-Block (`veh_path`/`link_geo`/`veh_km`/`occ_km_shares`, aktuell NACH `kpi_writer.write_long`) wird VOR die `rows`-Finalisierung gezogen, damit die Emissions-Rows in `kpis_long/wide.csv` landen. Konkret: den kompletten Block ab `import geometry` bis `elif drt_cache is not None: print(...)` unverändert nach oben verschieben — direkt VOR `pax_only.apply_overrides(rows)`. Danach (immer noch vor `pax_only.apply_overrides`) einfügen:
+- [x] **Step 3: `build_kpis.py` umbauen.** Der Geometrie-Block (`veh_path`/`link_geo`/`veh_km`/`occ_km_shares`, aktuell NACH `kpi_writer.write_long`) wird VOR die `rows`-Finalisierung gezogen, damit die Emissions-Rows in `kpis_long/wide.csv` landen. Konkret: den kompletten Block ab `import geometry` bis `elif drt_cache is not None: print(...)` unverändert nach oben verschieben — direkt VOR `pax_only.apply_overrides(rows)`. Danach (immer noch vor `pax_only.apply_overrides`) einfügen:
 
 ```python
     # Emissions (EMEP/EEA Tier-3, group "environment") -- reuses recon +
@@ -1859,7 +1872,7 @@ und nach dem `kpi_writer.write_wide(...)`-Aufruf:
 
 Achtung Reihenfolge-Detail: `network = run_dir / (meta.prefix + ".output_network.xml.gz")` zieht mit dem Geometrie-Block nach oben; die spätere Verwendung durch `maps` (Task-6-Kommentar im Code) bleibt funktionsfähig, weil `veh_path`/`link_geo` weiterhin vor dem maps-Abschnitt existieren. `distributions.extract(...)` (konsumiert `veh_km`/`occ_km_shares`) bleibt an seiner Stelle — die Variablen existieren nach dem Vorziehen früher, das ist unschädlich.
 
-- [ ] **Step 4: Volle Test-Suite laufen lassen**
+- [x] **Step 4: Volle Test-Suite laufen lassen** — **356 passed** (347 vor Task 8, +9 neue: 3x `build_kpis` inkl. Fehlschlag-Meta-Zeile, 1x `geometry.project_paths`-Identitaet, 1x 1d-e2e-km-Split, 4x `extract_emissions` fuer die drei unten gefundenen Defekte). Der Geometrie-Block ist nur verschoben, `environment` additiv.
 
 Run: `python -u -m pytest tests/ -v` (aus `analysis/kpi/`)
 Expected: PASS — insbesondere `test_build_kpis.py`, `test_render.py` und `test_real_married250.py` bleiben grün (der Geometrie-Block ist nur verschoben, nicht verändert; `environment` ist eine additive Gruppe).

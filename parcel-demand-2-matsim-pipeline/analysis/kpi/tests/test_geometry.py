@@ -208,3 +208,16 @@ def test_detailed_carries_event_times_for_task_window_intersection(tmp_path):
     cache.write_text(SYNTHETIC_DRT_CACHE, encoding="utf-8")
     veh_path, _ = reconstruct_drt_paths_detailed(cache)
     assert [t for _l, _p, _c, t in veh_path["drt_veh_1"]] == [10.0, 20.0]
+
+
+def test_project_paths_is_the_one_projection_both_entry_points_use(tmp_path):
+    """build_kpis reconstructs ONCE (detailed) and projects for the legacy
+    2-tuple consumers, so the projection rule now has two call sites. It
+    must live in one place: a second inline `pax + parcels` copy in
+    build_kpis is exactly how the two semantics drift apart."""
+    import geometry
+    cache = tmp_path / "shareduse.drt_events_filtered.txt"
+    cache.write_text(SHAREDUSE_DRT_CACHE, encoding="utf-8")
+    detailed, _ = reconstruct_drt_paths_detailed(cache)
+    plain, _ = reconstruct_drt_paths(cache)
+    assert geometry.project_paths(detailed) == plain
