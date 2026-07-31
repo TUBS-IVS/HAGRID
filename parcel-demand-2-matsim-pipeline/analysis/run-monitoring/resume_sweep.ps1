@@ -22,7 +22,11 @@ function Select-RemainingTags {
     foreach ($tag in $Tags) {
         if (-not (Test-TagComplete $OutputRoot $RunIdPrefix $tag $Suffix)) { $remaining += $tag }
     }
-    return $remaining
+    # Unary comma suppresses PowerShell's array-unrolling-on-return: without it, a
+    # single-element array collapses to a bare string on return, and Task 9's
+    # $remaining[0] would then index the STRING (its first character) instead of
+    # the array (the first tag), silently breaking the crash-directory cleanup.
+    return ,$remaining
 }
 
 function Test-StepAComplete {
@@ -38,7 +42,13 @@ function Test-StepAComplete {
 }
 
 function New-StepBBatch {
-    param([string]$Path, [string[]]$Tags, [string]$JavaExe, [string]$Jar, [string]$WorkDir)
+    param([string]$Path, [string[]]$Tags, [string]$JavaExe, [string]$Jar, [string]$WorkDir, [Parameter(Mandatory=$true)][string]$ArgTemplate)
+    # ArgTemplate is REQUIRED (no default): the sweep config (dates, iteration
+    # counts, delivery windows) has changed before and this script has a real
+    # history of stale hardcoded values surviving a config change and quietly
+    # producing wrong runs. A default here is exactly how that stale value would
+    # creep back in on a boot-triggered relaunch nobody is watching.
+    if ($ArgTemplate.IndexOf('{TAG}') -lt 0) { throw 'ArgTemplate must contain a {TAG} placeholder' }
     # WriteAllLines with explicit CRLF: Write/Edit strip CRLF and cmd then misparses.
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add('@echo off')
@@ -47,8 +57,9 @@ function New-StepBBatch {
     $lines.Add('echo ===== RESUME BATCH START %date% %time% =====')
     $index = 1
     foreach ($tag in $Tags) {
+        $args = $ArgTemplate.Replace('{TAG}', $tag)
         $lines.Add("echo ===== RESUME $index/$($Tags.Count) tag=$tag %time% =====")
-        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner concept=basecase,date=2025-05-13,tag=$tag,maxIter=150,jspritIter=1000,writeDashboard=true")
+        $lines.Add("`"$JavaExe`" -Xmx124g -XX:+AlwaysPreTouch -cp `"$Jar`" hagrid.HAGRIDSimulationRunner $args")
         $lines.Add("echo RESUME${index}_EXIT=%ERRORLEVEL%")
         $index++
     }
