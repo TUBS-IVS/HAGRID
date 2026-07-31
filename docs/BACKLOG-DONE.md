@@ -13,7 +13,48 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-31._
 
 ## 2026-07-31
 
-- **EMEP/EEA-Tier-3-Emissionskanal komplett** (Plan `2026-07-28-emissions-emep-eea-tier3.md`,
+- **1d Idle-Threshold-Sweep komplett (θ = 0,1 / 0,15 / 0,2 / 0,3 / 0,4 + Kontrollen 0,5 / 1,0)** —
+  ✅ alle Läufe iter150/fleet120/jsprit100 auf dem Sim-PC, Demand-Stand einheitlich 6020 Pakete /
+  127 geplante Touren (gepaarter Vergleich, METHODS-LOG §2.17). Nachweis: Output-Verzeichnisse
+  `DRT_MODULAR_13052025_m1d{010,015,020,030,040}_iter150_jsprit100` auf dem Sim-PC, Marker
+  `SWEEP1D_DONE` (31.07. 08:01) / `SWEEP1DB_DONE` (13:22) / `SWEEP1DC_DONE` (18:36), alle
+  STEP-Exit-Codes 0. In **jedem** Punkt: Erhaltungsidentitäten geschlossen, 0 Verspätungen,
+  Overlay konstant 393, `unassigned_jsprit=0`. Kurve (Pakete served / Fracht-Veh-h / Pax-Rides):
+  0,1 → 5894 (97,9 %)/363 h/7488 · 0,15 → 4038 (67,1 %)/262 h/8160 · 0,2 → 2261 (37,6 %)/153 h/8545 ·
+  0,3 → 551 (9,2 %)/42 h/8964 · 0,4 → 9 (0,15 %)/1,3 h/8949 · 0,5 → 1 Tour · 1,0 → 0.
+  Interpretation und Konsequenzen → METHODS-LOG §1.2 (neuer Sweep-Block) / §2.30.
+  Betriebsdetails: θ=0,4 wurde per Sim-PC-seitigem Watcher automatisch an die Hauptkette
+  angehängt (`watch_sweep1d.ps1`, LAUNCH_RC=0), θ=0,15 als Lückenschluss nach User-Go
+  **bewusst vor jedem Demand-Sync** gestartet. Keine Code-Änderung, kein Commit (reine Run-Arbeit;
+  Batches `run_sweep1d{,_b,_c}.bat` liegen untracked auf dem Sim-PC).
+
+- **Baseline + 1c auf dem einheitlichen 07:30–21:00-Fenster neu gefahren (`basew21` +
+  `chid600w21`)** — ✅ schließt den `[H]`-Punkt „Baseline + 1c neu fahren" (erster gültiger
+  1c-Punkt; weitere 1c-Punkte = χ-Sweep). Dev-PC-Nachtkette `run_nightbc.bat`
+  (Build-Gate `mvn install` grün → basew21 → chid600w21), `NIGHTBC_DONE` 31.07. 12:27, alle
+  Exit-Codes 0; Outputs `DRT_BASELINE_13052025_basew21_iter150_jsprit100` +
+  `DRT_SHAREDUSE_13052025_chid600w21_iter150_jsprit100` (Dev-PC) inkl. KPI-Build (85 KPIs).
+  **basew21:** 7 Carrier, 6052/5665/387/0 (Demand/zugestellt/missed/unassigned) = 93,61 % netto;
+  Pax 8973 Rides / 700 s / 26 Rejections — im alten Rauschband, Fensterwechsel + Demand-Drift
+  pax-neutral. **chid600w21:** 6051 injiziert / 5671 zugestellt (93,72 % brutto, 31 spät) /
+  338 verfallen / 42 nie submitted; alle 218 verfallenen Segmente χ-geblockt (11,68 M geblockte
+  Insertion-Versuche); Pax 7326 Rides (−18,4 % vs. basew21) / 704 s / 18 Rejections.
+  **Zwei Befunde daraus** (Konsequenzen im METHODS-LOG): Fenster-Bias-Verdacht widerlegt
+  (§3.10 — base10c 93,47 % ↔ basew21 93,61 %, `unassigned=0` beidseits, jsprit nie gebunden)
+  und Netto/Brutto-Konventionsmix Baseline↔1c aufgedeckt (§2.21, Annotation 2026-07-31 —
+  93,61 ↔ 93,72 ist Mechanismus-Koinzidenz, M10-konform kostet die Integration ~6,3 pp).
+  Nebenbefund mit eigenem Log-Eintrag: 0,53-%-Demand-Drift Dev↔Sim (§2.30 + neuer `[H]`-Punkt).
+
+- **Single-Carrier-Diagnose-Artefakt-Check: entwarnt** — ✅ Frage: kann der in einer anderen
+  Session benutzte Ein-Carrier-Testschalter (`-Dhagrid.jsprit.onlyCarrier`, Commit `086932a`)
+  laufende/kommende Läufe kontaminieren? Befund: **nein** — der Schalter ist eine reine
+  JVM-System-Property (default aus, `HAGRIDRouterUtils:98`, unbekannter Wert schlägt laut fehl,
+  Nutzung loggt `DIAGNOSTIC`-WARN), persistiert nirgends: `.mvn/jvm.config` existiert nicht,
+  `.mvn/maven.config` 0 Byte, keine pom-Referenz, `MAVEN_OPTS`/Env auf **beiden** Maschinen
+  sauber (Batches setzen MAVEN_OPTS ohnehin selbst). Empirischer Gegenbeweis: m1d010-Referenz
+  6020/127 exakt, 7 Carrier in `basew21.output_carriers.xml.gz` (amazon…ups), einzige
+  DIAGNOSTIC-Treffer im nightbc-Log stammen aus der STEP0-Testregression
+  (`LausitzCarrierSelectionTest`-Fixtures), vor STEP1A. Inputs seit 2026-07-28 unangetastet. (Plan `2026-07-28-emissions-emep-eea-tier3.md`,
   Tasks 1–9) — ✅ umgesetzt, **356 KPI-Tests** grün, KPI-Gruppe `environment` in `build_kpis`
   verdrahtet. Commits `87523e1` (Verdrahtung), `cb8205d` (Kaltstart-Bound + Limitations +
   Backlog), `cbc64fe` (Plan-Doc-Reparatur), Branch `hendrik`, **nicht gepusht**. Die früheren

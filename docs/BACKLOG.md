@@ -38,19 +38,26 @@ Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
 [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md) _(added 2026-07-14)_
 
 - **✅ 1c-Lieferfenster auf 07:30–21:00 angehoben (2026-07-30)** — dabei fiel auf, dass auch die
-  **Baseline** mit muss (fuhr 08:00–20:00, also enger als beide integrierten Szenarien → verzerrte
-  den Zustellquoten-Vergleich zu ihren Lasten). Alle drei Arme hängen jetzt an einer Konstante
-  `DeliveryDay` → [BACKLOG-DONE](BACKLOG-DONE.md), [METHODS-LOG](METHODS-LOG.md) §1.2.
-- **`[H]` Offen: Baseline + 1c neu fahren** — Folge der Fenster-Vereinheitlichung. Betroffen:
-  `base10c` (Baseline, 08:00–20:00), `chid600`/`chid600i` (1c, alte M5-Fenster) und alle älteren
-  Baseline-Läufe. **Nicht** betroffen: `ctrl1d`/`m1d050` (fuhren 21:00 schon). Reihenfolge: erst
-  Baseline neu (sie ist Referenz für 1c *und* 1d), dann die 1c-Punkte. _(added 2026-07-30)_
-- **🔄 Läuft (gestartet 2026-07-28, Sim-PC, detached):** `chid600` (χ=600, neue
-  Detour-only-Semantik, level_central, fleet120, iter150) → informiert die
-  **χ-Sweep-Rasterentscheidung**; danach automatisch `base10c` (10-Sitzer married-Baseline,
-  fleet120, iter150, jspritIter=100) = die 10-Sitze-Re-Baseline.
-  ETA `chid600` ≈ 17:40–18:00 Uhr am 28.07., `base10c` grob Nacht 28./29.07.
-- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt), Raster nach `chid600` festlegen.
+  **Baseline** mit muss (fuhr 08:00–20:00, enger als beide integrierten Szenarien). Alle drei
+  Arme hängen jetzt an einer Konstante `DeliveryDay` → [BACKLOG-DONE](BACKLOG-DONE.md),
+  [METHODS-LOG](METHODS-LOG.md) §1.2. ⚠️ Die ursprüngliche Bias-Begründung („verzerrte den
+  Zustellquoten-Vergleich zu Lasten der Baseline") ist gemessen **nicht** eingetreten →
+  zurückgezogen, [METHODS-LOG](METHODS-LOG.md) §3.10; die Entscheidung trägt als
+  Design-Hygiene weiter.
+- **✅ Baseline + 1c neu gefahren (2026-07-31):** `basew21` + `chid600w21` (Dev-PC-Nachtkette,
+  alle Exit-Codes 0) → [BACKLOG-DONE](BACKLOG-DONE.md). `chid600w21` ist der erste gültige
+  1c-Punkt auf dem 21:00-Fenster; `chid600`/`chid600i`/`base10c` bleiben vergleichsuntauglich
+  (die 2026-07-28er-Läufe sind durch, aber vom Fenster-Beschluss überholt). Zustellquoten-Lesart
+  (netto vs. brutto, M10): [METHODS-LOG](METHODS-LOG.md) §2.21.
+- **`[M]` Zustellquoten-Konvention M10-konform machen** — die KPI-Schicht mischt netto
+  (Baseline: Overlay als Miss verbucht) und brutto/operativ (1c/1d) unter ähnlichen KPI-Namen;
+  der Beinahe-Gleichstand basew21 93,61 % ↔ chid600w21 93,72 % ist eine Mechanismus-Koinzidenz,
+  keine Parität. Für Vergleichstabellen je Arm dieselbe Konvention exportieren (brutto überall +
+  Overlay als separate Zeile). Kontext: [METHODS-LOG](METHODS-LOG.md) §2.21, Annotation
+  2026-07-31. _(added 2026-07-31)_
+- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt); Raster jetzt an `chid600w21`
+  ausrichten (χ=600 → 93,7 % brutto; **alle** 218 verfallenen Segmente χ-geblockt — das Gate
+  ist der bindende Mechanismus, nicht die Fahrzeugkapazität).
 - **Offen: Shared-Use-Hälfte des Nachfrage-Bandes** — an den χ-Sweep hängen, kostet dort nur
   einen zusätzlichen Punkt. Nichtlinearität ist genau dort plausibel (χ-Gate: weniger Pakete →
   überproportional höheres δ).
@@ -93,17 +100,30 @@ Zahlen, Signal-Rausch-Tabelle, Seed-Schalter und der Nachbau-Gotcha:
   gepaart vs. ungepaart deklarieren: θ-Sweep innerhalb eines Caps = gepaart auf einer
   Realisierung (trägt), Cap-Vergleich 12600↔25200 = zwei unabhängige jsprit-Solves (trägt ohne
   Bänder nicht) → [METHODS-LOG](METHODS-LOG.md) §2.17.
+- **Priorisierung nach dem θ-Sweep (2026-07-31):** die Kurve steht auf einem Seed; Replikate
+  stiften am meisten Wert bei **θ=0,1/0,15/0,2** — den Punkten, zwischen denen die
+  Gewinner-Entscheidung fällt. θ≥0,3 braucht keine Bänder (Fracht-Signal ≈ 0).
 
 ### `[H]` Modular / U-Shift (Szenario 1d)
 
 Kapsel-Tausch, Offline-jsprit + Pax-Priorität. **Status: Implementierung fertig (2026-07-28),
-Ausführung offen.** 14 Tasks auf `hendrik`, jede mit eigenem Review-Pass und behobenen Findings,
-volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md). Offen bleiben die
-**Run-Arbeit**: 10-Sitze-Re-Baseline, Idle-Threshold-Sweep, 7,0-h-Kontrollarm sowie die
-Entscheidung zum prädiktiven Dispatch-Gate (θ_hist, s. Medium-Sektion) — dazu die
-zurückgestellte Sensitivitätsidee unten. Die Nacharbeiten aus dem Paper-Readiness-Review
-2026-07-29 sind **vollständig abgearbeitet** (2026-07-31, nächster Block); 1d ist damit
-codeseitig paper-fertig, offen ist nur noch Rechenzeit.
+θ-Sweep gefahren und ausgewertet (2026-07-31).** 14 Tasks auf `hendrik`, jede mit eigenem
+Review-Pass und behobenen Findings, volle Regression grün → [BACKLOG-DONE](BACKLOG-DONE.md).
+**✅ Idle-Threshold-Sweep komplett (2026-07-31):** `m1d010/015/020/030/040` + `ctrl1d`/`m1d050` —
+operativer Bereich θ∈[0,1–0,3], Wartezeit/Rejections θ-invariant, der Integrationspreis läuft
+über Mode-Choice-Nachfrageverlust; Kurve und Konsequenzen → [METHODS-LOG](METHODS-LOG.md) §1.2,
+Nachweis → [BACKLOG-DONE](BACKLOG-DONE.md). Die 10-Sitze-Re-Baseline ist mit `basew21` auf dem
+21:00-Fenster gedeckt. Offen bleiben: **Gewinner-θ-Entscheidung**, 7,0-h-Kontrollarm,
+Seed-Replikate (→ `[H]` Multi-Run-Aggregation) — dazu die zurückgestellte Sensitivitätsidee
+unten. Die Nacharbeiten aus dem Paper-Readiness-Review 2026-07-29 sind **vollständig
+abgearbeitet** (2026-07-31, nächster Block); 1d ist damit codeseitig paper-fertig.
+
+- **`[H]` Demand-Input-Sync Dev-PC↔Sim-PC entscheiden** — `hagrid-input/**` ist git-ignoriert
+  und synchronisiert nicht über Maschinen; die beiden PCs fahren 0,53 % verschiedene Nachfrage
+  (6052 vs. 6020 Pakete, anderes Muster). Baseline↔1c intern konsistent (beide Dev-PC), die
+  1d-Kurve intern konsistent (alle Sim-PC), Baseline↔1d nicht exakt. Entweder Sync +
+  Gewinner-θ-Rerun (sauber für die Paper-Headline) oder Caveat im Methods-Kapitel →
+  [METHODS-LOG](METHODS-LOG.md) §2.30. _(added 2026-07-31)_
 POC läuft auf dem aktuellen PANDA-Stand;
 die gematchte Baseline braucht es erst für die Paper-Runs.
 → [Plan](superpowers/plans/2026-07-27-1d-modular-capsule-swap.md) ·
@@ -279,6 +299,10 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Idle-Share) + Caveats: Iteration 0 ohne Historie (Fallback plain θ), Feedback-Schleife
   Freight↔Rejections über Iterationen. **Entscheidung: erst nach den ersten 1d-Läufen mit dem
   einfachen θ-Gate** (User akzeptiert den 07:16-Surge bewusst, Ergebnisse ansehen). _(added 2026-07-28)_
+  **Sweep-Ergebnis 2026-07-31: fürs Headline-Paper nicht nötig** — Wartezeit/Rejections sind
+  über die ganze θ-Kurve invariant, das einfache Gate erzeugt keinen
+  Servicequalitäts-Schaden, den ein prädiktives Gate heilen müsste
+  ([METHODS-LOG](METHODS-LOG.md) §1.2). Bleibt als Erweiterungsidee liegen.
 
 - **`[S]` LMD 14:00-Welle quasi tot (Restpunkt des Dispatch-Stagger-Fixes)** — Zweitbefund der
   Root-Cause-Analyse 2026-07-30 (→ [BACKLOG-DONE](BACKLOG-DONE.md) „LMD Dispatch-Stunden besser
@@ -538,6 +562,12 @@ der Rest ist mechanisch und kann jederzeit am Stück laufen. Der frühere zweite
      Fracht-Buchhaltung, weil es (Design D7) keinen zweiten Ereignisstrom zum Gegenrechnen gibt.
      Vorschlag: ein `record` mit benannten Feldern statt der Parameterliste.
   _(added 2026-07-29)_
+
+- **`[L]` ctrl1d-Dashboard: Modular-Badges ohne `*_pax`-Companion-Zeilen** — im
+  Kontrollarm-Sonderfall (θ=1,0, null Exkursionen) erzeugt `freight_h<=0` planmäßig keine
+  `*_pax`-Zeilen, die szenario-gegateten Badges erscheinen aber trotzdem → kosmetische
+  Inkonsistenz „Badge ohne Frachtanteil" nur auf ctrl1d. Befund der Dashboard-Verifikation
+  2026-07-30 (Fixwave-Ledger); alle anderen Runs unauffällig. _(added 2026-07-31)_
 
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 
