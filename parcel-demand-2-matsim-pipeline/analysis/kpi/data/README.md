@@ -161,7 +161,8 @@ hier plus build_kpis-Neulauf, kein Sim-Rerun; `total_*` bleibt unveraendert.
 Quellen und Vorbehalte: METHODS-LOG 2.26. Kurz:
   - kg_per_parcel = 1.65 kg, festgezurrte ANNAHME, Groessenordnung durch
     drei Quellen gestuetzt (Amaral et al. 2026 TR Part E; Rajendran &
-    Harper 2021 TRIP; Mohri et al.) - keine davon deutsch, deklarierter
+    Harper 2021 TRIP; Mohri, Nassir, Lavieri & Thompson 2024, Travel
+    Behaviour and Society 35, 100716) - keine davon deutsch, deklarierter
     Transfer. MITTELWERT, nicht Median.
   - kg_per_passenger = 80 kg ist eine SETZUNG ohne Quelle.
   - slots_per_seat_equiv = 2.5 (20 Paketslots / 8 Sitze) ist

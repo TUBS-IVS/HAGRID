@@ -1287,7 +1287,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 |---|---|
 | **Amaral et al. (2026):** *Empirical analysis of e-commerce delivery operations: from parcels to tours.* Transportation Research Part E, Tab. 1 | Mittel **1,6478 kg** — der einzige gemessene Mittelwert, liefert den Punktwert |
 | **Rajendran & Harper (2021):** *Simulation-based algorithm for determining best package delivery alternatives under three criteria: Time, cost and sustainability.* Transportation Research Interdisciplinary Perspectives (TRIP) | 1–350 lbs, >50 % unter 5 lbs; **kein Mittelwert angegeben** |
-| **Mohri et al.:** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* (Jahr/Journal **NEEDS-CHECK** für das Literaturverzeichnis) | Paketmassen **0,5–5 kg** |
+| **Mohri, Nassir, Lavieri & Thompson (2024):** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* Travel Behaviour and Society **35**, 100716 | Paketmassen **0,5–5 kg** |
 
 **Kein B2C/B2B-Split** — der Kontrast (1,5922 vs. 1,8160) macht 3,2 Pp am Aufteilungsanteil aus und liegt innerhalb der Unsicherheit der Annahme selbst; differenzieren wäre Scheingenauigkeit. `kg_per_passenger = 80` bleibt eine **Setzung** ohne Quelle. Details und Vorbehalte: METHODS-LOG §2.26.
 

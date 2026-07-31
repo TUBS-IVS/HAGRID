@@ -277,7 +277,8 @@ KG_PER_PARCEL_MIN = 1.3
 ALLOC_SRC = (
     "mass allocation on kg*km (EN 16258 / GLEC convention); "
     "kg_per_parcel=1.65 (ASSUMPTION; Amaral et al. 2026 TR Part E Tab.1 + "
-    "Rajendran & Harper 2021 TRIP + Mohri et al., none German - declared "
+    "Rajendran & Harper 2021 TRIP + Mohri et al. 2024 TBS 35:100716, none "
+    "German - declared "
     "transfer); kg_per_passenger=80 is a SETTING, not a source. Report the "
     "share alongside the intensity (METHODS-LOG 2.26)")
 
