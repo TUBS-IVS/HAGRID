@@ -74,9 +74,20 @@ function Read-HeartbeatState {
 
 function Write-HeartbeatState {
     param([Parameter(Mandatory=$true)][string]$Path, [Parameter(Mandatory=$true)]$State)
-    $dir = Split-Path -Parent $Path
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    ($State | ConvertTo-Json -Compress) | Set-Content -LiteralPath $Path -Encoding Ascii
+    # Returns $true/$false rather than throwing: the caller must fail CLOSED on a
+    # write failure (skip the progress ping), not crash the whole heartbeat cycle
+    # (the alive ping must still go out). Realistic trigger: C: fills during a
+    # multi-day sweep - which also kills the run - so this failure and a real
+    # crash tend to arrive together, which is exactly when a silently-swallowed
+    # write failure would be most dangerous.
+    try {
+        $dir = Split-Path -Parent $Path
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+        ($State | ConvertTo-Json -Compress) | Set-Content -LiteralPath $Path -Encoding Ascii -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Read-HeartbeatConfig {
@@ -165,8 +176,10 @@ function Invoke-Heartbeat {
     }
     $complete = Test-BatchComplete $tail
 
-    if ($advanced -or $complete) {
-        Send-HealthcheckPing $cfg.ProgressUrl '' '' | Out-Null
+    if ($current) {
+        $state.LastLogPath    = $current.Path
+        $state.LastWriteTicks = $current.LastWriteTicks
+        $state.LastLength     = $current.Length
     }
 
     # The meaning lives in the CHECK NAME (sweep-finished), not in the body: the docs
@@ -200,14 +213,28 @@ function Invoke-Heartbeat {
         }
     }
 
-    if ($current) {
-        $state.LastLogPath    = $current.Path
-        $state.LastWriteTicks = $current.LastWriteTicks
-        $state.LastLength     = $current.Length
+    # Persist LAST (after the completion-announce/re-arm mutations above), and gate
+    # the progress ping on the persistence actually succeeding. If
+    # Write-HeartbeatState silently failed, the NEXT cycle's Read-HeartbeatState
+    # would return empty defaults, $previous would be $null, and "first ever
+    # observation counts as progress" would make Test-ProgressAdvanced return
+    # $true forever - pinging progress every cycle regardless of whether the
+    # simulation is still running. Realistic trigger: C: fills during a multi-day
+    # sweep, which typically kills the run too, so this failure and a real crash
+    # tend to arrive together - exactly when a silently swallowed write failure
+    # would be most dangerous. Fail CLOSED instead: no persisted state this cycle
+    # means no progress claim this cycle, logged loudly since the local log is the
+    # only trace left after ten unattended days.
+    $stateSaved = Write-HeartbeatState $cfg.StatePath $state
+    if ($stateSaved) {
+        if ($advanced -or $complete) {
+            Send-HealthcheckPing $cfg.ProgressUrl '' '' | Out-Null
+        }
+    } else {
+        Write-LocalLog $cfg.LocalLogPath 'ERROR: could not persist heartbeat state - skipping progress ping this cycle (fail closed)'
     }
-    Write-HeartbeatState $cfg.StatePath $state
 
-    Write-LocalLog $cfg.LocalLogPath ("alive=$aliveOk advanced=$advanced complete=$complete")
+    Write-LocalLog $cfg.LocalLogPath ("alive=$aliveOk advanced=$advanced complete=$complete stateSaved=$stateSaved")
     return 0
 }
 

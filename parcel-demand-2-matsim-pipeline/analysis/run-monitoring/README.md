@@ -53,10 +53,25 @@ and pushes to the phone. No VPN, no SSH, no Claude session involved.
   deliberately, per the asymmetric-by-machine reasoning above.
 - `heartbeat.ps1` — the heartbeat. Test: `powershell -File Test-Heartbeat.ps1`.
 - `install_heartbeat_task.ps1` — creates the SYSTEM Scheduled Task (idempotent).
+  Validates `hc-config.json` (rejects unfilled `REPLACE` placeholders and an
+  ambiguous wide `LogPattern`) and pings all three check URLs once before
+  registering anything; reads back the local log after starting the task to
+  prove it actually ran, not just that the start request was accepted.
 - `hc-config.template.json` — copy to `<toolsdir>\hc-config.json` and fill in the UUIDs.
   **The real config never enters git; this repo is public and ping URLs are capability URLs.**
+  `LogPattern`'s shipped value is a `REPLACE-...` placeholder, not `*.log`: real log
+  directories hold `hagrid.log`, dozens of rotated `hagrid-<date>-N.log(.gz)`, and
+  `*.console.log` from unrelated batches, so "newest `.log`" is not reliably the
+  sweep's driver log. `install_heartbeat_task.ps1` refuses to install with the
+  literal value `*.log` unless exactly one file in `LogDir` currently matches it.
 - `resume_sweep.ps1` / `install_resume_task.ps1` — Part B, boot-triggered auto-resume.
-  Test: `powershell -File Test-ResumeSweep.ps1`.
+  Test: `powershell -File Test-ResumeSweep.ps1`. `install_resume_task.ps1` is
+  tested (cmdlet-existence smoke test plus its pure validation logic) by
+  `powershell -File Test-Installers.ps1`, which also covers `install_heartbeat_task.ps1`.
+  Neither installer's actual `Register-ScheduledTask` call is exercised by any
+  automated test - that needs admin rights and a real config.
+- `resume-config.template.json` — copy to `<toolsdir>\resume-config.json` and fill in
+  the real values below. **Never committed; this repo is public.**
 
   **`resume-config.json`** — required by `resume_sweep.ps1` / `install_resume_task.ps1`,
   never committed (this repo is public; a ping URL is a capability URL). Copy is
@@ -66,18 +81,21 @@ and pushes to the phone. No VPN, no SSH, no Claude session involved.
 
   | Key | Meaning |
   |---|---|
-  | `LockPath` | Absolute path to the lock file. Presence blocks a launch (`Test-CanLaunch`); the script also refuses to launch onto a running `java.exe` even with no lock. |
+  | `LockPath` | Absolute path to the lock file. Presence blocks a launch (`Test-CanLaunch`) UNLESS the lock has gone stale (see `LockStaleHours`); the script also refuses to launch onto a running `java.exe` even with no lock - that is the real double-launch guard, the lock only needs to cover the seconds between launch and `java.exe` appearing. |
+  | `LockStaleHours` | Optional, default `12`. A lock older than this many hours is treated as abandoned (e.g. a colleague rebooted after a SECOND crash) and bypassed rather than blocking auto-resume for the rest of the absence. |
   | `Tags` | The full scenario tag list for this sweep, e.g. `["30v3", "40v3", "50v3"]`. **Must list the real tag set of the sweep actually running** - Step A is checked/re-run for all of them together, and Step B resumes whichever remain incomplete. |
   | `RunIdPrefix` | The run-id prefix shared by every tag's output directory, e.g. `"BASECASE_13052025"`. |
   | `Suffix` | The trailing part of each tag's output directory name, e.g. `"_iter150_jsprit1000"`. Directory pattern is `<RunIdPrefix>_<tag><Suffix>`. |
-  | `OutputRoot` | Absolute path to the directory holding one output folder per tag (used to detect completion and to delete a crashed tag's partial output before relaunch). |
+  | `OutputRoot` | Absolute path to the directory holding one output folder per tag (used to detect completion and to delete EVERY remaining tag's partial output before relaunch, not just the first). |
   | `CarrierRoot` | Absolute path to the directory holding each tag's routed delivery-carrier file (used to detect whether Step A finished). |
-  | `WorkDir` | Absolute path Step B's generated batch `cd /d`s into before running. |
-  | `JavaExe` | Absolute path to the JDK's `java.exe`. Pin the exact version actually installed - a mismatched hardcoded version elsewhere in the pipeline has caused launch failures before. |
-  | `Jar` | Absolute path to the actual shaded jar. Resolve this against the repo before installing; never leave a placeholder in the real config. |
+  | `WorkDir` | Absolute path Step B's generated batch `cd /d`s into before running; also the working directory `Push-Location`'d to before invoking `StepALauncher`, since a SYSTEM task's default CWD is `C:\Windows\System32`. |
+  | `JavaExe` | Absolute path to the JDK's `java.exe`. Pin the exact version actually installed - a mismatched hardcoded version elsewhere in the pipeline has caused launch failures before. Checked with `Test-Path` before anything is deleted or launched. |
+  | `JvmArgs` | JVM flags (e.g. heap size), no default on purpose - same reasoning as `ArgTemplate`. The sim-PC (128 GB) and dev-PC (63.5 GB) need DIFFERENT flags; `-XX:+AlwaysPreTouch` commits the whole heap at startup and is wrong for a smaller machine. |
+  | `Jar` | Absolute path to the actual shaded jar. Resolve this against the repo before installing; never leave a placeholder in the real config. Checked with `Test-Path` before anything is deleted or launched. |
   | `ArgTemplate` | Step B's CLI arguments with a literal `{TAG}` placeholder, e.g. `"concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true"`. **Must be kept in sync with the sweep actually running** - a stale value here (old date, old iteration count) would relaunch with the wrong parameters, unattended, with nobody watching. |
-  | `GeneratedBatPath` | Absolute path where the resume script writes the batch file it generates for Step B. |
-  | `ResumeLog` | Path (relative to `WorkDir`, or absolute) for the resumed run's log output. |
-  | `StartDetached` | Absolute path to `start_detached.ps1` (or equivalent), used to launch Step B detached. A direct WMI call is not equivalent - it puts the output redirect outside the cmd string and the run never starts. |
-  | `StepALauncher` | Absolute path to the script/batch that re-runs Step A in full when it is found incomplete. |
+  | `GeneratedBatPath` | Absolute path where the resume script writes the batch file it generates for Step B. Tracks each tag's own exit code and emits `RESUME_DONE` only if every tag exited 0, otherwise a distinct `RESUME_FAILED` sentinel (not in the heartbeat's completion-marker list) - so a resumed run that fails fast cannot look like a successful "sweep finished" to the heartbeat. |
+  | `ResumeLog` | Path (relative to `WorkDir`, or absolute) for the resumed run's log output. **Must resolve INSIDE `hc-config.json`'s `LogDir` and match its `LogPattern`** - `install_resume_task.ps1` reads both configs and refuses to install otherwise, naming both values. This is the resumed run's only continuous artefact in a predictable place (its log4j output goes to its own run directory, not `LogDir`); if the heartbeat cannot find this file, progress goes permanently quiet (a false alarm nobody can act on) or latches on a stale finished log. |
+  | `StartDetached` | Absolute path to `start_detached.ps1` (or equivalent), used to launch Step B detached. A direct WMI call is not equivalent - it puts the output redirect outside the cmd string and the run never starts. Checked with `Test-Path` before anything is deleted or launched. |
+  | `StepALauncher` | Absolute path to the script/batch that re-runs Step A in full when it is found incomplete. Checked with `Test-Path` before anything is deleted or launched. After it finishes, the SAME invocation proceeds into Step B tag selection rather than returning - a boot landing during Step A must not leave the machine idle for the rest of a ten-day absence once Step A itself finishes. |
+  | `LocalLogPath` | Absolute path for `resume_sweep.ps1`'s own local log (mirrors `heartbeat.ps1`'s `Write-LocalLog`). Every branch of the main loop writes to it - under SYSTEM, `Write-Host` goes nowhere, so this file is the only record, ten days later, of whether the boot script ran and what it decided. |
   | `ResumedUrl` | healthchecks.io ping URL for the `*-resumed-after-boot` check. Optional: if empty, no ping is sent. |

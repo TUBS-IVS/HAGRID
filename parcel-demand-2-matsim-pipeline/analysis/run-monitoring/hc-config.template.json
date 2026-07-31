@@ -4,8 +4,8 @@
   "ProgressUrl": "https://hc-ping.com/REPLACE-WITH-PROGRESS-UUID",
   "SweepFinishedUrl": "https://hc-ping.com/REPLACE-WITH-SWEEP-FINISHED-UUID",
   "LogDir": "C:\\Users\\REPLACE\\Documents\\GitHub\\HAGRID\\parcel-demand-2-matsim-pipeline\\hagrid-output\\logs",
-  "_LogPattern_comment": "Scope the watch to ONE batch's logs, so a foreign batch's final sentinel cannot latch completion and blind stall detection. Leave as *.log only if this directory holds nothing else.",
-  "LogPattern": "*.log",
+  "_LogPattern_comment": "Scope the watch to ONE batch's logs, so a foreign batch's final sentinel cannot latch completion and blind stall detection. Real log directories hold hagrid.log, dozens of rotated hagrid-<date>-N.log(.gz), and *.console.log from unrelated batches, so the wide default '*.log' is NOT reliably the sweep's driver log - install_heartbeat_task.ps1 refuses to install with '*.log' unless exactly one file in LogDir matches it right now. Narrow this to the actual driver log's naming pattern, e.g. 'stepB_*.log'.",
+  "LogPattern": "REPLACE-WITH-NARROW-PATTERN",
   "StatePath": "C:\\Users\\REPLACE\\hagrid-tools\\hb-state.json",
   "LocalLogPath": "C:\\Users\\REPLACE\\hagrid-tools\\heartbeat.log"
 }
