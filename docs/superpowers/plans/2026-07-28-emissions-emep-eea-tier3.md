@@ -1908,9 +1908,28 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `analysis/kpi/data/README.md`
 - Modify: `docs/BACKLOG.md`
 
-- [ ] **Step 1: Kaltstart quantitativ bounden.** Aus dem Appendix-4-Sheet `COLD_EMISSIONS_PARAMETERS` (bzw. Guidebook-Kapitel Tier-2-Kaltstart) für Diesel-LCV die Kaltstart-Mehremission je Start abschätzen (Ansatz: `beta`-Anteil kalter Distanz ~ erste 5–10 km bei ~10 °C, je 1 Start pro Tour/Fahrzeug-Tag) und gegen die Task-8-Smoke-Zahlen je Schadstoff ins Verhältnis setzen. **Entscheidungsregel:** Anteil < 5 % für alle berichteten Schadstoffe → dokumentierte Limitation, fertig; Anteil ≥ 5 % (realistisch am ehesten NOx) → neuen Backlog-Punkt „Kaltstart-Zuschlag implementieren" unter dem Nachhaltigkeits-`[H]` anlegen (Tier-2-Zuschlag pro Tour, ~0,5 d).
+- [x] **Step 1: Kaltstart quantitativ bounden — ERGEBNIS: die Regel greift, ≥ 5 %.**
 
-- [ ] **Step 2: Limitations-Abschnitt in `data/README.md` anhängen** (konkrete Zahlen aus Step 1 einsetzen):
+Gerechnet, nicht geschätzt: EMEP/EEA Gl. (10) in der Euro-6+-Fassung (β Tab. 3-39 · bc Tab. 3-46 · Q aus `COLD_EMISSIONS_PARAMETERS`, Euro 7 Diesel LCV, N1-II == N1-III), ein Kaltstart je Tour bzw. Fahrzeugtag. Auf `base10c`: **Fracht NOx +5,63 %** (ta = 10 °C; +6,62 % bei 0 °C), Fracht CO +13,94 %, Fracht VOC +3,61 %, **Fracht Energie/CO₂ +0,93 %**, DRT NOx +1,41 %, DRT Energie/CO₂ +0,23 %.
+
+**Ein Transfer musste ausgewiesen werden, und er ist der einzige Freiheitsgrad:** β ist ein Anteil an der Gesamtfahrleistung, kalibriert für `ltrip` ∈ [8, 15] km. Unsere Touren sind ~99 km lang — dort wird die Formel **negativ**, ist also nicht auswertbar. Übertragbar ist die Kaltdistanz je Start β(ltrip)·ltrip, stabil über das gültige Band (3,02 / 3,50 / 3,39 km bei ltrip 8 / 12,4 / 15 km). Die Endzahl hängt daran nur schwach (NOx 5,99 / 5,63 / 4,71 %), die Aussage ist also kein ltrip-Artefakt. Das gehört ins Paper, nicht in eine Fußnote.
+
+**Zwei Punkte, die der Plan nicht vorgesehen hatte:**
+- **PM-Auspuff hat für Euro 7 überhaupt keine Kaltstart-Parametrisierung** im Sheet (Euro 5+ nutzt laut Kapitel eine eigene Gleichung mit absolutem Kaltfaktor). Für unsere Bilanz irrelevant — 0,89 g Auspuff-PM gegen 316,6 g Abrieb —, aber es ist eine Lücke und keine Null.
+- **Die DRT-Zahl ist „je Kaltstart" und skaliert linear.** Ein Fahrzeugtag enthält lange STAY-Phasen; ob der Motor darin auskühlt, ist ohne Thermomodell nicht entscheidbar. Bei 5 Starts läge DRT bei ~7 % NOx, also auf Frachtniveau. Als Empfindlichkeit berichtet, nicht als Befund.
+
+**Entscheidung nach der Plan-Regel:** ≥ 5 % für NOx → Backlog-Punkt „Kaltstart-Zuschlag implementieren" (`[H]`, ~0,5 d) angelegt. Bis dahin sind alle NOx-Zahlen des Papers eine **Untergrenze**; die Abweichung ist einseitig und trifft den BEV-Arm nicht (dessen Vorteil wäre größer). CO₂/Energie liegen unter dem jsprit-Rauschboden, die Kernaussagen hängen nicht daran. Vollständige Herleitung: METHODS-LOG §2.29, Rechenrezept: `analysis/kpi/data/README.md`.
+
+<details><summary>Ursprüngliche Step-1-Formulierung</summary>
+
+**Step 1: Kaltstart quantitativ bounden.** Aus dem Appendix-4-Sheet `COLD_EMISSIONS_PARAMETERS` (bzw. Guidebook-Kapitel Tier-2-Kaltstart) für Diesel-LCV die Kaltstart-Mehremission je Start abschätzen (Ansatz: `beta`-Anteil kalter Distanz ~ erste 5–10 km bei ~10 °C, je 1 Start pro Tour/Fahrzeug-Tag) und gegen die Task-8-Smoke-Zahlen je Schadstoff ins Verhältnis setzen. **Entscheidungsregel:** Anteil < 5 % für alle berichteten Schadstoffe → dokumentierte Limitation, fertig; Anteil ≥ 5 % (realistisch am ehesten NOx) → neuen Backlog-Punkt „Kaltstart-Zuschlag implementieren" unter dem Nachhaltigkeits-`[H]` anlegen (Tier-2-Zuschlag pro Tour, ~0,5 d).
+
+</details>
+
+- [x] **Step 2: Limitations-Abschnitt in `data/README.md` angehängt** — plus ein eigener Abschnitt „Kaltstart" mit Formeln, Tabelle und ltrip-Sensitivität (der Plan sah nur eine Zeile mit `<X>`/`<Y>` vor; eine Zahl ohne ihr Rechenrezept ist im Paper nicht verteidigbar). Gegenüber der Vorlage zusätzlich aufgenommen: der Geltungsbereich von `segment_km_share_*` (nur konventionelle Van-Flotte, siehe Task-8-Defekt 2), die Nicht-Vergleichbarkeit der DRT- und Freight-Reichweitenzeilen, die Restfreiheit des 1d-Regimesplits (`drt_* + freight_modular_* == total_*`, exakt), und der Gate auf die Paket-kg·km-Basis der 1c-Zurechnung. Der Block unten ist die Vorlage, nicht der Endstand — maßgeblich ist `data/README.md`.
+
+<details><summary>Vorlage Step 2</summary>
+
 
 ```markdown
 ## Limitations (Paper-Rohtext)
@@ -1997,9 +2016,17 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   faellt.
 ```
 
-- [ ] **Step 3: Backlog aktualisieren** — im `[H]` Nachhaltigkeits-Block: Verweis auf diesen Plan ergänzen (`→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md)`), die „Restliche Arbeitsschritte" als in-Plan-überführt markieren, Kaltstart-Ergebnis aus Step 1 eintragen. Offen bleiben dort: SOS-/PB-Layer (eigenes späteres Paket), Multi-Seed-Aggregation über ≥10 Runs (Reporting-Werkzeug, erst bei Paper-Auswertung), optionale Sensitivitäten (Midi-Bus für DRT, Rigid ≤7,5 t für `_l`).
+</details>
 
-- [ ] **Step 4: Commit**
+- [x] **Step 3: Backlog aktualisiert** — im `[H]` Nachhaltigkeits-Block: Verweis auf diesen Plan ergänzen (`→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md)`), die „Restliche Arbeitsschritte" als in-Plan-überführt markieren, Kaltstart-Ergebnis aus Step 1 eintragen. Offen bleiben dort: SOS-/PB-Layer (eigenes späteres Paket), Multi-Seed-Aggregation über ≥10 Runs (Reporting-Werkzeug, erst bei Paper-Auswertung), optionale Sensitivitäten (Midi-Bus für DRT, Rigid ≤7,5 t für `_l`).
+
+**Tatsächlich eingetragen — zwei neue Punkte statt einem:**
+1. `[H]` **Kaltstart-Zuschlag implementieren** (~0,5 d), wie die Regel es verlangt.
+2. `[M]` **Ladefenster-Analyse für die DRT-Elektrifizierbarkeit** (~0,5–1 d). Nicht im Plan vorgesehen, aber die Alternative wäre, eine unbeantwortbare Frage als beantwortet stehen zu lassen: `ev_range_exceed_drt_*` misst Fahrzeug**tage**, nicht Schichten. Die belastbare Größe ist der längste Fahrblock zwischen zwei ausreichend langen STAY-Phasen; die DVRP-Task-Events liefern beides schon.
+
+Außerdem ist das **EV-Reichweiten-Gate** von „zu prüfen" auf „Frachtseite beantwortet, DRT-Seite offen" umgeschrieben — mit der Begründung, warum aus dem Einzel-Gate ein Sweep wurde (das 250-km-Gate liefert in *jedem* Lauf 0 %, also ein Nullresultat, das wie eine Prüfung aussieht).
+
+- [x] **Step 4: Commit**
 
 ```bash
 git add analysis/kpi/data/README.md docs/BACKLOG.md

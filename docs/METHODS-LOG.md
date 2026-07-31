@@ -1485,6 +1485,70 @@ der *angenommenen* Paketsegmente in den KPIs steht. Ja: `shareduse_channel_stats
 `segments_delivered` (im geprüften Lauf 2884, bei 3104 `segments_submitted` und 3127
 `segments_injected`). Die Obergrenze ist also ohne Java-Eingriff berechenbar.
 
+### 2.29 Kaltstart: gerechnete Untergrenze, nicht geschätzte Limitation — NOx-Zahlen sind zu niedrig
+
+_(gerechnet 2026-07-31, Task 9 des EMEP/EEA-Plans)_
+
+Kaltstart ist im Emissionskanal **nicht modelliert**. Das ist eine Limitation wie jede andere —
+nur ist sie hier **quantifiziert** statt bloß erwähnt, und das Ergebnis kehrt die geplante
+Konsequenz um: die Entscheidungsregel des Plans („< 5 % → dokumentierte Limitation, fertig")
+greift nicht, weil NOx auf der Frachtseite darüber liegt.
+
+**Methode** (EMEP/EEA GB 2023 – Update 2025, Kap. 1.A.3.b.i–iv Gl. (10) in der
+Euro-6+-Fassung mit β-Reduktionsfaktor):
+
+```
+E_COLD = β · bc · km · e_HOT · (Q − 1)
+β  = 0,6474 − 0,02545·ltrip − (0,00974 − 0,000385·ltrip)·ta      (Tab. 3-39)
+bc = NOx 0,1719 − 0,0055·ltrip; CO 0,2022 − 0,0064·ltrip;
+     VOC 0,2398 − 0,0076·ltrip; sonst 1,0                        (Tab. 3-46)
+Q  = A·v + B·ta + C, Boden 1  (Appendix 4 COLD_EMISSIONS_PARAMETERS,
+     Euro 7 Diesel LCV, RANGE 1 für ta > 0; N1-II == N1-III):
+     NOx 0,04806·v + 14,6608 | CO 0,16114·v + 27,3472
+     VOC −0,28614·v + 18,4451 | Energie 1,34 − 0,008·ta
+```
+
+**Ein ausgewiesener Transfer, und er ist der einzige Freiheitsgrad.** β ist ein Anteil an der
+*Gesamt*fahrleistung, kalibriert für `ltrip` ∈ [8, 15] km (europäischer Default 12,4 km).
+Unsere Touren sind ~99 km lang — dort ist die Formel nicht auswertbar, sie wird negativ.
+Übertragbar ist die **Kaltdistanz je Start**, β(ltrip)·ltrip, und die ist über das gültige Band
+stabil: **3,02 / 3,50 / 3,39 km** bei ltrip 8 / 12,4 / 15 km (ta = 10 °C). Angesetzt wird
+**ein** Kaltstart je Tour bzw. Fahrzeugtag, also β_eigen = Kaltdistanz / Entity-km. Die
+Endzahl hängt daran nur schwach (NOx-Fracht 5,99 / 5,63 / 4,71 % über dasselbe Band) — die
+Aussage ist also nicht ein Artefakt der ltrip-Wahl.
+
+**Ergebnis auf `base10c`** (63 Touren / 6252 km Fracht; 120 Fahrzeugtage / 47 953 km DRT):
+
+| Arm | ta = 10 °C | ta = 0 °C |
+|---|---|---|
+| **Fracht NOx** | **+5,63 %** | +6,62 % |
+| Fracht CO | +13,94 % | +16,39 % |
+| Fracht VOC | +3,61 % | +4,25 % |
+| Fracht Energie/CO₂ | +0,93 % | +1,43 % |
+| DRT NOx | +1,41 % | +1,66 % |
+| DRT Energie/CO₂ | +0,23 % | +0,35 % |
+
+**Was daraus für das Paper folgt:**
+
+1. **Alle berichteten NOx-Zahlen sind eine UNTERGRENZE**, auf der Frachtseite um ~5–6 %. Die
+   Abweichung ist **einseitig** (der wahre Wert liegt darüber, nie darunter) und trifft Diesel
+   und BEV **nicht** gleich — der BEV-Arm hat keinen Kaltstart, sein Vorteil wäre also größer.
+   Die Richtungsaussagen bleiben damit gültig; die Niveauaussage für NOx nicht.
+2. **CO₂ und Energie sind unberührt** (< 1,5 %), also unter dem jsprit-Rauschboden von ~6,5 %.
+   Die Kernaussagen des Papers hängen nicht am Kaltstart.
+3. **PM-Auspuff hat für Euro 7 keine Kaltstart-Parametrisierung** im Appendix-4-Sheet (Euro 5+
+   nutzt laut Kapitel eine eigene Gleichung mit absolutem Kaltfaktor). Für unsere Bilanz
+   irrelevant: Auspuff-PM ist 0,89 g gegen 316,6 g Abrieb im selben Lauf (§2.27).
+4. **Die DRT-Zahl ist „je Kaltstart" zu lesen und skaliert linear.** Ein Fahrzeugtag enthält
+   lange STAY-Phasen; ob der Motor darin thermisch auskühlt, ist ohne Thermomodell nicht
+   entscheidbar. Bei 5 echten Kaltstarts je Fahrzeugtag läge die DRT-Seite bei ~7 % NOx, also
+   in derselben Größenordnung wie die Frachtseite. Das ist **keine** Aussage über die
+   Realität, sondern die Angabe, wie empfindlich die Zahl auf eine Größe reagiert, die wir
+   nicht messen.
+
+**Konsequenz:** Backlog-Punkt „Kaltstart-Zuschlag implementieren" (`[H]`, ~0,5 d) angelegt;
+Formeln und Sensitivitäten liegen rechenfertig in `analysis/kpi/data/README.md`.
+
 ---
 
 ## 3 · Zurückgezogene Befunde
