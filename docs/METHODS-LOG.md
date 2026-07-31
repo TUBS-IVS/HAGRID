@@ -218,13 +218,93 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
   (MJ/km → FC → CO₂, Diesel ~3,17 kg/kg; der Energie-KPI fällt gratis ab). BEV-Zeilen (nur EC)
   existieren für beide Kategorien.
 
-- **Klassenmapping: beide Flotten = N1-III Diesel Euro 7, DPF+SCR** — `trägt` · 2026-07-28
-  **DRT-Flotte** in allen drei Szenarien N1-III (masse-nächste Klasse für Sprinter-Klasse-Minibus
-  ~3,5–5,5 t). „Urban Buses Midi ≤15 t" **verworfen**: repräsentiert 9–12-t-Midibusse →
-  überzeichnet NOx/PM grob 2–3×, Kurven enden bei 80 km/h, Steigungs-/Beladungsstrata sind in
-  MATSim ohnehin nicht belegbar (optional als *obere* Sensitivitätsgrenze).
-  **LMD**: alle drei Van-Typen (`_s`/`_m`/`_l`) ebenfalls N1-III → beide Flotten einheitlich.
+- **Klassenmapping: beide Flotten = N1-III Diesel Euro 7, DPF+SCR** — **überholt durch den
+  nächsten Punkt** · 2026-07-28, ersetzt 2026-07-31
+  Der LMD-Teil („alle drei Van-Typen ebenfalls N1-III") ist zurückgezogen, siehe unten. Der
+  DRT-Teil **trägt weiter** und ist unten nur mit Zahlen unterlegt: „Urban Buses Midi ≤15 t"
+  bleibt verworfen (repräsentiert 9–12-t-Midibusse, Kurven enden bei 80 km/h).
+
+- **Klassenmapping Rev. B: alle Fahrzeuge LCV (N1) Euro 7 DPF+SCR, differenziert nach Segment**
+  — `trägt` · 2026-07-31
+  Kategorie, Kraftstoff, Norm und Nachbehandlung bleiben für alle Fahrzeuge identisch; variiert
+  wird ausschließlich das **Segment**, also die methodeneigene Massenklasse:
+  `ct_cep_size_s` → **N1-II** (angesetzte Bezugsmasse ~1700 kg), `_m` → **N1-III** (~2000 kg),
+  `_l` → **N1-III** (~2400 kg), DRT-Fahrzeug → **N1-III**. Generierte Sweep-Typen
+  `ct_cep_<cap>_<tpl>`: Kapa ≤ 120 → N1-II, sonst N1-III.
+  **Warum die Änderung:** die Van-Flotte ist real gemischt und der Mix ist ein **jsprit-Ergebnis**,
+  keine Konstante ([`LmdCarrierBuilder`](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LmdCarrierBuilder.java) bietet alle Typen bei
+  `FleetSize.INFINITE` an). Gemessen 2026-07-31: `base10c` fährt **92,6 %** der Freight-km auf
+  `size_s` (56 von 63 Fahrzeugen), `localdepots_stagger` dagegen **100 %** `size_m`. Eine
+  Einheitsklasse N1-III überschätzt die Baseline-Freight-Energie um **~39 %** (Flottenintensität
+  2,25 statt 3,12 MJ/km) und kann Szenarienrangfolgen kippen.
+  **Segmentwirkung**, verifiziert bei 30 km/h (Tourmittel der Läufe: 36 km/h): Energie N1-II
+  2,183 vs. N1-III 3,123 MJ/km (**+43 %**); NOx N1-I 0,054 vs. N1-II/III 0,090 g/km (N1-II und
+  N1-III **identisch**); PM exhaust über alle drei Segmente identisch (DPF). Der einzige
+  Energiebruch liegt also zwischen II und III, der einzige NOx-Bruch zwischen I und II.
+  **Annahmecharakter:** die Bezugsmasse je Typ ist eine ausgewiesene Setzung. Sie ist die Größe,
+  über die die **EU-Typgenehmigung** die N1-Segmente definiert (≤1305 / ≤1760 / >1760 kg); das
+  Segment folgt daraus mechanisch. **Zitatkette:** diese Grenzen stehen **nicht** im
+  Guidebook-Kapitel (kein Treffer für „1305", „1760", „reference mass" im PDF) — dort ist nur N1
+  als Ganzes definiert („carriage of goods […] not exceeding 3.5 tonnes", Tab. 2-1). Aus der
+  Verordnung zitieren, nicht aus dem Guidebook.
   Caveats: §2.7.
+
+- **Keine Zuladungsskalierung — methodenkonform, nicht Auslassung** — `trägt` · 2026-07-31
+  Geprüft und **verworfen**. Das Guidebook beschränkt die Lastkorrektur explizit auf schwere
+  Nutzfahrzeuge, Kap. 1.A.3.b.i–iv S. 62 f., Abschnitt „Emission corrections": *„road gradient
+  and vehicle load. Corrections need to be made to **heavy-duty vehicle** emissions […] Also, by
+  default, a factor of 50 % is considered for a load of heavy-duty vehicles."* Für LCV ist
+  Zuladung **kein Methodenparameter** — 0 von 1087 LCV-Zeilen im Appendix-4-Sheet tragen einen
+  Wert in `Load` oder `Road Slope` — und ein Referenz-Ladezustand ist für LCV nicht dokumentiert.
+  Ein Lastmultiplikator hätte damit **keinen definierten Nullpunkt**. EMEP legt den Masseeffekt
+  bei leichten Fahrzeugen ins **Segment**; die Differenzierung oben ist die methodenkonforme
+  Abbildung genau dieses Effekts.
+  **Bound des nicht modellierten Lasteffekts** (aus der HDV-Parametrisierung, Rigid ≤7,5 t,
+  30 km/h, 0 % Steigung: 4,387 leer → 4,666 bei Default-Last 50 % → 4,954 MJ/km voll):
+  **≤13 %** für einen 7,5-Tonner, **~5 %** für unsere Vans (~575 kg Zuladung auf ~2100 kg
+  Leergewicht), im Tourmittel ~2,5 % weil die Ladung leerläuft. Das liegt **unter dem
+  jsprit-Rauschboden von 6,5 %** (§2.1) und weit unter dem Segmenteffekt von 43 %.
+  **Ausdrücklich unzulässig:** Mischung von EMEP-Niveaus mit den STREAM-Lastverhältnissen aus
+  [`hagrid_output_analysis/config.py`](../parcel-demand-2-matsim-pipeline/src/hagrid_output_analysis/config.py) (dort van >2t urban 276→302 g/km = +9,4 %). Keine
+  gemeinsame Referenzbasis, keine haltbare Invarianzannahme über zwei Methoden. Wer Zuladung im
+  Ergebnis haben will, muss die **gesamte** Rechnung auf STREAM umstellen — dann fallen
+  Geschwindigkeitskurve, BEV-Arm und der SPN23/CH4/N2O-Vektor weg.
+  **Konsistenzcheck** (legitim, weil er nichts berechnet): die beiden unabhängigen Quellen sagen
+  dasselbe — Lasteffekt +9,4 % (STREAM) vs. +12,9 % (EMEP-HDV), Klassensprung +40 % (STREAM van
+  <2t→>2t) vs. +43 % (EMEP N1-II→N1-III).
+
+- **Kategoriensubstitution M2 → N1-III für die DRT-Flotte** — `trägt` · 2026-07-31
+  Das DRT-Fahrzeug hat `capacity="10"` und ist damit nach der Guidebook-eigenen Definition **M2**
+  („more than eight seats in addition to the driver's seat […] not exceeding 5 tonnes", Tab. 2-1),
+  nicht N1. Die Substitution ist eine benannte Annahme, gestützt auf die Einordnung bei 30 km/h:
+  PC Large-SUV-Executive Euro 7 Diesel **2,545** / LCV N1-III **3,123** / Buses Urban Midi ≤15 t
+  Euro VI bei Default-Last 50 % **~9,1** MJ/km. Der Bus liegt Faktor ~3 zu hoch, der Pkw zu
+  niedrig; ein 10-sitziger Sprinter Tourer *ist* mechanisch ein N1-III-Sprinter mit Sitzen.
+  Im Paper mit diesen drei Zahlen ausschreiben.
+
+- **Emissionszurechnung Freight ↔ Pax bei gemeinsam genutzten Fahrzeugen** — `trägt` für 1d,
+  **offen für 1c** · 2026-07-31
+  **1d (modular):** Regimesplit, vollständig durch die Tasksequenz bestimmt. km innerhalb der
+  `MODULAR_FREIGHT_DRIVE`-Fenster → Fracht, übrige km → Pax; Anfahrt zum Depot → Fracht, Fahrt
+  vom Depot zum nächsten Fahrgast → Pax. Erschöpfend und ohne Rest: jeder km landet auf genau
+  einer Seite. Retooling selbst ist ein STOP (`drt_retooling_hours_total` = „events(STOP inside a
+  freight window)"), erzeugt also keine km. **Voraussetzung:** `drt_vehicle_km` trägt bisher
+  keinen Freight/Pax-Kanal (§2.14, „not corrected") — der Distanzsplit entsteht erst im
+  Emissions-Extractor (Plan Task 5b).
+  **1c (Co-Riding):** eine marginale Zurechnung („Umwege durch Parcel-Insertion → Parcel, Rest →
+  Pax") ist **nicht ohne Java-Eingriff und 1c-Rerun** erreichbar, siehe §2.24. Bis dahin gilt
+  `total_*` (allokationsfrei) als die berichtbare Größe.
+  **Pax-Zuladung ist irrelevant:** `mean_pax_aboard_pax` = 1,60 → ~128 kg auf ~2100 kg = +6 %
+  Masse → **~1,2 %** Energie. Unter dem Rauschboden.
+
+- **EV-Reichweite als Schwellen-Sweep, nicht als Pass/Fail-Gate** — `trägt` · 2026-07-31
+  Gemessen über alle 12 Läufe mit Freight-Touren: längste Tour überhaupt **183,3 km**, `base10c`
+  max 158,8 / p95 139,3 km. Bei **250 km ist die Überschreitung in jedem einzelnen Lauf 0 %** —
+  ein Einzelgate bei 250 km hätte ein Nullresultat produziert, das nach Prüfung aussieht.
+  Trennschärfe liegt allein bei ~150 km (dort 0–13,4 % je Lauf; Maximum `married120` /
+  `localdepots_stagger_c100`). Berichtet wird die Kurve über 150/200/250 km. **Befund:**
+  Freight-Elektrifizierung ist in der Lausitz nicht reichweitenbegrenzt — als falsifizierbare
+  Aussage, nicht als leeres Häkchen.
 
 - **Systemgrenze: Well-to-Wheel quantitativ** — `trägt` · 2026-07-28
   Appendix 4 ist strikt TTW + Abrieb, **keine Vorkette/LCA**. WTT über EC-Kurve × externe
@@ -426,6 +506,23 @@ die *Richtung* ist robust, das Niveau nicht.
   CO₂e-Beitrag beim Diesel-LCV ~1–2 %, vertretbar.
 - **`_l`-Van (230, 6 m, keine Masse in der XML) bleibt Grauzone** zum leichten Lkw → optional
   einmal als HDT „Rigid ≤7,5 t" gegenrechnen, damit die Bandbreite ausgewiesen statt versteckt ist.
+  **Korrektur 2026-07-31:** falls das kommt, ist die Vergleichszeile `Load = 0.5` — das ist der
+  Guidebook-**Default** für HDV —, also 4,666 MJ/km bei 30 km/h / 0 % Steigung, **nicht** 4,387
+  (das wäre Load = 0). Und die Richtung ist nicht die erwartete: HDT bei Nulllast liegt mit 4,387
+  *über* N1-III (3,123), die Variante verschiebt also das Niveau deutlich, statt nur eine
+  Obergrenze zu setzen. Zusätzlich bringt die HDT-Kategorie `Load`- **und** `Road Slope`-Strata
+  mit, die der Extractor nicht kennt.
+- **Der Fahrzeugmix ist endogen und muss mitberichtet werden** — 2026-07-31.
+  jsprit wählt bei `FleetSize.INFINITE` frei aus den angebotenen Van-Typen; der Mix schwankt
+  zwischen Läufen von 0 % bis 93 % km-Anteil `size_s`. Mit der Segmentdifferenzierung (§1.4) hängt
+  CO₂ damit an einer kostengetriebenen Optimierungsentscheidung. **Nebenwirkung, die offen stehen
+  muss:** die Kosten von `ct_cep_size_s` sind selbst linear interpoliert
+  (`lmd-vehicle-types.xml`, Kommentar im File) — sie beeinflussen die Fahrzeugwahl und damit
+  indirekt das Emissionsergebnis. Deshalb emittiert der Extractor `segment_km_share_*`: ohne diese
+  Zeilen ist ein CO₂-Delta nicht in Mixverschiebung und Fahrleistungsänderung zerlegbar.
+- **Non-Exhaust-Abrieb ist nicht segmentdifferenziert** — 2026-07-31. Die Guidebook-Basen
+  (Kap. 1.A.3.b.vi–vii) sind für LCV nicht nach N1-Segment aufgelöst. Bewusste Asymmetrie zur
+  Auspuffseite; ein Segmentargument dort würde eine Auflösung behaupten, die die Quelle nicht hat.
 - **Stop&Go wird in EMEP/EEA systematisch niedriger bewertet als in HBEFA** (Literaturbefund) —
   für Szenarien*vergleiche* unkritisch (konsistent), für absolute NOx/PM-Aussagen Faktorquelle
   ausweisen.
@@ -898,6 +995,46 @@ jede dieser Konventionen ändert, wie eine Zahl zu lesen ist:
 „late"-Konvention (STOP_SERVED am Dwell-Ende, `tours_completed_late` vs. `parcels_served_late`)
 steht jetzt auch im `ModularKpiHandler`-Javadoc (`2c00e8d`); die `open_freight_windows`-Diagnostik
 für offen gebliebene Fracht-Fenster existiert (`5a8d88f`, Meta-Row in `extract_drt._modular_rows`).
+
+### 2.24 1c Co-Riding: marginale Emissionszurechnung ist nicht ohne Rerun erreichbar
+
+`trägt` · 2026-07-31. Die naheliegende Zurechnung für 1c — „die von der Parcel-Insertion
+verursachten Umwege gehören der Fracht, der Rest den Fahrgästen" — setzt Kenntnis der geplanten
+Tour **vor** der Insertion voraus. Diese Größe **wird in 1c berechnet**, ist aber nicht
+abrufbar. Drei Befunde:
+
+1. **Die Größe existiert und ist genau die richtige.**
+   [`ChiGateInsertionCostCalculator.calculate()`](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/shareduse/ChiGateInsertionCostCalculator.java)
+   bildet `detourOnly = max(0, detourTimeInfo.getTotalTimeLoss() − ownDwellSeconds(request))` —
+   also den marginalen, um die Eigenbedienzeit bereinigten Umweg der Parcel-Insertion. Das ist
+   das χ-Gate-Kriterium selbst.
+2. **Nur die *blockierten* Insertions werden protokolliert.** `ChiGateStats` führt
+   `blockedAttempts` und `blockedSegments`; für eine **angenommene** Insertion wird `detourOnly`
+   berechnet, gegen χ geprüft und dann verworfen. Genau die Fälle, die man für die Zurechnung
+   bräuchte, hinterlassen keine Spur.
+3. **Zwei weitere Hürden, auch wenn man mitloggt.** (a) `DetourTimeInfo` ist **Zeit**, nicht
+   Distanz — Emissionen brauchen km, und die Distanzanalogie müsste zusätzlich berechnet werden.
+   (b) `calculate()` läuft für **jede evaluierte Kandidaten-Insertion**, nicht nur für die
+   gewählte; ein naives Logging erzeugt Dutzende Werte pro Request ohne Kennzeichnung des
+   Gewinners. Man müsste am Commit-Punkt der Insertion ansetzen, nicht am Bewertungspunkt.
+
+**Aufwand also: Java-Eingriff in den DRT-Insertion-Pfad + kompletter 1c-Rerun.** Und selbst dann
+bleibt ein methodisches Problem, das kein Logging löst: **marginale Kosten sind
+reihenfolgeabhängig und summieren sich nicht zum Ganzen.** Der Grenzumweg von Paket B hängt davon
+ab, dass Paket A schon eingeplant ist; Σ marginal(Fracht) + Σ marginal(Pax) ≠ Gesamt-km. Der
+Rest ist der Verbundvorteil des gemeinsamen Routings — also genau die Größe, die das Paper
+messen will. Sie per Konstruktion einer Seite zuzuschlagen wäre zirkulär.
+
+**Konsequenz für 1c:** allokationsfrei berichten (`total_*`) und die Bandbreite ausweisen, statt
+eine Scheingenauigkeit zu erzeugen. Zwei Größen sind dafür **ohne Rerun** verfügbar:
+- die beiden Extremzurechnungen (Verbund-km vollständig Pax bzw. vollständig Fracht) als Intervall;
+- eine **Obergrenze für den frachtverursachten Zeitumweg** aus dem Szenario selbst: χ ist der
+  policy-seitige Deckel pro Insertion, also ist der Gesamtumweg ≤ (Anzahl angenommener
+  Parcel-Segmente) × χ. Vor Verwendung prüfen, ob die Zahl angenommener Segmente in den
+  `SharedUseKpiHandler`-KPIs steht. Das ist eine Schranke, keine Zurechnung — aber eine belegte.
+
+Verwandt: §2.3 („χ ist eine untere Schranke, nicht der Umweg") und §2.4 (was bei Pax-KPIs unter
+Co-Riding unkorrigierbar bleibt).
 
 ---
 
