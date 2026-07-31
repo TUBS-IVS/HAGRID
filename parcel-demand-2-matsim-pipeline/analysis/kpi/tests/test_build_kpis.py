@@ -237,3 +237,41 @@ def test_no_events_build_still_carries_the_modular_contamination_marker(tmp_path
     assert ";meta;modular_secondary_contaminated;" in long_txt
     # events never ran -- the *_pax rows need recon and must stay absent
     assert "_pax;" not in long_txt
+
+
+def _fleet_xml(tmp_path):
+    f = tmp_path / "fleet.xml"
+    f.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<vehicles>\n'
+        '  <vehicle id="drt_0" start_link="1" t_0="0.0" t_1="86400.0" capacity="10"/>\n'
+        '</vehicles>\n', encoding="utf-8")
+    return f
+
+
+def test_no_events_build_still_carries_the_fleet_file_flag(tmp_path):
+    """Backlog parking P1, as an integration pin through build() -- the same shape as
+    the marker pin above and for the same reason. `--no-events` omits every
+    capacity/shift KPI regardless, so without the flag nothing in kpis_long.csv
+    distinguished "this run has no fleet file" from "this build did not reconstruct
+    events", and the flag was unreachable on exactly those builds because it lived
+    inside extract_drt's recon-available branch. The drtrun fixture has no fleet file
+    anywhere `_default_fleet_file` looks, so this build genuinely has none."""
+    out = build(FIX, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert ";meta;fleet_file_missing;1;" in long_txt
+    # and the named KPIs really are the ones absent from this same CSV
+    for name in ("drt_vehicle_capacity", "fleet_utilisation_by_time",
+                 "service_ratio_shift", "fleet_shift_hours"):
+        assert ";" + name + ";" not in long_txt, name
+
+
+def test_readable_fleet_file_leaves_no_flag_in_the_csv(tmp_path):
+    """The other half: handing build() a readable fleet file must leave kpis_long.csv
+    flag-free, so "recon-free" does not degrade into "always on"."""
+    out = build(FIX, no_events=True, fleet_file=_fleet_xml(tmp_path),
+                out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert "fleet_file_missing" not in long_txt
