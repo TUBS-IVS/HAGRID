@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 import emissions_emep as em
+from common import row
 
 # Explicit reference-mass assumption per named van type -> N1 segment.
 # The named types are what the LMD carriers use; CarrierVehicleFactory
@@ -263,3 +264,126 @@ def drt_arm(veh_path, recon, link_len, fac, exclude_windows=None):
         _add_entity(totals, detail, "drt", veh, "drt_minibus", DRT_SEGMENT,
                     km, km / (drive_s / 3600.0), fac)
     return totals, detail
+
+
+# ------------------------------------------- 5c: mass allocation (1c arm)
+
+#: Lower edge of the plausible band on the MEAN parcel mass (METHODS-LOG 2.26).
+#: Guards against the median trap: Amaral's median 0.6950 kg instead of the
+#: mean would understate on-board parcel mass by 58 %.
+KG_PER_PARCEL_MIN = 1.3
+
+ALLOC_SRC = (
+    "mass allocation on kg*km (EN 16258 / GLEC convention); "
+    "kg_per_parcel=1.65 (ASSUMPTION; Amaral et al. 2026 TR Part E Tab.1 + "
+    "Rajendran & Harper 2021 TRIP + Mohri et al., none German - declared "
+    "transfer); kg_per_passenger=80 is a SETTING, not a source. Report the "
+    "share alongside the intensity (METHODS-LOG 2.26)")
+
+
+def _check_mass_constants(sup):
+    kg = sup["kg_per_parcel"]
+    if kg < KG_PER_PARCEL_MIN:
+        raise ValueError(
+            "kg_per_parcel=" + str(kg) + " is below the plausible band on the "
+            "MEAN parcel mass (>= " + str(KG_PER_PARCEL_MIN) + " kg). A value "
+            "this low is typically the MEDIAN (Amaral 0.6950 kg), which "
+            "understates total on-board mass by ~58 %: total mass = n x MEAN. "
+            "See METHODS-LOG 2.26.")
+    return kg, sup["kg_per_passenger"]
+
+
+def mass_split(n_pax, n_parcels, sup):
+    """(share_pax, share_parcels) of the mass aboard.
+
+    The allocation basis is MASS, so the two sourced/declared constants
+    kg_per_parcel and kg_per_passenger enter here and only here. Only their
+    RATIO matters, which is why the unsourced 80 kg weighs as much as the
+    sourced parcel mass -- both must be reported together.
+
+    (0.0, 0.0) when nothing is aboard: there is no basis, and the caller
+    must redistribute that leg rather than invent a split.
+    """
+    kg_parcel, kg_pax = _check_mass_constants(sup)
+    m_pax = float(n_pax) * kg_pax
+    m_par = float(n_parcels) * kg_parcel
+    tot = m_pax + m_par
+    if tot <= 0:
+        return 0.0, 0.0
+    return m_pax / tot, m_par / tot
+
+
+def slot_split(n_pax, n_parcels, sup):
+    """(share_pax, share_parcels) on CAPACITY slots instead of mass.
+
+    The mandatory companion to mass_split: the equivalence is
+    scenario-defined (the 1c vehicle has 8 seats and 20 parcel slots, hence
+    slots_per_seat_equiv = 2.5) and depends on NO external mass assumption.
+    Reporting both makes the assumption's leverage visible instead of
+    hiding it in a single number (METHODS-LOG 2.26).
+    """
+    per_seat = sup["slots_per_seat_equiv"]
+    s_pax = float(n_pax) * per_seat
+    s_par = float(n_parcels)
+    tot = s_pax + s_par
+    if tot <= 0:
+        return 0.0, 0.0
+    return s_pax / tot, s_par / tot
+
+
+def allocate_vehicle_by_mass(path, link_len, veh_co2e, sup):
+    """Split one vehicle's emission into {"pax": ..., "parcels": ...} on a
+    kg*km basis (EN 16258 / GLEC), i.e. mass aboard x link length -- so a
+    long loaded link weighs more than a short one.
+
+    `path` are the 4-tuples of geometry.reconstruct_drt_paths_detailed
+    ((link_id, occ_pax, occ_parcels, t)). Empty links carry no kg*km basis
+    and are spread proportionally over the vehicle's loaded kg*km, which is
+    the GLEC convention for empty running; the returned parts therefore sum
+    to `veh_co2e` exactly. A vehicle that was never loaded returns zeros:
+    there is no basis, and distributing anyway would be arbitrary.
+
+    Unit-agnostic: the parts carry whatever unit `veh_co2e` came in.
+    """
+    kg_parcel, kg_pax = _check_mass_constants(sup)
+    kgkm_pax = 0.0
+    kgkm_par = 0.0
+    for entry in path:
+        length = link_len.get(entry[0])
+        if length is None:
+            continue
+        km = length / 1000.0
+        kgkm_pax += entry[1] * kg_pax * km
+        kgkm_par += entry[2] * kg_parcel * km
+    tot = kgkm_pax + kgkm_par
+    if tot <= 0:
+        return {"pax": 0.0, "parcels": 0.0}
+    return {"pax": veh_co2e * kgkm_pax / tot,
+            "parcels": veh_co2e * kgkm_par / tot}
+
+
+def intensity_rows(alloc, n_pax, n_parcels, sup=None):
+    """Specific intensities plus the allocation shares they came from.
+
+    `alloc` values are kg CO2e (the caller converts from the gram-based
+    totals). Emits co2e_wtw_per_pax / co2e_wtw_per_parcel in kg, and -- per
+    the reporting rule in METHODS-LOG 2.26 -- always the mass share next to
+    them, with the mass-free slot share as its companion. An intensity whose
+    denominator is zero is OMITTED rather than reported as 0 or inf.
+    """
+    rows = []
+    tot = alloc["pax"] + alloc["parcels"]
+    if n_pax:
+        rows.append(row("environment", "co2e_wtw_per_pax",
+                        alloc["pax"] / float(n_pax), "kg", ALLOC_SRC))
+    if n_parcels:
+        rows.append(row("environment", "co2e_wtw_per_parcel",
+                        alloc["parcels"] / float(n_parcels), "kg", ALLOC_SRC))
+    if tot > 0:
+        rows.append(row("environment", "alloc_share_parcels_mass",
+                        alloc["parcels"] / tot, "share", ALLOC_SRC))
+    if sup is not None:
+        rows.append(row("environment", "alloc_share_parcels_slots",
+                        slot_split(n_pax, n_parcels, sup)[1], "share",
+                        ALLOC_SRC))
+    return rows

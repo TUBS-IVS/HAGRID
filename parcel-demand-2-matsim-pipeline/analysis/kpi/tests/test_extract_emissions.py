@@ -289,3 +289,121 @@ def test_drt_arm_all_km_inside_freight_windows_yields_no_pax_entity():
                            {"l1": 1000.0}, em.load_factors(),
                            exclude_windows={"drt_1": [(3600.0, 7200.0)]})
     assert detail == []
+
+
+# --- Task 5c: mass-based allocation + specific intensities ----------------
+
+def _sup():
+    # kg_per_parcel: Annahme 1.65 (METHODS-LOG 2.26); kg_per_passenger: Setzung
+    return {"kg_per_parcel": 1.65, "kg_per_passenger": 80.0,
+            "slots_per_seat_equiv": 2.5}
+
+
+def test_mass_split_uses_kg_km_shares():
+    import extract_emissions as ee
+    # 20 Pakete (33.0 kg) gegen 1 Fahrgast (80 kg)
+    sp, spc = ee.mass_split(1, 20, _sup())
+    assert spc == pytest.approx(33.0 / 113.0)
+    assert sp + spc == pytest.approx(1.0)
+    # nichts an Bord -> keine Basis, Aufrufer muss umlegen
+    assert ee.mass_split(0, 0, _sup()) == (0.0, 0.0)
+
+
+def test_mass_split_is_load_driven_first_mass_second():
+    """METHODS-LOG 2.26: die Beladung treibt den Frachtanteil (~45 Pp von
+    10 auf 99 Pakete), die Massenannahme im plausiblen Band 1.3-2.5 kg
+    zweitrangig (~16 Pp). Der Test haelt beide Groessenordnungen fest,
+    damit die Sensitivitaet nicht der falschen Groesse zugeschrieben wird."""
+    import extract_emissions as ee
+    sup = _sup()
+    lo = ee.mass_split(1.6, 10, sup)[1]
+    hi = ee.mass_split(1.6, 99, sup)[1]
+    assert lo == pytest.approx(0.114, abs=0.005)
+    assert hi == pytest.approx(0.561, abs=0.005)
+    band = (ee.mass_split(1.6, 50, dict(sup, kg_per_parcel=2.50))[1]
+            - ee.mass_split(1.6, 50, dict(sup, kg_per_parcel=1.30))[1])
+    assert band == pytest.approx(0.157, abs=0.01)
+    assert (hi - lo) > 2.5 * band       # Beladung dominiert die Massenannahme
+
+
+def test_slot_basis_needs_no_external_mass():
+    """Die Slot-Basis ist szenariodefiniert (20 Paketslots / 8 Sitze) und
+    haengt an KEINER Massenannahme -- deshalb ist sie die Pflicht-Begleitung
+    (METHODS-LOG 2.26)."""
+    import extract_emissions as ee
+    sup = _sup()
+    a = ee.slot_split(1.6, 50, sup)[1]
+    b = ee.slot_split(1.6, 50, dict(sup, kg_per_parcel=2.50))[1]
+    assert a == pytest.approx(b)        # invariant gegen die Massenkonstante
+    # 50 Paketslots gegen 1.6 Sitze x 2.5 = 4 Slot-Aequivalente
+    assert a == pytest.approx(50.0 / 54.0)
+
+
+def test_mass_split_rejects_median_style_understatement():
+    """Waechter gegen den Median-Griff: 0.6950 kg (Amaral-Median) statt des
+    Mittels wuerde die Paketmasse um 58 % unterschaetzen. Der Loader lehnt
+    Werte unterhalb des plausiblen Bandes (1.3 kg) ab."""
+    import extract_emissions as ee
+    with pytest.raises(ValueError):
+        ee.mass_split(1.6, 50, dict(_sup(), kg_per_parcel=0.6950))
+
+
+def test_empty_legs_allocated_proportionally():
+    """GLEC-Konvention: Leerfahrten tragen keine kg*km-Basis und werden
+    ueber die geladenen kg*km des Fahrzeugtages verteilt -- die Summe der
+    zugerechneten Emissionen muss die Gesamtemission treffen."""
+    import extract_emissions as ee
+    # ein Link geladen, ein Link leer
+    path = [("l1", 1, 20, 100.0), ("l2", 0, 0, 200.0)]
+    link_len = {"l1": 1000.0, "l2": 1000.0}
+    alloc = ee.allocate_vehicle_by_mass(path, link_len, 100.0, _sup())
+    assert alloc["pax"] + alloc["parcels"] == pytest.approx(100.0)
+    # der Leer-Link erbt die Anteile des geladenen
+    assert alloc["parcels"] / 100.0 == pytest.approx(33.0 / 113.0)
+
+
+def test_allocation_is_link_weighted_not_a_vehicle_average():
+    """kg*km heisst: ein langer Link mit Fracht wiegt mehr als ein kurzer.
+    Sonst waere es eine ungewichtete Mittelung ueber Links."""
+    import extract_emissions as ee
+    long_parcel = [("l1", 0, 20, 1.0), ("l2", 1, 0, 2.0)]
+    link_len = {"l1": 9000.0, "l2": 1000.0}
+    alloc = ee.allocate_vehicle_by_mass(long_parcel, link_len, 100.0, _sup())
+    # 20 Pakete x 1.65 kg x 9 km = 297 kg*km gegen 80 kg x 1 km = 80 kg*km
+    assert alloc["parcels"] == pytest.approx(100.0 * 297.0 / 377.0)
+
+
+def test_allocation_all_empty_yields_zero_split():
+    """Ein Fahrzeug, das nie beladen war, hat keine Aufteilungsbasis -- die
+    Emission darf dann nicht willkuerlich verteilt werden."""
+    import extract_emissions as ee
+    alloc = ee.allocate_vehicle_by_mass([("l1", 0, 0, 1.0)], {"l1": 1000.0},
+                                        100.0, _sup())
+    assert alloc == {"pax": 0.0, "parcels": 0.0}
+
+
+def test_specific_intensity_rows():
+    import extract_emissions as ee
+    rows = ee.intensity_rows(alloc={"pax": 300.0, "parcels": 700.0},
+                             n_pax=150, n_parcels=1400, sup=_sup())
+    by = {r["kpi_name"]: r for r in rows}
+    assert by["co2e_wtw_per_pax"]["value"] == pytest.approx(2.0)
+    assert by["co2e_wtw_per_parcel"]["value"] == pytest.approx(0.5)
+    assert by["co2e_wtw_per_parcel"]["unit"] == "kg"
+    assert "Amaral" in by["co2e_wtw_per_parcel"]["source"]
+    # beide Konstanten und ihr Status muessen in der Provenance stehen
+    assert "kg_per_passenger" in by["co2e_wtw_per_parcel"]["source"]
+    # Berichtsregel METHODS-LOG 2.26: der Anteil steht IMMER neben der
+    # Intensitaet, und die massenfreie Slot-Variante daneben
+    assert by["alloc_share_parcels_mass"]["value"] == pytest.approx(0.7)
+    assert "alloc_share_parcels_slots" in by
+
+
+def test_intensity_rows_skip_division_by_zero():
+    """Ohne bediente Menge gibt es keine Intensitaet -- die Zeile faellt
+    weg, statt inf oder 0 zu behaupten."""
+    import extract_emissions as ee
+    rows = ee.intensity_rows({"pax": 300.0, "parcels": 0.0}, 150, 0, _sup())
+    names = {r["kpi_name"] for r in rows}
+    assert "co2e_wtw_per_pax" in names
+    assert "co2e_wtw_per_parcel" not in names
