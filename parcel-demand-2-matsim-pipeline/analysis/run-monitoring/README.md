@@ -115,6 +115,23 @@ and pushes to the phone. No VPN, no SSH, no Claude session involved.
   | `LocalLogPath` | Absolute path for `resume_sweep.ps1`'s own local log (mirrors `heartbeat.ps1`'s `Write-LocalLog`). Every branch of the main loop writes to it - under SYSTEM, `Write-Host` goes nowhere, so this file is the only record, ten days later, of whether the boot script ran and what it decided. |
   | `ResumedUrl` | healthchecks.io ping URL for the `*-resumed-after-boot` check. Optional: if empty, no ping is sent. |
 
+## Every configured path must be on a local disk
+
+Both installers refuse to register anything if a configured path sits on a drive
+letter that is not a local fixed disk, or on a UNC share (`Test-SystemVisiblePaths`).
+A mapped network drive belongs to **one interactive logon session**; a Scheduled
+Task running as `SYSTEM` has no such session, so the letter simply does not exist
+for it and `Test-Path` returns `$false` with no error. The dev-PC maps `T:`, `S:`
+and `X:` to `\\ad.tu-bs.de\share\ivs\*`, so this is a live hazard there, not a
+theoretical one: a `LogDir` on `T:` would install perfectly green and then leave
+the heartbeat unable to find any log, i.e. `progress` alarming forever on a
+healthy machine. UNC paths are refused too, because `SYSTEM` authenticates to a
+share as the *machine* account, which has no rights on a user share.
+
+The same blind spot exists in an SSH session, which is what surfaced this: over
+`ssh sim`, `Get-PSDrive` lists `C:` only. That makes SSH a useful rehearsal for
+what the task will see.
+
 ## Known limitations (accepted, not fixed - the fixes are disproportionate to the risk)
 
 - **`LockStaleHours = 0` is treated as unset, not "never stale".** `Invoke-ResumeSweep`

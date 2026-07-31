@@ -85,6 +85,47 @@ function Test-HeartbeatConfigForInstall {
     return ,$problems
 }
 
+function Get-LocalFixedDriveLetters {
+    # The impure half of the session-scoped-path check, split out so
+    # Test-SystemVisiblePaths below stays a pure, directly unit-testable function.
+    # Win32_LogicalDisk DriveType 3 is "Local Disk"; 4 is "Network Drive", i.e. a
+    # letter mapped inside ONE interactive logon session. Only local disks exist for
+    # a task running as SYSTEM. Duplicated in install_resume_task.ps1, same
+    # independent-deployability convention as Test-CmdletsAvailable above.
+    $letters = @()
+    foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)) {
+        $letters += $d.DeviceID.TrimEnd(':').ToUpperInvariant()
+    }
+    return ,$letters
+}
+
+function Test-SystemVisiblePaths {
+    # Found 2026-07-31 by probing the sim-PC over SSH, which has no interactive
+    # session either and so exposed the same blind spot: the dev-PC maps T:, S: and
+    # X: to \\ad.tu-bs.de\share\ivs\*, and those letters do not exist for SYSTEM.
+    # Test-Path on such a path returns $false with NO error, so a LogDir on T: would
+    # install perfectly green and then leave the heartbeat unable to find any log at
+    # all - progress goes permanently quiet on a perfectly healthy machine, which is
+    # a false alarm nobody away from the desk can act on. Refuse at install time.
+    param($Config, [string[]]$Keys, [string[]]$LocalDriveLetters)
+    $problems = @()
+    foreach ($key in $Keys) {
+        $raw = [string]$Config.$key
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }   # emptiness is Test-HeartbeatConfigForInstall's job
+        if ($raw.StartsWith('\\')) {
+            $problems += "$key ('$raw') is a UNC path - a SYSTEM task authenticates to a share as the MACHINE account, which has no rights on a user share. Copy what is needed onto a local disk."
+            continue
+        }
+        if ($raw -match '^([A-Za-z]):') {
+            $letter = $Matches[1].ToUpperInvariant()
+            if ($LocalDriveLetters -notcontains $letter) {
+                $problems += "$key ('$raw') is on drive ${letter}:, which is not a local disk on this machine. A mapped network drive belongs to one interactive logon session and is INVISIBLE to a SYSTEM Scheduled Task - this would install green and then fail silently. Use a local path (or the UNC form only if the machine account really has access)."
+            }
+        }
+    }
+    return ,$problems
+}
+
 function Test-PathWritable {
     # Review Finding C3 (residual): StatePath (and LocalLogPath) were never
     # validated for writability, only presence-of-a-string. An unwritable
@@ -142,6 +183,17 @@ function Install-HeartbeatTask {
         throw "hc-config.json failed validation ($($problems.Count) problem(s)) - fix and re-run"
     }
 
+    # Cheapest check first, before any network I/O: refuse paths a SYSTEM task
+    # cannot resolve. LogDir matters most - if it is invisible, Get-NewestLogState
+    # finds nothing and progress goes quiet on a healthy machine.
+    $localDrives = Get-LocalFixedDriveLetters
+    $sessionScoped = Test-SystemVisiblePaths $hcCfg @('LogDir','StatePath','LocalLogPath') $localDrives
+    if ($sessionScoped.Count -gt 0) {
+        foreach ($p in $sessionScoped) { Write-Host "CONFIG PROBLEM: $p" }
+        throw "hc-config.json points at $($sessionScoped.Count) path(s) a SYSTEM task cannot see (local disks here: $($localDrives -join ', '))"
+    }
+    Write-Host "verified: every configured path is on a local disk ($($localDrives -join ', '))"
+
     # Review Finding I6: install must not succeed green on a placeholder or dead
     # URL. Ping each real check once now, while a human is present to see the
     # failure, rather than finding out ten days into an absence.
@@ -188,9 +240,17 @@ function Install-HeartbeatTask {
     # rejects outright ("the task XML contains a value which is either incorrectly
     # formatted or out of range"). Evidence, stated precisely: Register-ScheduledTask
     # was ATTEMPTED with each shape side by side. The OLD shape fails this exact XML
-    # validation; the FIXED shape passes validation and then fails on privileges
-    # (the dev machine had no admin rights). So the XML question is settled, but a
-    # SUCCESSFUL registration has never been observed - see RUNBOOK.md section 2 for
+    # validation; the FIXED shape passes.
+    #
+    # 2026-07-31, on the sim-PC over SSH: a throwaway task with EXACTLY this trigger
+    # shape registered SUCCESSFULLY as SYSTEM/Highest, and Get-ScheduledTask read
+    # back Repetition.Interval=PT5M with an EMPTY Repetition.Duration. So the shape
+    # is now confirmed end to end, not merely past validation. (Earlier attempts
+    # failed on privileges only because the dev account is not an admin; a Windows
+    # OpenSSH session for an account in Administrators is NOT UAC-filtered, which is
+    # why the same call succeeds over ssh.) What that test did NOT prove is that the
+    # repetition actually RE-FIRES, or that the At-startup trigger fires at a real
+    # boot - see RUNBOOK.md section 2 for
     # the checks that close that gap. Leaving Duration empty means "repeat
     # indefinitely" and passes validation.
     $trigger.Repetition.Duration = ''

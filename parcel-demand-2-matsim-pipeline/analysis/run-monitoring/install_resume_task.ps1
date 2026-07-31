@@ -41,6 +41,46 @@ function Test-ContainsReplacePlaceholder {
     return $false
 }
 
+function Get-LocalFixedDriveLetters {
+    # The impure half of the session-scoped-path check, split out so
+    # Test-SystemVisiblePaths below stays a pure, directly unit-testable function.
+    # Win32_LogicalDisk DriveType 3 is "Local Disk"; 4 is "Network Drive", i.e. a
+    # letter mapped inside ONE interactive logon session. Only local disks exist for
+    # a task running as SYSTEM.
+    $letters = @()
+    foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)) {
+        $letters += $d.DeviceID.TrimEnd(':').ToUpperInvariant()
+    }
+    return ,$letters
+}
+
+function Test-SystemVisiblePaths {
+    # Found 2026-07-31 by probing the sim-PC over SSH, which has no interactive
+    # session either and so exposed the same blind spot: the dev-PC maps T:, S: and
+    # X: to \\ad.tu-bs.de\share\ivs\*, and those letters do not exist for SYSTEM.
+    # Test-Path on such a path returns $false with NO error, so a config pointing at
+    # T: installs perfectly green and then fails at the next boot in silence - the
+    # precise failure direction this feature exists to eliminate. Refuse at install
+    # time, while a human is present to fix it.
+    param($Config, [string[]]$Keys, [string[]]$LocalDriveLetters)
+    $problems = @()
+    foreach ($key in $Keys) {
+        $raw = [string]$Config.$key
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }   # emptiness is the REPLACE/required-key checks' job
+        if ($raw.StartsWith('\\')) {
+            $problems += "$key ('$raw') is a UNC path - a SYSTEM task authenticates to a share as the MACHINE account, which has no rights on a user share. Copy what is needed onto a local disk."
+            continue
+        }
+        if ($raw -match '^([A-Za-z]):') {
+            $letter = $Matches[1].ToUpperInvariant()
+            if ($LocalDriveLetters -notcontains $letter) {
+                $problems += "$key ('$raw') is on drive ${letter}:, which is not a local disk on this machine. A mapped network drive belongs to one interactive logon session and is INVISIBLE to a SYSTEM Scheduled Task - this would install green and then fail silently at boot. Use a local path (or the UNC form only if the machine account really has access)."
+            }
+        }
+    }
+    return ,$problems
+}
+
 function Test-ResumeLogInvariant {
     # Review Finding C7 (the subtlest finding in the review): a resumed run writes
     # its log4j output under its own run-output directory, NOT into the
@@ -117,6 +157,17 @@ function Install-ResumeTask {
     if (@($resumeCfg.Tags).Count -eq 0) {
         throw 'resume-config.json: Tags is empty - nothing to resume'
     }
+
+    # Every key below is a path the SYSTEM-run resume must resolve at boot.
+    $pathKeys = @('LockPath','OutputRoot','CarrierRoot','WorkDir','JavaExe','Jar',
+                  'GeneratedBatPath','ResumeLog','StartDetached','StepALauncher','LocalLogPath')
+    $localDrives = Get-LocalFixedDriveLetters
+    $sessionScoped = Test-SystemVisiblePaths $resumeCfg $pathKeys $localDrives
+    if ($sessionScoped.Count -gt 0) {
+        foreach ($p in $sessionScoped) { Write-Host "CONFIG PROBLEM: $p" }
+        throw "resume-config.json points at $($sessionScoped.Count) path(s) a SYSTEM task cannot see (local disks here: $($localDrives -join ', '))"
+    }
+    Write-Host "verified: every configured path is on a local disk ($($localDrives -join ', '))"
 
     # Review Finding C7: read BOTH configs and refuse to install if the invariant
     # is violated, naming both values.
