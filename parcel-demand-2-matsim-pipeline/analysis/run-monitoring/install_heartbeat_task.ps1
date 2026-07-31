@@ -186,10 +186,13 @@ function Install-HeartbeatTask {
     # Review Finding C2: an explicit "-RepetitionDuration ([TimeSpan]::MaxValue)"
     # serializes to Duration:P99999999DT23H59M59S, which Register-ScheduledTask
     # rejects outright ("the task XML contains a value which is either incorrectly
-    # formatted or out of range") - confirmed by actually registering a throwaway
-    # task with each shape side by side; the OLD shape fails this exact XML
-    # validation and the FIXED shape passes it. Leaving Duration empty means
-    # "repeat indefinitely" and passes validation.
+    # formatted or out of range"). Evidence, stated precisely: Register-ScheduledTask
+    # was ATTEMPTED with each shape side by side. The OLD shape fails this exact XML
+    # validation; the FIXED shape passes validation and then fails on privileges
+    # (the dev machine had no admin rights). So the XML question is settled, but a
+    # SUCCESSFUL registration has never been observed - see RUNBOOK.md section 2 for
+    # the checks that close that gap. Leaving Duration empty means "repeat
+    # indefinitely" and passes validation.
     $trigger.Repetition.Duration = ''
 
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
