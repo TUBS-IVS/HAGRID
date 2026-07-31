@@ -12,6 +12,28 @@ import render
 FIX = Path(__file__).parent / "fixtures" / "drtrun"
 
 
+def _build_clean(tmp_path):
+    """`build()` on the baseline fixture WITH a readable DVRP fleet file.
+
+    The fixture directory has no fleet file next to it and `build`'s
+    `_default_fleet_file` looks for one two levels up (`hagrid-output/<run_id>/...`),
+    so without this the build resolves `fleet_file=None` and `extract_drt` correctly
+    emits `meta/fleet_file_missing` -- which puts a "Hinweise" block on every page
+    rendered here and makes the "a baseline page carries no meta rows" assertions
+    below impossible to state. A real DRT run always writes its fleet file, so
+    handing one over is the realistic shape of a clean baseline build, not a
+    workaround for the flag. (Backlog parking P1 moved that flag out of the event-
+    reconstruction branch, which is why a `no_events=True` build now reaches it.)
+    """
+    fleet = tmp_path / "fleet.xml"
+    fleet.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<vehicles>\n'
+        '  <vehicle id="drt_0" start_link="1" t_0="0.0" t_1="86400.0" capacity="10"/>\n'
+        '</vehicles>\n', encoding="utf-8")
+    return build(FIX, no_events=True, fleet_file=fleet, out_dir=tmp_path)
+
+
 def test_load_run_data_missing_files_graceful(tmp_path):
     d = render.load_run_data(tmp_path)          # no CSVs at all
     assert d.provider.empty and d.vehicles.empty and d.iterations.empty
@@ -23,7 +45,7 @@ def test_tile_tooltip():
 
 
 def test_run_page_has_drt_tab_and_plugins(tmp_path):
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     html = render.render_run_page(data, title="DRT_TEST")
     # NOTE: the DRT tab is now real render_drt.build_tab (v2 Plan C Task 5/6) --
@@ -42,7 +64,7 @@ def test_run_page_has_drt_tab_and_plugins(tmp_path):
 
 
 def test_build_writes_dashboard(tmp_path):
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     assert (out / "kpi_dashboard.html").exists()
 
 
@@ -97,7 +119,7 @@ def test_size_ramp_present_and_distinct():
 
 
 def test_donut_registers_center_plugin_in_run_page(tmp_path):
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     html = render.render_run_page(data, title="DRT_TEST")
     assert "centerTotal" in html
@@ -123,7 +145,7 @@ def _with_meta_row(data):
 def test_konvergenz_banner_only_on_contaminated_runs(tmp_path):
     # E2: baseline page has no banner text; a run with the contamination meta
     # row gets the warnbanner INSIDE the Konvergenz group (after its <h2>).
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     clean = render.render_run_page(data, title="DRT_TEST")
     assert "Iterationsreihen enthalten Paket-Agenten" not in clean
@@ -140,7 +162,7 @@ def test_konvergenz_banner_only_on_contaminated_runs(tmp_path):
 def test_meta_notes_block_renders_only_when_meta_rows_exist(tmp_path):
     # E3: the meta group never fit the grouped-table loop -- it must surface
     # as a "Hinweise" block; baseline pages stay free of it.
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     assert "Hinweise" not in render.render_kpi_table(data.kpis)
 
@@ -153,7 +175,7 @@ def test_meta_notes_block_renders_only_when_meta_rows_exist(tmp_path):
 def test_kpi_source_and_tip_src_cite_actual_source(tmp_path):
     # E4: tooltips must cite the row's ACTUAL source column (pax_only override
     # rewrites it on Shared-Use runs), never a hardcoded string.
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     src = render._kpi_source(data.kpis, "drt_rides")
     assert src  # fixture carries a source for the rides row
@@ -167,7 +189,7 @@ def test_kpi_source_and_tip_src_cite_actual_source(tmp_path):
 def test_channel_share_config_echo_footnote(tmp_path):
     # E5: door==1.0 AND locker==0.0 is a config echo (no lockers staged) and
     # must be footnoted as such in the KPI table.
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     row = data.kpis.iloc[0].copy()
     for name, val in (("share_channel_door", 1.0), ("share_channel_locker", 0.0)):
@@ -212,7 +234,7 @@ def test_table_groups_cover_every_canonical_kpi_group():
 
 def test_modular_kpis_are_rendered_in_the_table(tmp_path):
     """End of the chain: a `modular` row in the CSV must actually appear in the HTML."""
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     r = data.kpis.iloc[0].copy()
     r["kpi_group"] = "modular"
@@ -266,7 +288,7 @@ def _with_secondary_marker(data):
 def test_baseline_run_page_has_no_contamination_badges(tmp_path):
     # Pin: without either marker row, no badge string appears anywhere --
     # existing (pre-Task-4) pages must render unchanged.
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     html = render.render_run_page(data, title="DRT_TEST")
     assert CONTAMINATION_BADGE not in html
@@ -275,7 +297,7 @@ def test_baseline_run_page_has_no_contamination_badges(tmp_path):
 
 
 def test_contamination_badge_on_affected_tiles_near_vehicle_km_tile(tmp_path):
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     _with_modular_marker(data)
     _with_kpi_row(data, "service_ratio_active", 0.42, unit="share")
@@ -307,7 +329,7 @@ def test_contamination_badge_on_affected_tiles_near_vehicle_km_tile(tmp_path):
 def test_contamination_badge_absent_without_marker_even_with_pax_rows(tmp_path):
     # A run carrying the *_pax rows but NOT the marker (e.g. Task-3-only CSV
     # from a build that predates Task 4) must not show any badge.
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data = render.load_run_data(out)
     _with_kpi_row(data, "drt_tour_hours_total", 100.0, unit="h")
     _with_kpi_row(data, "drt_tour_hours_total_pax", 80.0, unit="h")
@@ -379,7 +401,7 @@ def test_secondary_badge_absent_without_marker():
 
 
 def test_comparison_page_meta_notes_below_table_with_run_label_prefix(tmp_path):
-    out = build(FIX, no_events=True, out_dir=tmp_path)
+    out = _build_clean(tmp_path)
     data_a = render.load_run_data(out)
     data_b = render.load_run_data(out)
     _with_modular_marker(data_b, source="drt_source_marker_xyz")

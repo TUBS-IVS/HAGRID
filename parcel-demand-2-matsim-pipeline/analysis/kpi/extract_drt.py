@@ -58,6 +58,9 @@ reconstruct events -- the marker used to live only inside the event-reconstructi
 branch, so a --no-events build (or a run whose output_events.xml.gz was never
 cached) published every contaminated KPI with no marker at all.
 See METHODS-LOG 2.14.
+
+`meta/fleet_file_missing` was moved out of that same branch for the same reason
+(backlog parking P1) -- see `_fleet_file_rows`.
 """
 import sys
 from pathlib import Path
@@ -226,6 +229,14 @@ def extract(run_dir, prefix, fleet_file=None, recon=None, modular=False):
     if modular:
         rows += _modular_marker_rows()
 
+    # Same discipline as the marker above, for the same reason (backlog parking P1):
+    # whether this run's DVRP fleet file can be read is a fact about the RUN's INPUTS,
+    # not about whether THIS build reconstructed events. The flag used to live inside
+    # the `recon is not None` branch below, so a --no-events build -- or a run whose
+    # output_events.xml.gz was never cached -- published the capacity/shift KPIs'
+    # absence with nothing in kpis_long.csv saying why.
+    rows += _fleet_file_rows(fleet_file)
+
     if recon is not None:
         fl = recon["fleet"]
         seg_t = fl["seg_time"]
@@ -237,16 +248,10 @@ def extract(run_dir, prefix, fleet_file=None, recon=None, modular=False):
         ]
         # Shift- and capacity-denominated KPIs exist ONLY when the DVRP fleet file was
         # actually found. drt_service_time no longer substitutes a default seat count or
-        # the sim horizon for a missing shift window, so an absent fleet file now drops
-        # these KPIs instead of silently publishing a wrong denominator. The meta row
-        # below makes that omission visible in kpis_long.csv rather than in stdout only.
-        # Checked directly against `fleet_file_known` (drt_service_time's own verdict on
-        # whether it could read the file), not against `capacity` being falsy -- the two
-        # used to be conflated, which mixed "no fleet file" with "fleet file present but
-        # its capacity attribute was unparseable" into one flag.
-        if not fl.get("fleet_file_known"):
-            rows.append(row("meta", "fleet_file_missing", 1, "flag",
-                             "capacity/shift KPIs omitted - DVRP fleet file not found"))
+        # the sim horizon for a missing shift window, so an absent fleet file drops these
+        # KPIs instead of silently publishing a wrong denominator; `meta/fleet_file_missing`
+        # (emitted above, outside this branch) is what makes that omission visible in
+        # kpis_long.csv rather than in stdout only.
         if "ratio_shift" in fl:
             rows.append(row("system", "service_ratio_shift", fl["ratio_shift"], "share", "events"))
             rows.append(row("system", "fleet_shift_hours",
@@ -296,6 +301,46 @@ def _modular_marker_rows():
             " occupancy map (map.occupancy_colors) carry no provenance channel for 1d"
             " freight contamination; see METHODS-LOG 2.14"),
     ]
+
+
+#: The KPIs that exist only when the DVRP fleet file could be read. Named in the
+#: `meta/fleet_file_missing` row's source text so a reader holding only the CSV can
+#: tell WHICH numbers went missing, instead of having to notice their absence.
+_FLEET_FILE_DENOMINATED = (
+    "drt_vehicle_capacity",
+    "fleet_utilisation_by_time",
+    "fleet_utilisation_by_trips",
+    "service_ratio_shift",
+    "fleet_shift_hours",
+)
+
+
+def _fleet_file_rows(fleet_file):
+    """`meta/fleet_file_missing`, decided WITHOUT the event reconstruction.
+
+    Backlog parking P1: this used to sit inside `extract`'s `recon is not None`
+    branch, which made the flag unreachable on exactly the builds that need it most
+    -- a `--no-events` build omits every capacity/shift KPI anyway, so with the flag
+    gone too there was nothing in `kpis_long.csv` separating "this run had no fleet
+    file" from "this build simply did not reconstruct events". Same class of defect as
+    review C1 (the modular marker), same fix: gate on an input the caller already
+    holds, not on whether the event path happened to run.
+
+    Predicate: `bool(read_shift_windows(...))` -- deliberately drt_service_time's OWN
+    `fleet_file_known` definition rather than a re-implementation, and deliberately not
+    a plain `os.path.exists`, which would miss the "file present but no parseable
+    t_0/t_1 attributes" case. It reads the same path `build_kpis` hands
+    `drt_service_time.reconstruct`, so the recon-free verdict and `fl["fleet_file_known"]`
+    cannot disagree; the fleet XML is a few hundred vehicles, i.e. free next to the
+    ~95 MB event cache the reconstruction walks.
+    """
+    if drt_service_time.read_shift_windows(str(fleet_file) if fleet_file else None):
+        return []
+    return [row("meta", "fleet_file_missing", 1, "flag",
+                "DVRP fleet file not found or without readable shift windows - "
+                + ", ".join(_FLEET_FILE_DENOMINATED)
+                + " omitted rather than computed against a guessed seat count or the"
+                  " sim horizon")]
 
 
 def _modular_rows(fl):
