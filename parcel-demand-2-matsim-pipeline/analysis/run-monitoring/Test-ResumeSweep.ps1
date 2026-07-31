@@ -39,6 +39,15 @@ $remaining = Select-RemainingTags $out $prefix @('60v2','70v2','80v2','90v2') $s
 Assert-Equal '70v2,90v2' ($remaining -join ',') 'returns incomplete tags in order'
 $none = Select-RemainingTags $out $prefix @('60v2','80v2') $suffix
 Assert-Equal 0 $none.Count 'all complete yields empty'
+# Exactly ONE tag remaining is the normal state near the end of every sweep, and it is
+# the case PowerShell's array-unrolling-on-return silently breaks: a bare "return
+# $remaining" collapses a single-element array to a scalar STRING, so Task 9's
+# $remaining[0] would index the string's first CHARACTER ('7') instead of the tag
+# ('70v2'), and the crash directory would never get deleted before relaunch.
+$one = Select-RemainingTags $out $prefix @('60v2','70v2','80v2') $suffix
+Assert-Equal $true ($one -is [array]) 'single remaining tag is still an array, not an unrolled scalar'
+Assert-Equal 1 $one.Count 'single remaining tag: count is 1'
+Assert-Equal '70v2' $one[0] 'single remaining tag: element 0 is the tag, not its first character'
 
 Write-Host 'Test-StepAComplete'
 $carriers = Join-Path $tmp 'hagrid-output'
@@ -49,7 +58,11 @@ Assert-Equal $false (Test-StepAComplete $carriers $prefix @('60v2','70v2')) 'one
 
 Write-Host 'New-StepBBatch writes CRLF ASCII'
 $bat = Join-Path $tmp 'run_resume.bat'
-New-StepBBatch $bat @('70v2','90v2') 'C:\jdk\bin\java.exe' 'C:\repo\app.jar' 'C:\repo\pipeline'
+# ArgTemplate is a REQUIRED parameter carrying the full, non-hardcoded sweep config:
+# a default would be exactly how a stale config value (old date, old jsprit
+# iteration count) creeps back into a boot-triggered relaunch nobody is watching.
+$argTemplate = 'concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true'
+New-StepBBatch $bat @('70v2','90v2') 'C:\jdk\bin\java.exe' 'C:\repo\app.jar' 'C:\repo\pipeline' $argTemplate
 $bytes = [IO.File]::ReadAllBytes($bat)
 $text  = [Text.Encoding]::ASCII.GetString($bytes)
 $cr = ($text.ToCharArray() | Where-Object { $_ -eq "`r" }).Count
@@ -60,8 +73,16 @@ Assert-Equal $true ($text -like '*tag=70v2*') 'first tag present'
 Assert-Equal $true ($text -like '*tag=90v2*') 'second tag present'
 Assert-Equal $true ($text.IndexOf('tag=70v2') -lt $text.IndexOf('tag=90v2')) 'tags in ascending order'
 Assert-Equal $true ($text -like '*RESUME_DONE*') 'completion marker present for the heartbeat to see'
-$nonAscii = ($bytes | Where-Object { $_ -gt 127 }).Count
-Assert-Equal 0 $nonAscii 'no non-ASCII bytes'
+# The template's values must actually reach the generated batch, once per tag - not
+# a hand-typed literal that can silently drift from the real sweep config.
+$maxIterCount = ([regex]::Matches($text, 'maxIter=150')).Count
+Assert-Equal 2 $maxIterCount 'ArgTemplate values (maxIter=150) reach the batch once per tag'
+Assert-Equal $false ($text -like '*{TAG}*') '{TAG} placeholder is fully substituted, none left literal'
+# ASCIIEncoding.GetBytes() silently replaces any non-ASCII source character with
+# '?' BEFORE the byte array exists, so counting bytes above 127 can never observe
+# an encoding slip - that assertion cannot fail no matter what. A literal '?' in
+# the decoded text is the only observable symptom of a mangled character.
+Assert-Equal $false ($text.Contains('?')) 'no non-ASCII source characters were silently replaced with ?'
 
 Write-Host 'Test-LockFree'
 # Deliberately tests the PURE lock predicate, not Test-CanLaunch: the latter also
