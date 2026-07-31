@@ -2,9 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Distanz- und geschwindigkeitsbasierte Tank-to-Wheel/Well-to-Wheel-Emissions-KPIs (CO₂e-Kern + NOx/PM/CO/VOC/CH4/SPN23 + Energie) für DRT- und LMD-Flotte aller Lausitz-Szenarien, aus EMEP/EEA-Guidebook-2025-Tier-3-Faktoren, als reines Post-Processing im bestehenden `analysis/kpi/`-Stack — inklusive BEV-Faktorsatz-Arm und EV-Reichweiten-Gate.
+> **Revision 2026-07-31 (Rev. B).** Substanzielle Überarbeitung nach Datenprüfung. Geändert gegenüber Rev. A:
+> 1. **Segmentdifferenzierung statt Einheitsklasse.** Nicht mehr „alle Fahrzeuge N1-III", sondern `ct_cep_size_s` → N1-II, `_m`/`_l` → N1-III. Grund: die Van-Flotte ist real gemischt und der Mix ist jsprit-Ergebnis, keine Konstante (base10c: 93 % der km auf `size_s`; `localdepots_stagger`: 100 % `size_m`). Eine Einheitsklasse N1-III überschätzt die Baseline-Freight-Energie um ~39 %.
+> 2. **Keine Zuladungsskalierung.** Geprüft und verworfen — methodenkonform, siehe Global Constraints. Ersetzt die in der Diskussion erwogene STREAM-Multiplikator-Variante (Quellenmischung, kein definierter Nullpunkt).
+> 3. **Zitat korrigiert:** „EMEP/EEA Guidebook **2023 – Update 2025**", nicht „2025".
+> 4. **EV-Gate als Schwellen-Sweep** (150/200/250 km) statt Einzel-Pass/Fail — bei 250 km ist die Überschreitung in allen 12 geprüften Läufen 0 %, das Gate wäre wirkungslos.
+> 5. **Dritter Datenpfad (Task 5b)** für den modularen Arm: 1d/1c haben kein `analysis/freight/`, die Fracht fährt in DRT-Fahrzeugen.
 
-**Architecture:** Ein einmaliges Extraktions-Tool zieht die COPERT-5.9.1-Koeffizienten aus dem Appendix-4-xlsx in eine committete, zitierfähige CSV. Ein neues Modul `emissions_emep.py` evaluiert die Tier-3-Kurven `EF(v) = (αv²+βv+γ+δ/v)/(εv²+ζv+η)·(1−RF)` und rechnet daraus pro Fahrzeug/Tour den vollen Schadstoffvektor (Diesel- UND BEV-Arm in einem Durchlauf). `extract_emissions.py` speist das als neue KPI-Gruppe `environment` in die bestehende `build_kpis.py`-Pipeline ein — Freight aus `TimeDistance_perVehicle.tsv` (Distanz+Fahrzeit je Tour), DRT aus Event-Pfadrekonstruktion (echte Link-Längen) + `reconstruct()`-DRIVE-Zeiten. Kein MATSim-Re-Run, keine Java-Änderung.
+**Goal:** Distanz- und geschwindigkeitsbasierte Tank-to-Wheel/Well-to-Wheel-Emissions-KPIs (CO₂e-Kern + NOx/PM/CO/VOC/CH4/SPN23 + Energie) für DRT- und LMD-Flotte aller Lausitz-Szenarien, aus Tier-3-Faktoren des EMEP/EEA-Guidebook 2023 (Update 2025), als reines Post-Processing im bestehenden `analysis/kpi/`-Stack — segmentdifferenziert (N1-II/N1-III), inklusive BEV-Faktorsatz-Arm und EV-Reichweiten-Sweep.
+
+**Architecture:** Ein einmaliges Extraktions-Tool zieht die COPERT-5.9.1-Koeffizienten aus dem Appendix-4-xlsx in eine committete, zitierfähige CSV — **alle drei N1-Segmente**, damit die Klassenzuordnung eine Datenzeile und keine Code-Änderung ist. Ein neues Modul `emissions_emep.py` evaluiert die Tier-3-Kurven `EF(v) = (αv²+βv+γ+δ/v)/(εv²+ζv+η)·(1−RF)` und rechnet daraus pro Fahrzeug/Tour den vollen Schadstoffvektor (Diesel- UND BEV-Arm in einem Durchlauf). `extract_emissions.py` speist das als neue KPI-Gruppe `environment` in die bestehende `build_kpis.py`-Pipeline ein — über **drei** Datenpfade: konventioneller Freight aus `TimeDistance_perVehicle.tsv` (Distanz+Fahrzeit je Tour), modularer Freight aus `MODULAR_FREIGHT_DRIVE`-Taskfenstern ∩ rekonstruiertem Link-Pfad, DRT-Pax aus Event-Pfadrekonstruktion (echte Link-Längen) + `reconstruct()`-DRIVE-Zeiten. Kein MATSim-Re-Run, keine Java-Änderung.
 
 **Tech Stack:** Python 3 (pandas, openpyxl), pytest; bestehende KPI-Pipeline `parcel-demand-2-matsim-pipeline/analysis/kpi/`.
 
@@ -13,17 +20,39 @@
 - **`src/hagrid_output_analysis/**` (insb. `emissions.py`, `config.py`) wird NICHT angefasst** — Kollegen-Paper-Freeze bis mind. 2026-08-11 (User 2026-07-28). Alles Neue lebt in `analysis/kpi/`.
 - Windows/cp1252: **ASCII-only in allen `print()`**; Python immer `python -u`.
 - KPI-Konventionen: Zeilen via `common.row(kpi_group, kpi_name, value, unit, source)`; Extractor bleibt run-agnostisch (kein run_id in den Rows); neue Gruppe heißt exakt `"environment"`.
-- Faktor-Provenance in jeder Quellenangabe: „EMEP/EEA Guidebook 2025, App. 4 (Okt 2025, COPERT 5.9.1)".
+- Faktor-Provenance in jeder Quellenangabe: „EMEP/EEA air pollutant emission inventory guidebook **2023 – Update 2025**, ch. 1.A.3.b.i-iv App. 4 (Okt 2025, COPERT 5.9.1)". **Nicht** „Guidebook 2025" — die Kopfzeile jeder Kapitelseite lautet „guidebook 2023 – Update 2025". Diese Zeichenkette landet in der `source`-Spalte jeder Faktorzeile und damit in jeder Paper-Tabelle.
 - **Gotcha:** Spalte `Reduction Factor [%]` im xlsx enthält **Bruchteile, nicht Prozent** (NOx Euro 7 = 0.282175 ≙ 28,2 %). Formel: `EF = (α·v² + β·v + γ + δ/v) / (ε·v² + ζ·v + η) · (1 − RF)`, v geclampt auf [Min Speed, Max Speed]. Validiert gegen die mitgelieferte EF(v=80)-Kontrollspalte (EC N1-III Diesel Euro 7 DPF+SCR: 2.7322 MJ/km).
-- Klassenmapping (User-entschieden 2026-07-28): **beide Flotten N1-III Diesel Euro 7, Technologie DPF+SCR**; BEV-Arm: N1-III Battery electric Euro 7 (nur EC-Kurve).
+- Klassenmapping: siehe eigener Abschnitt unten (Rev. B).
 - Xlsx-Quelle: `parcel-demand-2-matsim-pipeline/hagrid-input/emissions/1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx` (2026-07-28 aus `~/Downloads` dorthin verlegt; Provenance-Tabelle: `hagrid-input/emissions/SOURCES.md`) — wird NICHT committet (Größe, wie der übrige `hagrid-input`-Inhalt); committet werden die extrahierten CSVs + `data/README.md` mit URL/Version/Download-Datum.
 - Tests laufen aus `parcel-demand-2-matsim-pipeline/analysis/kpi/`: `python -u -m pytest tests/<file> -v`.
 - Git: auf Branch `hendrik` committen; Commit-Messages enden mit `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
+### Klassenmapping (Rev. B, 2026-07-31)
+
+Alle Fahrzeuge bleiben **LCV (N1) Diesel Euro 7, Technologie DPF+SCR**; BEV-Arm: dasselbe Segment mit `Fuel = Battery electric` (nur EC-Kurve). Variiert wird ausschließlich das **Segment**, also die methodeneigene Massenklasse:
+
+| Fahrzeugtyp | Kapa | Länge | angesetzte Bezugsmasse | Segment |
+|---|---|---|---|---|
+| `ct_cep_size_s` | 100 | 4,0 m | ~1700 kg | **N1-II** |
+| `ct_cep_size_m` | 165 | 5,0 m | ~2000 kg | **N1-III** |
+| `ct_cep_size_l` | 230 | 6,0 m | ~2400 kg | **N1-III** |
+| generierte `ct_cep_<cap>_<tpl>` (Hannover-Sweep) | var. | — | Kapazitätsregel | Kapa ≤ 120 → N1-II, sonst N1-III |
+| DRT-Fahrzeug (`drt_*`, `capacity="10"`) | — | — | Sprinter-Tourer-Klasse | **N1-III** (Kategoriensubstitution, s.u.) |
+
+Die Bezugsmasse ist **je Typ eine ausgewiesene Annahme** — sie ist die Größe, über die die EU-Typgenehmigung die N1-Segmente definiert (≤1305 / ≤1760 / >1760 kg); das Segment folgt daraus mechanisch. Damit steht pro Fahrzeugtyp *eine* nachvollziehbare Annahme statt einer freihändigen Segmentwahl.
+
+**Achtung Zitatkette:** diese Massengrenzen stehen **nicht** im Guidebook-Kapitel (kein Treffer für „1305", „1760", „reference mass" im PDF); dort ist nur N1 als Ganzes definiert („vehicles used for the carriage of goods and having a maximum weight not exceeding 3.5 tonnes", Tab. 2-1). Die Segmentgrenzen sind aus der EU-Typgenehmigung zu zitieren, nicht aus dem Guidebook.
+
+**Warum keine Zuladungsskalierung** (geprüft 2026-07-31, verworfen): Das Guidebook beschränkt die Lastkorrektur explizit auf schwere Nutzfahrzeuge — S. 62 f., Abschnitt „Emission corrections": *„road gradient and vehicle load. Corrections need to be made to **heavy-duty vehicle** emissions […] Also, by default, a factor of 50 % is considered for a load of heavy-duty vehicles."* Für LCV ist Zuladung **kein Methodenparameter** (0 von 1087 LCV-Zeilen im xlsx tragen `Load` oder `Road Slope`), und ein Referenz-Ladezustand ist für LCV nicht dokumentiert — es gibt also keinen Nullpunkt, an dem ein Lastmultiplikator ansetzen könnte. EMEP legt den Masseeffekt bei leichten Fahrzeugen in das **Segment**, nicht in die Last. Die Segmentdifferenzierung oben ist damit die methodenkonforme Abbildung genau dieses Effekts (43 % zwischen N1-II und N1-III bei 30 km/h); der nicht modellierte Lasteffekt wird als Limitation geführt und über die HDV-Parametrisierung gebounded (≤13 % für einen 7,5-Tonner, ~5 % für unsere Vans). Eine Quellenmischung (EMEP-Niveau × STREAM-Lastverhältnis) ist ausdrücklich **nicht** zulässig — sie hätte weder einen definierten Nullpunkt noch eine haltbare Invarianzannahme über zwei Methoden hinweg.
+
+**Kategoriensubstitution M2 → N1-III** (zu benennende Annahme): Das DRT-Fahrzeug hat `capacity="10"`, ist also nach Guidebook-Definition M2 („more than eight seats in addition to the driver's seat […] not exceeding 5 tonnes", Tab. 2-1). Die beiden nominell passenden Alternativen sind schlechter — EC bei 30 km/h: PC Large-SUV-Executive Euro 7 Diesel 2,545 MJ/km (zu leicht), **LCV N1-III 3,123**, Buses Urban Midi ≤15 t Euro VI bei Guidebook-Default-Last 50 % ≈ 9,1 MJ/km (Faktor ~3 zu hoch). N1-III ist die technisch richtige Entsprechung (ein 10-sitziger Sprinter Tourer *ist* ein N1-III-Sprinter mit Sitzen). Im Paper mit diesen drei Zahlen ausschreiben, nicht stillschweigend annehmen.
+
+**Wo das Mapping lebt:** in der committeten `analysis/kpi/`-Ebene (Segmentspalte in der CSV + Zuordnungsregel in `extract_emissions.py`), **nicht** als `engineInformation`-Attribut in `lmd-vehicle-types.xml` — `hagrid-input/**` ist gitignored und soll es bleiben; ein Mapping in einer nicht committeten Datei wäre nicht reproduzierbar.
+
 ## File Structure
 
 - Create: `analysis/kpi/emep_factor_extract.py` — einmaliges xlsx→CSV-Tool (committet für Reproduzierbarkeit)
-- Create: `analysis/kpi/data/emep_hot_factors.csv` — Tier-3-Koeffizienten (7 Diesel-Zeilen + 1 BEV-EC-Zeile)
+- Create: `analysis/kpi/data/emep_hot_factors.csv` — Tier-3-Koeffizienten für **alle drei N1-Segmente** (3 × 7 Diesel-Zeilen + 3 BEV-EC-Zeilen = 24)
 - Create: `analysis/kpi/data/emep_supplement.csv` — Energiekette/GWP/N2O/Non-Exhaust/BEV-Korrekturen/EV-Reichweite, je mit Quelle
 - Create: `analysis/kpi/data/README.md` — Quellendokumentation (zitierfähig, Paper-Referenz)
 - Create: `analysis/kpi/emissions_emep.py` — Faktor-Loader, `ef(v)`, `vehicle_emissions()`, `non_exhaust_pm10()`
@@ -43,8 +72,9 @@
 - Test: `analysis/kpi/tests/test_emissions_emep.py`
 
 **Interfaces:**
-- Produces: `data/emep_hot_factors.csv` mit Spalten (exakt): `powertrain,pollutant,alpha,beta,gamma,delta,epsilon,zita,hta,rf,vmin,vmax,ef_check_v,ef_check,unit,source` — konsumiert von Task 2 `load_factors()`.
-- `powertrain` ∈ {`diesel`,`bev`}; `pollutant` ∈ {`CO`,`NOx`,`VOC`,`PM Exhaust`,`EC`,`CH4`,`SPN23`} (diesel) bzw. {`EC`} (bev). `unit`: `g/km` außer `EC`→`MJ/km`, `SPN23`→`#/km`. `rf` als Bruchteil.
+- Produces: `data/emep_hot_factors.csv` mit Spalten (exakt): `powertrain,segment,pollutant,alpha,beta,gamma,delta,epsilon,zita,hta,rf,vmin,vmax,ef_check_v,ef_check,unit,source` — konsumiert von Task 2 `load_factors()`.
+- `powertrain` ∈ {`diesel`,`bev`}; **`segment` ∈ {`N1-I`,`N1-II`,`N1-III`}**; `pollutant` ∈ {`CO`,`NOx`,`VOC`,`PM Exhaust`,`EC`,`CH4`,`SPN23`} (diesel) bzw. {`EC`} (bev). `unit`: `g/km` außer `EC`→`MJ/km`, `SPN23`→`#/km`. `rf` als Bruchteil.
+- **Alle drei Segmente werden extrahiert**, auch das aktuell nicht zugeordnete N1-I. Grund: die Klassenzuordnung soll eine Datenzeile sein, keine Code-Änderung — und N1-I ist der Sensitivitäts-Nachbar von N1-II (Energie praktisch identisch: 2,157 vs. 2,183 MJ/km @30 km/h, NOx aber Faktor 1,67 auseinander).
 
 - [ ] **Step 1: Failing Test schreiben** — Transform-Funktion wird gegen einen In-Memory-DataFrame getestet (kein xlsx im Test nötig):
 
@@ -76,9 +106,10 @@ def _fake_sheet():
 def test_transform_filters_and_maps_columns():
     from emep_factor_extract import transform
     out = transform(_fake_sheet())
-    # nur N1-III Euro 7: Diesel-DPF+SCR-Zeilen + BEV-EC; DPF-only und Bus fliegen raus
+    # LCV Euro 7: Diesel-DPF+SCR-Zeilen + BEV-EC; DPF-only und Bus fliegen raus
     assert set(out["powertrain"]) == {"diesel", "bev"}
-    nox = out[(out["powertrain"] == "diesel") & (out["pollutant"] == "NOx")]
+    nox = out[(out["powertrain"] == "diesel") & (out["pollutant"] == "NOx")
+              & (out["segment"] == "N1-III")]
     assert len(nox) == 1
     r = nox.iloc[0]
     assert r["rf"] == pytest.approx(0.282175)      # Bruchteil, NICHT /100
@@ -89,7 +120,26 @@ def test_transform_filters_and_maps_columns():
     bev = out[out["powertrain"] == "bev"]
     assert list(bev["pollutant"]) == ["EC"]
     assert bev.iloc[0]["unit"] == "MJ/km"
+    assert bev.iloc[0]["segment"] == "N1-III"
     assert (out["source"].str.contains("COPERT 5.9.1")).all()
+    assert (out["source"].str.contains("2023 - Update 2025")).all()
+
+def test_transform_keeps_all_three_n1_segments():
+    """Rev. B: das Klassenmapping soll eine Datenzeile sein, keine
+    Code-Aenderung -- also alle drei Segmente extrahieren."""
+    from emep_factor_extract import transform
+    df = _fake_sheet().copy()
+    for seg in ("N1-I", "N1-II"):
+        extra = df[df["Segment"] == "N1-III"].copy()
+        extra["Segment"] = seg
+        df = pd.concat([df, extra], ignore_index=True)
+    out = transform(df)
+    assert set(out["segment"]) == {"N1-I", "N1-II", "N1-III"}
+    # je Segment die Diesel-NOx-Zeile genau einmal
+    for seg in ("N1-I", "N1-II", "N1-III"):
+        sel = out[(out["segment"] == seg) & (out["powertrain"] == "diesel")
+                  & (out["pollutant"] == "NOx")]
+        assert len(sel) == 1, seg
 ```
 
 - [ ] **Step 2: Test laufen lassen, Fehlschlag bestätigen**
@@ -103,12 +153,19 @@ Expected: FAIL — `ModuleNotFoundError: emep_factor_extract`
 # -*- coding: utf-8 -*-
 # analysis/kpi/emep_factor_extract.py
 """One-time extraction of the Tier-3 hot emission factor coefficients from
-the EMEP/EEA Guidebook 2025 Appendix 4 xlsx (Oct 2025, COPERT 5.9.1) into
-the committed data/emep_hot_factors.csv.
+the EMEP/EEA guidebook 2023 (Update 2025) Appendix 4 xlsx (Oct 2025,
+COPERT 5.9.1) into the committed data/emep_hot_factors.csv.
 
-Fleet mapping (user decision 2026-07-28): BOTH fleets (DRT minibuses, LMD
-vans ct_cep_size_s/m/l) = LCV N1-III Diesel Euro 7, technology DPF+SCR;
-BEV arm = N1-III Battery electric (EC curve only).
+Scope: LCV (N1) Euro 7, Diesel technology DPF+SCR plus the Battery
+electric EC curve, for ALL THREE N1 segments. The segment -> vehicle-type
+assignment itself lives in extract_emissions.SEGMENT_BY_TYPE / the
+capacity rule, NOT here -- so re-mapping a class is a data/config change,
+not an extraction re-run.
+
+Load is deliberately NOT a dimension: the guidebook restricts the load
+correction to heavy-duty vehicles (default 50 % load factor, ch.
+1.A.3.b.i-iv p. 62 f.); LCV rows carry no Load/Road Slope column at all
+and no documented reference load state. See the plan's Global Constraints.
 
 NOTE the xlsx gotcha: column 'Reduction Factor [%]' holds FRACTIONS
 (0.282175 = 28.2 %), not percent values. Copied through unchanged.
@@ -121,10 +178,13 @@ from pathlib import Path
 
 import pandas as pd
 
-SOURCE = ("EMEP/EEA Guidebook 2025, ch. 1.A.3.b.i-iv Appendix 4 "
+SOURCE = ("EMEP/EEA air pollutant emission inventory guidebook "
+          "2023 - Update 2025, ch. 1.A.3.b.i-iv Appendix 4 "
           "(Oct 2025, COPERT 5.9.1)")
+SEGMENTS = ("N1-I", "N1-II", "N1-III")
 UNIT_BY_POLL = {"EC": "MJ/km", "SPN23": "#/km"}   # default: g/km
-COLMAP = {"Pollutant": "pollutant", "Alpha": "alpha", "Beta": "beta",
+COLMAP = {"Segment": "segment", "Pollutant": "pollutant",
+          "Alpha": "alpha", "Beta": "beta",
           "Gamma": "gamma", "Delta": "delta", "Epsilon": "epsilon",
           "Zita": "zita", "Hta": "hta", "Reduction Factor [%]": "rf",
           "Min Speed [km/h]": "vmin", "Max Speed [km/h]": "vmax"}
@@ -132,10 +192,10 @@ EF_COL = "EF [g/km] or ECF [MJ/km] or #/km or #/kWh or g/kWh"
 
 
 def transform(df):
-    """Filter the HOT_EMISSIONS_PARAMETERS sheet to the two factor sets and
-    map to the committed CSV schema. Returns a DataFrame."""
+    """Filter the HOT_EMISSIONS_PARAMETERS sheet to the two factor sets,
+    all three N1 segments, and map to the committed CSV schema."""
     lcv = df[(df["Category"] == "Light Commercial Vehicles")
-             & (df["Segment"] == "N1-III")
+             & (df["Segment"].isin(SEGMENTS))
              & (df["Euro Standard"] == "Euro 7")]
     diesel = lcv[(lcv["Fuel"] == "Diesel") & (lcv["Technology"] == "DPF+SCR")]
     bev = lcv[lcv["Fuel"] == "Battery electric"]
@@ -151,8 +211,8 @@ def transform(df):
             row["unit"] = UNIT_BY_POLL.get(row["pollutant"], "g/km")
             row["source"] = SOURCE
             out.append(row)
-    cols = ["powertrain", "pollutant", "alpha", "beta", "gamma", "delta",
-            "epsilon", "zita", "hta", "rf", "vmin", "vmax",
+    cols = ["powertrain", "segment", "pollutant", "alpha", "beta", "gamma",
+            "delta", "epsilon", "zita", "hta", "rf", "vmin", "vmax",
             "ef_check_v", "ef_check", "unit", "source"]
     return pd.DataFrame(out)[cols]
 
@@ -178,14 +238,22 @@ Expected: PASS
 - [ ] **Step 5: Tool einmal real ausführen und CSV erzeugen**
 
 Run (aus `analysis/kpi/`):
-`python -u emep_factor_extract.py "C:/Users/Hendrik Bimmermann/Downloads/1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx"`
-Expected: `wrote .../data/emep_hot_factors.csv (8 rows)` — 7 Diesel-Zeilen (CO, NOx, VOC, PM Exhaust, EC, CH4, SPN23) + 1 BEV-EC-Zeile. CSV öffnen und Stichprobe prüfen: Diesel-EC `ef_check` ≈ 2.7322, NOx `rf` ≈ 0.282175.
+`python -u emep_factor_extract.py "../../hagrid-input/emissions/1.A.3.b.i-iv Road Transport Appendix 4 Emission Factors Oct_2025.xlsx"`
+Expected: `wrote .../data/emep_hot_factors.csv (24 rows)` — 3 Segmente × 7 Diesel-Zeilen (CO, NOx, VOC, PM Exhaust, EC, CH4, SPN23) + 3 BEV-EC-Zeilen. CSV öffnen und Stichprobe prüfen (verifizierte Werte, 2026-07-31):
+
+| Segment | Diesel EC `ef_check` (v=80) | Diesel NOx | BEV EC |
+|---|---|---|---|
+| N1-I | 1.729636 | 0.038473 | 0.569087 |
+| N1-II | 1.910160 | 0.093489 | 0.842321 |
+| N1-III | **2.732177** | 0.093489 | 1.169166 |
+
+Ebenso: NOx `rf` ≈ 0.282175, `PM Exhaust` = 0.000142 in allen drei Segmenten (DPF → keine Segmentdifferenzierung).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add analysis/kpi/emep_factor_extract.py analysis/kpi/data/emep_hot_factors.csv analysis/kpi/tests/test_emissions_emep.py
-git commit -m "feat(emissions): EMEP/EEA App.4 Tier-3 factor extraction (N1-III Euro 7 DPF+SCR + BEV)
+git commit -m "feat(emissions): EMEP/EEA App.4 Tier-3 factor extraction (N1-I/II/III Euro 7 DPF+SCR + BEV)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -200,7 +268,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `data/emep_hot_factors.csv` (Task-1-Schema).
-- Produces: `emissions_emep.load_factors(data_dir=None) -> dict` mit Struktur `{"diesel": {pollutant: coef}, "bev": {"EC": coef}, "sup": {}}` (`sup` füllt Task 3; `coef` = dict mit float-Keys `alpha,beta,gamma,delta,epsilon,zita,hta,rf,vmin,vmax,ef_check_v,ef_check` + str `unit`). — `emissions_emep.ef(v_kmh, coef) -> float`.
+- Produces: `emissions_emep.load_factors(data_dir=None) -> dict` mit Struktur `{"diesel": {segment: {pollutant: coef}}, "bev": {segment: {"EC": coef}}, "sup": {}}` — **eine Ebene tiefer als Rev. A** (`segment` ∈ {`N1-I`,`N1-II`,`N1-III`}). `sup` füllt Task 3; `coef` = dict mit float-Keys `alpha,beta,gamma,delta,epsilon,zita,hta,rf,vmin,vmax,ef_check_v,ef_check` + str `unit`. — `emissions_emep.ef(v_kmh, coef) -> float` unverändert.
 
 - [ ] **Step 1: Failing Tests anhängen** — der Regressionstest validiert JEDE committete Zeile gegen die mitgelieferte EF(80)-Kontrollspalte:
 
@@ -211,22 +279,47 @@ def test_ef_reproduces_appendix_check_column_for_every_row():
     fac = em.load_factors()
     checked = 0
     for pt in ("diesel", "bev"):
-        for poll, c in fac[pt].items():
-            got = em.ef(c["ef_check_v"], c)
-            # rel=1e-4: validiert Formelstruktur + RF-als-Bruchteil (ein
-            # Prozent-Fehler laege ~39 % daneben); letzte Stellen der
-            # xlsx-Kontrollspalte koennen rundungsbedingt abweichen.
-            assert got == pytest.approx(c["ef_check"], rel=1e-4), (pt, poll)
-            checked += 1
-    assert checked == 8
+        for seg, polls in fac[pt].items():
+            for poll, c in polls.items():
+                got = em.ef(c["ef_check_v"], c)
+                # rel=1e-4: validiert Formelstruktur + RF-als-Bruchteil (ein
+                # Prozent-Fehler laege ~39 % daneben); letzte Stellen der
+                # xlsx-Kontrollspalte koennen rundungsbedingt abweichen.
+                assert got == pytest.approx(c["ef_check"], rel=1e-4), (pt, seg, poll)
+                checked += 1
+    assert checked == 24            # 3 Segmente x (7 Diesel + 1 BEV)
 
 def test_ef_clamps_speed_to_curve_range():
     import emissions_emep as em
     fac = em.load_factors()
-    c = fac["diesel"]["NOx"]           # vmin=5, vmax=140
+    c = fac["diesel"]["N1-III"]["NOx"]        # vmin=5, vmax=140
     assert em.ef(1.0, c) == em.ef(5.0, c)
     assert em.ef(200.0, c) == em.ef(140.0, c)
     assert em.ef(80.0, c) > 0
+
+def test_segment_ordering_at_tour_speed():
+    """Rev. B: die Segmentdifferenzierung ist der Kern des Plans -- die
+    Kernaussagen werden hier festgenagelt, damit ein Faktor-Reimport, der
+    sie kippt, laut scheitert. Werte verifiziert 2026-07-31 bei 30 km/h
+    (Tourmittelgeschwindigkeit der Laeufe: 36 km/h)."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    ec = {s: em.ef(30.0, fac["diesel"][s]["EC"])
+          for s in ("N1-I", "N1-II", "N1-III")}
+    assert ec["N1-I"] == pytest.approx(2.157, rel=2e-3)
+    assert ec["N1-II"] == pytest.approx(2.183, rel=2e-3)
+    assert ec["N1-III"] == pytest.approx(3.123, rel=2e-3)
+    # der einzige relevante Energie-Bruch liegt zwischen II und III (~43 %)
+    assert ec["N1-III"] / ec["N1-II"] == pytest.approx(1.43, rel=0.02)
+    # NOx: II und III sind identisch, der Bruch liegt zwischen I und II
+    nox = {s: em.ef(30.0, fac["diesel"][s]["NOx"])
+           for s in ("N1-I", "N1-II", "N1-III")}
+    assert nox["N1-II"] == pytest.approx(nox["N1-III"])
+    assert nox["N1-II"] / nox["N1-I"] == pytest.approx(1.67, rel=0.02)
+    # PM exhaust: DPF -> keine Segmentdifferenzierung
+    pm = {s: em.ef(30.0, fac["diesel"][s]["PM Exhaust"])
+          for s in ("N1-I", "N1-II", "N1-III")}
+    assert pm["N1-I"] == pytest.approx(pm["N1-III"])
 ```
 
 - [ ] **Step 2: Fehlschlag bestätigen**
@@ -243,7 +336,12 @@ Expected: FAIL — `ModuleNotFoundError: emissions_emep`
 
 Deliberately independent of src/hagrid_output_analysis/emissions.py (that
 module backs a colleague's published paper and is frozen; user decision
-2026-07-28). Factor data lives in data/*.csv with full provenance columns.
+2026-07-28). NOTE the methodological difference: that module uses STREAM
+(empty, full) factor pairs interpolated by load_pct, this one uses EMEP/EEA
+speed curves with the mass effect carried by the N1 SEGMENT and no load
+dimension (guidebook restricts load correction to HDV). The two are
+independent sources and must NOT be blended -- see the plan's Global
+Constraints. Factor data lives in data/*.csv with full provenance columns.
 
 Curve form (COPERT v5, validated against the Appendix-4 EF(v=80) check
 column in test_emissions_emep.py):
@@ -262,13 +360,14 @@ _NUM = ("alpha", "beta", "gamma", "delta", "epsilon", "zita", "hta",
 
 
 def load_factors(data_dir=None):
+    """-> {"diesel": {segment: {pollutant: coef}}, "bev": {...}, "sup": {}}"""
     d = Path(data_dir) if data_dir else DATA_DIR
     fac = {"diesel": {}, "bev": {}, "sup": {}}
     with open(d / "emep_hot_factors.csv", newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             coef = {k: float(r[k]) for k in _NUM}
             coef["unit"] = r["unit"]
-            fac[r["powertrain"]][r["pollutant"]] = coef
+            fac[r["powertrain"]].setdefault(r["segment"], {})[r["pollutant"]] = coef
     sup_file = d / "emep_supplement.csv"
     if sup_file.exists():
         with open(sup_file, newline="", encoding="utf-8") as f:
@@ -288,7 +387,7 @@ def ef(v_kmh, coef):
 - [ ] **Step 4: PASS bestätigen**
 
 Run: `python -u -m pytest tests/test_emissions_emep.py -v`
-Expected: PASS (alle 8 Zeilen reproduzieren die Kontrollspalte; falls eine Zeile mit rel=1e-6 scheitert, prüfen ob das Tool volle Zellpräzision exportiert hat — `to_csv` ohne `float_format` behält volle Präzision, das ist gewollt)
+Expected: PASS (alle 24 Zeilen reproduzieren die Kontrollspalte; falls eine Zeile mit rel=1e-6 scheitert, prüfen ob das Tool volle Zellpräzision exportiert hat — `to_csv` ohne `float_format` behält volle Präzision, das ist gewollt)
 
 - [ ] **Step 5: Commit**
 
@@ -309,7 +408,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `analysis/kpi/tests/test_emissions_emep.py` (erweitern)
 
 **Interfaces:**
-- Produces: `emep_supplement.csv` mit Spalten `name,value,unit,source` und exakt diesen `name`-Keys (von Task 4 konsumiert): `ttw_co2_g_per_mj_diesel`, `wtt_co2e_g_per_mj_diesel`, `grid_co2e_g_per_mj`, `gwp_ch4`, `gwp_n2o`, `n2o_g_per_km_diesel_lcv`, `tsp_tyre_g_per_km_lcv`, `tsp_brake_g_per_km_lcv`, `tsp_road_g_per_km_lcv`, `pm10_frac_tyre`, `pm10_frac_brake`, `pm10_frac_road`, `bev_tyre_mult`, `bev_brake_mult`, `ev_range_km`.
+- Produces: `emep_supplement.csv` mit Spalten `name,value,unit,source` und exakt diesen `name`-Keys (von Task 4 konsumiert): `ttw_co2_g_per_mj_diesel`, `wtt_co2e_g_per_mj_diesel`, `grid_co2e_g_per_mj`, `gwp_ch4`, `gwp_n2o`, `n2o_g_per_km_diesel_lcv`, `tsp_tyre_g_per_km_lcv`, `tsp_brake_g_per_km_lcv`, `tsp_road_g_per_km_lcv`, `pm10_frac_tyre`, `pm10_frac_brake`, `pm10_frac_road`, `bev_tyre_mult`, `bev_brake_mult`, **`ev_range_km_low`, `ev_range_km_mid`, `ev_range_km_high`**.
+- **Rev. B:** `ev_range_km` (Einzelwert) ist durch **drei Schwellen** ersetzt. Begründung (Messung 2026-07-31 über 12 Läufe mit Freight-Touren): bei 250 km ist die Überschreitung in **jedem** Lauf 0 %, das Gate wäre wirkungslos. Längste Tour überhaupt 183,3 km; base10c: max 158,8, p95 139,3. Trennschärfe liegt allein bei ~150 km (dort 0–13,4 % je Lauf). Ein einzelner Wert würde ein Nullresultat produzieren, das nach Absicherung aussieht.
 
 - [ ] **Step 1: Kandidatenwerte gegen die Originalquellen verifizieren.** Die Werte unten sind fachlich begründete Kandidaten; VOR dem Commit jeden gegen die genannte Quelle prüfen und bei Abweichung korrigieren (Quelle gewinnt immer):
   - Non-Exhaust-Basen + PM10-Anteile + Speed-Korrekturen: EMEP/EEA Guidebook, Kapitel **1.A.3.b.vi-vii** (Tyre/brake/road wear), PDF frei auf https://www.eea.europa.eu/en/analysis/publications/emep-eea-guidebook-2025 — Tier-2-Tabellen für LCV.
@@ -330,7 +430,8 @@ def test_supplement_present_and_plausible():
                 "tsp_tyre_g_per_km_lcv", "tsp_brake_g_per_km_lcv",
                 "tsp_road_g_per_km_lcv", "pm10_frac_tyre",
                 "pm10_frac_brake", "pm10_frac_road",
-                "bev_tyre_mult", "bev_brake_mult", "ev_range_km"]
+                "bev_tyre_mult", "bev_brake_mult",
+                "ev_range_km_low", "ev_range_km_mid", "ev_range_km_high"]
     for k in required:
         assert k in sup, k
     assert 65 < sup["ttw_co2_g_per_mj_diesel"] < 80      # ~74 g CO2/MJ Diesel TTW
@@ -339,7 +440,11 @@ def test_supplement_present_and_plausible():
     assert 25 < sup["gwp_ch4"] < 35 and 250 < sup["gwp_n2o"] < 300
     assert 0 < sup["pm10_frac_brake"] <= 1.0
     assert sup["bev_brake_mult"] < 1.0 < sup["bev_tyre_mult"]
-    assert 150 <= sup["ev_range_km"] <= 400
+    assert (sup["ev_range_km_low"] < sup["ev_range_km_mid"]
+            < sup["ev_range_km_high"])
+    # die untere Schwelle muss unter der laengsten gemessenen Tour (183 km)
+    # liegen, sonst ist der Sweep in jedem Lauf trivial 0 (Messung 2026-07-31)
+    assert sup["ev_range_km_low"] < 183.0
 ```
 
 - [ ] **Step 3: Fehlschlag bestätigen**
@@ -365,7 +470,9 @@ pm10_frac_brake,0.98,fraction,"EMEP/EEA GB 1.A.3.b.vi mass fraction PM10 of TSP,
 pm10_frac_road,0.50,fraction,"EMEP/EEA GB 1.A.3.b.vii mass fraction PM10 of TSP, road"
 bev_tyre_mult,1.15,factor,"assumption: BEV mass penalty on tyre wear (lit. range 1.1-1.2); sensitivity param"
 bev_brake_mult,0.50,factor,"assumption: regenerative braking (lit. range 0.3-0.7); sensitivity param"
-ev_range_km,250.0,km,"conservative real-world winter range, e-LCV class (assumption; gate threshold)"
+ev_range_km_low,150.0,km,"pessimistic real-world winter range, e-LCV (sweep threshold; discriminating: 0-13.4% tour exceedance across the 12 freight runs, 2026-07-31)"
+ev_range_km_mid,200.0,km,"mid real-world range, e-LCV (sweep threshold)"
+ev_range_km_high,250.0,km,"optimistic real-world range, e-LCV (sweep threshold; 0% exceedance in all runs -- kept as the upper anchor, NOT as a pass/fail gate)"
 ```
 
 Dazu `data/README.md` (zitierfähige Quellendoku):
@@ -374,22 +481,58 @@ Dazu `data/README.md` (zitierfähige Quellendoku):
 # Emissionsfaktor-Quellen (Lausitz-Emissions-KPIs)
 
 ## emep_hot_factors.csv
-Extrahiert aus: EMEP/EEA air pollutant emission inventory guidebook 2025,
-Kapitel 1.A.3.b.i-iv "Road transport", **Appendix 4** (Version Okt 2025,
-verlinkt auf COPERT v5.9.1). Download: 2026-07-28 von
+Extrahiert aus: EMEP/EEA air pollutant emission inventory guidebook
+**2023 - Update 2025**, Kapitel 1.A.3.b.i-iv "Road transport",
+**Appendix 4** (Version Okt 2025, verlinkt auf COPERT v5.9.1).
+Download: 2026-07-28 von
 https://www.eea.europa.eu/en/analysis/publications/emep-eea-guidebook-2025
-Extraktion: `emep_factor_extract.py` (Filter: LCV N1-III, Euro 7,
-Diesel DPF+SCR bzw. Battery electric). Formel und EF(80)-Validierung:
-siehe `emissions_emep.py` + `tests/test_emissions_emep.py`.
+(Zitat-Hinweis: die Kopfzeile des Kapitels lautet "guidebook 2023 -
+Update 2025" - NICHT "guidebook 2025".)
+Extraktion: `emep_factor_extract.py` (Filter: LCV, Segmente N1-I/II/III,
+Euro 7, Diesel DPF+SCR bzw. Battery electric). Formel und
+EF(80)-Validierung: siehe `emissions_emep.py` +
+`tests/test_emissions_emep.py`.
 ACHTUNG: Spalte "Reduction Factor [%]" der Quelle enthaelt Bruchteile.
+
+## Klassenmapping (Rev. B, 2026-07-31)
+Alle Fahrzeuge sind LCV (N1) Diesel Euro 7 DPF+SCR bzw. Battery electric.
+Differenziert wird nur das Segment, also die methodeneigene Massenklasse:
+
+| Typ              | Kapa | angesetzte Bezugsmasse | Segment |
+|------------------|------|------------------------|---------|
+| ct_cep_size_s    | 100  | ~1700 kg               | N1-II   |
+| ct_cep_size_m    | 165  | ~2000 kg               | N1-III  |
+| ct_cep_size_l    | 230  | ~2400 kg               | N1-III  |
+| ct_cep_<cap>_<t> | var. | Kapazitaetsregel       | <=120 -> N1-II, sonst N1-III |
+| drt_* (cap 10)   | -    | Sprinter-Tourer-Klasse | N1-III (M2-Substitution) |
+
+Die Bezugsmasse ist je Typ eine ausgewiesene ANNAHME; die N1-Segmente sind
+ueber die Bezugsmasse definiert (<=1305 / <=1760 / >1760 kg, EU-Typ-
+genehmigung - NICHT im Guidebook-Kapitel, dort ist nur N1 als Ganzes
+definiert). Segmentwirkung bei 30 km/h: N1-II 2,183 vs. N1-III 3,123 MJ/km
+(+43 %); NOx N1-I 0,054 vs. N1-II/III 0,090 g/km; PM exhaust identisch.
+
+ZULADUNG ist bewusst NICHT modelliert - das Guidebook beschraenkt die
+Lastkorrektur auf schwere Nutzfahrzeuge (Default-Lastfaktor 50 %, Kap.
+1.A.3.b.i-iv S. 62 f.); LCV-Zeilen tragen keine Load-/Slope-Spalte und
+keinen dokumentierten Referenz-Ladezustand. Der Masseeffekt liegt bei
+EMEP im Segment. Bound des nicht modellierten Lasteffekts: <=13 % (HDV-
+Parametrisierung Rigid <=7,5 t, 0->100 % Last bei 30 km/h), ~5 % fuer
+unsere Vans. Faktoren aus anderen Quellen (z. B. STREAM-Lastverhaeltnisse
+in src/hagrid_output_analysis/config.py) duerfen hier NICHT eingemischt
+werden - keine gemeinsame Referenzbasis.
+
+Kategoriensubstitution M2 -> N1-III fuer die DRT-Flotte (cap 10, also M2
+nach Guidebook Tab. 2-1) ist eine benannte Annahme. Alternativen bei
+30 km/h: PC Large-SUV-Exec 2,545 / LCV N1-III 3,123 / Buses Urban Midi
+<=15 t (Default-Last 50 %) ~9,1 MJ/km.
 
 ## emep_supplement.csv
 Je Zeile Quelle in der `source`-Spalte. Euro-7-Faktoren sind aus
 Grenzwerten PROJIZIERT (Norm greift fuer LCV ab ~2026/27) - im Paper
-kennzeichnen. Klassenmapping-Entscheidung (2026-07-28): beide Flotten
-(DRT-Minibus Sprinter-Klasse, LMD-Vans ct_cep_size_s/m/l) = N1-III;
-`ct_cep_size_l` (230 Pakete, 6 m) ist Grauzone zum leichten Lkw ->
-optionale Sensitivitaet HDT "Rigid <=7.5 t" (nicht implementiert).
+kennzeichnen. `ev_range_km_{low,mid,high}` sind Sweep-Schwellen, kein
+Pass/Fail-Gate: bei 250 km ist die Ueberschreitung in allen 12 geprueften
+Laeufen 0 % (laengste Tour 183 km), Trennschaerfe nur bei ~150 km.
 ```
 
 - [ ] **Step 5: PASS bestätigen**
@@ -415,8 +558,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `analysis/kpi/tests/test_emissions_emep.py` (erweitern)
 
 **Interfaces:**
-- Produces (von Task 5/6 konsumiert): `vehicle_emissions(km, v_kmh, powertrain, fac) -> dict[str, float]` mit exakt den Keys `CO, NOx, VOC, PM_EXHAUST, CH4, SPN23, N2O, CO2, CO2E_TTW, CO2E_WTW, ENERGY_MJ, PM10_TYRE, PM10_BRAKE, PM10_ROAD, PM10_NONEXHAUST` — Massen in Gramm, `ENERGY_MJ` in MJ, `SPN23` in Partikelanzahl. `powertrain` ∈ {`"diesel"`,`"bev"`}; `fac` = Rückgabe von `load_factors()`.
-- Produces: `non_exhaust_pm10(km, v_kmh, powertrain, sup) -> (tyre_g, brake_g, road_g)`.
+- Produces (von Task 5/5b/6 konsumiert): `vehicle_emissions(km, v_kmh, powertrain, segment, fac) -> dict[str, float]` mit exakt den Keys `CO, NOx, VOC, PM_EXHAUST, CH4, SPN23, N2O, CO2, CO2E_TTW, CO2E_WTW, ENERGY_MJ, PM10_TYRE, PM10_BRAKE, PM10_ROAD, PM10_NONEXHAUST` — Massen in Gramm, `ENERGY_MJ` in MJ, `SPN23` in Partikelanzahl. `powertrain` ∈ {`"diesel"`,`"bev"`}; **`segment` ∈ {`"N1-I"`,`"N1-II"`,`"N1-III"`}** (Rev. B, neues Pflichtargument); `fac` = Rückgabe von `load_factors()`.
+- Produces: `non_exhaust_pm10(km, v_kmh, powertrain, sup) -> (tyre_g, brake_g, road_g)` — **kein `segment`-Argument**: die Non-Exhaust-Basen des Guidebooks (Kap. 1.A.3.b.vi-vii) sind für LCV nicht segmentiert. Bewusste Asymmetrie, im Docstring festhalten.
 
 - [ ] **Step 1: Failing Tests anhängen**
 
@@ -425,12 +568,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 def test_vehicle_emissions_diesel_matches_manual_calc():
     import emissions_emep as em
     fac = em.load_factors()
-    out = em.vehicle_emissions(100.0, 80.0, "diesel", fac)
-    ec = 100.0 * em.ef(80.0, fac["diesel"]["EC"])          # MJ
+    out = em.vehicle_emissions(100.0, 80.0, "diesel", "N1-III", fac)
+    ec = 100.0 * em.ef(80.0, fac["diesel"]["N1-III"]["EC"])          # MJ
     sup = fac["sup"]
     assert out["ENERGY_MJ"] == pytest.approx(ec)
     assert out["CO2"] == pytest.approx(ec * sup["ttw_co2_g_per_mj_diesel"])
-    assert out["NOx"] == pytest.approx(100.0 * em.ef(80.0, fac["diesel"]["NOx"]))
+    assert out["NOx"] == pytest.approx(
+        100.0 * em.ef(80.0, fac["diesel"]["N1-III"]["NOx"]))
     assert out["N2O"] == pytest.approx(100.0 * sup["n2o_g_per_km_diesel_lcv"])
     assert out["CO2E_TTW"] == pytest.approx(
         out["CO2"] + sup["gwp_ch4"] * out["CH4"] + sup["gwp_n2o"] * out["N2O"])
@@ -439,18 +583,37 @@ def test_vehicle_emissions_diesel_matches_manual_calc():
     assert out["PM10_NONEXHAUST"] == pytest.approx(
         out["PM10_TYRE"] + out["PM10_BRAKE"] + out["PM10_ROAD"])
 
+def test_vehicle_emissions_segment_changes_energy_not_nonexhaust():
+    """Rev. B: das Segment wirkt auf die Auspuff-/Energieseite, NICHT auf
+    den Abrieb (Guidebook-Non-Exhaust-Basen sind fuer LCV nicht
+    segmentiert). Diese Asymmetrie ist gewollt."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    s = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-II", fac)
+    l = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-III", fac)
+    assert l["ENERGY_MJ"] / s["ENERGY_MJ"] == pytest.approx(1.43, rel=0.02)
+    assert l["CO2"] > s["CO2"]
+    assert l["NOx"] == pytest.approx(s["NOx"])        # II und III gleich
+    assert l["PM10_NONEXHAUST"] == pytest.approx(s["PM10_NONEXHAUST"])
+
+def test_vehicle_emissions_rejects_unknown_segment():
+    import emissions_emep as em
+    with pytest.raises(KeyError):
+        em.vehicle_emissions(10.0, 30.0, "diesel", "N2-XL",
+                             em.load_factors())
+
 def test_vehicle_emissions_bev_zero_exhaust_grid_wtw():
     import emissions_emep as em
     fac = em.load_factors()
-    out = em.vehicle_emissions(100.0, 80.0, "bev", fac)
+    out = em.vehicle_emissions(100.0, 80.0, "bev", "N1-III", fac)
     for k in ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O",
               "CO2", "CO2E_TTW"):
         assert out[k] == 0.0, k
-    ec = 100.0 * em.ef(80.0, fac["bev"]["EC"])
+    ec = 100.0 * em.ef(80.0, fac["bev"]["N1-III"]["EC"])
     assert out["ENERGY_MJ"] == pytest.approx(ec)
     assert out["CO2E_WTW"] == pytest.approx(ec * fac["sup"]["grid_co2e_g_per_mj"])
     # BEV: mehr Reifen-, weniger Bremsabrieb als Diesel
-    d = em.vehicle_emissions(100.0, 80.0, "diesel", fac)
+    d = em.vehicle_emissions(100.0, 80.0, "diesel", "N1-III", fac)
     assert out["PM10_TYRE"] > d["PM10_TYRE"]
     assert out["PM10_BRAKE"] < d["PM10_BRAKE"]
 
@@ -504,7 +667,11 @@ def _brake_speed_corr(v):
 def non_exhaust_pm10(km, v_kmh, powertrain, sup):
     """PM10 [g] from tyre / brake / road-surface wear over km at mean speed
     v. BEV multipliers (mass penalty on tyre, regeneration on brake) are
-    declared assumptions in emep_supplement.csv, not guidebook values."""
+    declared assumptions in emep_supplement.csv, not guidebook values.
+
+    Deliberately NOT segment-dependent: the guidebook's non-exhaust bases
+    (ch. 1.A.3.b.vi-vii) are not resolved by N1 segment for LCV, so a
+    segment argument would imply a resolution the source does not have."""
     tyre_mult = sup["bev_tyre_mult"] if powertrain == "bev" else 1.0
     brake_mult = sup["bev_brake_mult"] if powertrain == "bev" else 1.0
     tyre = km * sup["tsp_tyre_g_per_km_lcv"] * sup["pm10_frac_tyre"] \
@@ -515,17 +682,28 @@ def non_exhaust_pm10(km, v_kmh, powertrain, sup):
     return tyre, brake, road
 
 
-def vehicle_emissions(km, v_kmh, powertrain, fac):
+def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
     """Full pollutant vector [g; ENERGY_MJ in MJ; SPN23 in #] for `km`
-    driven at mean travelling speed `v_kmh`. Idle and cold-start are NOT
-    modelled (documented limitation: engine-off at service stops assumed;
-    cold-start bounded in the plan's docs task)."""
+    driven at mean travelling speed `v_kmh` by a vehicle of N1 `segment`.
+
+    The segment IS the mass channel: EMEP/EEA resolves vehicle mass for
+    light vehicles through the N1 segment and provides no load dimension
+    for LCV (guidebook ch. 1.A.3.b.i-iv p. 62 f. restricts the load
+    correction to HDV). There is deliberately no load/payload argument --
+    see the plan's Global Constraints. Idle and cold-start are NOT modelled
+    (documented limitation: engine-off at service stops assumed;
+    cold-start bounded in the plan's docs task).
+
+    Raises KeyError on an unknown segment -- a new vehicle type must fail
+    loudly rather than be silently priced as N1-III.
+    """
     sup = fac["sup"]
     out = {}
     if powertrain == "diesel":
+        coefs = fac["diesel"][segment]
         for poll, key in _POLL_KEY.items():
-            out[key] = km * ef(v_kmh, fac["diesel"][poll])
-        ec = km * ef(v_kmh, fac["diesel"]["EC"])
+            out[key] = km * ef(v_kmh, coefs[poll])
+        ec = km * ef(v_kmh, coefs["EC"])
         out["ENERGY_MJ"] = ec
         out["CO2"] = ec * sup["ttw_co2_g_per_mj_diesel"]
         out["N2O"] = km * sup["n2o_g_per_km_diesel_lcv"]
@@ -533,8 +711,8 @@ def vehicle_emissions(km, v_kmh, powertrain, fac):
                            + sup["gwp_n2o"] * out["N2O"])
         out["CO2E_WTW"] = out["CO2E_TTW"] + ec * sup["wtt_co2e_g_per_mj_diesel"]
     elif powertrain == "bev":
+        ec = km * ef(v_kmh, fac["bev"][segment]["EC"])
         out = {k: 0.0 for k in EXHAUST_KEYS}
-        ec = km * ef(v_kmh, fac["bev"]["EC"])
         out["ENERGY_MJ"] = ec
         out["CO2E_WTW"] = ec * sup["grid_co2e_g_per_mj"]
     else:
@@ -568,8 +746,10 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `analysis/kpi/tests/test_extract_emissions.py`
 
 **Interfaces:**
-- Consumes: `emissions_emep.load_factors()`, `vehicle_emissions()` (Task 4); `common.row`; TSV `<run>/analysis/freight/TimeDistance_perVehicle.tsv` mit Spalten `vehicleId, carrierId, vehicleTypeId, tourId, travelDistance[km], travelTime[s]` (real vorhanden, verifiziert an married120).
-- Produces: `extract_emissions.freight_arm(run_dir, fac) -> (totals, detail)` — `totals[powertrain][key] = float` (Summen über alle Touren, Keys wie `vehicle_emissions`), `detail` = Liste von dicts `{fleet:"freight", entity: vehicleId, vehicle_type, km, v_kmh, powertrain, <alle Emissions-Keys>}`. Später von Task 7 (`extract`) konsumiert.
+- Consumes: `emissions_emep.load_factors()`, `vehicle_emissions()` (Task 4); `common.row`; TSV `<run>/analysis/freight/TimeDistance_perVehicle.tsv` mit Spalten `vehicleId, carrierId, vehicleTypeId, tourId, travelDistance[km], travelTime[s]`.
+- **Verfügbarkeit (verifiziert 2026-07-31):** die TSV existiert in den LMD_BASELINE-Läufen und in den DRT_BASELINE-Läufen mit `freight=true` — u. a. im window-vereinheitlichten **`base10c`** (63 Touren, 6252 km, v̄ 36,4 km/h). Sie existiert **nicht** in den DRT_MODULAR-(1d-) und DRT_SHAREDUSE-(1c-)Läufen; dafür Task 5b.
+- Produces: `extract_emissions.freight_arm(run_dir, fac) -> (totals, detail)` — `totals[powertrain][key] = float` (Summen über alle Touren, Keys wie `vehicle_emissions`), `detail` = Liste von dicts `{fleet:"freight", entity: vehicleId, vehicle_type, segment, km, v_kmh, powertrain, <alle Emissions-Keys>}`. Später von Task 7 (`extract`) konsumiert.
+- Produces: `segment_for_type(type_id, capacity=None) -> str` — die Zuordnungsregel aus den Global Constraints, **eine Funktion statt eines Exact-ID-Dicts**. Rev.-A-Grund für die Änderung: [`CarrierVehicleFactory.java:204-210`](../../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/demand/CarrierVehicleFactory.java#L204-L210) erzeugt Fahrzeugtypen zur Laufzeit (`ct_cep_<cap>_m` für Kapa ≤165, `ct_cep_<cap>_l` darüber). Ein Exact-ID-Dict hätte den gesamten Hannover-Kapazitätssweep in den „unmapped → skipped"-Zweig geschickt, also stillschweigend auf null Emissionen.
 
 - [ ] **Step 1: Failing Test schreiben** (Fixture-TSV wird per tmp_path erzeugt):
 
@@ -603,9 +783,10 @@ def test_freight_arm_sums_tours_at_tour_mean_speed(tmp_path):
     import extract_emissions as ee
     fac = em.load_factors()
     totals, detail = ee.freight_arm(_run_dir(tmp_path), fac)
-    # Tour 1: 120 km bei 120/4=30 km/h; Tour 2: 60 km bei 60/2=30 km/h
-    exp = em.vehicle_emissions(120.0, 30.0, "diesel", fac)
-    exp2 = em.vehicle_emissions(60.0, 30.0, "diesel", fac)
+    # Tour 1: 120 km bei 120/4=30 km/h (size_m -> N1-III)
+    # Tour 2:  60 km bei  60/2=30 km/h (size_l -> N1-III)
+    exp = em.vehicle_emissions(120.0, 30.0, "diesel", "N1-III", fac)
+    exp2 = em.vehicle_emissions(60.0, 30.0, "diesel", "N1-III", fac)
     assert totals["diesel"]["CO2E_WTW"] == pytest.approx(
         exp["CO2E_WTW"] + exp2["CO2E_WTW"])
     assert totals["bev"]["CO2E_WTW"] > 0
@@ -613,6 +794,48 @@ def test_freight_arm_sums_tours_at_tour_mean_speed(tmp_path):
     d0 = [d for d in detail if d["powertrain"] == "diesel"][0]
     assert d0["fleet"] == "freight" and d0["v_kmh"] == pytest.approx(30.0)
     assert d0["vehicle_type"] == "ct_cep_size_m"
+    assert d0["segment"] == "N1-III"
+
+def test_freight_arm_size_s_gets_the_lighter_segment(tmp_path):
+    """Rev. B Kernverhalten: size_s ist N1-II, nicht N1-III. In base10c
+    liegen 93 % der Freight-km auf size_s -- eine Einheitsklasse N1-III
+    wuerde die Baseline-Energie um ~39 % ueberschaetzen."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    fr = tmp_path / "analysis" / "freight"
+    fr.mkdir(parents=True)
+    rows = [["dhl_s", "dhl", "ct_cep_size_s", 1, 25000, 6.9,
+             100000.0, 100.0, 12000, 3.33, 0, 3.6e-4, 154.41, 0, 36.0, 190.4]]
+    pd.DataFrame(rows, columns=TSV_COLS).to_csv(
+        fr / "TimeDistance_perVehicle.tsv", sep="\t", index=False)
+    _, detail = ee.freight_arm(tmp_path, fac)
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["segment"] == "N1-II"
+    exp = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-II", fac)
+    assert d["ENERGY_MJ"] == pytest.approx(exp["ENERGY_MJ"])
+    # und deutlich unter der N1-III-Rechnung
+    n3 = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-III", fac)
+    assert d["ENERGY_MJ"] < 0.75 * n3["ENERGY_MJ"]
+
+def test_segment_for_type_covers_generated_sweep_types():
+    """CarrierVehicleFactory erzeugt ct_cep_<cap>_<tpl> zur Laufzeit; die
+    Regel muss die abdecken, sonst faellt der Hannover-Sweep still auf
+    null Emissionen."""
+    import extract_emissions as ee
+    assert ee.segment_for_type("ct_cep_size_s") == "N1-II"
+    assert ee.segment_for_type("ct_cep_size_m") == "N1-III"
+    assert ee.segment_for_type("ct_cep_size_l") == "N1-III"
+    assert ee.segment_for_type("ct_cep_60_m", capacity=60.0) == "N1-II"
+    assert ee.segment_for_type("ct_cep_300_l", capacity=300.0) == "N1-III"
+    assert ee.segment_for_type("ct_cep_120_m", capacity=120.0) == "N1-II"
+    assert ee.segment_for_type("ct_cep_121_m", capacity=121.0) == "N1-III"
+
+def test_segment_for_type_raises_on_unknown_without_capacity():
+    """Lieber laut scheitern als still als N1-III bepreisen."""
+    import extract_emissions as ee
+    with pytest.raises(ValueError):
+        ee.segment_for_type("ct_cargobike_xl")
 
 def test_freight_arm_missing_tsv_returns_none(tmp_path):
     import emissions_emep as em
@@ -638,10 +861,11 @@ time, service dwell excluded -- engine-off assumption at stops), multiply
 by its km. Both powertrain arms (diesel primary + BEV variant) are always
 computed from the same runs -- electrification is a factor swap, no re-run.
 
-Fleet mapping (user 2026-07-28): every vehicle of both fleets = N1-III
-Euro 7 (see data/README.md); vehicle types outside VEHICLE_CLASS_MAP are
-skipped with an ASCII warning so a future new type fails loudly, not
-silently wrong.
+Fleet mapping (Rev. B, 2026-07-31): all vehicles are LCV (N1) Euro 7; only
+the SEGMENT varies, because that is where EMEP/EEA carries the vehicle-mass
+effect for light vehicles (no load dimension exists for LCV). See
+segment_for_type() and data/README.md. An unmappable type raises rather
+than being silently priced as N1-III.
 """
 import csv
 from pathlib import Path
@@ -651,11 +875,36 @@ import pandas as pd
 import emissions_emep as em
 from common import row
 
-# vehicleTypeId (freight TSV) -> factor class; DRT vehicles are matched by
-# id prefix "drt_" instead (single homogeneous minibus fleet).
-VEHICLE_CLASS_MAP = {"ct_cep_size_s": "N1-III", "ct_cep_size_m": "N1-III",
-                     "ct_cep_size_l": "N1-III"}
+# Explicit reference-mass assumption per named van type -> N1 segment.
+# The named types are what the LMD carriers use; CarrierVehicleFactory
+# additionally creates ct_cep_<cap>_<tpl> at runtime (see CAP_SEGMENT_LIMIT).
+SEGMENT_BY_TYPE = {"ct_cep_size_s": "N1-II",     # ~1700 kg reference mass
+                   "ct_cep_size_m": "N1-III",    # ~2000 kg
+                   "ct_cep_size_l": "N1-III"}    # ~2400 kg
+CAP_SEGMENT_LIMIT = 120.0      # parcels; <= -> N1-II, > -> N1-III
+DRT_SEGMENT = "N1-III"         # M2 (cap 10) substituted by N1-III, see docs
 POWERTRAINS = ("diesel", "bev")
+
+
+def segment_for_type(type_id, capacity=None):
+    """N1 segment for a carrier vehicleTypeId.
+
+    Named types resolve from SEGMENT_BY_TYPE. Runtime-generated sweep types
+    (ct_cep_<cap>_<tpl>, CarrierVehicleFactory.java:204-210) resolve from
+    `capacity` against CAP_SEGMENT_LIMIT -- the boundary sits between the
+    two named capacities 100 (N1-II) and 165 (N1-III).
+
+    Raises ValueError when neither applies: a new vehicle type must fail
+    loudly, not inherit N1-III by accident.
+    """
+    tid = str(type_id)
+    if tid in SEGMENT_BY_TYPE:
+        return SEGMENT_BY_TYPE[tid]
+    if capacity is not None and tid.startswith("ct_cep_"):
+        return "N1-II" if float(capacity) <= CAP_SEGMENT_LIMIT else "N1-III"
+    raise ValueError("no N1 segment mapping for vehicle type '" + tid
+                     + "' (capacity=" + str(capacity) + "); extend "
+                     "SEGMENT_BY_TYPE in extract_emissions.py")
 
 # output keys of emissions_emep.vehicle_emissions
 EMIS_KEYS = ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O", "CO2",
@@ -667,39 +916,60 @@ def _zero_totals():
     return {pt: {k: 0.0 for k in EMIS_KEYS} for pt in POWERTRAINS}
 
 
-def _add_entity(totals, detail, fleet, entity, vtype, km, v_kmh, fac):
+def _add_entity(totals, detail, fleet, entity, vtype, segment, km, v_kmh, fac):
     for pt in POWERTRAINS:
-        out = em.vehicle_emissions(km, v_kmh, pt, fac)
+        out = em.vehicle_emissions(km, v_kmh, pt, segment, fac)
         for k in EMIS_KEYS:
             totals[pt][k] += out[k]
         d = {"fleet": fleet, "entity": entity, "vehicle_type": vtype,
-             "km": km, "v_kmh": v_kmh, "powertrain": pt}
+             "segment": segment, "km": km, "v_kmh": v_kmh, "powertrain": pt}
         d.update({k: out[k] for k in EMIS_KEYS})
         detail.append(d)
 
 
+def _capacities(run_dir):
+    """{typeId: capacity} from the run's carrier vehicle types, for the
+    capacity rule on generated sweep types. Empty dict if unavailable --
+    the named types resolve without it."""
+    try:
+        import carriers_parse
+    except ImportError:
+        return {}
+    for name in ("*output_carriersVehicleTypes.xml.gz",
+                 "*carriersVehicleTypes.xml*"):
+        for p in Path(run_dir).glob(name):
+            try:
+                vt = carriers_parse.parse_vehicle_types(p)
+                return {k: v.capacity for k, v in vt.items()}
+            except Exception as e:
+                print("[emissions] vehicle types unreadable: " + str(e))
+    return {}
+
+
 def freight_arm(run_dir, fac):
-    """Per-tour emissions from the CarriersAnalysis TSV. Returns
-    (totals, detail) or None if the TSV is absent (pax-only run)."""
+    """Per-tour emissions from the CarriersAnalysis TSV (conventional LMD
+    arm). Returns (totals, detail) or None if the TSV is absent -- that is
+    the normal case for pax-only runs AND for the modular/shared-use arms,
+    which are handled by modular_freight_arm()."""
     tsv = Path(run_dir) / "analysis" / "freight" / "TimeDistance_perVehicle.tsv"
     if not tsv.exists():
         return None
     td = pd.read_csv(tsv, sep="\t")
+    caps = _capacities(run_dir)
     totals, detail = _zero_totals(), []
     for _, r in td.iterrows():
         vtype = str(r["vehicleTypeId"])
-        if vtype not in VEHICLE_CLASS_MAP:
-            print("[emissions] unmapped freight vehicle type skipped: "
-                  + vtype)  # ASCII only
-            continue
         km = float(r["travelDistance[km]"])
         tt_h = float(r["travelTime[s]"]) / 3600.0
         if km <= 0 or tt_h <= 0:
             continue
+        segment = segment_for_type(vtype, caps.get(vtype))   # raises if unknown
         _add_entity(totals, detail, "freight", str(r["vehicleId"]), vtype,
-                    km, km / tt_h, fac)
+                    segment, km, km / tt_h, fac)
     return totals, detail
 ```
+
+**Hinweis zu `_capabilities`/`carriers_parse`:** die Funktionsnamen in `carriers_parse.py` vor der Implementierung verifizieren ([`test_carriers_parse.py`](../../parcel-demand-2-matsim-pipeline/analysis/kpi/tests/test_carriers_parse.py) zeigt `vt["ct_cep_size_s"].capacity == 100.0`, der Loader-Name kann abweichen). Fällt die Kapazitätsauflösung aus, resolven die drei benannten Typen weiterhin — nur der Hannover-Sweep bräuchte sie.
 
 - [ ] **Step 4: PASS bestätigen**
 
@@ -717,6 +987,88 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 5b: Extractor — modularer Freight-Arm (1d/1c: Fracht im DRT-Fahrzeug) **[NEU, Rev. B]**
+
+**Warum dieser Task existiert** (verifiziert 2026-07-31): In 1d und 1c fährt die Fracht in DRT-Fahrzeugen, es gibt **kein** `analysis/freight/`-Verzeichnis. Task 5 läuft dort ins `None`. Die Fahrleistung ist aber vorhanden: `m1d010` stellt 5894 von 6020 Paketen zu, 125 von 127 Touren, 4002,6 km Service + 1614,0 km Deadhead, 362,8 Freight-Fahrzeugstunden. Ohne diesen Task hätte der einzige methodisch valide Arm (1d) keine Emissionszahl.
+
+**Zusätzlicher Grund — der Zurechnungs-Blocker:** die `modular_contaminated_kpis`-Zeile der 1d-Läufe führt `drt_vehicle_km` explizit unter **„not corrected"**. Zeit ist getrennt (`drt_freight_drive_hours_total`), Distanz nicht. Emissionen sind km × Faktor, also muss der Distanzsplit hier entstehen.
+
+**Files:**
+- Modify: `analysis/kpi/extract_emissions.py`
+- Test: `analysis/kpi/tests/test_extract_emissions.py` (erweitern)
+
+**Interfaces:**
+- Consumes: `veh_path` (dict `vehicle_id -> [(link_id, occ), ...]`) und `link_len` wie Task 6; zusätzlich **Freight-Taskfenster** je Fahrzeug als Liste `[(t_start, t_end), ...]` aus den `MODULAR_FREIGHT_DRIVE`-Task-Events ([`Modular.java:38`](../../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/modular/Modular.java#L38): `DrtTaskType("MODULAR_FREIGHT_DRIVE", DRIVE)`).
+- Produces: `freight_windows(events_file) -> dict[str, list[tuple[float, float]]]`.
+- Produces: `modular_freight_arm(veh_path_ts, windows, link_len, fac) -> (totals, detail)` — `fleet="freight_modular"`, `vehicle_type="drt_modular"`, `segment=DRT_SEGMENT`.
+- **Voraussetzung, die vor der Implementierung zu prüfen ist:** `veh_path` trägt derzeit `(link_id, occ)` ohne Zeitstempel. Für den Fensterschnitt braucht es `(link_id, occ, t)`. Erst prüfen, ob `geometry.reconstruct_drt_paths` den Zeitstempel schon mitführt oder ob er durchgeschleift werden muss — **das ist der einzige potenziell invasive Eingriff des Plans in bestehenden Code** und der Grund, diesen Task nach Task 6 zu implementieren, nicht davor.
+
+- [ ] **Step 1: Vorabprüfung (kein Code).** In `geometry.py` klären: führt die Pfadrekonstruktion Event-Zeitstempel? Falls nein, minimal-invasiv ein drittes Tupelelement ergänzen und die bestehenden Konsumenten (`veh_km`, `occ_km_shares`, `maps`) auf Tupel-Entpackung prüfen. Ergebnis hier notieren, bevor Step 2 beginnt.
+
+- [ ] **Step 2: Failing Tests anhängen**
+
+```python
+# an tests/test_extract_emissions.py anhängen
+def test_freight_windows_parsed_from_task_events(tmp_path):
+    import extract_emissions as ee
+    ev = tmp_path / "freight_events_filtered.txt"
+    ev.write_text(
+        '<event time="3600.0" type="task started" '
+        'dvrpVehicle="drt_1" taskType="MODULAR_FREIGHT_DRIVE"/>\n'
+        '<event time="7200.0" type="task ended" '
+        'dvrpVehicle="drt_1" taskType="MODULAR_FREIGHT_DRIVE"/>\n'
+        '<event time="8000.0" type="task started" '
+        'dvrpVehicle="drt_1" taskType="STAY"/>\n',
+        encoding="utf-8")
+    w = ee.freight_windows(ev)
+    assert w == {"drt_1": [(3600.0, 7200.0)]}
+
+def test_modular_freight_arm_splits_km_by_window(tmp_path):
+    """Nur die km INNERHALB der Freight-Fenster zaehlen als Fracht; der
+    Rest bleibt Pax. Das ist der Distanzsplit, den drt_vehicle_km nicht
+    hat (METHODS-LOG 2.14)."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    # (link, occ, t): l1 vor dem Fenster, l2+l1 drin
+    veh_path_ts = {"drt_1": [("l1", 0, 100.0), ("l2", 0, 4000.0),
+                             ("l1", 0, 5000.0)]}
+    windows = {"drt_1": [(3600.0, 7200.0)]}
+    ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})  # 1200/800 m
+    totals, detail = ee.modular_freight_arm(veh_path_ts, windows, ll, fac)
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["km"] == pytest.approx(2.0)          # l2 + l1 = 800 + 1200 m
+    assert d["fleet"] == "freight_modular"
+    assert d["segment"] == "N1-III"
+    assert totals["diesel"]["CO2E_WTW"] > 0
+
+def test_modular_freight_arm_empty_without_windows():
+    import emissions_emep as em
+    import extract_emissions as ee
+    totals, detail = ee.modular_freight_arm(
+        {"drt_1": [("l1", 0, 100.0)]}, {}, {"l1": 500.0}, em.load_factors())
+    assert detail == [] and totals["diesel"]["CO2E_WTW"] == 0.0
+```
+
+- [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`, erwartet `AttributeError: freight_windows`.
+
+- [ ] **Step 4: Implementieren.** `freight_windows` parst die `*.freight_events_filtered.txt` (in allen 1d-Läufen vorhanden) auf `taskType="MODULAR_FREIGHT_DRIVE"`-Start/Ende je `dvrpVehicle`. `modular_freight_arm` summiert die Link-Längen der Pfadeinträge, deren Zeitstempel in ein Fenster fällt, und nimmt als Geschwindigkeit `km / Σ Fensterdauer`. **Sanity-Anker gegen `modular_tour_stats.csv`:** die rekonstruierten Freight-km müssen in der Größenordnung von `service_km_planned + deadhead_km_planned` liegen (m1d010: 5616,5 km). Weicht es um >10 % ab, ist der Fensterschnitt falsch — dann laut abbrechen, nicht runden.
+
+- [ ] **Step 5: PASS bestätigen + Realdaten-Gegenprobe gegen `m1d010`** (Sim-PC, `C:\Users\Simrechner\Documents\GitHub\HAGRID\...`).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add analysis/kpi/extract_emissions.py analysis/kpi/tests/test_extract_emissions.py
+git commit -m "feat(emissions): modular freight arm - km split by MODULAR_FREIGHT_DRIVE task windows
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+> **Offen, User-Entscheidung nötig (blockiert Task 7 nicht):** Zurechnung der Emissionen des gemeinsam genutzten Fahrzeugs auf „Freight" vs. „Pax". Dieser Task liefert den *regime-basierten* Split (Fenster). Alternative und aus meiner Sicht ökonomisch aussagekräftiger: **inkrementell gegen `ctrl1d`** (Fracht bekommt die Mehr-km gegenüber dem Pax-only-Kontrafaktum). Für 1c (Co-Riding, gleichzeitig) trägt der Fensteransatz nicht — dort fehlt zusätzlich die Paket-km-Quelle (`chid600i` hat kein `analysis/freight/`). Bis zur Entscheidung: Systemsumme ohne Split als robuster Rückfall immer mitberichten.
+
+---
+
 ### Task 6: Extractor — DRT-Arm (echte Link-Längen + DRIVE-Zeiten)
 
 **Files:**
@@ -725,7 +1077,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `veh_path` von `geometry.reconstruct_drt_paths(drt_cache)` (dict `vehicle_id -> [(link_id, occ), ...]`); `recon["per_veh"][veh]["drive_s"]` von `drt_service_time.reconstruct()`; MATSim-Netzwerk `*.output_network.xml.gz` (Link-Attribut `length` in Metern — NICHT die Euklid-Näherung aus `geometry.load_link_geometry`, die ist ~3 % zu kurz).
-- Produces: `load_link_lengths(network_gz, used_links) -> dict[str, float]` (Meter); `drt_arm(veh_path, recon, link_len, fac) -> (totals, detail)` — Struktur wie `freight_arm`, `fleet="drt"`, `entity=vehicle_id`, `vehicle_type="drt_minibus"`.
+- Produces: `load_link_lengths(network_gz, used_links) -> dict[str, float]` (Meter); `drt_arm(veh_path, recon, link_len, fac) -> (totals, detail)` — Struktur wie `freight_arm`, `fleet="drt"`, `entity=vehicle_id`, `vehicle_type="drt_minibus"`, `segment=DRT_SEGMENT` (`"N1-III"`, Kategoriensubstitution M2 → N1-III, siehe Global Constraints).
 
 - [ ] **Step 1: Failing Tests anhängen**
 
@@ -763,11 +1115,12 @@ def test_drt_arm_uses_true_lengths_and_drive_time(tmp_path):
     recon = {"per_veh": {"drt_v1": {"drive_s": 320.0}}}        # 36 km/h
     ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
     totals, detail = ee.drt_arm(veh_path, recon, ll, fac)
-    exp = em.vehicle_emissions(3.2, 36.0, "diesel", fac)
+    exp = em.vehicle_emissions(3.2, 36.0, "diesel", "N1-III", fac)
     assert totals["diesel"]["NOx"] == pytest.approx(exp["NOx"])
     d = [x for x in detail if x["powertrain"] == "diesel"][0]
     assert d["fleet"] == "drt" and d["km"] == pytest.approx(3.2)
     assert d["v_kmh"] == pytest.approx(36.0)
+    assert d["segment"] == "N1-III"
 
 def test_drt_arm_skips_vehicle_without_drive_time():
     import emissions_emep as em
@@ -806,18 +1159,25 @@ def drt_arm(veh_path, recon, link_len, fac):
     """Per-vehicle emissions for the DRT fleet: km = sum of true link
     lengths along the reconstructed path, mean speed = km / DRIVE task
     time from drt_service_time.reconstruct(). Vehicles without DRIVE time
-    are skipped (never moved -> nothing to emit)."""
+    are skipped (never moved -> nothing to emit).
+
+    Segment is DRT_SEGMENT ("N1-III"): the vehicle has capacity 10, i.e.
+    M2 by the guidebook's own definition, and is substituted by N1-III --
+    a declared assumption, see data/README.md for the bracketing figures.
+    """
     per_veh = recon.get("per_veh", {}) if recon else {}
     totals, detail = _zero_totals(), []
     for veh, path in veh_path.items():
         drive_s = per_veh.get(veh, {}).get("drive_s", 0.0)
-        km = sum(link_len.get(lid, 0.0) for lid, _occ in path) / 1000.0
+        km = sum(link_len.get(p[0], 0.0) for p in path) / 1000.0
         if drive_s <= 0 or km <= 0:
             continue
-        _add_entity(totals, detail, "drt", veh, "drt_minibus",
+        _add_entity(totals, detail, "drt", veh, "drt_minibus", DRT_SEGMENT,
                     km, km / (drive_s / 3600.0), fac)
     return totals, detail
 ```
+
+**Hinweis:** `sum(... for p in path)` statt `for lid, _occ in path` — Task 5b erweitert die Pfadeinträge ggf. auf `(link_id, occ, t)`; Indexzugriff bleibt dann gültig.
 
 - [ ] **Step 4: PASS bestätigen**
 
@@ -844,7 +1204,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `freight_arm`/`drt_arm` (Tasks 5/6); `common.row`.
 - Produces (von Task 8 konsumiert): `extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None) -> (rows, detail)` — `rows` = Liste von `common.row(...)`-Dicts (Gruppe `environment`), `detail` = Detail-Liste beider Arme. `write_detail(detail, meta, path)` schreibt `kpi_emissions_vehicles.csv` (Semikolon-getrennt wie `kpi_writer`, mit `run_id`-Spalte aus `meta.run_id`).
-- KPI-Namensschema: `{fleet}_{metric}{arm}` mit fleet ∈ {`drt`,`freight`,`total`}, arm ∈ {``,`_bev`}: `*_co2e_wtw` [kg], `*_co2e_ttw` [kg], `*_co2` [kg, nur diesel], `*_nox` [g], `*_pm_exhaust` [g], `*_pm10_nonexhaust` [g], `*_energy_final` [MJ]. EV-Gate: `ev_range_max_km_drt`, `ev_range_p95_km_drt`, `ev_range_max_km_freight_tour`, `ev_range_p95_km_freight_tour` [km] und `ev_range_exceed_drt`, `ev_range_exceed_freight` [share, Anteil Entities über `ev_range_km`].
+- KPI-Namensschema: `{fleet}_{metric}{arm}` mit fleet ∈ {`drt`,`freight`,`freight_modular`,`total`}, arm ∈ {``,`_bev`}: `*_co2e_wtw` [kg], `*_co2e_ttw` [kg], `*_co2` [kg, nur diesel], `*_nox` [g], `*_pm_exhaust` [g], `*_pm10_nonexhaust` [g], `*_energy_final` [MJ].
+- **EV-Reichweiten-Sweep (Rev. B):** `ev_range_max_km_<label>`, `ev_range_p95_km_<label>` [km] wie bisher, aber die Überschreitungsanteile **je Schwelle**: `ev_range_exceed_<fleet>_150`, `_200`, `_250` [share]. Statt eines Pass/Fail-Werts also eine Kurve über drei Stützstellen.
+- **Zusätzliche Transparenz-Rows:** `segment_km_share_n1_ii`, `segment_km_share_n1_iii` [share] — km-Anteil je Segment über alle abgedeckten Flotten. Grund: der Fahrzeugmix ist jsprit-Ergebnis und schwankt zwischen Läufen erheblich (base10c 93 % `size_s`; `localdepots_stagger` 100 % `size_m`). Ohne diese Rows ist im Paper nicht rekonstruierbar, wie viel eines CO₂-Deltas aus dem Mix statt aus der Fahrleistung kommt — genau die Verwechslung, die die Segmentdifferenzierung überhaupt nötig macht.
 
 - [ ] **Step 1: Failing Tests anhängen**
 
@@ -862,21 +1224,52 @@ def test_extract_freight_only_run(tmp_path):
     assert "total_co2e_wtw" in by
     assert by["freight_co2e_wtw"]["unit"] == "kg"
     assert by["freight_nox"]["unit"] == "g"
+    # Rev. B: Sweep-Rows statt Einzel-Gate, plus Mix-Transparenz
+    for thr in (150, 200, 250):
+        assert "ev_range_exceed_freight_" + str(thr) in by
+    assert "ev_range_exceed_freight" not in by      # kein Einzelwert mehr
+    assert by["segment_km_share_n1_iii"]["value"] == pytest.approx(1.0)
+    assert by["segment_km_share_n1_ii"]["value"] == pytest.approx(0.0)
+    assert "2023 - Update 2025" in by["freight_co2e_wtw"]["source"]
     assert "drt_co2e_wtw" not in by                     # kein DRT-Input uebergeben
-    # EV-Gate: Touren sind 120/60 km, Default-Range 250 -> exceed share 0
+    # EV-Sweep: Touren sind 120/60 km -> bei 150/200/250 km alle 0
     assert by["ev_range_max_km_freight_tour"]["value"] == pytest.approx(120.0)
-    assert by["ev_range_exceed_freight"]["value"] == 0.0
+    for thr in (150, 200, 250):
+        assert by["ev_range_exceed_freight_" + str(thr)]["value"] == 0.0
     assert "EMEP/EEA" in by["freight_co2e_wtw"]["source"]
 
-def test_extract_flags_range_exceedance(tmp_path, monkeypatch):
+def test_extract_sweep_resolves_at_the_low_threshold(tmp_path, monkeypatch):
+    """Die untere Schwelle muss greifen koennen -- genau das leistet der
+    250-km-Einzelwert aus Rev. A nicht (0 % in allen realen Laeufen)."""
     import emissions_emep as em
     import extract_emissions as ee
     fac = em.load_factors()
-    fac["sup"]["ev_range_km"] = 100.0                   # Tour 1 (120 km) reisst
+    fac["sup"]["ev_range_km_low"] = 100.0        # Tour 1 (120 km) reisst
     monkeypatch.setattr(em, "load_factors", lambda data_dir=None: fac)
     rows, _ = ee.extract(_run_dir(tmp_path), "test")
     by = _rows_by_name(rows)
-    assert by["ev_range_exceed_freight"]["value"] == pytest.approx(0.5)
+    assert by["ev_range_exceed_freight_100"]["value"] == pytest.approx(0.5)
+    assert by["ev_range_exceed_freight_250"]["value"] == 0.0
+
+def test_extract_mixed_fleet_reports_segment_shares(tmp_path):
+    """base10c-Situation im Kleinen: gemischte Flotte -> die km-Anteile je
+    Segment muessen im KPI-Kanal auftauchen, sonst ist ein CO2-Delta nicht
+    in Mix- und Fahrleistungsanteil zerlegbar."""
+    import extract_emissions as ee
+    fr = tmp_path / "analysis" / "freight"
+    fr.mkdir(parents=True)
+    rows_in = [
+        ["a", "dhl", "ct_cep_size_s", 1, 0, 0, 90000.0, 90.0, 10800, 3.0,
+         0, 3.6e-4, 154.41, 0, 32.4, 186.8],
+        ["b", "dhl", "ct_cep_size_m", 2, 0, 0, 30000.0, 30.0, 3600, 1.0,
+         0, 3.7e-4, 171.78, 0, 11.2, 183.0],
+    ]
+    pd.DataFrame(rows_in, columns=TSV_COLS).to_csv(
+        fr / "TimeDistance_perVehicle.tsv", sep="\t", index=False)
+    rows, _ = ee.extract(tmp_path, "test")
+    by = _rows_by_name(rows)
+    assert by["segment_km_share_n1_ii"]["value"] == pytest.approx(0.75)
+    assert by["segment_km_share_n1_iii"]["value"] == pytest.approx(0.25)
 
 def test_write_detail(tmp_path):
     import extract_emissions as ee
@@ -887,7 +1280,8 @@ def test_write_detail(tmp_path):
     out = tmp_path / "kpi_emissions_vehicles.csv"
     ee.write_detail(detail, Meta(), out)
     txt = out.read_text(encoding="utf-8")
-    assert txt.splitlines()[0].startswith("run_id;fleet;entity;vehicle_type;km;v_kmh;powertrain")
+    assert txt.splitlines()[0].startswith(
+        "run_id;fleet;entity;vehicle_type;segment;km;v_kmh;powertrain")
     assert "RUN1" in txt and "freight_dhl_veh_a_1" in txt
 ```
 
@@ -899,7 +1293,9 @@ Expected: FAIL — `extract` nicht definiert
 - [ ] **Step 3: Implementieren** (an `extract_emissions.py` anhängen):
 
 ```python
-SRC = "EMEP/EEA GB 2025 App.4 Tier-3 (Okt 2025, COPERT 5.9.1), N1-III Euro 7"
+SRC = ("EMEP/EEA GB 2023 - Update 2025, App.4 Tier-3 (Okt 2025, "
+       "COPERT 5.9.1), LCV Euro 7 DPF+SCR, segment per vehicle type")
+EV_THRESHOLDS = ("low", "mid", "high")     # -> sup["ev_range_km_<key>"]
 
 # (kpi_metric, emis_key, unit, to_unit_factor)
 _KPI_METRICS = [("co2e_wtw", "CO2E_WTW", "kg", 1e-3),
@@ -920,41 +1316,88 @@ def _percentile(sorted_vals, q):
 
 
 def _range_rows(detail, sup):
-    """EV range gate (user 2026-07-28): per DRT vehicle-day / per freight
-    tour km against the conservative real-world range. If exceed share is
-    > 0, the pure-postprocessing BEV arm is NOT defensible for that fleet
-    -> escalation path in BACKLOG (idle-window charging analysis first)."""
+    """EV range SWEEP (Rev. B): per DRT vehicle-day / per freight tour km
+    against three thresholds instead of one gate.
+
+    Rationale (measured 2026-07-31 across the 12 runs that have freight
+    tours): at 250 km the exceedance is 0 % in EVERY run -- the longest
+    tour anywhere is 183.3 km -- so a single 250 km gate reports a null
+    result that looks like a check. The discriminating band is ~150 km
+    (0-13.4 % depending on the run). Reporting the curve keeps the (real)
+    finding "freight electrification is not range-constrained here"
+    falsifiable instead of vacuous.
+    """
     rows = []
-    for fleet, label in (("drt", "drt"), ("freight", "freight_tour")):
+    for fleet, label in (("drt", "drt"), ("freight", "freight_tour"),
+                         ("freight_modular", "freight_modular")):
         kms = sorted(d["km"] for d in detail
                      if d["fleet"] == fleet and d["powertrain"] == "diesel")
         if not kms:
             continue
-        exceed = sum(1 for k in kms if k > sup["ev_range_km"]) / len(kms)
-        src = ("per-entity km vs ev_range_km=" + str(sup["ev_range_km"])
-               + " (emep_supplement.csv)")
+        src = "per-entity km vs ev_range_km_* (emep_supplement.csv)"
         rows += [row("environment", "ev_range_max_km_" + label,
                      max(kms), "km", src),
                  row("environment", "ev_range_p95_km_" + label,
-                     _percentile(kms, 0.95), "km", src),
-                 row("environment", "ev_range_exceed_" + fleet,
-                     exceed, "share", src)]
+                     _percentile(kms, 0.95), "km", src)]
+        for key in EV_THRESHOLDS:
+            thr = sup["ev_range_km_" + key]
+            exceed = sum(1 for k in kms if k > thr) / len(kms)
+            rows.append(row("environment",
+                            "ev_range_exceed_" + fleet + "_" + str(int(thr)),
+                            exceed, "share",
+                            src + " [threshold=" + str(int(thr)) + " km]"))
     return rows
 
 
-def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None):
-    """Emission KPI rows + per-entity detail for one run. Freight arm from
-    the CarriersAnalysis TSV; DRT arm only when veh_path/recon/network are
-    supplied by build_kpis (they are reused, never recomputed here)."""
+def _segment_share_rows(detail):
+    """km share per N1 segment -- makes the (endogenous, jsprit-chosen)
+    vehicle mix auditable, so a CO2 delta can be attributed to routing vs.
+    to a shifted fleet mix. See the plan's Task-7 interfaces."""
+    diesel = [d for d in detail if d["powertrain"] == "diesel"]
+    total = sum(d["km"] for d in diesel)
+    if total <= 0:
+        return []
+    rows = []
+    for seg, suffix in (("N1-II", "n1_ii"), ("N1-III", "n1_iii")):
+        km = sum(d["km"] for d in diesel if d["segment"] == seg)
+        rows.append(row("environment", "segment_km_share_" + suffix,
+                        km / total, "share",
+                        "sum km per N1 segment / total km (diesel arm)"))
+    return rows
+
+
+def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
+            freight_events=None):
+    """Emission KPI rows + per-entity detail for one run.
+
+    Three arms, each optional depending on what the run produced:
+      - "freight"         conventional LMD tours (CarriersAnalysis TSV)
+      - "freight_modular" 1d: freight km inside MODULAR_FREIGHT_DRIVE windows
+      - "drt"             DRT vehicle km (pax; contaminated in 1d, see below)
+
+    DRT arm only when veh_path/recon/network are supplied by build_kpis
+    (they are reused, never recomputed here).
+
+    KNOWN GAP (METHODS-LOG 2.14): in the 1d arm `drt_vehicle_km` carries no
+    freight/pax provenance, so the "drt" arm overlaps the modular freight
+    km. Until the allocation decision is made, `total_*` is the defensible
+    figure and the per-fleet split for 1d must be read with that caveat.
+    """
     fac = em.load_factors()
     arms = {}
     fr = freight_arm(run_dir, fac)
     if fr is not None:
         arms["freight"] = fr
+    link_len = None
     if veh_path and recon is not None and network_gz is not None:
-        used = {lid for path in veh_path.values() for lid, _ in path}
+        used = {p[0] for path in veh_path.values() for p in path}
         link_len = load_link_lengths(network_gz, used)
         arms["drt"] = drt_arm(veh_path, recon, link_len, fac)
+    if veh_path and link_len and freight_events is not None:
+        windows = freight_windows(freight_events)
+        if windows:
+            arms["freight_modular"] = modular_freight_arm(
+                veh_path, windows, link_len, fac)
 
     rows, detail = [], []
     grand = _zero_totals()
@@ -980,14 +1423,15 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None):
                 rows.append(row("environment", "total_" + metric + sfx,
                                 grand[pt][key] * f, unit, SRC))
     rows += _range_rows(detail, fac["sup"])
+    rows += _segment_share_rows(detail)
     return rows, detail
 
 
 def write_detail(detail, meta, path):
     """kpi_emissions_vehicles.csv -- one row per entity x powertrain,
     ';'-separated like the other kpi_* CSVs."""
-    header = ["run_id", "fleet", "entity", "vehicle_type", "km", "v_kmh",
-              "powertrain"] + list(EMIS_KEYS)
+    header = ["run_id", "fleet", "entity", "vehicle_type", "segment", "km",
+              "v_kmh", "powertrain"] + list(EMIS_KEYS)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(header)
@@ -1049,13 +1493,17 @@ KPI_GROUPS = ("system", "passenger", "freight", "economic", "channel",
     import extract_emissions
     emis_detail = None
     try:
+        fr_ev = run_dir / (meta.prefix + ".freight_events_filtered.txt")
         emis_rows, emis_detail = extract_emissions.extract(
             run_dir, meta.prefix, recon=recon, veh_path=veh_path,
-            network_gz=network if network.exists() else None)
+            network_gz=network if network.exists() else None,
+            freight_events=fr_ev if fr_ev.exists() else None)
         rows += emis_rows
     except Exception as e:
         print("[build] emissions skipped: " + str(e))  # ASCII only
 ```
+
+**Rev.-B-Anmerkung zum `except Exception`:** dieser Catch-all darf **nicht** den `ValueError` aus `segment_for_type()` verschlucken — ein unbekannter Fahrzeugtyp würde dann als „emissions skipped" durchrutschen und der Run hätte stillschweigend keine Umwelt-KPIs. Der `print` muss deshalb den Typ der Exception mitschreiben (`type(e).__name__`), und Step 5 unten prüft explizit, dass `environment`-Zeilen **vorhanden** sind, nicht nur dass der Build durchläuft.
 
 und nach dem `kpi_writer.write_wide(...)`-Aufruf:
 
@@ -1074,10 +1522,17 @@ Expected: PASS — insbesondere `test_build_kpis.py`, `test_render.py` und `test
 
 - [ ] **Step 5: Realdaten-Smoke gegen einen vorhandenen Run**
 
-Run (aus `analysis/kpi/`, Run-Dir ggf. anpassen — ein `bandz_*`- oder married-Run mit `analysis/freight/`):
-`python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_BASELINE_13052025_married120_iter150_jsprit100`
-Danach: `grep "environment" <run-dir>/analysis/kpis_long.csv | head -30`
-Expected: `freight_*`- (und bei DRT-Events auch `drt_*`-/`total_*`-) Zeilen mit plausiblen Größenordnungen — Sanity: `freight_co2e_wtw` grob 0,2–0,4 kg/km × `freight_vehicle_km`; `ev_range_*`-Zeilen vorhanden. `kpi_emissions_vehicles.csv` existiert und hat 2×(Touren+DRT-Fahrzeuge) Zeilen.
+Zwei Läufe, weil sie unterschiedliche Datenpfade treffen (beide auf dem Sim-PC unter `C:\Users\Simrechner\Documents\GitHub\HAGRID\...`):
+
+1. **`base10c`** — konventioneller Arm, window-vereinheitlicht, hat `analysis/freight/`:
+   `python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_BASELINE_13052025_base10c_iter150_jsprit100`
+   Erwartete Gegenprobe gegen die verifizierten Ist-Werte: 63 Touren, 6252 km, v̄ 36,4 km/h, `segment_km_share_n1_ii` ≈ **0,926** (56 Fahrzeuge / 5789 km auf `size_s`), `ev_range_max_km_freight_tour` ≈ **158,8**, `ev_range_exceed_freight_150` ≈ **0,032** (2 von 63), `_200` und `_250` = 0.
+2. **`m1d010`** — modularer Arm, kein `analysis/freight/`:
+   `python -u build_kpis.py --run-dir ../../hagrid-matsim-output/DRT_MODULAR_13052025_m1d010_iter150_jsprit100`
+   Erwartet: `freight_modular_*`-Zeilen vorhanden; rekonstruierte Freight-km in der Größenordnung **5616,5 km** (= `service_km_planned` 4002,6 + `deadhead_km_planned` 1614,0 aus `modular_tour_stats.csv`). Abweichung >10 % ⇒ Fensterschnitt aus Task 5b ist falsch.
+
+Danach je Lauf: `grep "environment" <run-dir>/analysis/kpis_long.csv | head -40`
+Expected: Zeilen vorhanden (**nicht** „emissions skipped"), Sanity `freight_co2e_wtw` grob 0,2–0,4 kg/km × Freight-km; `kpi_emissions_vehicles.csv` existiert, hat eine `segment`-Spalte und 2×(Entities) Zeilen.
 
 - [ ] **Step 6: Commit**
 
@@ -1102,6 +1557,32 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ```markdown
 ## Limitations (Paper-Rohtext)
+- ZULADUNG ist nicht modelliert, und das ist methodenkonform: EMEP/EEA
+  loest Last nur fuer schwere Nutzfahrzeuge auf (Default-Lastfaktor 50 %,
+  Kap. 1.A.3.b.i-iv S. 62 f.); fuer LCV ist Last kein Methodenparameter
+  und kein Referenz-Ladezustand dokumentiert. Der Fahrzeugmasse-Effekt
+  wird ueber die Segmentklasse N1-II/N1-III abgebildet -- dort legt EMEP
+  ihn hin. BOUND des nicht modellierten Lasteffekts, aus der HDV-
+  Parametrisierung (Rigid <=7,5 t, 30 km/h, 0 % Steigung: 4,387 leer ->
+  4,954 MJ/km voll): <=13 % fuer einen 7,5-Tonner, ~5 % fuer unsere Vans
+  bei ~575 kg Zuladung auf ~2100 kg Leergewicht. Kleiner als der
+  Segmenteffekt (43 %).
+- Bezugsmasse je Fahrzeugtyp ist eine ausgewiesene Annahme (~1700 /
+  ~2000 / ~2400 kg fuer size_s/m/l); die N1-Segmentgrenzen (<=1305 /
+  <=1760 / >1760 kg) stammen aus der EU-Typgenehmigung, NICHT aus dem
+  Guidebook-Kapitel.
+- Kategoriensubstitution M2 -> N1-III fuer die DRT-Flotte (capacity 10,
+  also M2 nach Guidebook Tab. 2-1). Einordnung bei 30 km/h: PC
+  Large-SUV-Exec 2,545 / N1-III 3,123 / Buses Urban Midi <=15 t bei
+  Default-Last 9,1 MJ/km -- N1-III ist die technische Entsprechung.
+- Fahrzeugmix ist ENDOGEN (jsprit waehlt bei FleetSize.INFINITE frei aus
+  den angebotenen Van-Typen, LmdCarrierBuilder). Er schwankt erheblich
+  zwischen Laeufen (base10c 92,6 % der km auf size_s; localdepots_stagger
+  100 % size_m). CO2-Deltas zwischen Szenarien sind daher immer zusammen
+  mit segment_km_share_* zu lesen -- sonst ist Mixverschiebung nicht von
+  Fahrleistungsaenderung zu trennen. Nebenwirkung: die Kosten von
+  ct_cep_size_s sind selbst interpoliert (lmd-vehicle-types.xml), sie
+  beeinflussen die Fahrzeugwahl und damit indirekt das CO2-Ergebnis.
 - Tier-3-Kurven auf Trip-/Tour-Mittelgeschwindigkeit angewandt (COPERT-
   Intention), nicht auf Link-Ebene; Stop&Go-Differenzierung unterhalb der
   Kurvenaufloesung entfaellt (laendlicher Raum: unkritisch fuer Deltas).
@@ -1110,11 +1591,26 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Idle an Servicestopps: Engine-off-Annahme (Auslieferung/Boarding).
 - Euro-7-Faktoren aus Grenzwerten projiziert (Norm ab ~2026/27).
 - km-Kanal traegt jsprit-Heuristik-Rauschen (~6.5 % Boden, Seed-Messung
-  2026-07-28) -> Paper-Zahlen als Mittel + Min/Max ueber >=10 Runs.
+  2026-07-28) -> Paper-Zahlen als Mittel + Min/Max ueber >=10 Runs. Der
+  Lasteffekt-Bound (~5 %) liegt UNTER diesem Rauschboden.
+- 1d-Zurechnung: `drt_vehicle_km` traegt keinen Freight/Pax-Kanal
+  (METHODS-LOG 2.14, "not corrected"). Der modulare Arm liefert einen
+  regimebasierten Split ueber die MODULAR_FREIGHT_DRIVE-Fenster; die
+  Aufteilung der Emissionen eines gemeinsam genutzten Fahrzeugs auf
+  Freight und Pax bleibt eine Buchungsentscheidung. `total_*` ist die
+  allokationsfreie Groesse. Pax-Zuladung waere ohnehin ~1,2 %
+  (mean_pax_aboard 1,6 -> ~128 kg), also unter dem Rauschboden.
 - BEV-Arm: Elektrifizierung nur auf Emissionsebene (keine Reichweiten-/
-  Ladezeitrestriktion in der Sim); Gate = ev_range_*-KPIs je Run.
+  Ladezeitrestriktion in der Sim); Reichweite als SWEEP ueber 150/200/
+  250 km, nicht als Pass/Fail. Befund ueber die 12 Laeufe mit Freight-
+  Touren: laengste Tour 183 km, bei 250 km 0 % Ueberschreitung in jedem
+  Lauf, bei 150 km 0-13,4 %. Freight-Elektrifizierung ist hier nicht
+  reichweitenbegrenzt.
 - Netzintensitaet Strom + BEV-Abrieb-Multiplikatoren sind ausgewiesene
   Sensitivitaetsparameter (emep_supplement.csv).
+- Non-Exhaust-Abrieb ist NICHT segmentdifferenziert (Guidebook-Basen fuer
+  LCV nicht nach N1-Segment aufgeloest) -- bewusste Asymmetrie zur
+  Auspuffseite.
 ```
 
 - [ ] **Step 3: Backlog aktualisieren** — im `[H]` Nachhaltigkeits-Block: Verweis auf diesen Plan ergänzen (`→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md)`), die „Restliche Arbeitsschritte" als in-Plan-überführt markieren, Kaltstart-Ergebnis aus Step 1 eintragen. Offen bleiben dort: SOS-/PB-Layer (eigenes späteres Paket), Multi-Seed-Aggregation über ≥10 Runs (Reporting-Werkzeug, erst bei Paper-Auswertung), optionale Sensitivitäten (Midi-Bus für DRT, Rigid ≤7,5 t für `_l`).
@@ -1135,6 +1631,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - **SOS-/Planetary-Boundaries-Layer** — eigenes Paket nach User-Detailklärung (Allokations-/Downscaling-Entscheidung; Backlog `[H]`).
 - **Multi-Seed-Aggregation (Mittel/Min/Max über ≥10 Runs)** — Reporting-Schritt zur Paper-Auswertung; die per-Run-KPIs aus diesem Plan sind die Inputs dafür.
 - **Kaltstart-Implementierung** — nur falls Task-9-Bound ≥ 5 % (dann eigener Backlog-Punkt).
-- **Sensitivitäts-Faktorsätze** (Urban Bus Midi ≤15 t für DRT; HDT Rigid ≤7,5 t für `ct_cep_size_l`) — datenseitig vorbereitet (Tool-Filter erweitern), aber nicht verdrahtet.
+- **Sensitivitäts-Faktorsätze** (Urban Bus Midi ≤15 t für DRT; HDT Rigid ≤7,5 t für `ct_cep_size_l`) — datenseitig vorbereitet (Tool-Filter erweitern), aber nicht verdrahtet. Falls die HDT-Variante später kommt: der Guidebook-**Default ist 50 % Last**, nicht 0 % — die Vergleichszeile ist `Load = 0.5` (4,666 MJ/km bei 30 km/h, 0 % Steigung), nicht 4,387.
+- **Zuladungsbasierte Skalierung** — geprüft 2026-07-31 und verworfen, siehe Global Constraints. Nicht als „später nachziehen" im Backlog führen, sondern als methodische Entscheidung im METHODS-LOG: EMEP bietet für LCV keine Lastdimension, und eine Mischung mit STREAM-Verhältnissen (wie in `src/hagrid_output_analysis/config.py`) hat keinen definierten Nullpunkt. Wer das ändern will, muss die **gesamte** Rechnung auf STREAM umstellen — dann fallen Geschwindigkeitskurve, BEV-Arm und der SPN23/CH4/N2O-Vektor weg.
+- **Ladeprofil-Rekonstruktion** — entfällt mit der Zuladungsentscheidung. (Nebenbefund für den Fall, dass es je gebraucht wird: `analysis/freight/Load_perVehicle.tsv` ist in **jedem** geprüften Lauf nur Header — MATSims CarriersAnalysis schreibt die Spalte `load state during tour` nicht.)
 - **Dashboard-Karten/-Kacheln für Emissionen** — die KPI-Tabellen-Ansicht (Task 8) reicht fürs Paper; hübsche Environment-Kacheln sind Dashboard-v2-Folgearbeit.
 - **`hagrid_output_analysis/`** — bleibt komplett unangetastet (Kollegen-Freeze).
