@@ -1232,7 +1232,24 @@ def test_modular_freight_arm_empty_without_windows():
 
   **Und die eigentliche Entwarnung:** die drei Fenster mappen exakt auf die Tourabschnitte — Fenster 2 = 6,532 km = `service_km_planned` (6,53166), Fenster 1+3 = 6,963 km = `deadhead_km_planned` (6,96289). Auch der **Service**-Abschnitt fährt mit 56,2 km/h Freispeed. Der Grund: `m1d050` stellt **genau ein Paket** zu, der Service-Leg ist also eine einzelne lange Anfahrt statt einer dichten Zustellrunde. Bei realistischer Beladung (`m1d010`: 5894 Pakete / 125 Touren, `max_parcels_per_tour` 99) sind die Zwischenstopp-Legs kurze Wohngebiets-Hops; erwartete Richtung: Geschwindigkeit **auf oder unter** Van-Niveau, damit zurück ins Plateau.
 
-  **NEEDS-CHECK (Sim-PC, `m1d010`):** Freight-Leg-Geschwindigkeit und längengewichteter Freispeed gegenrechnen. Erst danach darf überhaupt eine Aussage über Geschwindigkeitsunterschiede zwischen den Armen ins Paper. Bis dahin gilt: **kein** Armunterschied behauptet.
+  **NEEDS-CHECK ERLEDIGT (Sim-PC, ganzer 1d-Sweep, 2026-07-31).** Vorhersage bestätigt, Befund umgekehrt: **es gibt keinen Armunterschied.**
+
+  | Lauf | Touren | Pakete | Freight-km | Abw. vs. geplant | v_Freight | Freispeed | Realis. | Pax-km | v_Pax |
+  |---|---|---|---|---|---|---|---|---|---|
+  | `m1d010` | 125 | 5894 | 5616,5 | **+0,00 %** | **37,1** | 42,4 | 0,87 | 41.473 | 37,7 |
+  | `m1d020` | 56 | 2261 | 2517,7 | **−0,00 %** | **36,8** | 41,6 | 0,89 | 46.179 | 37,6 |
+  | `m1d030` | 22 | 551 | 704,9 | **+0,00 %** | **36,8** | 41,8 | 0,88 | 48.068 | 37,6 |
+  | `m1d040` | 2 | 9 | 21,9 | +0,00 % | 40,8 | 49,2 | 0,83 | 48.012 | 37,6 |
+  | `m1d050` | 1 | 1 | 13,5 | +0,00 % | 44,5 | 56,5 | 0,79 | 47.146 | 37,5 |
+  | `ctrl1d` | 0 | 0 | 0 | — | — | — | — | 48.824 | 37,6 |
+
+  (`m1d015` lief zum Messzeitpunkt noch, Iteration 82/150.)
+
+  **Sobald echte Beladung vorliegt (≥22 Touren), konvergiert die Freight-Geschwindigkeit auf 36,8–37,1 km/h** — praktisch identisch mit dem Pax-Betrieb (37,5–37,7) und mit den konventionellen Van-Touren (36,7). Der Freispeed konvergiert mit: 42,4 km/h, also sogar **leicht unter** dem Pax-Wert (43,8) — die Fracht fährt nicht auf schnelleren Straßen, sondern minimal langsameren. Die 44,5 km/h aus `m1d050` waren reines Kleinstichproben-Artefakt, und das Artefakt skaliert sauber mit der Dünnbesetzung (1 Tour 44,5 → 2 Touren 40,8 → 22 Touren 36,8).
+
+  **Folge für Task 4/9:** alle drei Flotten liegen unter 40 km/h, also **im Plateau beider Abrieb-Speedkorrekturen** (Reifen 1,39 / Bremse 1,67). Die Korrekturen sind zwischen den Armen damit **identisch** — es gibt nichts zu erklären und keinen Unterschied zu berichten. Der Realisierungsgrad ist ebenfalls gleich (0,87–0,89 Freight vs. 0,86 Pax).
+
+  **Und die Fensterrekonstruktion ist jetzt über drei Größenordnungen validiert:** die Abweichung gegen `service_km_planned + deadhead_km_planned` ist in **allen fünf** fertigen Läufen ±0,00 %, von 13,5 km bis 5616,5 km. Der im Plan gesetzte 10-%-Toleranzanker war um Größenordnungen zu locker.
 
 - [ ] **Step 6: Commit**
 
