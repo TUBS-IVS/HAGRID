@@ -1012,29 +1012,70 @@ abrufbar. Drei Befunde:
    `blockedAttempts` und `blockedSegments`; für eine **angenommene** Insertion wird `detourOnly`
    berechnet, gegen χ geprüft und dann verworfen. Genau die Fälle, die man für die Zurechnung
    bräuchte, hinterlassen keine Spur.
-3. **Zwei weitere Hürden, auch wenn man mitloggt.** (a) `DetourTimeInfo` ist **Zeit**, nicht
-   Distanz — Emissionen brauchen km, und die Distanzanalogie müsste zusätzlich berechnet werden.
-   (b) `calculate()` läuft für **jede evaluierte Kandidaten-Insertion**, nicht nur für die
-   gewählte; ein naives Logging erzeugt Dutzende Werte pro Request ohne Kennzeichnung des
-   Gewinners. Man müsste am Commit-Punkt der Insertion ansetzen, nicht am Bewertungspunkt.
+3. **Die Distanz existiert, ist aber nicht durchgereicht** (korrigiert 2026-07-31 gegen
+   `drt/dvrp-2025.0-PR3552-sources.jar`). `OneToManyPathSearch.PathData` hält den vollständigen
+   Link-Pfad (`ImmutableList.copyOf(path.links)`, ggf. lazy über `pathSupplier`) — die marginale
+   **Distanz** wäre also durch Summieren von `link.getLength()` verfügbar, **ohne neues Routing**.
+   Sie kommt nur nicht am Gate an: `InsertionCostCalculator.calculate(DrtRequest, Insertion,
+   DetourTimeInfo)` bekommt lediglich die Waypoint-Links und die Zeitverluste; die `PathData`
+   liegen eine Ebene höher in `InsertionWithDetourData.InsertionDetourData` und werden nicht
+   weitergegeben. **Wichtig:** die Zeit lässt sich *nicht* per km ÷ v in Distanz zurückrechnen —
+   die Reisezeiten kommen aus dem Dijkstra-Baum mit link-individuellen `TravelTime`-Werten, eine
+   aggregierte Durchschnittsgeschwindigkeit würde das verschmieren. Der Weg ist die Link-Summe,
+   nicht die Division.
+4. **`calculate()` läuft für jede evaluierte Kandidaten-Insertion**, nicht nur für die gewählte;
+   ein naives Logging erzeugt Dutzende Werte pro Request ohne Kennzeichnung des Gewinners. Man
+   müsste am Commit-Punkt der Insertion ansetzen, nicht am Bewertungspunkt.
 
-**Aufwand also: Java-Eingriff in den DRT-Insertion-Pfad + kompletter 1c-Rerun.** Und selbst dann
+**Aufwand also: Java-Eingriff in den DRT-Insertion-Pfad (PathData bis zum Gate durchreichen bzw.
+am Commit-Punkt hooken) + kompletter 1c-Rerun.** Und selbst dann
 bleibt ein methodisches Problem, das kein Logging löst: **marginale Kosten sind
 reihenfolgeabhängig und summieren sich nicht zum Ganzen.** Der Grenzumweg von Paket B hängt davon
 ab, dass Paket A schon eingeplant ist; Σ marginal(Fracht) + Σ marginal(Pax) ≠ Gesamt-km. Der
 Rest ist der Verbundvorteil des gemeinsamen Routings — also genau die Größe, die das Paper
 messen will. Sie per Konstruktion einer Seite zuzuschlagen wäre zirkulär.
 
-**Konsequenz für 1c:** allokationsfrei berichten (`total_*`) und die Bandbreite ausweisen, statt
-eine Scheingenauigkeit zu erzeugen. Zwei Größen sind dafür **ohne Rerun** verfügbar:
-- die beiden Extremzurechnungen (Verbund-km vollständig Pax bzw. vollständig Fracht) als Intervall;
-- eine **Obergrenze für den frachtverursachten Zeitumweg** aus dem Szenario selbst: χ ist der
-  policy-seitige Deckel pro Insertion, also ist der Gesamtumweg ≤ (Anzahl angenommener
-  Parcel-Segmente) × χ. Vor Verwendung prüfen, ob die Zahl angenommener Segmente in den
-  `SharedUseKpiHandler`-KPIs steht. Das ist eine Schranke, keine Zurechnung — aber eine belegte.
+**Vorbemerkung zum Bedarf:** die Kernaussage des Papers braucht **gar keine Zurechnung**.
+„Integration spart X % CO₂e" ist ein Systemvergleich — 1c-Gesamt gegen (Baseline-Pax-DRT +
+Baseline-LMD-Fracht). Eine Aufteilung braucht man erst für *spezifische* Intensitäten (kg CO₂e je
+Paket bzw. je Fahrgast). Die folgenden Optionen sind nach Aufwand geordnet:
 
-Verwandt: §2.3 („χ ist eine untere Schranke, nicht der Umweg") und §2.4 (was bei Pax-KPIs unter
-Co-Riding unkorrigierbar bleibt).
+**D — Allokationsfrei plus Intervall (Untergrenze, immer verfügbar, kein Rerun).**
+`total_*` berichten, dazu die beiden Extremzurechnungen (Verbund-km vollständig Pax bzw.
+vollständig Fracht) als Bandbreite. Null Annahmen, dafür weit. Zusätzlich als belegte Schranke:
+χ ist der policy-seitige Deckel des Umwegs pro Insertion, also frachtverursachter Zeitumweg
+≤ (angenommene Parcel-Segmente) × χ. **NEEDS-CHECK:** ob die Zahl angenommener Segmente in den
+`SharedUseKpiHandler`-KPIs steht.
+
+**A — Verbunddifferenz gegen ein Pax-only-Zwillingslauf (empfohlen, ein Rerun, kein Java).**
+Denselben 1c-Lauf ohne Fracht bei identischem Seed fahren; die Differenz der Fahrzeug-km *ist* der
+frachtverursachte Mehraufwand, exakt und ohne Aufteilungsannahme. Kein Java-Eingriff, kein
+Per-Request-Bookkeeping. Preis: nur aggregiert, keine Auflösung je Paket, und der Zwillingslauf
+muss gepaart sein (§2.17).
+
+**B — Shapley-Aufteilung mit zwei Spielern (exakt, fast gratis sobald A existiert).**
+Aus drei Zahlen: `v(beide)` = 1c-Gesamt-km, `v(pax)` = Pax-only-Lauf, `v(fracht)` =
+Baseline-LMD-Fracht.
+  φ_pax  = ½·[ v(pax)    + ( v(beide) − v(fracht) ) ]
+  φ_frac = ½·[ v(fracht) + ( v(beide) − v(pax)    ) ]
+Jede Seite bekommt den Mittelwert aus Alleinkosten und Grenzkosten. Summiert sich **exakt** auf
+`v(beide)`, ist symmetrisch (keine willkürliche Reihenfolge) und löst damit genau das Problem, an
+dem die marginale Zurechnung scheitert — der Verbundvorteil wird hälftig geteilt statt einer Seite
+zugeschlagen. Für zwei Spieler ist Shapley ein Einzeiler; die Standardreferenz für die Aufteilung
+gemeinsamer Kosten.
+
+**C — Physikalische Anteilszurechnung (kein Rerun, aber willkürliche Basis).**
+Emissionen je Link nach Masse bzw. Belegungsslots an Bord aufteilen. Summiert konstruktionsgemäß
+auf, braucht kein Kontrafaktum — aber das Ergebnis hängt von der gewählten Basis ab (Masse?
+Slots? Sitze?). Als Sensitivität brauchbar, als Kernzahl schwach.
+
+**Empfehlung:** D als Boden immer mitberichten; A fahren, wenn ein gepaarter Pax-only-Lauf
+bezahlbar ist, und dann B obendrauf, weil es dieselben drei Zahlen nutzt. Die marginale Variante
+(Java + Rerun) lohnt nur, wenn *per-Paket*-Intensitäten zwingend gebraucht werden — und selbst
+dann bleibt der nicht-summierende Rest.
+
+Verwandt: §2.3 („χ ist eine untere Schranke, nicht der Umweg"), §2.4 (was bei Pax-KPIs unter
+Co-Riding unkorrigierbar bleibt), §2.17 (gepaarte vs. ungepaarte Vergleiche).
 
 ---
 
