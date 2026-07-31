@@ -66,13 +66,14 @@ dev-PC, not from the sim-PC's power supply.
   Dev-PC ──HTTPS──┘        (alarms on silence)
 ```
 
-Three checks per machine, six of the twenty free slots:
+Four checks per machine, eight of the twenty free slots:
 
 | Check | Period / Grace | Alarm latency | Detects |
 |---|---|---|---|
 | `<pc>-alive` | 5 min / 15 min | ≤20 min | power-off, reboot, network loss, OS hang |
 | `<pc>-progress` | 30 min / see §6 | ≤~2 h | JVM crash with the machine still alive, hung run, stalled batch |
-| `<pc>-event` | manual (no schedule) | immediate | arbitrary push messages, good and bad |
+| `<pc>-sweep-finished` | 30 d / 1 d | immediate | the batch completed normally |
+| `<pc>-resumed-after-boot` | 30 d / 1 d | immediate | auto-resume fired (Part B only) |
 
 ### 3.1 Why `progress` is not redundant with `alive`
 
@@ -81,13 +82,26 @@ up, the batch moved on to the next tag, and a reachability check would have stay
 throughout. `progress` is the only check that sees this class of failure. It is also what
 reports normal completion of the sweep.
 
-### 3.2 `event` as a general push channel
+### 3.2 Event checks as a push channel — meaning in the name, not the body
 
 healthchecks.io notifies on *failure*, not on success. A `POST` to a check's `/fail` endpoint
-with a text body therefore delivers an arbitrary message to Signal and email. This is used
-deliberately, not as a workaround, for: Step A finished, Step B started, a per-run non-zero exit
-code, auto-resume triggered after boot, sweep complete. Body limit is generous (kilobytes); one
-line is enough.
+therefore delivers a push, and that is how good news is reported at all.
+
+**Corrected 2026-07-31 after checking the documentation:** an attached request body is logged in
+the check's Events list (first 100 kB), but the docs nowhere state that the body is included in
+the outgoing notification. The original plan of one generic `event` check carrying arbitrary
+message text therefore rested on undocumented behaviour and was dropped.
+
+Instead **each distinct event gets its own named check**, so the notification's subject line
+carries the meaning regardless of body support. The body is still POSTed — it is useful when
+pulling the dashboard — but nothing depends on it. Free-tier capacity makes this cheap: eight of
+twenty slots for two machines.
+
+After an event fires, the check is re-armed with a plain success ping on the *next* heartbeat
+cycle rather than immediately, so a down-notification never races an up-notification. If the UI
+offers a per-integration down/up toggle, disabling "up" for the event checks removes the
+resulting recovery message; the docs describe no such toggle, and with one to three events
+expected across ten days the noise is negligible either way. Nothing depends on it.
 
 ### 3.3 Why the dev-PC is monitored even though its death is acceptable
 
@@ -99,8 +113,8 @@ outage is indistinguishable from a hardware death.
 
 ## 4. Component A1 — heartbeat script (per machine)
 
-`hagrid-tools\heartbeat.ps1`, outside the git repo (see §4.2). Invoked every 5 minutes by a
-Scheduled Task. Steps:
+Source in the repo, deployed copy at `hagrid-tools\heartbeat.ps1` (see §4.2). Invoked every 5
+minutes by a Scheduled Task. Steps:
 
 1. **Always** ping `<pc>-alive`. Unconditional — it must not depend on any run being active.
 2. Compute the progress signal: the maximum `LastWriteTime` over `hagrid-output\logs\*.log`
@@ -136,11 +150,16 @@ Trigger *At startup*, repeat every 5 minutes indefinitely, run as `SYSTEM`, high
 A healthchecks ping URL is a capability URL: anyone holding it can forge heartbeats or fire
 alarms. **The HAGRID repo is public.** The UUIDs therefore must not be committed.
 
-Decision: the heartbeat script and its config live in `C:\Users\<user>\hagrid-tools\`, outside
-the repo — the same location already used for `start_detached.ps1` and `redo70_waiter.ps1`. The
-config is `hagrid-tools\hc-config.json` holding the three UUIDs for that machine. Only a
-sanitised template with placeholder UUIDs is committed, under
-`parcel-demand-2-matsim-pipeline/tools/heartbeat/`.
+Decision (refined during plan writing, approved by the user 2026-07-31): the **running** script
+and its config live in `C:\Users\<user>\hagrid-tools\`, outside the repo — the same location
+already used for `start_detached.ps1` and `redo70_waiter.ps1`. The **source** stays in the repo
+under `parcel-demand-2-matsim-pipeline/analysis/run-monitoring/`, because it contains no secrets
+and so gains version history and reviewability; the installer deploys a copy to the tools
+directory, which also insulates the running copy from `git checkout` operations during run prep.
+
+Only `hagrid-tools\hc-config.json`, holding that machine's ping UUIDs, is outside version control.
+A sanitised `hc-config.template.json` with placeholder UUIDs is committed. No UUID may appear in
+any committed file, commit message, or test fixture.
 
 ## 5. Component A2 — notification channels
 
@@ -157,7 +176,7 @@ makes outbound `curl` calls. This decouples the channel choice entirely from phy
   mail push on phones is often batched or silent, and a hard crash deserves a loud channel. If
   skipped, the design still functions on email alone.
 
-Whichever channels are enabled are attached to all six checks. A channel counts as verified only
+Whichever channels are enabled are attached to all eight checks. A channel counts as verified only
 when a test message has actually arrived on the phone (§11.6) — configuring it is not verifying it.
 
 ## 6. Open measurement — the `progress` grace window
@@ -249,7 +268,7 @@ These address the failures that actually occurred, not hypothetical ones:
 | Windows Update reboot | brief fail | recovers | possibly brief, then `event` "resumed" | fully automatic |
 | JVM crash, machine alive (70v2 class) | green | fails | ≤~2 h | batch continues to next tag by itself |
 | Batch hangs | green | fails | ≤~2 h | colleague reboot → auto-resume |
-| Sweep finished normally | green | green | `event` "sweep complete" | none needed |
+| Sweep finished normally | green | green | `sweep-finished` check fires | none needed |
 | Campus network outage | **both** fail | both fail | ≤20 min, false positive | self-healing; identifiable via the both-fail signature |
 | healthchecks.io itself down | no alarm | no alarm | **silent** | user can pull the dashboard from the phone (§10) |
 | Dev-PC dies | dev fails | dev fails | ≤20 min | accepted; optional colleague reboot |
@@ -266,7 +285,12 @@ These address the failures that actually occurred, not hypothetical ones:
    GB and 14 threads versus the sim-PC's 128 GB, so per-run time is expected above 7 h. Ordering
    should therefore put the *informative* capacities early. This is a run-planning consequence,
    recorded here because the alerting design must not be mistaken for a completion guarantee.
-4. **The dev-PC RAM headroom is unverified.** The sweep ran with `-Xmx124g` and ~106 GB peak at
+4. **A second auto-resume in the same absence is not announced.** The resume script runs once per
+   boot and exits, so it cannot re-arm its own check afterwards; `<pc>-resumed-after-boot` stays
+   down after the first firing. Accepted because the `alive` check alarms on every crash
+   regardless — that is the load-bearing signal — and this check only confirms that recovery
+   started. One click on the dashboard re-arms it.
+5. **The dev-PC RAM headroom is unverified.** The sweep ran with `-Xmx124g` and ~106 GB peak at
    capacity 60. High capacities use far fewer vehicles (~650–680 versus 3 204), so lower memory
    is plausible — but plausible is not measured. A ~4 min smoke run (`maxIter=1, jsprit=10`) at
    the highest planned capacity, with the peak read off, is required before committing the arm.

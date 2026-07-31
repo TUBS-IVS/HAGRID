@@ -4,7 +4,7 @@
 
 **Goal:** Both sweep machines ping healthchecks.io every 5 minutes; the service alarms on silence and pushes to the user's phone, so a crash during a ~10-day absence is noticed within ~20 minutes instead of at return.
 
-**Architecture:** Outbound dead-man's switch. A PowerShell heartbeat script runs as a SYSTEM Scheduled Task (trigger *At startup*, repeat every 5 min) on the sim-PC and the dev-PC. It unconditionally pings an `alive` check, conditionally pings a `progress` check when the newest batch log has advanced, and uses an `event` check's `/fail` endpoint as a general push channel. Part B adds a boot-triggered auto-resume so a colleague pressing the power button is sufficient recovery.
+**Architecture:** Outbound dead-man's switch. A PowerShell heartbeat script runs as a SYSTEM Scheduled Task (trigger *At startup*, repeat every 5 min) on the sim-PC and the dev-PC. It unconditionally pings an `alive` check, conditionally pings a `progress` check when the newest batch log has advanced, and reports discrete events by POSTing to a dedicated per-event check's `/fail` endpoint — the meaning lives in the check *name*, because the docs do not promise that an attached body reaches the notification. Part B adds a boot-triggered auto-resume so a colleague pressing the power button is sufficient recovery.
 
 **Tech Stack:** Windows PowerShell 5.1 (heartbeat + resume + installers), Python 3.13 + pytest (log-gap measurement), healthchecks.io free tier, Windows Task Scheduler.
 
@@ -482,7 +482,7 @@ unattended infrastructure should not depend on installing Pester 5."
 
 **Interfaces:**
 - Consumes: `Get-NewestLogState`, `Test-ProgressAdvanced`, `Test-BatchComplete`, `Read-HeartbeatState`, `Write-HeartbeatState` from Task 3; the grace number from Task 2
-- Produces: `Send-HealthcheckPing([string]$BaseUrl, [string]$Suffix, [string]$Body)` -> `[bool]`; `Read-HeartbeatConfig([string]$Path)` -> hashtable with keys `AliveUrl`, `ProgressUrl`, `EventUrl`, `LogDir`, `StatePath`, `LocalLogPath`; `Invoke-Heartbeat([string]$ConfigPath)` -> `[int]`. Task 5 invokes `Invoke-Heartbeat`.
+- Produces: `Send-HealthcheckPing([string]$BaseUrl, [string]$Suffix, [string]$Body)` -> `[bool]`; `Read-HeartbeatConfig([string]$Path)` -> hashtable with keys `AliveUrl`, `ProgressUrl`, `SweepFinishedUrl`, `LogDir`, `StatePath`, `LocalLogPath`; `Invoke-Heartbeat([string]$ConfigPath)` -> `[int]`. Task 5 invokes `Invoke-Heartbeat`.
 
 - [ ] **Step 1: Write the failing test (append to `Test-Heartbeat.ps1`, before the final failure check)**
 
@@ -491,9 +491,9 @@ Write-Host 'Read-HeartbeatConfig'
 $cfgPath = Join-Path $tmp 'cfg.json'
 @'
 {
-  "AliveUrl":    "https://hc-ping.com/aaaa-1111",
-  "ProgressUrl": "https://hc-ping.com/bbbb-2222",
-  "EventUrl":    "https://hc-ping.com/cccc-3333",
+  "AliveUrl":         "https://hc-ping.com/aaaa-1111",
+  "ProgressUrl":      "https://hc-ping.com/bbbb-2222",
+  "SweepFinishedUrl": "https://hc-ping.com/cccc-3333",
   "LogDir":      "C:\\logs",
   "StatePath":   "C:\\tools\\hb-state.json",
   "LocalLogPath":"C:\\tools\\heartbeat.log"
@@ -532,7 +532,7 @@ function Read-HeartbeatConfig {
     return @{
         AliveUrl     = [string]$parsed.AliveUrl
         ProgressUrl  = [string]$parsed.ProgressUrl
-        EventUrl     = [string]$parsed.EventUrl
+        SweepFinishedUrl = [string]$parsed.SweepFinishedUrl
         LogDir       = [string]$parsed.LogDir
         StatePath    = [string]$parsed.StatePath
         LocalLogPath = [string]$parsed.LocalLogPath
@@ -593,18 +593,21 @@ function Invoke-Heartbeat {
         Send-HealthcheckPing $cfg.ProgressUrl '' '' | Out-Null
     }
 
+    # The meaning lives in the CHECK NAME (sweep-finished), not in the body: the docs
+    # do not state that an attached body reaches the notification. The body is sent
+    # anyway because it is useful in the check's Events list.
     if ($complete -and -not $state.CompletionAnnounced) {
         $name = if ($current) { Split-Path $current.Path -Leaf } else { 'unknown' }
-        Send-HealthcheckPing $cfg.EventUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)" | Out-Null
+        Send-HealthcheckPing $cfg.SweepFinishedUrl '/fail' "$env:COMPUTERNAME sweep batch finished ($name)" | Out-Null
         $state.CompletionAnnounced = $true
         $state.EventPendingRearm   = $true
         Write-LocalLog $cfg.LocalLogPath 'event: batch completion announced'
     } elseif ($state.EventPendingRearm) {
         # Re-arm on the NEXT cycle, not immediately, so the down-notification is
         # never racing an up-notification.
-        Send-HealthcheckPing $cfg.EventUrl '' '' | Out-Null
+        Send-HealthcheckPing $cfg.SweepFinishedUrl '' '' | Out-Null
         $state.EventPendingRearm = $false
-        Write-LocalLog $cfg.LocalLogPath 'event check re-armed'
+        Write-LocalLog $cfg.LocalLogPath 'sweep-finished check re-armed'
     }
 
     if ($current) {
@@ -638,7 +641,7 @@ Create `hc-config.template.json`. Placeholder UUIDs only — the real file never
   "_comment": "Copy to <toolsdir>\\hc-config.json and fill in the real UUIDs. NEVER commit the filled copy: this repo is public and a ping URL is a capability URL.",
   "AliveUrl": "https://hc-ping.com/REPLACE-WITH-ALIVE-UUID",
   "ProgressUrl": "https://hc-ping.com/REPLACE-WITH-PROGRESS-UUID",
-  "EventUrl": "https://hc-ping.com/REPLACE-WITH-EVENT-UUID",
+  "SweepFinishedUrl": "https://hc-ping.com/REPLACE-WITH-SWEEP-FINISHED-UUID",
   "LogDir": "C:\\Users\\REPLACE\\Documents\\GitHub\\HAGRID\\parcel-demand-2-matsim-pipeline\\hagrid-output\\logs",
   "StatePath": "C:\\Users\\REPLACE\\hagrid-tools\\hb-state.json",
   "LocalLogPath": "C:\\Users\\REPLACE\\hagrid-tools\\heartbeat.log"
@@ -683,22 +686,26 @@ The dev-PC is the safe place to shake this out: its loss is already accepted, an
 - Consumes: `Invoke-Heartbeat` from Task 4; the grace value from Task 2
 - Produces: an installed Scheduled Task named `HAGRID-Heartbeat`; a deployed `<toolsdir>\heartbeat.ps1`. Task 6 uses the same installer on the sim-PC.
 
-- [ ] **Step 1: User creates the six checks in the healthchecks.io UI**
+- [ ] **Step 1: User creates the eight checks in the healthchecks.io UI**
 
-This step is the user's; it needs their account. Exact settings — six checks, "Simple" schedule:
+This step is the user's; it needs their account. Exact settings — eight checks, "Simple" schedule:
 
-| Name | Period | Grace | Notify on |
+| Name | Period | Grace | Purpose |
 |---|---|---|---|
-| `sim-alive` | 5 min | 15 min | down + up |
-| `sim-progress` | 30 min | **value measured in Task 2** | down + up |
-| `sim-event` | 30 days | 1 day | **down only** |
-| `dev-alive` | 5 min | 15 min | down + up |
-| `dev-progress` | 30 min | **value measured in Task 2** | down + up |
-| `dev-event` | 30 days | 1 day | **down only** |
+| `sim-alive` | 5 min | 15 min | liveness |
+| `sim-progress` | 30 min | **value measured in Task 2** | run is advancing |
+| `sim-sweep-finished` | 30 days | 1 day | batch completed normally |
+| `sim-resumed-after-boot` | 30 days | 1 day | Part B fired |
+| `dev-alive` | 5 min | 15 min | liveness |
+| `dev-progress` | 30 min | **value measured in Task 2** | run is advancing |
+| `dev-sweep-finished` | 30 days | 1 day | batch completed normally |
+| `dev-resumed-after-boot` | 30 days | 1 day | Part B fired |
 
-The `event` checks use a long period so they never alarm on their own; they fire only when the script POSTs to `/fail`. Down-only notification avoids a noise message when the script re-arms them. Attach the email integration to all six; attach Signal too if the user has set it up.
+**Why one check per event instead of one generic `event` check:** healthchecks.io logs an attached POST body in the check's Events list, but the documentation nowhere states the body is included in the outgoing notification (verified 2026-07-31). Message text in the body would therefore have rested on undocumented behaviour. Encoding the meaning in the **check name** puts it in the notification subject, which is guaranteed. The body is still sent — useful when pulling the dashboard — but nothing depends on it.
 
-Collect the six ping URLs. **They go straight into the config files, never into git, never into a commit message, never into chat if avoidable.**
+The two event checks per machine use a long period so they never alarm on their own; they fire only when a script POSTs to `/fail`. If the UI offers a per-integration down/up toggle, disabling "up" for these four suppresses the recovery message that follows re-arming; the docs describe no such toggle and the noise is one to three messages across the whole absence, so this is cosmetic. Attach email to all eight; attach Signal too if set up.
+
+Collect the eight ping URLs. **They go straight into the config files, never into git, never into a commit message, never into chat if avoidable.**
 
 - [ ] **Step 2: Write the installer**
 
@@ -817,14 +824,14 @@ An untested alarm is not an alarm. Each path is provoked deliberately, and **arr
 - Consumes: the installed dev-PC task from Task 5
 - Produces: a verified alerting chain; findings recorded for Task 10
 
-- [ ] **Step 1: Verify the `event` push end-to-end**
+- [ ] **Step 1: Verify the event push end-to-end**
 
 ```powershell
 $cfg = Get-Content 'C:\Users\Hendrik Bimmermann\hagrid-tools\hc-config.json' -Raw | ConvertFrom-Json
-Invoke-WebRequest -Uri ($cfg.EventUrl.TrimEnd('/') + '/fail') -Method Post -UseBasicParsing -TimeoutSec 20 -Body "TEST from $env:COMPUTERNAME - alerting chain check" | Select-Object StatusCode
+Invoke-WebRequest -Uri ($cfg.SweepFinishedUrl.TrimEnd('/') + '/fail') -Method Post -UseBasicParsing -TimeoutSec 20 -Body "TEST from $env:COMPUTERNAME - alerting chain check" | Select-Object StatusCode
 ```
 
-Expected: `200`. **Confirm the message arrives on the phone**, with the body text visible. Then re-arm: `Invoke-WebRequest -Uri $cfg.EventUrl -UseBasicParsing`.
+Expected: `200`. **Confirm the message arrives on the phone** and that the check *name* (`dev-sweep-finished`) is recognisable in it — that is what carries the meaning. Note separately whether the body text also appears: the docs do not promise it, so if it does, record that as a bonus rather than relying on it. Then re-arm: `Invoke-WebRequest -Uri $cfg.SweepFinishedUrl -UseBasicParsing`.
 
 - [ ] **Step 2: Verify the `alive` alarm**
 
@@ -1212,10 +1219,12 @@ function Invoke-ResumeSweep {
     # never start.
     & $cfg.StartDetached -Command $bat -LogFile $cfg.ResumeLog -WorkDir $cfg.WorkDir
 
-    if ($cfg.EventUrl) {
+    # Dedicated check per event: the name carries the meaning, because the docs do not
+    # promise the body reaches the notification.
+    if ($cfg.ResumedUrl) {
         $body = "$env:COMPUTERNAME resumed sweep after boot at tag $first ($($remaining.Count) remaining)"
         try {
-            Invoke-WebRequest -Uri ($cfg.EventUrl.TrimEnd('/') + '/fail') -Method Post -Body $body -UseBasicParsing -TimeoutSec 20 | Out-Null
+            Invoke-WebRequest -Uri ($cfg.ResumedUrl.TrimEnd('/') + '/fail') -Method Post -Body $body -UseBasicParsing -TimeoutSec 20 | Out-Null
         } catch { }
     }
     return 0
@@ -1266,6 +1275,8 @@ Write-Host 'NOT started now - it fires on the next boot. Verify with -DryRun fir
 
 `-ExecutionTimeLimit ([TimeSpan]::Zero)` means no limit: a resumed sweep runs for days.
 
+**Known limit, accepted rather than engineered around:** the resume script runs once per boot and then exits, so it cannot re-arm its own check later. After the first auto-resume, `<pc>-resumed-after-boot` stays down, and a *second* resume within the same absence would not produce a new notification. This is acceptable because the `alive` check alarms on **every** crash regardless — that is the signal that matters — and the resumed-check is only the confirmation that recovery started. The user can re-arm it with one click from the dashboard. Do not add boot-time tracking to the heartbeat to close this; the complexity is not worth a second-order convenience.
+
 - [ ] **Step 3: Create `resume-config.json` on the sim-PC (not committed)**
 
 Required keys, with the sim-PC values for the v3 sweep:
@@ -1285,7 +1296,7 @@ Required keys, with the sim-PC values for the v3 sweep:
   "StartDetached": "C:\\Users\\Simrechner\\hagrid-tools\\start_detached.ps1",
   "StepALauncher": "C:\\Users\\Simrechner\\hagrid-tools\\run_stepA_v3.bat",
   "LockPath": "C:\\Users\\Simrechner\\hagrid-tools\\resume.lock",
-  "EventUrl": "https://hc-ping.com/REPLACE-WITH-SIM-EVENT-UUID"
+  "ResumedUrl": "https://hc-ping.com/REPLACE-WITH-SIM-RESUMED-AFTER-BOOT-UUID"
 }
 ```
 
@@ -1344,7 +1355,7 @@ never starts. Dry-run mode logs the tag decision without deleting or launching."
 
 - [ ] **Step 1: Append the operating section to the README**
 
-Include, with the real measured values filled in: what each of the six checks means when it alarms; the both-alive-failed signature meaning a network outage rather than a hardware death; the colleague instruction (power button only, workdays only, weekend gap ~2.5 days); how to disarm (`Disable-ScheduledTask`); and the note that a silent failure of healthchecks.io is possible so the dashboard should be pulled occasionally.
+Include, with the real measured values filled in: what each of the eight checks means when it alarms; the both-alive-failed signature meaning a network outage rather than a hardware death; the colleague instruction (power button only, workdays only, weekend gap ~2.5 days); how to disarm (`Disable-ScheduledTask`); and the note that a silent failure of healthchecks.io is possible so the dashboard should be pulled occasionally.
 
 - [ ] **Step 2: Write a forwardable colleague note**
 
