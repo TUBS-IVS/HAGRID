@@ -1047,35 +1047,73 @@ vollständig Fracht) als Bandbreite. Null Annahmen, dafür weit. Zusätzlich als
 ≤ (angenommene Parcel-Segmente) × χ. **NEEDS-CHECK:** ob die Zahl angenommener Segmente in den
 `SharedUseKpiHandler`-KPIs steht.
 
-**A — Verbunddifferenz gegen ein Pax-only-Zwillingslauf (empfohlen, ein Rerun, kein Java).**
-Denselben 1c-Lauf ohne Fracht bei identischem Seed fahren; die Differenz der Fahrzeug-km *ist* der
-frachtverursachte Mehraufwand, exakt und ohne Aufteilungsannahme. Kein Java-Eingriff, kein
-Per-Request-Bookkeeping. Preis: nur aggregiert, keine Auflösung je Paket, und der Zwillingslauf
-muss gepaart sein (§2.17).
+**A — Verbunddifferenz gegen einen Pax-only-Zwillingslauf — VERWORFEN, siehe §3.9.**
+Nicht aus Kostengründen (das Kontrafaktum hängt nicht am Frachtparameter, `ctrl1d` bzw. der
+χ<0-Pfad decken je einen ganzen Sweep ab, Zusatzkosten null), sondern weil die Differenz im
+Rauschen verschwindet und das falsche Vorzeichen trägt.
 
-**B — Shapley-Aufteilung mit zwei Spielern (exakt, fast gratis sobald A existiert).**
-Aus drei Zahlen: `v(beide)` = 1c-Gesamt-km, `v(pax)` = Pax-only-Lauf, `v(fracht)` =
-Baseline-LMD-Fracht.
-  φ_pax  = ½·[ v(pax)    + ( v(beide) − v(fracht) ) ]
-  φ_frac = ½·[ v(fracht) + ( v(beide) − v(pax)    ) ]
-Jede Seite bekommt den Mittelwert aus Alleinkosten und Grenzkosten. Summiert sich **exakt** auf
-`v(beide)`, ist symmetrisch (keine willkürliche Reihenfolge) und löst damit genau das Problem, an
-dem die marginale Zurechnung scheitert — der Verbundvorteil wird hälftig geteilt statt einer Seite
-zugeschlagen. Für zwei Spieler ist Shapley ein Einzeiler; die Standardreferenz für die Aufteilung
-gemeinsamer Kosten.
+**B — Shapley-Aufteilung mit zwei Spielern — VERWORFEN, siehe §3.9.**
+Setzt feste Spieler voraus. Die Pax-Seite ist bei 150 Iterationen mit Modenwahl endogen und
+schrumpft zwischen `v(pax)` und `v(beide)` um 15 % — dann ist „Pax" nicht derselbe Spieler und
+die Formel rechnet, ohne etwas zu bedeuten.
 
 **C — Physikalische Anteilszurechnung (kein Rerun, aber willkürliche Basis).**
 Emissionen je Link nach Masse bzw. Belegungsslots an Bord aufteilen. Summiert konstruktionsgemäß
-auf, braucht kein Kontrafaktum — aber das Ergebnis hängt von der gewählten Basis ab (Masse?
-Slots? Sitze?). Als Sensitivität brauchbar, als Kernzahl schwach.
+auf, braucht kein Kontrafaktum, und ist **direkt gemessen** — also rauschunempfindlich. Preis: das
+Ergebnis hängt von der gewählten Basis ab (Masse? Slots? Sitze?). Als Aufteilung brauchbar, wenn
+die Basis offen deklariert wird; als alleinstehende Kernzahl schwach.
 
-**Empfehlung:** D als Boden immer mitberichten; A fahren, wenn ein gepaarter Pax-only-Lauf
-bezahlbar ist, und dann B obendrauf, weil es dieselben drei Zahlen nutzt. Die marginale Variante
-(Java + Rerun) lohnt nur, wenn *per-Paket*-Intensitäten zwingend gebraucht werden — und selbst
-dann bleibt der nicht-summierende Rest.
+**M — Marginale Insertion mit Java-Hook (teuer, aber methodisch solide).**
+Wie oben beschrieben: `PathData` bis zum Gate durchreichen bzw. am Commit-Punkt hooken, Link-Längen
+summieren, 1c-Rerun. Relativ zu A/B ist diese Variante **besser gestellt, nicht schlechter**: sie
+misst pro Insertion *innerhalb eines Laufs*, bildet also keine Differenz zweier Läufe und erbt
+keinen Replanning-Drift. Es bleibt der nicht-summierende Verbundrest.
+
+**Empfehlung (Stand 2026-07-31):** **direkt gemessene Größen schlagen Differenzen zweier Läufe.**
+D als Boden immer mitberichten; C dazu, wenn spezifische Intensitäten (kg CO₂e je Paket / je
+Fahrgast) gebraucht werden, mit deklarierter Basis; M nur, wenn eine *marginale* Aussage zwingend
+ist. A und B nicht verwenden.
 
 Verwandt: §2.3 („χ ist eine untere Schranke, nicht der Umweg"), §2.4 (was bei Pax-KPIs unter
-Co-Riding unkorrigierbar bleibt), §2.17 (gepaarte vs. ungepaarte Vergleiche).
+Co-Riding unkorrigierbar bleibt), §2.17 (gepaarte vs. ungepaarte Vergleiche), §2.25
+(Pax-Verdrängung), §3.9 (Verwerfung von A/B).
+
+### 2.25 1d Modular: die Fracht verdrängt Pax-Bedienung, sie addiert nicht nur Fahrleistung
+
+`trägt` · 2026-07-31. Gemessen an `drt_vehicle_stats_drt.csv`, Iteration 150, alle Läufe 120
+Fahrzeuge:
+
+| Run | Pakete zugestellt | DRT-Gesamtdistanz | bediente Pax-Distanz | Leerfahrtquote | d_p/d_t | l_det |
+|---|---|---|---|---|---|---|
+| `ctrl1d` | 0 | 48.824 km | 99.353 km | 0,12 | 2,03 | 0,71 |
+| `m1d010` | 5.894 | 47.089 km | **84.065 km (−15,4 %)** | **0,22** | 1,79 | 0,80 |
+| `m1d020` | 2.261 | 48.697 km | 93.496 km (−5,9 %) | 0,16 | 1,92 | 0,75 |
+| `m1d030` | 551 | 48.773 km | 97.786 km (−1,6 %) | 0,14 | 2,00 | 0,72 |
+| `m1d050` | 1 | 47.160 km | 97.949 km (−1,4 %) | 0,11 | 2,08 | 0,69 |
+
+**Der Befund:** bei vollem Frachtbetrieb (`m1d010`, 98 % Zustellquote) bedient dieselbe Flotte
+**15,4 % weniger Pax-Distanz**, die Leerfahrtquote steigt von 0,12 auf 0,22, und die
+Pax-Distanz je Fahrzeug-km (`d_p/d_t`) fällt von 2,03 auf 1,79. Die Fracht hat Pax also teilweise
+**verdrängt**, statt Fahrleistung zu addieren. Der Effekt ist monoton in der Frachtmenge
+(−1,4 / −1,6 / −5,9 / −15,4 %) und liegt bei `m1d010` und `m1d020` klar außerhalb des Rauschbands,
+das `m1d050` mit einem einzigen zugestellten Paket auf ~±1,5 % abgrenzt.
+
+**Warum das entsteht:** über 150 Iterationen mit Modenwahl ist die Pax-Nachfrage endogen. Sind die
+Fahrzeuge in Frachtfenstern gebunden, verschlechtert sich das Pax-Angebot, Agenten wandern ab — der
+Endzustand ist ein anderes Gleichgewicht, nicht dieselbe Pax-Nachfrage mit Fracht obendrauf.
+
+**Konsequenzen:**
+1. **Eigener Kostenposten der Integration**, der berichtet werden muss, unabhängig von jeder
+   Emissionszurechnung. „Integration spart CO₂" wäre unvollständig, wenn dabei 15 % weniger
+   Fahrgäste bedient werden — das ist keine Emissionsersparnis, sondern teils ein Leistungsabbau.
+2. **Die DRT-Gesamtdistanz ist als Vergleichsgröße zwischen den Läufen unbrauchbar** (§3.9): sie
+   sinkt mit steigender Frachtmenge, weil der Pax-Rückgang den Fracht-Zuschlag überkompensiert.
+3. **Der Vergleich 1d ↔ Baseline braucht eine Leistungsnormierung.** Ungleiche bediente
+   Pax-Distanz *und* ungleiche Zustellquote gleichzeitig — verwandt mit dem Netto-vs-Brutto- und
+   Sitzplatz-Confound in §2.21, aber ein zusätzlicher Kanal.
+4. **NEEDS-CHECK:** wie viel des Pax-Rückgangs ist Abwanderung (Modenwahl) und wie viel
+   Ablehnung (`rejections`)? `drt_customer_stats` je Lauf gegenrechnen — die Unterscheidung
+   ändert die Interpretation erheblich.
 
 ---
 
@@ -1263,6 +1301,42 @@ Ersatzwert (≤10,7 h je Arm) zu optimistisch: gemessen ~5,0 h für den größte
 abgebrochene Messung nie als Kostenzahl zitieren ohne den Abbruch mitzuführen; und wenn eine
 Entscheidung an einer Zahl hängt, die nie gemessen wurde, ist die Messung billiger als die
 Debatte.
+
+### 3.9 „Die Emissionszurechnung Fracht ↔ Pax lässt sich über die Verbunddifferenz gegen einen Pax-only-Zwillingslauf lösen"
+
+Zurückgezogen 2026-07-31, **am selben Tag wie vorgeschlagen** (vorgeschlagen in `a685f7f` als
+Option A samt Shapley-Aufbau B, verworfen nach Messung).
+
+**Was behauptet war:** einen Lauf ohne Fracht bei identischem Seed fahren; die Differenz der
+DRT-Fahrzeug-km *ist* der frachtverursachte Mehraufwand — exakt, ohne Aufteilungsannahme, ohne
+Java-Eingriff. Darauf aufbauend eine Zwei-Spieler-Shapley-Aufteilung aus `v(beide)`, `v(pax)`,
+`v(fracht)`, die sich exakt auf die Systemsumme summiert.
+
+**Was die Messung zeigt** (`drt_vehicle_stats_drt.csv`, Iteration 150, Tabelle in §2.25):
+
+1. **Falsches Vorzeichen.** Die DRT-Gesamtdistanz *sinkt* mit steigender Frachtmenge — `m1d010`
+   (5.894 Pakete) liegt 3,6 % **unter** `ctrl1d` (0 Pakete). Fracht fahren kostet km; eine
+   Differenz mit negativem Vorzeichen kann kein Mehraufwand sein.
+2. **Die Differenz liegt im Rauschband.** `m1d050` stellt **ein** Paket zu und liegt trotzdem
+   3,4 % unter `ctrl1d`. Das Rauschband auf der Gesamtdistanz ist damit mindestens ±3,5 % — die
+   −3,6 % von `m1d010` sind vollständig darin. Die Differenz zweier Läufe misst hier den
+   Replanning-Drift, nicht den Effekt.
+3. **Die Spieler sind nicht fest.** Ursache von (1) und (2) ist die Pax-Verdrängung (§2.25):
+   `m1d010` bedient 15,4 % weniger Pax-Distanz als `ctrl1d`. Shapley setzt feste Spieler voraus;
+   wenn „Pax" zwischen `v(pax)` und `v(beide)` um 15 % schrumpft, ist es nicht derselbe Spieler.
+   B rechnet dann, ohne etwas zu bedeuten.
+
+**Was bleibt:** die Kostenkritik an A war *nicht* der Grund — sie war sogar unbegründet. Das
+Kontrafaktum „gar keine Fracht" hängt nicht am Frachtparameter, `ctrl1d` deckt den ganzen 1d-Sweep
+ab und der χ<0-Pfad (`ChiGateInsertionCostCalculator`, „hard-closed mode") den ganzen 1c-Sweep;
+Zusatzkosten wären null gewesen. A scheitert an der Auflösung, nicht am Preis.
+
+**Lehre:** eine Differenz zweier Simulationsläufe braucht vor der Empfehlung einen Abgleich gegen
+das Rauschband — und in einem Lauf mit Replanning ist „alles außer dem Behandlungsparameter bleibt
+gleich" keine Annahme, die man kostenlos haben kann. Verallgemeinert für diesen Stack: **direkt
+gemessene Größen (Regimesplit, Anteile je Link, marginale Insertion) sind Differenzen zweier Läufe
+vorzuziehen**, weil letztere den kompletten Replanning-Drift erben. Der 1d-Regimesplit (§1.4) war
+von Anfang an die bessere Wahl; meine inkrementelle Alternative war ein Rückschritt.
 
 ---
 
