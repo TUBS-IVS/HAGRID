@@ -95,6 +95,194 @@ Assert-Equal $false (Test-LockFree $lock) 'existing lock blocks launch'
 # Test-CanLaunch must be false whenever the lock is held, regardless of java state.
 Assert-Equal $false (Test-CanLaunch $lock) 'held lock blocks Test-CanLaunch too'
 
+Write-Host ''
+Write-Host 'Invoke-ResumeSweep -DryRun (main loop)'
+# A previous task in this plan shipped two critical wiring bugs precisely because its
+# main loop had no test while every leaf function was green in isolation. -DryRun makes
+# decisions and logs them without deleting or launching anything, so it is exercised
+# here end-to-end against a real fixture tree and a real JSON config - the only way to
+# catch a bug in the WIRING between the already-tested leaf functions.
+#
+# Capture mechanism note: Invoke-ResumeSweep reports exclusively via Write-Host. On
+# PowerShell 5.1, Write-Host writes to the Information stream (6), which "6>&1 | Out-String"
+# redirects into the success stream and flattens to text - confirmed working on this
+# PS 5.1 (5.1.26100.8875) before relying on it below. A plain "$x = Invoke-ResumeSweep ..."
+# would NOT have captured it, since Write-Host bypasses the success/output stream.
+#
+# Known gotcha (recorded from an earlier task): $env:TEMP can resolve to an 8.3 short
+# path while .FullName returns the long form. Every fixture root below is resolved
+# through .FullName immediately after creation so the paths written into each JSON
+# config match what Test-Path and Get-ChildItem see later.
+
+function New-InvokeFixtureRoot {
+    $raw = Join-Path $env:TEMP ("resumeinvoke_" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $raw -Force | Out-Null
+    return (Get-Item -LiteralPath $raw).FullName
+}
+
+function New-InvokeCarrier($CarrierRoot, $Prefix, $Tag) {
+    $dir = Join-Path $CarrierRoot ("{0}_{1}\carriers" -f $Prefix, $Tag)
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Set-Content -Path (Join-Path $dir ("{0}_{1}_delivery_carriers_routed.xml" -f $Prefix, $Tag)) -Value '<carriers/>' -Encoding Ascii
+}
+
+function New-InvokeRun($OutputRoot, $Prefix, $Tag, $Suffix, $WithDashboard) {
+    # Mirrors New-FakeRun above: a finished run has a dashboard, a crashed one has the
+    # directory but no dashboard. This is the real 2026-07-31 crash signature.
+    $dir = Join-Path $OutputRoot ("{0}_{1}{2}" -f $Prefix, $Tag, $Suffix)
+    New-Item -ItemType Directory -Path (Join-Path $dir 'analysis') -Force | Out-Null
+    if ($WithDashboard) {
+        Set-Content -Path (Join-Path $dir ("analysis\HAGRID_Dashboard_{0}_{1}{2}.html" -f $Prefix, $Tag, $Suffix)) -Value '<html/>' -Encoding Ascii
+    }
+    return $dir
+}
+
+function New-InvokeConfig($Root, $LockPath, $Tags, $CarrierRoot, $OutputRoot, $Prefix, $Suffix, $StepALauncher) {
+    # StepALauncher and StartDetached deliberately point at files that do NOT exist.
+    # Invoke-ResumeSweep only invokes either one outside of -DryRun; if a future edit
+    # to the main loop accidentally invoked them under -DryRun too, "& <missing path>"
+    # throws a terminating error under this file's $ErrorActionPreference = 'Stop' and
+    # the test fails loudly instead of silently launching something real.
+    $cfg = [ordered]@{
+        LockPath         = $LockPath
+        Tags             = $Tags
+        CarrierRoot      = $CarrierRoot
+        RunIdPrefix      = $Prefix
+        OutputRoot       = $OutputRoot
+        Suffix           = $Suffix
+        StepALauncher    = $StepALauncher
+        ArgTemplate      = 'concept=basecase,date=2025-05-13,tag={TAG},maxIter=150,jspritIter=1000,writeDashboard=true'
+        JavaExe          = (Join-Path $Root 'nonexistent_java.exe')
+        Jar              = (Join-Path $Root 'nonexistent_app.jar')
+        WorkDir          = $Root
+        GeneratedBatPath = (Join-Path $Root 'run_resume.bat')
+        StartDetached    = (Join-Path $Root 'nonexistent_start_detached.ps1')
+        ResumeLog        = (Join-Path $Root 'resume_sweep.log')
+        ResumedUrl       = ''
+    }
+    $configPath = Join-Path $Root 'resume-config.json'
+    ($cfg | ConvertTo-Json) | Set-Content -Path $configPath -Encoding Ascii
+    return $configPath
+}
+
+# Test-CanLaunch (called internally by Invoke-ResumeSweep) also probes for a running
+# java.exe on the machine, same as the Test-LockFree section above notes. Unlike that
+# section, scenarios B-E below need to get PAST the launch gate to exercise Step A /
+# tag-selection logic, so a real java.exe running on the dev box (observed during this
+# test's own development) would wrongly block every one of them for a reason unrelated
+# to the code under test. Shadowing the Get-Process cmdlet with a same-named function
+# is a standard mocking technique in PowerShell: function name resolution wins over a
+# cmdlet of the same name in the calling scope chain, so Test-CanLaunch's internal
+# "Get-Process java -ErrorAction SilentlyContinue" call resolves to this fake instead,
+# with no change needed to resume_sweep.ps1 itself. Restored immediately after.
+function Get-Process { [CmdletBinding()] param($Name) @() }
+
+# --- Scenario A: lock held -> blocked, nothing evaluated, nothing touched ---
+$rootA = New-InvokeFixtureRoot
+$lockA = Join-Path $rootA 'resume.lock'
+Set-Content -Path $lockA -Value 'held' -Encoding Ascii
+$carrierA = Join-Path $rootA 'hagrid-output'
+$outA = Join-Path $rootA 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierA -Force | Out-Null
+New-Item -ItemType Directory -Path $outA -Force | Out-Null
+New-InvokeCarrier $carrierA $prefix '60v2'
+$dirA = New-InvokeRun $outA $prefix '60v2' $suffix $true
+$configA = New-InvokeConfig $rootA $lockA @('60v2') $carrierA $outA $prefix $suffix (Join-Path $rootA 'nonexistent_stepA.bat')
+
+$outputA = (Invoke-ResumeSweep -ConfigPath $configA -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputA -like '*blocked*') 'lock held: reports blocked'
+Assert-Equal $true  (Test-Path -LiteralPath $lockA) 'lock held: lock file still present (untouched, not recreated)'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootA 'run_resume.bat')) 'lock held: no batch file written'
+Assert-Equal $true  (Test-Path -LiteralPath $dirA) 'lock held: existing output directory untouched'
+Remove-Item $rootA -Recurse -Force
+
+# --- Scenario B: Step A incomplete -> full re-run reported, Step B tag selection skipped ---
+$rootB = New-InvokeFixtureRoot
+$lockB = Join-Path $rootB 'resume.lock'
+$carrierB = Join-Path $rootB 'hagrid-output'
+$outB = Join-Path $rootB 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierB -Force | Out-Null
+New-Item -ItemType Directory -Path $outB -Force | Out-Null
+New-InvokeCarrier $carrierB $prefix '60v2'   # 70v2's carrier file is deliberately absent
+$configB = New-InvokeConfig $rootB $lockB @('60v2','70v2') $carrierB $outB $prefix $suffix (Join-Path $rootB 'nonexistent_stepA.bat')
+
+$outputB = (Invoke-ResumeSweep -ConfigPath $configB -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputB -like '*Step A incomplete*') 'Step A incomplete: reports it would re-run Step A in full'
+Assert-Equal $false ($outputB -like '*remaining*') 'Step A incomplete: does NOT proceed to Step B tag selection'
+Assert-Equal $false (Test-Path -LiteralPath $lockB) 'Step A incomplete dry run: no lock file created'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootB 'run_resume.bat')) 'Step A incomplete dry run: no batch file written'
+Remove-Item $rootB -Recurse -Force
+
+# --- Scenario C: Step A complete, several tags remaining -> names the FIRST incomplete one ---
+$rootC = New-InvokeFixtureRoot
+$lockC = Join-Path $rootC 'resume.lock'
+$carrierC = Join-Path $rootC 'hagrid-output'
+$outC = Join-Path $rootC 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierC -Force | Out-Null
+New-Item -ItemType Directory -Path $outC -Force | Out-Null
+$tagsC = @('60v2','70v2','80v2','90v2')
+foreach ($t in $tagsC) { New-InvokeCarrier $carrierC $prefix $t }
+New-InvokeRun $outC $prefix '60v2' $suffix $true  | Out-Null
+$dir70C = New-InvokeRun $outC $prefix '70v2' $suffix $false   # crash fragment: dir, no dashboard
+New-InvokeRun $outC $prefix '80v2' $suffix $true  | Out-Null
+$dir90C = New-InvokeRun $outC $prefix '90v2' $suffix $false   # crash fragment: dir, no dashboard
+$configC = New-InvokeConfig $rootC $lockC $tagsC $carrierC $outC $prefix $suffix (Join-Path $rootC 'nonexistent_stepA.bat')
+
+$outputC = (Invoke-ResumeSweep -ConfigPath $configC -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputC -like '*2 tag(s) remaining*') 'multi-remaining: reports the correct remaining count (2)'
+Assert-Equal $true  ($outputC -like '*first incomplete = 70v2*') 'multi-remaining: names the FIRST incomplete tag (70v2, not 90v2)'
+Assert-Equal $false (Test-Path -LiteralPath $lockC) 'multi-remaining dry run: no lock file created'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootC 'run_resume.bat')) 'multi-remaining dry run: no batch file written'
+Assert-Equal $true  (Test-Path -LiteralPath $dir70C) 'multi-remaining dry run: first crash-fragment directory NOT deleted'
+Assert-Equal $true  (Test-Path -LiteralPath $dir90C) 'multi-remaining dry run: second crash-fragment directory untouched'
+Remove-Item $rootC -Recurse -Force
+
+# --- Scenario D: exactly ONE tag remaining -> guards the $remaining[0] call site in the ---
+# --- main loop against the single-element-array-unrolls-to-a-scalar-string bug that was ---
+# --- already fixed once inside Select-RemainingTags itself. ---
+$rootD = New-InvokeFixtureRoot
+$lockD = Join-Path $rootD 'resume.lock'
+$carrierD = Join-Path $rootD 'hagrid-output'
+$outD = Join-Path $rootD 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierD -Force | Out-Null
+New-Item -ItemType Directory -Path $outD -Force | Out-Null
+$tagsD = @('60v2','70v2','80v2')
+foreach ($t in $tagsD) { New-InvokeCarrier $carrierD $prefix $t }
+New-InvokeRun $outD $prefix '60v2' $suffix $true  | Out-Null
+$dir70D = New-InvokeRun $outD $prefix '70v2' $suffix $false   # the ONLY incomplete tag
+New-InvokeRun $outD $prefix '80v2' $suffix $true  | Out-Null
+$configD = New-InvokeConfig $rootD $lockD $tagsD $carrierD $outD $prefix $suffix (Join-Path $rootD 'nonexistent_stepA.bat')
+
+$outputD = (Invoke-ResumeSweep -ConfigPath $configD -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputD -like '*1 tag(s) remaining*') 'single-remaining: reports count 1'
+# If the bug were reintroduced, $first would be the STRING "70v2"[0] = '7', and the
+# message would read "first incomplete = 7" instead of "first incomplete = 70v2".
+Assert-Equal $true  ($outputD -like '*first incomplete = 70v2*') 'single-remaining: names the full tag "70v2", not its first character'
+Assert-Equal $false (Test-Path -LiteralPath $lockD) 'single-remaining dry run: no lock file created'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootD 'run_resume.bat')) 'single-remaining dry run: no batch file written'
+Assert-Equal $true  (Test-Path -LiteralPath $dir70D) 'single-remaining dry run: the one crash-fragment directory NOT deleted'
+Remove-Item $rootD -Recurse -Force
+
+# --- Scenario E: all tags complete -> nothing to do ---
+$rootE = New-InvokeFixtureRoot
+$lockE = Join-Path $rootE 'resume.lock'
+$carrierE = Join-Path $rootE 'hagrid-output'
+$outE = Join-Path $rootE 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierE -Force | Out-Null
+New-Item -ItemType Directory -Path $outE -Force | Out-Null
+$tagsE = @('60v2','70v2')
+foreach ($t in $tagsE) { New-InvokeCarrier $carrierE $prefix $t }
+foreach ($t in $tagsE) { New-InvokeRun $outE $prefix $t $suffix $true | Out-Null }
+$configE = New-InvokeConfig $rootE $lockE $tagsE $carrierE $outE $prefix $suffix (Join-Path $rootE 'nonexistent_stepA.bat')
+
+$outputE = (Invoke-ResumeSweep -ConfigPath $configE -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputE -like '*all tags complete*') 'all complete: reports nothing to do'
+Assert-Equal $false (Test-Path -LiteralPath $lockE) 'all complete dry run: no lock file created'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootE 'run_resume.bat')) 'all complete dry run: no batch file written'
+Remove-Item $rootE -Recurse -Force
+
+Remove-Item Function:\Get-Process -ErrorAction SilentlyContinue
+
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
 Write-Host "`nAll resume tests passed"; exit 0
