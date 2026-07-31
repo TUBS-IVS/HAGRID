@@ -531,9 +531,11 @@ die *Richtung* ist robust, das Niveau nicht.
   (`lmd-vehicle-types.xml`, Kommentar im File) — sie beeinflussen die Fahrzeugwahl und damit
   indirekt das Emissionsergebnis. Deshalb emittiert der Extractor `segment_km_share_*`: ohne diese
   Zeilen ist ein CO₂-Delta nicht in Mixverschiebung und Fahrleistungsänderung zerlegbar.
-- **Non-Exhaust-Abrieb ist nicht segmentdifferenziert** — 2026-07-31. Die Guidebook-Basen
-  (Kap. 1.A.3.b.vi–vii) sind für LCV nicht nach N1-Segment aufgelöst. Bewusste Asymmetrie zur
-  Auspuffseite; ein Segmentargument dort würde eine Auflösung behaupten, die die Quelle nicht hat.
+- **~~Non-Exhaust-Abrieb ist nicht segmentdifferenziert~~ — RETRAHIERT am selben Tag (2026-07-31),
+  Details in §2.27.** Die Behauptung stand hier, *bevor* Kap. 1.A.3.b.vi–vii überhaupt vorlag
+  (`hagrid-input/emissions/SOURCES.md` wies es selbst als Lücke aus). Nach dem Nachladen: die Quelle
+  löst LCV **sehr wohl** nach N1-Segment auf. Die „bewusste Asymmetrie" war keine
+  Methodenentscheidung, sondern eine Annahme über eine ungelesene Quelle.
 - **Stop&Go wird in EMEP/EEA systematisch niedriger bewertet als in HBEFA** (Literaturbefund) —
   für Szenarien*vergleiche* unkritisch (konsistent), für absolute NOx/PM-Aussagen Faktorquelle
   ausweisen.
@@ -1225,6 +1227,89 @@ ist trivial, weil die Person-ID sie trägt. Zwei Zähler statt einem, Fallunters
 `person_id.startswith("parcel_")`. **Vor der Implementierung prüfen**, ob die 1c-Occupancy-KPIs
 diese Kontamination schon irgendwo ausweisen — falls nicht, ist es ein eigener Befund und gehört
 in die Limitations des 1c-Arms, nicht nur in die Emissionsrechnung.
+
+### 2.27 Non-Exhaust (Abrieb): segmentauflösend, dominierend — und von der Quelle selbst als überschätzt gekennzeichnet
+
+`trägt` · 2026-07-31 · Quelle: EMEP/EEA Guidebook 2023 – Update 2025, **Kap. 1.A.3.b.vi–vii**
+„Road tyre and brake wear / Road abrasion" (38 S., nachgeladen 2026-07-31; vorher lag das Kapitel
+nicht vor, s. `hagrid-input/emissions/SOURCES.md`). Implementiert in
+[`emissions_emep.non_exhaust_pm10`](../parcel-demand-2-matsim-pipeline/analysis/kpi/emissions_emep.py#L89).
+
+**Was Non-Exhaust ist:** Partikelemissionen, die nicht aus dem Auspuff stammen, sondern aus
+**Abrieb** — Reifen, Bremse, Straßendecke. Reiner Feinstaub (PM10), kein CO₂; betrifft also die
+Luftschadstoffseite des Papers, nicht die CO₂e-Kernaussage.
+
+**Befund 1 — es dominiert die PM-Bilanz um Größenordnungen.** Der Auspuff-PM eines Euro-7-Diesels
+mit DPF ist praktisch verschwunden (0,142 mg/km, in allen drei Segmenten identisch, weil der DPF
+die Segmentwirkung wegfiltert). Der Abrieb liegt bei N1-III/30 km/h bei **59,1 mg PM10/km**, also
+**Faktor ~400 darüber**. Eine PM-Aussage, die nur den Auspuff rechnet, berichtet fast Null und
+verfehlt die reale Belastung vollständig. Deshalb ist Non-Exhaust kein Nebenbaustein, sondern *die*
+PM-Aussage des Papers.
+
+**Befund 2 — Elektrifizierung halbiert den Feinstaub nicht.** BEV hat null Auspuffemission, reibt
+aber Reifen und Straße **stärker** ab (höhere Fahrzeugmasse), nur die Bremse deutlich schwächer
+(Rekuperation). Guidebook-interne ICE→BEV-Verhältnisse des Medium-Pkw: Reifen 1,0841, Bremse
+0,2113, Straße 1,1267. Netto bleiben bei N1-III **34,4 von 59,1 mg PM10/km = 58 %** übrig — die
+Elektrifizierung senkt den Feinstaub also um gut 40 %, nicht auf Null. Das ist eine
+berichtenswerte Gegenaussage zur „Zero-Emission"-Rhetorik und gehört ins Ergebniskapitel, nicht in
+die Limitations.
+
+**Befund 3 — die Geschwindigkeitsabhängigkeit läuft der Auspuffseite entgegen.** Abrieb ist im
+langsamen Verkehr **hoch** (häufiges Bremsen und Lenken) und auf der Autobahn niedrig, umgekehrt
+zur Auspuffkurve. Guidebook-eigene Korrekturen auf die **mittlere Trip-Geschwindigkeit**: Gl. (5)
+Reifen 1,39 unter 40 km/h, Gl. (8) Bremse 1,67 unter 40 km/h; Straßenabrieb ist
+geschwindigkeitsunabhängig (Gl. 9). Unsere Touren fahren bei ~30–36 km/h, also **in beiden
+Plateaus der Höchstwerte**. Das ist kein Zufallseffekt der Parametrisierung, sondern die
+Kernaussage des Kapitels für Stadt-/Zustellverkehr.
+
+**Befund 4 — Segmentauflösung, entgegen der ursprünglichen Annahme** (§2.7 retrahiert). TSP-Basen
+[g/km]:
+
+| Abriebquelle | N1-I | N1-II | N1-III | Tabelle | PM10-Anteil |
+|---|---|---|---|---|---|
+| Reifen | 0,0107 | 0,0169 | 0,0169 | 3-4 (II+III gruppiert) | 0,600 (Tab. 3-5) |
+| Bremse | 0,0117 | **0,0155** | **0,0211** | 3-6 (**alle drei getrennt**) | 0,980 (Tab. 3-7) |
+| Straße | 0,0150 | 0,0210 | 0,0210 | 3-8 (II+III gruppiert) | 0,50 (Tab. 3-9) |
+
+Innerhalb unserer Flotte wirkt das real: N1-II→N1-III hebt den Bremsabrieb um **36 %**. Die
+Gruppierung der Quelle ist als Daten ausgeschrieben (identische Werte für ii/iii in
+`emep_supplement.csv`), nicht in Code-Verzweigungen versteckt — sonst wäre nicht mehr erkennbar,
+was Quellenstruktur und was unsere Interpretation ist.
+
+**Einschränkung, die methodentreu ist und ins Methods-/Limitations-Kapitel gehört:** die Quelle
+kennzeichnet ihre eigenen Reifen-PM-Werte als **überschätzt**. Wortlaut (Kap. 1.A.3.b.vi, zu
+Tab. 3-4): *„Recent measurements demonstrated that the existing PM10 and PM2.5 in this table are
+overestimated since the actual ratio of PM10 to total tyre wear is more recently found to be well
+below 3 % (Saladin et al., 2024; Huber et al., 2024; Giechaskiel et al. 2024a). Therefore, the
+large majority of tyre wear is deposited on the ground and does not become airborne. Current
+evidence does not allow a revision of the values in Table 3-4."*
+
+Konsequenz und **Entscheidung: wir rechnen trotzdem mit 0,600.** Begründung — der angesetzte
+PM10/TSP-Anteil von 0,600 ist gegenüber „deutlich unter 3 %" um mehr als eine Größenordnung zu
+hoch, aber die Quelle stellt den revidierten Wert **nicht bereit**; ihn selbst zu setzen hieße, das
+Guidebook zu verlassen und eine Zahl aus drei Primärstudien zu synthetisieren, die wir nicht
+geprüft haben. Methodentreue schlägt hier Punktgenauigkeit: wir übernehmen den dokumentierten Wert
+**samt seinem dokumentierten Vorbehalt**. Für das Paper heißt das:
+- Der Reifen-PM10-Beitrag (14,1 mg/km bei N1-III/30 km/h, **24 % des Abriebs**) ist eine
+  **Obergrenze**, nicht eine Schätzung. Bei 3 % statt 60 % wäre er ~0,7 mg/km, der Gesamtabrieb
+  fiele von 59,1 auf ~45,7 mg/km (−23 %).
+- Diese Spanne ist als Sensitivität zu berichten, nicht als Fehler zu verschweigen. Sie ist
+  **einseitig**: der wahre Wert liegt unter dem berichteten, nie darüber.
+- Die **Richtungsaussagen bleiben davon unberührt**, weil der Vorbehalt Diesel und BEV gleich
+  trifft: der BEV-Vorteil beim Bremsabrieb und der BEV-Nachteil beim Reifenabrieb verschieben sich
+  proportional. Befund 2 (58 % bleiben) würde bei revidiertem Reifenanteil sogar *günstiger* für
+  den BEV, da sein Nachteil genau am überschätzten Term hängt.
+
+**Zweiter Quellenvorbehalt:** der Straßenabrieb trägt Qualitätscode **C–D** und wird von der Quelle
+selbst als *„based on limited information and highly uncertain"* bezeichnet — mit 10,5 mg/km immerhin
+**18 % des Abriebs**. Reifen- und Bremsbasen tragen Code B („non-statistically significant based on a
+small set of measured re-evaluated data"). Es gibt in diesem Kapitel also **keinen** Wert mit
+Qualitätscode A; das ist der Rahmen, in dem alle PM-Aussagen des Papers stehen.
+
+**Nebenertrag für die Lastentscheidung (§1.4):** auch hier ist die Lastkorrektur **HDV-only** —
+`LCF_T = 1,41 + 1,38·LF` (Gl. 4) und `LCF_B = 1 + 0,79·LF` (Gl. 7) gelten explizit nur für Trucks,
+Busse und Reisebusse; für LCV existiert kein Lastparameter. Damit steht die Begründung, warum die
+Zuladung nicht in den Faktor eingeht, auf **zwei unabhängigen Kapiteln** statt auf einem.
 
 ---
 

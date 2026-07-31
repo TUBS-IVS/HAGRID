@@ -1867,11 +1867,38 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   Touren: laengste Tour 183 km, bei 250 km 0 % Ueberschreitung in jedem
   Lauf, bei 150 km 0-13,4 %. Freight-Elektrifizierung ist hier nicht
   reichweitenbegrenzt.
-- Netzintensitaet Strom + BEV-Abrieb-Multiplikatoren sind ausgewiesene
-  Sensitivitaetsparameter (emep_supplement.csv).
-- Non-Exhaust-Abrieb ist NICHT segmentdifferenziert (Guidebook-Basen fuer
-  LCV nicht nach N1-Segment aufgeloest) -- bewusste Asymmetrie zur
-  Auspuffseite.
+- Netzintensitaet Strom ist ein ausgewiesener Sensitivitaetsparameter
+  (emep_supplement.csv). Die BEV-Abrieb-Multiplikatoren sind KEINE freie
+  Annahme mehr, sondern die guidebook-eigenen ICE->BEV-Verhaeltnisse des
+  Medium-Pkw (Reifen 1,0841 / Bremse 0,2113 / Strasse 1,1267) - ein
+  deklarierter Kategorientransfer, weil die Quelle keine BEV-Zeile fuer
+  LCV hat.
+- Non-Exhaust-Abrieb IST segmentdifferenziert (Kap. 1.A.3.b.vi-vii loest
+  LCV nach N1-Segment auf; Reifen/Strasse gruppieren N1-II+III, die Bremse
+  trennt alle drei). Die frueher hier notierte "bewusste Asymmetrie zur
+  Auspuffseite" war eine Annahme ueber ein damals nicht vorliegendes
+  Kapitel und ist zurueckgezogen.
+- REIFEN-PM10 IST EINE OBERGRENZE, KEINE SCHAETZUNG. Das Guidebook
+  kennzeichnet die eigenen Reifenwerte als ueberschaetzt: der
+  luftgetragene PM10-Anteil liege nach neueren Messungen "well below 3 %"
+  statt der angesetzten 60 % (Saladin et al. 2024; Huber et al. 2024;
+  Giechaskiel et al. 2024a), eine Revision der Tabelle sei zum
+  Redaktionsstand nicht moeglich. Wir rechnen methodentreu mit dem
+  dokumentierten Wert 0,600 UND berichten den Vorbehalt: Reifen-PM10
+  14,1 mg/km (24 % des Abriebs) bei N1-III/30 km/h waere bei 3 % nur
+  ~0,7 mg/km, der Gesamtabrieb fiele von 59,1 auf 45,7 mg/km (-23 %). Die
+  Abweichung ist EINSEITIG (wahrer Wert darunter, nie darueber) und trifft
+  Diesel und BEV gleich, die Richtungsaussagen bleiben also gueltig - der
+  BEV-Vorteil wuerde sogar groesser, weil sein Nachteil genau am
+  ueberschaetzten Term haengt.
+- KEIN Wert dieses Kapitels hat Qualitaetscode A: Reifen- und Bremsbasen
+  sind Code B, der Strassenabrieb C-D ("highly uncertain") bei 10,5 mg/km
+  = 18 % des Abriebs. Das ist der Rahmen aller PM-Aussagen des Papers.
+- Non-Exhaust dominiert die PM-Bilanz: Auspuff-PM eines Euro-7-Diesels mit
+  DPF ist 0,142 mg/km, der Abrieb 59,1 mg/km - Faktor ~416. Und die
+  Elektrifizierung halbiert ihn nicht: BEV behaelt 34,4 mg/km = 58 %, weil
+  Reifen und Strasse mit der Fahrzeugmasse STEIGEN und nur die Bremse
+  faellt.
 ```
 
 - [ ] **Step 3: Backlog aktualisieren** — im `[H]` Nachhaltigkeits-Block: Verweis auf diesen Plan ergänzen (`→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md)`), die „Restliche Arbeitsschritte" als in-Plan-überführt markieren, Kaltstart-Ergebnis aus Step 1 eintragen. Offen bleiben dort: SOS-/PB-Layer (eigenes späteres Paket), Multi-Seed-Aggregation über ≥10 Runs (Reporting-Werkzeug, erst bei Paper-Auswertung), optionale Sensitivitäten (Midi-Bus für DRT, Rigid ≤7,5 t für `_l`).

@@ -128,11 +128,30 @@ LCF_B = 1 + 0.79*LF (Gl. 7) gelten explizit nur fuer Trucks, Busse und
 Reisebusse. Fuer LCV existiert kein Lastparameter - zweite unabhaengige
 Belegstelle fuer die Lastentscheidung oben.
 
-Vorbehalte der Quelle selbst, im Paper zu nennen: die PM10/PM2.5-Werte der
-Reifentabelle sind laut Guidebook UEBERSCHAETZT (neuere Messungen finden
-den PM10-Anteil am Gesamtreifenabrieb deutlich unter 3 %); eine Revision
-war zum Redaktionsstand nicht moeglich. Der Strassenabrieb traegt
-Qualitaetscode C-D ("highly uncertain").
+Vorbehalte der Quelle selbst, im Paper zu nennen (Details METHODS-LOG 2.27):
+
+REIFEN-PM10 IST EINE OBERGRENZE. Das Guidebook kennzeichnet die eigenen
+Werte als ueberschaetzt - der luftgetragene PM10-Anteil liege nach
+neueren Messungen "well below 3 %" statt der angesetzten 60 % (Saladin et
+al. 2024; Huber et al. 2024; Giechaskiel et al. 2024a); eine Revision der
+Tabelle war zum Redaktionsstand nicht moeglich. Wir rechnen methodentreu
+mit dem dokumentierten 0.600 und berichten den Vorbehalt, statt selbst
+eine Zahl aus ungepruefter Primaerliteratur zu synthetisieren.
+Quantifiziert (N1-III, 30 km/h): Reifen 14.1 mg/km = 24 % des Abriebs;
+bei 3 % waeren es ~0.7 mg/km und der Gesamtabrieb faellt von 59.1 auf
+45.7 mg/km (-23 %). Die Abweichung ist EINSEITIG (wahrer Wert darunter)
+und trifft Diesel und BEV gleich - Richtungsaussagen bleiben gueltig.
+
+KEIN Wert dieses Kapitels hat Qualitaetscode A: Reifen und Bremse tragen
+B ("non-statistically significant based on a small set of measured
+re-evaluated data"), der Strassenabrieb C-D ("highly uncertain") bei
+10.5 mg/km = 18 % des Abriebs.
+
+Groessenordnung, damit die Relevanz klar ist: der Auspuff-PM eines
+Euro-7-Diesels mit DPF ist 0.142 mg/km, der Abrieb 59.1 mg/km - Faktor
+~416. Und Elektrifizierung halbiert ihn nicht: BEV behaelt 34.4 mg/km
+= 58 %, weil Reifen- und Strassenabrieb mit der Fahrzeugmasse STEIGEN und
+nur der Bremsabrieb faellt.
 
 ## Aufteilungskonstanten (kg_per_parcel, kg_per_passenger, slots_per_seat_equiv)
 Reine Post-Processing-Groessen: sie gehen weder in die Simulation noch in

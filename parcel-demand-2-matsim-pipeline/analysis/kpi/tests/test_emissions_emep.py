@@ -256,3 +256,43 @@ def test_non_exhaust_speed_correction_piecewise():
     t, b, _ = em.non_exhaust_pm10(1.0, 30.0, "diesel", "N1-III", sup)
     assert t == pytest.approx(0.0169 * 0.600 * 1.39)
     assert b == pytest.approx(0.0211 * 0.980 * 1.67)
+
+
+def test_tyre_pm10_fraction_stays_at_the_documented_value():
+    """METHODS-LOG 2.27: die Quelle kennzeichnet ihre EIGENEN Reifen-PM10-
+    Werte als ueberschaetzt ("well below 3 %" statt der angesetzten 60 %),
+    stellt aber keinen revidierten Wert bereit. Entscheidung: methodentreu
+    beim dokumentierten 0.600 bleiben und den Vorbehalt berichten, statt
+    eine Zahl aus ungepruefter Primaerliteratur zu synthetisieren.
+
+    Dieser Test ist bewusst ein Gedaechtnis-Test, kein Rechentest: wer
+    0.600 auf 0.03 "korrigiert", soll hier landen und die Begruendung
+    lesen -- und dann bewusst entscheiden, nicht versehentlich."""
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    assert sup["pm10_frac_tyre"] == pytest.approx(0.600)
+    # Groessenordnung des Vorbehalts festhalten: Reifen ist ~24 % des
+    # Abriebs, bei 3 % fiele der Gesamtabrieb um ~23 %
+    t, b, r = em.non_exhaust_pm10(1.0, 30.0, "diesel", "N1-III", sup)
+    assert t / (t + b + r) == pytest.approx(0.238, abs=0.01)
+    t_low = t * (0.03 / sup["pm10_frac_tyre"])
+    assert (t_low + b + r) / (t + b + r) == pytest.approx(0.77, abs=0.01)
+
+
+def test_non_exhaust_dominates_exhaust_pm_and_survives_electrification():
+    """Zwei Ergebnisaussagen des Papers, gegen stille Regression gesichert
+    (METHODS-LOG 2.27): (a) der Abrieb ist gegenueber dem Euro-7-Auspuff-PM
+    um mehr als zwei Groessenordnungen groesser -- wer PM nur aus dem
+    Auspuff rechnet, berichtet fast Null; (b) Elektrifizierung senkt ihn um
+    gut 40 %, nicht auf Null, weil Reifen- und Strassenabrieb mit der
+    Fahrzeugmasse STEIGEN."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    d = em.vehicle_emissions(1.0, 30.0, "diesel", "N1-III", fac)
+    assert d["PM10_NONEXHAUST"] / d["PM_EXHAUST"] > 100.0
+    e = em.vehicle_emissions(1.0, 30.0, "bev", "N1-III", fac)
+    assert (e["PM10_NONEXHAUST"] / d["PM10_NONEXHAUST"]
+            == pytest.approx(0.582, abs=0.01))
+    assert e["PM10_TYRE"] > d["PM10_TYRE"]      # Masse steigt
+    assert e["PM10_ROAD"] > d["PM10_ROAD"]      # Masse steigt
+    assert e["PM10_BRAKE"] < d["PM10_BRAKE"]    # Rekuperation
