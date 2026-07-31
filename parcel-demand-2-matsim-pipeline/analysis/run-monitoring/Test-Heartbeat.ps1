@@ -54,6 +54,46 @@ Assert-Equal 'a.log' $loaded.LastLogPath 'path round-trips'
 Assert-Equal 1234 $loaded.LastWriteTicks 'ticks round-trip'
 Assert-Equal $true $loaded.CompletionAnnounced 'bool round-trips'
 
+Write-Host 'Read-HeartbeatConfig'
+$cfgPath = Join-Path $tmp 'cfg.json'
+@'
+{
+  "AliveUrl":         "https://hc-ping.com/aaaa-1111",
+  "ProgressUrl":      "https://hc-ping.com/bbbb-2222",
+  "SweepFinishedUrl": "https://hc-ping.com/cccc-3333",
+  "LogDir":      "C:\\logs",
+  "StatePath":   "C:\\tools\\hb-state.json",
+  "LocalLogPath":"C:\\tools\\heartbeat.log"
+}
+'@ | Set-Content -LiteralPath $cfgPath -Encoding Ascii
+$cfg = Read-HeartbeatConfig $cfgPath
+Assert-Equal 'https://hc-ping.com/aaaa-1111' $cfg.AliveUrl 'alive url parsed'
+Assert-Equal 'C:\logs' $cfg.LogDir 'log dir parsed'
+Assert-Equal '*.log' $cfg.LogPattern 'absent LogPattern defaults to *.log'
+
+Write-Host 'Get-NewestLogState honours a scoping pattern'
+# Guards the CLASS of bug the Task 3 review found: an unscoped watch can latch
+# completion on a FOREIGN batch's final sentinel and blind stall detection for
+# the rest of the sweep, with every check still showing green.
+$scoped = Join-Path $tmp 'scoped'
+New-Item -ItemType Directory -Path $scoped | Out-Null
+Set-Content -Path (Join-Path $scoped 'stepB_mine.log') -Value 'mine' -Encoding Ascii
+Start-Sleep -Milliseconds 1100
+Set-Content -Path (Join-Path $scoped 'nightbc.console.log') -Value 'foreign' -Encoding Ascii
+Assert-Equal 'nightbc.console.log' (Split-Path (Get-NewestLogState $scoped).Path -Leaf) 'unscoped picks the newest, foreign log'
+Assert-Equal 'stepB_mine.log' (Split-Path (Get-NewestLogState $scoped 'stepB_*.log').Path -Leaf) 'pattern excludes the foreign log'
+Assert-Equal $null (Get-NewestLogState $scoped 'nomatch_*.log') 'pattern matching nothing yields null'
+
+$threw = $false
+try { Read-HeartbeatConfig (Join-Path $tmp 'missing.json') } catch { $threw = $true }
+Assert-Equal $true $threw 'missing config throws (only fatal condition)'
+
+Write-Host 'Send-HealthcheckPing is failure-tolerant'
+# Unroutable host: must return $false and must NOT throw - a network blip may not
+# kill the heartbeat, that is what the grace window is for.
+Assert-Equal $false (Send-HealthcheckPing 'https://127.0.0.1:9' '' '') 'unreachable endpoint returns false, no throw'
+Assert-Equal $false (Send-HealthcheckPing '' '' '') 'empty url returns false'
+
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
 Write-Host "`nAll heartbeat tests passed"; exit 0

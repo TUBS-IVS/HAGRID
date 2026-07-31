@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy to <toolsdir>\\hc-config.json and fill in the real UUIDs. NEVER commit the filled copy: this repo is public and a ping URL is a capability URL.",
+  "AliveUrl": "https://hc-ping.com/REPLACE-WITH-ALIVE-UUID",
+  "ProgressUrl": "https://hc-ping.com/REPLACE-WITH-PROGRESS-UUID",
+  "SweepFinishedUrl": "https://hc-ping.com/REPLACE-WITH-SWEEP-FINISHED-UUID",
+  "LogDir": "C:\\Users\\REPLACE\\Documents\\GitHub\\HAGRID\\parcel-demand-2-matsim-pipeline\\hagrid-output\\logs",
+  "_LogPattern_comment": "Scope the watch to ONE batch's logs, so a foreign batch's final sentinel cannot latch completion and blind stall detection. Leave as *.log only if this directory holds nothing else.",
+  "LogPattern": "*.log",
+  "StatePath": "C:\\Users\\REPLACE\\hagrid-tools\\hb-state.json",
+  "LocalLogPath": "C:\\Users\\REPLACE\\hagrid-tools\\heartbeat.log"
+}
