@@ -166,16 +166,34 @@ function New-InvokeConfig($Root, $LockPath, $Tags, $CarrierRoot, $OutputRoot, $P
 }
 
 # Test-CanLaunch (called internally by Invoke-ResumeSweep) also probes for a running
-# java.exe on the machine, same as the Test-LockFree section above notes. Unlike that
-# section, scenarios B-E below need to get PAST the launch gate to exercise Step A /
-# tag-selection logic, so a real java.exe running on the dev box (observed during this
-# test's own development) would wrongly block every one of them for a reason unrelated
-# to the code under test. Shadowing the Get-Process cmdlet with a same-named function
-# is a standard mocking technique in PowerShell: function name resolution wins over a
-# cmdlet of the same name in the calling scope chain, so Test-CanLaunch's internal
+# java.exe on the machine, same as the Test-LockFree section above notes. Scenarios
+# A-F below need control over that probe: B-E need to get PAST it (a real java.exe was
+# observed running on this dev box during development, which would otherwise wrongly
+# block every one of them for a reason unrelated to the code under test), and F needs
+# to force it ON to prove the refusal path is actually exercised somewhere.
+#
+# Shadowing the Get-Process cmdlet with a same-named function is a standard mocking
+# technique in PowerShell: function name resolution wins over a cmdlet of the same
+# name in the calling scope chain, so Test-CanLaunch's internal
 # "Get-Process java -ErrorAction SilentlyContinue" call resolves to this fake instead,
-# with no change needed to resume_sweep.ps1 itself. Restored immediately after.
-function Get-Process { [CmdletBinding()] param($Name) @() }
+# with no change needed to resume_sweep.ps1 itself.
+#
+# DANGER ZONE, LEXICALLY BOUNDED: everything that must see the fake lives inside this
+# "& { ... }" script block, not at top-level script scope. A function defined inside a
+# scriptblock is local to that scriptblock's lifetime and disappears when it exits -
+# including on an exception - so there is no manual Remove-Item cleanup to forget and
+# no risk of a bare throw (this file deliberately invokes several nonexistent paths
+# under $ErrorActionPreference = 'Stop') leaking the shadow into the rest of the file.
+# $script:Failures still accumulates correctly across this boundary: Assert-Equal
+# already increments it via the $script: scope modifier, which resolves to the file's
+# top-level scope regardless of how many script-block scopes sit in between.
+& {
+    $script:MockJavaRunning = $false
+    function Get-Process {
+        [CmdletBinding()] param($Name)
+        if ($script:MockJavaRunning) { return @(New-Object psobject) }
+        return @()
+    }
 
 # --- Scenario A: lock held -> blocked, nothing evaluated, nothing touched ---
 $rootA = New-InvokeFixtureRoot
@@ -204,6 +222,11 @@ $outB = Join-Path $rootB 'hagrid-matsim-output'
 New-Item -ItemType Directory -Path $carrierB -Force | Out-Null
 New-Item -ItemType Directory -Path $outB -Force | Out-Null
 New-InvokeCarrier $carrierB $prefix '60v2'   # 70v2's carrier file is deliberately absent
+# An unrelated, already-finished run's output directory (same OutputRoot, a tag not
+# even in this scenario's Tags list) - stands in for real leftover output from a
+# previous sweep. Its survival proves the "nothing was deleted" claim by execution,
+# not by the absence of anything to delete.
+$dirCompleteB = New-InvokeRun $outB $prefix '80v2' $suffix $true
 $configB = New-InvokeConfig $rootB $lockB @('60v2','70v2') $carrierB $outB $prefix $suffix (Join-Path $rootB 'nonexistent_stepA.bat')
 
 $outputB = (Invoke-ResumeSweep -ConfigPath $configB -DryRun 6>&1 | Out-String)
@@ -211,6 +234,7 @@ Assert-Equal $true  ($outputB -like '*Step A incomplete*') 'Step A incomplete: r
 Assert-Equal $false ($outputB -like '*remaining*') 'Step A incomplete: does NOT proceed to Step B tag selection'
 Assert-Equal $false (Test-Path -LiteralPath $lockB) 'Step A incomplete dry run: no lock file created'
 Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootB 'run_resume.bat')) 'Step A incomplete dry run: no batch file written'
+Assert-Equal $true  (Test-Path -LiteralPath $dirCompleteB) 'Step A incomplete dry run: unrelated finished-run directory NOT deleted'
 Remove-Item $rootB -Recurse -Force
 
 # --- Scenario C: Step A complete, several tags remaining -> names the FIRST incomplete one ---
@@ -272,16 +296,48 @@ New-Item -ItemType Directory -Path $carrierE -Force | Out-Null
 New-Item -ItemType Directory -Path $outE -Force | Out-Null
 $tagsE = @('60v2','70v2')
 foreach ($t in $tagsE) { New-InvokeCarrier $carrierE $prefix $t }
-foreach ($t in $tagsE) { New-InvokeRun $outE $prefix $t $suffix $true | Out-Null }
+$dirsE = @()
+foreach ($t in $tagsE) { $dirsE += ,(New-InvokeRun $outE $prefix $t $suffix $true) }
 $configE = New-InvokeConfig $rootE $lockE $tagsE $carrierE $outE $prefix $suffix (Join-Path $rootE 'nonexistent_stepA.bat')
 
 $outputE = (Invoke-ResumeSweep -ConfigPath $configE -DryRun 6>&1 | Out-String)
 Assert-Equal $true  ($outputE -like '*all tags complete*') 'all complete: reports nothing to do'
 Assert-Equal $false (Test-Path -LiteralPath $lockE) 'all complete dry run: no lock file created'
 Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootE 'run_resume.bat')) 'all complete dry run: no batch file written'
+# Both tags' own finished-run directories, not a stand-in: if the code ever deleted
+# "the first tag" unconditionally instead of only an incomplete one, this is what
+# would catch it - proof by execution rather than by there being nothing to delete.
+Assert-Equal $true  (Test-Path -LiteralPath $dirsE[0]) 'all complete dry run: first finished-run directory NOT deleted'
+Assert-Equal $true  (Test-Path -LiteralPath $dirsE[1]) 'all complete dry run: second finished-run directory NOT deleted'
 Remove-Item $rootE -Recurse -Force
 
-Remove-Item Function:\Get-Process -ErrorAction SilentlyContinue
+# --- Scenario F (Important, Finding 1): java.exe already running, NO lock file ---
+# resume_sweep.ps1:80's "Get-Process java" guard is arguably the highest-consequence
+# line in this feature - it is what stops a boot-resume from double-launching onto an
+# already-running sweep and corrupting its output directories, unattended, with nobody
+# watching. Scenario A's "blocked" case proves nothing about this line: it is blocked
+# by the LOCK file before Test-CanLaunch ever reaches the java probe. This scenario
+# forces the java probe to report a process and leaves the lock ABSENT, so a "blocked"
+# result here can only come from the java check - proving the refusal path is real.
+$script:MockJavaRunning = $true
+$rootF = New-InvokeFixtureRoot
+$lockF = Join-Path $rootF 'resume.lock'   # deliberately never created
+$carrierF = Join-Path $rootF 'hagrid-output'
+$outF = Join-Path $rootF 'hagrid-matsim-output'
+New-Item -ItemType Directory -Path $carrierF -Force | Out-Null
+New-Item -ItemType Directory -Path $outF -Force | Out-Null
+New-InvokeCarrier $carrierF $prefix '60v2'
+$dirF = New-InvokeRun $outF $prefix '60v2' $suffix $true
+$configF = New-InvokeConfig $rootF $lockF @('60v2') $carrierF $outF $prefix $suffix (Join-Path $rootF 'nonexistent_stepA.bat')
+
+$outputF = (Invoke-ResumeSweep -ConfigPath $configF -DryRun 6>&1 | Out-String)
+Assert-Equal $true  ($outputF -like '*blocked*') 'java running, no lock present: reports blocked (refusal is from the java probe, not the lock)'
+Assert-Equal $false (Test-Path -LiteralPath $lockF) 'java running, no lock present: still no lock file created'
+Assert-Equal $false (Test-Path -LiteralPath (Join-Path $rootF 'run_resume.bat')) 'java running, no lock present: no batch file written'
+Assert-Equal $true  (Test-Path -LiteralPath $dirF) 'java running, no lock present: existing output directory untouched'
+Remove-Item $rootF -Recurse -Force
+$script:MockJavaRunning = $false
+}
 
 Remove-Item $tmp -Recurse -Force
 if ($script:Failures -gt 0) { Write-Host "`n$($script:Failures) FAILURE(S)"; exit 1 }
