@@ -172,3 +172,87 @@ def test_nonexhaust_bases_are_segment_resolved_as_the_source_has_them():
     assert sup["tsp_brake_g_per_km_n1_ii"] == pytest.approx(0.0155)
     assert sup["tsp_road_g_per_km_n1_i"] == pytest.approx(0.0150)
     assert sup["tsp_road_g_per_km_n1_ii"] == pytest.approx(0.0210)
+
+
+def test_vehicle_emissions_diesel_matches_manual_calc():
+    import emissions_emep as em
+    fac = em.load_factors()
+    out = em.vehicle_emissions(100.0, 80.0, "diesel", "N1-III", fac)
+    ec = 100.0 * em.ef(80.0, fac["diesel"]["N1-III"]["EC"])          # MJ
+    sup = fac["sup"]
+    assert out["ENERGY_MJ"] == pytest.approx(ec)
+    assert out["CO2"] == pytest.approx(ec * sup["ttw_co2_g_per_mj_diesel"])
+    assert out["NOx"] == pytest.approx(
+        100.0 * em.ef(80.0, fac["diesel"]["N1-III"]["NOx"]))
+    assert out["N2O"] == pytest.approx(100.0 * sup["n2o_g_per_km_diesel_lcv"])
+    assert out["CO2E_TTW"] == pytest.approx(
+        out["CO2"] + sup["gwp_ch4"] * out["CH4"] + sup["gwp_n2o"] * out["N2O"])
+    assert out["CO2E_WTW"] == pytest.approx(
+        out["CO2E_TTW"] + ec * sup["wtt_co2e_g_per_mj_diesel"])
+    assert out["PM10_NONEXHAUST"] == pytest.approx(
+        out["PM10_TYRE"] + out["PM10_BRAKE"] + out["PM10_ROAD"])
+
+
+def test_vehicle_emissions_segment_acts_on_energy_and_on_brake_wear():
+    """Rev. B2: das Segment wirkt auf BEIDEN Seiten -- Energie/Auspuff ueber
+    die Tier-3-Kurven, Abrieb ueber die segmentierten TSP-Basen. Genau je
+    Abriebquelle unterschiedlich: Reifen und Strasse gruppiert die Quelle
+    fuer N1-II+III (also gleich), die Bremse trennt sie (+36 %)."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    s = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-II", fac)
+    l = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-III", fac)
+    assert l["ENERGY_MJ"] / s["ENERGY_MJ"] == pytest.approx(1.43, rel=0.02)
+    assert l["CO2"] > s["CO2"]
+    assert l["NOx"] == pytest.approx(s["NOx"])        # II und III gleich
+    assert l["PM10_TYRE"] == pytest.approx(s["PM10_TYRE"])
+    assert l["PM10_ROAD"] == pytest.approx(s["PM10_ROAD"])
+    assert l["PM10_BRAKE"] / s["PM10_BRAKE"] == pytest.approx(1.361, rel=0.01)
+    # N1-I liegt bei ALLEN drei Abriebquellen darunter
+    xs = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-I", fac)
+    for k in ("PM10_TYRE", "PM10_BRAKE", "PM10_ROAD"):
+        assert xs[k] < s[k], k
+
+
+def test_vehicle_emissions_rejects_unknown_segment():
+    import emissions_emep as em
+    with pytest.raises(KeyError):
+        em.vehicle_emissions(10.0, 30.0, "diesel", "N2-XL",
+                             em.load_factors())
+
+
+def test_vehicle_emissions_bev_zero_exhaust_grid_wtw():
+    import emissions_emep as em
+    fac = em.load_factors()
+    out = em.vehicle_emissions(100.0, 80.0, "bev", "N1-III", fac)
+    for k in ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O",
+              "CO2", "CO2E_TTW"):
+        assert out[k] == 0.0, k
+    ec = 100.0 * em.ef(80.0, fac["bev"]["N1-III"]["EC"])
+    assert out["ENERGY_MJ"] == pytest.approx(ec)
+    assert out["CO2E_WTW"] == pytest.approx(ec * fac["sup"]["grid_co2e_g_per_mj"])
+    # BEV: mehr Reifen- und Strassen-, weniger Bremsabrieb als Diesel
+    d = em.vehicle_emissions(100.0, 80.0, "diesel", "N1-III", fac)
+    assert out["PM10_TYRE"] > d["PM10_TYRE"]
+    assert out["PM10_ROAD"] > d["PM10_ROAD"]
+    assert out["PM10_BRAKE"] < d["PM10_BRAKE"]
+
+
+def test_non_exhaust_speed_correction_piecewise():
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    # Tyre-Korrektur: konstant unter 40, fallend 40..90, konstant ueber 90
+    def tyre(v):
+        return em.non_exhaust_pm10(1.0, v, "diesel", "N1-III", sup)[0]
+    assert tyre(30.0) == pytest.approx(tyre(39.9), rel=1e-3)
+    assert tyre(39.9) > tyre(60.0) > tyre(95.0)
+    assert tyre(95.0) == pytest.approx(tyre(120.0))
+    # Strassenabrieb ist laut Gl. 9 geschwindigkeitsUNabhaengig
+    def road(v):
+        return em.non_exhaust_pm10(1.0, v, "diesel", "N1-III", sup)[2]
+    assert road(15.0) == pytest.approx(road(120.0))
+    # Plateauwerte gegen die Quelle: Reifen 1.39 bzw. Bremse 1.67 unter
+    # 40 km/h -- genau der Bereich, in dem unsere Touren fahren
+    t, b, _ = em.non_exhaust_pm10(1.0, 30.0, "diesel", "N1-III", sup)
+    assert t == pytest.approx(0.0169 * 0.600 * 1.39)
+    assert b == pytest.approx(0.0211 * 0.980 * 1.67)

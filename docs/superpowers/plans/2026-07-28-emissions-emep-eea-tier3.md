@@ -656,7 +656,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces (von Task 5/5b/6 konsumiert): `vehicle_emissions(km, v_kmh, powertrain, segment, fac) -> dict[str, float]` mit exakt den Keys `CO, NOx, VOC, PM_EXHAUST, CH4, SPN23, N2O, CO2, CO2E_TTW, CO2E_WTW, ENERGY_MJ, PM10_TYRE, PM10_BRAKE, PM10_ROAD, PM10_NONEXHAUST` — Massen in Gramm, `ENERGY_MJ` in MJ, `SPN23` in Partikelanzahl. `powertrain` ∈ {`"diesel"`,`"bev"`}; **`segment` ∈ {`"N1-I"`,`"N1-II"`,`"N1-III"`}** (Rev. B, neues Pflichtargument); `fac` = Rückgabe von `load_factors()`.
-- Produces: `non_exhaust_pm10(km, v_kmh, powertrain, sup) -> (tyre_g, brake_g, road_g)` — **kein `segment`-Argument**: die Non-Exhaust-Basen des Guidebooks (Kap. 1.A.3.b.vi-vii) sind für LCV nicht segmentiert. Bewusste Asymmetrie, im Docstring festhalten.
+- Produces: `non_exhaust_pm10(km, v_kmh, powertrain, segment, sup) -> (tyre_g, brake_g, road_g)`.
+  > **Korrigiert gegenüber Rev. B (Step-1-Verifikation 2026-07-31):** hier stand „kein `segment`-Argument, die Non-Exhaust-Basen sind für LCV nicht segmentiert — bewusste Asymmetrie". Das ist widerlegt: Tab. 3-4/3-8 gruppieren N1-II+III, Tab. 3-6 trennt alle drei Segmente. `segment` ist Pflichtargument, die Asymmetrie entfällt. Segment→Key: `segment.lower().replace("-", "_")`.
 
 - [ ] **Step 1: Failing Tests anhängen**
 
@@ -680,10 +681,11 @@ def test_vehicle_emissions_diesel_matches_manual_calc():
     assert out["PM10_NONEXHAUST"] == pytest.approx(
         out["PM10_TYRE"] + out["PM10_BRAKE"] + out["PM10_ROAD"])
 
-def test_vehicle_emissions_segment_changes_energy_not_nonexhaust():
-    """Rev. B: das Segment wirkt auf die Auspuff-/Energieseite, NICHT auf
-    den Abrieb (Guidebook-Non-Exhaust-Basen sind fuer LCV nicht
-    segmentiert). Diese Asymmetrie ist gewollt."""
+def test_vehicle_emissions_segment_acts_on_energy_and_on_brake_wear():
+    """Rev. B2: das Segment wirkt auf BEIDEN Seiten -- Energie/Auspuff ueber
+    die Tier-3-Kurven, Abrieb ueber die segmentierten TSP-Basen. Genau je
+    Abriebquelle unterschiedlich: Reifen und Strasse gruppiert die Quelle
+    fuer N1-II+III (also gleich), die Bremse trennt sie (+36 %)."""
     import emissions_emep as em
     fac = em.load_factors()
     s = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-II", fac)
@@ -691,7 +693,13 @@ def test_vehicle_emissions_segment_changes_energy_not_nonexhaust():
     assert l["ENERGY_MJ"] / s["ENERGY_MJ"] == pytest.approx(1.43, rel=0.02)
     assert l["CO2"] > s["CO2"]
     assert l["NOx"] == pytest.approx(s["NOx"])        # II und III gleich
-    assert l["PM10_NONEXHAUST"] == pytest.approx(s["PM10_NONEXHAUST"])
+    assert l["PM10_TYRE"] == pytest.approx(s["PM10_TYRE"])
+    assert l["PM10_ROAD"] == pytest.approx(s["PM10_ROAD"])
+    assert l["PM10_BRAKE"] / s["PM10_BRAKE"] == pytest.approx(1.361, rel=0.01)
+    # N1-I liegt bei ALLEN drei Abriebquellen darunter
+    xs = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-I", fac)
+    for k in ("PM10_TYRE", "PM10_BRAKE", "PM10_ROAD"):
+        assert xs[k] < s[k], k
 
 def test_vehicle_emissions_rejects_unknown_segment():
     import emissions_emep as em
@@ -718,14 +726,20 @@ def test_non_exhaust_speed_correction_piecewise():
     import emissions_emep as em
     sup = em.load_factors()["sup"]
     # Tyre-Korrektur: konstant unter 40, fallend 40..90, konstant ueber 90
-    t30, _, _ = em.non_exhaust_pm10(1.0, 30.0, "diesel", sup)
-    t39, _, _ = em.non_exhaust_pm10(1.0, 39.9, "diesel", sup)
-    t60, _, _ = em.non_exhaust_pm10(1.0, 60.0, "diesel", sup)
-    t95, _, _ = em.non_exhaust_pm10(1.0, 95.0, "diesel", sup)
-    t120, _, _ = em.non_exhaust_pm10(1.0, 120.0, "diesel", sup)
-    assert t30 == pytest.approx(t39, rel=1e-3)
-    assert t39 > t60 > t95
-    assert t95 == pytest.approx(t120)
+    def tyre(v):
+        return em.non_exhaust_pm10(1.0, v, "diesel", "N1-III", sup)[0]
+    assert tyre(30.0) == pytest.approx(tyre(39.9), rel=1e-3)
+    assert tyre(39.9) > tyre(60.0) > tyre(95.0)
+    assert tyre(95.0) == pytest.approx(tyre(120.0))
+    # Strassenabrieb ist laut Gl. 9 geschwindigkeitsUNabhaengig
+    def road(v):
+        return em.non_exhaust_pm10(1.0, v, "diesel", "N1-III", sup)[2]
+    assert road(15.0) == pytest.approx(road(120.0))
+    # Plateauwerte gegen die Quelle: Reifen 1.39 bzw. Bremse 1.67 unter
+    # 40 km/h -- genau der Bereich, in dem unsere Touren fahren
+    t, b, _ = em.non_exhaust_pm10(1.0, 30.0, "diesel", "N1-III", sup)
+    assert t == pytest.approx(0.0169 * 0.600 * 1.39)
+    assert b == pytest.approx(0.0211 * 0.980 * 1.67)
 ```
 
 - [ ] **Step 2: Fehlschlag bestätigen**
@@ -761,21 +775,41 @@ def _brake_speed_corr(v):
     return 0.185
 
 
-def non_exhaust_pm10(km, v_kmh, powertrain, sup):
-    """PM10 [g] from tyre / brake / road-surface wear over km at mean speed
-    v. BEV multipliers (mass penalty on tyre, regeneration on brake) are
-    declared assumptions in emep_supplement.csv, not guidebook values.
+def _seg_key(prefix, segment):
+    """'tsp_brake_g_per_km_' + 'N1-II' -> 'tsp_brake_g_per_km_n1_ii'."""
+    return prefix + segment.lower().replace("-", "_")
 
-    Deliberately NOT segment-dependent: the guidebook's non-exhaust bases
-    (ch. 1.A.3.b.vi-vii) are not resolved by N1 segment for LCV, so a
-    segment argument would imply a resolution the source does not have."""
-    tyre_mult = sup["bev_tyre_mult"] if powertrain == "bev" else 1.0
-    brake_mult = sup["bev_brake_mult"] if powertrain == "bev" else 1.0
-    tyre = km * sup["tsp_tyre_g_per_km_lcv"] * sup["pm10_frac_tyre"] \
-        * _tyre_speed_corr(v_kmh) * tyre_mult
-    brake = km * sup["tsp_brake_g_per_km_lcv"] * sup["pm10_frac_brake"] \
-        * _brake_speed_corr(v_kmh) * brake_mult
-    road = km * sup["tsp_road_g_per_km_lcv"] * sup["pm10_frac_road"]
+
+def non_exhaust_pm10(km, v_kmh, powertrain, segment, sup):
+    """PM10 [g] from tyre / brake / road-surface wear over km at mean speed
+    v, for an N1 `segment`.
+
+    Segment-resolved because the source is: ch. 1.A.3.b.vi-vii gives TSP
+    bases per N1 segment -- Tab. 3-4 (tyre) and Tab. 3-8 (road) group
+    N1-II and N1-III into one row, Tab. 3-6 (brake) separates all three.
+    That grouping is written out as data (identical values for ii/iii) so
+    the source structure stays visible in emep_supplement.csv.
+
+    Speed corrections are the guidebook's own eq. (5) / (8) on MEAN TRIP
+    speed; road-surface wear has no speed dependence (eq. 9).
+
+    BEV multipliers are the guidebook's own ICE->BEV ratios for the medium
+    passenger car (the source has no BEV row for LCV) -- a declared
+    category transfer, not a free assumption. See data/README.md.
+
+    Raises KeyError on an unknown segment: a vehicle type without a
+    mapping must fail loudly rather than be silently priced as N1-III.
+    """
+    bev = powertrain == "bev"
+    tyre = (km * sup[_seg_key("tsp_tyre_g_per_km_", segment)]
+            * sup["pm10_frac_tyre"] * _tyre_speed_corr(v_kmh)
+            * (sup["bev_tyre_mult"] if bev else 1.0))
+    brake = (km * sup[_seg_key("tsp_brake_g_per_km_", segment)]
+             * sup["pm10_frac_brake"] * _brake_speed_corr(v_kmh)
+             * (sup["bev_brake_mult"] if bev else 1.0))
+    road = (km * sup[_seg_key("tsp_road_g_per_km_", segment)]
+            * sup["pm10_frac_road"]
+            * (sup["bev_road_mult"] if bev else 1.0))
     return tyre, brake, road
 
 
@@ -814,7 +848,7 @@ def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
         out["CO2E_WTW"] = ec * sup["grid_co2e_g_per_mj"]
     else:
         raise ValueError("unknown powertrain: " + str(powertrain))
-    tyre, brake, road = non_exhaust_pm10(km, v_kmh, powertrain, sup)
+    tyre, brake, road = non_exhaust_pm10(km, v_kmh, powertrain, segment, sup)
     out["PM10_TYRE"], out["PM10_BRAKE"], out["PM10_ROAD"] = tyre, brake, road
     out["PM10_NONEXHAUST"] = tyre + brake + road
     return out
