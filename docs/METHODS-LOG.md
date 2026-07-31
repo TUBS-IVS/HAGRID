@@ -745,6 +745,24 @@ Java-Emissionspunkte verifiziert, Baseline bitgleich), aber:
    **Behoben 2026-07-29 (`48bff7c`):** der Wortlaut im Code ist korrigiert (`unkorrigierbar` →
    `nicht korrigiert`); die tatsächliche km-Korrektur bleibt weiterhin **bewusst** nicht gebaut —
    an dieser Entscheidung ändert sich nichts.
+
+   **Annotation 2026-07-31 — die Begründung der Nicht-Korrektur ist empirisch entfallen.** Das
+   Gegenargument war, eine Selbstrechnung träte an die Stelle der autoritativen MATSim-CSV. Der
+   Emissions-Extractor rechnet die Fahrzeug-km nun mit `link.getLength()` (Netzwerkattribut) statt
+   Euklid-Knotendistanz — und trifft `drt_vehicle_stats` in **allen fünf** fertigen 1d-Läufen auf
+   **0,001 %**: Rekonstruierte Pax-km + Fracht-km aus dem Fensterschnitt = CSV-Gesamtdistanz
+   (48.824 / 47.089 / 48.697 / 48.773 / 47.160 km). Selbstrechnung und autoritative CSV sind also
+   **dieselbe Zahl**, sobald die Länge stimmt; es gibt keinen Autoritätsverlust mehr abzuwägen.
+
+   Damit ist auch der oft zitierte **„~3 % zu niedrige Event-Rekonstruktion" ein Artefakt der
+   Euklid-Näherung**, nicht eine Eigenschaft der Rekonstruktion (die Luftlinie zwischen den
+   Linkknoten ist kürzer als der modellierte Straßenverlauf). Wer künftig Event-Distanzen
+   rekonstruiert, muss das `length`-Attribut nehmen; `geometry.load_link_geometry.length_m` ist für
+   Distanz-KPIs untauglich und nur für Kartenzeichnung gedacht.
+
+   **Die Entscheidung selbst ist damit nicht getroffen** — ob die drei km-KPIs korrigiert werden,
+   bleibt offen und ist eine User-Entscheidung. Nur ihre Begründung braucht eine neue, falls sie
+   bestehen bleiben soll.
 2. **Das „von Hand korrigierbar"-Rezept (Subtraktion) stimmt nur für `drt_tour_hours_total`.**
    `service_ratio_active`, `fleet_utilisation_by_time`, `mean_pax_aboard` brauchen eine
    **Reskalierung** × `tour_h / (tour_h − freight_h)` (funktioniert nur, weil Exkursionen
@@ -1116,12 +1134,38 @@ das `m1d050` mit einem einzigen zugestellten Paket auf ~±1,5 % abgrenzt.
 Fahrzeuge in Frachtfenstern gebunden, verschlechtert sich das Pax-Angebot, Agenten wandern ab — der
 Endzustand ist ein anderes Gleichgewicht, nicht dieselbe Pax-Nachfrage mit Fracht obendrauf.
 
+**Annotation 2026-07-31 — der Regimesplit macht die Verdrängung erst sichtbar, und sie ist viermal
+so groß wie die Gesamtdistanz suggeriert.** Mit dem implementierten Fensterschnitt (Plan Task 5b/6)
+lässt sich die DRT-Gesamtdistanz jetzt in **Fracht-km und Pax-bedienende km** zerlegen:
+
+| Run | Gesamt (`drt_vehicle_stats`) | Fracht (Fensterschnitt) | **Pax-bedienende Fzg-km** | Gesamt vs. ctrl1d | **Pax-km vs. ctrl1d** |
+|---|---|---|---|---|---|
+| `ctrl1d` | 48.824 | 0 | 48.824 | — | — |
+| `m1d010` | 47.089 | 5.616,5 | **41.473** | −3,6 % | **−15,1 %** |
+| `m1d020` | 48.697 | 2.517,7 | 46.179 | −0,3 % | −5,4 % |
+| `m1d030` | 48.773 | 704,9 | 48.068 | −0,1 % | −1,6 % |
+| `m1d050` | 47.160 | 13,5 | 47.146 | −3,4 % | −3,4 % |
+
+**Die naive Lesart der Fahrzeug-km unterschätzt die Verdrängung um mehr als das Vierfache**
+(−3,6 % gegen −15,1 %), weil die Gesamtdistanz die Fracht-km *enthält*: der Pax-Rückgang wird vom
+Fracht-Zuschlag kaschiert. Das ist genau der Kanal, den §2.14 als „not corrected" führt — er ist
+mit dem Fensterschnitt geschlossen. Bemerkenswert: die Verdrängung auf der **Fahrzeug**-km-Seite
+(−15,1 %) und auf der **bedienten Pax-Distanz** (−15,4 %, Tabelle oben) stimmen fast überein, die
+Flotte fährt also nicht ineffizienter für weniger Leistung, sondern schlicht weniger Pax-Betrieb.
+
+**Einschränkung, die die Zerlegung ebenfalls sichtbar macht:** die Monotonie gilt nur oberhalb des
+Rauschbands. `m1d050` liegt mit **einem** zugestellten Paket bei −3,4 %, also *tiefer* als `m1d030`
+mit 22 Touren (−1,6 %). Unterhalb von `m1d020` ist das Signal von der Replanning-Streuung
+(~±1,5–3 %) nicht zu trennen; belastbar sind `m1d010` und `m1d020`.
+
 **Konsequenzen:**
 1. **Eigener Kostenposten der Integration**, der berichtet werden muss, unabhängig von jeder
    Emissionszurechnung. „Integration spart CO₂" wäre unvollständig, wenn dabei 15 % weniger
    Fahrgäste bedient werden — das ist keine Emissionsersparnis, sondern teils ein Leistungsabbau.
 2. **Die DRT-Gesamtdistanz ist als Vergleichsgröße zwischen den Läufen unbrauchbar** (§3.9): sie
-   sinkt mit steigender Frachtmenge, weil der Pax-Rückgang den Fracht-Zuschlag überkompensiert.
+   sinkt mit steigender Frachtmenge, weil der Pax-Rückgang den Fracht-Zuschlag überkompensiert —
+   und sie *verschleiert* zusätzlich die Verdrängung, s. Annotation oben. Zu berichten ist die
+   zerlegte Größe, nicht die Summe.
 3. **Der Vergleich 1d ↔ Baseline braucht eine Leistungsnormierung.** Ungleiche bediente
    Pax-Distanz *und* ungleiche Zustellquote gleichzeitig — verwandt mit dem Netto-vs-Brutto- und
    Sitzplatz-Confound in §2.21, aber ein zusätzlicher Kanal.
