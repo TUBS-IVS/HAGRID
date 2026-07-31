@@ -326,6 +326,153 @@ class ModularTourSchedulerTest {
         assertThat(ModularTourScheduler.sameLink(realDepot, stop1)).isFalse(); // genuinely different ids
     }
 
+    // --- minimumChainDurationS: the no-routing short-circuit for re-offered tours -------------
+
+    /**
+     * A {@link TravelTime} that counts lookups, so a test can assert that the production chain
+     * routing did NOT happen. Only the INJECTED travel time is wrapped - the free-flow twin
+     * {@link ModularTourScheduler#minimumChainDurationS} builds for itself is internal and
+     * deliberately not counted, which is exactly the distinction under test ("the bound was
+     * computed, the chain was not routed").
+     */
+    private static final class CountingTravelTime implements TravelTime {
+        private final TravelTime delegate = new FreeSpeedTravelTime();
+        private int lookups;
+
+        @Override
+        public double getLinkTravelTime(Link link, double time, org.matsim.api.core.v01.population.Person person,
+                                        org.matsim.vehicles.Vehicle vehicle) {
+            lookups++;
+            return delegate.getLinkTravelTime(link, time, person, vehicle);
+        }
+    }
+
+    private ModularTourScheduler schedulerWith(CountingTravelTime counting) {
+        return new ModularTourScheduler(network, counting, new TimeAsTravelDisutility(counting),
+                new DrtTaskFactoryImpl(), loadType);
+    }
+
+    @Test
+    @DisplayName("bound is a LOWER bound: strictly below the routed completion of a feasible tour")
+    void boundStaysBelowTheRoutedDuration() {
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0,
+                stop(stopLink1, 240.0, 2), stop(stopLink2, 360.0, 3));
+
+        double routed = scheduler.schedule(vehicle, tour, 8 * 3600.0).orElseThrow().routedDurationS();
+
+        // This fixture's travel time IS free-flow, so the bound differs from the routed duration
+        // by exactly the one term it drops - the approach leg. That makes this the tightest case
+        // available here, i.e. the one where an off-by-a-term bound would show up.
+        assertThat(scheduler.minimumChainDurationS(tour)).isLessThan(routed);
+    }
+
+    @Test
+    @DisplayName("bound never vetoes a tour the routing accepts, not even at the envelope boundary")
+    void boundDoesNotVetoAtTheEnvelopeBoundary() {
+        // Same construction as envelopeBoundary(): latestEnd == the exact routed completion must
+        // still be ACCEPTED. Step 0 runs before the routing, so a bound that overshot by even one
+        // second would turn this acceptance into a rejection - which is why this case is repeated
+        // here rather than left to that test alone.
+        DvrpVehicle probe = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_b1");
+        ModularFreightTour probeTour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        double completion = scheduler.schedule(probe, probeTour, 8 * 3600.0)
+                .orElseThrow().plannedCompletion();
+
+        DvrpVehicle exact = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_b2");
+        ModularFreightTour exactTour = tour(depotLink, completion, stop(stopLink1, 240.0, 2));
+
+        assertThat(scheduler.schedule(exact, exactTour, 8 * 3600.0)).isPresent();
+    }
+
+    @Test
+    @DisplayName("bound accounts for both capsule swaps and every stop's service duration")
+    void boundContainsTheTimeIndependentTerms() {
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0,
+                stop(stopLink1, 240.0, 2), stop(stopLink2, 360.0, 3));
+
+        // The two swaps and the dwell times are the part of the chain that no routing can shorten;
+        // a bound built from travel alone would let a hopeless tour be re-routed for another
+        // 2*420 + 600 seconds of simulated time before it finally expired.
+        assertThat(scheduler.minimumChainDurationS(tour))
+                .isGreaterThan(2 * Modular.RETOOLING_S + 240.0 + 360.0);
+    }
+
+    @Test
+    @DisplayName("a re-offered hopeless tour is rejected WITHOUT routing the chain again")
+    void reOfferedHopelessTourIsNotReRouted() {
+        CountingTravelTime counting = new CountingTravelTime();
+        ModularTourScheduler counted = schedulerWith(counting);
+        // latestEnd sits inside the bound (two swaps alone are 840 s), so no departure can ever fit.
+        ModularFreightTour hopeless = tour(depotLink, 8 * 3600.0 + 300.0,
+                stop(stopLink1, 240.0, 2), stop(stopLink2, 360.0, 3));
+
+        DvrpVehicle first = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_c1");
+        assertThat(counted.schedule(first, hopeless, 8 * 3600.0)).isEmpty();
+        counting.lookups = 0;
+
+        // The dispatcher's re-offers: same tour, later simsteps, whichever vehicle is nearest.
+        for (int step = 1; step <= 20; step++) {
+            DvrpVehicle again = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")),
+                    "drt_c1_" + step);
+            assertThat(counted.schedule(again, hopeless, 8 * 3600.0 + step)).isEmpty();
+            assertThat(again.getSchedule().getTaskCount()).isEqualTo(1);   // untouched
+        }
+
+        assertThat(counting.lookups)
+                .as("20 re-offers must cost zero chain-routing travel-time lookups")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("the short-circuit reaches the SAME verdict as the full routing, tour by tour")
+    void shortCircuitAgreesWithTheFullRouting() {
+        // Differential check across the whole feasible/infeasible transition: for every latestEnd
+        // in a window that straddles the fixture's routed completion, "bound says impossible" must
+        // never disagree with "routing rejected it". A bound that was too aggressive anywhere in
+        // this range would show up as a veto on an accepted latestEnd.
+        DvrpVehicle probe = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")), "drt_d0");
+        ModularFreightTour probeTour = tour(depotLink, 21 * 3600.0, stop(stopLink1, 240.0, 2));
+        double completion = scheduler.schedule(probe, probeTour, 8 * 3600.0)
+                .orElseThrow().plannedCompletion();
+
+        for (int offset = -400; offset <= 400; offset += 20) {
+            double latestEnd = completion + offset;
+            DvrpVehicle v = fixtureVehicle(network.getLinks().get(Id.createLinkId("start")),
+                    "drt_d_" + offset);
+            ModularFreightTour t = new ModularFreightTour("dhl_t_" + offset, "dhl", 0, depotLink,
+                    8 * 3600.0, 0.0, latestEnd, List.of(stop(stopLink1, 240.0, 2)));
+
+            boolean boundSaysImpossible = 8 * 3600.0 + scheduler.minimumChainDurationS(t) > latestEnd;
+            boolean routingRejected = scheduler.schedule(v, t, 8 * 3600.0).isEmpty();
+
+            if (boundSaysImpossible) {
+                assertThat(routingRejected)
+                        .as("bound vetoed latestEnd=%s but the routing would have accepted it",
+                                latestEnd)
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("bound is STABLE across queries and across departure times (the veto must not flicker)")
+    void boundIsStableAcrossQueries() {
+        ModularFreightTour tour = tour(depotLink, 21 * 3600.0,
+                stop(stopLink1, 240.0, 2), stop(stopLink2, 360.0, 3));
+
+        // Time-independence is the property the short-circuit rests on (see the method's javadoc,
+        // point 3): the same tour must yield the same bound however often and whenever it is asked,
+        // or a re-offer could be vetoed at one simstep and routed at the next.
+        double first = scheduler.minimumChainDurationS(tour);
+        assertThat(scheduler.minimumChainDurationS(tour)).isEqualTo(first);
+        assertThat(new ModularTourScheduler(network, new FreeSpeedTravelTime(),
+                new TimeAsTravelDisutility(new FreeSpeedTravelTime()), new DrtTaskFactoryImpl(),
+                loadType).minimumChainDurationS(tour)).isEqualTo(first);
+        // NOTE: that the repeat is served from the per-tour cache rather than recomputed is not
+        // observable at this seam (the bound's router is internal by design). Its cost effect is
+        // what reOfferedHopelessTourIsNotReRouted pins.
+    }
+
     // --- fixture helpers ---
 
     private ModularFreightTour tour(Id<Link> depotLink, double latestEnd, ModularFreightTour.Stop... stops) {

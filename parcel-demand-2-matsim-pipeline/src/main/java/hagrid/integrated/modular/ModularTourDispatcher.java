@@ -158,15 +158,13 @@ public class ModularTourDispatcher {
                 // Review Finding 3: this branch used to be EMPTY - no event, no log, no counter.
                 // The tour stayed pending and, when it later tripped the expiry check, was
                 // published as tours_expired_pending / delta_share_undispatched, i.e. as
-                // "the gate was too tight". It is not the same failure. The two envelopes are
-                // different tests: the expiry check above uses plannedDuration - jsprit's sum
-                // over the CAR network - while the splicer checks the actual DRT-routed
-                // completion plus the approach leg, which is always larger and systematically
-                // so wherever DRT routing diverges from jsprit's. A tour can therefore pass
-                // expiry and still be refused every simstep until it expires. Confusing the two
+                // "the gate was too tight". It is not the same failure, and confusing the two
                 // points the theta sweep - the study's main 1d instrument - at the wrong knob:
                 // "lower theta" is the answer to a gate that is too tight, "loosen the tour cap"
-                // to a tour that never fit.
+                // to a tour that never fit. Why the two envelopes are different tests is stated
+                // ONCE, in this class's javadoc; it is deliberately not restated here (that
+                // duplicate is how the retracted F2 claim - "the splicer's number is always
+                // larger" - survived the javadoc's own correction, see METHODS-LOG 2.18).
                 LOG.warn("Modular tour {} (mode {}) rejected by the splicer at {} on candidate"
                         + " vehicle {}: the DRT-routed completion exceeds min(latestEnd {},"
                         + " vehicle service end). Tour stays pending; this is NOT the pending"
