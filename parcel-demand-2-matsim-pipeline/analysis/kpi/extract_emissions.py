@@ -14,6 +14,7 @@ effect for light vehicles (no load dimension exists for LCV). See
 segment_for_type() and data/README.md. An unmappable type raises rather
 than being silently priced as N1-III.
 """
+import csv
 import gzip
 import re
 import xml.etree.ElementTree as ET
@@ -387,3 +388,193 @@ def intensity_rows(alloc, n_pax, n_parcels, sup=None):
                         slot_split(n_pax, n_parcels, sup)[1], "share",
                         ALLOC_SRC))
     return rows
+
+
+# ------------------------------------------- 7: KPI rows + detail CSV
+
+SRC = ("EMEP/EEA GB 2023 - Update 2025, App.4 Tier-3 (Okt 2025, "
+       "COPERT 5.9.1), LCV Euro 7 DPF+SCR, segment per vehicle type")
+EV_THRESHOLDS = ("low", "mid", "high")     # -> sup["ev_range_km_<key>"]
+
+# (kpi_metric, emis_key, unit, to_unit_factor)
+_KPI_METRICS = [("co2e_wtw", "CO2E_WTW", "kg", 1e-3),
+                ("co2e_ttw", "CO2E_TTW", "kg", 1e-3),
+                ("co2", "CO2", "kg", 1e-3),
+                ("nox", "NOx", "g", 1.0),
+                ("pm_exhaust", "PM_EXHAUST", "g", 1.0),
+                ("pm10_nonexhaust", "PM10_NONEXHAUST", "g", 1.0),
+                ("energy_final", "ENERGY_MJ", "MJ", 1.0)]
+_BEV_SKIP = {"co2e_ttw", "co2"}          # im BEV-Arm konstruktionsbedingt 0
+
+
+def _percentile(sorted_vals, q):
+    if not sorted_vals:
+        return 0.0
+    i = min(len(sorted_vals) - 1, int(round(q * (len(sorted_vals) - 1))))
+    return sorted_vals[i]
+
+
+def _range_rows(detail, sup):
+    """EV range SWEEP (Rev. B): per DRT vehicle-day / per freight tour km
+    against three thresholds instead of one gate.
+
+    Rationale (measured 2026-07-31 across the runs that have freight tours):
+    at 250 km the exceedance is 0 % in EVERY run -- the longest tour anywhere
+    is 183.3 km -- so a single 250 km gate reports a null result that looks
+    like a check. The discriminating band is ~150 km (0-13.4 % depending on
+    the run). Reporting the curve keeps the real finding "freight
+    electrification is not range-constrained here" falsifiable instead of
+    vacuous.
+    """
+    rows = []
+    for fleet, label in (("drt", "drt"), ("freight", "freight_tour"),
+                         ("freight_modular", "freight_modular")):
+        kms = sorted(d["km"] for d in detail
+                     if d["fleet"] == fleet and d["powertrain"] == "diesel")
+        if not kms:
+            continue
+        src = "per-entity km vs ev_range_km_* (emep_supplement.csv)"
+        rows += [row("environment", "ev_range_max_km_" + label,
+                     max(kms), "km", src),
+                 row("environment", "ev_range_p95_km_" + label,
+                     _percentile(kms, 0.95), "km", src)]
+        for key in EV_THRESHOLDS:
+            thr = sup["ev_range_km_" + key]
+            exceed = sum(1 for k in kms if k > thr) / len(kms)
+            rows.append(row("environment",
+                            "ev_range_exceed_" + fleet + "_" + str(int(thr)),
+                            exceed, "share",
+                            src + " [threshold=" + str(int(thr)) + " km]"))
+    return rows
+
+
+def _segment_share_rows(detail):
+    """km share per N1 segment -- makes the (endogenous, jsprit-chosen)
+    vehicle mix auditable, so a CO2 delta can be attributed to routing vs.
+    to a shifted fleet mix. See the plan's Task-7 interfaces."""
+    diesel = [d for d in detail if d["powertrain"] == "diesel"]
+    total = sum(d["km"] for d in diesel)
+    if total <= 0:
+        return []
+    rows = []
+    for seg, suffix in (("N1-II", "n1_ii"), ("N1-III", "n1_iii")):
+        km = sum(d["km"] for d in diesel if d["segment"] == seg)
+        rows.append(row("environment", "segment_km_share_" + suffix,
+                        km / total, "share",
+                        "sum km per N1 segment / total km (diesel arm)"))
+    return rows
+
+
+def _intensity_rows_for_drt(veh_path, link_len, drt_detail, n_pax, n_parcels,
+                            sup):
+    """Mass/slot allocation rows for the shared-use (1c) arm.
+
+    Only emitted when the caller supplies the served quantities: the
+    extractor stays run-agnostic and does not know how many passengers or
+    parcels a run served (build_kpis does). Without them there is no
+    denominator, and a wrong denominator is worse than a missing row.
+
+    CAUTION on the reported number: the allocation BASIS moves CO2e per
+    parcel by a factor ~26 (mass 0.90 % vs slot 23.64 % freight share on the
+    measured 1c run), which is why both shares are always emitted as a pair
+    and why total_* stays the uncontested figure. METHODS-LOG 2.26.
+    """
+    if not (n_pax or n_parcels):
+        return []
+    alloc = {"pax": 0.0, "parcels": 0.0}
+    by_veh = {d["entity"]: d["CO2E_WTW"] for d in drt_detail
+              if d["powertrain"] == "diesel"}
+    for veh, g in by_veh.items():
+        part = allocate_vehicle_by_mass(veh_path.get(veh, []), link_len,
+                                        g * 1e-3, sup)      # g -> kg
+        alloc["pax"] += part["pax"]
+        alloc["parcels"] += part["parcels"]
+    if alloc["pax"] + alloc["parcels"] <= 0:
+        return []
+    return intensity_rows(alloc, n_pax, n_parcels, sup)
+
+
+def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
+            freight_events=None, n_pax=None, n_parcels=None):
+    """Emission KPI rows + per-entity detail for one run.
+
+    Three arms, each optional depending on what the run produced:
+      - "freight"         conventional LMD tours (CarriersAnalysis TSV)
+      - "freight_modular" 1d: freight km inside MODULAR_FREIGHT_DRIVE windows
+      - "drt"             DRT vehicle km (pax side)
+
+    DRT arm only when veh_path/recon/network are supplied by build_kpis
+    (they are reused, never recomputed here). n_pax/n_parcels are the served
+    quantities for the 1c allocation rows; omit them and those rows are
+    skipped rather than divided by a guessed denominator.
+
+    GAP GESCHLOSSEN (2026-07-31, war: "KNOWN GAP METHODS-LOG 2.14"). Der
+    Plan notierte hier, der "drt"-Arm ueberlappe im 1d-Fall die modularen
+    Freight-km und total_* sei deshalb die einzige belastbare Groesse.
+    Das war der Stand VOR der Zurechnungsentscheidung. Die steht inzwischen
+    (METHODS-LOG 1.4: 1d = restfreier Regimesplit), also wird die
+    Doppelzaehlung behoben statt dokumentiert: die Freight-Fenster werden
+    zuerst bestimmt und dann an drt_arm als exclude_windows gegeben.
+    Die Zeitseite trennte ohnehin schon (drive_s vs freight_drive_s,
+    drt_service_time.py:411/414); nur die Distanzseite fehlte.
+    """
+    fac = em.load_factors()
+    arms = {}
+    fr = freight_arm(run_dir, fac)
+    if fr is not None:
+        arms["freight"] = fr
+    link_len = None
+    windows = {}
+    if veh_path and recon is not None and network_gz is not None:
+        used = {p[0] for path in veh_path.values() for p in path}
+        link_len = load_link_lengths(network_gz, used)
+        # Fenster VOR dem DRT-Arm bestimmen: sie sind dessen Ausschlussmenge.
+        if freight_events is not None:
+            windows = freight_windows(freight_events)
+        arms["drt"] = drt_arm(veh_path, recon, link_len, fac,
+                              exclude_windows=windows)
+        if windows:
+            arms["freight_modular"] = modular_freight_arm(
+                veh_path, windows, link_len, fac)
+
+    rows, detail = [], []
+    grand = _zero_totals()
+    for fleet, (totals, det) in arms.items():
+        detail += det
+        for pt in POWERTRAINS:
+            for k in EMIS_KEYS:
+                grand[pt][k] += totals[pt][k]
+            sfx = "_bev" if pt == "bev" else ""
+            for metric, key, unit, f in _KPI_METRICS:
+                if pt == "bev" and metric in _BEV_SKIP:
+                    continue
+                rows.append(row("environment", fleet + "_" + metric + sfx,
+                                totals[pt][key] * f, unit, SRC))
+    # total_* immer emittieren (= Summe der ABGEDECKTEN Flotten; bei
+    # Freight-only-Runs also == freight_*) -- Vergleichbarkeit ueber Runs.
+    if arms:
+        for pt in POWERTRAINS:
+            sfx = "_bev" if pt == "bev" else ""
+            for metric, key, unit, f in _KPI_METRICS:
+                if pt == "bev" and metric in _BEV_SKIP:
+                    continue
+                rows.append(row("environment", "total_" + metric + sfx,
+                                grand[pt][key] * f, unit, SRC))
+    rows += _range_rows(detail, fac["sup"])
+    rows += _segment_share_rows(detail)
+    if "drt" in arms and link_len is not None:
+        rows += _intensity_rows_for_drt(veh_path, link_len, arms["drt"][1],
+                                        n_pax, n_parcels, fac["sup"])
+    return rows, detail
+
+
+def write_detail(detail, meta, path):
+    """kpi_emissions_vehicles.csv -- one row per entity x powertrain,
+    ';'-separated like the other kpi_* CSVs."""
+    header = ["run_id", "fleet", "entity", "vehicle_type", "segment", "km",
+              "v_kmh", "powertrain"] + list(EMIS_KEYS)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(header)
+        for d in detail:
+            w.writerow([meta.run_id] + [d[k] for k in header[1:]])

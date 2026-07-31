@@ -1778,10 +1778,15 @@ def write_detail(detail, meta, path):
             w.writerow([meta.run_id] + [d[k] for k in header[1:]])
 ```
 
-- [ ] **Step 4: PASS bestätigen**
+- [x] **Step 4: PASS bestätigt** — 29/29, plus Realdaten-Durchlauf über beide Armkonstellationen.
 
-Run: `python -u -m pytest tests/test_extract_emissions.py -v`
-Expected: PASS
+  **A) Konventioneller Baseline-Lauf** (`bandz_central`, nur Freight-Arm): 1243,8 kg CO₂e-WTW / 435,4 kg BEV; NOx 542,6 g; Abrieb-PM10 316,6 g; 13.128 MJ; Segmentanteile 92,6 % N1-II / 7,4 % N1-III; 31 KPI-Rows, 126 Detailzeilen.
+
+  **B) 1d-Lauf** (`m1d050`, DRT + modularer Freight): `drt_co2e_wtw` 12.706,058 + `freight_modular_co2e_wtw` 3,520 = `total_co2e_wtw` **12.709,578 kg — auf die Stelle restfrei**, der Regimesplit hält also auch durch die KPI-Schicht.
+
+  **Der EV-Sweep trennt scharf, und in die erwartete Richtung** — der Rev.-B-Umbau war berechtigt: längste Freight-Tour 158,8 km, p95 139,4 km, Überschreitung **3,2 % bei 150 km** und **0 % bei 250 km**. Ein Einzelgate bei 250 km hätte hier genau nichts gezeigt.
+
+  **ACHTUNG, asymmetrischer Befund — nicht überinterpretieren:** auf der DRT-Seite liegt die Überschreitung bei 150 km bei **95,8 %** (längster Fahrzeugtag 527 km, Mittel ~393 km/Fahrzeug). Das ist **kein** „DRT ist nicht elektrifizierbar": ein Freight-*Tour* ist eine zusammenhängende Schicht, ein DRT-*Fahrzeugtag* enthält lange `STAY`-Phasen, in denen geladen werden könnte. Die beiden Zahlen sind also **nicht dieselbe Größe** und dürfen nicht nebeneinander als Vergleich stehen. Sauber wäre eine Ladefenster-Analyse (längster Fahrblock zwischen zwei ausreichend langen STAY-Phasen) — **nicht in diesem Plan**, gehört als eigener Punkt in den Backlog. Bis dahin: die DRT-Reichweiten-Rows nur als *Fahrleistung je Fahrzeugtag* interpretieren, nicht als Reichweitenaussage.
 
 - [ ] **Step 5: Commit**
 
