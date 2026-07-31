@@ -471,7 +471,7 @@ pm10_frac_road,0.50,fraction,"EMEP/EEA GB 1.A.3.b.vii mass fraction PM10 of TSP,
 bev_tyre_mult,1.15,factor,"assumption: BEV mass penalty on tyre wear (lit. range 1.1-1.2); sensitivity param"
 bev_brake_mult,0.50,factor,"assumption: regenerative braking (lit. range 0.3-0.7); sensitivity param"
 kg_per_parcel,1.65,kg,"ASSUMPTION, deliberately rounded (user 2026-07-31). Order of magnitude supported by three sources: Amaral et al. 2026 TR-E Tab.1 mean 1.6478 kg (only measured mean; BRAZILIAN data, declared transfer); Rajendran & Harper 2021 TRIP 1-350 lbs, >50 % under 5 lbs (no mean given); Mohri et al. 0.5-5 kg. MEAN not median - total on-board mass = n x mean; Amaral median 0.6950 would understate by 58 %. Plausible band on the mean 1.3-2.5 kg (~16 pp on the allocation share at 50 parcels)"
-kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel_* drives the allocation, so this weighs as much as the sourced parcel mass. Pure post-processing: changing it needs no sim rerun and leaves total_* unchanged"
+kg_per_passenger,80.0,kg,"SETTING, not a source: common road-transport convention, excl. luggage. Only the ratio to kg_per_parcel drives the allocation, so this weighs as much as the sourced parcel mass. Pure post-processing: changing it needs no sim rerun and leaves total_* unchanged"
 slots_per_seat_equiv,2.5,slots/seat,"scenario-defined capacity equivalence for the alternative allocation basis: 20 parcel slots / 8 seats (1c vehicle); sensitivity companion to the mass basis"
 ev_range_km_low,150.0,km,"pessimistic real-world winter range, e-LCV (sweep threshold; discriminating: 0-13.4% tour exceedance across the 12 freight runs, 2026-07-31)"
 ev_range_km_mid,200.0,km,"mid real-world range, e-LCV (sweep threshold)"
@@ -1086,10 +1086,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - `geometry.reconstruct_drt_paths` liefert Pfadeinträge mit **getrennten Zählern**: `(link_id, occ_pax, occ_parcels, t)`. Trennung über `person_id.startswith("parcel_")` (Java-Konstante `SharedUse.PARCEL_PERSON_PREFIX`).
-- Produces: `mass_split(n_pax, n_parcels, sup) -> (share_pax, share_parcels)` und `allocate_by_mass(detail, veh_path, sup) -> rows` mit den KPI-Zeilen `co2e_wtw_per_parcel` [kg/Paket], `co2e_wtw_per_pax` [kg/Fahrgast], `alloc_share_parcels_mass`, `alloc_share_parcels_slots` [share].
+- Produces: `mass_split(n_pax, n_parcels, sup) -> (share_pax, share_parcels)` und `allocate_vehicle_by_mass(veh_path, link_len, veh_co2e, sup) -> {"pax": …, "parcels": …}` sowie `intensity_rows(alloc, n_pax, n_parcels) -> rows` mit den KPI-Zeilen `co2e_wtw_per_parcel` [kg/Paket], `co2e_wtw_per_pax` [kg/Fahrgast], `alloc_share_parcels_mass`, `alloc_share_parcels_slots` [share].
 - Neue Supplement-Keys: `kg_per_parcel`, `kg_per_passenger`, `slots_per_seat_equiv`.
 
-**Massenkonstanten (2026-07-31): `kg_per_parcel = 1.65`, eine Konstante, absichtlich gerundet.** Größenordnung durch drei Quellen gestützt (Amaral et al. 2026 TR-E Tab. 1: Mittel 1,6478 kg — der einzige gemessene Mittelwert; Rajendran & Harper 2021 TRIP: 1–350 lbs, >50 % unter 5 lbs, kein Mittelwert; Mohri et al.: 0,5–5 kg). **Kein B2C/B2B-Split** — der Kontrast (1,5922 vs. 1,8160) macht 3,2 Pp am Aufteilungsanteil aus und liegt innerhalb der Unsicherheit der Annahme selbst; differenzieren wäre Scheingenauigkeit. `kg_per_passenger = 80` bleibt eine **Setzung** ohne Quelle. Details und Vorbehalte: METHODS-LOG §2.26.
+**Massenkonstanten (2026-07-31): `kg_per_parcel = 1.65`, eine Konstante, absichtlich gerundet.** Größenordnung durch drei Quellen gestützt:
+
+| Quelle | Aussage |
+|---|---|
+| **Amaral et al. (2026):** *Empirical analysis of e-commerce delivery operations: from parcels to tours.* Transportation Research Part E, Tab. 1 | Mittel **1,6478 kg** — der einzige gemessene Mittelwert, liefert den Punktwert |
+| **Rajendran & Harper (2021):** *Simulation-based algorithm for determining best package delivery alternatives under three criteria: Time, cost and sustainability.* Transportation Research Interdisciplinary Perspectives (TRIP) | 1–350 lbs, >50 % unter 5 lbs; **kein Mittelwert angegeben** |
+| **Mohri et al.:** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* (Jahr/Journal **NEEDS-CHECK** für das Literaturverzeichnis) | Paketmassen **0,5–5 kg** |
+
+**Kein B2C/B2B-Split** — der Kontrast (1,5922 vs. 1,8160) macht 3,2 Pp am Aufteilungsanteil aus und liegt innerhalb der Unsicherheit der Annahme selbst; differenzieren wäre Scheingenauigkeit. `kg_per_passenger = 80` bleibt eine **Setzung** ohne Quelle. Details und Vorbehalte: METHODS-LOG §2.26.
 
 Zwei statistische Festlegungen, die im Code als Kommentar mitmüssen:
 - **Mittelwert, nicht Median.** Gebraucht wird die Gesamtmasse an Bord, `Σ Gewichte = n × Mittelwert`; der Mittelwert ist dafür der unverzerrte Schätzer. Die Verteilung ist stark rechtsschief (Amaral-Median 0,6950 kg = 42 % des Mittels) — wer „robustheitshalber" den Median nimmt, unterschätzt die Paketmasse um 58 %.
@@ -1179,7 +1187,7 @@ def test_specific_intensity_rows(tmp_path):
 
 - [ ] **Step 3: Fehlschlag bestätigen** — `python -u -m pytest tests/test_extract_emissions.py -v`.
 
-- [ ] **Step 4: Implementieren.** `mass_split(n_pax, parcels_by_channel, sup)` bildet die kg·km-Anteile und **validiert die Konstanten beim Laden** (`kg_per_parcel_*` unterhalb des Haushaltsmittels ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „kg_per_parcel=1.65 (assumption; Amaral et al. 2026 TR-E Tab.1 + Rajendran & Harper 2021 + Mohri et al., none German - declared transfer); kg_per_passenger=80 is a setting".
+- [ ] **Step 4: Implementieren.** `mass_split(n_pax, n_parcels, sup)` bildet die kg·km-Anteile und **validiert die Konstante beim Laden** (`kg_per_parcel` unterhalb des plausiblen Bandes, also < 1,3 kg ⇒ `ValueError` mit Hinweis auf den Median-Fehler); `allocate_vehicle_by_mass` läuft den Fahrzeugpfad ab, summiert geladene kg·km je Seite und legt die Emission der Leer-Links proportional um; `intensity_rows` teilt durch bediente Mengen. Zusätzlich **beide** Aufteilungsvarianten emittieren: `alloc_share_parcels_mass` und `alloc_share_parcels_slots` (Kapazitätsbasis 8 Sitze / 20 Paketslots — szenariodefiniert, deshalb die Pflicht-Sensitivität gegen die belegte kg-Zahl, METHODS-LOG §2.26). Die `source`-Spalte der Intensitäts-Rows nennt **beide** Konstanten und ihren Status: „kg_per_parcel=1.65 (assumption; Amaral et al. 2026 TR-E Tab.1 + Rajendran & Harper 2021 + Mohri et al., none German - declared transfer); kg_per_passenger=80 is a setting".
 
 - [ ] **Step 5: PASS + Gegenprobe.** Zwei Invarianten am Realdatenlauf prüfen: (a) zugerechnete Summe == `total_co2e_wtw` bis auf Rundung; (b) `alloc_share_parcels_mass` und `_slots` als Paar berichten — divergieren sie um mehr als ~10 Prozentpunkte, ist das ein Paper-relevanter Befund und keine Rundung.
 

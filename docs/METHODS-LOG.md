@@ -1152,9 +1152,9 @@ dieselbe Größenordnung:
 
 | Quelle | Kontext | Aussage |
 |---|---|---|
-| Amaral et al. (2026), TR Part E, Tab. 1 | Brasilien, E-Commerce | Mittel **1,6478 kg** (Haushalte 1,5922 / Gewerbe 1,8160); Median 0,6950; Std.abw. 3,0797 |
-| Rajendran & Harper (2021), TRIP | USA, Paketzustellung | 1–350 lbs = 0,454–158,757 kg; >50 % unter 5 lbs (2,268 kg); **kein Mittelwert angegeben** |
-| Mohri et al., *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers* | Crowdshipping/ÖPNV | Paketmassen **0,5–5 kg** |
+| **Amaral et al. (2026):** *Empirical analysis of e-commerce delivery operations: from parcels to tours.* Transportation Research Part E, Tab. 1 | Brasilien, E-Commerce | Mittel **1,6478 kg** (Haushalte 1,5922 / Gewerbe 1,8160); Median 0,6950; Std.abw. 3,0797 |
+| **Rajendran & Harper (2021):** *Simulation-based algorithm for determining best package delivery alternatives under three criteria: Time, cost and sustainability.* Transportation Research Interdisciplinary Perspectives (TRIP) | USA, Paketzustellung | 1–350 lbs = 0,454–158,757 kg; >50 % unter 5 lbs (2,268 kg); **kein Mittelwert angegeben** |
+| **Mohri et al.:** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* (Jahr/Journal **NEEDS-CHECK** für das Literaturverzeichnis) | Crowdshipping/ÖPNV | Paketmassen **0,5–5 kg** |
 
 Amaral liefert den einzigen gemessenen Mittelwert und damit den Punktwert; die beiden anderen
 bestätigen die Größenordnung. **Kein Kanal-Split** (B2C/B2B): der Kontrast beträgt 3,2 Pp am
