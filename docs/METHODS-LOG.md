@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-30._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
 
 ---
 
@@ -644,6 +644,14 @@ Java-Emissionspunkte verifiziert, Baseline bitgleich), aber:
    **Behoben 2026-07-29 (`48bff7c`):** das Rezept ist korrigiert, und die `*_pax`-Zusatzzeilen für
    die reskalierbaren KPIs werden jetzt mechanisch mit emittiert; `fleet_utilisation_by_trips`
    ist dabei explizit als **unkorrigierbar** umklassifiziert (nicht bloß „schwierig").
+   **Annotation 2026-07-31 (`c47fc80`):** die Reskalierung ist jetzt gegen **ihre eigene
+   Begründung** geprüft, nicht mehr gegen sich selbst. Die bisherigen Tests rechneten dieselbe
+   Formel wie die Produktion, waren also gegen eine mutierte Formel blind. Der neue
+   Äquivalenztest leitet `mean_pax_aboard_pax` sekundenweise her — `freight_s` Sekunden aus dem
+   0-Pax-Eimer entfernen (das ist der D2-Lockout, auf dem der Faktor `tour_h/(tour_h − freight_h)`
+   überhaupt ruht) und über den Rest neu mitteln — und trennt das Ergebnis explizit von
+   unkorrigiert, invertiertem Rescale und Subtraktion. Zwei Mutationen verifiziert. Am Wert selbst
+   ändert sich nichts; belastbar ist er erst jetzt.
 3. **Der Marker selbst ist zerbrechlich:** `meta/modular_contaminated_kpis` wird nur auf dem
    Event-Pfad geschrieben (`extract_drt.py:149/194`). Ein `--no-events`-Build oder ein Run ohne
    aufgehobene `output_events.xml.gz` publiziert alle kontaminierten KPIs **ohne jeden Marker**
@@ -653,6 +661,15 @@ Java-Emissionspunkte verifiziert, Baseline bitgleich), aber:
    **Behoben 2026-07-29:** der Marker ist jetzt CSV-/szenario-gebunden statt Event-gebunden und
    übersteht `--no-events` (`48bff7c`); die Comparison-Page rendert den Marker-Payload wieder, und
    die Run-Kacheln tragen das Kontaminations-Banner (`5fee8f1`).
+   **Annotation 2026-07-31 (`c47fc80`):** `meta/fleet_file_missing` saß im **selben**
+   Event-Zweig und ist jetzt ebenfalls draußen — es war derselbe Defekt an einer zweiten Flag,
+   und die Fixwelle hatte nur die erste erwischt. Konsequenz für einen Leser: ein
+   `--no-events`-Build ohne auffindbare DVRP-Fleet-Datei sagt jetzt in `kpis_long.csv`, dass
+   `drt_vehicle_capacity`, `fleet_utilisation_by_time`, `fleet_utilisation_by_trips`,
+   `service_ratio_shift` und `fleet_shift_hours` **wegen fehlender Fleet-Datei** fehlen — vorher
+   fehlten sie stumm und ununterscheidbar von „dieser Build hat keine Events rekonstruiert". Die
+   Flag ist eine Eigenschaft jedes DRT-Laufs, nicht 1d-spezifisch; sie steht hier nur, weil sie
+   im selben Zweig wohnte.
 4. **Vier weitere Konsumenten sind kontaminiert und unmarkiert** — ihre CSVs haben keinen
    Provenance-Kanal: `drt_tour_duration`-Verteilung, `occ_time`/`occ_segments`,
    `occ_km`/`drt_tour_distance` (+ `veh_km` in `build_kpis`), `kpi_vehicles.csv`
@@ -752,6 +769,24 @@ komplett neu geroutet (N+2 Router-Queries pro Angebot).
 entschärft. **Aber** derselbe Wortlaut existiert weiterhin als **Code-Kommentar** (nicht Javadoc)
 in `ModularTourDispatcher.dispatch()` (~:164-165) — das war explizit außerhalb des Datei-Scopes
 dieser Task (nur `:44-59`, s. Task-6-Bericht). Als `[L]`-Backlog-Einzeiler erfasst.
+
+**Annotation 2026-07-31 (`d386e18`):** das Kommentar-Duplikat ist weg, die Rücknahme damit
+vollständig — der Kommentar trägt nur noch das KPI-Zuordnungsargument und verweist für den
+Mechanismus aufs Javadoc, statt ihn zweitzuschreiben. Dass ein Overclaim eine Korrektur
+überlebt, weil er an zwei Stellen stand, ist der eigentliche Befund; eine Aussage über die
+Zahlen ändert sich hier nicht.
+**Der Perf-Rand ist ebenfalls behoben, und zwar so, dass er kein Verdikt verschiebt:**
+`ModularTourScheduler` prüft vor der Routung eine **zeitunabhängige untere Schranke** der Kette
+(2 × 420 s Rüstzeit + alle Servicezeiten + Free-Flow-Fahrzeit Depot→Stops→Depot, je Tour
+gecacht). Reißt schon die Schranke das Envelope, ist die Ablehnung bewiesen, und die N+2
+Router-Queries entfallen. Bewusst **keine** Wiederverwendung eines früheren Neins: das würde
+Monotonie in der Abfahrtszeit unterstellen, die gebinnte DVRP-Fahrzeiten nicht garantieren
+(Nicht-FIFO an Bin-Grenzen), und könnte einen machbaren Splice verschlucken — also genau die
+Fehlattribution vergrößern, um die es in diesem Abschnitt geht. Die Schranke braucht nur
+„eine Linkfahrzeit liegt nie unter `length/freespeed`". `tours_rejected_at_splice`,
+`tours_expired_pending` und jede daraus abgeleitete Zahl bleiben unverändert; ein
+differentieller Test über den Machbarkeits-Übergang und die beiden 1d-End-to-End-Tests halten
+das fest.
 
 ### 2.19 1d Modular: Kapsel- und Swap-Infrastruktur ist unbeschränkt modelliert
 
