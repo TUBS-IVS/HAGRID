@@ -13,6 +13,82 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-31._
 
 ## 2026-07-31
 
+- **EMEP/EEA-Tier-3-Emissionskanal komplett** (Plan `2026-07-28-emissions-emep-eea-tier3.md`,
+  Tasks 1–9) — ✅ umgesetzt, **356 KPI-Tests** grün, KPI-Gruppe `environment` in `build_kpis`
+  verdrahtet. Commits `87523e1` (Verdrahtung), `cb8205d` (Kaltstart-Bound + Limitations +
+  Backlog), `cbc64fe` (Plan-Doc-Reparatur), Branch `hendrik`, **nicht gepusht**. Die früheren
+  Tasks 1–7 sind in den Commits davor (Faktor-Extraktion bis Detail-CSV).
+  Damit ist der Backlog-Punkt „Nachhaltigkeitsparameter einbauen" bis auf die dort explizit
+  offen gelassenen Reste erledigt (SOS-/PB-Layer, Multi-Seed-Aggregation, optionale
+  Substitutions-Sensitivitäten).
+
+  - **Was der Kanal liefert.** Drei Arme (`freight` konventionelle Vans aus der
+    CarriersAnalysis-TSV · `freight_modular` 1d-Fracht innerhalb der
+    `MODULAR_FREIGHT_DRIVE`-Fenster · `drt`), jeweils Diesel **und** BEV aus demselben Lauf
+    (Elektrifizierung ist ein Faktortausch, kein Rerun). Tier-3-Kurven auf der
+    Entity-Mittelgeschwindigkeit, Non-Exhaust-Abrieb segmentdifferenziert nach Kap.
+    1.A.3.b.vi–vii, EV-Reichweiten-**Sweep** (150/200/250 km) statt Einzel-Gate,
+    massenbasierte 1c-Zurechnung mit Pflicht-Begleitung durch die Slot-Variante, plus
+    `kpi_emissions_vehicles.csv` (eine Zeile je Entity × Antrieb).
+
+  - **Beweis auf Realdaten, vier Läufe** (jede Armkombination trifft einen eigenen Datenpfad):
+    `bandz_central` (freight) 1243,76 kg CO₂e WTW / 435,44 BEV, `segment_km_share_n1_ii`
+    0,925937 · `base10c` (freight + drt) 14163,9 kg, 6252,1 Fracht-km / 47953 DRT-km ·
+    `m1d050` (drt + freight_modular) 12706,1 + 3,52 = 12709,6 kg, **restfrei** über alle
+    Schadstoffe · `chid600w21` (1c) 20,20 g CO₂e/Paket bei Massenanteil 0,90 % gegen
+    Slotanteil 23,64 %. Die Task-7-Zahlen werden durch die KPI-Schicht **exakt** reproduziert.
+
+  - **Zwei Defekte, die nur die Realdaten gefunden haben.** (1) Die
+    `MODULAR_FREIGHT_DRIVE`-Fenster liegen im **DRT**-Event-Cache; der Freight-Cache ist auf
+    jedem 1d-Lauf 0 Byte. Der vom Plan vorgegebene Snippet verdrahtete den Freight-Cache, und
+    das wirft **nichts**: die `freight_modular_*`-Zeilen verschwinden und ihre km werden als
+    Pax-km verbucht (12708,7 statt 12706,1 + 2,6). Derselbe Datei-Verwechsler war schon in
+    Task 5b passiert → Parameter heißt jetzt `drt_task_events`, und der e2e-Test prüft den
+    **km-Split** statt der Zeilenpräsenz (mutationsgeprüft: `KeyError: 'freight_modular'`).
+    (2) `segment_km_share_*` war über **alle** Flotten gerechnet, also wog der DRT-Arm die Vans
+    47953 : 6252 km aus → `n1_ii` = 0,107 für denselben LMD-Plan, der auf `bandz_central`
+    0,926 liest. Ursache: DRT und modularer Arm tragen beide die feste Ersetzung N1-III, ihr
+    Anteil ist konstruktionsbedingt 1,0. Jetzt nur über die konventionelle Van-Flotte, und auf
+    Pax-only-/1d-Läufen **fehlt** die Zeile statt eine Scheinaussage zu liefern.
+
+  - **Kaltstart gerechnet, nicht geschätzt — und die Plan-Regel kippt.** Fracht-NOx **+5,63 %**
+    bei ta = 10 °C (Band 4,71–5,99 % über ltrip 8–15 km, +6,62 % bei 0 °C), CO₂/Energie
+    +0,93 %, DRT-NOx +1,41 % je Kaltstart. ≥ 5 % ⇒ statt „dokumentierte Limitation, fertig"
+    ein neuer `[H]`-Backlog-Punkt; bis dahin sind **alle NOx-Zahlen eine Untergrenze**,
+    einseitig, und der BEV-Arm hat keinen Kaltstart, sein Vorteil wäre also größer.
+    Herleitung: METHODS-LOG §2.29, Rechenrezept `analysis/kpi/data/README.md`.
+
+  - **Zwei irreführende Ausgaben abgestellt.** Jede EV-Reichweiten-Flotte trägt ihre eigene
+    Provenance — 3,2 % je **Tour** darf nicht neben 96,7 % je **Fahrzeugtag** wie eine
+    vergleichbare Zahl stehen (daraus folgte der neue `[M]`-Punkt Ladefenster-Analyse). Und die
+    Zurechnungszeilen entstehen nur bei vorhandener Paket-kg·km-Basis: im 1d-Arm fahren Pakete
+    als Kapsel, ein Anteil von 0 % wäre die Behauptung, die Fracht sei emissionsfrei.
+
+  - **Ein gescheiterter Emissionslauf ist jetzt sichtbar:** `meta/emissions_skipped` mit
+    Exception-Typ und -Text in `kpis_long.csv` (und damit im „Hinweise"-Block des Dashboards),
+    statt nur eines `print`. Ein unbekannter Fahrzeugtyp wäre sonst als stille Abwesenheit der
+    Umwelt-KPIs durchgelaufen — dieselbe Konvention wie `run_meta_degraded`.
+
+  - **Constraint eingehalten:** `src/hagrid_output_analysis/**` unberührt (Kollegen-Paper-Freeze
+    bis ~2026-08-11); der Kanal liegt vollständig in
+    `analysis/kpi/{emissions_emep,extract_emissions}.py` + `data/`.
+
+  - **Fehler in der eigenen Plan-Pflege, behoben:** meine Task-8-Annotation begrenzte den
+    Ersetzungs-Slice mit `s.index("Step 6: Commit")`, was Task **1**s Step 6 traf. Der Slice
+    war rückwärts und damit leer, also hat `replace()` den neuen Step-5-Block **an den
+    Dateianfang** gesetzt statt den alten zu ersetzen — Titel und Constraints standen darunter,
+    Task 8s Step 5/6 blieben offen. Repariert in `cbc64fe`, zusammen mit den 44 Checkboxen aus
+    Tasks 1–7, die nie gesetzt worden waren. Jetzt 0 offene Checkboxen im Plan.
+
+  - **Literaturstelle geschlossen:** die dritte Paketmassen-Quelle ist **Mohri, Nassir, Lavieri
+    & Thompson (2024)**, *Modeling package delivery acceptance in Crowdshipping systems by
+    Public Transportation Passengers: A latent class approach*, Travel Behaviour and Society
+    **35**, 100716. Jahr/Journal waren als `NEEDS-CHECK` offen und sind in allen fünf
+    Fundstellen nachgezogen (METHODS-LOG §2.26, Plan Task 5c, `emep_supplement.csv`,
+    `data/README.md`, `ALLOC_SRC` in `extract_emissions.py` — die `source`-Spalte jeder
+    Zurechnungszeile trägt sie jetzt mit).
+
+
 - **Die vier offenen 1d-Paper-Nacharbeiten abgeschlossen** (Rest der Fixwelle vom 2026-07-29:
   Parkungen P1/P2, F2-Kommentar-Duplikat, Re-Routing) — ✅ umgesetzt, **301 KPI-Tests** grün und
   die **volle Java-Modul-Suite** grün, inklusive `ModularEndToEndTest` (55 s) und

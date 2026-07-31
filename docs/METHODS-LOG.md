@@ -1200,7 +1200,7 @@ dieselbe Größenordnung:
 |---|---|---|
 | **Amaral et al. (2026):** *Empirical analysis of e-commerce delivery operations: from parcels to tours.* Transportation Research Part E, Tab. 1 | Brasilien, E-Commerce | Mittel **1,6478 kg** (Haushalte 1,5922 / Gewerbe 1,8160); Median 0,6950; Std.abw. 3,0797 |
 | **Rajendran & Harper (2021):** *Simulation-based algorithm for determining best package delivery alternatives under three criteria: Time, cost and sustainability.* Transportation Research Interdisciplinary Perspectives (TRIP) | USA, Paketzustellung | 1–350 lbs = 0,454–158,757 kg; >50 % unter 5 lbs (2,268 kg); **kein Mittelwert angegeben** |
-| **Mohri et al.:** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* (Jahr/Journal **NEEDS-CHECK** für das Literaturverzeichnis) | Crowdshipping/ÖPNV | Paketmassen **0,5–5 kg** |
+| **Mohri, Nassir, Lavieri & Thompson (2024):** *Modeling package delivery acceptance in Crowdshipping systems by Public Transportation Passengers: A latent class approach.* Travel Behaviour and Society **35**, 100716 | Crowdshipping/ÖPNV | Paketmassen **0,5–5 kg** |
 
 Amaral liefert den einzigen gemessenen Mittelwert und damit den Punktwert; die beiden anderen
 bestätigen die Größenordnung. **Kein Kanal-Split** (B2C/B2B): der Kontrast beträgt 3,2 Pp am
@@ -1208,7 +1208,7 @@ Aufteilungsanteil und liegt damit innerhalb der Unsicherheit der Annahme selbst 
 wäre Scheingenauigkeit. Eine Konstante, `kg_per_parcel = 1.65`.
 
 **Zurückgezogen: mein Oberbracket von ~5,4 kg.** Es entstand als Rajendrans Median-*Obergrenze*
-(2,268) × Amarals Schiefeverhältnis (2,37), also als Schranke auf eine Schranke. Mohris Spanne
+(2,268) × Amarals Schiefeverhältnis (2,37), also als Schranke auf eine Schranke. Mohri et al.s Spanne
 0,5–5 kg **schließt es aus** — ein Mittel von 5,4 kg läge über dem berichteten Maximum. Damit fällt
 auch die daraus gezogene Warnung („29 Pp Spanne über Kontexte"): das plausible Band auf den
 Mittelwert ist **1,3–2,5 kg**, am Aufteilungsanteil ~16 Pp bei 50 Paketen. Material, aber kein
