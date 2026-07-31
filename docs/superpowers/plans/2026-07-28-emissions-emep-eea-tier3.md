@@ -1139,7 +1139,25 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Produces: `modular_freight_arm(veh_path_ts, windows, link_len, fac) -> (totals, detail)` — `fleet="freight_modular"`, `vehicle_type="drt_modular"`, `segment=DRT_SEGMENT`.
 - **Voraussetzung, die vor der Implementierung zu prüfen ist:** `veh_path` trägt derzeit `(link_id, occ)` ohne Zeitstempel. Für den Fensterschnitt braucht es `(link_id, occ, t)`. Erst prüfen, ob `geometry.reconstruct_drt_paths` den Zeitstempel schon mitführt oder ob er durchgeschleift werden muss — **das ist der einzige potenziell invasive Eingriff des Plans in bestehenden Code** und der Grund, diesen Task nach Task 6 zu implementieren, nicht davor.
 
-- [ ] **Step 1: Vorabprüfung (kein Code).** In `geometry.py` klären: führt die Pfadrekonstruktion Event-Zeitstempel? Falls nein, minimal-invasiv ein drittes Tupelelement ergänzen und die bestehenden Konsumenten (`veh_km`, `occ_km_shares`, `maps`) auf Tupel-Entpackung prüfen. Ergebnis hier notieren, bevor Step 2 beginnt.
+- [x] **Step 1: Vorabprüfung erledigt (2026-07-31). Ergebnis: Zeitstempel fehlten, und der Plan-Ansatz „Tupel erweitern" wird NICHT umgesetzt.**
+
+  Geprüft: `reconstruct_drt_paths` führt keine Zeit. Die Konsumenten entpacken aber **strikt 2-Tupel** an vier Stellen — [`build_kpis.py:138`](../../parcel-demand-2-matsim-pipeline/analysis/kpi/build_kpis.py#L138) (`for lid, occ in path`), [`maps._build_vehicles:73`](../../parcel-demand-2-matsim-pipeline/analysis/kpi/maps.py#L73), [`geometry.polyline_runs:201`](../../parcel-demand-2-matsim-pipeline/analysis/kpi/geometry.py#L201) — plus **drei Testdateien mit exakten Tupel-Assertions** (`test_geometry`, `test_maps`, `test_build_kpis`). Eine Arity-Änderung hätte also Karten- und Distanzcode angefasst, dessen einziger Nutzen beim neuen Emissionsmodul liegt.
+
+  **Stattdessen umgesetzt:** neue Funktion `geometry.reconstruct_drt_paths_detailed(cache) -> (veh_path, used_links)` mit **4-Tupeln `(link_id, occ_pax, occ_parcels, t)`**; `reconstruct_drt_paths` wird zur dünnen **Projektion** darauf (`occ = occ_pax + occ_parcels`, exakt die Altsemantik, da der Altzähler nie unterschied). Damit:
+  - kein Konsument und kein bestehender Test geändert — **45 bestehende Tests laufen unverändert grün**, das ist der Identitätsbeweis;
+  - weiterhin **ein** Event-Pass (`build_kpis` kann später die Detailvariante einmal rufen und projizieren);
+  - Task 5c bekommt die Pakt/Pax-Trennung aus derselben Funktion, statt sie separat nachzurüsten.
+
+  Ein Test hält die Projektionsgleichheit explizit fest (`test_plain_variant_is_exactly_the_sum_projection`), damit die beiden Pfade nicht auseinanderlaufen.
+
+- [x] **Step 1b: Zwei Plan-Fehler, die das echte Datenformat aufdeckt — beide hätten STILL NULL geliefert.**
+
+  1. **Falsche Datei.** Der Plan sagt, `freight_windows` parse `*.freight_events_filtered.txt`, „in allen 1d-Läufen vorhanden". Gemessen: die Datei ist in **allen drei lokalen 1d-Läufen 0 Bytes** (`ctrl1d`, `m1d050`, `poc1d`). Die DVRP-Task-Events stehen im **drt**-Cache (`*.drt_events_filtered.txt`) — dort sind sie vollständig, weil `dvrpVehicle="drt_…"` den `drt_`-Filter passiert (m1d050: 34.067 Task-Start-Events im Cache, davon 6 `MODULAR_FREIGHT_DRIVE`).
+  2. **Falsche Event-Typnamen.** Der Plan-Test schreibt `type="task started"` / `"task ended"`. Real heißt es **`dvrpTaskStarted`** / **`dvrpTaskEnded`**. Der Plan-Test hätte also gegen einen falschen Parser bestanden — genau die Fixture-Lüge, gegen die Task 5 den Realdatenabgleich vorsieht.
+
+  Reales Event (m1d050): `<event time="73330.0" type="dvrpTaskStarted" person="drt_100" link="713626289#1" dvrpVehicle="drt_100" taskType="MODULAR_FREIGHT_DRIVE" taskIndex="319" dvrpMode="drt"/>`
+
+  Konsequenz für die Signatur: `veh_path_ts` sind die **4-Tupel** der Detailvariante, nicht die im Plan skizzierten 3-Tupel — eine dritte Tupelform hätte niemandem genützt.
 
 - [ ] **Step 2: Failing Tests anhängen**
 
@@ -1190,7 +1208,17 @@ def test_modular_freight_arm_empty_without_windows():
 
 - [ ] **Step 4: Implementieren.** `freight_windows` parst die `*.freight_events_filtered.txt` (in allen 1d-Läufen vorhanden) auf `taskType="MODULAR_FREIGHT_DRIVE"`-Start/Ende je `dvrpVehicle`. `modular_freight_arm` summiert die Link-Längen der Pfadeinträge, deren Zeitstempel in ein Fenster fällt, und nimmt als Geschwindigkeit `km / Σ Fensterdauer`. **Sanity-Anker gegen `modular_tour_stats.csv`:** die rekonstruierten Freight-km müssen in der Größenordnung von `service_km_planned + deadhead_km_planned` liegen (m1d010: 5616,5 km). Weicht es um >10 % ab, ist der Fensterschnitt falsch — dann laut abbrechen, nicht runden.
 
-- [ ] **Step 5: PASS bestätigen + Realdaten-Gegenprobe gegen `m1d010`** (Sim-PC, `C:\Users\Simrechner\Documents\GitHub\HAGRID\...`).
+- [x] **Step 5: PASS + Realdaten-Gegenprobe (2026-07-31) — meterexakt.** Gegenprobe lokal an **`m1d050`** gefahren (der einzige lokal verfügbare 1d-Lauf mit tatsächlich disponierter Tour; `m1d010`/`m1d040` liegen auf dem Sim-PC):
+
+  | Größe | rekonstruiert | `modular_tour_stats.csv` |
+  |---|---|---|
+  | Freight-km | **13,495 km** | `service_km_planned` 6,53166 + `deadhead_km_planned` 6,96289 = **13,49455 km** |
+
+  Abweichung **< 1 m**, nicht die erlaubten 10 %. Der Fensterschnitt trifft also genau die geplante Tour — 1 Fahrzeug (`drt_100`), 3 Fenster (76 s / 538 s / 478 s). Laufzeit auf dem 76-MB-Cache: Fenster 0,2 s, Pfadrekonstruktion 1,2 s, Link-Längen 6,2 s.
+
+  **Definitionsentscheidung, die die Gegenprobe sichtbar macht:** die Geschwindigkeit ist **km / Σ Fensterdauer** = 13,495 / 0,3033 h = **44,5 km/h**. Die Alternative `freight_vehicle_hours` (0,57 h, inkl. `MODULAR_FREIGHT_STOP` und Retooling) ergäbe 23,7 km/h — Faktor 1,9 auf der Geschwindigkeit und damit ein anderer Punkt auf der Tier-3-Kurve. Gewählt ist die **Fahrzeit ohne Standzeit**, konsistent mit dem konventionellen Arm (`travelTime[s]` ist dort ebenfalls fahrzeitbereinigt) und mit der Engine-off-Annahme an Stopps.
+
+  **Nebenbefund für die Interpretation:** 44,5 km/h liegt **über 40 km/h**, also außerhalb des Abrieb-Plateaus, in dem die konventionellen Van-Touren (34–40 km/h) sitzen. Der modulare Freight-Leg ist schneller, weil er überwiegend Deadhead auf schnelleren Straßen ist und die Zustellstopps nicht in den DRIVE-Tasks liegen. Für den Armvergleich heißt das: die Abrieb-Geschwindigkeitskorrektur ist zwischen den Armen **nicht** identisch (Bremse 1,67 vs. ~1,55), das gehört in die Ergebnisdiskussion und darf nicht als Faktorfehler gelesen werden.
 
 - [ ] **Step 6: Commit**
 

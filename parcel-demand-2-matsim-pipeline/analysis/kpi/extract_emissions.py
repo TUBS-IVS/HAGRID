@@ -14,6 +14,9 @@ effect for light vehicles (no load dimension exists for LCV). See
 segment_for_type() and data/README.md. An unmappable type raises rather
 than being silently priced as N1-III.
 """
+import gzip
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pandas as pd
@@ -111,4 +114,111 @@ def freight_arm(run_dir, fac):
         segment = segment_for_type(vtype, caps.get(vtype))   # raises if unknown
         _add_entity(totals, detail, "freight", str(r["vehicleId"]), vtype,
                     segment, km, km / tt_h, fac)
+    return totals, detail
+
+
+# ---------------------------------------------------------------- 5b: 1d arm
+
+RE_TASK_TYPE = re.compile(r'taskType="([^"]+)"')
+RE_DVRP_VEH = re.compile(r'dvrpVehicle="([^"]+)"')
+RE_EV_TYPE = re.compile(r'type="([^"]+)"')
+RE_EV_TIME = re.compile(r'\btime="([^"]+)"')
+
+MODULAR_FREIGHT_DRIVE = "MODULAR_FREIGHT_DRIVE"
+
+
+def load_link_lengths(network_gz, used_links):
+    """{link_id: length_m} from the MATSim network's own `length` attribute,
+    restricted to `used_links`.
+
+    Deliberately NOT geometry.load_link_geometry's length_m: that one is the
+    Euclidean node-to-node distance and runs ~3 % short, because a link's
+    modelled length follows the road, not the straight line. Emissions are
+    km x factor, so the systematic shortfall would propagate directly."""
+    used = set(used_links)
+    out = {}
+    with gzip.open(network_gz, "rt", encoding="utf-8") as f:
+        for _, el in ET.iterparse(f, events=("end",)):
+            if el.tag == "link":
+                lid = el.get("id")
+                if lid in used:
+                    out[lid] = float(el.get("length"))
+                el.clear()
+    return out
+
+
+def freight_windows(drt_cache):
+    """{vehicle_id: [(t_start, t_end), ...]} for MODULAR_FREIGHT_DRIVE tasks.
+
+    Parsed from the DRT events cache, NOT the freight cache: in the modular
+    arm the freight rides in DRT vehicles, so `*.freight_events_filtered.txt`
+    is empty (0 bytes in all 1d runs checked 2026-07-31) while the DVRP task
+    events sit in the drt cache -- dvrpVehicle="drt_..." passes the "drt_"
+    filter. Event types are dvrpTaskStarted / dvrpTaskEnded (verified against
+    m1d050).
+
+    Plain DRIVE/STOP tasks are pax operation and are ignored; only the
+    MODULAR_FREIGHT_* task type marks freight (Modular.java:38).
+    """
+    open_at = {}
+    windows = {}
+    with open(drt_cache, "r", encoding="utf-8") as f:
+        for line in f:
+            mtt = RE_TASK_TYPE.search(line)
+            if not mtt or mtt.group(1) != MODULAR_FREIGHT_DRIVE:
+                continue
+            met, mv, mtm = (RE_EV_TYPE.search(line), RE_DVRP_VEH.search(line),
+                            RE_EV_TIME.search(line))
+            if not (met and mv and mtm):
+                continue
+            v, t = mv.group(1), float(mtm.group(1))
+            if met.group(1) == "dvrpTaskStarted":
+                open_at[v] = t
+            elif met.group(1) == "dvrpTaskEnded" and v in open_at:
+                windows.setdefault(v, []).append((open_at.pop(v), t))
+    return windows
+
+
+def _in_windows(t, wins):
+    for t0, t1 in wins:
+        if t0 <= t <= t1:
+            return True
+    return False
+
+
+def modular_freight_arm(veh_path_ts, windows, link_len, fac):
+    """Freight emissions for the modular (1d) arm, where freight rides in the
+    DRT vehicles and no analysis/freight/ TSV exists.
+
+    The regime split: a link entered INSIDE a MODULAR_FREIGHT_DRIVE window is
+    freight km, everything else stays pax km. Residue-free and measured
+    within one run -- see METHODS-LOG 1.4. The incremental variant against a
+    pax-only twin run is rejected (METHODS-LOG 3.9: the difference sits
+    inside the noise band and carries the wrong sign, because freight
+    DISPLACES pax service rather than adding km).
+
+    `veh_path_ts` are the 4-tuples of geometry.reconstruct_drt_paths_detailed
+    ((link_id, occ_pax, occ_parcels, t)). Mean speed is freight km divided by
+    the summed freight window duration, i.e. the same
+    distance-over-driving-time definition the conventional arm uses.
+    """
+    totals, detail = _zero_totals(), []
+    for veh, path in (veh_path_ts or {}).items():
+        wins = windows.get(veh)
+        if not wins:
+            continue
+        km = 0.0
+        for entry in path:
+            lid, t = entry[0], entry[3]
+            if not _in_windows(t, wins):
+                continue
+            length = link_len.get(lid)
+            if length is None:          # no geometry -> skip, do not count 0
+                continue
+            km += length / 1000.0
+        drive_h = sum(t1 - t0 for t0, t1 in wins) / 3600.0
+        if km <= 0 or drive_h <= 0:
+            continue
+        _add_entity(totals, detail, "freight_modular", veh, "drt_modular",
+                    DRT_SEGMENT, km, km / drive_h, fac)
     return totals, detail

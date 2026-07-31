@@ -9,6 +9,7 @@ from events_cache import ensure_caches
 from freight_events import FreightEvents
 from geometry import (
     LinkGeo,
+    reconstruct_drt_paths_detailed,
     douglas_peucker,
     drop_collinear,
     freight_used_links,
@@ -158,3 +159,52 @@ def test_polyline_runs_breaks_when_links_not_chained():
     assert len(runs) == 2
     assert len(runs[0]) == 2
     assert len(runs[1]) == 2
+
+
+# --- detailed variant (parcel/pax split + timestamps) ---------------------
+
+# 1c-style cache: a passenger AND a parcel-person board the same vehicle.
+# The legacy single counter cannot tell them apart -- that is the point.
+SHAREDUSE_DRT_CACHE = """<event time="10.0" type="entered link" link="s1" vehicle="drt_veh_9"/>
+<event time="12.0" type="PersonEntersVehicle" person="p42" vehicle="drt_veh_9"/>
+<event time="14.0" type="PersonEntersVehicle" person="parcel_7" vehicle="drt_veh_9"/>
+<event time="20.0" type="entered link" link="s2" vehicle="drt_veh_9"/>
+<event time="25.0" type="PersonLeavesVehicle" person="parcel_7" vehicle="drt_veh_9"/>
+<event time="30.0" type="entered link" link="s3" vehicle="drt_veh_9"/>
+"""
+
+
+def test_detailed_splits_parcels_from_passengers(tmp_path):
+    """1c models parcels as persons (SharedUse.PARCEL_PERSON_PREFIX), so a
+    single occupancy counter conflates freight and pax. The split comes free
+    from the person id."""
+    cache = tmp_path / "shareduse.drt_events_filtered.txt"
+    cache.write_text(SHAREDUSE_DRT_CACHE, encoding="utf-8")
+    veh_path, used = reconstruct_drt_paths_detailed(cache)
+    assert veh_path["drt_veh_9"] == [("s1", 0, 0, 10.0),
+                                     ("s2", 1, 1, 20.0),
+                                     ("s3", 1, 0, 30.0)]
+    assert used == {"s1", "s2", "s3"}
+
+
+def test_plain_variant_is_exactly_the_sum_projection(tmp_path):
+    """The 2-tuple entry point must stay bit-identical to the legacy
+    semantics (occupancy = everyone aboard), because maps/veh_km/occ_km all
+    consume it. Here: the mixed 1c cache projects to 0, 2, 1."""
+    cache = tmp_path / "shareduse.drt_events_filtered.txt"
+    cache.write_text(SHAREDUSE_DRT_CACHE, encoding="utf-8")
+    plain, used_p = reconstruct_drt_paths(cache)
+    detailed, used_d = reconstruct_drt_paths_detailed(cache)
+    assert plain["drt_veh_9"] == [("s1", 0), ("s2", 2), ("s3", 1)]
+    assert used_p == used_d
+    for v, path in detailed.items():
+        assert plain[v] == [(lid, pax + par) for lid, pax, par, _t in path]
+
+
+def test_detailed_carries_event_times_for_task_window_intersection(tmp_path):
+    """The modular (1d) freight arm intersects the link path with
+    MODULAR_FREIGHT_DRIVE task windows, so the entry time must survive."""
+    cache = tmp_path / "synthetic.drt_events_filtered.txt"
+    cache.write_text(SYNTHETIC_DRT_CACHE, encoding="utf-8")
+    veh_path, _ = reconstruct_drt_paths_detailed(cache)
+    assert [t for _l, _p, _c, t in veh_path["drt_veh_1"]] == [10.0, 20.0]
