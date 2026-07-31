@@ -215,3 +215,77 @@ def test_modular_freight_arm_skips_links_missing_from_the_network():
                                        {"l1": 1000.0}, em.load_factors())
     d = [x for x in detail if x["powertrain"] == "diesel"][0]
     assert d["km"] == pytest.approx(1.0)
+
+
+# --- Task 6: DRT arm ------------------------------------------------------
+
+def test_drt_arm_uses_true_lengths_and_drive_time(tmp_path):
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    veh_path = {"drt_v1": [("l1", 0, 0, 10.0), ("l2", 1, 0, 20.0),
+                           ("l1", 0, 0, 30.0)]}          # 1200+800+1200 = 3.2 km
+    recon = {"per_veh": {"drt_v1": {"drive_s": 320.0}}}   # 36 km/h
+    ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
+    totals, detail = ee.drt_arm(veh_path, recon, ll, fac)
+    exp = em.vehicle_emissions(3.2, 36.0, "diesel", "N1-III", fac)
+    assert totals["diesel"]["NOx"] == pytest.approx(exp["NOx"])
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["fleet"] == "drt" and d["km"] == pytest.approx(3.2)
+    assert d["v_kmh"] == pytest.approx(36.0)
+    assert d["segment"] == "N1-III"
+
+
+def test_drt_arm_skips_vehicle_without_drive_time():
+    import emissions_emep as em
+    import extract_emissions as ee
+    totals, detail = ee.drt_arm({"drt_v1": [("l1", 0, 0, 1.0)]},
+                                {"per_veh": {}}, {"l1": 500.0},
+                                em.load_factors())
+    assert detail == [] and totals["diesel"]["CO2E_WTW"] == 0.0
+
+
+def test_drt_arm_excludes_freight_km_so_the_arms_do_not_double_count():
+    """Der 1d-Regimesplit ist RESTFREI (METHODS-LOG 1.4): jeder Fahrzeug-km
+    gehoert genau einer Seite. Ohne exclude_windows zaehlt drt_arm die
+    Freight-km als Pax-km UND modular_freight_arm zaehlt sie erneut --
+    total_* waere dann um die Freight-km zu hoch.
+
+    Die Zeitseite ist schon getrennt: drt_service_time.reconstruct legt
+    taskType DRIVE nach `drive_s` und MODULAR_FREIGHT_DRIVE nach
+    `freight_drive_s` (drt_service_time.py:411/414). Nur die Distanzseite
+    fehlte."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    # l1 im Pax-Betrieb (t=100), l2 im Freight-Fenster (t=4000)
+    veh_path = {"drt_1": [("l1", 0, 0, 100.0), ("l2", 0, 0, 4000.0)]}
+    windows = {"drt_1": [(3600.0, 7200.0)]}
+    ll = {"l1": 1200.0, "l2": 800.0}
+    recon = {"per_veh": {"drt_1": {"drive_s": 120.0}}}
+
+    naive, _ = ee.drt_arm(veh_path, recon, ll, fac)
+    split, det_split = ee.drt_arm(veh_path, recon, ll, fac,
+                                  exclude_windows=windows)
+    _, det_fr = ee.modular_freight_arm(veh_path, windows, ll, fac)
+
+    d_split = [x for x in det_split if x["powertrain"] == "diesel"][0]
+    d_fr = [x for x in det_fr if x["powertrain"] == "diesel"][0]
+    assert d_split["km"] == pytest.approx(1.2)           # nur der Pax-Link
+    assert d_fr["km"] == pytest.approx(0.8)              # nur der Freight-Link
+    # restfrei: die beiden Seiten summieren auf die gesamte Fahrleistung
+    assert d_split["km"] + d_fr["km"] == pytest.approx(2.0)
+    # und der naive Aufruf haette die Freight-km mitgezaehlt
+    assert naive["diesel"]["ENERGY_MJ"] > split["diesel"]["ENERGY_MJ"]
+
+
+def test_drt_arm_all_km_inside_freight_windows_yields_no_pax_entity():
+    """Ein Fahrzeug, das ausschliesslich Fracht gefahren hat, darf keine
+    Pax-Zeile erzeugen (km = 0 nach Ausschluss)."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    veh_path = {"drt_1": [("l1", 0, 0, 4000.0)]}
+    _, detail = ee.drt_arm(veh_path, {"per_veh": {"drt_1": {"drive_s": 60.0}}},
+                           {"l1": 1000.0}, em.load_factors(),
+                           exclude_windows={"drt_1": [(3600.0, 7200.0)]})
+    assert detail == []

@@ -1385,7 +1385,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `veh_path` von `geometry.reconstruct_drt_paths(drt_cache)` (dict `vehicle_id -> [(link_id, occ), ...]`); `recon["per_veh"][veh]["drive_s"]` von `drt_service_time.reconstruct()`; MATSim-Netzwerk `*.output_network.xml.gz` (Link-Attribut `length` in Metern — NICHT die Euklid-Näherung aus `geometry.load_link_geometry`, die ist ~3 % zu kurz).
-- Produces: `load_link_lengths(network_gz, used_links) -> dict[str, float]` (Meter); `drt_arm(veh_path, recon, link_len, fac) -> (totals, detail)` — Struktur wie `freight_arm`, `fleet="drt"`, `entity=vehicle_id`, `vehicle_type="drt_minibus"`, `segment=DRT_SEGMENT` (`"N1-III"`, Kategoriensubstitution M2 → N1-III, siehe Global Constraints).
+- Produces: `load_link_lengths(network_gz, used_links) -> dict[str, float]` (Meter; **schon mit Task 5b implementiert**, der Plan führte sie doppelt); `drt_arm(veh_path, recon, link_len, fac, exclude_windows=None) -> (totals, detail)` — Struktur wie `freight_arm`, `fleet="drt"`, `entity=vehicle_id`, `vehicle_type="drt_minibus"`, `segment=DRT_SEGMENT` (`"N1-III"`, Kategoriensubstitution M2 → N1-III, siehe Global Constraints).
+
+> **Doppelzählung behoben statt dokumentiert (2026-07-31).** Der Plan gab `drt_arm` ohne Ausschlussmenge und notierte die Überlappung mit dem modularen Freight-Arm in Task 7 als „KNOWN GAP". Das war der Stand vor der Zurechnungsentscheidung; die steht inzwischen (METHODS-LOG §1.4: 1d = **restfreier** Regimesplit). Deshalb neuer Parameter `exclude_windows`: Link-Einträge innerhalb eines `MODULAR_FREIGHT_DRIVE`-Fensters fallen aus dem Pax-Arm heraus.
+>
+> Die **Zeit**seite trennte ohnehin schon — `drt_service_time.reconstruct` bucht `taskType="DRIVE"` nach `drive_s` und `MODULAR_FREIGHT_DRIVE` nach `freight_drive_s` ([drt_service_time.py:411/414](../../parcel-demand-2-matsim-pipeline/analysis/drt-headline/drt_service_time.py#L411-L414)). Nur die Distanzseite fehlte, also genau die Größe, aus der Emissionen entstehen.
+>
+> **Verifiziert an m1d050:** Pax-Arm 47.146,35 km + Freight-Arm 13,49 km = 47.159,85 km = Gesamtpfad, **Residuum −0,0000 km**. Ohne den Ausschluss lägen die Freight-km doppelt in `total_*`. In `m1d050` wären das nur 2,61 von 12.710 kg CO₂e (0,02 %), weil dort eine einzige Tour lief — bei realistischer Beladung (`m1d010`: 5616,5 Freight-km gegen ~47.000 DRT-km) wären es **rund 12 %**. Also material, nicht kosmetisch. Ein Test hält die Restfreiheit fest (`test_drt_arm_excludes_freight_km_so_the_arms_do_not_double_count`).
 
 - [ ] **Step 1: Failing Tests anhängen**
 
@@ -1686,10 +1692,15 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
     DRT arm only when veh_path/recon/network are supplied by build_kpis
     (they are reused, never recomputed here).
 
-    KNOWN GAP (METHODS-LOG 2.14): in the 1d arm `drt_vehicle_km` carries no
-    freight/pax provenance, so the "drt" arm overlaps the modular freight
-    km. Until the allocation decision is made, `total_*` is the defensible
-    figure and the per-fleet split for 1d must be read with that caveat.
+    GAP GESCHLOSSEN (2026-07-31, war: "KNOWN GAP METHODS-LOG 2.14"). Der
+    Plan notierte hier, der "drt"-Arm ueberlappe im 1d-Fall die modularen
+    Freight-km und `total_*` sei deshalb die einzige belastbare Groesse.
+    Das war der Stand VOR der Zurechnungsentscheidung. Die steht inzwischen
+    (METHODS-LOG 1.4: 1d = restfreier Regimesplit), also wird die
+    Doppelzaehlung behoben statt dokumentiert: die Freight-Fenster werden
+    zuerst bestimmt und dann an drt_arm als `exclude_windows` gegeben.
+    Die Zeitseite trennte ohnehin schon (`drive_s` vs `freight_drive_s`,
+    drt_service_time.py:411/414); nur die Distanzseite fehlte.
     """
     fac = em.load_factors()
     arms = {}
@@ -1697,12 +1708,15 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
     if fr is not None:
         arms["freight"] = fr
     link_len = None
+    windows = {}
     if veh_path and recon is not None and network_gz is not None:
         used = {p[0] for path in veh_path.values() for p in path}
         link_len = load_link_lengths(network_gz, used)
-        arms["drt"] = drt_arm(veh_path, recon, link_len, fac)
-    if veh_path and link_len and freight_events is not None:
-        windows = freight_windows(freight_events)
+        # Fenster VOR dem DRT-Arm bestimmen: sie sind dessen Ausschlussmenge.
+        if freight_events is not None:
+            windows = freight_windows(freight_events)
+        arms["drt"] = drt_arm(veh_path, recon, link_len, fac,
+                              exclude_windows=windows)
         if windows:
             arms["freight_modular"] = modular_freight_arm(
                 veh_path, windows, link_len, fac)

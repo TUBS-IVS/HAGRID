@@ -222,3 +222,44 @@ def modular_freight_arm(veh_path_ts, windows, link_len, fac):
         _add_entity(totals, detail, "freight_modular", veh, "drt_modular",
                     DRT_SEGMENT, km, km / drive_h, fac)
     return totals, detail
+
+
+# ----------------------------------------------------------------- 6: DRT arm
+
+def drt_arm(veh_path, recon, link_len, fac, exclude_windows=None):
+    """Per-vehicle emissions for the DRT fleet: km = sum of true link
+    lengths along the reconstructed path, mean speed = km / DRIVE task time
+    from drt_service_time.reconstruct(). Vehicles without DRIVE time are
+    skipped (never moved -> nothing to emit).
+
+    `exclude_windows` (as returned by freight_windows) removes the link
+    entries driven inside a MODULAR_FREIGHT_DRIVE window. Pass it for the
+    modular (1d) arm: the regime split is residue-free (METHODS-LOG 1.4),
+    so every vehicle-km must belong to exactly one side. Without it,
+    drt_arm counts the freight km as pax km and modular_freight_arm counts
+    them again -- total_* would be too high by the freight distance.
+
+    The time side already separates cleanly: reconstruct() books taskType
+    DRIVE into `drive_s` and MODULAR_FREIGHT_DRIVE into `freight_drive_s`
+    (drt_service_time.py:411/414), so `drive_s` is pax driving time only.
+    Only the distance side needed this.
+
+    Segment is DRT_SEGMENT ("N1-III"): the vehicle has capacity 10, i.e.
+    M2 by the guidebook's own definition, and is substituted by N1-III --
+    a declared assumption, see data/README.md for the bracketing figures.
+    """
+    per_veh = recon.get("per_veh", {}) if recon else {}
+    totals, detail = _zero_totals(), []
+    for veh, path in (veh_path or {}).items():
+        drive_s = per_veh.get(veh, {}).get("drive_s", 0.0)
+        wins = (exclude_windows or {}).get(veh)
+        km = 0.0
+        for entry in path:
+            if wins and len(entry) > 3 and _in_windows(entry[3], wins):
+                continue
+            km += link_len.get(entry[0], 0.0) / 1000.0
+        if drive_s <= 0 or km <= 0:
+            continue
+        _add_entity(totals, detail, "drt", veh, "drt_minibus", DRT_SEGMENT,
+                    km, km / (drive_s / 3600.0), fac)
+    return totals, detail
