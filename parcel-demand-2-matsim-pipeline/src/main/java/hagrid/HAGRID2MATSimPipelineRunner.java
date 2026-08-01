@@ -93,15 +93,52 @@ public final class HAGRID2MATSimPipelineRunner {
 
 	private static final ScenarioConfig[] SCENARIOS = {
 
-			// Sensitivity study capacity=30, 3 replicates.
+			// DEV-PC ARM, 2026-07-31: completes the v2 capacity sweep.
+			// 30v2-150v2 are already done on the sim-PC (70v2 crashed there on a JVM
+			// access violation and was never redone), so this arm covers 160-400 in
+			// steps of 10, plus 70v2.
+			//
 			// Distinct tags -> distinct runId -> distinct runId.hashCode() seed
-			// -> reseeded demand-layer RNG (dispatch time-shifts + missed-delivery draw).
-			// All three read the SAME demand shapefile (tag-independent baseRunId).
-			// vehicleSize "30_l": clones ct_cep_size_l, overrides freight capacity to 30
+			// -> reseeded demand-layer RNG (dispatch time-shifts + missed-delivery draw)
+			// AND reseeded CarrierVehicleFactory (CarrierGenerator.java:87-89).
+			// All tags read the SAME demand shapefile (tag-independent baseRunId).
+			// vehicleSize "<n>_l": clones ct_cep_size_l, overrides freight capacity to <n>
 			// (costs/speed/dimensions stay on the l-template -> only capacity varies across the sweep).
-			scenario("basecase", "30R1", LocalDate.of(2025, 5, 13), "30_l"),
-			scenario("basecase", "30R2", LocalDate.of(2025, 5, 13), "30_l"),
-			scenario("basecase", "30R3", LocalDate.of(2025, 5, 13), "30_l"),
+			//
+			// ORDER IS DELIBERATE and doubles as this machine's smoke test: no Hannover
+			// run has ever executed on the dev-PC (63.5 GB vs the sim-PC's 128 GB). The
+			// lightest capacity runs first, so a broken Hannover path fails within
+			// minutes on tag 1 rather than hours in. 70v2 is LAST because low capacity
+			// means the most services after the merger split (30v2 32,906 vs 50v2 32,817)
+			// and by far the largest fleet (~2,800+ vehicles vs ~650-680 at 160+) - the
+			// sim-PC's own 70v2 crash dump shows ZHeap used 87.8 GB, which does not fit
+			// here. If Step A dies on memory at 70v2, the other 25 tags are already done.
+			scenario("basecase", "160v2", LocalDate.of(2025, 5, 13), "160_l"),
+			scenario("basecase", "170v2", LocalDate.of(2025, 5, 13), "170_l"),
+			scenario("basecase", "180v2", LocalDate.of(2025, 5, 13), "180_l"),
+			scenario("basecase", "190v2", LocalDate.of(2025, 5, 13), "190_l"),
+			scenario("basecase", "200v2", LocalDate.of(2025, 5, 13), "200_l"),
+			scenario("basecase", "210v2", LocalDate.of(2025, 5, 13), "210_l"),
+			scenario("basecase", "220v2", LocalDate.of(2025, 5, 13), "220_l"),
+			scenario("basecase", "230v2", LocalDate.of(2025, 5, 13), "230_l"),
+			scenario("basecase", "240v2", LocalDate.of(2025, 5, 13), "240_l"),
+			scenario("basecase", "250v2", LocalDate.of(2025, 5, 13), "250_l"),
+			scenario("basecase", "260v2", LocalDate.of(2025, 5, 13), "260_l"),
+			scenario("basecase", "270v2", LocalDate.of(2025, 5, 13), "270_l"),
+			scenario("basecase", "280v2", LocalDate.of(2025, 5, 13), "280_l"),
+			scenario("basecase", "290v2", LocalDate.of(2025, 5, 13), "290_l"),
+			scenario("basecase", "300v2", LocalDate.of(2025, 5, 13), "300_l"),
+			scenario("basecase", "310v2", LocalDate.of(2025, 5, 13), "310_l"),
+			scenario("basecase", "320v2", LocalDate.of(2025, 5, 13), "320_l"),
+			scenario("basecase", "330v2", LocalDate.of(2025, 5, 13), "330_l"),
+			scenario("basecase", "340v2", LocalDate.of(2025, 5, 13), "340_l"),
+			scenario("basecase", "350v2", LocalDate.of(2025, 5, 13), "350_l"),
+			scenario("basecase", "360v2", LocalDate.of(2025, 5, 13), "360_l"),
+			scenario("basecase", "370v2", LocalDate.of(2025, 5, 13), "370_l"),
+			scenario("basecase", "380v2", LocalDate.of(2025, 5, 13), "380_l"),
+			scenario("basecase", "390v2", LocalDate.of(2025, 5, 13), "390_l"),
+			scenario("basecase", "400v2", LocalDate.of(2025, 5, 13), "400_l"),
+			scenario("basecase", "70v2", LocalDate.of(2025, 5, 13), "70_l"),
 
 			// Scenario 2: Basecase V1 mit 100er Fahrzeugen (gleicher Tag, neuer Name)
 			// scenario("basecase", "V1", LocalDate.of(2025, 5, 13), "100_l"),
