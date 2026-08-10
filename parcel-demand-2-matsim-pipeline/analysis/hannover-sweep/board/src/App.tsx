@@ -12,6 +12,7 @@ import DeltaChart from "@/components/DeltaChart";
 import LimitChart from "@/components/LimitChart";
 import LimitLines from "@/components/LimitLines";
 import RunsTable from "@/components/RunsTable";
+import SummaryPanels from "@/components/SummaryPanels";
 import SweepChart from "@/components/SweepChart";
 import Tiles from "@/components/Tiles";
 import { KPIS, META, SERIES, SERIES_VAR, type KpiDef, type Series } from "@/lib/data";
@@ -77,6 +78,8 @@ export default function App() {
   const [deltaKpi, setDeltaKpi] = useState<KpiDef>(KPIS.find((k) => k.key === "vehicles")!);
   const [deltaRel, setDeltaRel] = useState(true);
   const [deltaPairId, setDeltaPairId] = useState(DELTA_PAIRS[0].id);
+  const [summaryV1, setSummaryV1] = useState(false);
+  const [summaryRel, setSummaryRel] = useState(true);
   const deltaPair = DELTA_PAIRS.find((p) => p.id === deltaPairId)!;
 
   return (
@@ -251,6 +254,32 @@ export default function App() {
                 </>
               )}
             </p>
+          </CardContent>
+        </Card>
+
+        {/* ── Zusammenfassung: gepoolter Mittelwert + Unsicherheitsband ── */}
+        <Card className="mb-6 shadow-none">
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <CardTitle className="text-base">Alle KPIs im Überblick — Mittelwert mit Unsicherheitsband</CardTitle>
+              <div className="flex flex-wrap items-center gap-3">
+                <Tabs value={summaryRel ? "rel" : "abs"} onValueChange={(v) => setSummaryRel(v === "rel")}>
+                  <TabsList className="h-8">
+                    <TabsTrigger value="rel" className="h-6 text-xs">relativ (%)</TabsTrigger>
+                    <TabsTrigger value="abs" className="h-6 text-xs">absolut</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="flex items-center gap-2">
+                  <Switch id="summary-v1" checked={summaryV1} onCheckedChange={setSummaryV1} />
+                  <Label htmlFor="summary-v1" className="text-xs text-muted-foreground">
+                    v1 einblenden
+                  </Label>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SummaryPanels showV1={summaryV1} rel={summaryRel} />
           </CardContent>
         </Card>
 
