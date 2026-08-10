@@ -5,16 +5,20 @@ import { KPIS, SERIES, SERIES_VAR, fmt, meanAt, type Series } from "@/lib/data";
 
 function DeltaChip({ delta }: { delta: number }) {
   return (
-    <span className="ml-2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold bg-muted text-foreground/80">
-      {delta > 0 ? "+" : ""}
-      {fmt(delta, 1)} %
+    <span className="ml-2 shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold bg-muted text-foreground/80">
+      {/* a delta that rounds to zero must not carry a sign: "-0,0 %" reads as a
+          decrease that isn't there */}
+      {Math.abs(delta) < 0.05 ? "0,0" : `${delta > 0 ? "+" : ""}${fmt(delta, 1)}`} %
     </span>
   );
 }
 
 export default function Tiles({ cap }: { cap: number }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+    // 3 across, not 6: at 6 columns a tile is ~168 px, where a six-digit cost
+    // plus unit plus delta chip does not fit on one line. flex-wrap above keeps
+    // that from destroying anything, but the fix is room, not squeezing.
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
       {KPIS.map((k) => {
         const vals = Object.fromEntries(SERIES.map((s) => [s, meanAt(s, cap, k.key)])) as Record<
           Series,
@@ -31,14 +35,19 @@ export default function Tiles({ cap }: { cap: number }) {
                 // vertically aligned across KPIs; the other arms only when present.
                 if (v == null && s !== "v1") return null;
                 return (
-                  <div key={s} className="mt-1 flex items-baseline">
+                  // flex-wrap + shrink-0: the dot is the only child without text,
+                  // so without this it is what flexbox squeezes to nothing when
+                  // number + unit + chip exceed the tile width (Tour-km, Kosten).
+                  // The series colour is the row's only identifier — it may never
+                  // be the thing that gives way.
+                  <div key={s} className="mt-1 flex flex-wrap items-baseline">
                     <span
-                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                      className="mr-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: `var(${SERIES_VAR[s]})` }}
                       title={s}
                     />
-                    <span className="text-xl font-bold tabular-nums">{v == null ? "–" : fmt(v, k.digits)}</span>
-                    {k.unit && <span className="ml-1 text-xs text-muted-foreground">{k.unit}</span>}
+                    <span className="shrink-0 text-xl font-bold tabular-nums">{v == null ? "–" : fmt(v, k.digits)}</span>
+                    {k.unit && <span className="ml-1 shrink-0 text-xs text-muted-foreground">{k.unit}</span>}
                     {s !== "v1" && v != null && ref != null && <DeltaChip delta={((v - ref) / ref) * 100} />}
                   </div>
                 );
