@@ -13,14 +13,18 @@ All inputs are the per-run Java LMD dashboards (`HAGRID_Dashboard_<runId>_iter15
 which embed a server-rendered `SUMMARY=[...]` JSON array (per provider, with per-vehicle
 `vehDetails`). One extraction script reads exactly these files:
 
-**Series v1 (old code, Feb–Apr 2026), 38 sweep points + 3 replicates:**
+**Series v1 (old code, Feb–Apr 2026), 38 sweep points + 1 replicate:**
 - `C:\Users\Hendrik Bimmermann\Desktop\Sim_Results\HAGRID_Dashboard_BASECASE_13052025_<cap>_iter150_jsprit1000.html`
-  for cap = 30, 40, …, 400 (step 10; 38 files).
-- Replicates (same code, reseeded tag): `120_v2` (Desktop), `300v2` (Desktop),
-  `50v2_l` (repo root). Despite the "v2" in their tags these are **old-code** runs
-  (file dates 2026-02-19, no unassigned KPI) → they enter as extra v1 points at
-  caps 120, 300, 50. `300v2` exists on Desktop and in repo root; implementation
-  verifies the copies are identical (checksum) and uses the Desktop copy.
+  for cap = 30, 40, …, 400 (step 10; 38 files). *(Implementation finding: caps 50 and
+  300 have no plain-tag board — their sweep points ARE the old-code runs tagged
+  `50v2_l` / `300v2`; despite the "v2" tags these are old-code runs, file dates
+  2026-02-19, no unassigned KPI.)*
+- Replicate: `120_v2` (Desktop; plain `120` also exists) → extra v1 point at cap 120.
+  `300v2` exists on Desktop and in repo root; the extractor verified the copies are
+  byte-identical (checksum) and uses the Desktop copy.
+- Older schema note: the two Feb boards expose only provider-level `durH` (no
+  `tourDurH`), so `tour_h` is computed uniformly as Σ per-tour `durH` from
+  `vehDetails` in ALL runs, cross-checked against `tourDurH` where present (1 %).
 
 **Series v2 (current code incl. CarrierServiceMerger split fix, 2026-07-23/27), 12 points:**
 - `C:\Users\Hendrik Bimmermann\Desktop\Sim_Results\0726\Run1\Dashboards\HAGRID_Dashboard_BASECASE_13052025_<cap>v2_iter150_jsprit1000.html`
