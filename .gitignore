@@ -117,6 +117,14 @@ __pycache__/
 
 # Generated analysis pages (regenerated from the run output; not versioned)
 parcel-demand-2-matsim-pipeline/analysis/**/*.html
+# ...but the sweep board's Parcel entry point is SOURCE, not a generated page.
+# Without this negation a clone cannot rebuild the board at all, while the rule
+# above still keeps every 26-38 MB run dashboard out. bundle.html stays ignored
+# via board/.gitignore - it is the build artifact, rebuilt via the README recipe.
+!parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/board/index.html
+
+# Headless visual-check screenshots (regenerate with `node shot.cjs`)
+parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/board/shot_*.png
 
 # Root-level generated analysis artifacts
 /Analyse_*.png
