@@ -7,7 +7,43 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-07-31._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-08-10._
+
+---
+
+## 2026-07-29 _(nachgetragen 2026-08-10)_
+
+- **χ-Gate instrumentiert (`ChiGateStats`, 3 Zähler in beide Channel-Stats-CSVs)** — ✅ Commit
+  `a375df9` auf `hendrik`. Anlass: `segments_rejected_final = 0` wurde als „χ bindet nicht"
+  gelesen, obwohl der Zähler ein χ-blockiertes Paket **nie** sieht (Rückkehr in die
+  `ParcelOnlyRetryQueue`, Ausfall hinter dem Fenster ohne Event). Neu:
+  `chi_blocked_insertion_attempts`, `chi_blocked_segments`, `segments_window_expired_chi_blocked`
+  — Controller-Scope-Singleton, weil das Gate je Iteration im QSim-Child-Injector neu gebaut wird;
+  Zähler teilen den Per-Iterations-Lebenszyklus des Handlers. Nachweis: Java 38/38 shareduse grün
+  inkl. `SharedUseDispatchTest`-Boot, Python 251/251.
+- **Verdrahtungs-Probelauf `chiwire` (χ=−1, 1 Iteration)** — ✅ beweist, dass Gate und
+  KPI-Handler dasselbe Guice-Singleton sehen (ein stiller Null-Zähler wäre testgrün geblieben):
+  `chi_blocked_segments` 2953 = `segments_submitted`, `segments_window_expired_chi_blocked` 2953,
+  46 838 041 Blocks, 0 Zustellungen, δ = 1,0. Per-Iterations-Reset verifiziert (Iter 0
+  46 680 497 ≠ Iter 1 46 838 041 statt Summe). Nebenbefund, jetzt belegt statt argumentiert:
+  `segments_rejected_final` bleibt bei 100 % verhinderter Zustellung **auf 0**
+  → [METHODS-LOG](METHODS-LOG.md) §2.31.
+- **Instrumentierter Referenzlauf `chid600i` (χ=600, 150 Iter)** — ✅ alle Exit-Codes 0,
+  `CHIGATE_DONE` 29.07. 20:48. In **allen** gemeinsamen Spalten und Iterationen **bit-identisch**
+  zu `chid600` (δ = 0,1046375355767621) — die Zähler sind also nebenwirkungsfrei, und ein Rerun
+  derselben Konfiguration taugt **nicht** als Reproduktionstest (§1.5). Ergebnis: das Gate ist
+  aktiv (11 087 254 Blocks, alle 2953 Segmente), der Zuordnungszähler saturiert aber
+  → [METHODS-LOG](METHODS-LOG.md) §2.31. Läufe selbst durch das 21:00-Fenster überholt
+  (`chid600w21`), der Zählerbefund nicht.
+- **Betriebsdetail (kostete ~3 h):** der erste Detached-Start über
+  `Start-Process -WindowStyle Hidden` aus einer ssh-Sitzung **starb still** — Log blieb auf
+  `===== COMPILE =====`, kein Prozess, leeres stderr, kein Reboot, `target/classes` unverändert.
+  Kein Compile-Problem (synchron 13,7 s BUILD SUCCESS). Fix: Start über
+  `Invoke-CimMethod Win32_Process Create` (hängt am WMI-Provider, nicht am ssh-Prozessbaum).
+  Zweiter Fehler derselben Klasse: der Marker-Monitor schwieg 3 h, weil ein Prozess, der **vor**
+  dem ersten Marker stirbt, in einem Marker-only-Filter aussieht wie „kompiliert noch" — Filter
+  brauchen einen Liveness-Zweig (java-Prozess vorhanden?), nicht nur Erfolgs-/Fehlermarker.
+  Nachfolgearbeit: [Remote-Crash-Alerting](superpowers/specs/2026-07-31-remote-crash-alerting-design.md).
 
 ---
 
@@ -38,7 +74,10 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-07-31._
   Pax 8973 Rides / 700 s / 26 Rejections — im alten Rauschband, Fensterwechsel + Demand-Drift
   pax-neutral. **chid600w21:** 6051 injiziert / 5671 zugestellt (93,72 % brutto, 31 spät) /
   338 verfallen / 42 nie submitted; alle 218 verfallenen Segmente χ-geblockt (11,68 M geblockte
-  Insertion-Versuche); Pax 7326 Rides (−18,4 % vs. basew21) / 704 s / 18 Rejections.
+  Insertion-Versuche) — ⚠️ **Annotation 2026-08-10:** daraus folgt *nicht*, dass das Gate der
+  bindende Mechanismus ist; `chi_blocked_segments` = 3104 = *alle* eingereichten Segmente, also auch
+  die 2884 zugestellten. Der Zähler saturiert → [METHODS-LOG](METHODS-LOG.md) §2.31.
+  Pax 7326 Rides (−18,4 % vs. basew21) / 704 s / 18 Rejections.
   **Zwei Befunde daraus** (Konsequenzen im METHODS-LOG): Fenster-Bias-Verdacht widerlegt
   (§3.10 — base10c 93,47 % ↔ basew21 93,61 %, `unassigned=0` beidseits, jsprit nie gebunden)
   und Netto/Brutto-Konventionsmix Baseline↔1c aufgedeckt (§2.21, Annotation 2026-07-31 —
