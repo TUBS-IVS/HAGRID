@@ -55,9 +55,17 @@ Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
   keine Parität. Für Vergleichstabellen je Arm dieselbe Konvention exportieren (brutto überall +
   Overlay als separate Zeile). Kontext: [METHODS-LOG](METHODS-LOG.md) §2.21, Annotation
   2026-07-31. _(added 2026-07-31)_
-- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt); Raster jetzt an `chid600w21`
-  ausrichten (χ=600 → 93,7 % brutto; **alle** 218 verfallenen Segmente χ-geblockt — das Gate
-  ist der bindende Mechanismus, nicht die Fahrzeugkapazität).
+- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt); Raster an `chid600w21` ausrichten
+  (χ=600 → 93,7 % brutto). ⚠️ **Korrektur 2026-08-10:** die frühere Begründung „alle 218
+  verfallenen Segmente χ-geblockt → das Gate ist der bindende Mechanismus, nicht die
+  Fahrzeugkapazität" ist **nicht gedeckt**. Der Zähler saturiert: `chi_blocked_segments` = 3104 =
+  *alle* eingereichten Segmente, also auch die 2884 erfolgreich zugestellten — „je einmal geblockt"
+  trennt Erfolg nicht von Misserfolg. Gemessen ist nur, dass das Gate **aktiv** ist (11,7 Mio.
+  Blocks), nicht dass es bindet → [METHODS-LOG](METHODS-LOG.md) §2.31.
+- **`[M]` Vor dem χ-Sweep: Detour-Verteilung instrumentieren** statt Raster raten — pro Segment und
+  Dispatch-Runde den kleinsten erreichbaren `detourOnly`-Wert erfassen. Liefert eine erste Näherung
+  der ganzen δ(χ)-Kurve aus **einem** Lauf und damit begründete Sweep-Punkte; ~1–2 h Code + 1 Rerun.
+  Design, Belege und Grenzen: [METHODS-LOG](METHODS-LOG.md) §2.31. _(added 2026-08-10)_
 - **Offen: Shared-Use-Hälfte des Nachfrage-Bandes** — an den χ-Sweep hängen, kostet dort nur
   einen zusätzlichen Punkt. Nichtlinearität ist genau dort plausibel (χ-Gate: weniger Pakete →
   überproportional höheres δ).

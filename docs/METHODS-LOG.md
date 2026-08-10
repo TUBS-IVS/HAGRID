@@ -498,6 +498,7 @@ Carrier), für Armläufe der Hebel.
 
 `trägt` · 2026-07-27 · **Paper-Caveat.** Bei Teil-Piggyback misst χ den *verworfenen* Umweg nur
 nach unten. Zusätzlich: **n=1 Seed pro χ-Punkt** in den bisherigen 1c-Läufen.
+Wie *aktiv* das Gate ist, ist gemessen; ob es **bindet**, ist es nicht → §2.31.
 
 ### 2.4 Pax-KPIs unter Co-Riding: was unkorrigierbar bleibt
 
@@ -1596,6 +1597,51 @@ Baseline↔1d-Vergleich: die 0,53 % sind ein *Muster*-, nicht nur ein Niveau-Unt
 neu rechnen — sauber für die Paper-Headline; oder (b) 0,53 % als Caveat im Methods-Kapitel
 ausweisen — klein gegen das ±10-%-Nachfrageband und den 6,5-%-km-Rauschboden (§2.1).
 Der m1d015-Nachschuss lief bewusst **vor** jedem Sync, um die Kurve nicht intern zu brechen.
+
+### 2.31 1c: der χ-Zuordnungszähler saturiert — „alle verfallenen Segmente χ-geblockt" ist informationslos
+
+`trägt` · Messung 2026-07-29, nachgetragen 2026-08-10. **Instrument-Limitation.** Die drei
+`ChiGateStats`-Zähler (`chi_blocked_insertion_attempts`, `chi_blocked_segments`,
+`segments_window_expired_chi_blocked`, eingebaut `a375df9`) beantworten **nicht**, ob χ die
+verfallenen Segmente verursacht. Grund: `chi_blocked_segments` ist in **jeder** Iteration gleich
+`segments_submitted` — das Prädikat „wurde je einmal χ-geblockt" ist über einen Simulationstag mit
+tausenden Dispatch-Runden praktisch garantiert und gilt für erfolgreich zugestellte Segmente
+genauso wie für verfallene.
+
+Belege (zwei Läufe, unabhängig vom Lieferfenster):
+
+| Lauf | `segments_submitted` | `chi_blocked_segments` | zugestellt | `window_expired` | `..._chi_blocked` |
+|---|---|---|---|---|---|
+| `chid600i` (χ=600, 20:00-Fenster) | 2953 | **2953** | 2676 | 260 | 260 (100 %) |
+| `chid600w21` (χ=600, 21:00-Fenster) | 3104 | **3104** | 2884 | 218 | 218 (100 %) |
+
+`segments_window_expired_chi_blocked == segments_window_expired` ist also **keine Messung, sondern
+eine Identität**, solange der Zähler saturiert. ⚠️ Die daraus in BACKLOG/BACKLOG-DONE (2026-07-31)
+gezogene Folgerung „das Gate ist der bindende Mechanismus, nicht die Fahrzeugkapazität" ist durch
+diesen Zähler **nicht gedeckt** und dort entsprechend annotiert. Was gilt: das Gate ist
+**nachweislich aktiv** (11,7 Mio. blockierte Evaluationen bei χ=600) — aktiv ≠ bindend.
+
+**Positiv-Befund aus derselben Messreihe:** `segments_rejected_final` ist als Gate-Signal
+empirisch wertlos. Der Hard-Closed-Lauf `chiwire` (χ=−1) blockt 46 838 041 Evaluationen und
+verhindert **100 %** der Zustellungen — `segments_rejected_final` steht dabei **auf 0**. Ein
+χ-blockiertes Paket wird nie terminal abgelehnt (es kehrt in die `ParcelOnlyRetryQueue` zurück und
+fällt hinter seinem Fenster ohne Event heraus). Wer aus `rejected_final = 0` auf ein inaktives Gate
+schließt, irrt maximal — genau das war der Anlass der Instrumentierung.
+
+**Was die Frage tatsächlich beantworten würde** (nicht gebaut, Aufwand ~1–2 h + 1 Rerun): statt
+eines Zählers eine **Verteilung** — pro Segment und Dispatch-Runde der *kleinste erreichbare*
+`detourOnly`-Wert über alle Kandidaten. Liegt das Minimum für die verfallenen Segmente bei
+700–900 s, hätte χ=900 sie zugestellt; liegt es bei mehreren 1000 s, ist χ nicht der Engpass.
+Das liefert eine erste Näherung der **ganzen δ(χ)-Kurve aus einem Lauf** und damit eine begründete
+Platzierung der Sweep-Punkte statt eines geratenen Rasters. Keine exakte Kurve: höheres χ verändert
+die Trajektorie (zusätzlich angenommene Pakete verschieben die Fahrzeugzustände), der Wert ist eine
+Ober-/Unterschranken-Aussage pro Runde, kein Kontrafaktum. Nebenbedingung aus §2.24 Punkt 4:
+`calculate()` läuft je Kandidat, nicht je gewählter Insertion — die Aggregation muss das Minimum je
+Runde bilden, nicht jede Evaluation loggen.
+
+Verwandt: §2.3 (χ als untere Schranke des Umwegs), §2.24 Punkt 2 (dieselbe Zählerlücke aus
+Emissions-Perspektive: angenommene Insertions hinterlassen keine Spur), §1.5 (Determinismus —
+ein Rerun derselben Konfiguration ist bit-identisch und taugt nicht als Reproduktionstest).
 
 ---
 
