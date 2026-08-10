@@ -49,7 +49,9 @@ export const KPIS: KpiDef[] = [
   { key: "tour_h", label: "Tour-h", unit: "h", digits: 0, scale: 1 },
   { key: "cost_eur", label: "Kosten", unit: "€", digits: 0, scale: 1 },
   { key: "vehicles", label: "Fahrzeuge", unit: "", digits: 0, scale: 1 },
-  { key: "parcels_per_vehicle", label: "Pakete je Fahrzeug", unit: "", digits: 0, scale: 1 },
+  // one decimal: the extractor already rounds parcels/vehicles to 0.1, and at
+  // ~30-160 parcels a whole number hides differences between the arms
+  { key: "parcels_per_vehicle", label: "Pakete je Fahrzeug", unit: "", digits: 1, scale: 1 },
   { key: "utilization", label: "Auslastung", unit: "%", digits: 1, scale: 100 },
 ];
 
@@ -64,8 +66,10 @@ export const LIMIT_CLASSES = [
 
 export type LimitKey = (typeof LIMIT_CLASSES)[number]["key"];
 
+// min == max digits on purpose: a column where 29,1 sits above 29 reads as a
+// different precision rather than the same number, so trailing zeros are kept.
 const nf = (digits: number) =>
-  new Intl.NumberFormat("de-DE", { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+  new Intl.NumberFormat("de-DE", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 
 export function fmt(value: number, digits = 0): string {
   return nf(digits).format(value);
