@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fmt, limitLineRows, type Series } from "@/lib/data";
+import { capTicks, fmt, limitLineRows, type Series } from "@/lib/data";
 
 const INK2 = "var(--chart-ink2)";
 
@@ -52,7 +52,7 @@ export default function LimitLines({ series, share, separateBoth }: Props) {
             dataKey="cap"
             type="number"
             domain={["dataMin", "dataMax"]}
-            ticks={series === "v1" ? [30, 50, 100, 150, 200, 250, 300, 350, 400] : [30, 50, 70, 90, 110, 130, 150]}
+            ticks={capTicks(series)}
             stroke="var(--chart-axis)"
             tick={{ fill: INK2, fontSize: 12 }}
             label={{ value: "Fahrzeugkapazität [Pakete]", position: "insideBottom", offset: -4, fill: INK2, fontSize: 12 }}

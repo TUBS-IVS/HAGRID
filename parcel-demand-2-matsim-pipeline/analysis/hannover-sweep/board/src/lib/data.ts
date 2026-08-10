@@ -90,6 +90,20 @@ export function capsFor(series: Series): number[] {
   return series === "v1" ? V1_CAPS : series === "v2" ? V2_CAPS : V3_CAPS;
 }
 
+/** X-axis ticks for one series: every multiple of 50 inside its actual capacity
+    range, plus both endpoints. Derived on purpose — a hard-coded list stops
+    labelling the moment a series grows (v2 went 150 -> 280, v3 reaches 380), and
+    an unlabelled axis tail reads as if the data ended there. */
+export function capTicks(series: Series): number[] {
+  const caps = capsFor(series);
+  const lo = caps[0];
+  const hi = caps[caps.length - 1];
+  const marks: number[] = [];
+  for (let x = Math.ceil(lo / 50) * 50; x <= hi; x += 50) marks.push(x);
+  // drop marks that would collide with an endpoint label rather than the endpoint
+  return [lo, ...marks.filter((x) => x - lo >= 15 && hi - x >= 15), hi];
+}
+
 export const SERIES_LABEL: Record<Series, string> = {
   v1: "v1 (Alt, Feb–Apr 26)",
   v2: "v2 (Merger-Split, Sim+Dev)",
@@ -163,6 +177,74 @@ export function deltaRows(
       const b = meanAt(series, cap, key)!;
       return { cap, delta: rel ? ((b - a) / a) * 100 : b - a };
     });
+}
+
+/** The arms that carry the current code and may therefore be pooled into one
+    mean. v1 is a DIFFERENT code version — it stays a reference line and is never
+    averaged in, however the summary section is toggled. */
+export const POOLED: Series[] = ["v2", "v3"];
+
+export interface SummaryRow {
+  cap: number;
+  mean: number | null;
+  /** [min, max] over the pooled runs — null where only one run exists, so the
+      band is absent rather than drawn as a zero-width fake certainty. */
+  band: [number, number] | null;
+  n: number;
+  v1: number | null;
+}
+
+/** Pooled mean of the replicate arms per capacity, with their min-max spread as
+    the uncertainty band, plus v1 alongside for the optional overlay.
+
+    Why min-max and not a standard deviation: n is 2 at best, where an SD is not
+    an estimate of anything. The observed range between two independently seeded
+    runs of identical code is the honest statement of what this sweep resolves. */
+export function summaryRows(key: KpiKey): SummaryRow[] {
+  return ALL_CAPS.map((cap) => {
+    const vals = RUNS.filter((r) => POOLED.includes(r.series) && r.cap === cap).map((r) => kpiValue(r, key));
+    return {
+      cap,
+      mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null,
+      band: vals.length > 1 ? [Math.min(...vals), Math.max(...vals)] : null,
+      n: vals.length,
+      v1: meanAt("v1", cap, key),
+    };
+  });
+}
+
+export interface SpreadStat {
+  meanPct: number;
+  maxPct: number;
+  maxCap: number;
+  nCaps: number;
+}
+
+/** The noise floor as one number per KPI: band width relative to the mean,
+    averaged over every capacity that actually has two runs. */
+export function spreadStat(key: KpiKey): SpreadStat | null {
+  const pct = summaryRows(key)
+    .filter((r) => r.band && r.mean)
+    .map((r) => ({ cap: r.cap, p: ((r.band![1] - r.band![0]) / r.mean!) * 100 }));
+  if (!pct.length) return null;
+  const worst = pct.reduce((a, b) => (b.p > a.p ? b : a));
+  return {
+    meanPct: pct.reduce((s, x) => s + x.p, 0) / pct.length,
+    maxPct: worst.p,
+    maxCap: worst.cap,
+    nCaps: pct.length,
+  };
+}
+
+/** Capacities grouped by how many pooled runs they carry — the section states
+    these explicitly, so a missing band is never read as a tight one. */
+export function pooledCoverage(): { n1: number[]; n0: number[]; total: number } {
+  const rows = summaryRows("vehicles");
+  return {
+    n1: rows.filter((r) => r.n === 1).map((r) => r.cap),
+    n0: rows.filter((r) => r.n === 0).map((r) => r.cap),
+    total: rows.length,
+  };
 }
 
 export interface LimitRow {
