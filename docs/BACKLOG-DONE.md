@@ -22,8 +22,14 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-08-11._
   Volle 7-Carrier-Lausitz-Route gegen `DRT_BASELINE_13052025_basew21`: **52 → 41 Touren (−21,2 %)**,
   Distanz 3.002,4 → 1.984,5 km (−33,9 %), Kosten 9.502 → 7.797 € (−17,9 %), Schichtnutzung
   79,6 → 91,7 %, Anteil `ct_cep_size_s` 60 % → 12 %; Pakete/Stops je Carrier identisch,
-  `unassignedJobs=0`. Nicht langsamer (dpd 722 s gegen 931 s bei gleicher Parallelität).
-  → Konsequenz für die Zahlen: [METHODS-LOG](METHODS-LOG.md) §2.34.
+  `unassignedJobs=0`. **Laufzeit +9,2 %** (gepaart, beide Arme gleichzeitig auf leerer Maschine:
+  11.240 s gegen 12.274 s) — die zuerst notierte Aussage „nicht langsamer" stammte aus einer
+  Ein-Carrier-Messung und ist widerlegt. → Konsequenz für die Zahlen:
+  [METHODS-LOG](METHODS-LOG.md) §2.34.
+- **Harness gegen den echten Produktionsrun verifiziert** — ✅ der `BEST`-Arm der gepaarten Messung
+  reproduziert `DRT_BASELINE_13052025_basew21` **exakt** (52 Touren, 3.002,4 km, 9.502,17 €,
+  Typenmix je Carrier identisch); der `REGRET`-Arm reproduziert sich über zwei Läufe sechs Stunden
+  auseinander byte-gleich. Die −21 % sind damit weder Harness-Artefakt noch Suchrauschen.
 - **Ausschluss-Nachweis (Zehn-Arm-Probe auf Carrier `dpd`, 408 Services, je einvariabel)** — ✅ die
   drei naheliegenden Erklärungen sind widerlegt, nicht nur unwahrscheinlich: Kapazität 100/165/230
   ergibt **immer** 5 Touren; `FIXED_COST_PARAM=1.0` lässt 5 Touren bei −0,3 % Gesamt; alle Ruins
