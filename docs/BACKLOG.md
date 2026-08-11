@@ -245,6 +245,70 @@ _(Prio-Vorschlag: eng an Nachhaltigkeit gekoppelt.)_ _(added 2026-07-14)_
   fehlt; Kapsel-/Swap-Station-Kapital und Handling fehlen ganz. Beim Neubau der Kostenfunktion
   die Allokationsregel Fracht↔Pax explizit entscheiden (Zeitanteile aus
   `drt_freight_hours_total` liegen vor). _(added 2026-07-29)_
+- **Subtask: der LMD-Arm gehört mit auf die Liste (Befund 2026-08-11)** — bisher stand hier nur
+  die DRT-Seite. Die LMD-Kostenfunktion hat **keinen zeitproportionalen Term**
+  (`costsPerSecond = 0`), der Fixsatz 189,15 €/Tag hängt an der *Tour* statt an der Dauer, und für
+  171,78/189,15 € gibt es im Repo keine Quelle. Der Neubau muss den Fixsatz in Fahrzeug-Tag +
+  Fahrer-Stunde aufspalten — das ist zugleich die Voraussetzung für den Autonomie-Switch (§1.1)
+  und dafür, dass χ-Umwegzeit / 420-s-Rüstzeit / Deadhead in 1c/1d überhaupt bepreisbar werden.
+  Details: [METHODS-LOG](METHODS-LOG.md) §2.33. _(added 2026-08-11)_
+
+### `[H]` Hannover-Sweep: Kostenkorrektur im Postprocessing
+
+**Ad-hoc-Korrektur der €-Zahlen auf dem Kapazitäts-Sweep-Board, ohne Re-Runs.** Befund und
+Messung: [METHODS-LOG](METHODS-LOG.md) §2.33. Kurzfassung: 88,3 % der berichteten Kosten sind
+Fixkosten, die je *Tour* einen vollen Tagessatz (189,15 €) berechnen — auch für die 32 % der
+Touren unter 7 h und die kürzeste mit 0,72 h (≙ 263 €/h). Das bestraft systematisch die
+Low-Cap-Läufe, also genau die Achse, die der Sweep vermisst.
+
+**Terminierung (User-Entscheidung 2026-08-11): erst wenn die Serien v2–v4 vollständig sind, dann
+gesammelt nachziehen.** Alle Läufe sollen auf derselben Kostenversion stehen; eine Korrektur
+mitten in einer laufenden Serie erzeugt genau die Vermischung, die vermieden werden soll.
+`extract_sweep.py` kennt heute nur `V1_CAPS`/`V2_CAPS`/`V3_CAPS`; v4 muss dort angelegt werden
+(`EXPECTED_RUNS` in derselben Edit mitwachsen lassen, by design).
+
+**v4 ist ein Reseed-Replikat auf identischem Codestand** (User 2026-08-11), also dieselbe Kategorie
+wie v3. Das ist ein Zugewinn, kein Risiko: mit v2/v3/v4 hat das Board **drei** Ziehungen statt
+zwei, und die Unsicherheitsaussage wird von einer Zwei-Punkt-Spanne zu einer (immer noch kleinen,
+n=3) Streuungsschätzung — dieselbe Struktur wie der Multi-Seed-Fächer aus
+[METHODS-LOG](METHODS-LOG.md) §1.5/§2.1. Beim Nachziehen mitentscheiden, ob die Kostenkurve als
+gepoolter Mittelwert über v2–v4 gezeigt wird (die Summary-Sektion des Boards kann das bereits) —
+und ob die Korrektur die Reseed-Spanne verändert. Erwartung: sie sollte sie **verkleinern**, weil
+die Tourenzahl zwischen Seeds stärker schwankt als die Tourstunden.
+
+**Machbarkeit ist geprüft:** der `SUMMARY`-Blob jedes Dashboards trägt **pro Tour** `durH`,
+`travelH`, `distKm`, `fixCost`, `costPerKm`; `extract_sweep.py` schneidet ihn bereits heraus. Die
+Korrektur ist eine Kostenfunktion in Python über vorhandene Artefakte — kein Re-Run, alle Läufe
+auf einen Schlag.
+
+**Vorgeschlagene Regel (Option B, „Zwei-Term-Rekonstruktion"):** `F_Fzg + w × durH` statt der
+Tagespauschale, niveauverankert über `F_Fzg + w × 7h = 189,15 €`. Vorzug vor reiner Pro-rata-
+Umlage, Schichtstaffel oder Fahrzeug-statt-Tour-Zählung (letztere ist auf diesen Daten wirkungslos:
+Fahrzeuge == Touren), weil sie **strukturell identisch mit dem späteren echten Fix** ist — der
+Ad-hoc ist damit ein Prototyp, kein Wegwerfcode. Zwei Defekte fallen dabei gratis mit:
+`max(0, durH − 7) × w × Zuschlag` ersetzt die kaputte 5-€-Pauschale, und der Lohnterm über `durH`
+subsumiert `costActivity` (also **nicht** zusätzlich draufrechnen — Doppelzählung).
+`costTimeWindowPenalty` bleibt draußen (5 €/s ist ein Scoring-Gerät).
+
+**Offene Entscheidungen:**
+- **Kalibrierung.** Vorentscheidung des Users: `F_Fzg ≈ 40 €/Tag` → `w = 21,31 €/h`. Bewusst
+  akzeptiert: das liegt unter Arbeitgeber-Vollkosten (25–30 €/h), unterzeichnet die Personalkosten
+  also weiter um ~⅓ — jetzt aber sichtbar an einer Zahl statt versteckt in einer Tagespauschale.
+  Die Niveaukorrektur gehört in den echten Fix, nicht hierher.
+- **Darstellung auf dem Board.** Empfehlung: **beide Kurven zeigen**, Konventionswechsel explizit,
+  kein stiller Tausch. Grund: die Ersparnis cap 30 → 280 fällt von −78,8 % auf −56,7 %, und das
+  Kostenminimum wandert von cap 240 auf 190 (allerdings innerhalb eines 2,4-%-Plateaus).
+  Unberührt bleibt der Arbeitszeit-/Kapazitäts-Crossover bei ~170 — `classify()` ist rein physisch.
+- **Distanzkosten NICHT neu rechnen.** `costDist` aus `CARRIER_DETAIL` unverändert übernehmen.
+  Grund: `distKm × costPerKm` liegt systematisch 4,6 % über `costDist` (Verhältnis 0,950–0,958 über
+  14 Boards, Mechanismus ungeklärt, §2.33 Punkt 5). Nur den Fixterm ersetzen, dann fasst die
+  Korrektur die Lücke gar nicht an und behält Anschluss an alle berichteten Zahlen.
+
+**Mitzuziehen, wenn die Korrektur greift:** `sweep_kpis.csv` (`cost_eur`), das React-Board
+(`board/`, neue Serie oder Toggle), und der Nachweis in
+[BACKLOG-DONE](BACKLOG-DONE.md). Die dauerhafte Reparatur im Java-Pfad
+(`ScoringFunctions`, Fahrzeugtyp-XML) läuft über `[H]` Kostenfunktion reviewen und ersetzt diesen
+Punkt später. _(added 2026-08-11)_
 
 ---
 
@@ -291,6 +355,27 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Headline-Runs. Kosten: 3 × ~1 h 40. _(added 2026-07-28)_
 
 ### Sonstige Medium-Punkte
+
+- **`[M]` Zwei Distanzmaße derselben Touren, systematisch 4,6 % auseinander — klären, welches die
+  gefahrenen km sind** — jedes Java-Dashboard trägt beide nebeneinander: `distKm` (aus dem
+  gerouteten Carrier-Plan geparst) und `costDist` (aus dem MATSim-Scoring der ausgeführten Legs,
+  `SimpleDriversLegScoring`). Auf `230v2`: 30.283 km × 0,3864 €/km = **11.701 €** gegen
+  `costDist` **11.180 €**. Verhältnis **0,950–0,958 über alle 14 lokal vorliegenden
+  Hannover-Boards**, 0,983 auf `bandz_central` (Lausitz, iter0) — stabil, kein Rauschen.
+  Ausgeschlossen ist die Low-Util-Re-Allokation (auf 230v2 liegt keine Tour unter der
+  5-%-Schwelle, Minimum-Loadfactor 5,20 → ratio = 1,0).
+  **Zwei Kandidaten, keiner ausgeschlossen:** (a) Plan vs. nach Re-Routing ausgeführte Strecke —
+  erklärt den Sprung 0,983 → 0,955 über die Iterationszahl, aber nicht die 1,7 % Restlücke bei
+  iter0; (b) abweichende Linkbuchhaltung an den Leg-Grenzen oder im Scoring übersprungene Legs —
+  wäre ein iterationsunabhängiger Konstant-Offset und passt auf genau diese 1,7 %. Plausibelste
+  Lesart: beides gleichzeitig.
+  **Warum das kein Buchhaltungsdetail ist:** auf der €-Seite sind es 0,4 % der Gesamtkosten, egal.
+  Die offene Frage ist, welche der beiden Zahlen **die gefahrenen Kilometer** sind — Input für
+  km/Paket, Fahrleistungsaussagen und die distanzbasierten Emissionen. Falls `costDist` recht hat,
+  sind die Board-km um 4,6 % zu hoch: dieselbe Größenordnung wie der jsprit-Rauschboden von 6,5 %
+  ([METHODS-LOG](METHODS-LOG.md) §2.1), aber als **systematischer Versatz**, nicht als Streuung.
+  Details: [METHODS-LOG](METHODS-LOG.md) §2.33 Punkt 5. Blockiert die Kostenkorrektur **nicht**
+  (dort gilt: `costDist` unverändert übernehmen, `[H]` Hannover-Sweep). _(added 2026-08-11)_
 
 - **`[M]` KPI-Landschaft konsolidieren** — ein Konzept für Kontaminations-Marker,
   `*_pax`-Zusatzzeilen, `pax_only`-Overrides und Meta-Rows, bevor weitere Szenarien dazukommen

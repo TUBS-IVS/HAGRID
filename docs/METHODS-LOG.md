@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-07-31._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-11._
 
 ---
 
@@ -400,6 +400,15 @@ Mechanismus: die Zielfunktion ist **fixkostendominiert (81 %)** → jsprit optim
 Fahrzeugzahl (saubere +4-Schritte) und behandelt Distanz als schwachen Term. **Fahrzeugzahl
 konvergiert, Tourengeometrie nicht.**
 
+**Annotation 2026-08-11 — der Mechanismus ist richtig, aber eine Ebene zu flach beschrieben
+(→ §2.33).** Zwei Präzisierungen: (a) die **81 % sind basisabhängig**, kein Modellwert — gemessen
+81,4 % auf `bandz_central`, 72,2 % auf `basew21`, 88,3 % auf dem Hannover-Lauf `230v2`; die Spanne
+kommt fast vollständig aus dem fenster­abhängigen Overtime-Artefakt (§2.33 Punkt 4). (b) Distanz
+ist nicht nur ein *schwacher* Term — **Zeit ist gar keiner** (`costsPerSecond = 0` in allen
+Vantypen), und der Fixsatz hängt an der Tour, nicht an ihrer Dauer. Deshalb kann kein
+Iterations-Hochlauf die Geometrie stabilisieren: der Solver hat schlicht kein Signal, eine Tour zu
+verkürzen.
+
 **Annotation 2026-07-30 — unabhängig reproduziert bei `jspritIter=1000`, und ein neuer Kanal.**
 Die 1000-Iterationen-Sonde (§2.2) fand auf einem Carrier über 3 Seeds **7,61 % km-Spanne bei
 0,00 % Tourenspanne** und, mit Mischsatz gerechnet, **~0,7 % Gesamtkosten-Spanne** — die
@@ -532,6 +541,13 @@ Platzhalter-Karten (Bottom-up 25 € / Literatur-Benchmark 68 €). Widersprüch
 noch unaufgelöst (150.000 € pauschal mit Verweis Currie/Fournier vs. 408.000 € Benchmark /
 35,25 € pro Fahrt). Betrifft auch die Elastizitäts-Aussage aus §1.3, die über Fixkosten läuft —
 die *Richtung* ist robust, das Niveau nicht.
+
+**Erweiterung 2026-08-11: die LMD-Seite ist ebenfalls nicht belastbar, und aus einem anderen
+Grund.** Dieser Abschnitt las sich bislang so, als sei nur die DRT-Seite ein Platzhalter und die
+LMD-Kosten aus Hannover gesetzt. Gesetzt sind sie — aber ohne dokumentierte Quelle, ohne
+zeitproportionalen Term und mit zwei Scoring-Defekten. Die vollständige Zerlegung, die Messung und
+die Folgen stehen in **§2.33**. Für die Formulierung im Paper heißt das: *alle* €-Zahlen stehen
+unter Vorbehalt, nicht nur die DRT-seitigen.
 
 ### 2.7 Emissions-Caveats
 
@@ -1002,6 +1018,34 @@ Sensitivität, BACKLOG.)
    kostet ~6,3 pp Zustellquote. Für jede Vergleichstabelle gilt: je Arm dieselbe Konvention
    (brutto/operativ überall, Overlay als separate Zeile) → BACKLOG `[M]`. §2.5-Quarantäne
    (nur Deltas berichten) unverändert.
+   **✅ ENTSCHIEDEN + UMGESETZT 2026-08-10 (User): das Overlay ist kosmetisch, die Baseline ist
+   operativ 100 %.** Begründung des Users: im POC wird weder der Rücktransport noch die
+   Ersatzzustellung an der Packstation simuliert, also ist ein Not-at-home-Miss kein
+   Zustellausfall des *Konzepts*, sondern eine nicht modellierte Folgeprozess-Annahme. Solange
+   `parcels_unassigned = 0` ist — bei `FleetSize.INFINITE` legt jsprit immer ein Fahrzeug nach,
+   ein Ausfall entstünde nur bei echter Einzel-Infeasibility — ist die Baseline definitionsgemäß
+   bei 100 %. Umsetzung: **ein** KPI-Name `delivery_rate` in allen drei Armen, kpi_group
+   `freight`, Basis „zugestellt / Nachfrage, Overlay NICHT abgezogen"
+   (`extract_freight.py`, `extract_modular.py` — der Arm hatte vorher **gar keine** Quote, nur
+   `delta_share_*` —, `extract_shareduse.py` als Alias auf `delivery_rate_total`). Der Netto-Wert
+   bleibt als `delivery_rate_net_overlay` erhalten, `parcels_handled` und
+   `parcels_per_vehicle_km` bleiben bewusst netto, weil `parcels_handled` der Nenner von
+   `economics.freight_cost_per_parcel` ist und die €-Kennzahl sich nicht still mitverschieben
+   soll (die Kostenfunktion wird separat überarbeitet → BACKLOG `[H]`; nach der Umstellung
+   fällt sie von 2,06 auf ~1,92 €/Paket).
+   **Mit-behobener Geschwisterdefekt:** `extract_freight_provider.py` rechnete `delivery_rate`
+   ebenfalls netto — eine Provider-Tabelle auf anderer Basis als ihre eigene Headline. Lehre
+   (vgl. [[feedback-test-discrimination]]): wer eine Quote auf falscher Basis findet, sucht im
+   selben Zweig nach der zweiten.
+   **Was sich dadurch an den Zahlen ändert — das Vorzeichen der Kernaussage.** Wie bisher
+   exportiert las die Reihe *Baseline 93,6 % (netto) · 1c 93,7 % · 1d 97,9 %*, also
+   „integriert ≥ Baseline". Auf einer Konvention lautet sie **Baseline ~100 % · 1d 97,9 % ·
+   1c 93,7 %**, also 1d −2,1 pp und 1c −6,3 pp gegen die Baseline. Für 1d ist zusätzlich
+   nachgerechnet, dass `parcels_served` wirklich brutto ist: auf `m1d010` beträgt die Fehlmenge
+   126 Pakete, das ausgewiesene Overlay 393 — es kann darin also nicht enthalten sein.
+   Der Limitations-Satz fürs Paper: *Rücktransport und Ersatzzustellung sind nicht modelliert;
+   die Baseline-Quote ist eine Aussage über jsprit-Machbarkeit, nicht über Empfängerverhalten.*
+   §2.5-Quarantäne (nur Deltas berichten) unverändert.
 3. **1c↔1d-Confound:** 1c fährt 8 Sitze + 20 Paketslots (M1), 1d 10 Sitze (D3) — beides einzeln
    richtig entschieden, zusammen heißt es: jeder **direkte** 1c↔1d-Pax-Vergleich vermengt
    Mechanismus- und Kapazitätseffekt (20 % Sitzdifferenz). Vergleichsdesign sternförmig über die
@@ -1598,6 +1642,25 @@ neu rechnen — sauber für die Paper-Headline; oder (b) 0,53 % als Caveat im Me
 ausweisen — klein gegen das ±10-%-Nachfrageband und den 6,5-%-km-Rauschboden (§2.1).
 Der m1d015-Nachschuss lief bewusst **vor** jedem Sync, um die Kurve nicht intern zu brechen.
 
+**Annotation 2026-08-10 — welcher Stand der richtige ist, und eine Falle beim Syncen.** Per
+SHA256 nachgezählt: die aktive Datei auf dem **Dev-PC** ist `fdac2435ebc56d41` = der archivierte
+Stand **`level_central`**, also der aktuelle PANDA-Stand (Zensus + Zentroid-Snap-Fix, 1131
+Segmente, §2.8). Der **Sim-PC** fährt `bc86ecc580b0a81f` = `level_ctrsnap_central`, einen Stand
+zurück. Damit ist die Richtung des Syncs festgelegt (Dev → Sim) und die Bewertung der
+bestehenden Läufe eindeutig: **`basew21` und `chid600w21` fahren den aktuellen Stand und bleiben
+gültig; die komplette θ-Kurve fährt den überholten.**
+⚠️ **Falle:** auf dem Sim-PC existiert ein Verzeichnis `hagrid-input/lausitz/demand/level_central`,
+das ebenfalls `bc86ecc5` enthält — den **alten** Stand unter dem Namen des neuen. Wer dort
+„level_central einspielt", holt die falsche Datei und hält sie für die richtige. Die aktuelle
+Datei liegt physisch nur auf dem Dev-PC. Beim Sync also nach SHA256 prüfen (wie
+`run_lmd_band.ps1` es tut, nicht nach Dateigröße — `.dbf` ist fixed-width) und das fehlbenannte
+Verzeichnis umbenennen. Nicht syncen, solange dort ein Lauf aktiv ist: eine getauschte
+Eingabedatei würde von einem Folgelauf derselben Kette still aufgegriffen.
+**Konsequenz für die θ-Entscheidung:** die Kandidaten müssen auf dem aktuellen Stand ohnehin neu
+laufen → **keine Seed-Replikate auf der überholten Datei kaufen.** Ein Lauf je Kandidat
+(θ=0,10 und 0,15) auf dem aktuellen Stand erledigt „Gewinner-θ-Rerun" und „Demand-Sync"
+zusammen und ist dann erstmals gepaart gegen `basew21`.
+
 ### 2.31 1c: der χ-Zuordnungszähler saturiert — „alle verfallenen Segmente χ-geblockt" ist informationslos
 
 `trägt` · Messung 2026-07-29, nachgetragen 2026-08-10. **Instrument-Limitation.** Die drei
@@ -1642,6 +1705,167 @@ Runde bilden, nicht jede Evaluation loggen.
 Verwandt: §2.3 (χ als untere Schranke des Umwegs), §2.24 Punkt 2 (dieselbe Zählerlücke aus
 Emissions-Perspektive: angenommene Insertions hinterlassen keine Spur), §1.5 (Determinismus —
 ein Rerun derselben Konfiguration ist bit-identisch und taugt nicht als Reproduktionstest).
+
+**✅ GEBAUT 2026-08-10 — das Instrument existiert, die Messung fehlt noch.** Umgesetzt genau wie
+oben skizziert, statt eines Zählers eine Verteilung:
+`ChiGateInsertionCostCalculator` meldet jetzt **jede** Paket-Evaluation an
+`ChiGateStats.recordEvaluation(person, parcels, detourOnly)` — auch die geblockten, sonst hätten
+die verfallenen Segmente überhaupt keinen Wert —, und `ChiGateStats` hält je Segment das
+**Minimum** über alle Kandidaten (CAS-Schleife, Schreibvorgang nur bei neuem Minimum; ein
+Map-Zugriff und ein Double-Vergleich je Evaluation). `SharedUseKpiHandler.writeDetourCsv`
+schreibt zum Shutdown `<runId>.shareduse_detour_min.csv` mit
+`segment;parcels;evaluations;min_detour_s;outcome`; das Outcome-Label entsteht in **derselben**
+Schleife wie die Bucket-Zähler (`Totals.outcomeByPerson`), damit Label und Zählung nicht
+auseinanderlaufen können. Zeilen sind nach Segment-ID **sortiert** — die Map darunter ist
+concurrent, eine unsortierte CSV würde zwei bit-identische Läufe unterscheidbar machen und die
+Determinismus-Kontrollen (§1.5) brechen. Python-Seite: `analysis/kpi/chi_detour.py` liefert
+Quantile je Bucket (`delivered` inkl. `delivered_late` gegen `window_expired`), das billigste
+verfallene Segment, die mittlere Segmentgröße je Bucket (F1-Gegenprobe) und zwei
+100-s-Histogramme in `kpi_distributions.csv`; leere Buckets werden **weggelassen**, nicht
+0-gefüllt (M4). Tests: 8 Java (`ChiGateDetourStatsTest`) + 3 (`SharedUseKpiHandlerTest`) +
+13 Python, die drei tragenden Java-Verhalten mutationsgeprüft (Aufzeichnung entfernt / rohen
+`totalTimeLoss` statt `detourOnly` / Minimum-Vergleich entfernt → alle gefangen).
+Zwei Punkte für die Auswertung: `pending_open` gehört **nicht** in den χ-Bucket (das Fenster ist
+nie zugegangen, es ist kein Beleg über die Schwelle), und der `χ<0`-Arm zeichnet ebenfalls auf —
+dort boardet kein Paket, die Trajektorie ist die reine Pax-Trajektorie, also ist seine Verteilung
+die **unperturbierte Referenz**. **Offen: der Rerun**, der die Datei erzeugt (bestehende
+χ=600-Konfiguration, ~7 h) — Sim-PC und Dev-PC waren am 2026-08-10 belegt.
+
+### 2.32 1d gegen 1c an den gemessenen Punkten: eine Achse trägt, die andere nicht
+
+`trägt mit Einschränkung` · 2026-08-10. Gegenüberstellung der beiden bislang einzigen gültigen
+Betriebspunkte (`m1d010`, θ=0,10, Sim-PC · `chid600w21`, χ=600, Dev-PC), beide gegen die
+10-Sitzer-Baseline `basew21`:
+
+| | Pakete zugestellt (brutto) | Pax-Fahrten | Δ Pax gegen basew21 |
+|---|---|---|---|
+| Baseline `basew21` | ~100 % (6052, unassigned 0) | 8973 | — |
+| 1d `m1d010` | **97,9 %** (5894/6020) | 7488 | **−16,6 %** |
+| 1c `chid600w21` | **93,7 %** (5671/6051) | 7326 | **−18,4 %** |
+
+**Paketachse: belastbar.** 4,2 pp Unterschied liegen außerhalb jedes hier gemessenen
+Rauschbands. **Pax-Achse: nicht auflösbar.** Die 1,8 pp entsprechen 162 Fahrten, und der
+Rauschboden auf diesem Kanal ist ~113 Fahrten — die Spanne der drei Läufe mit praktisch keiner
+Fracht (θ=0,40/0,50/1,00: 8949 / 8914 / 9027). Die ehrliche Fassung ist deshalb: *1d stellt klar
+mehr Pakete zu; dass es dabei auch weniger Pax-Fahrten kostet, ist nicht belegt.*
+
+Drei Vorbehalte, die vor jeder Übernahme ins Paper stehen müssen: **je ein einzelner Punkt** pro
+Arm (der χ-Sweep fehlt noch, δ(χ) ist nicht bekannt — 1c könnte einen Punkt haben, der der
+Dominanz entgeht); der **Sitz-Confound** aus §2.21 Punkt 3 (1c fährt 8 Sitze, die −18,4 %
+enthalten den Sitzverlust *und* das Mitnehmen, untrennbar ohne einen 8-Sitz-Kontrolllauf über
+iter150 — `suref8` existiert nur mit `maxIter=1`); und der **Cross-Machine-Drift** aus §2.30
+(1d 6020 Pakete, 1c 6051).
+
+**Normalisierungs-Falle, beim Zeichnen aufgefallen.** Die θ-Prozentwerte in §1.2 sind gegen
+**`basew21` (8973)** gerechnet, nicht gegen den Kontrollarm **`ctrl1d` (9027)** desselben Sweeps.
+Beide Referenzen sind vertretbar und beantworten verschiedene Fragen — `ctrl1d` ist der
+*gepaarte* Bezug (gleiche Maschine, gleiche Nachfrage, identischer Modulstack, nur θ variiert)
+und damit der richtige für Aussagen *innerhalb* der θ-Kurve; `basew21` ist der *armübergreifende*
+Bezug und der richtige für 1c↔1d↔Baseline. Sie unterscheiden sich um 0,6 %, was θ=0,10 zwischen
+−16,6 % (basew21) und −17,0 % (ctrl1d) verschiebt. **In einer Tabelle darf nur eine von beiden
+vorkommen**, und welche, muss dabeistehen.
+
+### 2.33 Die LMD-Kostenfunktion bepreist keine Zeit — der Tagesfixsatz je Tour ist der ganze Personalkanal
+
+`trägt` (gemessen, nicht geschätzt) · 2026-08-11 · betrifft **alle** LMD-€-Zahlen, Hannover wie
+Lausitz-Baseline, weil beide Pfade dieselbe `ScoringFunctions` binden
+(`HAGRIDSimulationModule:64` bzw. `FreightRunComposer:53-54`).
+
+**Was in die berichtete Summe eingeht** (`DashboardGenerator:1352-1357,1788-1789`, Python-Zwilling
+`extract_freight_provider.py:184-204`) — gemessen auf `BASECASE_13052025_230v2` (663 Zustelltouren,
+97.528 Pakete, 30.282 km, 4.449 Tour-h):
+
+| Term | Formel | Wert | Anteil |
+|---|---|---|---|
+| Fixkosten | 663 Touren × 189,15 €/Tag | **125.406,3 €** | **88,3 %** |
+| Distanz | Linklängen × 3,864e-4 €/m | 11.180,0 € | 7,9 % |
+| Overtime | 5 € pauschal je Aktivität > 7,5 h | 5.425,0 € | 3,8 % |
+| Zeit | Fahrzeit × `costsPerSecond` = **0** | **0,0 €** | 0 % |
+| **Σ** | | **142.011,4 €** | |
+
+**Was getrackt, in Euro ausgewiesen und dann aus der Summe geworfen wird:** `costActivity`
+93.904,9 € (Standzeit × **0,008 €/s**, hardcoded `ScoringFunctions:139`) und
+`costTimeWindowPenalty` 31.005,0 € (Verspätung × 5 €/s ≙ 18.000 €/h — ein Scoring-Gerät, kein
+Preis). Beide werden im Dashboard als Balken *gezeichnet*.
+
+**1. Es gibt keinen zeitproportionalen Kostenterm.** `costsPerSecond="0.0"` steht explizit in allen
+`ct_cep_*`-Vantypen (`lmd-vehicle-types.xml`, `HAGRID_vehicleTypes2.0.xml`), während `ct_car`
+(0,00628) und `ct_bus` (8e-4) Werte tragen — die Null ist eine Typentscheidung, kein Default.
+Der einzige echte Zeitterm (`costActivity`) ist aus der Summe genommen. **Kein Bug, eine Setzung
+— aber eine, die das Modell blind macht für alles, was Zeit kostet.**
+
+**2. Der Fixsatz ist eine Tagespauschale je _Tour_, unabhängig von der Dauer.** Auf 230v2 (Median
+7,35 h, Mittel 6,71 h) liegen **32 % der Touren unter 7 h**, 7 % unter 3 h; die kürzeste (0,72 h)
+zahlt 189,15 € ≙ **263 €/h**, die längste (12,64 h) ≙ 15 €/h. Für jsprit heißt das: Touren
+zusammenlegen lohnt, Touren *verkürzen* nie. Das ist der eigentliche Mechanismus hinter §2.1/§2.2
+(„Fahrzeugzahl konvergiert, Tourengeometrie nicht") — Distanz ist nicht nur ein schwacher Term,
+Zeit ist gar keiner.
+
+**3. Dass im Fixsatz ein Fahrer steckt, ist Inferenz, kein Beleg.** Eine Quelle für 171,78/189,15 €
+existiert im gesamten Repo nicht, `ct_cep_size_s` (154,41 €) ist aus den beiden anderen linear
+interpoliert (§2.7). Zwei Indizien für den Fahrer: 189 €/Tag ist für Kapital+Wartung+Versicherung
+eines Transporters zu hoch (real 30–60 €), und 125.406 € / 4.449 Tour-h = **28,2 €/h implizit** —
+praktisch identisch mit den 28,8 €/h, die das Activity-Scoring separat ansetzt. Gegen-Indiz:
+189,15 € lassen sich **nicht** in ein plausibles Fahrzeug *plus* einen vollkostenrechnenden Fahrer
+zerlegen (Arbeitgeber-Vollkosten 25–30 €/h wären über 7 h schon 175–210 €). Der Satz ist also
+zusätzlich zu niedrig, vermutlich Netto-Lohnbasis.
+
+**4. Zwei echte Defekte im Scoring** (im Unterschied zu 1.–3.):
+- `costFix` im Carrier-Attribut ist **immer 0** — `CostAttributeWriter.finish()` schreibt, bevor
+  `VehicleEmploymentScoring.getScore()` akkumuliert (`SumScoringFunction` ruft erst alle `finish()`).
+  Folge: das Java-Attribut `costTotal` (230v2: 148.635,6 €) ist `dist+activity+overtime+twPen`
+  **ohne** Fix, die Board-Summe ist `dist+fix+overtime` **ohne** activity/twPen. **Zwei Totale mit
+  disjunkten Auslassungen, keins davon sind die Kosten.** Die Python-Schicht umgeht es (rechnet fix
+  selbst aus den Fahrzeugtypen), der Java-Pfad nicht.
+- Overtime: `isExceedingWorkTime` wird deklariert und **nie auf `true` gesetzt**
+  (`ScoringFunctions:146,184`) → 5 € feuern je Aktivität statt einmal je Tour; Bezugspunkt ist
+  zudem die erste Aktivität des **Carriers**, nicht der Tour. Der Term ist damit
+  fenster­abhängig statt arbeitszeit­abhängig: **35 €** auf `bandz_central` (08:00–20:00) gegen
+  **1.920 €** auf `basew21` (07:30–21:00, 16,5 % der dortigen Summe). Der Fixkostenanteil
+  verschiebt sich dadurch mit: 81,4 % (`bandz_central`) vs. 72,2 % (`basew21`) vs. 88,3 % (230v2)
+  — **der „81 %" aus §2.1 ist basisabhängig, nicht eine Modellkonstante.**
+
+**5. Zwei Distanzmaße im selben Blob, systematisch 4,6 % auseinander.** `distKm` (aus dem
+geparsten Carrier-Plan) × `costPerKm` ergibt konsistent mehr als `costDist` (aus dem
+MATSim-Scoring der ausgeführten Legs): Verhältnis **0,950–0,958 über alle 14 lokal vorliegenden
+Hannover-Boards**, 0,983 auf `bandz_central` (Lausitz, iter0). **Nicht** die
+Low-Util-Re-Allokation — auf 230v2 liegt keine Tour unter der 5-%-Schwelle (Minimum-Loadfactor
+5,20), ratio = 1,0. Die Richtung (gescorte Strecke kürzer) und der Kontrast iter150 ↔ iter0 passen
+zu „Plan vs. nach Re-Routing ausgeführt", erklären die 1,7 % Restlücke bei iter0 aber nicht.
+**Mechanismus ungeklärt.** Für €-Summen irrelevant (4,6 % auf einen 7,9-%-Posten = 0,4 % der
+Gesamtkosten), für jede €/km- oder km-Kennzahl nicht.
+
+**Konsequenz für die Kapazitäts-Sensitivität (Hannover).** Die Kostenkurve folgt heute der
+**Tourenzahl** (−81 % von cap 30→280), nicht den **Tourstunden** (−37 %). Probeweise nachgerechnet
+mit einem Zwei-Term-Modell (F_Fzg 40 €/Tag + w 21,31 €/h, niveauverankert auf 189,15 € bei 7 h,
+Distanz und Overtime unverändert):
+
+| cap | Touren | Tour-h | alt € | neu € | Δ |
+|---|---|---|---|---|---|
+| 30 | 3.357 | 7.095 | 672.391 | 322.864 | **−52,0 %** |
+| 100 | 1.077 | 4.723 | 227.670 | 167.671 | −26,4 % |
+| 190 | 671 | 4.468 | 141.558 | 136.672 | −3,5 % |
+| 280 | 652 | 4.451 | 142.329 | 139.923 | −1,7 % |
+
+Fast reiner Low-Cap-Effekt. Vorzeichen und Monotonie bleiben, die **Stärke** nicht: die Ersparnis
+cap 30 → 280 fällt von **−78,8 % auf −56,7 %**. Das Kostenminimum wandert von cap 240 auf 190,
+liegt aber in einem Plateau von 2,4 % Spanne — daraus ist keine Optimum-Aussage zu bauen.
+**Ausdrücklich unberührt:** der Arbeitszeit-/Kapazitäts-Crossover bei ~170. `classify()`
+(`extract_sweep.py:109-119`) prüft nur `durH > 7.0` und `parcels > 0.9·cap`; da geht kein Euro ein.
+
+**Konsequenz für 1c/1d (die paper-relevante).** Die drei Größen, die die Integrationsszenarien
+überhaupt ausmachen — χ-Umwegzeit, 2 × 420 s Rüstzeit, Deadhead zur Idle-Position — kosten
+allesamt **Zeit**, und Zeit hat in dieser Kostenfunktion den Preis null. §2.20 hält fest, dass die
+*Zielfunktion* Rüstzeit und Deadhead nicht kennt; hier kommt dazu, dass auch die *nachträgliche
+Abrechnung* sie nicht sichtbar machen könnte. Eine Kostenaussage über 1c/1d ist damit vor dem
+Neubau der Kostenfunktion strukturell nicht möglich — unabhängig davon, dass beide Arme heute
+ohnehin **gar keine** Fracht-€-KPI exportieren (nur die Baseline hat ein `analysis/freight/`).
+
+**Reproduktion:** Zerlegung aus den `COSTS` / `SUMMARY` / `CARRIER_DETAIL`-JSON-Blobs der
+Java-Dashboards (`hagrid-matsim-output/*/analysis/HAGRID_Dashboard_*.html`); Carrier-Attribute
+gegengelesen aus `*.output_carriers.xml.gz`. Sweep-Nachrechnung auf
+`analysis/hannover-sweep/sweep_kpis.csv`. Umsetzung → BACKLOG `[H]` Hannover-Sweep: Kostenkorrektur
+im Postprocessing.
 
 ---
 
