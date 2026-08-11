@@ -7,7 +7,36 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-08-10._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-08-11._
+
+---
+
+## 2026-08-11
+
+- **jsprit-Konstruktionsheuristik auf jsprits Default zurückgesetzt (`BEST_INSERTION` →
+  `REGRET_INSERTION`, `HAGRIDRouterUtils:232`)** — ✅ lokal auf `hendrik`, **nicht gepusht, Sim-PC
+  bewusst nicht gezogen** (Hannover läuft dort). Anlass war die Frage, warum jsprit übermäßig oft
+  den 100-Paket-Van wählt, obwohl die Touren die Arbeitszeitgrenze nicht erreichen. Der Van war
+  Symptom: greedy Insertion eröffnet zu viele Routen (Fahrzeug-Fixkosten sind während der Insertion
+  unsichtbar), und bei ~100 Paketen je Tour ist der kleine Van dann die korrekte, billigste Wahl.
+  Volle 7-Carrier-Lausitz-Route gegen `DRT_BASELINE_13052025_basew21`: **52 → 41 Touren (−21,2 %)**,
+  Distanz 3.002,4 → 1.984,5 km (−33,9 %), Kosten 9.502 → 7.797 € (−17,9 %), Schichtnutzung
+  79,6 → 91,7 %, Anteil `ct_cep_size_s` 60 % → 12 %; Pakete/Stops je Carrier identisch,
+  `unassignedJobs=0`. Nicht langsamer (dpd 722 s gegen 931 s bei gleicher Parallelität).
+  → Konsequenz für die Zahlen: [METHODS-LOG](METHODS-LOG.md) §2.34.
+- **Ausschluss-Nachweis (Zehn-Arm-Probe auf Carrier `dpd`, 408 Services, je einvariabel)** — ✅ die
+  drei naheliegenden Erklärungen sind widerlegt, nicht nur unwahrscheinlich: Kapazität 100/165/230
+  ergibt **immer** 5 Touren; `FIXED_COST_PARAM=1.0` lässt 5 Touren bei −0,3 % Gesamt; alle Ruins
+  über jsprits harte 50/70-Deckel hinaus vergrößert (radial 122, random 163, incl. der
+  höchstgewichteten `WORST_*`/`CLUSTER_*`, die HAGRID nicht überschreibt) → weiterhin 5 Touren.
+  Erst `REGRET_INSERTION` bringt 4. Der `ct_cep_size_s`-Preis ist damit als Ursache ausgeschlossen.
+- **Regressionsschutz `JspritConstructionHeuristicTest`** — ✅ verhaltensbasiert, nicht
+  konstanten-prüfend: 7×7-Gitter, 48 Stops, Kapazität absichtlich großzügig und Dauer-Cap 1 h
+  (dauergebundenes Regime — ein kapazitätsgebundenes Fixture diskriminiert **nicht**, mitgemessen).
+  4 Touren mit `REGRET`, 5 mit `BEST`. **Mutationsgeprüft**: Produktionszeile testweise
+  zurückgeflippt → 1 Failure mit der Diagnosemeldung, danach wieder grün. Suite
+  `hagrid.integrated.freight` 36/36 grün inkl. `LmdBaselineEndToEndTest` (84 min, echter
+  End-to-End-Durchlauf mit dem Fix).
 
 ---
 

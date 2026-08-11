@@ -213,7 +213,25 @@ public class HAGRIDRouterUtils {
                 .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
-                .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.BEST_INSERTION.toString())
+                // REGRET_INSERTION is jsprit's own default; HAGRID used to override it with
+                // BEST_INSERTION, which cost roughly one vehicle per carrier. BEST_INSERTION is
+                // greedy per job — each job goes wherever it is cheapest AT THE MOMENT it is
+                // inserted, and opening a fresh route costs nothing but the depot stub because the
+                // vehicle's fixed cost is invisible during insertion (jsprit's FIXED_COST_PARAM
+                // defaults to 0, and the fixed-cost branch of JobInsertionCostsCalculatorBuilder is
+                // commented out in 1.8). That over-opens routes, and ruin-and-recreate cannot undo
+                // it afterwards: a half-emptied tour still pays its full fixed cost, so every
+                // intermediate state scores worse and the acceptor rejects the path out.
+                // Measured 2026-08-11 on carrier dpd (408 services, jsprit 100 iters, production
+                // inputs incl. service-area clip): 5 tours / 248.6 km / 878.82 EUR with
+                // BEST_INSERTION vs 4 tours / 206.9 km / 746.15 EUR with REGRET_INSERTION
+                // (-1 vehicle, -15.1 % cost, shift utilisation 74.2 % -> 88.5 %), and not slower.
+                // Verified NOT to be a ruin-size problem: enlarging every ruin past jsprit's own
+                // 50/70 caps (radial 122, random 163) leaves the tour count at 5.
+                // Pinned by JspritConstructionHeuristicTest — do not "restore" BEST_INSERTION.
+                .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.REGRET_INSERTION.toString())
+                // jsprit's default is false as well; kept explicit because regretFast() is the
+                // next candidate knob (see BACKLOG "jsprit-Upgrade 1.8 -> 2.x", spike question i).
                 .setProperty(Jsprit.Parameter.FAST_REGRET, "false");
 
         // Must be set on the builder, not via RandomNumberGeneration.setSeed(): Jsprit.Builder
