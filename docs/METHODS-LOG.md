@@ -1925,8 +1925,29 @@ Fünffachen des dort dokumentierten jsprit-Rauschbodens von 6,5 % auf der Fahrle
   Ruins über die Deckel hinaus vergrößert (radial 122, random 163, incl. `WORST_*`/`CLUSTER_*`, die
   HAGRID nicht überschreibt und die die höchstgewichteten Strategien sind): **Tourenzahl bleibt 5.**
 
-**Laufzeit ist kein Argument gegen den Fix.** Bei gleicher Parallelität war `REGRET_INSERTION`
-schneller (dpd: 722 s gegen 931 s); die volle 7-Carrier-Route brauchte 8.447 s.
+**Laufzeit: +9,2 %, nicht 0.** Gepaarte Messung 2026-08-12 (beide Arme **gleichzeitig** gestartet,
+leere Maschine, identische Inputs/`-Xmx`/Seed, einzige Code-Differenz die eine `CONSTRUCTION`-Zeile
+gegen `git HEAD`, im Bytecode gegengeprüft):
+
+| | Wall | jsprit | s/Tour | s/km |
+|---|---|---|---|---|
+| `BEST` | 11.240 s (187,3 min) | 11.071 s | 212,9 | 3,69 |
+| `REGRET` | 12.274 s (204,6 min) | 12.100 s | 295,1 | 6,10 |
+| Δ | **+9,2 %** | +9,3 % | +38,6 % | +65,4 % |
+
+**Die zuerst hier notierte Aussage „Laufzeit ist kein Argument" war eine Übertragung von einem
+Carrier auf sieben und ist falsch.** Auf `dpd` mit reinem M-Van-Menü war `REGRET` 22 % schneller
+(722 s gegen 931 s) — auf der vollen Route ist es 9 % langsamer. Je Ergebnis-Einheit ist der
+Abstand größer, weil `REGRET` länger rechnet *und* weniger Touren/km erzeugt. +17 min je
+Baseline-Arm gegen −21 % Fahrzeuge und −34 % Fahrleistung bleibt ein guter Tausch, ist aber ein
+Tausch und keine Gratisverbesserung. Kein Arm bricht früh ab (beide 100/100 Iterationen), der
+Unterschied ist also Kosten pro Iteration, nicht Konvergenzgeschwindigkeit.
+
+**Zwei Validierungen, die die Tabelle oben tragen:** (a) der `BEST`-Arm reproduziert die
+Produktions-Baseline `basew21` **exakt** — 52 Touren, 3.002,4 km, 9.502,17 €, gleicher Typenmix je
+Carrier —, die Gegenüberstellung ist also kein Harness-Artefakt; (b) der `REGRET`-Arm liefert in
+zwei Läufen sechs Stunden auseinander und unter verschiedener Maschinenlast identische Zahlen
+(41 / 1.984,5 km / 7.797,24 €), die Richtung ist also nicht Suchrauschen.
 
 **Konsequenz für bestehende Läufe.** Alle vor dem 2026-08-11 geplanten Touren tragen die zu hohe
 Tourenzahl. Betroffen: die **Lausitz-Baseline** und **1d Modular** (`runModular` bindet dieselbe
