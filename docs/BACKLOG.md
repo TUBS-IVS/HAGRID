@@ -483,6 +483,17 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
     `Jsprit.Parameter`/`Jsprit.Strategy` **oder** der Algorithm-XML-Hook (existiert im Config
     bereits) geben Operator-Diversität evtl. ohne jeden Bump (→ 80 % Nutzen, 0 Fork-Port-Last).
     **(ii)** Falls doch 2.0: Kompilier-Spike gegen 2.0.0, um den Fork-Port real zu messen.
+  - ✅ **Spike-Frage (i) beantwortet 2026-08-11: ja, 1.8 genügt — der Fork-Port ist für den
+    Hauptnutzen nicht nötig.** Eine einzige Property war falsch gesetzt: `CONSTRUCTION` stand auf
+    `BEST_INSERTION` statt auf jsprits Default `REGRET_INSERTION`. Volle 7-Carrier-Lausitz-Route:
+    **52 → 41 Touren (−21,2 %)**, −33,9 % Distanz, −17,9 % Kosten, und *schneller*
+    (→ [BACKLOG-DONE](BACKLOG-DONE.md) 2026-08-11, [METHODS-LOG](METHODS-LOG.md) §2.34).
+    Ausdrücklich mitgemessen und **widerlegt**: Ruin-Operator-Diversität ist hier *nicht* der
+    Engpass — alle Ruins über jsprits harte 50/70-Job-Deckel hinaus vergrößert (radial 122,
+    random 163) ändert die Tourenzahl nicht. Das dämpft die Erwartung an 2.x, dessen Hauptversprechen
+    genau mehr Ruin-/Insertion-Operatoren sind. **Restliche 20 %:** `FAST_REGRET`/`regretFast()`
+    (steht auf jsprit-Default `false`) ist der nächste 1.8-Regler und noch ungetestet — der wäre vor
+    jedem 2.0-Aufwand zu probieren.
     Erst danach Go/No-Go.
   - **Bei tatsächlichem Bump:** berührt `pom.xml` (`jsprit.version`) + drei POMs (root,
     parcel-pipeline, Fork-freight); braucht freight-272-Regression **plus** Re-Run-Vergleich

@@ -1869,6 +1869,90 @@ im Postprocessing.
 
 ---
 
+### 2.34 Die Tourenzahl war systematisch ~21 % zu hoch — greedy Konstruktionsheuristik, nicht Rauschen
+
+`trägt` (gemessen, nicht geschätzt; Ursache behoben 2026-08-11) · betrifft **alle** jsprit-geplanten Touren,
+Hannover wie Lausitz, weil beide Pfade dieselbe Methode binden
+(`HAGRIDRouterUtils#configureAlgorithm`, aufgerufen aus `Router:741` bzw.
+`LausitzFreightPreprocessor:374`).
+
+`HAGRIDRouterUtils:232` setzte `Jsprit.Parameter.CONSTRUCTION` auf `BEST_INSERTION` und überschrieb
+damit jsprits eigenen Default `REGRET_INSERTION`. Eine Quelle oder Begründung für die Abweichung
+existiert im Repo nicht.
+
+**Mechanismus.** `BEST_INSERTION` ist greedy je Job: jeder Job landet dort, wo er *im Moment seiner
+Einfügung* am billigsten ist. Eine frische Route zu eröffnen kostet dabei nur die Depot-Stichfahrt,
+weil die **Fixkosten des Fahrzeugs während der Insertion unsichtbar** sind — jsprits
+`FIXED_COST_PARAM` ist per Default 0, und der Fixkosten-Zweig in
+`JobInsertionCostsCalculatorBuilder.build()` ist in jsprit 1.8 auskommentiert. Die *Zielfunktion*
+berechnet `vehicleCostParams.fix` je Route korrekt, bewertet aber nur fertige Lösungen.
+Ruin-and-Recreate kann den Anfangsfehler nicht heilen: eine halb geleerte Tour zahlt ihre volle
+Tagespauschale weiter, jeder Zwischenzustand ist also schlechter und wird verworfen. Das ist die
+Kehrseite von §2.33 Punkt 2 — dort steht „Touren zusammenlegen lohnt", hier steht, dass der
+Optimierer es nicht getan hat.
+
+**Messung, volle Lausitz-LMD-Route, 7 Carrier, 3.123 Deliveries, `jspritIter=100`, identische
+Inputs incl. Service-Area-Clip, gegen `DRT_BASELINE_13052025_basew21_iter150_jsprit100`:**
+
+| | vorher (`BEST`) | nachher (`REGRET`) | Δ |
+|---|---|---|---|
+| Touren | 52 | **41** | **−11 (−21,2 %)** |
+| Distanz (plan-basiert) | 3.002,4 km | 1.984,5 km | **−33,9 %** |
+| Kosten (Fix + Distanz) | 9.502,17 € | 7.797,24 € | −17,9 % |
+| Arbeitsstunden | 289,7 h | 263,2 h | −9,1 % |
+| Schichtnutzung | 79,6 % | **91,7 %** | |
+| ungenutzte Fahrzeugtage | 10,61 | 3,40 | |
+| Touren an der 7-h-Grenze | 11 | 26 | |
+| Anteil `ct_cep_size_s` | 31/52 (60 %) | **5/41 (12 %)** | |
+
+Pakete und Stops sind je Carrier auf beiden Seiten identisch, `unassignedJobs=0` überall — die
+Ersparnis ist keine ausgelassene Arbeit. Kleine Carrier ändern sich kaum (fedex 2→2, ups 3→3),
+die großen stark (amazon 11→8, hermes 7→5, dhl 19→15).
+
+**Das ist Bias, nicht Rauschen, und widerspricht §2.1/§2.2 nicht.** Die Fahrzeugzahl konvergierte
+stabil — nur auf einen systematisch zu hohen Wert. Die Distanzänderung (−33,9 %) liegt beim
+Fünffachen des dort dokumentierten jsprit-Rauschbodens von 6,5 % auf der Fahrleistung.
+
+**Was ausgeschlossen wurde** (Zehn-Arm-Probe auf Carrier `dpd`, 408 Services, je einvariabel):
+- **Fahrzeugkosten sind nicht die Ursache.** Bei Kapazität 100 / 165 / 230 ergeben sich *immer* 5
+  Touren; `ct_cep_size_s` teurer zu machen ändert nichts an der Tourenzahl. Der kleine Van ist
+  innerhalb einer 5-Touren-Struktur die korrekte, billigste Wahl — er war Symptom, nicht Ursache.
+- **`FIXED_COST_PARAM` ist nicht der Hebel.** Auf 1.0 gesetzt: 5 Touren bleiben 5, −0,3 % Gesamt.
+  `IncreasingAbsoluteFixedCosts` bepreist die Fixkosten des *eingesetzten* Fahrzeugs, bestraft also
+  das Upgrade auf den größeren Van, während der Gewinn erst nach dem Zusammenlegen anfällt.
+- **Die Ruin-Größe ist nicht die Ursache.** HAGRIDs Anteile (radial 48, random 81 Jobs bei 408) sind
+  nicht kleiner, sondern **größer** als jsprits eigene, hart gedeckelte Defaults (20–50 / 70). Alle
+  Ruins über die Deckel hinaus vergrößert (radial 122, random 163, incl. `WORST_*`/`CLUSTER_*`, die
+  HAGRID nicht überschreibt und die die höchstgewichteten Strategien sind): **Tourenzahl bleibt 5.**
+
+**Laufzeit ist kein Argument gegen den Fix.** Bei gleicher Parallelität war `REGRET_INSERTION`
+schneller (dpd: 722 s gegen 931 s); die volle 7-Carrier-Route brauchte 8.447 s.
+
+**Konsequenz für bestehende Läufe.** Alle vor dem 2026-08-11 geplanten Touren tragen die zu hohe
+Tourenzahl. Betroffen: die **Lausitz-Baseline** und **1d Modular** (`runModular` bindet dieselbe
+Methode); **1c** rechnet selbst kein jsprit (Pakete fahren auf der DRT-Flotte), seine
+Vergleichsbasis aber schon. Ebenso der komplette **Hannover-Sweep cap 30→400** — und dort mit
+zusätzlicher Wucht, weil dessen Kostenkurve laut §2.33 der *Tourenzahl* folgt, also genau der
+Größe, die hier um ein Fünftel falsch war. Der Arbeitszeit-/Kapazitäts-Crossover bei ~170 (§2.33)
+ist neu zu vermessen, nicht fortzuschreiben.
+
+**Offen:** Seed-Fächer auf dem Fix (Einzellauf, jsprit-Default-Seed) — die Richtung ist weit
+außerhalb des Rauschbodens, die exakte Höhe nicht abgesichert. `FAST_REGRET` steht weiter auf
+`false` (= jsprit-Default) und ist der nächste Kandidat.
+
+**Reproduktion:** `LausitzFreightPreprocessor.run` mit `hagrid-input/lausitz`, Vergleich
+plan-gegen-plan aus beiden `*carriers.xml` (Kosten aus der Fahrzeugtypen-Tabelle neu gerechnet, weil
+die Java-Kostenattribute laut §2.33 Punkt 4 unvollständig sind). Gepinnt durch
+`JspritConstructionHeuristicTest` (48 dauergebundene Stops: 4 Touren mit `REGRET`, 5 mit `BEST`;
+mutationsgeprüft). Teilergebnis zum BACKLOG-Item „jsprit-Upgrade 1.8 → 2.x": Spike-Frage (i) ist
+positiv beantwortet — 1.8 genügt, der `[L]`-Fork-Port ist dafür nicht nötig.
+
+**Nebenbefund, nicht untersucht:** plan-basierte Distanz 3.002,4 km gegen 3.724,3 km in
+`analysis/freight/TimeDistance_perVehicleType.tsv` (event-basiert, nach `LmdTourRetimer`-Reroute)
+— 19 %, deutlich mehr als die 4,6 % aus §2.33 Punkt 5, aber ein anderes Messpaar.
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**
