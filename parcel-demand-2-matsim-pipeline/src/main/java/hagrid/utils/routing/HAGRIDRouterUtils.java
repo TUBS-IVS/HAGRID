@@ -225,7 +225,13 @@ public class HAGRIDRouterUtils {
                 // Measured 2026-08-11 on carrier dpd (408 services, jsprit 100 iters, production
                 // inputs incl. service-area clip): 5 tours / 248.6 km / 878.82 EUR with
                 // BEST_INSERTION vs 4 tours / 206.9 km / 746.15 EUR with REGRET_INSERTION
-                // (-1 vehicle, -15.1 % cost, shift utilisation 74.2 % -> 88.5 %), and not slower.
+                // (-1 vehicle, -15.1 % cost, shift utilisation 74.2 % -> 88.5 %). Over the full
+                // 7-carrier route: 52 -> 41 tours, -33.9 % km, -17.9 % cost.
+                // It COSTS runtime, contrary to what this comment claimed until 2026-08-12: the
+                // paired full-run measurement gives +9.2 % wall / +9.3 % jsprit time at identical
+                // 100/100 iterations, i.e. a higher per-iteration cost (regret evaluates every
+                // route per job, not just the best position). The earlier "not slower" came from
+                // carrier dpd alone and did not generalise (METHODS-LOG §2.34).
                 // Verified NOT to be a ruin-size problem: enlarging every ruin past jsprit's own
                 // 50/70 caps (radial 122, random 163) leaves the tour count at 5.
                 // Pinned by JspritConstructionHeuristicTest — do not "restore" BEST_INSERTION.
