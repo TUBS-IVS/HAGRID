@@ -36,6 +36,53 @@ public class CarrierServiceMerger implements Runnable {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
+     * One capacity-bounded sub-stop produced when a merged group's pooled demand exceeds what a
+     * single van can carry. {@link #capacity()} never exceeds {@code segCap}; {@link #duration()} is
+     * the group duration apportioned proportionally to this segment's capacity; {@link #b2b()}/
+     * {@link #b2c()} split the group's B2B/B2C parcel counts so both totals are preserved exactly.
+     */
+    public record MergeSegment(int capacity, double duration, int b2b, int b2c) {}
+
+    /**
+     * Splits a merged service group into capacity-bounded sub-stops. A merged stop must fit one van
+     * (jsprit may not split a service; the INFINITE fleet only clones identical vans), so a group of
+     * {@code totalCapacity} parcels is broken into {@code ceil(totalCapacity / segCap)} segments of at
+     * most {@code segCap} parcels each — the last one carrying the remainder.
+     * <p>
+     * When {@code segCap >= totalCapacity} (e.g. high-capacity runs, where segCap = demandBorder) this
+     * returns a single segment carrying the full group, i.e. the previous single-merged-service
+     * behaviour unchanged. Duration is apportioned proportionally to capacity; B2B parcels fill the
+     * earliest segments, then B2C, so every segment's {@code b2b + b2c == capacity} and both totals
+     * are preserved. Deterministic (pure integer arithmetic).
+     *
+     * @param totalCapacity pooled parcel demand of the group (&gt; 0)
+     * @param segCap        max parcels per sub-stop = min(demandBorder, minVehicleCapacity); &lt;= 0 means "no split"
+     * @param totalDuration pooled service duration of the group (incl. any travel-time bonus)
+     * @param b2b           pooled B2B parcel count ({@code b2b + b2c == totalCapacity})
+     * @param b2c           pooled B2C parcel count
+     */
+    static List<MergeSegment> splitMergeGroup(int totalCapacity, int segCap, double totalDuration, int b2b, int b2c) {
+        List<MergeSegment> segments = new ArrayList<>();
+        if (segCap <= 0 || totalCapacity <= segCap) {
+            segments.add(new MergeSegment(totalCapacity, totalDuration, b2b, b2c));
+            return segments;
+        }
+        int numSegments = (int) Math.ceil((double) totalCapacity / segCap);
+        int remainingB2b = b2b;
+        int assigned = 0;
+        for (int i = 0; i < numSegments; i++) {
+            int cap = (i < numSegments - 1) ? segCap : (totalCapacity - assigned);
+            assigned += cap;
+            int segB2b = Math.min(cap, remainingB2b);
+            remainingB2b -= segB2b;
+            int segB2c = cap - segB2b;
+            double dur = totalDuration * ((double) cap / totalCapacity);
+            segments.add(new MergeSegment(cap, dur, segB2b, segB2c));
+        }
+        return segments;
+    }
+
+    /**
      * Speed and acceleration configuration used for realistic travel time
      * calculation between service coordinates.
      *
@@ -256,51 +303,78 @@ public class CarrierServiceMerger implements Runnable {
 
                 double finalDuration = totalDuration + timeBonus;
 
-                // Define parcel type based on b2b and b2c counts
-                ParcelType mergedType;
-                if (b2b > 0 && b2c > 0) {
-                    mergedType = ParcelType.MIXED;
-                } else if (b2b > 0) {
-                    mergedType = ParcelType.B2B;
-                } else if (b2c > 0) {
-                    mergedType = ParcelType.B2C;
-                } else {
-                    throw new IllegalStateException("Merged service has no parcel type assigned (b2b=0, b2c=0)");
-                }
-
-                String newServiceId = String.format("service_%s_%s_%d",
-                        "MIXED", carrier.getId().toString(), merged);
-
-                CarrierService.Builder builder = CarrierService.Builder.newInstance(
-                        Id.create(newServiceId, CarrierService.class), selectedLinkId);
-
-                builder.setCapacityDemand(totalCapacity);
-                builder.setServiceDuration(finalDuration);
-
                 final double begin = hagridConfig.getDeliveryTimeWindowStart();
                 final double end = hagridConfig.getDeliveryTimeWindowEnd();
-                builder.setServiceStartingTimeWindow(TimeWindow.newInstance(begin, end));
 
-                CarrierService mergedService = builder.build();
+                // Cap each merged stop at what a single van can carry. A service cannot be split
+                // across vehicles, and the INFINITE fleet only clones identical vans, so a pooled
+                // demand above the vehicle capacity would be structurally unroutable (left unassigned
+                // by jsprit). segCap = min(demandBorder, minVehicleCapacity): at high capacities this
+                // equals demandBorder -> one segment -> behaviour unchanged; at low capacities the
+                // group is broken into ceil(total/segCap) sub-stops. See splitMergeGroup.
+                final int segCap = Math.min(demandBorder, hagridConfig.getMinVehicleCapacity());
+                List<MergeSegment> segments = splitMergeGroup(totalCapacity, segCap, finalDuration, b2b, b2c);
 
-                mergedService.getAttributes().putAttribute("carrierMode", key.carrierMode);
-                mergedService.getAttributes().putAttribute("skills", String.join(",", key.skillSet));
-                mergedService.getAttributes().putAttribute("b2b", b2b);
-                mergedService.getAttributes().putAttribute("b2c", b2c);
-                mergedService.getAttributes().putAttribute("serviceDuration", (int) totalDuration);
-                mergedService.getAttributes().putAttribute("travelDuration", (int) timeBonus);
-
-                mergedService.getAttributes().putAttribute("type", mergedType);
-
+                String mergedMetaJson = null;
                 try {
-                    String jsonMeta = objectMapper.writeValueAsString(mergedMeta);
-                    mergedService.getAttributes().putAttribute("mergedMetadata", jsonMeta);
+                    mergedMetaJson = objectMapper.writeValueAsString(mergedMeta);
                 } catch (JsonProcessingException e) {
                     LOGGER.error("Failed to write merged service metadata", e);
                 }
 
-                // add + cleanup
-                CarriersUtils.addService(carrier, mergedService);
+                int seg = 0;
+                for (MergeSegment segment : segments) {
+                    // Parcel type reflects this sub-stop's own B2B/B2C mix (a split may yield pure
+                    // segments at the ends and MIXED at the B2B/B2C boundary).
+                    ParcelType segType;
+                    if (segment.b2b() > 0 && segment.b2c() > 0) {
+                        segType = ParcelType.MIXED;
+                    } else if (segment.b2b() > 0) {
+                        segType = ParcelType.B2B;
+                    } else if (segment.b2c() > 0) {
+                        segType = ParcelType.B2C;
+                    } else {
+                        throw new IllegalStateException("Merged service segment has no parcel type (b2b=0, b2c=0)");
+                    }
+
+                    // Single-segment groups keep the original id shape (high-cap parity); split groups
+                    // get a per-segment suffix so ids stay unique.
+                    String newServiceId = segments.size() == 1
+                            ? String.format("service_%s_%s_%d", "MIXED", carrier.getId().toString(), merged)
+                            : String.format("service_%s_%s_%d_s%d", "MIXED", carrier.getId().toString(), merged, seg);
+
+                    // Apportion the service/travel durations by capacity fraction (truncated, matching
+                    // the previous (int) cast so single-segment output is byte-identical).
+                    double segFraction = (double) segment.capacity() / totalCapacity;
+
+                    CarrierService.Builder builder = CarrierService.Builder.newInstance(
+                            Id.create(newServiceId, CarrierService.class), selectedLinkId);
+                    builder.setCapacityDemand(segment.capacity());
+                    builder.setServiceDuration(segment.duration());
+                    builder.setServiceStartingTimeWindow(TimeWindow.newInstance(begin, end));
+
+                    CarrierService mergedService = builder.build();
+                    mergedService.getAttributes().putAttribute("carrierMode", key.carrierMode);
+                    mergedService.getAttributes().putAttribute("skills", String.join(",", key.skillSet));
+                    mergedService.getAttributes().putAttribute("b2b", segment.b2b());
+                    mergedService.getAttributes().putAttribute("b2c", segment.b2c());
+                    mergedService.getAttributes().putAttribute("serviceDuration", (int) (totalDuration * segFraction));
+                    mergedService.getAttributes().putAttribute("travelDuration", (int) (timeBonus * segFraction));
+                    mergedService.getAttributes().putAttribute("type", segType);
+                    if (mergedMetaJson != null) {
+                        mergedService.getAttributes().putAttribute("mergedMetadata", mergedMetaJson);
+                    }
+
+                    CarriersUtils.addService(carrier, mergedService);
+                    seg++;
+                }
+
+                if (segments.size() > 1) {
+                    LOGGER.debug("Carrier {}: split merged group of {} parcels into {} sub-stops (segCap={}). Link: {}",
+                            carrier.getId(), totalCapacity, segments.size(), segCap, key.linkId);
+                }
+
+                // cleanup originals
                 services.forEach(s -> carrier.getServices().remove(s.getId()));
                 merged++;
                 removed += services.size();
