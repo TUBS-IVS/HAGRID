@@ -133,7 +133,8 @@ public class HAGRIDUtils {
             if (typeId.startsWith("ct_car") || typeId.startsWith("ct_bus") || typeId.startsWith("ct_motorbike")
                     || typeId.startsWith("ct_other") || typeId.startsWith("ct_egrocery_bike")
                     || typeId.startsWith("ct_egrocery_van") || typeId.startsWith("ct_cep_bike")
-                    || typeId.startsWith("ct_cep_size_m") || typeId.startsWith("ct_cep_size_l")) {
+                    || typeId.startsWith("ct_cep_size_s") || typeId.startsWith("ct_cep_size_m")
+                    || typeId.startsWith("ct_cep_size_l")) {
                 CarriersUtils.addSkill(vehicleType, "conventional");
             } else if (typeId.startsWith("ct_truck_heavy") || typeId.startsWith("ct_truck_light")
                     || typeId.startsWith("ct_truck_super_light")) {

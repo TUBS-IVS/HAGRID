@@ -83,8 +83,9 @@ public class HAGRIDAnalysisRunner {
         } catch (DateTimeParseException ex) {
             throw new IllegalArgumentException("Invalid date (use yyyy-MM-dd): " + dateStr, ex);
         }
-        int maxIter = intOrDefault(map, "maxIter", DEFAULT_MAX_ITER);
-        int jspritIter = intOrDefault(map, "jspritIter", DEFAULT_JSPRIT_ITER);
+        // maxIter may be 0 (valid for the LMD_BASELINE routing-only run); jsprit must be >= 1.
+        int maxIter = intOrDefault(map, "maxIter", DEFAULT_MAX_ITER, 0);
+        int jspritIter = intOrDefault(map, "jspritIter", DEFAULT_JSPRIT_ITER, 1);
         String tag = map.getOrDefault("tag", "").trim();
 
         // ── 2. Resolve paths ──
@@ -212,12 +213,12 @@ public class HAGRIDAnalysisRunner {
         return v;
     }
 
-    private static int intOrDefault(Map<String, String> map, String key, int def) {
+    private static int intOrDefault(Map<String, String> map, String key, int def, int min) {
         String v = map.get(key);
         if (v == null) return def;
         try {
             int val = Integer.parseInt(v);
-            if (val <= 0) throw new IllegalArgumentException(key + " must be positive");
+            if (val < min) throw new IllegalArgumentException(key + " must be >= " + min);
             return val;
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid integer for " + key + ": " + v);
