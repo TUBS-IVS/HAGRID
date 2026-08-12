@@ -17,14 +17,18 @@ Interactive single-file dashboard over the Hannover LMD capacity-sensitivity run
 
 ## Refresh (e.g. when the pending v3 runs land)
 
-Still outstanding at the last refresh (2026-08-10): `170v3` / `270v3` / `330v3` (JVM crash,
-redo armed on the sim-PC), `390v3` / `400v3` (were still running), `290v2` (finishing on the
-dev-PC), and `70v2` (never redone). Collect the dashboard into
-`Desktop\Sim_Results\0726\Run1\Dashboards\` keeping its **full original filename**, then:
+Still outstanding at the last refresh (2026-08-12): **v2 at caps 320–400** (9 runs, being
+produced on the sim-PC — a `java` was live at the time of writing, so this board is a
+snapshot of a moving arm). **v3 is complete** (38/38: the three ZGC casualties 170/270/330
+were redone on G1 and sit within the reseed band, 390/400 finished). Collect the dashboard
+into `Desktop\Sim_Results\0726\Run1\Dashboards\` keeping its **full original filename**,
+then:
 
 ```bash
-# 1. drop the cap out of V3_MISSING (or into V2_CAPS) and bump EXPECTED_RUNS in the SAME edit
-#    -- EXPECTED_RUNS is the deliberate cross-check; a stale value fails the run, by design
+# 1. move the cap from V2_MISSING into V2_CAPS and bump EXPECTED_RUNS in the SAME edit
+#    -- both are cross-checked at import time: V2_CAPS + V2_MISSING must partition the
+#    full 30..400 grid, and the list lengths must match EXPECTED_RUNS. A half-edit fails
+#    the run, by design
 python extract_sweep.py
 cp sweep_data.json board/src/data/sweep_data.json
 cd board

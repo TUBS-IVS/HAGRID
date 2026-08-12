@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -29,20 +30,30 @@ CAPA_LIMIT_FRAC = 0.9      # parcels > 0.9 * cap -> capacity-limited
 
 V1_CAPS = list(range(30, 401, 10))                       # 38 points
 
-# Original v2 arm (sim-PC, 2026-07-23/27): 30-150 step 10, 70v2 lost to a JVM
-# crash and never redone. Extended 2026-08-01/10 by the dev-PC with 160-280.
-# The dev arm was stopped after 290v2 by user decision, so 290-400 have no v2
-# point; v3 covers that range.
-V2_CAPS = ([30, 40, 50, 60, 80, 90, 100, 110, 120, 130, 140, 150]
-           + list(range(160, 281, 10)))                  # 25 points, 70 missing
+# Original v2 arm (sim-PC, 2026-07-23/27): 30-150 step 10. Extended 2026-08-01/10
+# by the dev-PC with 160-290, and 2026-08-11/12 with 70 (the run lost to the July
+# JVM crash), 300 and 310. Caps 320-400 are still being produced -- add them as
+# they land; v3 already covers that range.
+V2_CAPS = list(range(30, 151, 10)) + list(range(160, 311, 10))     # 29 points
+V2_MISSING = tuple(range(320, 401, 10))                            # still running
 
-# v3 arm (sim-PC, 2026-08-01/10): 30-400 step 10. Three runs died on a ZGC
-# EXCEPTION_ACCESS_VIOLATION (170v3, 270v3, 330v3) and are being redone on G1;
-# 390v3 was still running and 400v3 not yet started when this list was written.
-V3_MISSING = (170, 270, 330, 390, 400)
-V3_CAPS = [c for c in range(30, 401, 10) if c not in V3_MISSING]   # 33 points
+# v3 arm (sim-PC, 2026-08-01/10): 30-400 step 10. COMPLETE as of 2026-08-12 --
+# the three ZGC EXCEPTION_ACCESS_VIOLATION casualties (170v3, 270v3, 330v3) were
+# redone on G1, and 390v3/400v3 finished.
+V3_CAPS = list(range(30, 401, 10))                                 # 38 points
 
-EXPECTED_RUNS = {"v1": 39, "v2": 25, "v3": 33}   # v1 includes the 120_v2 replicate
+EXPECTED_RUNS = {"v1": 39, "v2": 29, "v3": 38}   # v1 includes the 120_v2 replicate
+
+# V2_MISSING is not decoration: present + missing must partition the full grid, so
+# moving a cap out of the missing list without adding it to V2_CAPS (or vice versa)
+# fails here instead of silently shrinking the v2 arm by one point.
+_full_grid = list(range(30, 401, 10))
+if sorted(V2_CAPS + list(V2_MISSING)) != _full_grid:
+    raise ValueError(f"V2_CAPS + V2_MISSING must partition {_full_grid[0]}..{_full_grid[-1]} "
+                     f"step 10; got {len(V2_CAPS)} + {len(V2_MISSING)} caps with overlaps or gaps")
+if len(V2_CAPS) != EXPECTED_RUNS["v2"] or len(V3_CAPS) != EXPECTED_RUNS["v3"]:
+    raise ValueError(f"list lengths v2={len(V2_CAPS)} v3={len(V3_CAPS)} disagree with "
+                     f"EXPECTED_RUNS {EXPECTED_RUNS} - update both in the same edit")
 
 
 def board(name: str) -> str:
@@ -209,8 +220,11 @@ def main():
 
     validate(runs)
 
+    # Derived, never a literal: a hardcoded date keeps asserting the vintage of an
+    # earlier extraction after the inputs have changed, which is how a refreshed
+    # board ends up looking older (or newer) than its data.
     out = {"source": "HAGRID Java LMD dashboards (SUMMARY blob)",
-           "extracted": "2026-08-10",
+           "extracted": date.today().isoformat(),
            "worktime_limit_h": WORKTIME_LIMIT_H,
            "capa_limit_frac": CAPA_LIMIT_FRAC,
            "runs": runs}
