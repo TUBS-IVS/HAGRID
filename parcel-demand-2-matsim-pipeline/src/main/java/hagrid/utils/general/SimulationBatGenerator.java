@@ -115,8 +115,21 @@ public final class SimulationBatGenerator {
 		bat.append("rem   Scenarios and settings come from the pipeline configuration.\r\n");
 		bat.append("rem ═══════════════════════════════════════════════════════════════\r\n");
 		bat.append("\r\n");
-		bat.append("rem harte Vorgabe JDK 21\r\n");
-		bat.append("set \"JAVA_EXE=C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.3.9-hotspot\\bin\\java.exe\"\r\n");
+		// JDK is RESOLVED, not hardcoded: a pinned Major.Minor.Patch path
+		// (was jdk-21.0.3.9-hotspot) breaks the generated bat on every JDK update
+		// of the target machine -- the sim-PC bump to 21.0.8.9 cost a manual bat
+		// patch per sweep restart (2026-07-21). Order: HAGRID_JAVA_EXE override >
+		// JAVA_HOME > PATH; hard fail if none resolves, warn if it is not a 21.
+		bat.append("rem JDK aufloesen: HAGRID_JAVA_EXE > JAVA_HOME > PATH (JDK 21 erwartet)\r\n");
+		bat.append("set \"JAVA_EXE=\"\r\n");
+		bat.append("if defined HAGRID_JAVA_EXE if exist \"%HAGRID_JAVA_EXE%\" set \"JAVA_EXE=%HAGRID_JAVA_EXE%\"\r\n");
+		bat.append("if not defined JAVA_EXE if defined JAVA_HOME if exist \"%JAVA_HOME%\\bin\\java.exe\" set \"JAVA_EXE=%JAVA_HOME%\\bin\\java.exe\"\r\n");
+		bat.append("if not defined JAVA_EXE for %%J in (java.exe) do set \"JAVA_EXE=%%~$PATH:J\"\r\n");
+		bat.append("if not defined JAVA_EXE (\r\n");
+		bat.append("  echo No java.exe found. Set JAVA_HOME or HAGRID_JAVA_EXE to a JDK 21 installation.\r\n");
+		bat.append("  exit /b 1\r\n");
+		bat.append(")\r\n");
+		bat.append("echo Using JAVA_EXE=%JAVA_EXE%\r\n");
 		bat.append("\r\n");
 		bat.append("rem evtl. Overrides entschaerfen\r\n");
 		bat.append("set \"JAVA_TOOL_OPTIONS=\"\r\n");
@@ -129,6 +142,15 @@ public final class SimulationBatGenerator {
 		bat.append("rem effektive VM Settings vor dem Start loggen\r\n");
 		bat.append("if not exist \"hagrid-matsim-output\\logs\\jvm\" mkdir \"hagrid-matsim-output\\logs\\jvm\"\r\n");
 		bat.append("\"%JAVA_EXE%\" -XshowSettings:vm -version 2> \"hagrid-matsim-output\\logs\\jvm\\vm_settings_before.txt\"\r\n");
+		bat.append("\r\n");
+		// Version guard reads the file just written instead of parsing `java -version`
+		// through `for /f`: the resolved path contains a space ("C:\Program Files\..."),
+		// which for /f's cmd-in-quotes handling mangles ("C:\Program" not found).
+		// The regex's "." matches the quote in: java version "21.0.10" 2026-01-20 LTS
+		bat.append("rem Versionspruefung: MATSim/HAGRID sind auf 21 gebaut (pom.xml release=21)\r\n");
+		bat.append("findstr /r /c:\"version .21\\.\" \"hagrid-matsim-output\\logs\\jvm\\vm_settings_before.txt\" >nul\r\n");
+		bat.append("if errorlevel 1 echo WARNING: JDK 21 expected - see "
+				+ "hagrid-matsim-output\\logs\\jvm\\vm_settings_before.txt\r\n");
 		bat.append("\r\n");
 		bat.append("rem JAR pruefen\r\n");
 		bat.append("set \"JAR=target\\parcel-demand-2-matsim-pipeline-1.0-SNAPSHOT.jar\"\r\n");
