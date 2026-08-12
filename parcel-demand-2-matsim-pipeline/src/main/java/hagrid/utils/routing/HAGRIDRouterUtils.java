@@ -34,11 +34,16 @@ import org.jfree.data.xy.XYSeriesCollection;
 import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Random;
 
 import org.apache.logging.log4j.LogManager;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.freight.carriers.Carrier;
+import org.matsim.freight.carriers.CarrierService;
 import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
 
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
@@ -46,7 +51,29 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 public class HAGRIDRouterUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDRouterUtils.class);
-    private static final int MAXROUTEDURATION = 25200; // example value, adjust as needed
+    /**
+     * Hard cap on jsprit route duration (7h driver shift), enforced via
+     * {@code MaxRouteDurationConstraint}. Do not change casually: it alters Hannover routing results.
+     */
+    public static final int MAXROUTEDURATION = 25200;
+
+    /**
+     * System property that overrides jsprit's search seed, e.g. {@code -Dhagrid.jsprit.seed=1234}.
+     *
+     * <p>Why this exists: jsprit's ruin-and-recreate search is stochastic, and its default RNG is
+     * seeded with a fixed 4711 ({@code RandomNumberGeneration.DEFAULT_SEED}). A run is therefore
+     * reproducible, but its solution is a single draw — two runs that differ in some input also
+     * differ by an unknown amount of pure search noise. Re-running with a different seed and an
+     * otherwise identical input measures that noise floor, which is what tells you whether a KPI
+     * difference between two scenarios is a real effect. The 2026-07-28 demand-band measurement
+     * needed exactly this: vehicle-km moved non-monotonically across the three demand levels,
+     * which is physically impossible and hence must be search noise.
+     *
+     * <p>Left unset, jsprit keeps its own default seed, so production runs are bit-identical to
+     * before this property existed. Note the seed is applied per carrier (each carrier builds its
+     * own algorithm), matching how the default already behaves.
+     */
+    public static final String JSPRIT_SEED_PROPERTY = "hagrid.jsprit.seed";
 
     /**
      * Configures the routing algorithm (no U-turn penalty).
@@ -68,6 +95,8 @@ public class HAGRIDRouterUtils {
 
     /**
      * Configures the routing algorithm with custom iteration count and optional U-turn penalty.
+     * Delegates to the 6-arg overload with {@link #MAXROUTEDURATION} — byte-identical to
+     * before the cap became a parameter.
      *
      * @param vrp                  The vehicle routing problem.
      * @param serviceCount         The number of services.
@@ -79,6 +108,27 @@ public class HAGRIDRouterUtils {
     public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
                                                               int jspritIterations, Network network,
                                                               double uTurnPenaltyCost) {
+        return configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost,
+                MAXROUTEDURATION);
+    }
+
+    /**
+     * Configures the routing algorithm with an explicit route-duration cap, overriding
+     * {@link #MAXROUTEDURATION}. Used by tests that need a small, duration-bound fixture, and by
+     * any scenario whose tours must fit a shorter budget than the 25200s (7h) driver shift.
+     *
+     * @param vrp                     The vehicle routing problem.
+     * @param serviceCount            The number of services.
+     * @param jspritIterations        Number of JSprit iterations (1=quick, 20-50=production)
+     * @param network                 MATSim network for U-turn detection (null to disable)
+     * @param uTurnPenaltyCost        Soft score penalty per U-turn (0 to disable)
+     * @param maxRouteDurationSeconds Hard cap on jsprit route duration (seconds)
+     * @return The configured vehicle routing algorithm.
+     */
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
+                                                              int jspritIterations, Network network,
+                                                              double uTurnPenaltyCost,
+                                                              int maxRouteDurationSeconds) {
         StateManager stateManager = new StateManager(vrp);
         ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
 
@@ -90,13 +140,13 @@ public class HAGRIDRouterUtils {
         stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
         stateManager.addStateUpdater(new OpenRouteStateVerifier());
         stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
-                vrp.getTransportCosts(), MAXROUTEDURATION));
+                vrp.getTransportCosts(), maxRouteDurationSeconds));
 
         constraintManager.addConstraint(
-                new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
+                new MaxRouteDurationConstraint(maxRouteDurationSeconds, stateManager, vrp.getTransportCosts()),
                 Priority.CRITICAL);
         constraintManager.addConstraint(
-                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
+                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), maxRouteDurationSeconds),
                 Priority.CRITICAL);
 
         constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
@@ -130,16 +180,46 @@ public class HAGRIDRouterUtils {
         int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
     // int jspritThreads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-    VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
+    Jsprit.Builder builder = Jsprit.Builder.newInstance(vrp)
                 .setStateAndConstraintManager(stateManager, constraintManager)
                 // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
                 .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
                 .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
-                .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.BEST_INSERTION.toString())
-                .setProperty(Jsprit.Parameter.FAST_REGRET, "false")
-                .buildAlgorithm();
+                // REGRET_INSERTION is jsprit's own default; HAGRID used to override it with
+                // BEST_INSERTION, which cost roughly one vehicle per carrier. BEST_INSERTION is
+                // greedy per job — each job goes wherever it is cheapest AT THE MOMENT it is
+                // inserted, and opening a fresh route costs nothing but the depot stub because the
+                // vehicle's fixed cost is invisible during insertion (jsprit's FIXED_COST_PARAM
+                // defaults to 0, and the fixed-cost branch of JobInsertionCostsCalculatorBuilder is
+                // commented out in 1.8). That over-opens routes, and ruin-and-recreate cannot undo
+                // it afterwards: a half-emptied tour still pays its full fixed cost, so every
+                // intermediate state scores worse and the acceptor rejects the path out.
+                // Measured 2026-08-11 on carrier dpd (408 services, jsprit 100 iters, production
+                // inputs incl. service-area clip): 5 tours / 248.6 km / 878.82 EUR with
+                // BEST_INSERTION vs 4 tours / 206.9 km / 746.15 EUR with REGRET_INSERTION
+                // (-1 vehicle, -15.1 % cost, shift utilisation 74.2 % -> 88.5 %). Over the full
+                // 7-carrier route: 52 -> 41 tours, -33.9 % km, -17.9 % cost.
+                // It COSTS runtime, contrary to what this comment claimed until 2026-08-12: the
+                // paired full-run measurement gives +9.2 % wall / +9.3 % jsprit time at identical
+                // 100/100 iterations, i.e. a higher per-iteration cost (regret evaluates every
+                // route per job, not just the best position). The earlier "not slower" came from
+                // carrier dpd alone and did not generalise (METHODS-LOG §2.34).
+                // Verified NOT to be a ruin-size problem: enlarging every ruin past jsprit's own
+                // 50/70 caps (radial 122, random 163) leaves the tour count at 5.
+                // Pinned by JspritConstructionHeuristicTest — do not "restore" BEST_INSERTION.
+                .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.REGRET_INSERTION.toString())
+                // jsprit's default is false as well; kept explicit because regretFast() is the
+                // next candidate knob (see BACKLOG "jsprit-Upgrade 1.8 -> 2.x", spike question i).
+                .setProperty(Jsprit.Parameter.FAST_REGRET, "false");
+
+        // Must be set on the builder, not via RandomNumberGeneration.setSeed(): Jsprit.Builder
+        // takes its RNG from RandomNumberGeneration.newInstance(), which always uses the fixed
+        // DEFAULT_SEED and therefore ignores setSeed() entirely.
+        applySeedOverride(builder);
+
+        VehicleRoutingAlgorithm algorithm = builder.buildAlgorithm();
 
         int iterations = Math.max(1, jspritIterations);
         int termination = calculateNoImprovementThreshold(iterations);
@@ -151,6 +231,28 @@ public class HAGRIDRouterUtils {
   
 
         return algorithm;
+    }
+
+    /**
+     * Applies {@link #JSPRIT_SEED_PROPERTY} to the builder, if set. No-op otherwise, so the
+     * default stays jsprit's own fixed seed. A malformed value fails loudly rather than
+     * silently falling back: a seed sweep whose seed was ignored would produce identical runs
+     * and read as "no search noise", the exact opposite of the truth.
+     */
+    static void applySeedOverride(Jsprit.Builder builder) {
+        String raw = System.getProperty(JSPRIT_SEED_PROPERTY);
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        long seed;
+        try {
+            seed = Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    JSPRIT_SEED_PROPERTY + " must be a long, was: '" + raw + "'", e);
+        }
+        builder.setRandom(new Random(seed));
+        LOGGER.info("jsprit search seed overridden via -D{}={}", JSPRIT_SEED_PROPERTY, seed);
     }
 
     /**
@@ -297,5 +399,41 @@ public class HAGRIDRouterUtils {
         VehicleRoutingProblem.Builder vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, network);
         vrpBuilder.setRoutingCost(netBasedCosts);
         return vrpBuilder.build();
+    }
+
+    /**
+     * Persists the jobs the best jsprit solution could NOT insert as carrier attributes, so they
+     * surface as a dashboard KPI instead of silently disappearing from the tours while
+     * {@code numberOfParcels} still counts them as attempted demand. Called from {@code Router}.
+     * <p>
+     * The routing path uses an INFINITE fleet, so an unassigned stop is never "out of vehicles":
+     * it is a stop whose demand exceeds every (identical) van's capacity — e.g. a merged MIXED stop
+     * of 179 parcels against a capacity-30 van — or that is infeasible under the 7h route-duration
+     * cap / vehicle end window. Adding vehicles cannot help; the job is structurally infeasible.
+     * <p>
+     * {@code unassignedParcels} sums the resolved services' {@code capacityDemand} (parcel-level).
+     * An unresolved id is still counted as a job but contributes ZERO parcels — it is deliberately
+     * NOT defaulted to 1, which would silently invent demand.
+     *
+     * @param carrier           the routed carrier; attributes are written onto it
+     * @param unassignedJobIds  ids of the jobs jsprit left unassigned (e.g. from
+     *                          {@code solution.getUnassignedJobs()} mapped to {@code Job::getId})
+     */
+    public static void recordUnassignedJobs(Carrier carrier, Collection<String> unassignedJobIds) {
+        List<String> ids = new ArrayList<>(unassignedJobIds);
+        int unassignedParcels = 0;
+        for (String id : ids) {
+            CarrierService service = carrier.getServices().get(Id.create(id, CarrierService.class));
+            if (service != null) {
+                unassignedParcels += service.getCapacityDemand();
+            }
+        }
+        carrier.getAttributes().putAttribute("unassignedJobs", ids.size());
+        carrier.getAttributes().putAttribute("unassignedParcels", unassignedParcels);
+        carrier.getAttributes().putAttribute("unassignedJobsAsString", ids.toString());
+        if (!ids.isEmpty()) {
+            LOGGER.warn("Carrier {}: jsprit left {} of {} stops UNASSIGNED ({} parcels) - not driven by any tour: {}",
+                    carrier.getId(), ids.size(), carrier.getServices().size(), unassignedParcels, ids);
+        }
     }
 }
