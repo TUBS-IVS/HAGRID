@@ -355,7 +355,8 @@ public class DashboardGenerator {
         }
         double successRate = parcelBase > 0 ? 100.0 * (parcelBase - totalMissed) / parcelBase : 100.0;
         // Stops jsprit could not insert into any tour (7h route-duration cap / vehicle window / capacity)
-        // — written by LausitzFreightPreprocessor.recordUnassignedJobs; 0 for the Hannover legacy path.
+        // — written by HAGRIDRouterUtils.recordUnassignedJobs from the Router's jsprit solution.
+        // Carrier files routed before that existed carry no such attribute and read as 0 here.
         int totalUnassignedParcels = sumIntAttr(delivery, "unassignedParcels");
         int totalUnassignedJobs = sumIntAttr(delivery, "unassignedJobs");
         double avgTourLengthKm = totalDeliveryVehicles > 0 ? totalDistanceKm / totalDeliveryVehicles : 0;
