@@ -1,6 +1,6 @@
 {
  "source": "HAGRID Java LMD dashboards (SUMMARY blob)",
- "extracted": "2026-08-10",
+ "extracted": "2026-08-12",
  "worktime_limit_h": 7.0,
  "capa_limit_frac": 0.9,
  "runs": [
@@ -1124,6 +1124,32 @@
   },
   {
    "series": "v2",
+   "cap": 70,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_70v2_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 49508,
+    "tour_h": 5119.8,
+    "cost_eur": 309810,
+    "vehicles": 1499,
+    "parcels": 97546,
+    "parcels_per_vehicle": 65.1,
+    "utilization": 0.9296
+   },
+   "limits": {
+    "worktime_only": 0,
+    "capa_only": 1236,
+    "both": 0,
+    "neither": 263,
+    "total_tours": 1499
+   },
+   "meta": {
+    "carrier_detail_tours": 1499,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v2",
    "cap": 80,
    "replicate": null,
    "file": "HAGRID_Dashboard_BASECASE_13052025_80v2_iter150_jsprit1000.html",
@@ -1669,6 +1695,84 @@
    }
   },
   {
+   "series": "v2",
+   "cap": 290,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_290v2_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30467,
+    "tour_h": 4462.5,
+    "cost_eur": 141308,
+    "vehicles": 661,
+    "parcels": 97423,
+    "parcels_per_vehicle": 147.4,
+    "utilization": 0.5082
+   },
+   "limits": {
+    "worktime_only": 440,
+    "capa_only": 0,
+    "both": 14,
+    "neither": 207,
+    "total_tours": 661
+   },
+   "meta": {
+    "carrier_detail_tours": 661,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v2",
+   "cap": 300,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_300v2_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30531,
+    "tour_h": 4459.7,
+    "cost_eur": 140930,
+    "vehicles": 653,
+    "parcels": 97433,
+    "parcels_per_vehicle": 149.2,
+    "utilization": 0.4974
+   },
+   "limits": {
+    "worktime_only": 454,
+    "capa_only": 0,
+    "both": 12,
+    "neither": 187,
+    "total_tours": 653
+   },
+   "meta": {
+    "carrier_detail_tours": 653,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v2",
+   "cap": 310,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_310v2_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30738,
+    "tour_h": 4471.4,
+    "cost_eur": 139783,
+    "vehicles": 650,
+    "parcels": 97448,
+    "parcels_per_vehicle": 149.9,
+    "utilization": 0.4836
+   },
+   "limits": {
+    "worktime_only": 461,
+    "capa_only": 1,
+    "both": 7,
+    "neither": 181,
+    "total_tours": 650
+   },
+   "meta": {
+    "carrier_detail_tours": 650,
+    "providers": 7
+   }
+  },
+  {
    "series": "v3",
    "cap": 30,
    "replicate": null,
@@ -2034,6 +2138,32 @@
   },
   {
    "series": "v3",
+   "cap": 170,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_170v3_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 31446,
+    "tour_h": 4487.3,
+    "cost_eur": 156660,
+    "vehicles": 735,
+    "parcels": 97530,
+    "parcels_per_vehicle": 132.7,
+    "utilization": 0.7806
+   },
+   "limits": {
+    "worktime_only": 104,
+    "capa_only": 141,
+    "both": 218,
+    "neither": 272,
+    "total_tours": 735
+   },
+   "meta": {
+    "carrier_detail_tours": 735,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v3",
    "cap": 180,
    "replicate": null,
    "file": "HAGRID_Dashboard_BASECASE_13052025_180v3_iter150_jsprit1000.html",
@@ -2268,6 +2398,32 @@
   },
   {
    "series": "v3",
+   "cap": 270,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_270v3_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30295,
+    "tour_h": 4451.5,
+    "cost_eur": 143332,
+    "vehicles": 663,
+    "parcels": 97462,
+    "parcels_per_vehicle": 147.0,
+    "utilization": 0.5445
+   },
+   "limits": {
+    "worktime_only": 413,
+    "capa_only": 3,
+    "both": 29,
+    "neither": 218,
+    "total_tours": 663
+   },
+   "meta": {
+    "carrier_detail_tours": 663,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v3",
    "cap": 280,
    "replicate": null,
    "file": "HAGRID_Dashboard_BASECASE_13052025_280v3_iter150_jsprit1000.html",
@@ -2398,6 +2554,32 @@
   },
   {
    "series": "v3",
+   "cap": 330,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_330v3_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30857,
+    "tour_h": 4466.2,
+    "cost_eur": 140798,
+    "vehicles": 658,
+    "parcels": 97373,
+    "parcels_per_vehicle": 148.0,
+    "utilization": 0.4484
+   },
+   "limits": {
+    "worktime_only": 464,
+    "capa_only": 1,
+    "both": 2,
+    "neither": 191,
+    "total_tours": 658
+   },
+   "meta": {
+    "carrier_detail_tours": 658,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v3",
    "cap": 340,
    "replicate": null,
    "file": "HAGRID_Dashboard_BASECASE_13052025_340v3_iter150_jsprit1000.html",
@@ -2523,6 +2705,58 @@
    },
    "meta": {
     "carrier_detail_tours": 666,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v3",
+   "cap": 390,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_390v3_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30772,
+    "tour_h": 4472.7,
+    "cost_eur": 141413,
+    "vehicles": 665,
+    "parcels": 97402,
+    "parcels_per_vehicle": 146.5,
+    "utilization": 0.3756
+   },
+   "limits": {
+    "worktime_only": 465,
+    "capa_only": 0,
+    "both": 1,
+    "neither": 199,
+    "total_tours": 665
+   },
+   "meta": {
+    "carrier_detail_tours": 665,
+    "providers": 7
+   }
+  },
+  {
+   "series": "v3",
+   "cap": 400,
+   "replicate": null,
+   "file": "HAGRID_Dashboard_BASECASE_13052025_400v3_iter150_jsprit1000.html",
+   "kpis": {
+    "tour_km": 30504,
+    "tour_h": 4461.0,
+    "cost_eur": 140940,
+    "vehicles": 657,
+    "parcels": 97428,
+    "parcels_per_vehicle": 148.3,
+    "utilization": 0.3707
+   },
+   "limits": {
+    "worktime_only": 471,
+    "capa_only": 0,
+    "both": 1,
+    "neither": 185,
+    "total_tours": 657
+   },
+   "meta": {
+    "carrier_detail_tours": 657,
     "providers": 7
    }
   }
