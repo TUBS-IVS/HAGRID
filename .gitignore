@@ -103,3 +103,24 @@ parcel-analysis/*
 # Temporary helper / analysis scripts
 analysis_cp.txt
 analyze_tw*.ps1
+
+# MATSim integration-test output (MatsimTestUtils writes to <module>/test/output)
+parcel-demand-2-matsim-pipeline/test/output/
+
+# Python bytecode caches (were tracked by accident until 2026-07-27)
+__pycache__/
+*.pyc
+
+# Generated analysis pages (regenerated from the run output; not versioned)
+parcel-demand-2-matsim-pipeline/analysis/**/*.html
+
+# Root-level generated analysis artifacts
+/Analyse_*.png
+/HAGRID_Dashboard_*.html
+/kneedle_breakpoint_analysis.png
+/plots/
+/Pictures/
+
+# local-only working files (untracked on purpose)
+SESSION_LOG.md
+parcel-demand-2-matsim-pipeline/analysis/paper-figures/
