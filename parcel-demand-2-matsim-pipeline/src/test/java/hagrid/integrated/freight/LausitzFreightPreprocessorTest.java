@@ -66,6 +66,36 @@ class LausitzFreightPreprocessorTest {
     }
 
     /**
+     * Pins the LMD_BASELINE carrier output to a golden hash. The Baseline is explicitly out of
+     * scope for the district-depot change (spec 2026-08-17 §D2), and
+     * {@code LmdCarrierBuilder.buildCore} documents an RNG draw-order contract that the overlay
+     * rework touches. If this fails, the Baseline moved and every existing Baseline run became
+     * incomparable.
+     */
+    @Test
+    void baselineCarrierOutputIsUnchanged(@TempDir Path tmp) throws Exception {
+        StagedFixture fixture = stageLmdFixture(tmp);
+        Path out = tmp.resolve("baseline_carriers.xml");
+        LausitzFreightPreprocessor.run(fixture.demandShp().toString(), fixture.depotCsv().toString(),
+                fixture.netFile().toString(), fixture.typesFile().toString(), out.toString(),
+                /*jspritIterations*/ 5);
+
+        String actual = sha256(out);
+        Path golden = Path.of("src/test/resources/baseline-golden/carriers-golden.sha256");
+        assertThat(golden).as("golden file missing - see plan Task 1 Step 2").exists();
+        assertThat(actual)
+                .as("Baseline carrier output changed. The Baseline is out of scope for the "
+                        + "district-depot change (spec §D2) - investigate before proceeding.")
+                .isEqualTo(Files.readString(golden).trim());
+    }
+
+    private static String sha256(Path file) throws Exception {
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        md.update(Files.readAllBytes(file));
+        return java.util.HexFormat.of().formatHex(md.digest());
+    }
+
+    /**
      * Fixture files (+ the in-memory van {@link CarrierVehicleTypes}) shared by every
      * {@link #stageLmdFixture(Path)} caller: grid network, single van type, dhl+hermes depot csv,
      * 3-point demand shapefile. {@code producesRoutedCarriers()} and the runModular tests below all
