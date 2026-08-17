@@ -130,4 +130,47 @@ class DeliveryDistrictBuilderTest {
         }
         return out;
     }
+
+    @Test
+    void splitsACatchmentThatExceedsTheJobCeiling() {
+        List<Delivery> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            many.add(delivery(i * 10, 0, "dhl", 1));   // 10 distinct segments, all nearest WEST
+        }
+        List<DeliveryDistrictBuilder.District> ds =
+                DeliveryDistrictBuilder.build(many, List.of(WEST), 4);
+
+        assertEquals(3, ds.size(), "10 stops at ceiling 4 -> ceil(10/4) = 3 districts");
+        assertTrue(ds.stream().allMatch(d -> d.stops().size() <= 4));
+        assertEquals(10, ds.stream().mapToInt(d -> d.stops().size()).sum());
+        assertTrue(ds.stream().allMatch(d -> d.depot().id().equals("west")),
+                "sub-districts share their catchment's depot");
+        assertEquals(List.of("west#0", "west#1", "west#2"), ds.stream().map(
+                DeliveryDistrictBuilder.District::id).toList());
+    }
+
+    @Test
+    void doesNotSplitACatchmentBelowTheCeiling() {
+        List<DeliveryDistrictBuilder.District> ds = DeliveryDistrictBuilder.build(
+                List.of(delivery(10, 0, "dhl", 1), delivery(20, 0, "gls", 1)),
+                List.of(WEST), 4);
+
+        assertEquals(1, ds.size());
+        assertEquals("west", ds.get(0).id(), "an unsplit catchment keeps the plain depot id");
+    }
+
+    @Test
+    void splitsAlongTheLongerAxisSoDistrictsStayCompact() {
+        List<Delivery> wide = new java.util.ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            wide.add(delivery(i * 1000, 0, "dhl", 1));   // spread in x, flat in y
+        }
+        List<DeliveryDistrictBuilder.District> ds =
+                DeliveryDistrictBuilder.build(wide, List.of(WEST), 2);
+
+        assertEquals(2, ds.size());
+        double maxXFirst = ds.get(0).stops().stream().mapToDouble(s -> s.coord().getX()).max().orElseThrow();
+        double minXSecond = ds.get(1).stops().stream().mapToDouble(s -> s.coord().getX()).min().orElseThrow();
+        assertTrue(maxXFirst < minXSecond, "districts must not interleave along the split axis");
+    }
 }
