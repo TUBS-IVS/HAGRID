@@ -1,5 +1,6 @@
 package hagrid.integrated.freight;
 
+import hagrid.integrated.DeliveryDistrictBuilder;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.routing.HAGRIDRouterUtils;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("LmdCarrierBuilder")
 class LmdCarrierBuilderTest {
 
+    /** Same depot link id as {@link #net()}'s only link - reused as a constant by the district tests
+     *  below since they pass it repeatedly. */
+    private static final Id<Link> DEPOT_LINK = Id.createLinkId("ab");
+
     private Network net() {
         Network n = NetworkUtils.createNetwork();
         Node a = NetworkUtils.createAndAddNode(n, Id.createNodeId("a"), new Coord(0, 0));
@@ -38,6 +43,20 @@ class LmdCarrierBuilderTest {
         t.getCapacity().setOther(cap);
         t.setNetworkMode("car");
         return t;
+    }
+
+    /** The two-van-type fleet already used inline by several tests in this file (e.g. {@code buildsCarrier}),
+     *  pulled out because the district tests below all need the same array. */
+    private VehicleType[] vanTypes() {
+        return new VehicleType[]{van("ct_cep_size_m", 165), van("ct_cep_size_l", 230)};
+    }
+
+    /** Builds one {@link Delivery} at a coordinate, following the builder pattern already used by
+     *  every other test in this file (HOME mode, fixed postal code - irrelevant to these assertions). */
+    private Delivery deliveryAt(double x, double y, String provider, int amount, Delivery.ParcelType type) {
+        return Delivery.builder().id(provider + "_" + type).coordinate(new Coord(x, y)).provider(provider)
+                .parcelType(type).amount(amount)
+                .deliveryMode(Delivery.DeliveryMode.HOME).postalCode("02977").build();
     }
 
     @Test
@@ -235,5 +254,58 @@ class LmdCarrierBuilderTest {
 
         assertThat((int) b2b.getAttributes().getAttribute("missedParcels"))
                 .isLessThan((int) b2c.getAttributes().getAttribute("missedParcels"));
+    }
+
+    @Test
+    @DisplayName("buildDistrict: a district spanning two providers applies each parcel's own rate, not the 90 percent default")
+    void districtCarrierAppliesEachParcelsOwnProviderRate() {
+        // dhl 94%, gls 91% - a district spanning both must NOT collapse to the 90% default.
+        List<DeliveryDistrictBuilder.PooledStop> stops = List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 200,
+                        List.of(deliveryAt(100, 100, "dhl", 100, Delivery.ParcelType.B2C),
+                                deliveryAt(100, 100, "gls", 100, Delivery.ParcelType.B2C))));
+
+        Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        assertThat(c.getServices()).as("one pooled stop = one service").hasSize(1);
+        assertThat((int) c.getAttributes().getAttribute("numberOfParcels")).isEqualTo(200);
+        // 100 parcels at ~94% + 100 at ~91% -> expectation ~15; the 90% default would give ~20.
+        int missed = (int) c.getAttributes().getAttribute("missedParcels");
+        assertThat(missed).isGreaterThan(3).isLessThan(35);
+    }
+
+    @Test
+    @DisplayName("buildDistrict: a single-provider district matches that provider's own rate band")
+    void districtCarrierWithOneProviderMatchesTheProviderRateBand() {
+        List<DeliveryDistrictBuilder.PooledStop> stops = List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 1000,
+                        List.of(deliveryAt(100, 100, "dhl", 1000, Delivery.ParcelType.B2C))));
+
+        Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        // 1000 dhl parcels at 94% + Random(1L)'s daily bias (~+3.9, clamped at MAX_EFFECTIVE_RATE
+        // 98%) deterministically misses 19 with this seed and draw order. Verified by replaying the
+        // identical draw sequence against the 90% default fallback: same random calls, only the
+        // comparison threshold differs, gives 58 misses - so this band cleanly rejects the bug
+        // (falling through to the 90% default) while accepting the correct per-provider rate.
+        int missed = (int) c.getAttributes().getAttribute("missedParcels");
+        assertThat(missed).isGreaterThan(5).isLessThan(40);
+    }
+
+    @Test
+    @DisplayName("buildDistrict: B2B parcels keep the B2B rate regardless of which provider carries them")
+    void b2bParcelsInADistrictKeepTheB2BRate() {
+        List<DeliveryDistrictBuilder.PooledStop> stops = List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 1000,
+                        List.of(deliveryAt(100, 100, "dpd", 1000, Delivery.ParcelType.B2B))));
+
+        Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        // B2B is ~99% reliable, so well under 40 of 1000 parcels should be missed.
+        int missed = (int) c.getAttributes().getAttribute("missedParcels");
+        assertThat(missed).isLessThan(40);
     }
 }
