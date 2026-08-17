@@ -55,17 +55,57 @@ Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
   keine Parität. Für Vergleichstabellen je Arm dieselbe Konvention exportieren (brutto überall +
   Overlay als separate Zeile). Kontext: [METHODS-LOG](METHODS-LOG.md) §2.21, Annotation
   2026-07-31. _(added 2026-07-31)_
-- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt); Raster an `chid600w21` ausrichten
-  (χ=600 → 93,7 % brutto). ⚠️ **Korrektur 2026-08-10:** die frühere Begründung „alle 218
+- **Offen: χ-Sweep fahren** (M6 — Sweep statt Einzelpunkt); ~~Raster an `chid600w21` ausrichten
+  (χ=600 → 93,7 % brutto)~~ ⚠️ **überholt 2026-08-13:** dieser Ankerwert entstand unter dem
+  fehlerhaften Summen-Abzug und ist kein gültiger 1c-Betriebspunkt; Raster und Anker neu →
+  die beiden `[H]`-Punkte unten, [METHODS-LOG](METHODS-LOG.md) §2.35.
+  ⚠️ **Korrektur 2026-08-10:** die frühere Begründung „alle 218
   verfallenen Segmente χ-geblockt → das Gate ist der bindende Mechanismus, nicht die
   Fahrzeugkapazität" ist **nicht gedeckt**. Der Zähler saturiert: `chi_blocked_segments` = 3104 =
   *alle* eingereichten Segmente, also auch die 2884 erfolgreich zugestellten — „je einmal geblockt"
   trennt Erfolg nicht von Misserfolg. Gemessen ist nur, dass das Gate **aktiv** ist (11,7 Mio.
   Blocks), nicht dass es bindet → [METHODS-LOG](METHODS-LOG.md) §2.31.
-- **`[M]` Vor dem χ-Sweep: Detour-Verteilung instrumentieren** statt Raster raten — pro Segment und
-  Dispatch-Runde den kleinsten erreichbaren `detourOnly`-Wert erfassen. Liefert eine erste Näherung
-  der ganzen δ(χ)-Kurve aus **einem** Lauf und damit begründete Sweep-Punkte; ~1–2 h Code + 1 Rerun.
-  Design, Belege und Grenzen: [METHODS-LOG](METHODS-LOG.md) §2.31. _(added 2026-08-10)_
+- **✅ Detour-Verteilung instrumentiert (2026-08-10) und gemessen (2026-08-11)** — statt Raster raten
+  pro Segment das kleinste erreichbare `detourOnly` erfassen; `chid600det` (χ=600, 151 Iterationen,
+  Exit 0) liefert die Datei mit 3104 Segmenten. Design, Belege und Grenzen:
+  [METHODS-LOG](METHODS-LOG.md) §2.31. _(added 2026-08-10)_
+- **✅ χ-Gate-Rechenfehler behoben (2026-08-13)** — der Abzug der Eigenstandzeit lief auf der
+  **Summe** beider Beine, sodass ein mitgenommenes Bein echten Fahrumweg auf dem anderen bezahlte
+  (bis zu `ownDwell(n)`, 35 % aller Segmente meldeten exakt 0). Jetzt je Bein gegen dessen eigene
+  Standzeit, je Bein geklemmt — und gegen `max(Eigenstandzeit, 60-s-Fahrplanboden)`, sonst blieben
+  bei n=1 30 s eigene Depot-Standzeit als „Umweg" stehen (zweiter Bias, Gegenrichtung, bei χ=60 die
+  halbe Schwelle). Betraf die **Zulassungsentscheidung**, nicht nur die Anzeige →
+  `chid600w21` und `chid600det` sind als 1c-Betriebspunkte hinfällig; θ/1d **unberührt** (disjunkte
+  Pakete). Mechanismus, Beweis aus der DVRP-Quelle, Schranken und was aus der Messung trotzdem
+  trägt: [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
+- **`[H]` χ=600-Anker-Rerun auf dem Fix** — Voraussetzung für jeden 1c-Vergleich und für den Sweep,
+  weil der Fix strikt strenger ist und die Zustellquote bei χ=600 nur fallen kann. **Wie weit, ist
+  aus der alten Datei nicht invertierbar** (das Clamp hat die Information vernichtet: wahrer Umweg
+  eines 0-Segments liegt in `[0, ownDwell(n)]`) — das ist eine Messung, keine Rechnung.
+  Bestehende Config, ~7–12 h (s. Laufzeit-Regression unten). _(added 2026-08-13)_
+- **`[H]` χ-Sweep-Raster **unter** 200 s legen, nicht 200–900** — dort trennen sich die Verteilungen
+  (bei 60 s zugestellt/verfallen 28 % vs. 64 %), zwischen 200 und 900 s bewegt sich die zulässige
+  Menge kaum. Punkte oberhalb kaufen eine flache Kurve. χ=0 (nur Piggyback) ist dabei ein eigenes
+  Politikszenario, nicht der Randwert; der bestehende `χ<0`-Hard-Closed-Modus bleibt die
+  Leakage-Kontrolle. Erwartete Aussage ist damit nicht „wo liegt χ\*", sondern „χ hat oberhalb
+  ~200 s keinen Arbeitsbereich". [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
+- **`[M]` Konkurrenz-Diagnose (0 Runs, reines Postprocessing)** — verfallene Segmente wurden im
+  Median **17 477** mal evaluiert gegen 1 140 bei den zugestellten, und 215/218 hatten ein Minimum
+  unter χ. Übrig bleibt die Hypothese „das Fahrzeug, das es günstig mitgenommen hätte, war jede
+  Runde anderweitig verplant" — zu prüfen aus den vorhandenen Events: welches Fahrzeug bot das
+  Minimum, was tat es stattdessen. ⚠️ Die Stichprobe **nicht** über die 19 Null-Segmente ziehen:
+  diese Auswahl ist ein Artefakt des behobenen Fehlers. Frame ist die verfallene Menge.
+  _(added 2026-08-13)_
+- **`[M]` Laufzeit-Regression 7,0 h → 11,9 h klären** — `chid600w21` (2026-07-31) gegen
+  `chid600det` (2026-08-11), identische 1c-Config, gleicher Rechner, **+70 %**. Über 24
+  Pflichtläufe ~120 h ≈ 5 Tage. Kandidaten: `recordEvaluation` im DRT-Hot-Path (11,85 Mio.
+  `ConcurrentHashMap`-Zugriffe aus den *parallelen* Insertion-Providern — der Kostenkommentar in
+  `ChiGateStats` argumentiert über CAS-Schreibvorgänge, nicht über Map-Contention),
+  REGRET_INSERTION (§2.34, +9,2 %), Codedrift seit 2026-07-31. Diskriminator: zwei
+  5-Iterations-Läufe mit und ohne Recording, ~1 h. _(added 2026-08-13)_
+- **`[L]` `BIN_WIDTH_S = 100` in `analysis/kpi/chi_detour.py` ist für das neue Raster zu grob** —
+  unter 200 s bleiben zwei Bins, genau im informativen Gebiet. Quantile sind unberührt, nur die
+  Histogramme in `kpi_distributions.csv`. _(added 2026-08-13)_
 - **Offen: Shared-Use-Hälfte des Nachfrage-Bandes** — an den χ-Sweep hängen, kostet dort nur
   einen zusätzlichen Punkt. Nichtlinearität ist genau dort plausibel (χ-Gate: weniger Pakete →
   überproportional höheres δ).

@@ -24,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -117,6 +119,9 @@ public final class SharedUseKpiHandler implements
 
     static final String FILE_NAME = "shareduse_channel_stats.csv";
     static final String ITERATIONS_FILE_NAME = "shareduse_channel_stats_iterations.csv";
+    /** Per-segment detour distribution (2026-08-10, METHODS-LOG 2.31) — final iteration only. */
+    static final String DETOUR_FILE_NAME = "shareduse_detour_min.csv";
+    static final String DETOUR_HEADER = "segment;parcels;evaluations;min_detour_s;outcome";
     static final String ITERATIONS_HEADER = "iteration;segments_submitted;segments_delivered;"
             + "segments_delivered_late;segments_window_expired;segments_pending_open;"
             + "parcels_submitted;parcels_delivered;parcels_delivered_late;parcels_undelivered;"
@@ -142,6 +147,7 @@ public final class SharedUseKpiHandler implements
 
     private final Path outputCsv;
     private final Path outputIterationsCsv;
+    private final Path outputDetourCsv;
     /** χ-gate instrumentation (M6): shared controller-scope counters written by the gate. */
     private final ChiGateStats chiGateStats;
 
@@ -172,6 +178,7 @@ public final class SharedUseKpiHandler implements
         this.parcelsInjected = injectedSum;
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
         this.outputIterationsCsv = Path.of(controlerIO.getOutputFilename(ITERATIONS_FILE_NAME));
+        this.outputDetourCsv = Path.of(controlerIO.getOutputFilename(DETOUR_FILE_NAME));
     }
 
     /**
@@ -255,6 +262,7 @@ public final class SharedUseKpiHandler implements
     @Override
     public void notifyShutdown(ShutdownEvent event) {
         writeCsv(outputCsv);
+        writeDetourCsv(outputDetourCsv);
     }
 
     /** Package-visible so the unit test can drive it without a real Controler iteration. */
@@ -361,6 +369,72 @@ public final class SharedUseKpiHandler implements
     }
 
     /**
+     * Writes one row per parcel segment the χ-gate evaluated: the SMALLEST detour-only value any
+     * candidate insertion ever offered it, how many candidates it saw, and how the segment ended.
+     * Final iteration only (driven from {@link #notifyShutdown}), like the main CSV.
+     *
+     * <p><b>What it is for (2026-08-10, METHODS-LOG 2.31).</b> The χ block counters saturate —
+     * {@code chi_blocked_segments == segments_submitted} in every measured run — so
+     * "every expired segment was χ-blocked" is an identity and cannot show that χ BINDS. The
+     * minimum can: it is a lower bound on the threshold a segment would have needed. Compare the
+     * distribution for {@code window_expired} against {@code delivered} — minima sitting just
+     * above χ implicate the threshold and locate the sweep; minima at several thousand seconds
+     * exonerate it and point at fleet/window/segment size instead. Read cumulatively ("how many
+     * segments have a minimum ≤ x") it approximates δ(χ) from a single run, which is what makes
+     * a sweep grid derivable rather than guessed. {@code parcels} is on every row so the F1
+     * concern (do large segments still fail structurally once their own dwell is subtracted?)
+     * is answerable from the same file.
+     *
+     * <p><b>Limits.</b> Not a counterfactual: a higher χ accepts more parcels, changing vehicle
+     * states and shifting later minima. Only candidates that survived the insertion search's
+     * earlier feasibility filters and reached the cost calculator are seen. Segments that never
+     * emitted a submission (router walk-fallback, C2/F5) are absent entirely — they have no
+     * evaluation to record. {@code min_detour_s} is a DRIVE-only detour since 2026-08-13
+     * (per-leg dwell subtraction, METHODS-LOG 2.35); files written by earlier runs understate it
+     * by up to the segment's own dwell and are not comparable.
+     *
+     * <p>Rows are sorted by segment id: the map behind them is concurrent, and an unsorted CSV
+     * would differ between two byte-identical runs, breaking the determinism checks this project
+     * relies on ({@code Files.mismatch} control arms).
+     */
+    void writeDetourCsv(Path path) {
+        Map<Id<Person>, ChiGateStats.SegmentDetour> detours = chiGateStats.detourBySegment();
+        if (detours.isEmpty()) {
+            return; // no parcel ever evaluated (noParcels=true, or a non-parcel run): no file
+        }
+        Map<Id<Person>, String> outcomes = computeTotals().outcomeByPerson;
+        List<Id<Person>> segments = new ArrayList<>(detours.keySet());
+        segments.sort(Comparator.comparing(Id::toString));
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            try (BufferedWriter w = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+                w.write(DETOUR_HEADER);
+                w.newLine();
+                for (Id<Person> segment : segments) {
+                    ChiGateStats.SegmentDetour d = detours.get(segment);
+                    double min = d.minDetourSeconds();
+                    // Unreachable in practice (a record always follows the computeIfAbsent that
+                    // creates the entry) - an empty field rather than "Infinity", which pandas
+                    // would happily read as a float and plot.
+                    String minField = Double.isInfinite(min) ? "" : Double.toString(min);
+                    // "unmatched": evaluated but absent from the submitted-segment
+                    // classification. Should not occur (an evaluation implies a submission), so
+                    // it is deliberately NOT labelled "never_submitted" - that would assert a
+                    // cause this file cannot know.
+                    w.write(segment + ";" + d.parcels + ";" + d.evaluations() + ";" + minField
+                            + ";" + outcomes.getOrDefault(segment, "unmatched"));
+                    w.newLine();
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not write " + path, e);
+        }
+    }
+
+    /**
      * One pass over the tracked requests, classifying each submitted segment into exactly one
      * of: delivered (in-window), delivered_late, rejected_final, window_expired, pending_open -
      * so the extended M3 conservation identity holds by construction.
@@ -403,9 +477,11 @@ public final class SharedUseKpiHandler implements
                     t.segmentsDelivered++;
                     t.parcelsDelivered += load;
                     t.timeToDeliverySumS += deliveredTime - e.getValue();
+                    t.outcomeByPerson.put(personId, "delivered");
                 } else {
                     t.segmentsDeliveredLate++;
                     t.parcelsDeliveredLate += load;
+                    t.outcomeByPerson.put(personId, "delivered_late");
                 }
             } else if (!rejectedFinal.contains(requestId)) {
                 // Undelivered and not a hard reject -> classify by its own delivery window.
@@ -421,9 +497,16 @@ public final class SharedUseKpiHandler implements
                     if (chiGateStats.wasBlocked(personId)) {
                         t.segmentsWindowExpiredChiBlocked++;
                     }
+                    t.outcomeByPerson.put(personId, "window_expired");
                 } else {
                     t.segmentsPendingOpen++;   // sim ended before the deadline
+                    t.outcomeByPerson.put(personId, "pending_open");
                 }
+            } else {
+                // The remaining branch of the chain above: delivered==null AND hard-rejected.
+                // It increments no counter here (segmentsRejectedFinal is taken from the set's
+                // size), but the detour CSV needs every submitted segment labelled.
+                t.outcomeByPerson.put(personId, "rejected_final");
             }
         }
         return t;
@@ -445,6 +528,13 @@ public final class SharedUseKpiHandler implements
         int doorLoad;
         int lockerLoad;
         double timeToDeliverySumS;
+        /**
+         * Outcome label per SUBMITTED segment, for the detour CSV's join. Filled in the same
+         * pass that increments the counters above, so the label a segment carries and the
+         * bucket it was counted in can never diverge (a second classification pass would be a
+         * sibling waiting to drift).
+         */
+        final Map<Id<Person>, String> outcomeByPerson = new LinkedHashMap<>();
     }
 
     /** Explicit long overload: without it a long argument widens to the double overload and

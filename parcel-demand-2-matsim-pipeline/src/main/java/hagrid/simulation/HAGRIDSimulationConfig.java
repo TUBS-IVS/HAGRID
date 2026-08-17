@@ -110,9 +110,10 @@ public class HAGRIDSimulationConfig {
     private final boolean kpiDashboard;
 
     /**
-     * χ-gate threshold (seconds): the maximum acceptable DETOUR-ONLY added vehicle time for a
-     * single parcel insertion — the gate subtracts the request's own depot-pickup + door-dropoff
-     * dwell from the raw {@code totalTimeLoss} before comparing (rev. 2026-07-27). &lt; 0 = gate
+     * χ-gate threshold (seconds): the maximum acceptable DRIVE-only added vehicle time for a
+     * single parcel insertion — the gate subtracts the request's own depot-pickup dwell from the
+     * PICKUP leg's time loss and its door dwell from the DROPOFF leg's, each clamped at 0, before
+     * comparing (rev. 2026-07-27, per-leg since 2026-08-13). &lt; 0 = gate
      * closed (rejects all parcels; leakage-control probe). Only meaningful for
      * {@code DRT_SHAREDUSE}, where it is passed to {@code SharedUseModule}'s
      * {@code ChiGateInsertionCostCalculator}; harmless for every other concept.
@@ -648,8 +649,9 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Returns the χ-gate threshold (seconds): the maximum acceptable DETOUR-ONLY added vehicle
-     * time for a single parcel insertion (the request's own dwell is subtracted by the gate).
+     * Returns the χ-gate threshold (seconds): the maximum acceptable DRIVE-only added vehicle
+     * time for a single parcel insertion (the gate subtracts each leg's own stop duration from
+     * that leg).
      * &lt; 0 = gate closed (rejects all parcels; leakage-control probe). Only meaningful for
      * {@code DRT_SHAREDUSE} (default 600.0).
      *

@@ -458,6 +458,74 @@ class SharedUseKpiHandlerTest {
         assertThat(rowByName.get("segments_window_expired_chi_blocked")).isEqualTo("1");
     }
 
+    // ---- detour distribution (2026-08-10, METHODS-LOG 2.31) -----------------
+
+    @Test
+    @DisplayName("detour CSV joins each segment's smallest achievable detour with its outcome")
+    void detourCsvJoinsMinimumWithOutcome() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person delivered = personWithWindow(population, "parcel_dhl_2_B2C", 3, "DOOR", 60000.0);
+        Person expired = personWithWindow(population, "parcel_dhl_1_B2C", 7, "DOOR", 45000.0);
+
+        ChiGateStats stats = new ChiGateStats();
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(), stats);
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), delivered.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("e", Request.class), expired.getId()));
+        handler.handleEvent(droppedOff(50000.0, Id.create("d", Request.class), delivered.getId()));
+
+        stats.recordEvaluation(delivered.getId(), 3, 900.0);
+        stats.recordEvaluation(delivered.getId(), 3, 120.0);  // its best chance
+        stats.recordEvaluation(expired.getId(), 7, 4200.0);   // beyond any plausible chi
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("detour.csv");
+        handler.writeDetourCsv(csv);
+
+        List<String> lines = Files.readAllLines(csv, StandardCharsets.UTF_8);
+        assertThat(lines.get(0)).isEqualTo(SharedUseKpiHandler.DETOUR_HEADER);
+        // Sorted by segment id - parcel_dhl_1 before parcel_dhl_2 despite being recorded LAST.
+        // The backing map is concurrent, so an unsorted CSV would differ between two runs that
+        // are otherwise bit-identical, breaking the determinism control arms.
+        assertThat(lines.get(1)).isEqualTo("parcel_dhl_1_B2C;7;1;4200.0;window_expired");
+        assertThat(lines.get(2)).isEqualTo("parcel_dhl_2_B2C;3;2;120.0;delivered");
+        assertThat(lines).as("header + one row per evaluated segment").hasSize(3);
+    }
+
+    @Test
+    @DisplayName("a segment still open at sim end is labelled pending_open, not expired")
+    void detourCsvLabelsPendingOpen() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person pending = personWithWindow(population, "parcel_dhl_9_B2C", 2, "DOOR", 70000.0);
+
+        ChiGateStats stats = new ChiGateStats();
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(), stats);
+        handler.handleEvent(submitted(1000.0, Id.create("p", Request.class), pending.getId()));
+        stats.recordEvaluation(pending.getId(), 2, 700.0);
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("detour2.csv");
+        handler.writeDetourCsv(csv);
+
+        assertThat(Files.readAllLines(csv, StandardCharsets.UTF_8).get(1))
+                .as("its deadline never passed - counting it against chi would inflate the "
+                        + "expired bucket the analysis is built on")
+                .isEqualTo("parcel_dhl_9_B2C;2;1;700.0;pending_open");
+    }
+
+    @Test
+    @DisplayName("nothing evaluated -> no detour file (noParcels arm writes no empty stub)")
+    void detourCsvSkippedWhenNothingEvaluated() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        person(population, "parcel_dhl_1_B2C", 2, "DOOR");
+
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO(),
+                new ChiGateStats());
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("detour3.csv");
+        handler.writeDetourCsv(csv);
+
+        assertThat(Files.exists(csv))
+                .as("a header-only file would read downstream as 'measured, nothing found'")
+                .isFalse();
+    }
+
     // -------------------------------------------------------------------------
 
     /**

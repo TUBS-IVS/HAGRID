@@ -22,6 +22,12 @@ def _dist(series, bin_lo, bin_hi, value, unit):
             "value": value, "unit": unit}
 
 
+#: Public alias so other extractors (chi_detour) emit kpi_distributions rows through the
+#: same constructor instead of hand-rolling the dict -- one place to change the schema.
+def dist_row(series, bin_lo, bin_hi, value, unit):
+    return _dist(series, bin_lo, bin_hi, value, unit)
+
+
 def bin_fixed(values, width):
     """Fixed-width binning: v falls in [lo, lo+width) where
     lo = width*floor(v/width). Returns {(lo, hi): count}."""

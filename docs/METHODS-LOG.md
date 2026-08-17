@@ -84,6 +84,9 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-11._
   eingefügten Pakets — ein Umweg-Gate, das strukturell mit der **Paketgröße** statt dem Umweg
   korrelierte. Pilotbeweis `suhead600`: δ=0,40, zugestellte Segmente ⌀1,42 vs. verworfene ⌀8,0
   Pakete/Segment. Caveat zur Kennzahl selbst: §2.3.
+  **Präzisierung 2026-08-13:** der Abzug lief bis dahin auf der *Summe* beider Insertion-Beine und
+  war damit selbst fehlerhaft — die Entscheidung „Detour-only statt Dwell-inklusive" trägt, ihre
+  Umsetzung war es nicht → §2.35.
 
 ### 1.2 Parametrisierung
 
@@ -508,6 +511,9 @@ Carrier), für Armläufe der Hebel.
 `trägt` · 2026-07-27 · **Paper-Caveat.** Bei Teil-Piggyback misst χ den *verworfenen* Umweg nur
 nach unten. Zusätzlich: **n=1 Seed pro χ-Punkt** in den bisherigen 1c-Läufen.
 Wie *aktiv* das Gate ist, ist gemessen; ob es **bindet**, ist es nicht → §2.31.
+⚠️ Bis 2026-08-13 war die Untererfassung **kein Messcaveat, sondern ein Rechenfehler** im Gate
+(Abzug auf der Summe statt je Bein): bis zur vollen Eigenstandzeit realer Umweg las sich als 0,
+und das betraf die Zulassungsentscheidung → §2.35.
 
 ### 2.4 Pax-KPIs unter Co-Riding: was unkorrigierbar bleibt
 
@@ -1118,6 +1124,10 @@ abrufbar. Drei Befunde:
    bildet `detourOnly = max(0, detourTimeInfo.getTotalTimeLoss() − ownDwellSeconds(request))` —
    also den marginalen, um die Eigenbedienzeit bereinigten Umweg der Parcel-Insertion. Das ist
    das χ-Gate-Kriterium selbst.
+   ⚠️ **Formel überholt 2026-08-13:** genau diese Summenform war fehlerhaft (ein mitgenommenes
+   Bein bezahlte echten Umweg auf dem anderen); jetzt je Bein gegen dessen eigene, auf den
+   Fahrplanboden gehobene Standzeit → §2.35. Die *Aussage* dieses Punktes bleibt: die Größe
+   existiert im Gate und ist die richtige — sie ist es jetzt sogar genauer.
 2. **Nur die *blockierten* Insertions werden protokolliert.** `ChiGateStats` führt
    `blockedAttempts` und `blockedSegments`; für eine **angenommene** Insertion wird `detourOnly`
    berechnet, gegen χ geprüft und dann verworfen. Genau die Fälle, die man für die Zurechnung
@@ -1971,6 +1981,103 @@ positiv beantwortet — 1.8 genügt, der `[L]`-Fork-Port ist dafür nicht nötig
 **Nebenbefund, nicht untersucht:** plan-basierte Distanz 3.002,4 km gegen 3.724,3 km in
 `analysis/freight/TimeDistance_perVehicleType.tsv` (event-basiert, nach `LmdTourRetimer`-Reroute)
 — 19 %, deutlich mehr als die 4,6 % aus §2.33 Punkt 5, aber ein anderes Messpaar.
+
+### 2.35 Das χ-Gate verrechnete den Umweg auf der Summe — echter Umweg bis zur eigenen Standzeit las sich als Null
+
+`behoben 2026-08-13` · **Defekt in der Entscheidungsgröße des 1c-Arms, nicht bloß im Instrument.**
+
+Das Gate zog die Eigenstandzeit des Pakets von der **Summe** beider Beine ab und klemmte einmal:
+
+```
+alt:  detourOnly = max(0, totalTimeLoss − [depotPickup(n) + segmentDwell(n)])
+neu:  detourOnly = max(0, pickupTimeLoss  − max(depotPickup(n),  60 s))
+                 + max(0, dropoffTimeLoss − max(segmentDwell(n), 60 s))
+```
+
+**Warum die Summenform falsch ist.** `InsertionDetourTimeCalculator` bildet jedes Bein separat, und
+jedes Bein enthält **die Standzeit seines eigenen Stops**: das Pickup-Bein die Depot-Ladezeit, das
+Dropoff-Bein die Türstandzeit. Für einen **neuen** Stop ist `stopDuration` exakt die Dauer dieses
+Requests — die Subtraktion hebt sie punktgenau weg und lässt `toTT + fromTT − replacedDriveTT`
+stehen, also den reinen Fahrumweg. Für einen **gleich-verlinkten** Stop trägt das Bein nur die
+*zusätzliche* Standzeit (`ParallelStopTimeCalculator`-max-Semantik) und **überhaupt keine
+Fahrterme** — dort ist der wahre Fahrumweg 0. Zieht man aber die Nominalstandzeit **beider** Stops
+von der Summe ab, wird die Überzahlung des mitgenommenen Beins gegen echtes Fahren auf dem
+**anderen** Bein verrechnet: bis zu `ownDwell(n)` Sekunden realer Umweg lasen sich als 0.
+
+**Zweiter, kleinerer Bias in derselben Größenklasse — mit behoben.** Der Abzug nahm die
+*nominale* Eigenstandzeit, der Fahrplan kennt aber einen Boden: `MinimumStopDurationAdapter`
+(`drtCfg.getStopDuration() = 60 s`) macht jeden Stop mindestens 60 s lang. Ein Ein-Paket-Segment
+lädt nominal 30 s, im Fahrplan aber 60 s — der Abzug von 30 s ließ also 30 s **eigene Standzeit**
+im Rest stehen und zählte sie als Umweg. Richtung: Gate zu **streng**, also entgegengesetzt zum
+Hauptfehler. Bei χ=600 unter 5 %, bei χ=60 die halbe Schwelle — im neuen Sweep-Gebiet also nicht
+vernachlässigbar. Jetzt zieht das Gate je Bein `max(Eigenstandzeit, Boden)` ab und liest den Boden
+aus **derselben** `drtCfg`-Quelle, die den Adapter parametrisiert (zwei Literale wären genau die
+Drift, die hier zu vermeiden ist). Der Dropoff-Boden bindet in dieser Parametrisierung nie
+(`segmentDwellSeconds(1) = 120 s`).
+
+**Kein Doppel-Zufall nötig, deshalb der Normalfall.** Jedes Paketsegment startet am `parcelDepot`;
+ein mitgenommener Depot-Stop ist die Regel, nicht die Ausnahme. Ein Bein genügt. Messbild in
+`chid600det` (χ=600, 3104 Segmente, 6009 Pakete, 11 849 786 Evaluationen): **1096 Segmente (35 %)
+melden exakt 0** — jedes davon mit ≥ 123 Evaluationen, es ist also gemessen und nicht defaultet.
+Kanten der Fehlgröße: `ownDwell(1)=150 s`, `ownDwell(13)=1290 s`.
+
+**Was das entwertet.** Die beiden bislang einzigen 1c-Punkte `chid600w21` und `chid600det` haben
+Pakete unter der Summenform **zugelassen** — die Entscheidung, nicht nur die Anzeige, war betroffen.
+Der Fix ist strikt **strenger** (kein unverdientes Guthaben mehr), die Zustellquote bei χ=600 kann
+also nur fallen oder gleich bleiben. **Wie weit, ist aus der vorhandenen Datei nicht invertierbar**:
+für ein Segment mit gemeldeter 0 liegt der wahre Fahrumweg irgendwo in `[0, ownDwell(n)]`, das Clamp
+hat die Information vernichtet. Genau dafür ist der χ=600-Anker-Rerun die Messung, nicht die
+Schätzung. Vom θ-Sweep und dem gesamten 1d-Arm ist **nichts** betroffen: `chiThreshold` existiert nur
+in `hagrid.integrated.shareduse` + der Simulations-Verdrahtung, `theta` nur in
+`hagrid/integrated/modular/ModularTourDispatcher.java`.
+
+**Was aus der `chid600det`-Messung trotzdem trägt.** Die Kernaussage lebt in der
+Entscheidungsvariablen des Gates selbst und ist gegen den Defekt robust, weil er nur nach unten
+verzerrt: **215 der 218 verfallenen Segmente (98,6 %) hatten ein Minimum unter χ=600** — sie wurden
+nicht von der Schwelle gehindert. Worst-Case-Korrektur (jedem verfallenen Segment das volle
+`ownDwell` als unterschlagenen Umweg gutgeschrieben) hebt nur **16 von 218 (7,3 %)** über 600 s;
+Grund: **178 der 218 sind Ein-Paket-Segmente** mit `ownDwell = 150 s`, es ist kaum Guthaben da, in
+dem sich etwas verstecken könnte. Nicht tragend und **nicht zitierbar** sind dagegen alle
+Niveauzahlen derselben Datei — Median 127 s (verfallen) / 25 s (zugestellt), `p25 = 0` (das ist die
+Klemmgrenze, kein Quantil: 35 % Punktmasse), „19 Segmente fuhren umsonst mit", `expired_cheapest_s`.
+
+**Nebenbefund, der die Deutung dreht.** Verfallene Segmente sind *kleiner* (1,41 vs. 1,98 Pakete) —
+die F1-Hypothese „große Segmente kippen heraus" ist damit invertiert — und wurden im Median
+**17 477** mal evaluiert gegen **1 140** bei den zugestellten (Verteilungen berühren sich kaum:
+Minimum verfallen 15 907 > Median zugestellt 1 140). Der zirkuläre Teil davon ist die
+`ParcelOnlyRetryQueue` (sie bietet jede Runde neu an, bis das Fenster zugeht); der nicht-zirkuläre
+Teil ist, dass über ~17 k Angebote hinweg der billigste Kandidat billig **blieb** und Kandidaten den
+Kostenrechner erst *nach* Kapazitäts- und Zeitfensterfilter erreichen. Übrig bleibt Konkurrenz:
+das Fahrzeug, das es günstig mitgenommen hätte, war jede Runde anderweitig verplant.
+
+**Konsequenz für den Sweep** (BACKLOG): das informative Gebiet liegt **unter 200 s** (bei 60 s
+trennen sich zugestellt/verfallen 28 % vs. 64 %, zwischen 200 und 900 s bewegt sich die zulässige
+Menge kaum). Dort ist das unverdiente Guthaben **so groß wie die Schwelle selbst oder größer**
+(150 s = 75 % von χ=200, > χ=120, 2,5 × χ=60) — ein Sweep auf der Summenform hätte dort den Defekt
+gemessen, nicht die Politik. Deshalb ist der Fix Voraussetzung für Block 1 und nicht dessen
+Fußnote. χ=0 (nur Piggyback) wird damit ein eigenes Politikszenario statt eines Randwerts.
+
+**Tests.** `ChiGateInsertionCostCalculatorTest` 17 → 23, `ChiGateDetourStatsTest` 8 → 9. Die alten
+Fixturen waren **konstruktionsblind**: der Helfer legte den ganzen `totalTimeLoss` auf das
+Pickup-Bein und 0 auf das Dropoff-Bein, in dieser Lage sind Summen- und Bein-Form identisch — die
+Suite war während des gesamten Defekts grün. Jetzt buchstabiert jede Fixtur beide Beine aus, und drei
+Regressionen sind so gelegt, dass die beiden Formen sich im **Urteil** unterscheiden, nicht nur in
+einer Zahl (n=1: 100 s statt 70 s, blockiert bei χ=90 · n=13: 300 s statt 0 s, blockiert bei χ=200 ·
+Spiegelfall mit mitgenommener Zustellung: 400 s statt 0 s). Eine Fixtur mit vertauschten
+Bein-Konstanten fällt auf (60 s statt 0 s), eine weitere pinnt den 60-s-Boden: ein solo
+eingefügtes Ein-Paket-Segment ohne Fahrumweg muss bei χ=0 **durchgehen** — ohne Boden läse es
+30 s Umweg und würde abgelehnt.
+
+**Offen, aus derselben Messung:** `chid600w21` brauchte 7,0 h, `chid600det` mit identischer 1c-Config
+**11,9 h** (+70 %) — Kandidaten: das `recordEvaluation` im DRT-Hot-Path (11,85 Mio.
+`ConcurrentHashMap`-Zugriffe aus den *parallelen* Insertion-Providern; der Kommentar dort adressiert
+CAS-Schreibvorgänge, nicht Map-Contention), REGRET_INSERTION (§2.34, +9,2 %), Codedrift seit
+2026-07-31. Über 24 Pflichtläufe sind das ~120 h, der Diskriminator kostet ~1 h.
+
+Verwandt: §2.3 (χ als untere Schranke — richtige Richtung, aber die dort genannte Ursache
+„Teil-Piggyback" war nur die halbe: nicht der gemessene Umweg war unvollständig, sondern die
+Verrechnung), §2.31 (das Instrument, das diesen Defekt überhaupt sichtbar gemacht hat),
+§2.24 Punkt 4 (`calculate()` je Kandidat, nicht je Entscheidung).
 
 ---
 

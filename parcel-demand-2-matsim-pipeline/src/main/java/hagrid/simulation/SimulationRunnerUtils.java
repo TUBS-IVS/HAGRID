@@ -138,8 +138,8 @@ public final class SimulationRunnerUtils {
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
         boolean drtWithFreight = bool(map.getOrDefault("freight", "true"), "freight");
         boolean kpiDashboard = bool(map.getOrDefault("kpiDashboard", "true"), "kpiDashboard");
-        // chi-gate threshold (seconds): max acceptable DETOUR-ONLY added vehicle time per parcel
-        // insertion (the request's own dwell is subtracted by the gate). Negative values are
+        // chi-gate threshold (seconds): max acceptable DRIVE-only added vehicle time per parcel
+        // insertion (the gate subtracts each leg's own stop duration from that leg). Negative are
         // deliberately ACCEPTED: < 0 = gate hard-closed, rejects ALL parcels (Task-10 leakage
         // probe). Only consumed by DRT_SHAREDUSE (SharedUseModule); harmless default otherwise.
         double chiThreshold = anyDouble(map.getOrDefault("chiThreshold", "600.0"), "chiThreshold");
