@@ -105,6 +105,23 @@ def extract(run_dir, prefix):
     stat("freight", "parcels_delivered_late", int, "parcels")
     stat("freight", "parcels_undelivered", int, "parcels")
 
+    # Zustellquoten-Konvention (2026-08-10, METHODS-LOG 2.21): EIN Name, EINE Basis über alle
+    # drei Arme -- zugestellt / injizierte Nachfrage, Not-at-home-Overlay NICHT abgezogen
+    # (dieser Arm hat ohnehin keines, M10). Wertgleich mit delivery_rate_total; der Alias
+    # existiert, weil Baseline und 1d unter `delivery_rate` melden und eine Vergleichstabelle
+    # sonst drei verschiedene Namen auflösen müsste. delivery_rate_total bleibt stehen, damit
+    # bestehende 1c-Dashboards nicht brechen -- die zwei Zeilen sind KEIN versehentliches
+    # Duplikat, wer eine davon aufräumt, muss beide Konsumenten prüfen.
+    if "delivery_rate_total" in stats:
+        rows.append(row("freight", "delivery_rate", float(stats["delivery_rate_total"]),
+                        "share", "shareduse_channel_stats (= delivery_rate_total)"))
+    elif "parcels_delivered" in stats and "parcels_injected" in stats:
+        injected = int(stats["parcels_injected"])
+        if injected:
+            rows.append(row("freight", "delivery_rate",
+                            int(stats["parcels_delivered"]) / injected, "share",
+                            "computed parcels_delivered/parcels_injected (legacy CSV)"))
+
     # C1 delay rename: the handler now writes mean_time_to_delivery_s (in-window
     # deliveries only) and OMITS the line when nothing was delivered -- never
     # re-materialize a 0.0 pseudo-result here. Legacy CSVs carry the old

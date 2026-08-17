@@ -196,6 +196,20 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
         # no economics rows), so it has to travel with the CSV, not just stdout.
         rows.append(common_row("meta", "run_meta_degraded", 1, "flag",
                                "dir-name parsing: " + meta.run_dir_name))
+    # chi detour distribution (2026-08-10, METHODS-LOG 2.31). Silent no-op for every run
+    # without the file (all non-1c runs, and 1c runs from before the instrumentation), so no
+    # meta flag on the normal path; the try/except is for a file that exists but is corrupt,
+    # which must not abort a whole build (same policy as the provider block below).
+    chi_dist_rows = []
+    try:
+        import chi_detour
+        chi_long, chi_dist_rows = chi_detour.extract(run_dir, meta.prefix)
+        rows += chi_long
+    except Exception as e:  # noqa: BLE001 - degrade, never abort
+        note = type(e).__name__ + ": " + str(e)
+        print("[build] chi detour skipped: " + note)  # ASCII only
+        rows.append(common_row("meta", "chi_detour_skipped", 1, "flag", note))
+
     rows += economics.extract(rows, fleet_size=meta.fleet_size)
 
     kpi_writer.write_long(rows, meta, out / "kpis_long.csv")
@@ -217,6 +231,7 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
 
     dist_rows = distributions.extract(run_dir, meta.prefix, recon=recon,
                                        veh_km=veh_km, occ_km_shares=occ_km_shares)
+    dist_rows += chi_dist_rows   # collected above, written through the same file
     distributions.write(dist_rows, meta, out / "kpi_distributions.csv")
     prov_rows = []
     if has_freight and pf is not None:

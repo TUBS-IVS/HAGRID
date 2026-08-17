@@ -57,9 +57,10 @@ import java.util.Map;
 public final class SharedUseModule extends AbstractDvrpModeModule {
 
     private final DrtConfigGroup drtCfg;
-    /** χ-gate threshold (seconds of max acceptable DETOUR-ONLY added vehicle time per
-     *  parcel insertion — the request's own dwell is subtracted; &lt; 0 = gate hard-closed,
-     *  rejects all parcels); consumed by the QSim-half {@link ChiGateInsertionCostCalculator}. */
+    /** χ-gate threshold (seconds of max acceptable DRIVE-only added vehicle time per
+     *  parcel insertion — each leg's own stop duration is subtracted from that leg;
+     *  &lt; 0 = gate hard-closed, rejects all parcels); consumed by the QSim-half
+     *  {@link ChiGateInsertionCostCalculator}. */
     private final double chiThreshold;
 
     public SharedUseModule(DrtConfigGroup drtCfg, double chiThreshold) {
@@ -146,8 +147,9 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
             @Override
             protected void configureQSim() {
                 // χ-gate wraps the native DefaultInsertionCostCalculator (constructed exactly as
-                // DrtModeOptimizerQSimModule does) and rejects a parcel insertion whose DETOUR-ONLY
-                // time loss (totalTimeLoss minus the request's own dwell, clamped at 0) exceeds χ;
+                // DrtModeOptimizerQSimModule does) and rejects a parcel insertion whose DRIVE-only
+                // time loss (each leg's time loss minus THAT leg's own stop duration, clamped per
+                // leg — see ChiGateInsertionCostCalculator, METHODS-LOG 2.35) exceeds χ;
                 // χ<0 = hard-closed (rejects all parcels). The modal DvrpLoadType (controller-scope,
                 // visible from the QSim child injector) lets the gate read the request's parcel
                 // count off its DvrpLoad. Pax and kept parcels keep the delegate's cost.
@@ -159,6 +161,10 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
                                                 .addOrGetDefaultDrtOptimizationConstraintsSet()),
                                 chiThreshold,
                                 getter.getModal(DvrpLoadType.class),
+                                // The SAME floor the MinimumStopDurationAdapter above got. Read
+                                // from drtCfg both times on purpose: two literals would let the
+                                // gate subtract a dwell the schedule never contained.
+                                drtCfg.getStopDuration(),
                                 // Controller-scope singleton, visible from the QSim child
                                 // injector (same resolution path as DvrpLoadType above).
                                 getter.get(ChiGateStats.class))));
