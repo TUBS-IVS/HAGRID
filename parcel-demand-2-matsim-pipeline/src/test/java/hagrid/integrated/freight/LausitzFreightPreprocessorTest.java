@@ -1,5 +1,6 @@
 package hagrid.integrated.freight;
 
+import hagrid.integrated.drt.DrtDepotReader;
 import hagrid.integrated.drt.DrtE2eFixtures;
 import hagrid.integrated.modular.Modular;
 import hagrid.integrated.modular.ModularVehicleTypes;
@@ -107,6 +108,11 @@ class LausitzFreightPreprocessorTest {
     /**
      * Stages the tiny grid network / single van type / dhl+hermes depot csv / 3-point demand
      * shapefile shared by every test in this class that needs a routable LMD/Modular fixture.
+     *
+     * <p>The depot csv carries a {@code site} column (dhl -&gt; wittichenau, hermes -&gt; hoy_sued,
+     * mirroring the real depot naming, spec 2026-08-17 D7) so {@link DrtDepotReader#readBySite}
+     * can resolve it; {@link LmdDepotLoader#load} only reads columns 0-2, so this is invisible to
+     * the Baseline path and does not move {@code baselineCarrierOutputIsUnchanged}'s golden hash.
      */
     private StagedFixture stageLmdFixture(Path dir) throws Exception {
         // tiny grid network (car), 4 links in a square
@@ -131,9 +137,10 @@ class LausitzFreightPreprocessorTest {
         Path typesFile = dir.resolve("vans.xml");
         new CarrierVehicleTypeWriter(types).write(typesFile.toString());
 
-        // depot CSV (dhl + hermes)
+        // depot CSV (dhl + hermes), with a site column for DrtDepotReader.readBySite
         Path depotCsv = dir.resolve("depots.csv");
-        Files.writeString(depotCsv, "provider;x;y\ndhl;0;0\nhermes;1000;1000\n");
+        Files.writeString(depotCsv,
+                "provider;x;y;site\ndhl;0;0;wittichenau\nhermes;1000;1000;hoy_sued\n");
 
         // demand shapefile with 3 points carrying dhl + hermes parcels
         Path demandShp = dir.resolve("demand.shp");
@@ -222,6 +229,40 @@ class LausitzFreightPreprocessorTest {
                         .isEqualTo(0);
             }
         }
+    }
+
+    /**
+     * Deviation from the plan's Step 1 snippet (spec 2026-08-17 Task 5): that snippet calls
+     * {@code LmdTestShapefiles.demandShapefile/depotCsv/networkFile/vehicleTypesFile(tmp)}, but
+     * {@code LmdTestShapefiles} only ever offered {@code writeDemand(...)} (Task 1's own interface
+     * note says so explicitly) - those four accessors do not exist anywhere in the codebase and no
+     * task creates them. Reuses this class's existing {@link #stageLmdFixture(Path)} recipe
+     * instead, whose depot csv now carries a {@code wittichenau} site (see its javadoc), and
+     * asserts with this file's AssertJ convention rather than the snippet's JUnit
+     * {@code assertEquals}/{@code assertNotNull}.
+     */
+    @Test
+    @DisplayName("runModular: one carrier per delivery DISTRICT, not per LSP (spec 2026-08-17 D2/D7)")
+    void modularBuildsOneCarrierPerDistrictNotPerProvider(@TempDir Path tmp) throws Exception {
+        StagedFixture fixture = stageLmdFixture(tmp);
+
+        Path out = tmp.resolve("carriers.xml.gz");
+        LausitzFreightPreprocessor.runModular(
+                fixture.demandShp().toString(), fixture.depotCsv().toString(),
+                fixture.netFile().toString(), fixture.typesFile().toString(),
+                out.toString(), 1, null, 12600,
+                List.of("wittichenau"), 300);
+
+        Carriers carriers = new Carriers();
+        CarrierVehicleTypes capsuleTypes = ModularVehicleTypes.createCapsuleTypes(fixture.typesFile().toString());
+        new CarrierPlanXmlReader(carriers, capsuleTypes).readFile(out.toString());
+
+        assertThat(carriers.getCarriers())
+                .as("one open depot + ceiling 300 = one district carrier")
+                .hasSize(1);
+        Carrier only = carriers.getCarriers().values().iterator().next();
+        assertThat(only.getId().toString()).as("carrier id is the district id").isEqualTo("wittichenau");
+        assertThat(only.getAttributes().getAttribute("district")).isNotNull();
     }
 
     @Test

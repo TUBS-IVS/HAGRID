@@ -5,6 +5,9 @@ import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
 import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
 import com.graphhopper.jsprit.core.util.Solutions;
 
+import hagrid.integrated.DeliveryDistrictBuilder;
+import hagrid.integrated.DepotNetwork;
+import hagrid.integrated.drt.DrtDepotReader;
 import hagrid.integrated.modular.Modular;
 import hagrid.integrated.modular.ModularVehicleTypes;
 import hagrid.utils.GeoUtils;
@@ -173,16 +176,37 @@ public final class LausitzFreightPreprocessor {
     }
 
     /**
-     * DRT_MODULAR preprocessing (1d): identical demand/depot/clip pipeline as the LMD baseline,
-     * but every carrier gets ONE vehicle type - the 216-parcel U-Shift cargo capsule -, the
-     * jsprit route-duration cap is the Modular tour cap (design D5: 12600s default, 25200s
-     * control arm) instead of the 7h driver shift, and there are NO dispatch waves (plan C4
-     * revised): one un-jittered vehicle template per carrier with the full delivery-day window
-     * 07:30-21:00, service-start TWs aligned to the same interval.
+     * Backwards-compatible entry point: all depots stay open and districts are capped at the
+     * default 300 jobs (INTEGRATED (1c/1d) default, spec 2026-08-17). See
+     * {@link #runModular(String, String, String, String, String, int, String, int, List, int)}.
      */
     public static void runModular(String demandShp, String depotCsv, String networkFile,
                                   String vanTypesFile, String carriersOut, int jspritIterations,
                                   String serviceAreaShp, int maxTourDurationSeconds) {
+        runModular(demandShp, depotCsv, networkFile, vanTypesFile, carriersOut, jspritIterations,
+                serviceAreaShp, maxTourDurationSeconds, null, 300);
+    }
+
+    /**
+     * DRT_MODULAR preprocessing (1d): identical demand/clip pipeline as the LMD baseline, but the
+     * demand is pooled into delivery DISTRICTS (one district per open depot's catchment, split at
+     * {@code maxJobsPerDistrict} — see {@link DeliveryDistrictBuilder}) instead of one carrier per
+     * LSP, so parcels are picked up at the depot nearest their delivery segment rather than at
+     * their own provider's depot (spec 2026-08-17, D2/D7). Every carrier still gets ONE vehicle
+     * type - the 216-parcel U-Shift cargo capsule -, the jsprit route-duration cap is the Modular
+     * tour cap (design D5: 12600s default, 25200s control arm) instead of the 7h driver shift, and
+     * there are NO dispatch waves (plan C4 revised): one un-jittered vehicle template per carrier
+     * with the full delivery-day window 07:30-21:00, service-start TWs aligned to the same
+     * interval.
+     *
+     * @param openDepots        site names (see {@link DrtDepotReader#readBySite}) that stay open;
+     *                          {@code null}/empty opens every depot in {@code depotCsv}
+     * @param maxJobsPerDistrict job ceiling per district before a catchment is split
+     */
+    public static void runModular(String demandShp, String depotCsv, String networkFile,
+                                  String vanTypesFile, String carriersOut, int jspritIterations,
+                                  String serviceAreaShp, int maxTourDurationSeconds,
+                                  List<String> openDepots, int maxJobsPerDistrict) {
         // 1. network — same car sub-network derivation as run() (see carNetwork()).
         Config config = ConfigUtils.createConfig();
         config.network().setInputFile(networkFile);
@@ -194,27 +218,26 @@ public final class LausitzFreightPreprocessor {
         CarrierVehicleTypes capsuleTypes = ModularVehicleTypes.createCapsuleTypes(vanTypesFile);
         VehicleType[] capsuleArr = capsuleTypes.getVehicleTypes().values().toArray(new VehicleType[0]);
 
-        // 3. demand -> per-LSP deliveries ; depots -> per-LSP link
+        // 3. demand -> pooled stops in districts anchored at the nearest OPEN depot
         Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(demandShp));
         if (serviceAreaShp != null && !serviceAreaShp.isBlank()) {
             byProvider = clipToServiceArea(byProvider, serviceAreaShp);
         }
-        Map<String, Id<Link>> depots = LmdDepotLoader.load(depotCsv, network);
+        List<Delivery> all = byProvider.values().stream().flatMap(List::stream).toList();
+        Map<String, Coord> depotCoords = DrtDepotReader.readBySite(java.nio.file.Path.of(depotCsv));
+        List<DepotNetwork.Depot> open =
+                DeliveryDistrictBuilder.selectOpenDepots(depotCoords, openDepots);
+        List<DeliveryDistrictBuilder.District> districts =
+                DeliveryDistrictBuilder.build(all, open, maxJobsPerDistrict);
 
-        // 4. one carrier per demanded LSP, anchored at its depot; single un-jittered vehicle
-        //    template per carrier spanning the full delivery day (no dispatch waves, see
-        //    LmdCarrierBuilder#buildSingleWindow).
+        // 4. one carrier per DISTRICT (not per LSP), anchored at the district's depot
         Carriers carriers = new Carriers();
-        for (Map.Entry<String, List<Delivery>> e : byProvider.entrySet()) {
-            String provider = e.getKey();
-            Id<Link> depot = depots.get(provider);
-            if (depot == null) {
-                throw new IllegalStateException("No depot for provider with demand: " + provider);
-            }
-            Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
-            Carrier carrier = LmdCarrierBuilder.buildSingleWindow(provider, e.getValue(), depot,
-                    network, capsuleArr, DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN,
-                    missedRng,
+        for (DeliveryDistrictBuilder.District district : districts) {
+            Link depotLink = NetworkUtils.getNearestLinkExactly(network, district.depot().coord());
+            Random missedRng = new Random(MISSED_DELIVERY_SEED + district.id().hashCode());
+            Carrier carrier = LmdCarrierBuilder.buildDistrict(district.id(), district.stops(),
+                    depotLink.getId(), network, capsuleArr,
+                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, missedRng,
                     Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S,
                     Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S);
             CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
