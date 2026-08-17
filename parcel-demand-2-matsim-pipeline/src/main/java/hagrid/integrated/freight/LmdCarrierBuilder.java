@@ -15,6 +15,7 @@ import org.matsim.freight.carriers.TimeWindow;
 import org.matsim.vehicles.VehicleType;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -170,7 +171,7 @@ public final class LmdCarrierBuilder {
         carrier.getAttributes().putAttribute("district", districtId);
 
         // One daily bias per provider present in this district (first-appearance order).
-        Map<String, Double> dailyBias = new java.util.LinkedHashMap<>();
+        Map<String, Double> dailyBias = new LinkedHashMap<>();
         for (var stop : stops) {
             for (Delivery d : stop.parts()) {
                 String p = d.getProvider() == null ? "" : d.getProvider().trim().toLowerCase();
