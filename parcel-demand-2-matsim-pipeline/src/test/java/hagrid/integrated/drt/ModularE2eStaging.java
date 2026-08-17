@@ -95,7 +95,7 @@ final class ModularE2eStaging {
         Path shpFile = dir.resolve("service-area.shp");
         DrtE2eFixtures.writeSquareShapefile(shpFile, AREA_SIZE);
         Path depotCsv = dir.resolve("depots.csv");
-        Files.writeString(depotCsv, "provider;x;y\ndhl;500.0;500.0\n");
+        Files.writeString(depotCsv, "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n");
 
         // ---- freight side: van type (cost donor for the capsule) + tiny PANDA-like demand ----
         CarrierVehicleTypes types = new CarrierVehicleTypes();

@@ -262,7 +262,9 @@ class LausitzFreightPreprocessorTest {
                 .hasSize(1);
         Carrier only = carriers.getCarriers().values().iterator().next();
         assertThat(only.getId().toString()).as("carrier id is the district id").isEqualTo("wittichenau");
-        assertThat(only.getAttributes().getAttribute("district")).isNotNull();
+        assertThat(only.getAttributes().getAttribute("district"))
+                .as("buildDistrict must stamp the district attribute the analysis layer reads")
+                .isNotNull();
     }
 
     @Test
