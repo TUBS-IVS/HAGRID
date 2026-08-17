@@ -74,4 +74,23 @@ class LmdDepotLoaderTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Non-numeric coordinate");
     }
+
+    /**
+     * Baseline safety net for the district-depot change (spec 2026-08-17 SS D2): the depot CSV
+     * gained a trailing {@code site} column for the INTEGRATED (1c/1d) arms, but {@code load()}
+     * splits on ";" and only ever reads indices 0-2, so the extra column must be invisible here
+     * and the Baseline's provider->link assignment must not move.
+     */
+    @Test
+    @DisplayName("load() ignores a trailing site column - the Baseline path is unaffected")
+    void ignoresTrailingSiteColumn(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("lmd-depots-with-site.csv");
+        Files.writeString(csv, "provider;x;y;site\ndhl;100;10;wittichenau\nhermes;1900;10;hoy_sued\n");
+
+        Map<String, Id<Link>> depots = LmdDepotLoader.load(csv.toString(), twoLinkNetwork());
+
+        assertThat(depots).containsOnlyKeys("dhl", "hermes");
+        assertThat(depots.get("dhl")).isEqualTo(Id.createLinkId("ab"));
+        assertThat(depots.get("hermes")).isEqualTo(Id.createLinkId("bc"));
+    }
 }

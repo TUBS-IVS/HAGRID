@@ -72,4 +72,47 @@ class DrtDepotReaderTest {
         assertThatThrownBy(() -> DrtDepotReader.readByProvider(csv))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("readBySite keys on the 4th column, normalized to trimmed lowercase, file order preserved")
+    void readsBySite(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("depots.csv");
+        Files.writeString(csv, "provider;x;y;site\n"
+                + "dhl;866341.8;5705764.6;wittichenau\n"
+                + "amazon;855395.1;5712299.2; LAUTA \n"
+                + "hermes;867545.1;5710992.6;hoy_sued\n");
+        Map<String, Coord> depots = DrtDepotReader.readBySite(csv);
+        assertThat(depots.keySet()).containsExactly("wittichenau", "lauta", "hoy_sued");
+        assertThat(depots.get("wittichenau")).isEqualTo(new Coord(866341.8, 5705764.6));
+        assertThat(depots.get("lauta")).isEqualTo(new Coord(855395.1, 5712299.2));
+        assertThat(depots.get("hoy_sued")).isEqualTo(new Coord(867545.1, 5710992.6));
+    }
+
+    @Test
+    @DisplayName("readBySite rejects a file with no data rows")
+    void readBySiteRejectsEmpty(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("e.csv");
+        Files.writeString(csv, "provider;x;y;site\n");
+        assertThatThrownBy(() -> DrtDepotReader.readBySite(csv))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("readBySite rejects a non-numeric coordinate")
+    void readBySiteRejectsMalformedRow(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("bad.csv");
+        Files.writeString(csv, "provider;x;y;site\ndhl;notanumber;200.0;wittichenau\n");
+        assertThatThrownBy(() -> DrtDepotReader.readBySite(csv))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("readBySite fails loudly on an older provider-only CSV missing the site column")
+    void readBySiteRejectsMissingSiteColumn(@TempDir Path tmp) throws Exception {
+        Path csv = tmp.resolve("old.csv");
+        Files.writeString(csv, "provider;x;y\ndhl;866341.8;5705764.6\n");
+        assertThatThrownBy(() -> DrtDepotReader.readBySite(csv))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("site");
+    }
 }
