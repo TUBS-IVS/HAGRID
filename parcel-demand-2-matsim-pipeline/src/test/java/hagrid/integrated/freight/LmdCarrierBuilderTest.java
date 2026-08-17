@@ -269,10 +269,20 @@ class LmdCarrierBuilderTest {
                 vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
 
         assertThat(c.getServices()).as("one pooled stop = one service").hasSize(1);
-        assertThat((int) c.getAttributes().getAttribute("numberOfParcels")).isEqualTo(200);
-        // 100 parcels at ~94% + 100 at ~91% -> expectation ~15; the 90% default would give ~20.
+        assertThat((int) c.getAttributes().getAttribute("numberOfParcels"))
+                .as("numberOfParcels must be the plain sum of the pooled stop's parcels (100 dhl + 100 gls)")
+                .isEqualTo(200);
+        // Exact value, not a band: this quantity is fully deterministic (fixed seed, no concurrency).
+        // Correct (per-parcel provider rate) gives 15 with Random(1L); the regression this test exists
+        // to catch - buildCore's shape, ONE carrier-level bias keyed off districtId ("bez0", so
+        // sigma=5.0 since "dhl".equals("bez0") is false) and DELIVERY_RATES.getOrDefault("bez0", 90.0)
+        // applied to every parcel regardless of provider - gives 6 with the same seed. A band such as
+        // (3, 35) does not separate 15 from 6; only the exact value does.
         int missed = (int) c.getAttributes().getAttribute("missedParcels");
-        assertThat(missed).isGreaterThan(3).isLessThan(35);
+        assertThat(missed)
+                .as("missedParcels must reflect each parcel's own provider rate (dhl 94% / gls 91%), "
+                        + "not a single carrier-level 90% default draw")
+                .isEqualTo(15);
     }
 
     @Test
@@ -282,16 +292,25 @@ class LmdCarrierBuilderTest {
                 new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 1000,
                         List.of(deliveryAt(100, 100, "dhl", 1000, Delivery.ParcelType.B2C))));
 
+        // Seed 1L was replaced with 2L (fix round 1): with a single dhl-only district and seed 1L,
+        // the correct per-provider draw (bias sigma 2.5, base 94%) and the buildCore-shaped regression
+        // (bias sigma 5.0, base 90% via DELIVERY_RATES.getOrDefault("bez0", 90.0)) both land at ~97.9%
+        // effective rate and coincidentally both miss exactly 19 parcels - the fixture could not
+        // discriminate the bug it exists to catch. Seed 2L was chosen by running both implementations
+        // side by side (not guessed): correct=53, regressed=87, a 34-parcel gap far outside sampling
+        // noise for n=1000.
         Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
-                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+                vanTypes(), 2, 15, new Random(2L), 27000.0, 75600.0, 27000.0, 75600.0);
 
-        // 1000 dhl parcels at 94% + Random(1L)'s daily bias (~+3.9, clamped at MAX_EFFECTIVE_RATE
-        // 98%) deterministically misses 19 with this seed and draw order. Verified by replaying the
-        // identical draw sequence against the 90% default fallback: same random calls, only the
-        // comparison threshold differs, gives 58 misses - so this band cleanly rejects the bug
-        // (falling through to the 90% default) while accepting the correct per-provider rate.
+        assertThat((int) c.getAttributes().getAttribute("numberOfParcels"))
+                .as("numberOfParcels must be the plain sum of the pooled stop's parcels (1000 dhl)")
+                .isEqualTo(1000);
         int missed = (int) c.getAttributes().getAttribute("missedParcels");
-        assertThat(missed).isGreaterThan(5).isLessThan(40);
+        assertThat(missed)
+                .as("missedParcels must reflect dhl's own 94% rate + Random(2L)'s daily bias, "
+                        + "not the buildCore-shaped regression (one carrier-level bias off districtId, "
+                        + "90% default) which gives 87 with this same seed")
+                .isEqualTo(53);
     }
 
     @Test
@@ -304,8 +323,16 @@ class LmdCarrierBuilderTest {
         Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
                 vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
 
-        // B2B is ~99% reliable, so well under 40 of 1000 parcels should be missed.
+        assertThat((int) c.getAttributes().getAttribute("numberOfParcels"))
+                .as("numberOfParcels must be the plain sum of the pooled stop's parcels (1000 dpd)")
+                .isEqualTo(1000);
+        // B2B_DELIVERY_RATE (99%) is a fixed constant applied regardless of provider or districtId, so
+        // this quantity cannot distinguish the per-provider-rate regression covered by the two tests
+        // above (both the correct and the buildCore-shaped regression apply the same 99% here) - it
+        // pins the separate B2B-override contract instead. Still exact, not a band, since deterministic.
         int missed = (int) c.getAttributes().getAttribute("missedParcels");
-        assertThat(missed).isLessThan(40);
+        assertThat(missed)
+                .as("B2B is ~99% reliable regardless of provider; with Random(1L) exactly 11 of 1000 miss")
+                .isEqualTo(11);
     }
 }
