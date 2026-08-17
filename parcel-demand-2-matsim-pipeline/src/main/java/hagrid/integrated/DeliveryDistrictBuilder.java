@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * Turns provider-separated deliveries into district-based delivery units for the INTEGRATED
- * scenarios (1c/1d). Two levels, in this order:
+ * scenarios (1c/1d). Three levels, in this order:
  *
  * <ol>
  *   <li><b>Pool</b> every delivery at the same segment coordinate into ONE {@link PooledStop} —
@@ -22,9 +22,11 @@ import java.util.Map;
  *   <li><b>Catchment</b>: each stop goes to its nearest OPEN depot. This ordering is what
  *       guarantees the depot is the nearest loading point for every stop it serves — assigning
  *       depots to freely-clustered districts does not.</li>
+ *   <li><b>Split</b> oversized catchments at the job ceiling: if a depot's demand exceeds
+ *       maxJobsPerDistrict, it is partitioned deterministically into sub-districts using a
+ *       median-strip split along the longer bounding-box axis. Each sub-district gets a suffixed
+ *       id (e.g., west#0, west#1) and the same parent depot.</li>
  * </ol>
- *
- * <p>Level 2 (splitting an oversized catchment) is added in the next task.
  *
  * <p>The Baseline keeps one depot per provider and does NOT use this class
  * (spec 2026-08-17 D2).
