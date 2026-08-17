@@ -74,7 +74,17 @@ public final class DeliveryDistrictBuilder {
                 LOG.info("depot {} has no demand in its catchment - no district built", depot.id());
                 continue;
             }
-            districts.add(new District(depot.id(), depot, List.copyOf(stops)));
+            int parts = (int) Math.ceil(stops.size() / (double) maxJobsPerDistrict);
+            if (parts <= 1) {
+                districts.add(new District(depot.id(), depot, List.copyOf(stops)));
+            } else {
+                List<List<PooledStop>> chunks = splitEvenly(stops, parts);
+                for (int i = 0; i < chunks.size(); i++) {
+                    districts.add(new District(depot.id() + "#" + i, depot, List.copyOf(chunks.get(i))));
+                }
+                LOG.info("catchment {} has {} stops > ceiling {} -> split into {} districts",
+                        depot.id(), stops.size(), maxJobsPerDistrict, chunks.size());
+            }
         }
         LOG.info("DeliveryDistrictBuilder: {} deliveries -> {} pooled stops in {} district(s)",
                 deliveries.size(), bySegment.size(), districts.size());
@@ -84,6 +94,39 @@ public final class DeliveryDistrictBuilder {
     /** Segments are identified by their exact coordinate (PANDA emits one point per segment). */
     private static String segmentKey(Coord c) {
         return c.getX() + "|" + c.getY();
+    }
+
+    /**
+     * Deterministic compact split: sort along the wider bounding-box axis, then cut into {@code parts}
+     * contiguous blocks of near-equal size. Chosen over {@code SameSizeKMeans} because level 2 only
+     * needs a reproducible equal-size cut and the ELKI path is seeded randomly (see plan Task 3).
+     */
+    private static List<List<PooledStop>> splitEvenly(List<PooledStop> stops, int parts) {
+        double minX = stops.stream().mapToDouble(s -> s.coord().getX()).min().orElseThrow();
+        double maxX = stops.stream().mapToDouble(s -> s.coord().getX()).max().orElseThrow();
+        double minY = stops.stream().mapToDouble(s -> s.coord().getY()).min().orElseThrow();
+        double maxY = stops.stream().mapToDouble(s -> s.coord().getY()).max().orElseThrow();
+        boolean byX = (maxX - minX) >= (maxY - minY);
+
+        List<PooledStop> sorted = new ArrayList<>(stops);
+        // Tie-break on the other axis so the order is total and reproducible.
+        sorted.sort(byX
+                ? java.util.Comparator.comparingDouble((PooledStop s) -> s.coord().getX())
+                        .thenComparingDouble(s -> s.coord().getY())
+                : java.util.Comparator.comparingDouble((PooledStop s) -> s.coord().getY())
+                        .thenComparingDouble(s -> s.coord().getX()));
+
+        List<List<PooledStop>> chunks = new ArrayList<>();
+        int n = sorted.size();
+        int base = n / parts;
+        int remainder = n % parts;
+        int from = 0;
+        for (int i = 0; i < parts; i++) {
+            int size = base + (i < remainder ? 1 : 0);
+            chunks.add(new ArrayList<>(sorted.subList(from, from + size)));
+            from += size;
+        }
+        return chunks;
     }
 
     /**
