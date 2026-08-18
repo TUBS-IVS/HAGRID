@@ -1,5 +1,7 @@
 package hagrid.integrated.shareduse;
 
+import hagrid.integrated.DeliveryDistrictBuilder;
+import hagrid.integrated.DepotNetwork;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Delivery.ParcelType;
 import org.junit.jupiter.api.Test;
@@ -14,12 +16,28 @@ import org.matsim.core.config.ConfigUtils;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Task 6 (spec 2026-08-17 D2/D7/D8/D9): {@code ParcelAgentGenerator.generate} now consumes
+ * {@link DeliveryDistrictBuilder.District}/{@code PooledStop} instead of a raw
+ * {@code Map<String, List<Delivery>>} + a provider-&gt;depot map. Every test in this class was
+ * migrated to build districts first (the old overload is deleted, not kept).
+ *
+ * <p>Three tests that existed before this task are GONE rather than migrated, because the
+ * behaviour they proved (M4(b): each parcel physically originates at ITS OWN provider's tagged
+ * depot, with a nearest-depot fallback for an untagged provider, case/whitespace-normalized) was
+ * deleted in this task's {@code generate} rewrite, not merely relocated:
+ * {@code assignsEachParcelToItsProviderDepotEvenWhenAnotherIsNearer},
+ * {@code fallsBackToNearestDepotForUnknownProvider}, {@code normalizesProviderNameWhenResolvingDepot}.
+ * Provider identity plays no role in depot assignment any more — every pooled stop already
+ * carries its district's depot by the time {@code generate} sees it (assigned upstream by
+ * {@link DeliveryDistrictBuilder}, which is covered by its own test class) — so there is nothing
+ * left in {@code ParcelAgentGenerator} for those three tests to discriminate.</p>
+ */
 class ParcelAgentGeneratorTest {
 
     private static Geometry square(double size) {
@@ -32,18 +50,21 @@ class ParcelAgentGeneratorTest {
                 new org.locationtech.jts.geom.Coordinate(0, 0)});
     }
 
+    private static Delivery deliveryAt(double x, double y, String provider, int amount) {
+        return Delivery.builder().id(provider + "_" + x + "_" + y).coordinate(new Coord(x, y))
+                .provider(provider).amount(amount).parcelType(ParcelType.B2C).build();
+    }
+
     @Test
     void generatesOnePersonPerInAreaDeliveryWithLoadDwellAndPlan() {
         Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
         Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
-                        .provider("dhl").amount(3).parcelType(ParcelType.B2C).build(),
-                Delivery.builder().id("s2").coordinate(new Coord(9_999_999, 0))   // outside
-                        .provider("dhl").amount(2).parcelType(ParcelType.B2B).build()));
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 3),
+                        deliveryAt(9_999_999, 0, "dhl", 2)),   // outside the service area
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
 
-        var result = ParcelAgentGenerator.generate(demand, square(2000), net,
-                Map.of("dhl", new Coord(500, 500)), pop, 4711L);
+        var result = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
 
         assertEquals(1, result.personsAdded());
         assertEquals(3, result.parcels());
@@ -79,17 +100,16 @@ class ParcelAgentGeneratorTest {
 
     @Test
     void splitsOversizedSegmentIntoSubPersonsEachWithinCapacity() {
-        // M2 (segment-split): a segment of 45 parcels exceeds SharedUse.PARCEL_SLOTS (20) and would
+        // M2 (segment-split): a stop of 45 parcels exceeds SharedUse.PARCEL_SLOTS (20) and would
         // be undeliverable-by-construction as a single 2D load; it must be split into sub-persons
-        // that each fit, all visiting the same physical depot/segment point.
+        // that each fit, all visiting the same physical depot/stop point.
         Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
         Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
-                        .provider("dhl").amount(45).parcelType(ParcelType.B2C).build()));
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 45)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
 
-        var result = ParcelAgentGenerator.generate(demand, square(2000), net,
-                Map.of("dhl", new Coord(500, 500)), pop, 4711L);
+        var result = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
 
         assertEquals(3, result.personsAdded());
         assertEquals(45, result.parcels());
@@ -120,7 +140,7 @@ class ParcelAgentGeneratorTest {
                             (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE)),
                     (double) (Double) p.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE), 1e-9);
         }
-        // all sub-persons of one segment share the same depot link and the same delivery link
+        // all sub-persons of one stop share the same depot link and the same delivery link
         assertEquals(1, persons.stream()
                 .map(p -> ((Activity) p.getSelectedPlan().getPlanElements().get(0)).getLinkId()).distinct().count());
         assertEquals(1, persons.stream()
@@ -131,12 +151,11 @@ class ParcelAgentGeneratorTest {
     void doesNotSplitSegmentAtExactlyCapacity() {
         Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
         Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
-                        .provider("dhl").amount(SharedUse.PARCEL_SLOTS).parcelType(ParcelType.B2C).build()));
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", SharedUse.PARCEL_SLOTS)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
 
-        var result = ParcelAgentGenerator.generate(demand, square(2000), net,
-                Map.of("dhl", new Coord(500, 500)), pop, 4711L);
+        var result = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
 
         assertEquals(1, result.personsAdded());
         assertEquals(SharedUse.PARCEL_SLOTS, result.parcels());
@@ -146,92 +165,90 @@ class ParcelAgentGeneratorTest {
         assertTrue(p.getId().toString().startsWith(SharedUse.PARCEL_PERSON_PREFIX));
     }
 
-    /**
-     * M4(b) discriminating case: each parcel must originate at ITS provider's tagged depot,
-     * even when the OTHER provider's depot is geometrically nearer. The dhl segment at
-     * (900,900) is right next to the hermes depot (1000,1000) and far from the dhl depot
-     * (100,100) — nearest-depot assignment (pre-M4(b)) would cross-dock it at hermes.
-     */
-    @Test
-    void assignsEachParcelToItsProviderDepotEvenWhenAnotherIsNearer() {
-        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
-        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        Map<String, List<Delivery>> demand = Map.of(
-                "dhl", List.of(Delivery.builder().id("s1").coordinate(new Coord(900, 900))
-                        .provider("dhl").amount(2).parcelType(ParcelType.B2C).build()),
-                "hermes", List.of(Delivery.builder().id("s2").coordinate(new Coord(200, 200))
-                        .provider("hermes").amount(1).parcelType(ParcelType.B2C).build()));
-        Map<String, Coord> depots = Map.of(
-                "dhl", new Coord(100, 100),
-                "hermes", new Coord(1000, 1000));
-
-        var result = ParcelAgentGenerator.generate(demand, square(2000), net, depots, pop, 4711L);
-
-        assertEquals(2, result.personsAdded());
-        for (Person p : pop.getPersons().values()) {
-            String provider = (String) p.getAttributes().getAttribute("provider");
-            Activity depot = (Activity) p.getSelectedPlan().getPlanElements().get(0);
-            assertEquals(depots.get(provider), depot.getCoord(),
-                    "parcel of " + provider + " must originate at its provider depot");
-        }
-    }
-
-    /** M4(b) fallback: a provider without a tagged depot gets the nearest depot (plus a WARN). */
-    @Test
-    void fallsBackToNearestDepotForUnknownProvider() {
-        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
-        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        // delivery (800,800) vs depots: dhl (500,500) is nearest (~424 m), hermes (100,100)
-        // is far (~989 m) - the (500,500)/(800,800) pair is proven same-link-collision-free
-        // (see generatesOnePersonPerInAreaDeliveryWithLoadDwellAndPlan).
-        Map<String, List<Delivery>> demand = Map.of("ups", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
-                        .provider("ups").amount(1).parcelType(ParcelType.B2C).build()));
-        Map<String, Coord> depots = Map.of(
-                "dhl", new Coord(500, 500),
-                "hermes", new Coord(100, 100));
-
-        var result = ParcelAgentGenerator.generate(demand, square(2000), net, depots, pop, 4711L);
-
-        assertEquals(1, result.personsAdded());
-        Person p = pop.getPersons().values().iterator().next();
-        Activity depot = (Activity) p.getSelectedPlan().getPlanElements().get(0);
-        assertEquals(new Coord(500, 500), depot.getCoord(),
-                "unknown provider must fall back to the nearest depot");
-    }
-
-    /** M4(b): provider names are matched case/whitespace-insensitively (LmdDepotLoader idiom). */
-    @Test
-    void normalizesProviderNameWhenResolvingDepot() {
-        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
-        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        Map<String, List<Delivery>> demand = Map.of("DHL", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(900, 900))
-                        .provider(" DHL ").amount(1).parcelType(ParcelType.B2C).build()));
-        Map<String, Coord> depots = Map.of(
-                "dhl", new Coord(100, 100),
-                "hermes", new Coord(1000, 1000));
-
-        ParcelAgentGenerator.generate(demand, square(2000), net, depots, pop, 4711L);
-
-        Person p = pop.getPersons().values().iterator().next();
-        Activity depot = (Activity) p.getSelectedPlan().getPlanElements().get(0);
-        assertEquals(new Coord(100, 100), depot.getCoord(),
-                "' DHL ' must resolve to the 'dhl' depot, not fall back to nearest (hermes)");
-    }
-
     @Test
     void deterministicForFixedSeed() {
         Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
-        Map<String, List<Delivery>> demand = Map.of("dhl", List.of(
-                Delivery.builder().id("s1").coordinate(new Coord(800, 800))
-                        .provider("dhl").amount(1).parcelType(ParcelType.B2C).build()));
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 1)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
         Population p1 = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
         Population p2 = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
-        ParcelAgentGenerator.generate(demand, square(2000), net, Map.of("dhl", new Coord(500, 500)), p1, 4711L);
-        ParcelAgentGenerator.generate(demand, square(2000), net, Map.of("dhl", new Coord(500, 500)), p2, 4711L);
+        ParcelAgentGenerator.generate(districts, square(2000), net, p1, 4711L);
+        ParcelAgentGenerator.generate(districts, square(2000), net, p2, 4711L);
         Activity a1 = (Activity) p1.getPersons().values().iterator().next().getSelectedPlan().getPlanElements().get(0);
         Activity a2 = (Activity) p2.getPersons().values().iterator().next().getSelectedPlan().getPlanElements().get(0);
         assertEquals(a1.getEndTime().seconds(), a2.getEndTime().seconds(), 1e-9);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // New district-pooling behaviour (Task 6, spec 2026-08-17 D2/D7/D8/D9).
+    // -------------------------------------------------------------------------------------
+
+    @Test
+    void oneParcelPersonPerPooledStopNotPerProvider() {
+        // Same segment, three providers -> today 3 persons; after pooling 1 person with 6 parcels.
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 3),
+                        deliveryAt(800, 800, "hermes", 2),
+                        deliveryAt(800, 800, "gls", 1)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(1, r.personsAdded());
+        assertEquals(6, r.parcels());
+        Person p = pop.getPersons().values().iterator().next();
+        assertTrue(p.getId().toString().startsWith(SharedUse.PARCEL_PERSON_PREFIX),
+                "the parcel_ prefix contract must survive pooling");
+        assertEquals(6, (int) (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE));
+        assertEquals(SharedUse.segmentDwellSeconds(6),
+                (double) (Double) p.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE), 1e-9);
+    }
+
+    @Test
+    void stopOriginIsTheDistrictDepotNotTheProviderDepot() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "gls", 1)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        Person p = pop.getPersons().values().iterator().next();
+        Activity depot = (Activity) p.getSelectedPlan().getPlanElements().get(0);
+        assertEquals(SharedUse.ACT_DEPOT, depot.getType());
+        assertEquals(new Coord(500, 500), depot.getCoord(),
+                "a gls parcel must now start at the hoy_sued district depot");
+    }
+
+    @Test
+    void oversizedStopsStillSplitIntoParcelSlotChunks() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 45)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(3, r.personsAdded(), "45 parcels at 20 slots -> 20 + 20 + 5");
+        assertEquals(45, r.parcels());
+    }
+
+    @Test
+    void stopsOutsideTheServiceAreaAreStillClipped() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 3), deliveryAt(9_999_999, 0, "dhl", 2)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(1, r.personsAdded());
+        assertEquals(1, r.clippedOutside());
     }
 }

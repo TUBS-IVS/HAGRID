@@ -269,8 +269,12 @@ public final class LausitzFreightPreprocessor {
         return clipToArea(byProvider, area);
     }
 
-    /** Geometry-level clip (no file I/O) — see {@link #clipToServiceArea(Map, String)}. */
-    static Map<String, List<Delivery>> clipToArea(Map<String, List<Delivery>> byProvider, Geometry area) {
+    /**
+     * Geometry-level clip (no file I/O) — see {@link #clipToServiceArea(Map, String)}. Public so
+     * both INTEGRATED arms (1c {@code ParcelAgentGenerator}/{@code LausitzDrtPreprocessor} and 1d
+     * {@code runModular}) clip identically before districting (spec 2026-08-17 D9).
+     */
+    public static Map<String, List<Delivery>> clipToArea(Map<String, List<Delivery>> byProvider, Geometry area) {
         Map<String, List<Delivery>> clipped = new LinkedHashMap<>();
         int before = 0;
         int after = 0;
