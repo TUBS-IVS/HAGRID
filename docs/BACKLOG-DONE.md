@@ -7,7 +7,69 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-08-11._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-08-17._
+
+---
+
+## 2026-08-17
+
+- **1d-Kostenkampagne gefahren und ausgewertet — drei Hebel, sechs Läufe, alle Exit-Codes geprüft.**
+  Dev-PC, `maxIter=150`, `jspritIter=100`. Neue REGRET-Baseline `b120rg` (87.046,09 €/Tag, 9.076
+  Fahrten) plus `f150t010`/`f150t015` (θ), `f140t015`/`f130t015` (Flotte), `f150d25`/`f150d45`
+  (Tourdauer); `f150d40` und `f150d70` liefen am 2026-08-17 nach. **Gewinner-θ = 0,15**, bester
+  zulässiger Punkt `f150t015` mit +7,5 % gegen die Baseline. Zulässigkeit automatisiert in
+  `devlog/decide_theta.py` (Pakete ≥ 99,9 % **und** Fahrten ≥ 99 % Baseline), damit die
+  Wochenendkette nicht auf eine menschliche Entscheidung um 04:00 wartet. Ketten:
+  `run_weekend_chain.bat`, `run_tourdur_chain.bat`, `run_dur40.bat`, `run_dur70_chain.bat` (alle
+  mit `if errorlevel 1 goto :FAILED` statt `||`, Erfolgserkennung über `analysis/kpis_long.csv`
+  statt Exit-Code — Begründung siehe BACKLOG `[M]` `writeDashboard`). Ergebnisse, Mechanismus,
+  Bilanz und der Seed-Band-Vorbehalt → [METHODS-LOG](METHODS-LOG.md) §2.36–§2.38.
+  ⚠️ **Betriebswissen aus dieser Kampagne, zweimal reingelaufen:** der `DrtInputsFingerprint`-Guard
+  bricht jeden Lauf nach ~1 s ab, dessen Flottenparameter von den vorbereiteten Inputs abweichen
+  (`prepared=8 but run wants=10`, genauso bei jeder neuen `fleetSize`) → **vor jedem
+  Parameterwechsel zwingend `PrepareLausitzDrtInputs`** als eigener Schritt davor. Deshalb hat jede
+  Kette dieser Session einen Prepare-Schritt je Lauf. Nebenbei damit erledigt: die
+  10-Sitze-Re-Baseline ist live (`drt_vehicle_capacity=10` in `b120rg` **und** `f150t015`
+  verifiziert); alte married-Runs (married120/250) fahren weiterhin cap=8.
+
+- **Log-Selbstblockade umgangen (Workaround, nicht der Fix)** — `devlog/log4j2_dev.xml` pinnt das
+  Logverzeichnis auf `hagrid-output/logs` außerhalb des Laufverzeichnisses, aktiviert über
+  `-Dlog4j2.configurationFile=devlog/log4j2_dev.xml` in `vmargs_dev.txt` (separat von `vmargs.txt`,
+  das die Hannover-Sweep-Konfiguration mit `-Xmx124g` trägt und unberührt bleibt). ✅ Nachweis:
+  alle sechs Kampagnenläufe kamen damit durch, nachdem ein `DRT_MODULAR`-Lauf zuvor nach 19 min
+  daran gestorben war. **Ursache lokalisiert:** `SimulationRunnerUtils.initLogging()` legt
+  `hagrid.log.dir` korrekt außerhalb ab (`:64-72`) und `runSimulation` biegt es 220 Zeilen später
+  wieder hinein (`:286-288`), wo es mit `LausitzDrtConfigurator`s `deleteDirectoryIfExists`
+  (`:143`) kollidiert. Der echte Fix (zweite Zuweisung entfernen/gaten) bleibt offen → BACKLOG.
+  ⚠️ Der Pfad im `@argfile` muss **relativ** bleiben: ein absoluter Pfad mit Leerzeichen wird von
+  javas Argfile-Parser gesplittet und als Main-Klasse gelesen (Lauf 3 starb daran nach 0,5 s).
+
+- **BACKLOG-Durchsicht: 30 `file:line`-Referenzen gegen den Code geprüft, 20 waren verschoben.**
+  Zwei zeigten auf Zeilen, die inzwischen etwas anderes enthalten — `LausitzFreightPreprocessor:163`
+  war als `DrtNetworkPreparer`-Kommentar zitiert und ist heute die `MAXROUTEDURATION`-Zeile,
+  `SimulationRunnerUtils:238` lag 49 Zeilen neben dem gemeinten Exception-Swallow. Alle korrigiert;
+  außerdem waren beide relativen Links im Dokument kaputt (`parcel-demand-…` statt
+  `../parcel-demand-…` aus `docs/` heraus). Ein Strukturschaden repariert: der Kopftext des
+  1d-Abschnitts samt Plan/Design/Spike-Links hing als Fließtext hinter einer Bullet-Liste, weil
+  ein später eingefügter Punkt ihn abgeschnitten hatte.
+
+- **`writeDashboard=true` gegen 1c/1d abgesichert — der Lügen-Exit-Code ist weg.** ✅ im
+  Arbeitsbaum (`SimulationRunnerUtils.generateDashboard` + neuer `GenerateDashboardGuardTest`,
+  hermetisch, noch nicht committet). Der Legacy-Dashboardpfad liest `output_carriers.xml.gz`, das
+  1c/1d nie schreiben; er warf danach aus `HAGRIDSimulationRunner.main`, **nachdem** Simulation,
+  KPIs und v2-Dashboard fertig waren — jeder 1c/1d-Lauf meldete Fehlschlag. ⚠️ **Der Guard ist
+  bewusst zweiteilig** (`cfg.isDrtScenario() && !runsCarrierModules(...)`): allein auf
+  `runsCarrierModules` zu gaten hätte auch `LMD_BASELINE` und den Hannover-`BASECASE`
+  übersprungen, weil `isDrtWithFreight()` dort false ist — und genau aus deren `SUMMARY`-Blob
+  liest der Hannover-Sweep. Die einzeilige Fassung, die im BACKLOG als Fix vorgeschlagen war,
+  wäre also falsch gewesen; der Punkt ist damit erledigt und aus BACKLOG entfernt.
+
+- **BACKLOG auf Roadmap-Höhe zurückgeschnitten (User-Anstoß 2026-08-17)** — 838 → 495 Zeilen. Das
+  Dokument hatte seine eigene Abgrenzungsregel verletzt: 35 Bullets mit ≥8 Zeilen machten 59 % der
+  Datei, ein großer Teil davon Findings-Narrative. Erledigte Punkte entfernt (sie haben ihren
+  Nachweis hier), Befundtexte nach [METHODS-LOG](METHODS-LOG.md) verschoben bzw. gestrichen, wo sie
+  dort schon standen (§2.2, §2.33 Punkt 5, §2.34). Neu hierher gewandert ist die beschlossene
+  Hannover-Korrekturregel → METHODS-LOG §2.33.
 
 ---
 
