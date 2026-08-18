@@ -212,7 +212,7 @@ class HAGRIDSimulationConfigTest {
      * {@link #drtConfig(int)}).</p>
      */
     @Test
-    @DisplayName("openDepotsDefaultsToAllAndMaxJobsToThreeHundred — shorter constructors default district keys")
+    @DisplayName("openDepotsDefaultsToAllAndMaxJobsToThreeHundred - shorter constructors default district keys")
     void openDepotsDefaultsToAllAndMaxJobsToThreeHundred() {
         HAGRIDSimulationConfig cfg = drtConfig(50);
         assertThat(cfg.getOpenDepots()).isEmpty();
@@ -224,7 +224,7 @@ class HAGRIDSimulationConfigTest {
      * existing {@code maxTourDurationSeconds &lt;= 0} check.
      */
     @Test
-    @DisplayName("maxJobsPerDistrictMustBePositive — fullest constructor rejects maxJobsPerDistrict <= 0")
+    @DisplayName("maxJobsPerDistrictMustBePositive - fullest constructor rejects maxJobsPerDistrict <= 0")
     void maxJobsPerDistrictMustBePositive() {
         assertThatThrownBy(() -> new HAGRIDSimulationConfig(
                 "DRT_MODULAR", LocalDate.of(2025, 5, 13), 1, 1,
