@@ -2386,6 +2386,169 @@ sie hier bewertet werden), §2.5 (Zustellquote/Overlay).
 
 ---
 
+### 2.39 Der 15-Minuten-Stopp-Deckel bindet nach dem Pooling weit öfter — 59 h geschenkte Standzeit, poolinvariant
+
+`trägt` · 2026-08-18 · **Nebenwirkung der bezirksscharfen Depotzuordnung (Task 2), gemessen auf dem geclippten Bestand.**
+
+Pooling fasst alle Provider an einem Zustellsegment zu einem Stopp zusammen
+(`DeliveryDistrictBuilder.PooledStop`) — damit steigt die Paketzahl je Stopp, und der Deckel
+`min(2 min × Pakete, 15 min)` (`DURATION_PER_PARCEL_MIN = 2`, `MAX_DURATION_PER_STOP_MIN = 15`,
+[LausitzFreightPreprocessor.java:63-64](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java#L63))
+bindet ab 7,5 Paketen je Segment weit häufiger als vorher.
+
+**Gemessen:** 29 % der Segmente (68 % der Pakete) überschreiten die 7,5-Paket-Schwelle, das
+größte Segment trägt 81 Pakete. Die gesamte Standzeit fällt dadurch von 188,7 h auf 129,4 h —
+**poolinvariant**: ungedeckelt wären es 201,7 h in BEIDEN Welten (gepoolt und ungepoolt), der
+Unterschied entsteht ausschließlich durch den Deckel, nicht durch das Pooling-Konzept selbst.
+
+Die integrierten Arme (1c/1d) erhalten dadurch **59 h** Standzeit-Ersparnis, die aus der Formel
+kommt, nicht aus dem Integrationskonzept. Konsequenz für die Formulierung: eine Kosten- oder
+Zeitersparnis, die aus dieser Standzeit-Differenz abgeleitet wird, darf dem Integrationskonzept
+nicht ohne diesen Vorbehalt zugeschrieben werden.
+
+**Akzeptiert** zur Konsistenz mit vorherigen Läufen — die Global Constraints des Plans
+(`docs/superpowers/plans/2026-08-17-integrated-district-depot-assignment.md`) untersagen
+ausdrücklich, den Deckel zu „reparieren"; seine Verzerrung ist eine dokumentierte, keine
+verschwiegene Limitation.
+
+---
+
+### 2.40 Der Headline-Vergleich ist konfundiert: providergetrennte Baseline gegen konsolidierte integrierte Arme
+
+`trägt` · 2026-08-18 · **Deckt sich mit dem bereits in §2.36 notierten Vorbehalt, hier als
+eigenständiger, allgemeiner Punkt.**
+
+Die Baseline bleibt bewusst providergebunden (ein Depot je LSP, `LmdDepotLoader`), während die
+integrierten Arme (1c/1d) mit der bezirksscharfen Depotzuordnung (Task 2-7) alle Provider an
+einem Segment zu einem Stopp und einem Bezirk konsolidieren. Jede Differenz zwischen Baseline und
+integrierten Armen enthält daher **zwei Effekte gleichzeitig**: Konsolidierung (weniger Stopps,
+weniger Depots, gemeinsame Touren) UND Integration (Pax-Fracht-Teilung). Die beiden sind mit dem
+aktuellen Versuchsaufbau nicht trennbar.
+
+**Was das nicht ist:** kein neuer Befund — die Konfundierung liegt in der Architektur selbst
+(Baseline bewusst unverändert, spec 2026-08-17 §2 „Baseline is out of scope"), nicht in einem
+Messfehler.
+
+**Der Ausweg** ist bereits geplant, aber nicht Teil dieser Arbeit: eine „konsolidierte-Operator"-
+Baseline-Variante (Bezirke, eigene Vans, aber keine Pax-Fracht-Integration) würde Konsolidierung
+und Integration entkoppeln. Bis dahin ist jede Zahl, die „1c/1d spart X gegen die Baseline"
+behauptet, als **Konsolidierung + Integration gemeinsam** zu lesen, nicht als reiner
+Integrationseffekt.
+
+Verwandt: §2.36 (Vorbehaltsbox, die dieselbe Tatsache für die Tourdauer-Sweeps notiert), §1.1
+(Architekturentscheidung, Baseline providergebunden).
+
+---
+
+### 2.41 Alle bisherigen 1c/1d-Plausibilitäts- und Kalibrierläufe sind durch die Depotumstellung hinfällig
+
+`trägt` · Nutzerentscheidung 2026-08-17, nachgetragen 2026-08-18 · **Betrifft JEDEN Lauf vor der
+bezirksscharfen Depotzuordnung, nicht nur die in §2.36 genannten.**
+
+Am 2026-08-17 wurde beschlossen, die providergebundene Depotzuordnung in 1c/1d durch eine
+bezirksscharfe zu ersetzen
+(`docs/superpowers/specs/2026-08-17-integrated-district-depot-assignment-design.md`). Ausdrückliche
+Konsequenz: **jeder 1c- und 1d-Lauf, der vor dieser Umstellung entstand, gilt als überholt.**
+
+**Was das konkret trifft:**
+- **Alle χ-Aussagen für 1c** — jeder χ-Schwellenwert, jede χ-Sweep-Kurve, jede Aussage über die
+  Segmentzuordnung (§2.3, §2.31, §1.2) wurde gegen die alte, providergebundene Depotlage
+  kalibriert. Die Umstellung verschiebt die Ø Depotdistanz je Paket massiv (6,63 km → 1,92 km bei
+  sieben offenen Depots, s. §2.36-Vorbehaltsbox) — jede χ-Schranke, die auf dem alten Umweg
+  beruht, ist neu zu ziehen.
+- **Alle Tourdauer-/Flottengrößen-Sweeps aus §2.34-§2.38**, s. dortige Vorbehaltsbox.
+
+**Was NICHT betroffen ist:** der θ-Wertebereich [0,1-0,3] für 1d (Dispatch-Gate-Schwelle) ist eine
+Aussage über das Dispatch-Verhalten bei gegebener Nachfrage am Fahrzeug, nicht über die Depotlage
+— er bleibt gültig.
+
+**Warum das hier steht statt nur in §2.36:** §2.36s Vorbehaltsbox ist auf die drei
+Tourdauer-/Flottensweep-Abschnitte (§2.36-§2.38) verengt. Diese Eintragung macht den
+Geltungsbereich vollständig: er umfasst jede 1c/1d-Zahl im gesamten Dokument, die vor 2026-08-17
+gemessen wurde, ohne Ausnahme außer der genannten θ-Bandbreite.
+
+---
+
+### 2.42 Inbound-Sortierung ist nicht modelliert — nächstgelegene Depotzuordnung setzt bezirksscharfe Vorsortierung voraus
+
+`trägt` · 2026-08-18 · **Neue, bisher unbenannte Modellannahme der bezirksscharfen
+Depotzuordnung.**
+
+Kein Modellbaustein transportiert ein Paket zu SEINEM Bezirksdepot. Die Zuordnung
+„nächstgelegener offener Yard" (`DeliveryDistrictBuilder`) setzt still voraus, dass der Vorlauf
+(Line-Haul) das Paket bereits dorthin liefert — also eine bezirksscharfe Vorsortierung, die VOR
+der letzten Meile stattfindet.
+
+Für einen einzelnen Betreiber im Hub-and-Spoke-Modell ist das plausibel (ein Betreiber kann seine
+eigene Sortierung frei auf Bezirke ausrichten). Es ist aber eine **neue** Annahme — sie kostet in
+der Realität Sortierinfrastruktur und -zeit, die im Modell nicht bepreist ist —, und die Baseline
+bekommt sie nicht (dort bleibt jedes Paket am Depot des eigenen Providers).
+
+`lmd-depots-regional-reference.csv` hält die Line-Haul-Variante (regionale statt Bezirksdepots)
+für eine spätere Untersuchung vor, in der sich die Vorsortierungsannahme explizit modellieren oder
+vermeiden ließe.
+
+---
+
+### 2.43 Ein Abholort je Paket, kein Bestands-Pooling — die gemessene Verbesserung ist eine Untergrenze
+
+`trägt` · 2026-08-18 · **Strukturelle Grenze der Preprocessing-Zuordnung, nicht behebbar ohne
+DVRP-Erweiterung.**
+
+Die Depotzuordnung ist im Preprocessing fixiert (`DeliveryDistrictBuilder.build`), und eine
+DVRP-Anfrage hat genau EINEN Ursprung (`CarrierService`/Parcel-Person-Origin-Activity). Kein
+Fahrzeug kann ein Paket an einem ANDEREN Yard abholen, selbst wenn dort tatsächlich Bestand läge —
+Bestands-Pooling über mehrere Depots ist architektonisch ausgeschlossen, nicht nur ungenutzt.
+
+**Konsequenz:** die gemessene Verbesserung durch bezirksscharfe Depotzuordnung ist eine
+**Untergrenze**. Echtes Bestands-Pooling (ein Fahrzeug darf am nächstgelegenen Yard abholen,
+unabhängig von der Preprocessing-Zuordnung) würde mindestens so gut abschneiden, vermutlich
+besser. Die Einschränkung kostet am meisten bei sieben offenen Depots (viele mögliche
+Fehlzuordnungen) und nichts bei einem einzigen (dort gibt es ohnehin nur einen Yard).
+
+---
+
+### 2.44 Unter nächstgelegener Zuordnung ist die Sieben-Depot-Stufe faktisch eine Fünf-Depot-Stufe
+
+`trägt` · 2026-08-18 · **Gemessen auf dem geclippten Bestand, nicht simuliert.**
+
+Bei „alle sieben Depots offen" und Zuordnung nach kürzester Distanz tragen zwei der sieben Yards
+fast nichts: `spreetal` (89 Pakete) und `elsterheide` (137 Pakete) zusammen **3,8 %** des
+Gesamtvolumens — Standorte, die in der Praxis niemand als eigenen Yard betreiben würde.
+
+**Balancierte Zuordnung würde das beheben, kostet aber +81 % Depotdistanz:** 1,92 km → 3,49 km je
+Paket im Mittel — nahe am Einzeldepot-Wert von 3,82 km. Balancierte Zuordnung ist damit für die
+Sieben-Depot-Stufe fast so teuer wie ein einziger zentraler Yard, bei nomineller
+Sieben-Depot-Infrastruktur.
+
+Bewusst nicht umgesetzt (Nutzerentscheidung 2026-08-17: „weglassen, aber spannend") — eine gleich
+große Bezirksaufteilung ist ein kapazitiertes Transportproblem, kein `argmin`, und die
+Headline-Zahl (+81 %) liegt bereits ohne Simulation vor (spec §10). Verwandt: §2.42
+(Inbound-Sortierung — dieselbe Nächstgelegen-Logik trägt beide Befunde).
+
+---
+
+### 2.45 Keine Swap-Kapazität am Hof — bei einem offenen Depot konzentriert sich jeder Wechsel auf einen Standort
+
+`trägt` · 2026-08-18 · **Verschärft §2.19 (dort: unbeschränkt an sieben Depots) für den
+Ein-Depot-Fall.**
+
+§2.19 hat bereits notiert, dass die Kapsel-Swap-Infrastruktur unbeschränkt modelliert ist —
+unbegrenzt parallele Swap-Plätze, keine Warteschlange. Unter der bezirksscharfen Depotzuordnung
+wird dieselbe Annahme an einem einzigen offenen Depot (z. B. `openDepots=hoy_sued`) schärfer:
+JEDER Kapselwechsel im gesamten Untersuchungsgebiet konzentriert sich auf einen physischen
+Standort. In einer Dispatch-Welle sind das überschlägig ein Dutzend gleichzeitige Wechsel — das
+Modell nimmt implizit ein Dutzend Swap-Bays an einem Hof an, ohne das je zu benennen.
+
+**Nicht beschränkt** — wird als Kennzahl je Depot ausgewiesen (Task 10: Peak gleichzeitiger Swaps
+je Depot, 15-min-Bins, s. §2.19), aber nicht als Kapazitätsgrenze durchgesetzt. Eine echte
+Kapazitätsgrenze würde Warteschlangen vor dem Hof erzeugen und wäre eine eigene
+Modellerweiterung.
+
+Verwandt: §2.19 (die ursprüngliche, breiter gefasste Limitation).
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**

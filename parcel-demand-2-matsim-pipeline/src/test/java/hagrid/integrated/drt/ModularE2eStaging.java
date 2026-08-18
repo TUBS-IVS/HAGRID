@@ -81,9 +81,21 @@ final class ModularE2eStaging {
      * from; callers that need multiple {@code Scenario}s (e.g. a byte-identity comparison across
      * two {@code Controler} runs) call {@code DrtScenarioBuilder.build} once per run against the
      * SAME returned file paths, so there is no staging step left that could itself introduce a
-     * difference between runs.
+     * difference between runs. Every depot stays open (spec 2026-08-17 default) — see the
+     * {@link #stage(Path, List)} overload for the district-based depot-selection guard (Task 8).
      */
     static ModularE2eStaging stage(Path dir) throws Exception {
+        return stage(dir, List.of());
+    }
+
+    /**
+     * Same staging recipe as {@link #stage(Path)}, but threading {@code openDepots} into
+     * {@link LausitzFreightPreprocessor#runModular} (Task 8, spec 2026-08-17) and, whenever the
+     * caller actually restricts to a subset, staging a SECOND depot ({@code hoy_sued}) in the
+     * depot CSV alongside the original {@code wittichenau} one. Without a second depot present,
+     * opening "only hoy_sued" would be vacuous — there would be nothing else to exclude.
+     */
+    static ModularE2eStaging stage(Path dir, List<String> openDepots) throws Exception {
         Files.createDirectories(dir);
 
         // ---- shared raw fixtures (identical to MarriedBaselineEndToEndTest) ----
@@ -95,7 +107,12 @@ final class ModularE2eStaging {
         Path shpFile = dir.resolve("service-area.shp");
         DrtE2eFixtures.writeSquareShapefile(shpFile, AREA_SIZE);
         Path depotCsv = dir.resolve("depots.csv");
-        Files.writeString(depotCsv, "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n");
+        // hoy_sued at (700,200) - distinct from wittichenau and from both demand points below -
+        // added only when openDepots actually restricts to a subset (see javadoc above).
+        String depotCsvBody = openDepots.isEmpty()
+                ? "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n"
+                : "provider;x;y;site\ndhl;500.0;500.0;wittichenau\ndhl;700.0;200.0;hoy_sued\n";
+        Files.writeString(depotCsv, depotCsvBody);
 
         // ---- freight side: van type (cost donor for the capsule) + tiny PANDA-like demand ----
         CarrierVehicleTypes types = new CarrierVehicleTypes();
@@ -118,7 +135,8 @@ final class ModularE2eStaging {
         Path carriersOut = dir.resolve("modular_carriers_routed.xml");
         LausitzFreightPreprocessor.runModular(demandShp.toString(), depotCsv.toString(),
                 rawNetFile.toString(), typesFile.toString(), carriersOut.toString(),
-                /*jspritIterations*/ 1, shpFile.toString(), Modular.DEFAULT_MAX_TOUR_DURATION_S);
+                /*jspritIterations*/ 1, shpFile.toString(), Modular.DEFAULT_MAX_TOUR_DURATION_S,
+                openDepots, /*maxJobsPerDistrict*/ 300);
         assertThat(carriersOut).exists();
 
         // ---- DRT side: production preprocessor (drt-tagged net, person plans, fleet) ----
