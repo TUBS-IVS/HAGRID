@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-11._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-17._
 
 ---
 
@@ -1871,6 +1871,32 @@ Abrechnung* sie nicht sichtbar machen könnte. Eine Kostenaussage über 1c/1d is
 Neubau der Kostenfunktion strukturell nicht möglich — unabhängig davon, dass beide Arme heute
 ohnehin **gar keine** Fracht-€-KPI exportieren (nur die Baseline hat ein `analysis/freight/`).
 
+**Beschlossene Korrekturregel für den Hannover-Sweep** (Entscheidungen 2026-08-11, hierher
+verschoben aus dem BACKLOG 2026-08-17, weil es Festlegungen sind und keine offene Arbeit):
+
+- **Regel = „Zwei-Term-Rekonstruktion"** — `F_Fzg + w × durH` statt der Tagespauschale,
+  niveauverankert über `F_Fzg + w × 7 h = 189,15 €`. Vorzug vor Pro-rata-Umlage, Schichtstaffel und
+  Fahrzeug-statt-Tour-Zählung (letztere ist auf diesen Daten wirkungslos: Fahrzeuge == Touren), weil
+  sie **strukturell identisch mit dem späteren echten Fix** ist — der Ad-hoc ist ein Prototyp, kein
+  Wegwerfcode. Zwei Defekte fallen gratis mit: `max(0, durH − 7) × w × Zuschlag` ersetzt die kaputte
+  5-€-Overtime-Pauschale, und der Lohnterm über `durH` **subsumiert** `costActivity` (nicht
+  zusätzlich draufrechnen — Doppelzählung). `costTimeWindowPenalty` bleibt draußen (5 €/s ist ein
+  Scoring-Gerät, kein Preis).
+- **Kalibrierung `F_Fzg ≈ 40 €/Tag` → `w = 21,31 €/h`** (User-Vorentscheidung). Bewusst akzeptiert:
+  das liegt unter Arbeitgeber-Vollkosten (25–30 €/h, vgl. die 28,99/33,45 €/h in
+  `cost_parameters.csv`) und unterzeichnet die Personalkosten weiter um ~⅓ — jetzt aber **sichtbar
+  an einer Zahl** statt versteckt in einer Tagespauschale. Die Niveaukorrektur gehört in den echten
+  Fix, nicht in den Ad-hoc.
+- **Darstellung: beide Kurven zeigen**, Konventionswechsel explizit, kein stiller Tausch.
+- **Distanzkosten nicht neu rechnen** — `costDist` aus `CARRIER_DETAIL` unverändert übernehmen, dann
+  fasst die Korrektur die 4,6-%-Lücke aus Punkt 5 gar nicht an und behält Anschluss an alle
+  berichteten Zahlen.
+- **Terminierung: erst wenn v2–v4 vollständig sind**, dann gesammelt — alle Läufe sollen auf
+  derselben Kostenversion stehen. v4 ist ein Reseed-Replikat auf identischem Codestand, gibt dem
+  Board also **drei** Ziehungen statt zwei (Struktur wie der Multi-Seed-Fächer, §1.5/§2.1).
+  Erwartung: die Korrektur **verkleinert** die Reseed-Spanne, weil die Tourenzahl zwischen Seeds
+  stärker schwankt als die Tourstunden.
+
 **Reproduktion:** Zerlegung aus den `COSTS` / `SUMMARY` / `CARRIER_DETAIL`-JSON-Blobs der
 Java-Dashboards (`hagrid-matsim-output/*/analysis/HAGRID_Dashboard_*.html`); Carrier-Attribute
 gegengelesen aus `*.output_carriers.xml.gz`. Sweep-Nachrechnung auf
@@ -2078,6 +2104,285 @@ Verwandt: §2.3 (χ als untere Schranke — richtige Richtung, aber die dort gen
 „Teil-Piggyback" war nur die halbe: nicht der gemessene Umweg war unvollständig, sondern die
 Verrechnung), §2.31 (das Instrument, das diesen Defekt überhaupt sichtbar gemacht hat),
 §2.24 Punkt 4 (`calculate()` je Kandidat, nicht je Entscheidung).
+
+---
+
+### 2.36 Tourdauer hat ein Innenoptimum bei 3,5 h — die Fracht wird effizienter, das System nicht
+
+> ⚠️ **Vorbehalt, nachgetragen 2026-08-18: §2.36–§2.38 stehen auf der ALTEN, providergebundenen
+> Depotlogik.** Am 2026-08-17 wurde die Umstellung auf bezirksscharfe Depotzuordnung für 1c/1d
+> beschlossen (Spec/Plan `docs/superpowers/{specs,plans}/2026-08-17-integrated-district-depot-assignment*`,
+> beide noch ungetrackt) — mit der ausdrücklichen Konsequenz, dass **alle bisherigen
+> 1c/1d-Kalibrierläufe hinfällig sind**. Alle Läufe dieser drei Abschnitte (`b120rg`, `f150t015`,
+> `f150d40`, `f150d45`, `f150d70`) sind davor entstanden.
+>
+> **Was das trifft:** jede Niveauzahl — die +7,5 % des besten Punktes, €/Paket, €/Fahrt, und
+> besonders die 1.187,93 km Leerfahrt, denn genau dort greift die Umstellung an (Ø Depotdistanz je
+> Paket 6,63 km → 1,92 km). Der mit 21 % der Lücke bezifferte Leerfahrt-Kanal wird sich deutlich
+> verkleinern; die Richtung ist **zugunsten von 1d**, die Aussage „1d verliert in jeder
+> Cap-Einstellung" ist damit **nicht** auf die neue Depotlogik übertragbar.
+>
+> **Was voraussichtlich trägt**, weil es Mechanismus und Messgüte betrifft, nicht Niveau: die
+> Identität Cap ↔ Tourenzahl (7 h ⇒ 41 Touren = Baseline), die Beobachtung, dass der Frachtkanal
+> glatt und die Pax-Seite rauh ist, und der Befund, dass die Rauheit der Kostenfläche so groß ist
+> wie die verglichenen Differenzen. Das ist vor einer Wiederverwendung zu prüfen, nicht zu
+> unterstellen. Die Baseline bleibt laut Beschluss bewusst providergebunden und wird **nicht** neu
+> gerechnet — der Headline-Vergleich enthält danach Konsolidierung und Integration gemeinsam.
+
+
+`trägt` · 2026-08-17 · **Der dritte und letzte der drei 1d-Hebel ist vermessen; keiner schließt die Lücke.**
+
+Alle Läufe `fleetSize=150, idleThreshold=0.15, maxIter=150, jspritIter=100`, gegen die
+nachgezogene REGRET-Baseline `b120rg` (87.046,09 €/Tag, 9.076 Fahrten). Kosten post-hoc nach
+`cost_parameters.csv` v0.7-draft (Overhead = 0), **nicht** nach jsprits interner Zielfunktion:
+
+| Cap | Touren | Swaps | Leerfahrt km | Service km | Fracht-h | Fahrten | vs Ziel | €/Tag | vs Baseline |
+|---|---|---|---|---|---|---|---|---|---|
+| 2,5 h | 134 | 268 | 1.809 | 4.064 | 377,9 | 8.797 | −3,07 % ✗ | 94.973,65 | +9,1 % |
+| **3,5 h** | 89 | 178 | 1.188 | 3.259 | 331,4 | 9.070 | −0,07 % ✓ | **93.570,57** | **+7,5 %** |
+| 4,5 h | 65 | 130 | 846 | 2.893 | 307,8 | 9.005 | −0,78 % ✓ | 94.182,63 | +8,2 % |
+
+**Der Mechanismus ist der Befund, nicht die Zahl.** Von 3,5 h auf 4,5 h verbessert sich *jeder*
+Frachtkanal deutlich: Touren, Swaps und Retooling −27,0 %, Leerfahrt −28,8 %, Servicekilometer
+−11,2 %, Fracht-Fahrzeugstunden −7,1 % (−23,6 h). Trotzdem steigen die Systemkosten um 612 €/Tag,
+weil die **Pax-Seite** verliert: `drt_tour_hours_total_pax` +2,2 % (1.991 → 2.036 h),
+`drt_wait_hours_total` +9,9 % (481 → 529 h), Fahrten −0,7 %, Ablehnungen +31,0 %. Die 23,6
+gesparten Frachtstunden werden von 44,7 zusätzlichen Fahrgaststunden mehr als aufgefressen.
+Deutung: 65 *lange* Fahrzeugsperren zerreißen den Fahrgastbetrieb stärker als 89 *kurze* — ein
+Fahrzeug, das 4,5 h weg ist, fehlt über einen ganzen Nachfragepeak. **Tourlänge ist im modularen
+Konzept kein Fracht-Optimierungsproblem, sondern ein Zielkonflikt zwischen Bündelungsvorteil und
+Flottenverfügbarkeit.** Das ist die verallgemeinerbare Aussage; die 3,5 h selbst sind
+netz- und nachfragespezifisch.
+
+**⚠️ Der 4,0-h-Lauf hat die Glattheitsannahme widerlegt — und damit die innere Rangfolge
+(2026-08-17 abends).** Die oben notierte Vorhersage war **93.624,71 €/Tag**; gemessen wurden
+**94.256,91 €/Tag** — daneben um **+632 €/Tag (+0,68 %)**. Der Punkt liegt damit nicht zwischen
+3,5 h und 4,5 h, sondern **über beiden**:
+
+| Cap | Touren | Swaps | tour_h | veh_km | Fahrten | vs Ziel | €/Tag | vs Baseline |
+|---|---|---|---|---|---|---|---|---|
+| 2,5 h | 134 | 268 | 2.362,2 | 53.509 | 8.797 | −3,07 % ✗ | 94.999,72 | +9,10 % |
+| **3,5 h** | 89 | 178 | 2.322,6 | 53.178 | 9.070 | −0,07 % ✓ | **93.596,42** | **+7,49 %** |
+| 4,0 h | 75 | 150 | 2.351,6 | 51.857 | 8.957 | −1,31 % ✗ | 94.256,91 | +8,25 % |
+| 4,5 h | 65 | 130 | 2.343,6 | 52.786 | 9.005 | −0,78 % ✓ | 94.208,38 | +8,19 % |
+
+**Der Fehlschlag ist das Ergebnis.** Die Abweichung der Vorhersage (632 €/Tag) ist praktisch
+**gleich groß wie der Unterschied, den ich rangiere** (3,5 h ↔ 4,5 h: 612 €/Tag). Die Rauheit der
+Fläche entspricht also der Effektgröße — der Vorbehalt von heute Mittag ist damit nicht nur
+bestätigt, sondern **verschärft**: es geht nicht bloß um die genaue Scheitellage, die Fläche ist auf
+der Skala der berichteten Differenzen messbar unglatt und nicht konvex (4,0 h liegt über 4,5 h).
+Bestätigend: `tour_h` ist **nicht monoton** (2.362 / 2.323 / 2.352 / 2.344) und `veh_km` auch nicht,
+während die Tourenzahl streng monoton fällt (134 / 89 / 75 / 65). Die Fracht-Seite reagiert glatt
+auf den Cap, die **Systemantwort** nicht. Der 4,0-h-Punkt fällt zudem mit −1,31 % Fahrten durch die
+1-%-Zulässigkeitsregel, 4,5 h mit −0,78 % nicht — auch das nicht monoton.
+
+**Was danach noch trägt:** (a) 2,5 h ist eindeutig schlechter (1,6 pp ≈ 4 × Rauheit); (b) 3,5 h ist
+der billigste **und** zulässige der vier gemessenen Punkte; (c) der Mechanismus der
+Vorzeichenumkehr, weil die Kanalbewegungen zwischen 3,5 h und 4,5 h (Fracht −23,6 h, Pax +44,7 h)
+größer sind als die Rauheit von ~19 Lohnstunden. **Was nicht trägt:** jede Aussage über die
+Scheitellage innerhalb [3,5 h; 4,5 h] und das Vorzeichen des Netto-Effekts zwischen benachbarten
+Punkten. Für eine belastbare Kurve braucht es ≥3 Seeds je Cap → BACKLOG `[H]`
+Multi-Run-Aggregation. **Konsequenz für die Formulierung:** „3,5 h ist das Innenoptimum" ist als
+Punktaussage zurückzuziehen; tragfähig ist „der operative Bereich liegt bei 3,5–4,5 h, unterhalb
+davon wird es klar teurer".
+
+_Hinweis zur Rekonziliation:_ die absoluten €-Werte liegen ~29 €/Tag (0,03 %) über den vormittags
+notierten, weil der Van-Mix der Baseline jetzt aus deren **eigener** `kpis_provider.csv` gelesen
+wird (5 × size_s / 30 × size_m / 6 × size_l, Präfix `vtype:`) statt aus einem Vorlauf. Alle
+Relativaussagen ändern sich um ≤0,01 pp.
+
+**Bilanz aller drei Hebel** — bester zulässiger 1d-Punkt bleibt **+7,5 %**:
+
+| Hebel | Bestwert | Spielraum |
+|---|---|---|
+| θ (Reserve-Gate) | 0,15 | 1,7 pp, Optimum erreicht |
+| Flottengröße | 150 (zulässig ab ~149) | ~0,7 pp |
+| Tourdauer | 3,5 h (Bereich 3,5–4,5 h) | 0 — 3,5 h war bereits der beste Punkt |
+
+**Interpolation als Vorhersage, nicht als Fit — und sie ist gefallen.** Die exakte Parabel durch
+die drei Punkte (Krümmung +1.007,57 €/Tag·h⁻², Steigung bei 3,5 h −395,51 €/Tag·h⁻¹) legte den
+Scheitel auf **3,696 h** und sagte für 4,0 h **93.624,71 €/Tag** voraus. Die Zahl war notiert,
+**bevor** der Lauf um 08:40 startete — er war damit ein Test der Glattheitsannahme, keine
+Bestätigung. **Er ist durchgefallen** (Messung 94.256,91 €/Tag, +632 €/Tag daneben) → nächster
+Block. Die Parabel-Deutung ist damit zurückgezogen; sie bleibt hier nur als Protokoll dessen
+stehen, was vorhergesagt und dann widerlegt wurde.
+
+Verwandt: §2.34 (REGRET_INSERTION, auf dem diese Baseline steht), §2.38 (die Cap-Asymmetrie, die
+diesen Sweep in ein anderes Licht rückt), §2.33 (jsprit optimiert *nicht* gegen diese Kostenfunktion).
+
+---
+
+### 2.37 Das Schichtfenster ist kein Integrationshebel — es skaliert beide Arme fast gleich
+
+`trägt` · 2026-08-17 · **Ohne neuen Lauf entschieden. Enthält eine Korrektur an meiner eigenen früheren Rahmung.**
+
+Der als „fünfter Hebel" vorgemerkte Kandidat war das DVRP-Servicefenster der DRT-Fahrzeuge
+(`t_0=0, t_1=86400` in der Flottendatei). Die Frage ließ sich vollständig aus vorhandenen
+Läufen beantworten, weil die **Definition der bepreisten Größe** sie entscheidet.
+
+**Was die Kostenfunktion tatsächlich bepreist.** `drt_tour_hours_total` = `tour_s = sum_active`
+mit `active = last_prod[v] − first_prod[v]`
+([drt_service_time.py:396](../parcel-demand-2-matsim-pipeline/analysis/drt-headline/drt_service_time.py#L396)) —
+die **aktive Spanne** vom ersten produktiven Task bis zum letzten, *nicht* das Schichtfenster
+`t_1 − t_0`. Ein engeres Fenster kann die Rechnung also nur dort senken, wo es diese Spanne an
+den **Rändern** abschneidet.
+
+**Korrektur.** Meine frühere Formulierung, der fünfte Hebel liege dort, „wo die 481 Leerlaufstunden
+mit 16.100 €/Tag sitzen", war im Mechanismus falsch. Diese 481 h sind
+`waiting_s = tour_s − drive − stop − freight`, also Leerlauf **innerhalb** der Spanne, mitten am
+Tag. Kein Schichtfenster erreicht sie. Erreichbar sind nur die Randstunden, und die sind klein.
+
+**Gemessen** (Event-Rekonstruktion, reproduziert die publizierten KPIs exakt: 2.322,55 h und
+481,288 h für `f150t015`; 1.908,70 h / 390,68 h für `b120rg`):
+
+| Fenster | Baseline €/Tag | 1d €/Tag | neue Lücke | Fahrten in den Rändern |
+|---|---|---|---|---|
+| 00:00–24:00 (Status quo) | 87.046 | 93.571 | **+7,50 %** | — |
+| 05:00–23:00 | 84.426 | 90.651 | +7,37 % | 342 (3,8 %) |
+| 06:00–22:00 | 80.671 | 86.574 | +7,32 % | 870 (9,6 %) |
+| 07:00–21:00 | 75.173 | 80.324 | +6,85 % | 1.795 (19,8 %) |
+
+**Warum der Hebel tot ist.** Das Fenster ist ein **Szenario-Designparameter beider Arme**, kein
+1d-Merkmal: die Baseline-DRT-Flotte hat dasselbe 0–24-Fenster und verliert beim Kürzen
+dasselbe. Pro Fahrzeug trägt die Baseline sogar *mehr* Randzeit (0,653 h) als 1d (0,602 h) — ein
+engeres Fenster hilft ihr also relativ geringfügig **mehr**. Selbst ein brutales 14-h-Fenster
+bewegt die Lücke nur um 0,65 pp und vernichtet dafür ein Fünftel aller Fahrten; es fiele durch
+die 1-%-Zulässigkeitsregel um das Zwanzigfache. Die Randfahrten sind zudem **nicht
+umverteilbar**: außerhalb des Fensters darf kein Fahrzeug fahren, sie entfallen ersatzlos.
+
+**Was bleibt.** Der Mehr-Leerlauf von 1d (481 h vs 391 h, +90 h ≙ 3.022 €/Tag) ist pro Fahrzeug
+praktisch identisch (3,32 vs 3,26 h) — er ist ein reiner **Flottengrößeneffekt** der 150 statt
+120 Fahrzeuge, also bereits der Preis der Fracht-Verdrängung und kein eigener Hebel. Die
+Zahlen der Tabelle sind Obergrenzen (reine Spannenkürzung, ohne Rückwirkung des Umplanens).
+
+Verwandt: §2.36 (die drei vermessenen Hebel), §3.10 (das *Liefer*-Fenster — anderer Parameter,
+gleiche Lehre: ein Fenster, das nie bindet, erklärt nichts).
+
+---
+
+### 2.38 Der Vergleich ist in der Tourdauer asymmetrisch: Baseline 7 h, 1d 3,5 h
+
+`trägt` · 2026-08-17 · **Modellannahmen-Audit. Eine Asymmetrie gefunden, drei Verdächtige entlastet.**
+
+Anlass war die Frage, ob die schwache 1d-Performance am Modell statt am Konzept liegt.
+Geprüft: Höchstgeschwindigkeit, Kapsel-Wechselzeit, Hub-Positionierung, Servicezeiten — plus
+das, was dabei auffiel.
+
+**Entlastet (alle drei symmetrisch zwischen den Armen):**
+- **Geschwindigkeit** — `maximumVelocity` der Vans steht bei 140/160 km/h, die DRT-Fahrzeuge
+  fahren Netz-Freespeed; der Autonomie-Cap (`autonomousMaxSpeedKmh = 30`) ist inaktiv, weil die
+  Läufe `conventional` sind. Kein Cap bindet unterhalb des Freespeeds → Wirkung 0 €/Tag.
+  *(Nebenbefund ohne Wirkung: size_m/size_s haben mit 160 km/h einen **höheren** Cap als size_l
+  mit 140 — inhaltlich verdreht, aber folgenlos, da beide nie binden.)*
+- **Hub-Positionierung** — beide Arme laden dieselben Depots aus derselben Quelle
+  (`LmdDepotLoader.load(depotCsv, network)`, je LSP ein synthetisches Depot). Kein Bias.
+- **Servicezeiten** — `DURATION_PER_PARCEL_MIN = 2`, `MAX_DURATION_PER_STOP_MIN = 15`, in
+  beiden Armen dieselben Konstanten.
+- **Kapsel-Wechselzeit** — `Modular.RETOOLING_S = 420` s (Spec §6.1), 178 Swaps = 20,77 h =
+  **695 €/Tag = 10,6 % der Lücke**. Real, aber selbst ein *kostenloser* Wechsel ließe +6,7 %
+  stehen. Kein Erklärer.
+
+**Die Asymmetrie.** Der LMD-Baseline-Arm routet mit `HAGRIDRouterUtils.MAXROUTEDURATION = 25200`
+(**7 h**), der modulare Arm mit dem CLI-`maxTourDuration` (**3,5 h** Default) —
+[LausitzFreightPreprocessor.java:163](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java#L163)
+vs. [:225](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java#L225),
+wo der Kommentar es selbst benennt: *„capped at the Modular tour duration (not the 7h shift)"*.
+Bei identisch 6.052 Paketen:
+
+| | Baseline LMD | 1d modular | Verhältnis |
+|---|---|---|---|
+| Touren | 41 | 89 | 2,17 |
+| Fracht-km | 2.702 | 4.447 | 1,65 |
+| Fracht-h | 266,8 | 331,4 | 1,24 |
+| Pakete je Tour | 147,6 | 68,0 | 0,46 |
+| **Tourdauer-Cap** | **7 h** | **3,5 h** | **0,50** |
+
+Die Tourenzahl skaliert fast exakt invers mit dem Cap (Tour×Cap: 335 / 312 / 293 bei 2,5 / 3,5 /
+4,5 h), was bei 7 h auf **~45 Touren** extrapoliert — die 41 der Baseline. **Der Tourenzahl-Unterschied
+*ist* der Cap-Unterschied**, nicht das Konzept. Bestätigend: die Kapsel ist mit 68 von 216 Paketen
+nur zu **31 %** gefüllt, während die Vans 148 Pakete gegen 100/165/230 tragen — die Kapazität bindet
+nicht, die Dauer bindet (mittlere Tour 3,490 h gegen 3,500 h Cap). Und jsprit bestraft im 1d-Arm
+jede Tour mit 189,15 €/Tag (Kostenspender = größter Van, `ModularVehicleTypes`) und kommt
+*trotzdem* auf 89 Touren: der Cap bindet hart, es ist kein Heuristik-Artefakt.
+
+**Ist die Asymmetrie ein Defekt?** Nein — sie ist verteidigbar: ein Kapselfahrzeug ist ein
+DRT-Fahrzeug auf Exkursion und kann nicht 7 h fehlen, das ist der Kern des Konzepts. Aber die
+3,5 h sind ein **gesetzter Parameter**, kein physikalischer Zwang, und der Konkurrent bekommt das
+Doppelte. Solange das so steht, misst der Vergleich Konzept **und** Cap gemeinsam.
+
+**Konsequenz — Revision einer eigenen Aussage.** Nach §2.36 hatte ich den 7-h-Kontrollarm für
+erledigt erklärt („das Optimum ist eingeklammert"). Als *Optimierungsfrage* stimmt das weiterhin.
+Als **Symmetriefrage** ist er jetzt der wichtigste offene Lauf: er ist die einzige Konfiguration,
+in der 1d und Baseline dieselbe Freiheit haben. Die Erwartung aus §2.36 ist, dass er *schlechter*
+ausfällt als 3,5 h (die Pax-Seite bestraft lange Sperren) — dann wäre die Aussage sauber und
+stärker als heute: *auch bei voller Cap-Parität verliert das modulare Konzept.* Fällt er besser
+aus, ist der bisherige 1d-Nachteil teilweise ein Parameter-Artefakt und die drei Sweeps sind auf
+der falschen Achse gefahren worden.
+
+**Gewichtung der übrigen Kanäle** gegen die Lücke von 6.524 €/Tag (Obergrenzen, Leerfahrt-Stunden
+mit der mittleren Frachtgeschwindigkeit 36,5 km/h approximiert):
+
+| Kanal | €/Tag | Anteil an der Lücke |
+|---|---|---|
+| Fracht-Stunden zum DRT-Lohnaufschlag (33,45 statt 28,99 €/h) | 1.478 | 22,7 % |
+| davon allein Türstandzeit 188,68 h | 842 | 12,9 % |
+| Leerfahrt 1.187,93 km (32,6 h + km-Kosten) | 1.369 | 21,0 % |
+| Retooling 20,77 h | 695 | 10,6 % |
+
+Die Leerfahrt ist strukturell: der Baseline-Van *startet* im Depot, das 1d-Fahrzeug muss erst
+hinfahren. Sie ist über die Depotlage reduzierbar, aber nicht abschaffbar — und eine Depot-Verlegung
+wäre eine Änderung der **Eingangsdaten**, kein Parameter-Sweep.
+
+**✅ AUFGELÖST 2026-08-18 — der 7-h-Kontrollarm ist gefahren (`f150d70`).** Ergebnis in einem Satz:
+**die Cap-Asymmetrie erklärt die Tourenzahl vollständig und den Frachtpreis zu zwei Dritteln, aber
+sie ist nicht der Grund, warum 1d verliert.**
+
+Bei 7 h produziert 1d **exakt 41 Touren** — die Zahl der LMD-Baseline. Die Extrapolation in §2.36
+sagte ~45; gemessen sind es 41, die Vorhersage war also konservativ und die These „der
+Tourenzahl-Unterschied *ist* der Cap-Unterschied" ist bestätigt, nicht nur plausibel.
+
+M11-Marginalzurechnung (Fracht zahlt eigene Fahrzeugstunden + eigene km, Pax den Rest samt
+Fixblock), alle 1d-Punkte gegen `b120rg`:
+
+| Arm | Cap | Touren | System €/Tag | €/Paket | vs Basis | €/Fahrt | vs Basis | Fahrten vs Ziel |
+|---|---|---|---|---|---|---|---|---|
+| Baseline | 7,0 h | 41 | 87.073 | 1,497 | — | 8,596 | — | — |
+| 1d | 3,5 h | 89 | 93.595 | 2,004 | +33,9 % | 8,982 | +4,5 % | −0,07 % |
+| 1d | 4,0 h | 75 | 94.256 | 1,916 | +28,0 % | 9,228 | +7,4 % | −1,31 % |
+| 1d | 4,5 h | 65 | 94.207 | 1,847 | +23,4 % | 9,221 | +7,3 % | −0,78 % |
+| 1d | 7,0 h | 41 | 95.327 | 1,685 | **+12,6 %** | 9,031 | +5,1 % | **+3,87 %** |
+
+**Drei Befunde, und der dritte ist der wichtige.**
+
+1. **Der Frachtkanal ist sauber und monoton**: der Aufschlag je Paket fällt über alle vier Caps
+   gleichmäßig (+33,9 → +28,0 → +23,4 → +12,6 %). Anders als die Systemsumme (§2.36) zeigt er
+   **keine** Rauheit — die Unglattheit der Gesamtkosten sitzt also nachweislich auf der Pax-Seite,
+   nicht in jsprits Tourenplanung. Das ist ein eigenständiges methodisches Ergebnis: es sagt, wo
+   Seed-Bänder gebraucht werden und wo nicht.
+2. **Auch bei voller Cap-Parität bleibt Fracht +12,6 % teurer je Paket.** Der Cap erklärt also gut
+   zwei Drittel des Frachtaufschlags, aber nicht alles; der Rest ist die Konzeptlast (Anfahrt zur
+   Kapsel, Retooling, DRT-Lohnsatz statt LMD-Lohnsatz).
+3. **Die Pax-Seite verbessert sich nie.** Über alle Caps kostet eine Fahrt 4,5–7,4 % mehr als in
+   der Baseline, ohne Trend, der sich schlösse. **Das ist der irreduzible Teil** — die Verdrängung
+   von Fahrgastbetrieb durch Frachtexkursionen lässt sich über die Tourdauer nicht wegstellen.
+
+**Korrektur an meiner Erwartung.** In §2.36 stand, der 7-h-Lauf werde *schlechter* ausfallen und
+damit die saubere Aussage „auch bei Cap-Parität verliert 1d" liefern. Die Systemsumme ist
+tatsächlich am höchsten (+9,48 %) — **aber aus dem falschen Grund**: `f150d70` bedient **3,87 %
+mehr Fahrten** als die Baseline (9.427 gegen 9.076), die Summe mischt also „kostet mehr" mit
+„leistet mehr". Genau deshalb steht hier die M11-Zerlegung und nicht die Systemsumme. Die
+Schlussfolgerung hält, ihre Begründung ist eine andere als erwartet.
+
+**Direkt anschließendes Experiment (offen).** Der 7-h-Arm überliefert Fahrleistung, weil dieselben
+150 Fahrzeuge seltener und kürzer für Fracht wegfallen. Eine faire Cap-Parität bräuchte bei 7 h
+eine **kleinere Flotte**, die 9.076 Fahrten gerade trifft. Die Ersparnis ist **nicht** aus diesen
+Daten hochzurechnen: der Flottensweep (§2.36) hat gezeigt, dass die Fahrzeugstunden *nicht* mit der
+Flottengröße skalieren (150→140 ergab +0,7 %, 140→130 dann −13,1 %). Das ist zu messen, nicht zu
+schätzen → BACKLOG.
+
+Verwandt: §2.36 (die Sweeps, die unter dieser Asymmetrie gefahren wurden), §2.33 (jsprits
+Zielfunktion bepreist keine Zeit — die Touren sind also *nicht* für die Größe optimiert, mit der
+sie hier bewertet werden), §2.5 (Zustellquote/Overlay).
 
 ---
 
