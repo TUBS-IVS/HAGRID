@@ -165,6 +165,21 @@ public class HAGRIDSimulationConfig {
     private final int maxTourDurationSeconds;
 
     /**
+     * District-based depot assignment (spec 2026-08-17): site names (see
+     * {@code DrtDepotReader.readBySite}) that stay open for the INTEGRATED arms (1c/1d). Empty
+     * list means every depot in the depot CSV stays open. Order follows the user's input
+     * (determinism). Ignored by the Baseline, which keeps one depot per provider.
+     */
+    private final List<String> openDepots;
+
+    /**
+     * District-based depot assignment (spec 2026-08-17): job ceiling per district before a
+     * catchment is split. Default 300. 1d-only concept ({@code DRT_MODULAR}) — 1c never splits a
+     * district (spec D8), so this field is ignored there.
+     */
+    private final int maxJobsPerDistrict;
+
+    /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
      *
      * @param concept          scenario concept name
@@ -325,10 +340,10 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Fullest constructor: adds the DRT_MODULAR (1d) dispatch-gate/tour-cap keys,
-     * {@code idleThreshold} and {@code maxTourDurationSeconds}, on top of every other parameter.
-     * All shorter constructors default them to {@link Modular#DEFAULT_IDLE_THRESHOLD} /
-     * {@link Modular#DEFAULT_MAX_TOUR_DURATION_S}.
+     * Creates a new scenario configuration with the DRT_MODULAR (1d) dispatch-gate/tour-cap keys,
+     * {@code idleThreshold} and {@code maxTourDurationSeconds}, defaulting the INTEGRATED-arm
+     * district-based depot assignment keys ({@code openDepots} to "every depot open",
+     * {@code maxJobsPerDistrict} to 300).
      *
      * @param idleThreshold           passenger-first dispatch gate (design D6); must be in
      *                                {@code [0.0, 1.0]} ({@code 1.0} = never-dispatch control arm)
@@ -341,6 +356,35 @@ public class HAGRIDSimulationConfig {
                           double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
                           boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
                           boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold,
+                maxTourDurationSeconds, List.of(), 300);
+    }
+
+    /**
+     * Fullest constructor: adds the INTEGRATED-arm (1c/1d) district-based depot assignment keys
+     * (spec 2026-08-17), {@code openDepots} and {@code maxJobsPerDistrict}, on top of every other
+     * parameter. All shorter constructors default {@code openDepots} to "every depot open" (empty
+     * list) and {@code maxJobsPerDistrict} to 300.
+     *
+     * @param openDepots         site names (see {@code DrtDepotReader.readBySite}) that stay open;
+     *                           {@code null}/empty opens every depot in the depot CSV. Order is
+     *                           preserved (determinism). Ignored by the Baseline, which keeps one
+     *                           depot per provider.
+     * @param maxJobsPerDistrict job ceiling per district before a catchment is split; must be
+     *                           positive. 1d-only concept ({@code DRT_MODULAR}) — 1c never splits
+     *                           a district (spec D8).
+     * @throws IllegalArgumentException if {@code idleThreshold} is outside {@code [0.0, 1.0]}, if
+     *                                  {@code maxTourDurationSeconds} is not positive, or if
+     *                                  {@code maxJobsPerDistrict} is not positive
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds,
+                          List<String> openDepots, int maxJobsPerDistrict) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -373,6 +417,9 @@ public class HAGRIDSimulationConfig {
         if (maxTourDurationSeconds <= 0) {
             throw new IllegalArgumentException("maxTourDurationSeconds must be positive: " + maxTourDurationSeconds);
         }
+        if (maxJobsPerDistrict <= 0) {
+            throw new IllegalArgumentException("maxJobsPerDistrict must be positive: " + maxJobsPerDistrict);
+        }
         this.maxIterations = maxIterations;
         this.jspritIterations = jspritIterations;
         this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
@@ -388,6 +435,8 @@ public class HAGRIDSimulationConfig {
         this.seed = seed;
         this.idleThreshold = idleThreshold;
         this.maxTourDurationSeconds = maxTourDurationSeconds;
+        this.openDepots = openDepots == null ? List.of() : List.copyOf(openDepots);
+        this.maxJobsPerDistrict = maxJobsPerDistrict;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -706,6 +755,30 @@ public class HAGRIDSimulationConfig {
      */
     public int getMaxTourDurationSeconds() {
         return maxTourDurationSeconds;
+    }
+
+    /**
+     * Returns the district-based depot assignment's open-depot selection (spec 2026-08-17): site
+     * names (see {@code DrtDepotReader.readBySite}) that stay open. An empty list means every
+     * depot in the depot CSV stays open. Order follows the user's input (determinism). Ignored by
+     * the Baseline, which keeps one depot per provider.
+     *
+     * @return open-depot site names, or an empty list if every depot is open
+     */
+    public List<String> getOpenDepots() {
+        return openDepots;
+    }
+
+    /**
+     * Returns the district-based depot assignment's job ceiling per district (spec 2026-08-17):
+     * the maximum number of delivery jobs a single district may hold before its catchment is
+     * split. Default 300. 1d-only concept ({@code DRT_MODULAR}) — 1c never splits a district
+     * (spec D8), so this value is ignored there.
+     *
+     * @return maximum jobs per district
+     */
+    public int getMaxJobsPerDistrict() {
+        return maxJobsPerDistrict;
     }
 
     /**

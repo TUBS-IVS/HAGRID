@@ -1,6 +1,7 @@
 package hagrid.simulation;
 
 import hagrid.integrated.drt.DrtInputsFingerprint;
+import hagrid.integrated.modular.Modular;
 import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -196,6 +199,41 @@ class HAGRIDSimulationConfigTest {
         } finally {
             System.clearProperty("hagrid.pipeline.root");
         }
+    }
+
+    /**
+     * District-based depot assignment (spec 2026-08-17): every shorter constructor must default
+     * {@code openDepots} to "every depot open" (empty list) and {@code maxJobsPerDistrict} to
+     * 300, so existing callers that never mention either key keep the pre-task-7 behaviour.
+     *
+     * <p>The brief's snippet references {@code HAGRIDSimulationConfig.defaults()} /
+     * {@code withDistrictSettings(...)}, neither of which exists in this codebase — adapted to
+     * the constructor-based style every other test in this file already uses (e.g.
+     * {@link #drtConfig(int)}).</p>
+     */
+    @Test
+    @DisplayName("openDepotsDefaultsToAllAndMaxJobsToThreeHundred — shorter constructors default district keys")
+    void openDepotsDefaultsToAllAndMaxJobsToThreeHundred() {
+        HAGRIDSimulationConfig cfg = drtConfig(50);
+        assertThat(cfg.getOpenDepots()).isEmpty();
+        assertThat(cfg.getMaxJobsPerDistrict()).isEqualTo(300);
+    }
+
+    /**
+     * The fullest constructor must reject a non-positive {@code maxJobsPerDistrict} next to the
+     * existing {@code maxTourDurationSeconds &lt;= 0} check.
+     */
+    @Test
+    @DisplayName("maxJobsPerDistrictMustBePositive — fullest constructor rejects maxJobsPerDistrict <= 0")
+    void maxJobsPerDistrictMustBePositive() {
+        assertThatThrownBy(() -> new HAGRIDSimulationConfig(
+                "DRT_MODULAR", LocalDate.of(2025, 5, 13), 1, 1,
+                false, 0.0, 0.0, "", StudyArea.LAUSITZ_HOYERSWERDA, 4,
+                false, true, 600.0, false, 1337L,
+                Modular.DEFAULT_IDLE_THRESHOLD, Modular.DEFAULT_MAX_TOUR_DURATION_S,
+                List.of("hoy_sued"), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxJobsPerDistrict");
     }
 
     /** Passenger-only DRT config at the temp root; only fleetSize varies across tests. */
