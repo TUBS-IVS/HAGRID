@@ -99,12 +99,17 @@ public final class SimulationRunnerUtils {
      * Parses a single scenario specification of the form
      * {@code concept=...,date=...,maxIter=...,jspritIter=...,writeDashboard=true}.
      *
-     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for a multi-value key
-     * like {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
-     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}), the delimiter WITHIN a value —
-     * there is no escaping mechanism. A token with no {@code =} is therefore not rejected: it is
-     * treated as a continuation of the previous key's value and re-joined with a comma, so a
-     * multi-value key's own commas survive the top-level split.</p>
+     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for the single
+     * multi-value key {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
+     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}), the delimiter WITHIN its value -
+     * there is no escaping mechanism. A token with no {@code =} is therefore accepted ONLY when
+     * the immediately preceding key was {@code openDepots}: it is then a continuation of that
+     * value and is re-joined with a comma. Deliberately narrow (fix round 1, review Important 1):
+     * for every OTHER key a bare token is still rejected with {@code "Invalid token: ..."}, the
+     * same as before this key existed - otherwise a stray token after e.g. {@code tag=...} would
+     * be silently absorbed into that key's value (a mangled run-directory name with no error),
+     * or after {@code concept=...} would silently corrupt the concept string instead of failing
+     * the enum lookup loudly.</p>
      *
      * @param spec comma-separated key=value string
      * @return parsed configuration
@@ -118,7 +123,10 @@ public final class SimulationRunnerUtils {
         String lastKey = null;
         for (String token : spec.split(",")) {
             if (!token.contains("=")) {
-                if (lastKey == null || token.isBlank()) {
+                // Only openDepots is a multi-value key today - narrowed here (not "any bare
+                // token continues the previous key") so a typo after an unrelated key still
+                // fails loudly instead of being silently absorbed (review Important 1).
+                if (!"openDepots".equals(lastKey) || token.isBlank()) {
                     throw new IllegalArgumentException("Invalid token: " + token);
                 }
                 map.put(lastKey, map.get(lastKey) + "," + token.trim());

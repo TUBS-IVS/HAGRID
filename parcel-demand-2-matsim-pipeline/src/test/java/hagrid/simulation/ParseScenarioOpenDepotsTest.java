@@ -46,6 +46,47 @@ class ParseScenarioOpenDepotsTest {
     }
 
     @Test
+    @DisplayName("the parent plan's own 3-depot sweep spec parses to those three sites in that order")
+    void planSweepExampleParsesInOrder() {
+        // docs/superpowers/plans/2026-08-17-integrated-district-depot-assignment.md:1458 -
+        // pinned verbatim since this is the exact syntax the depot sweep is driven by.
+        HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
+                "concept=drt_modular,openDepots=wittichenau,hoy_sued,doergenhausen,"
+                        + "date=2025-06-10,maxIter=1,jspritIter=1,tag=d1d_dep3");
+        assertThat(cfg.getOpenDepots()).containsExactly("wittichenau", "hoy_sued", "doergenhausen");
+    }
+
+    /**
+     * Fix round 1 (review Important 1): the tokenizer's bare-token continuation rule must be
+     * narrowed to {@code openDepots} only. A prior, over-broad version let a stray bare token
+     * continue ANY preceding key's value instead of failing - e.g.
+     * {@code concept=DRT_MODULAR,maxIterr,date=...,maxIter=1} silently mangled {@code concept}
+     * to {@code "DRT_MODULAR,MAXITERR"} (the enum-lookup gates swallow the resulting
+     * {@code IllegalArgumentException} and just return {@code false}, so the corruption surfaced
+     * only much later as a cryptic {@code No enum constant} error). These three tests pin the
+     * narrowed behaviour so that regression cannot come back silently.
+     */
+    @Test
+    @DisplayName("a stray bare token after an unrelated key is still rejected (concept must not be silently mangled)")
+    void strayTokenAfterUnrelatedKeyIsStillRejected() {
+        assertThatThrownBy(() -> SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,maxIterr,date=2025-06-10,maxIter=1,jspritIter=1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid token")
+                .hasMessageContaining("maxIterr");
+    }
+
+    @Test
+    @DisplayName("a stray bare token after tag=... is still rejected (no silently mangled run-directory name)")
+    void strayTokenAfterTagIsStillRejected() {
+        assertThatThrownBy(() -> SimulationRunnerUtils.parseScenario(
+                "concept=DRT_MODULAR,date=2025-06-10,maxIter=1,jspritIter=1,tag=depot1,stray"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid token")
+                .hasMessageContaining("stray");
+    }
+
+    @Test
     @DisplayName("maxJobsPerDistrict parses to the given value")
     void maxJobsPerDistrictParses() {
         HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
