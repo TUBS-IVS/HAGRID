@@ -225,8 +225,8 @@ public final class LausitzDrtPreprocessor {
                     .values().stream().flatMap(List::stream).toList();
             List<DeliveryDistrictBuilder.District> districts = DeliveryDistrictBuilder.build(
                     clipped,
-                    DeliveryDistrictBuilder.selectOpenDepots(depotCoords, null),
-                    Integer.MAX_VALUE);   // 1c never splits (spec D8)
+                    DeliveryDistrictBuilder.selectOpenDepots(depotCoords, cfg.getOpenDepots()),
+                    Integer.MAX_VALUE);   // 1c never splits (spec D8) - maxJobsPerDistrict is a 1d-only concept
             ParcelAgentGenerator.Result r = ParcelAgentGenerator.generate(
                     districts, area, drtNet, pop, 4711L);
             LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",

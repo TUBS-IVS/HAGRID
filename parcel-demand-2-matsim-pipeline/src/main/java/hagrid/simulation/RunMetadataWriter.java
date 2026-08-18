@@ -43,6 +43,11 @@ public final class RunMetadataWriter {
         // F3: the MATSim seed is a runner key (error-band replicates differ ONLY in it and
         // the tag) — persisting it lets sweep/error-band assembly bind replicates to seeds.
         m.put("matsim_seed", cfg.getSeed());
+        // District-based depot assignment (spec 2026-08-17): openDepots/maxJobsPerDistrict define
+        // the INTEGRATED-arm (1c/1d) sweep point but, like chiThreshold above, are NOT part of the
+        // runId — persisting them here lets the KPI layer label sweep stages.
+        m.put("open_depots", cfg.getOpenDepots().isEmpty() ? "all" : String.join(",", cfg.getOpenDepots()));
+        m.put("max_jobs_per_district", cfg.getMaxJobsPerDistrict());
         m.put("created", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return writeMap(m, targetDir);
     }

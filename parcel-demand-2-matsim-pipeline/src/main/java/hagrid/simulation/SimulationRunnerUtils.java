@@ -99,6 +99,13 @@ public final class SimulationRunnerUtils {
      * Parses a single scenario specification of the form
      * {@code concept=...,date=...,maxIter=...,jspritIter=...,writeDashboard=true}.
      *
+     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for a multi-value key
+     * like {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
+     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}), the delimiter WITHIN a value —
+     * there is no escaping mechanism. A token with no {@code =} is therefore not rejected: it is
+     * treated as a continuation of the previous key's value and re-joined with a comma, so a
+     * multi-value key's own commas survive the top-level split.</p>
+     *
      * @param spec comma-separated key=value string
      * @return parsed configuration
      */
@@ -108,12 +115,21 @@ public final class SimulationRunnerUtils {
         }
 
         Map<String, String> map = new LinkedHashMap<>();
+        String lastKey = null;
         for (String token : spec.split(",")) {
+            if (!token.contains("=")) {
+                if (lastKey == null || token.isBlank()) {
+                    throw new IllegalArgumentException("Invalid token: " + token);
+                }
+                map.put(lastKey, map.get(lastKey) + "," + token.trim());
+                continue;
+            }
             String[] kv = token.split("=", 2);
             if (kv.length != 2 || kv[0].isBlank() || kv[1].isBlank()) {
                 throw new IllegalArgumentException("Invalid token: " + token);
             }
-            map.put(kv[0].trim(), kv[1].trim());
+            lastKey = kv[0].trim();
+            map.put(lastKey, kv[1].trim());
         }
 
         String concept = require(map, "concept");
@@ -157,12 +173,22 @@ public final class SimulationRunnerUtils {
                 Double.toString(hagrid.integrated.modular.Modular.DEFAULT_IDLE_THRESHOLD)), "idleThreshold");
         int maxTourDuration = positiveInt(map.getOrDefault("maxTourDuration",
                 Integer.toString(hagrid.integrated.modular.Modular.DEFAULT_MAX_TOUR_DURATION_S)), "maxTourDuration");
+        // District-based depot assignment for the INTEGRATED arms (spec 2026-08-17). Ignored by
+        // the Baseline, which keeps one depot per provider. Same parse pattern as chiThreshold.
+        String openDepotsRaw = map.getOrDefault("openDepots", "all").trim();
+        List<String> openDepots = "all".equalsIgnoreCase(openDepotsRaw)
+                ? List.of()
+                : Arrays.stream(openDepotsRaw.split(","))
+                        .map(s -> s.trim().toLowerCase())
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+        int maxJobsPerDistrict = positiveInt(map.getOrDefault("maxJobsPerDistrict", "300"), "maxJobsPerDistrict");
 
         // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
-        // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold
-        // and noParcels are deliberately NOT encoded in the runId, so two DRT_SHAREDUSE sweep
-        // points differing only in chi (or noParcels) with the same/no tag would silently
-        // destroy each other's outputs. Require the tag to encode the sweep point instead of
+        // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold,
+        // noParcels and openDepots are deliberately NOT encoded in the runId, so two sweep
+        // points differing only in one of these with the same/no tag would silently destroy
+        // each other's outputs. Require the tag to encode the sweep point instead of
         // auto-mangling the runId (run-dir naming conventions must stay stable).
         boolean isSharedUse;
         try {
@@ -171,13 +197,25 @@ public final class SimulationRunnerUtils {
         } catch (IllegalArgumentException ex) {
             isSharedUse = false;
         }
-        if (isSharedUse && tag.isEmpty()) {
+        boolean isModular;
+        try {
+            isModular = hagrid.HagridConfig.Scenario.valueOf(concept.toUpperCase())
+                    == hagrid.HagridConfig.Scenario.DRT_MODULAR;
+        } catch (IllegalArgumentException ex) {
+            isModular = false;
+        }
+        // DRT_SHAREDUSE always requires a tag (chiThreshold/noParcels are never the runId-default
+        // case); DRT_MODULAR only needs one once openDepots deviates from "all" (idleThreshold/
+        // maxTourDuration are out of scope for this guard - task 7 covers openDepots only).
+        boolean nonDefaultOpenDepots = !openDepots.isEmpty();
+        if ((isSharedUse || (isModular && nonDefaultOpenDepots)) && tag.isEmpty()) {
             throw new IllegalArgumentException(
-                    "DRT_SHAREDUSE requires a non-blank tag: chiThreshold/noParcels are not part"
+                    "DRT_SHAREDUSE requires a non-blank tag; DRT_MODULAR requires one whenever"
+                            + " openDepots is set: chiThreshold/noParcels/openDepots are not part"
                             + " of the runId (CONCEPT_date[_tag]) and MATSim deletes an existing"
-                            + " output directory, so two sweep points differing only in chi would"
-                            + " silently overwrite each other. Encode the sweep point in the tag,"
-                            + " e.g. tag=chi600 or tag=chi0noparcels.");
+                            + " output directory, so two sweep points differing only in one of"
+                            + " these would silently overwrite each other. Encode the sweep point"
+                            + " in the tag, e.g. tag=chi600, tag=chi0noparcels or tag=depot3.");
         }
 
         // Lausitz-bound concepts (all DRT scenarios + LMD_BASELINE) require LAUSITZ_HOYERSWERDA.
@@ -213,13 +251,13 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
                 drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed,
-                idleThreshold, maxTourDuration);
+                idleThreshold, maxTourDuration, openDepots, maxJobsPerDistrict);
     }
 
     /**
@@ -316,9 +354,13 @@ public final class SimulationRunnerUtils {
                 hagrid.integrated.freight.LausitzFreightPreprocessor.runModular(
                         cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(), cfg.getLausitzNetworkRaw(),
                         cfg.getLmdVehicleTypes(), cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                        cfg.getDrtServiceAreaShapefile(), cfg.getMaxTourDurationSeconds());
-                LOG.info("DRT_MODULAR: jsprit tours routed (cap {}s); freight flag ignored - the DRT "
-                        + "fleet executes them (no CarrierModule).", cfg.getMaxTourDurationSeconds());
+                        cfg.getDrtServiceAreaShapefile(), cfg.getMaxTourDurationSeconds(),
+                        cfg.getOpenDepots(), cfg.getMaxJobsPerDistrict());
+                LOG.info("DRT_MODULAR: jsprit tours routed (cap {}s, openDepots={}, "
+                        + "maxJobsPerDistrict={}); freight flag ignored - the DRT fleet executes "
+                        + "them (no CarrierModule).", cfg.getMaxTourDurationSeconds(),
+                        cfg.getOpenDepots().isEmpty() ? "all" : cfg.getOpenDepots(),
+                        cfg.getMaxJobsPerDistrict());
             } else if (sharedUse && cfg.isDrtWithFreight()) {
                 LOG.info("DRT_SHAREDUSE: freight flag ignored - parcels ride the DRT fleet (no jsprit/carriers)");
             }
