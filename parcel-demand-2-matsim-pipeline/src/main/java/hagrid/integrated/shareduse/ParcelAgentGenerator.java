@@ -1,6 +1,7 @@
 package hagrid.integrated.shareduse;
 
 import hagrid.integrated.DeliveryDistrictBuilder;
+import hagrid.utils.demand.Delivery;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.locationtech.jts.geom.Geometry;
@@ -41,6 +42,20 @@ public final class ParcelAgentGenerator {
     private ParcelAgentGenerator() {
     }
 
+    /** M4(c): a pooled stop resolves to ONE channel. If ANY part is B2B, resolve from that B2B
+     *  part so its mandatory door delivery is not silently overridden by an earlier B2C part;
+     *  otherwise resolve from the first part. Currently inert under Phase 1's empty locker list
+     *  (every resolution returns DOOR regardless of parcel type) - this is a safeguard for
+     *  Phase 2, once real locker locations make the channel choice matter. */
+    static Delivery channelRepresentative(List<Delivery> parts) {
+        for (Delivery part : parts) {
+            if (part.getParcelType() == Delivery.ParcelType.B2B) {
+                return part;
+            }
+        }
+        return parts.get(0);
+    }
+
     /** M2 (segment-split): split a pooled stop's total parcel amount into sub-loads of at most
      *  SharedUse.PARCEL_SLOTS each (filling full slots first, then the remainder), e.g. 45 -> [20,20,5]. */
     private static List<Integer> splitLoad(int amount) {
@@ -65,7 +80,8 @@ public final class ParcelAgentGenerator {
         for (DeliveryDistrictBuilder.District district : districts) {
             Link depotLink = NetworkUtils.getNearestLinkExactly(drtNetwork, district.depot().coord());
             for (DeliveryDistrictBuilder.PooledStop stop : district.stops()) {
-                index++;
+                index++;                     // DBF has no id column, and a pooled stop doesn't
+                                              // get one either -> index is the identity
                 if (!serviceArea.contains(GF.createPoint(new org.locationtech.jts.geom.Coordinate(
                         stop.coord().getX(), stop.coord().getY())))) {
                     outside++;
@@ -85,9 +101,11 @@ public final class ParcelAgentGenerator {
                 // each, all visiting the same physical depot/stop point (dense point -> multiple
                 // visits).
                 List<Integer> subLoads = splitLoad(stop.totalParcels());
-                // A pooled stop can mix channels; B2B presence forces door delivery, which is
-                // what the Phase-1 (locker-free) resolver returns anyway.
-                String channel = resolver.resolve(stop.parts().get(0)).name();
+                // A pooled stop can mix channels; resolve from a B2B part when one is present
+                // (channelRepresentative) so B2B's mandatory door delivery is not silently
+                // overridden by an earlier B2C part - inert today under the Phase-1 (locker-free)
+                // resolver, which returns DOOR regardless.
+                String channel = resolver.resolve(channelRepresentative(stop.parts())).name();
                 // One deadline for every parcel type, and the same one the Baseline and 1d use
                 // (user decision 2026-07-30). See DeliveryDay.
                 double windowEnd = SharedUse.WINDOW_END_S;

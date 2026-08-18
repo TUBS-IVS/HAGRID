@@ -251,4 +251,25 @@ class ParcelAgentGeneratorTest {
         assertEquals(1, r.personsAdded());
         assertEquals(1, r.clippedOutside());
     }
+
+    /**
+     * Fix round 1 finding (Important): channel resolution on a pooled stop must not just look at
+     * part 0. If ANY part is B2B, {@code channelRepresentative} must pick a B2B part so its
+     * mandatory door delivery is not silently overridden by an earlier B2C part. The resolver
+     * itself can't discriminate this in Phase 1 (empty locker list -> DOOR for everything), so
+     * this asserts on the resolution INPUT that {@code generate} feeds the resolver, which is the
+     * only place the old index-0 bug is visible.
+     */
+    @Test
+    void channelRepresentativePrefersB2BPartOverAnEarlierB2C() {
+        Delivery b2c = deliveryAt(800, 800, "dhl", 3);
+        Delivery b2b = Delivery.builder().id("hermes_800.0_800.0_b2b").coordinate(new Coord(800, 800))
+                .provider("hermes").amount(2).parcelType(ParcelType.B2B).build();
+
+        Delivery chosen = ParcelAgentGenerator.channelRepresentative(List.of(b2c, b2b));
+
+        assertEquals(ParcelType.B2B, chosen.getParcelType(),
+                "a B2B part later in the list must win over an earlier B2C part - "
+                        + "the old code picked parts.get(0) and would have returned B2C here");
+    }
 }
