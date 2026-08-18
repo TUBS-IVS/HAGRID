@@ -1,7 +1,9 @@
 package hagrid.integrated.drt;
 
 import hagrid.HagridConfig;
+import hagrid.integrated.DeliveryDistrictBuilder;
 import hagrid.integrated.PopulationClipper;
+import hagrid.integrated.freight.LausitzFreightPreprocessor;
 import hagrid.integrated.freight.LmdDemandReader;
 import hagrid.integrated.shareduse.ParcelAgentGenerator;
 import hagrid.simulation.HAGRIDSimulationConfig;
@@ -215,14 +217,18 @@ public final class LausitzDrtPreprocessor {
             new TransportModeNetworkFilter(fullNet).filter(drtNet, Set.of(TransportMode.drt));
             Geometry area = GeoUtils.getBoundaryGeometry(
                     GeoFileReader.getAllFeatures(cfg.getDrtServiceAreaShapefile()));
-            Map<String, List<Delivery>> demand =
-                    LmdDemandReader.group(LmdDemandReader.read(cfg.getLmdDemandShapefile()));
-            // M4(b): keep the provider identity so each parcel originates at ITS provider's
-            // depot (mirrors the provider-constrained LMD van arm), nearest only as fallback.
-            Map<String, Coord> depotsByProvider =
-                    DrtDepotReader.readByProvider(Path.of(cfg.getLmdDepotCsv()));
+            Map<String, Coord> depotCoords =
+                    DrtDepotReader.readBySite(Path.of(cfg.getLmdDepotCsv()));
+            // Clip BEFORE districting so 1c and 1d district the identical delivery set (D9).
+            List<Delivery> clipped = LausitzFreightPreprocessor.clipToArea(
+                    LmdDemandReader.group(LmdDemandReader.read(cfg.getLmdDemandShapefile())), area)
+                    .values().stream().flatMap(List::stream).toList();
+            List<DeliveryDistrictBuilder.District> districts = DeliveryDistrictBuilder.build(
+                    clipped,
+                    DeliveryDistrictBuilder.selectOpenDepots(depotCoords, null),
+                    Integer.MAX_VALUE);   // 1c never splits (spec D8)
             ParcelAgentGenerator.Result r = ParcelAgentGenerator.generate(
-                    demand, area, drtNet, depotsByProvider, pop, 4711L);
+                    districts, area, drtNet, pop, 4711L);
             LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",
                     r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
             PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());
