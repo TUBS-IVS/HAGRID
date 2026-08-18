@@ -38,9 +38,23 @@ class LmdBaselineEndToEndTest {
         // run_metadata.json is emitted by the real runSimulation() glue (1e Task 1 review fix C):
         // this is the one e2e test that drives the production SimulationRunnerUtils.runSimulation
         // call site directly, so it covers the writeRunMetadataSafely() wiring itself.
-        assertThat(Files.exists(cfg.getOutputDirectory().resolve(
-                hagrid.simulation.RunMetadataWriter.FILE_NAME)))
+        Path runMetadataFile = cfg.getOutputDirectory().resolve(
+                hagrid.simulation.RunMetadataWriter.FILE_NAME);
+        assertThat(Files.exists(runMetadataFile))
                 .as("run_metadata.json missing from LMD baseline MATSim output dir").isTrue();
+
+        // Task 8 (spec 2026-08-17): the district-based depot assignment is an INTEGRATED-arm
+        // (1c/1d) concept only - LMD_BASELINE keeps one depot per provider regardless of
+        // openDepots/maxJobsPerDistrict. Task 1's byte-identity guard already proves the routed
+        // CARRIER output is untouched; this proves the METADATA also records the untouched
+        // default ("every depot open"), not merely some value, so a Baseline run can never be
+        // mistaken for a restricted-depot sweep stage.
+        String runMetadataJson = Files.readString(runMetadataFile);
+        assertThat(runMetadataJson)
+                .as("LMD_BASELINE run_metadata.json must record the untouched default "
+                        + "(every depot open), proving the Baseline is unaffected by the "
+                        + "INTEGRATED-arm depot sweep keys")
+                .contains("\"open_depots\": \"all\"");
 
         // v2 Plan B: the auto-trigger must have produced the Python KPI dashboard.
         // Skip (not fail) on machines without python on PATH — the trigger itself is

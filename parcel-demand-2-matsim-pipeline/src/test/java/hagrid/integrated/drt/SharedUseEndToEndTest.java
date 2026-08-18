@@ -1,10 +1,12 @@
 package hagrid.integrated.drt;
 
 import hagrid.integrated.freight.LmdTestShapefiles;
+import hagrid.integrated.modular.Modular;
 import hagrid.integrated.shareduse.SharedUse;
 import hagrid.integrated.shareduse.SharedUseModule;
 import hagrid.simulation.DrtScenarioBuilder;
 import hagrid.simulation.HAGRIDSimulationConfig;
+import hagrid.simulation.RunMetadataWriter;
 import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,9 @@ import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.events.handler.PersonEntersVehicleEventHandler;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.population.Activity;
+import org.matsim.api.core.v01.population.Population;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.core.api.experimental.events.EventsManager;
@@ -47,7 +52,9 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -187,12 +194,68 @@ class SharedUseEndToEndTest {
                 .as("expected >=1 parcel_* person to physically board a drt_* vehicle").isTrue();
     }
 
+    /**
+     * Task 8 (spec 2026-08-17): end-to-end guard for district-based depot assignment (Task 6).
+     * Same production preprocessor call as {@link #runsShareduseThroughOneReplanningIteration()},
+     * but with {@code openDepots=hoy_sued} against a two-depot CSV (wittichenau + hoy_sued):
+     * every parcel-person's origin activity must land on the SAME link, because every pooled
+     * stop's nearest OPEN depot is now hoy_sued regardless of which depot is geometrically
+     * closer overall. Does not run a full {@code Controler} - the production preprocessor
+     * (parcel injection) is where {@code openDepots} threads through, and this stays fast by
+     * stopping right after that.
+     */
+    @Test
+    @DisplayName("sharedUseRunsWithASingleOpenDepot - openDepots=hoy_sued yields exactly one parcel "
+            + "origin link, and run_metadata.json records the depot-sweep keys")
+    void sharedUseRunsWithASingleOpenDepot() throws Exception {
+        Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
+        Files.createDirectories(dir);
+
+        HAGRIDSimulationConfig cfg = stageAndBuildConfig(dir, List.of("hoy_sued"));
+        LausitzDrtPreprocessor.run(cfg);
+
+        Population pop = PopulationUtils.readPopulation(cfg.getPassengerPlansClipped());
+        long parcelPersons = pop.getPersons().values().stream()
+                .filter(p -> SharedUse.isParcelPerson(p.getId().toString())).count();
+        assertThat(parcelPersons).as("no parcel persons were injected").isGreaterThan(0);
+
+        Set<Id<Link>> depotLinks = pop.getPersons().values().stream()
+                .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
+                .map(p -> ((Activity) p.getSelectedPlan().getPlanElements().get(0)).getLinkId())
+                .collect(Collectors.toSet());
+        assertThat(depotLinks)
+                .as("one open depot must yield exactly one origin link - none at the excluded "
+                        + "wittichenau provider yard")
+                .hasSize(1);
+
+        // run_metadata.json must record openDepots/maxJobsPerDistrict, else a sweep stage cannot
+        // be identified after the fact and two stages could be compared as if they were the same
+        // configuration (RunMetadataWriter keys: open_depots / max_jobs_per_district).
+        Path metaFile = RunMetadataWriter.write(cfg, dir.resolve("run_metadata_check"));
+        String meta = Files.readString(metaFile);
+        assertThat(meta).as("run_metadata.json must record open_depots").contains("\"open_depots\"");
+        assertThat(meta).as("run_metadata.json must record WHICH depots were open").contains("hoy_sued");
+        assertThat(meta).as("run_metadata.json must record max_jobs_per_district")
+                .contains("\"max_jobs_per_district\"");
+    }
+
     // -------------------------------------------------------------------------
     // Fixture setup: stage raw inputs at the exact paths cfg's getters resolve to
     // (hagrid.pipeline.root -> a fresh temp dir per test), mirroring SharedUsePreprocessorTest.
     // -------------------------------------------------------------------------
 
     private HAGRIDSimulationConfig stageAndBuildConfig(Path dir) throws Exception {
+        return stageAndBuildConfig(dir, List.of());
+    }
+
+    /**
+     * Same fixture as {@link #stageAndBuildConfig(Path)}, but threading {@code openDepots} into
+     * the config (Task 8, spec 2026-08-17) and, whenever the caller actually restricts to a
+     * subset, staging a SECOND depot ({@code hoy_sued}) in the depot CSV alongside the original
+     * {@code wittichenau} one. Without a second depot present, opening "only hoy_sued" would be
+     * vacuous - there would be nothing else to exclude.
+     */
+    private HAGRIDSimulationConfig stageAndBuildConfig(Path dir, List<String> openDepots) throws Exception {
         System.setProperty("hagrid.pipeline.root", dir.toString());
         try {
             HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(
@@ -200,7 +263,10 @@ class SharedUseEndToEndTest {
                     /*maxIterations*/ 1, /*jspritIterations*/ 1,
                     false, 0.0, 0.0, "shareduse_e2e",
                     StudyArea.LAUSITZ_HOYERSWERDA, FLEET_SIZE,
-                    /*drtWithFreight*/ false, /*kpiDashboard*/ false, CHI_THRESHOLD);
+                    /*drtWithFreight*/ false, /*kpiDashboard*/ false, CHI_THRESHOLD,
+                    /*noParcels*/ false, /*seed*/ 1337L,
+                    Modular.DEFAULT_IDLE_THRESHOLD, Modular.DEFAULT_MAX_TOUR_DURATION_S,
+                    openDepots, /*maxJobsPerDistrict*/ 300);
 
             // raw network
             createParentDirs(cfg.getLausitzNetworkRaw());
@@ -214,9 +280,18 @@ class SharedUseEndToEndTest {
             createParentDirs(cfg.getDrtServiceAreaShapefile());
             DrtE2eFixtures.writeSquareShapefile(Path.of(cfg.getDrtServiceAreaShapefile()), AREA_SIZE);
 
-            // LMD depot CSV (single depot at 500,500)
+            // LMD depot CSV (single depot at 500,500, or two when openDepots restricts to a
+            // subset - see javadoc above). Needs a site column: run(cfg)'s shareduse branch now
+            // districts via DrtDepotReader.readBySite (Task 6, spec 2026-08-17 D7), which throws
+            // loudly on a column-3-less row.
             createParentDirs(cfg.getLmdDepotCsv());
-            Files.writeString(Path.of(cfg.getLmdDepotCsv()), "provider;x;y\ndhl;500.0;500.0\n");
+            // hoy_sued sits at (700,200) - deliberately NOT on top of either demand segment
+            // ({300,300} / {800,800} below), so opening it exercises real routing rather than a
+            // same-link pickup/delivery coincidence (which ParcelAgentGenerator skips).
+            String depotCsvBody = openDepots.isEmpty()
+                    ? "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n"
+                    : "provider;x;y;site\ndhl;500.0;500.0;wittichenau\ndhl;700.0;200.0;hoy_sued\n";
+            Files.writeString(Path.of(cfg.getLmdDepotCsv()), depotCsvBody);
 
             // LMD parcel-demand shapefile: two segments, both B2C+B2B so multiple parcel-persons
             // are injected (only consumed by the shareduse post-step in run(cfg)).

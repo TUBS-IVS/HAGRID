@@ -5,6 +5,9 @@ import hagrid.integrated.modular.ModularDispatchModule;
 import hagrid.integrated.modular.ModularFreightTour;
 import hagrid.integrated.modular.ModularTourEvent;
 import hagrid.simulation.DrtScenarioBuilder;
+import hagrid.simulation.HAGRIDSimulationConfig;
+import hagrid.simulation.RunMetadataWriter;
+import hagrid.utils.general.StudyArea;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -30,6 +33,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -445,6 +449,52 @@ class ModularEndToEndTest {
                 .as("D2 strict lockout: vehicle %s must serve NO passenger between %s and %s",
                         excursionVehicle[0], excursionStart[0], excursionEnd[0])
                 .isEmpty();
+    }
+
+    /**
+     * Task 8 (spec 2026-08-17): end-to-end guard for district-based depot assignment (Task 5) on
+     * the 1d side, mirroring {@link SharedUseEndToEndTest#sharedUseRunsWithASingleOpenDepot()}.
+     * Same staging recipe as {@link #runsModularThroughOneIteration()}, but with
+     * {@code openDepots=hoy_sued} against a two-depot CSV (wittichenau + hoy_sued): every routed
+     * tour's carrier id (the jsprit district id {@link LausitzFreightPreprocessor#runModular}
+     * builds one carrier per) must be the hoy_sued district, none from the excluded wittichenau
+     * catchment. Does not run a full {@code Controler} - {@code runModular} is where
+     * {@code openDepots} threads through on the 1d side, and the mobsim-level wiring is already
+     * proven by {@link #runsModularThroughOneIteration()}; re-running it here would only repeat
+     * that proof at several seconds' extra cost without adding coverage of the depot-selection
+     * property this guard exists for.
+     */
+    @Test
+    @DisplayName("modularRunsWithASingleOpenDepot - openDepots=hoy_sued routes every tour through "
+            + "the hoy_sued district, and run_metadata.json records the depot-sweep keys")
+    void modularRunsWithASingleOpenDepot() throws Exception {
+        Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
+        ModularE2eStaging staging = ModularE2eStaging.stage(dir, List.of("hoy_sued"));
+
+        assertThat(staging.tours).as("staging must produce >=1 dispatchable tour").isNotEmpty();
+        assertThat(staging.tours)
+                .as("every tour's carrier (district) id must be the one open depot, hoy_sued - "
+                        + "none from the excluded wittichenau catchment")
+                .allSatisfy(t -> assertThat(t.provider()).startsWith("hoy_sued"));
+
+        // run_metadata.json must record openDepots/maxJobsPerDistrict (RunMetadataWriter keys:
+        // open_depots / max_jobs_per_district), else a sweep stage cannot be identified after the
+        // fact and two stages could be compared as if they were the same configuration.
+        HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(
+                "drt_modular", LocalDate.of(2025, 6, 10),
+                /*maxIterations*/ 1, /*jspritIterations*/ 1,
+                false, 0.0, 0.0, "modular_depot_e2e",
+                StudyArea.LAUSITZ_HOYERSWERDA, ModularE2eStaging.FLEET_SIZE,
+                /*drtWithFreight*/ false, /*kpiDashboard*/ false, /*chiThreshold*/ 600.0,
+                /*noParcels*/ false, /*seed*/ 1337L,
+                Modular.DEFAULT_IDLE_THRESHOLD, Modular.DEFAULT_MAX_TOUR_DURATION_S,
+                List.of("hoy_sued"), /*maxJobsPerDistrict*/ 300);
+        Path metaFile = RunMetadataWriter.write(cfg, dir.resolve("run_metadata_check"));
+        String meta = Files.readString(metaFile);
+        assertThat(meta).as("run_metadata.json must record open_depots").contains("\"open_depots\"");
+        assertThat(meta).as("run_metadata.json must record WHICH depots were open").contains("hoy_sued");
+        assertThat(meta).as("run_metadata.json must record max_jobs_per_district")
+                .contains("\"max_jobs_per_district\"");
     }
 
     // ------------------------------------------------------------------ helpers

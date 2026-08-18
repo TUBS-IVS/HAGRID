@@ -203,9 +203,11 @@ class SharedUsePreprocessorTest {
             DrtE2eFixtures.writeSquareShapefile(Path.of(cfg.getDrtServiceAreaShapefile()), AREA_SIZE);
 
             // LMD depot CSV (single depot at 500,500 - proven collision-free with the (800,800)
-            // demand point used by the default fixture, see ParcelAgentGeneratorTest)
+            // demand point used by the default fixture, see ParcelAgentGeneratorTest). Needs a
+            // site column: run(cfg)'s shareduse branch now districts via DrtDepotReader.readBySite
+            // (Task 6, spec 2026-08-17 D7), which throws loudly on a column-3-less row.
             createParentDirs(cfg.getLmdDepotCsv());
-            Files.writeString(Path.of(cfg.getLmdDepotCsv()), "provider;x;y\ndhl;500.0;500.0\n");
+            Files.writeString(Path.of(cfg.getLmdDepotCsv()), "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n");
 
             // LMD parcel-demand shapefile (only consumed by the shareduse branch, harmless
             // for baseline).
