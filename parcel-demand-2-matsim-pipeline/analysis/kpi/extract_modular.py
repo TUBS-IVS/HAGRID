@@ -274,6 +274,19 @@ def _rows_from_stats(stats, core, run_dir, prefix):
                 "swaps", "modular_tour_stats"),
         ]
 
+    # Task 10 fix round 1: peak_concurrent_swaps_<site> rows, one per PHYSICAL SITE that ever
+    # recorded a swap (Java already strips any maxJobsPerDistrict "#<n>" split suffix before this
+    # key reaches the CSV, so a split catchment's sub-districts are pre-aggregated onto their one
+    # shared yard -- this extractor does not need to know about the suffix at all). Surfaced via a
+    # key-prefix scan, not a fixed name list: the site set is run-specific (however many depots
+    # are open) and unbounded, unlike the fixed five names above. Absent entirely on a CSV
+    # predating this feature or on a run with zero swaps recorded anywhere -- sorted for
+    # determinism (dict key order already mirrors the CSV's own TreeMap-sorted write order, but
+    # this must not rely on that).
+    for _name in sorted(stats):
+        if _name.startswith("peak_concurrent_swaps_"):
+            rows.append(row("modular", _name, int(stats[_name]), "swaps", "modular_tour_stats"))
+
     # Zustellquoten-Konvention (2026-08-10, METHODS-LOG 2.21): dieser Arm hatte gar keine
     # Quote -- nur delta_share_*, das die NICHT-Zustellung nach Ursache aufteilt. Der
     # Drei-Arm-Vergleich braucht EINEN Namen auf EINER Basis: zugestellt / Nachfrage, das

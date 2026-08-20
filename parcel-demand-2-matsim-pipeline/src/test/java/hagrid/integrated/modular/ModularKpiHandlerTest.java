@@ -614,11 +614,12 @@ class ModularKpiHandlerTest {
      *
      * <p>Three tours share depot {@code depotHoySued} / district {@code "hoy_sued"} with three
      * mutually overlapping swaps (peak 3); one tour sits alone at depot {@code depotWittichenau} /
-     * district {@code "wittichenau"} (peak 1). Both the pre-existing depot-keyed global figure and
-     * the new district-keyed per-site figures agree on 3 here (the two groupings are not yet
-     * forced apart - {@link #peakConcurrentSwapsPerSiteDivergesFromPerDepotWhenCatchmentIsSplit}
-     * does that), so this test's job is the brief's literal claims: a per-site accessor exists,
-     * the CSV carries one row per site, and the global row is unchanged.
+     * district {@code "wittichenau"} (peak 1). Neither district here is ever split by {@code
+     * maxJobsPerDistrict}, so stripping a (non-existent) {@code #<n>} suffix is a no-op and the
+     * site id equals the district id - {@link
+     * #peakConcurrentSwapsAggregatesSplitSubDistrictsAtOnePhysicalSite} is the one that exercises
+     * the suffix-stripping aggregation itself. This test's job is the brief's literal claims: a
+     * per-site accessor exists, the CSV carries one row per site, and the global row is unchanged.
      */
     @Test
     @DisplayName("Task 10: peak_concurrent_swaps is also reported PER SITE (district id), and the "
@@ -679,20 +680,29 @@ class ModularKpiHandlerTest {
     }
 
     /**
-     * Task 10: forces the depot-keyed global grouping and the district-keyed per-site grouping
-     * genuinely APART - the interfaces note explicitly documents that a catchment split by {@code
-     * maxJobsPerDistrict} produces sites like {@code hoy_sued#0}/{@code hoy_sued#1} that share ONE
-     * physical depot link. Two tours here do exactly that: same depot, two different district ids,
-     * one swap each at the SAME instant (identical intervals, mirroring {@link
-     * #peakConcurrentSwapsIsPerDepotNotGlobal}'s technique). Depot-keyed grouping pools them into
-     * one bucket (peak 2); district-keyed grouping keeps them apart (peak 1 at each site) - a
-     * per-site implementation that secretly aliased "site" to "depot" would report 2 for both
-     * sub-districts here instead of 1 each.
+     * Fix round 1 (coordinator review, replaces an earlier wrong-by-design test): the per-site
+     * swap metric answers ONE question - how many capsule swaps happen simultaneously at ONE
+     * PHYSICAL YARD, because the model has no swap capacity limit at all. A prior version of this
+     * class keyed the per-site grouping on the raw district id, so a catchment split by {@code
+     * maxJobsPerDistrict} into {@code hoy_sued#0}/{@code hoy_sued#1} (sharing ONE physical depot
+     * link) was reported as two tidy separate peaks of 1 - understating the real concurrency at
+     * that yard by half, and by up to 3x on the sweep's single-depot stage where THREE
+     * sub-districts land on one yard. This test pins the FIX: {@code peakConcurrentSwaps} is
+     * queried by the physical SITE id (the {@code #<n>} suffix stripped), and the two
+     * sub-districts' overlapping swaps must be counted TOGETHER under that one site, matching the
+     * depot-keyed global figure - not summed from the parts, but read as one aggregated value the
+     * same sweep-line produces.
+     *
+     * <p>Verified BEFORE the fix landed (coordinator instruction): run against the raw
+     * district-keyed grouping, {@code peakConcurrentSwaps("hoy_sued")} returned 0 (no bucket was
+     * ever stored under the unsuffixed key at all) and {@code peak_concurrent_swaps_hoy_sued} was
+     * absent from the CSV (only the suffixed {@code _hoy_sued#0}/{@code _hoy_sued#1} rows
+     * existed) - both assertions below failed under that implementation.
      */
     @Test
-    @DisplayName("Task 10: per-site peak is keyed by DISTRICT id, not depot link - two split "
-            + "sub-districts of the same physical depot are counted SEPARATELY")
-    void peakConcurrentSwapsPerSiteDivergesFromPerDepotWhenCatchmentIsSplit(@TempDir Path tmp)
+    @DisplayName("Task 10 fix: per-site peak is keyed by PHYSICAL SITE (suffix stripped) - two "
+            + "split sub-districts of the same physical depot are counted TOGETHER")
+    void peakConcurrentSwapsAggregatesSplitSubDistrictsAtOnePhysicalSite(@TempDir Path tmp)
             throws Exception {
         Id<Link> sharedDepot = Id.createLinkId("depotHoySued");
         Map<String, Id<Link>> depotByTourId = Map.of(
@@ -702,6 +712,8 @@ class ModularKpiHandlerTest {
         ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, depotByTourId, districtByTourId);
         ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
 
+        // Same instant at BOTH sub-districts -> identical, overlapping intervals. A yard with no
+        // swap capacity limit would see 2 capsule swaps happening at once here.
         handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued#0_t0", 1));
         handler.handleEvent(ModularTourEvent.swapDone(30000, "hoy_sued#0_t0", vehId));
         handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued#1_t0", 1));
@@ -709,18 +721,31 @@ class ModularKpiHandlerTest {
 
         handler.notifyShutdown(fixtureShutdownEvent());
 
+        // THE assertion the fix is about: aggregated by SITE, not summed from the parts by hand -
+        // both sub-districts' swaps must land in the SAME bucket the sweep-line maxes over.
+        assertThat(handler.peakConcurrentSwaps("hoy_sued"))
+                .as("both sub-districts share ONE physical yard - their overlapping swaps must be "
+                        + "counted TOGETHER, not as two separate peaks of 1")
+                .isEqualTo(2);
         assertThat(handler.peakConcurrentSwaps("hoy_sued#0"))
-                .as("split sub-district #0 alone never had 2 concurrent swaps").isEqualTo(1);
+                .as("a raw, still-suffixed district id is not a site - it must look up nothing")
+                .isEqualTo(0);
         assertThat(handler.peakConcurrentSwaps("hoy_sued#1"))
-                .as("split sub-district #1 alone never had 2 concurrent swaps").isEqualTo(1);
+                .as("a raw, still-suffixed district id is not a site - it must look up nothing")
+                .isEqualTo(0);
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
         assertThat(csv.get("peak_concurrent_swaps"))
                 .as("the depot-keyed GLOBAL figure still pools both sub-districts at their shared"
                         + " physical yard - unchanged behaviour, not a regression")
                 .isEqualTo(2);
-        assertThat(csv.get("peak_concurrent_swaps_hoy_sued#0")).isEqualTo(1);
-        assertThat(csv.get("peak_concurrent_swaps_hoy_sued#1")).isEqualTo(1);
+        assertThat(csv.get("peak_concurrent_swaps_hoy_sued"))
+                .as("ONE aggregated row for the physical site, matching the global figure")
+                .isEqualTo(2);
+        assertThat(csv)
+                .as("no separate per-sub-district rows - the raw district id is not a site")
+                .doesNotContainKey("peak_concurrent_swaps_hoy_sued#0")
+                .doesNotContainKey("peak_concurrent_swaps_hoy_sued#1");
     }
 
     /** Task 1: a zero-valued fixture for tests that exercise the ORIGINAL 21 metrics only and do

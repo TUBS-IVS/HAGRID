@@ -114,11 +114,14 @@ import java.util.function.ToIntFunction;
  * {@link #peakConcurrentSwaps()} below. The upcoming depot-count sweep makes that number stop
  * describing any one site — one open depot concentrates every swap on a single yard, several
  * open depots hide which one actually saturates. {@link #peakConcurrentSwapsBySite()} reuses the
- * identical sweep-line ({@link #maxConcurrentSwaps}) grouped by {@link
- * ModularPlanStats#districtByTourId()} instead, and {@link #notifyShutdown} appends one {@code
- * peak_concurrent_swaps_<site>} row per site that ever recorded a swap, after the twenty-six
- * pre-existing metric names. See {@link #swapEndTimesBySite()}'s javadoc for how this grouping
- * differs from the depot-link one the global figure keeps using.</p>
+ * identical sweep-line ({@link #maxConcurrentSwaps}) grouped by the PHYSICAL SITE {@link #siteOf}
+ * derives from {@link ModularPlanStats#districtByTourId()} — NOT the raw district id itself
+ * (fix round 1: a district id can be a {@code maxJobsPerDistrict} split sub-district, e.g. {@code
+ * hoy_sued#0}/{@code hoy_sued#1}, that shares one physical yard with its siblings; the metric
+ * must aggregate those back together or it understates exactly the concurrency it exists to
+ * measure). {@link #notifyShutdown} appends one {@code peak_concurrent_swaps_<site>} row per
+ * physical site that ever recorded a swap, after the twenty-six pre-existing metric names. See
+ * {@link #siteOf}'s and {@link #swapEndTimesBySite()}'s javadoc for the full reasoning.</p>
  *
  * <p><b>Conservation identities (design §4; assert in test, log — never throw — at shutdown):</b>
  * <ol>
@@ -501,11 +504,13 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      * that stops describing any particular site: at one open depot every swap concentrates on a
      * single yard the global figure cannot single out, and at several open depots the global
      * max hides which one is actually saturated. This groups the SAME swap-end times {@link
-     * #peakConcurrentSwaps()} sees, but by {@link ModularPlanStats#districtByTourId()} (the
-     * tour's carrier's district id) instead of by depot link - see that field's javadoc for why
-     * the two groupings are kept separate rather than reusing {@link #peakConcurrentSwaps()}'s
-     * map. {@link #peakConcurrentSwaps()} itself is untouched: same map, same key, same
-     * arithmetic, so the pre-existing global figure cannot regress from this addition.
+     * #peakConcurrentSwaps()} sees, by the PHYSICAL SITE {@link #siteOf} derives from {@link
+     * ModularPlanStats#districtByTourId()} - see {@link #siteOf}'s javadoc for why a site is NOT
+     * simply the district id, and {@link ModularPlanStats#districtByTourId()}'s javadoc for why
+     * the two groupings (this one and the pre-existing depot-link one) are kept separate rather
+     * than reusing {@link #peakConcurrentSwaps()}'s map. {@link #peakConcurrentSwaps()} itself
+     * is untouched: same map, same key, same arithmetic, so the pre-existing global figure
+     * cannot regress from this addition.
      *
      * <p>A tour id absent from {@code districtByTourId()} (defensive; should not happen for any
      * tour this handler's own PLANNED event created) is grouped under the synthetic site key
@@ -521,10 +526,10 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 continue;
             }
             String tourId = entry.getKey();
-            String site = planStats.districtByTourId().get(tourId);
+            String district = planStats.districtByTourId().get(tourId);
             String siteKey;
-            if (site != null) {
-                siteKey = site;
+            if (district != null) {
+                siteKey = siteOf(district);
             } else {
                 siteKey = "unknown";
                 if (unknownSiteTourIdsLogged.add(tourId)) {
@@ -540,13 +545,37 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
     }
 
     /**
-     * Task 10: peak concurrent swaps at ONE site (district id) - {@code 0} if that site never
-     * appears (an id nothing ever swapped under, or one this run never planned a tour for at
-     * all). Uses the exact same sweep-line as the global figure ({@link #maxConcurrentSwaps}),
-     * just grouped by a different key ({@link #swapEndTimesBySite()} instead of the depot-keyed
-     * map {@link #peakConcurrentSwaps()} builds). Package-private: exercised directly by {@link
-     * ModularKpiHandlerTest}; the {@code peak_concurrent_swaps_<site>} CSV rows below are the
-     * only production consumer.
+     * Fix round 1 (coordinator review): the per-site swap metric exists to answer ONE question -
+     * how many capsule swaps happen simultaneously at ONE PHYSICAL YARD, because the model has
+     * NO swap capacity limit and that concurrency figure IS the infrastructure the scenario
+     * silently assumes. A district id is NOT the same thing as a physical site: {@code
+     * DeliveryDistrictBuilder} splits an oversized catchment into sub-districts {@code
+     * <depotId>#0}, {@code <depotId>#1}, ... that all share the SAME physical depot ({@code
+     * maxJobsPerDistrict}, spec 2026-08-17) - keying the swap-concurrency metric on the raw
+     * district id would report {@code hoy_sued#0}/{@code hoy_sued#1}/{@code hoy_sued#2} as three
+     * tidy separate peaks when the sweep's single-depot stage puts all three at ONE yard, wrongly
+     * understating concurrency by up to 3x exactly on the stage this metric exists to police
+     * (the one most likely to otherwise win the sweep on unpriced infrastructure). Stripping the
+     * {@code #<n>} suffix - a district id with none IS its own site unchanged - re-aggregates
+     * every split sub-district back onto the one physical yard they actually share, matching the
+     * question the metric is meant to answer.
+     */
+    private static String siteOf(String districtId) {
+        int hash = districtId.indexOf('#');
+        return hash < 0 ? districtId : districtId.substring(0, hash);
+    }
+
+    /**
+     * Task 10: peak concurrent swaps at ONE physical site - {@code 0} if that site never appears
+     * (an id nothing ever swapped under, or one this run never planned a tour for at all). {@code
+     * site} is a PHYSICAL yard id ({@link #siteOf}'s output, i.e. a district id with any {@code
+     * maxJobsPerDistrict} split suffix stripped) - passing a raw, still-suffixed district id
+     * (e.g. {@code "hoy_sued#0"}) looks up nothing and returns 0, since {@link
+     * #swapEndTimesBySite()} never stores a suffixed key. Uses the exact same sweep-line as the
+     * global figure ({@link #maxConcurrentSwaps}), just grouped by a different key ({@link
+     * #swapEndTimesBySite()} instead of the depot-keyed map {@link #peakConcurrentSwaps()}
+     * builds). Package-private: exercised directly by {@link ModularKpiHandlerTest}; the {@code
+     * peak_concurrent_swaps_<site>} CSV rows below are the only production consumer.
      */
     long peakConcurrentSwaps(String site) {
         List<Double> endTimes = swapEndTimesBySite().get(site);

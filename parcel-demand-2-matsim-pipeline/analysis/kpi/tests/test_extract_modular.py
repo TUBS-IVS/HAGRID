@@ -369,6 +369,49 @@ def test_old_21_metric_csv_omits_task1_rows(tmp_path):
     assert ("meta", "modular_identity_violated") not in by_name
 
 
+def test_per_site_swap_peak_rows_surfaced_from_stats_csv(tmp_path):
+    """Task 10 fix round 1: peak_concurrent_swaps_<site> rows (Java already aggregates by
+    PHYSICAL SITE, stripping any maxJobsPerDistrict "#<n>" split suffix before the key ever
+    reaches this CSV) must reach kpis_long.csv under kpi_group "modular", alongside the untouched
+    global peak_concurrent_swaps row -- surfaced by a key-prefix scan since the site set is
+    run-specific and unbounded."""
+    lines = ["metric;value",
+             "tours_planned;10", "tours_expired_pending;2", "tours_dispatched;7",
+             "tours_completed;6", "tours_dispatched_incomplete;1", "tours_pending_eod;1",
+             "parcels_planned;500", "parcels_expired_pending;80", "parcels_dispatched;400",
+             "parcels_served;350", "parcels_dispatched_unserved;50", "parcels_pending_eod;20",
+             "delta_parcels;150", "swaps_completed;13", "retooling_hours;1.516",
+             "deadhead_km_planned;42.5", "service_km_planned;120.0",
+             "freight_vehicle_hours;21.75",
+             "tours_completed_late;1", "parcels_served_late;12",
+             "tours_rejected_at_splice;3",
+             "parcels_demand;530", "parcels_unassigned_jsprit;30",
+             "parcels_missed_overlay;4", "max_parcels_per_tour;8",
+             "peak_concurrent_swaps;2",
+             "peak_concurrent_swaps_hoy_sued;2", "peak_concurrent_swaps_wittichenau;1"]
+    (tmp_path / "P.modular_tour_stats.csv").write_text("\n".join(lines))
+
+    rows = extract_modular.extract(tmp_path, "P")
+    by_name = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+
+    assert by_name[("modular", "peak_concurrent_swaps")]["value"] == 2
+    hoy = by_name[("modular", "peak_concurrent_swaps_hoy_sued")]
+    assert hoy["value"] == 2
+    assert hoy["unit"] == "swaps"
+    wit = by_name[("modular", "peak_concurrent_swaps_wittichenau")]
+    assert wit["value"] == 1
+
+
+def test_per_site_swap_peak_rows_absent_on_csv_predating_the_feature(tmp_path):
+    """A CSV predating Task 10 (no peak_concurrent_swaps_<site> keys at all) must simply omit
+    them -- no meta row, no exception, same tolerance as the pre-existing Task-1 backward-compat
+    pin."""
+    _write_stats(tmp_path, "P")
+    rows = extract_modular.extract(tmp_path, "P")
+    names = {r["kpi_name"] for r in rows}
+    assert not any(n.startswith("peak_concurrent_swaps_") for n in names)
+
+
 def test_district_rows_from_output_carriers(tmp_path):
     """Task 10 (spec 2026-08-17, "make the idealisations measurable"): district_parcels_<id> /
     district_segments_<id> come straight from the ROUTED carriers XML, not from
