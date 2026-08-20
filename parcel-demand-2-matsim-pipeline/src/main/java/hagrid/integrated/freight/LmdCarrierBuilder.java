@@ -182,6 +182,9 @@ public final class LmdCarrierBuilder {
 
         TimeWindow tw = TimeWindow.newInstance(serviceTwStart, serviceTwEnd);
         List<Id<CarrierService>> missedParcels = new ArrayList<>();
+        // Real per-provider parcel counts, first-appearance order - the analysis layer needs this
+        // split explicitly since the carrier itself is a district, not an LSP (plan Task 9).
+        Map<String, Integer> parcelsByProvider = new LinkedHashMap<>();
         int totalParcels = 0;
         int n = 0;
         for (var stop : stops) {
@@ -200,6 +203,7 @@ public final class LmdCarrierBuilder {
 
             for (Delivery d : stop.parts()) {
                 String p = d.getProvider() == null ? "" : d.getProvider().trim().toLowerCase();
+                parcelsByProvider.merge(p, d.getAmount(), Integer::sum);
                 double effectiveRate = d.getParcelType() == Delivery.ParcelType.B2B
                         ? B2B_DELIVERY_RATE
                         : Math.max(0.0, Math.min(MAX_EFFECTIVE_RATE,
@@ -226,6 +230,17 @@ public final class LmdCarrierBuilder {
         carrier.getAttributes().putAttribute("missedParcels", missedParcels.size());
         carrier.getAttributes().putAttribute("missedParcelsAsList", new ArrayList<>(missedParcels));
         carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString", missedParcels.toString());
+
+        // Provider identity is operationally dissolved, but the ANALYSIS layer still needs the
+        // split - a district mixes all providers, so carrier id != provider (see plan Task 9).
+        StringBuilder breakdown = new StringBuilder();
+        parcelsByProvider.forEach((prov, count) -> {
+            if (breakdown.length() > 0) {
+                breakdown.append(';');
+            }
+            breakdown.append(prov).append('=').append(count);
+        });
+        carrier.getAttributes().putAttribute("parcelsByProvider", breakdown.toString());
         return carrier;
     }
 

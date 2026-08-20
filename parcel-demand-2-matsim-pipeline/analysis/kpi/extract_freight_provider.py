@@ -38,6 +38,50 @@ def prow(provider, kpi_name, value, unit, source):
             "unit": unit, "source": source}
 
 
+def _carrier_label(carrier):
+    """Provider label used to GROUP a carrier's own KPI rows.
+
+    A district carrier (integrated 1c/1d scenarios, plan 2026-08-17 Task 9)
+    mixes all seven providers, so it must never be reported as if it were one
+    LSP -- it carries a `parcelsByProvider` attribute (format "dhl=100;gls=20")
+    instead of `provider`, and is labelled "district:<carrierId>", mirroring
+    the existing "type:<VT>" prefix convention. Baseline carriers have no such
+    attribute and keep today's behaviour (provider_of) unchanged.
+    """
+    if carrier.attrs.get("parcelsByProvider"):
+        return "district:" + carrier.carrier_id
+    return provider_of(carrier.carrier_id, carrier.attrs.get("provider"))
+
+
+def _real_provider_parcel_rows(pf):
+    """Recover the real per-LSP parcel counts hidden inside district carriers'
+    `parcelsByProvider` attribute, summed across every district carrier that
+    carries one. Emitted as `parcels` rows keyed by the real provider name
+    (e.g. "dhl"), additive alongside the district's own `parcels_total` row
+    (which stays keyed by "district:<carrierId>") -- this is the only way the
+    per-provider split survives at all once several providers share a carrier.
+    """
+    totals = {}
+    for c in pf.carriers:
+        pbp = c.attrs.get("parcelsByProvider")
+        if not pbp:
+            continue
+        for part in pbp.split(";"):
+            if not part:
+                continue
+            prov, sep, count = part.partition("=")
+            if not sep:
+                continue
+            try:
+                n = int(count)
+            except ValueError:
+                continue
+            totals[prov] = totals.get(prov, 0) + n
+    return [prow(prov, "parcels", n, "parcels",
+                 "carrier attributes (parcelsByProvider)")
+            for prov, n in totals.items()]
+
+
 @dataclass
 class VehRecord:
     event_vehicle_id: str
@@ -72,7 +116,7 @@ def parse_run(run_dir, prefix):
     excluded = set()
     for carrier in carriers:
         ctype = carrier_type_of(carrier.carrier_id, carrier.attrs.get("carrierType"))
-        provider = provider_of(carrier.carrier_id, carrier.attrs.get("provider"))
+        provider = _carrier_label(carrier)
         for tour in carrier.tours:
             vehicle = carrier.vehicles.get(tour.vehicle_id)
             type_id = vehicle.type_id if vehicle else None
@@ -111,8 +155,7 @@ def extract(run_dir, prefix, pf=None):
     excluded = pf.excluded
     vtypes = pf.vtypes
 
-    carrier_provider = {c.carrier_id: provider_of(c.carrier_id, c.attrs.get("provider"))
-                         for c in pf.carriers}
+    carrier_provider = {c.carrier_id: _carrier_label(c) for c in pf.carriers}
     carrier_ctype = {c.carrier_id: carrier_type_of(c.carrier_id, c.attrs.get("carrierType"))
                       for c in pf.carriers}
     vrs_by_carrier = {}
@@ -241,6 +284,7 @@ def extract(run_dir, prefix, pf=None):
         ]
 
     rows += _all_rows(pf, carrier_ctype, prov_travel_hours)
+    rows += _real_provider_parcel_rows(pf)
     rows += _vehicle_type_rows(pf, tv)
     rows += _vehicle_typeid_rows(pf, tv)
 

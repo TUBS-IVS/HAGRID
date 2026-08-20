@@ -335,4 +335,20 @@ class LmdCarrierBuilderTest {
                 .as("B2B is ~99% reliable regardless of provider; with Random(1L) exactly 11 of 1000 miss")
                 .isEqualTo(11);
     }
+
+    @Test
+    @DisplayName("buildDistrict: records the real per-provider parcel breakdown for the analysis layer")
+    void districtCarrierRecordsItsProviderBreakdown() {
+        List<DeliveryDistrictBuilder.PooledStop> stops = List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 120,
+                        List.of(deliveryAt(100, 100, "dhl", 100, Delivery.ParcelType.B2C),
+                                deliveryAt(100, 100, "gls", 20, Delivery.ParcelType.B2C))));
+
+        Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        assertThat(c.getAttributes().getAttribute("parcelsByProvider"))
+                .as("the analysis layer needs the real provider split - a district mixes providers")
+                .isEqualTo("dhl=100;gls=20");
+    }
 }

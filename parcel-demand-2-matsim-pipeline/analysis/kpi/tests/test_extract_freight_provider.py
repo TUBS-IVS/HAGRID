@@ -1,4 +1,5 @@
 # tests/test_extract_freight_provider.py
+import gzip
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -115,3 +116,86 @@ def test_write_schema(tmp_path):
     efp.write(rows, M, out)
     head = out.read_text(encoding="utf-8").splitlines()[0]
     assert head == "run_id;provider;kpi_name;value;unit;source"
+
+
+# --------------------------------------------------------------------------- Task 9: district carriers
+
+def _stage_run(tmp_path, parcels_by_provider):
+    """Minimal on-disk run for a set of DISTRICT carriers (integrated 1c/1d,
+    each carrying a `parcelsByProvider` attribute instead of `provider`).
+
+    No static fixture directory exists yet for a district-carrier run, so this
+    follows the same inline gzip.open(...).write(xml) style already used by
+    test_extract_freight.py's REAL_TEST fixtures (`_CARRIERS_XML`) rather than
+    inventing a second staging convention. `parcels_by_provider` maps
+    carrier_id -> the raw attribute string (e.g. "dhl=100;gls=20").
+    """
+    prefix = "DISTRICT_TEST"
+    parts = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<carriers>"]
+    for carrier_id, pbp in parcels_by_provider.items():
+        total = sum(int(seg.split("=")[1]) for seg in pbp.split(";") if seg)
+        parts.append(
+            "  <carrier id=\"{cid}\">\n"
+            "    <attributes>\n"
+            "      <attribute name=\"district\" class=\"java.lang.String\">{cid}</attribute>\n"
+            "      <attribute name=\"numberOfParcels\" class=\"java.lang.Integer\">{total}</attribute>\n"
+            "      <attribute name=\"parcelsByProvider\" class=\"java.lang.String\">{pbp}</attribute>\n"
+            "    </attributes>\n"
+            "  </carrier>".format(cid=carrier_id, total=total, pbp=pbp))
+    parts.append("</carriers>")
+
+    with gzip.open(tmp_path / (prefix + ".output_carriers.xml.gz"), "wt", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+    with gzip.open(tmp_path / (prefix + ".output_carriersVehicleTypes.xml.gz"), "wt",
+                    encoding="utf-8") as f:
+        f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><vehicleTypes></vehicleTypes>")
+    return tmp_path, prefix
+
+
+def test_district_carriers_are_labelled_as_districts_not_providers(tmp_path):
+    """A district carrier must never be reported as if it were an LSP."""
+    run_dir, prefix = _stage_run(tmp_path, {
+        "hoy_sued#0": "dhl=100;gls=20",
+        "hoy_sued#1": "dhl=50",
+    })
+    rows = efp.extract(run_dir, prefix)
+
+    labels = {r["provider"] for r in rows}
+    assert "district:hoy_sued#0" in labels
+    assert "district:hoy_sued#1" in labels
+    # Site ids carry no LSP name by construction (D7) -- unlike the brief's
+    # tautological "in labels or True" placeholder, this is the real check:
+    # the bare site name must never surface as its own provider label.
+    assert "hoy_sued" not in labels
+
+
+def test_parcels_are_attributed_back_to_the_real_providers(tmp_path):
+    run_dir, prefix = _stage_run(tmp_path, {"hoy_sued#0": "dhl=100;gls=20"})
+    rows = efp.extract(run_dir, prefix)
+
+    parcels = {r["provider"]: r["value"] for r in rows if r["kpi_name"] == "parcels"}
+    assert parcels["dhl"] == 100
+    assert parcels["gls"] == 20
+
+
+def test_baseline_carrier_without_the_attribute_is_unaffected(tmp_path):
+    """Baseline carriers (provider-bound, no parcelsByProvider attribute) must
+    keep today's behaviour exactly: no 'district:' prefix, and no synthetic
+    'parcels' rows fabricated for them."""
+    prefix = "BASELINE_TEST"
+    with gzip.open(tmp_path / (prefix + ".output_carriers.xml.gz"), "wt", encoding="utf-8") as f:
+        f.write(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><carriers>"
+            "<carrier id=\"dhl\"><attributes>"
+            "<attribute name=\"provider\" class=\"java.lang.String\">dhl</attribute>"
+            "<attribute name=\"numberOfParcels\" class=\"java.lang.Integer\">50</attribute>"
+            "</attributes></carrier></carriers>")
+    with gzip.open(tmp_path / (prefix + ".output_carriersVehicleTypes.xml.gz"), "wt",
+                    encoding="utf-8") as f:
+        f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><vehicleTypes></vehicleTypes>")
+
+    rows = efp.extract(tmp_path, prefix)
+    labels = {r["provider"] for r in rows}
+    assert "dhl" in labels
+    assert not any(lbl.startswith("district:") for lbl in labels)
+    assert not [r for r in rows if r["kpi_name"] == "parcels"]
