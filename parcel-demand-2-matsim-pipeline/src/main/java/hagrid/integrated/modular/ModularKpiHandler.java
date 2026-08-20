@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToIntFunction;
@@ -107,6 +108,17 @@ import java.util.function.ToIntFunction;
  * dispatched later, may expire, or may sit pending at EOD. Read it against
  * {@code tours_dispatched}: a tour counted here that never reached DISPATCHED had the gate open
  * for it and still did not fit.</p>
+ *
+ * <p><b>Task 10 per-site swap peaks (spec 2026-08-17, "make the idealisations measurable"):</b>
+ * {@code peak_concurrent_swaps} is ONE global number, computed by the pre-existing (untouched)
+ * {@link #peakConcurrentSwaps()} below. The upcoming depot-count sweep makes that number stop
+ * describing any one site — one open depot concentrates every swap on a single yard, several
+ * open depots hide which one actually saturates. {@link #peakConcurrentSwapsBySite()} reuses the
+ * identical sweep-line ({@link #maxConcurrentSwaps}) grouped by {@link
+ * ModularPlanStats#districtByTourId()} instead, and {@link #notifyShutdown} appends one {@code
+ * peak_concurrent_swaps_<site>} row per site that ever recorded a swap, after the twenty-six
+ * pre-existing metric names. See {@link #swapEndTimesBySite()}'s javadoc for how this grouping
+ * differs from the depot-link one the global figure keeps using.</p>
  *
  * <p><b>Conservation identities (design §4; assert in test, log — never throw — at shutdown):</b>
  * <ol>
@@ -197,6 +209,15 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      * crash. CLEARED on {@link #reset(int)} along with {@link #byTour}.
      */
     private final Set<String> unknownDepotTourIdsLogged = new LinkedHashSet<>();
+    /**
+     * Task 10 (per-site swap peaks): mirrors {@link #unknownDepotTourIdsLogged} but for the
+     * DISTRICT/site grouping {@link #swapEndTimesBySite()} uses - a SWAP_DONE whose tour id has
+     * no entry in {@link ModularPlanStats#districtByTourId()} is grouped under the synthetic
+     * site key {@code "unknown"} and logged ONCE, never dropped. Independent of {@link
+     * #unknownDepotTourIdsLogged} because the two groupings key off two different maps and can
+     * disagree about which tour ids are "unknown". CLEARED on {@link #reset(int)}.
+     */
+    private final Set<String> unknownSiteTourIdsLogged = new LinkedHashSet<>();
     private final Path outputCsv;
     /** Task 1: plan-time accounting (demand/unassigned/missed/max-load/depot-by-tour), computed
      *  once by {@link ModularTourConverter#planStats} right after {@code convert} and handed in by
@@ -213,6 +234,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         byTour.clear();
         unknownTourIdsLogged.clear();
         unknownDepotTourIdsLogged.clear();
+        unknownSiteTourIdsLogged.clear();
     }
 
     @Override
@@ -362,6 +384,15 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 "parcels_missed_overlay;" + planStats.parcelsMissedOverlay(),
                 "max_parcels_per_tour;" + planStats.maxParcelsPerTour(),
                 "peak_concurrent_swaps;" + peakConcurrentSwaps()));
+        // Task 10 (spec 2026-08-17, "make the idealisations measurable"): one MORE row per site
+        // that ever recorded a swap, APPENDED after the twenty-six names above - same append-only
+        // discipline as everything else in this list, except this final block's row COUNT is not
+        // fixed (it is exactly the number of distinct sites {@link #swapEndTimesBySite()} ever
+        // saw). peakConcurrentSwaps() just above is completely untouched by this addition - same
+        // method, same map (planStats.depotByTourId()), same arithmetic - so the pre-existing
+        // global figure cannot regress; see ModularKpiHandlerTest for the pinning assertion.
+        peakConcurrentSwapsBySite().forEach((site, peak) ->
+                lines.add("peak_concurrent_swaps_" + site + ";" + peak));
         try {
             Path parent = outputCsv.getParent();
             if (parent != null) {
@@ -462,6 +493,77 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
             peak = Math.max(peak, maxConcurrentSwaps(endTimes));
         }
         return peak;
+    }
+
+    /**
+     * Task 10 (spec 2026-08-17, "make the idealisations measurable"): {@code
+     * peak_concurrent_swaps} above is ONE global number. With the upcoming depot-count sweep
+     * that stops describing any particular site: at one open depot every swap concentrates on a
+     * single yard the global figure cannot single out, and at several open depots the global
+     * max hides which one is actually saturated. This groups the SAME swap-end times {@link
+     * #peakConcurrentSwaps()} sees, but by {@link ModularPlanStats#districtByTourId()} (the
+     * tour's carrier's district id) instead of by depot link - see that field's javadoc for why
+     * the two groupings are kept separate rather than reusing {@link #peakConcurrentSwaps()}'s
+     * map. {@link #peakConcurrentSwaps()} itself is untouched: same map, same key, same
+     * arithmetic, so the pre-existing global figure cannot regress from this addition.
+     *
+     * <p>A tour id absent from {@code districtByTourId()} (defensive; should not happen for any
+     * tour this handler's own PLANNED event created) is grouped under the synthetic site key
+     * {@code "unknown"} and logged ONCE - never dropped, never a crash, mirroring {@link
+     * #peakConcurrentSwaps()}'s own "unknown" depot fallback via the independent {@link
+     * #unknownSiteTourIdsLogged} flood-guard.
+     */
+    private Map<String, List<Double>> swapEndTimesBySite() {
+        Map<String, List<Double>> bySite = new LinkedHashMap<>();
+        for (Map.Entry<String, TourStat> entry : byTour.entrySet()) {
+            TourStat s = entry.getValue();
+            if (s.swapTimes.isEmpty()) {
+                continue;
+            }
+            String tourId = entry.getKey();
+            String site = planStats.districtByTourId().get(tourId);
+            String siteKey;
+            if (site != null) {
+                siteKey = site;
+            } else {
+                siteKey = "unknown";
+                if (unknownSiteTourIdsLogged.add(tourId)) {
+                    LOG.warn("SWAP_DONE for tour '{}' has no district in"
+                            + " planStats.districtByTourId() - counting its {} swap(s) under the"
+                            + " synthetic site key 'unknown' for the per-site"
+                            + " peak_concurrent_swaps breakdown.", tourId, s.swapTimes.size());
+                }
+            }
+            bySite.computeIfAbsent(siteKey, k -> new ArrayList<>()).addAll(s.swapTimes);
+        }
+        return bySite;
+    }
+
+    /**
+     * Task 10: peak concurrent swaps at ONE site (district id) - {@code 0} if that site never
+     * appears (an id nothing ever swapped under, or one this run never planned a tour for at
+     * all). Uses the exact same sweep-line as the global figure ({@link #maxConcurrentSwaps}),
+     * just grouped by a different key ({@link #swapEndTimesBySite()} instead of the depot-keyed
+     * map {@link #peakConcurrentSwaps()} builds). Package-private: exercised directly by {@link
+     * ModularKpiHandlerTest}; the {@code peak_concurrent_swaps_<site>} CSV rows below are the
+     * only production consumer.
+     */
+    long peakConcurrentSwaps(String site) {
+        List<Double> endTimes = swapEndTimesBySite().get(site);
+        return endTimes == null ? 0 : maxConcurrentSwaps(endTimes);
+    }
+
+    /**
+     * Task 10: every site's peak, for the {@code peak_concurrent_swaps_<site>} CSV rows written
+     * in {@link #notifyShutdown}. {@code TreeMap} - never a {@code HashMap} (determinism, global
+     * constraint): the site set and its insertion order here are a function of simstep event
+     * arrival, not something that should leak into published CSV row order; sorting by site id
+     * gives a byte-reproducible row order independent of that arrival order.
+     */
+    private Map<String, Long> peakConcurrentSwapsBySite() {
+        Map<String, Long> peaks = new TreeMap<>();
+        swapEndTimesBySite().forEach((site, endTimes) -> peaks.put(site, maxConcurrentSwaps(endTimes)));
+        return peaks;
     }
 
     /**

@@ -19,6 +19,7 @@ Task 2 (paper-readiness fixwave, review F1/I6/M1/M2/M4, METHODS-LOG 2.16) added:
 - the unreadable-CSV policy (M1): a 0-byte or header-only modular_tour_stats.csv now
   degrades to a single meta row instead of raising out of build_kpis.
 """
+import gzip
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -131,6 +132,35 @@ def _write_stats_theta_one(tmp_path, prefix):
              "tours_completed_late;0", "parcels_served_late;0",
              "tours_rejected_at_splice;0"]
     (tmp_path / (prefix + ".modular_tour_stats.csv")).write_text("\n".join(lines))
+
+
+def _write_carriers_xml(tmp_path, prefix, carriers):
+    """Task 10: a minimal routed-carriers XML fixture (namespace-free, mirroring
+    tests/fixtures/mini_lmd/MINI.output_carriers.xml.gz's own style). `carriers` is a list of
+    (carrier_id, district_or_None, number_of_parcels, [service_capacity, ...]) tuples -- a district
+    carrier has one CarrierService per pooled stop (LmdCarrierBuilder.buildDistrict), so
+    len(service_capacities) is the segment count."""
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<carriers>"]
+    for carrier_id, district, number_of_parcels, service_caps in carriers:
+        lines.append('  <carrier id="%s">' % carrier_id)
+        lines.append("    <attributes>")
+        if district is not None:
+            lines.append('      <attribute name="district" class="java.lang.String">%s'
+                          "</attribute>" % district)
+        lines.append('      <attribute name="numberOfParcels" class="java.lang.Integer">%d'
+                      "</attribute>" % number_of_parcels)
+        lines.append("    </attributes>")
+        lines.append('    <capabilities fleetSize="INFINITE"><vehicles/></capabilities>')
+        lines.append("    <services>")
+        for i, cap in enumerate(service_caps):
+            lines.append('      <service id="s%d" capacityDemand="%d"/>' % (i, cap))
+        lines.append("    </services>")
+        lines.append("    <plans></plans>")
+        lines.append("  </carrier>")
+    lines.append("</carriers>")
+    path = tmp_path / (prefix + ".output_carriers.xml.gz")
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
 
 def _meta(prefix):
@@ -337,3 +367,50 @@ def test_old_21_metric_csv_omits_task1_rows(tmp_path):
     # No spurious meta rows: this CSV parses cleanly and conserves.
     assert ("meta", "modular_stats_unreadable") not in by_name
     assert ("meta", "modular_identity_violated") not in by_name
+
+
+def test_district_rows_from_output_carriers(tmp_path):
+    """Task 10 (spec 2026-08-17, "make the idealisations measurable"): district_parcels_<id> /
+    district_segments_<id> come straight from the ROUTED carriers XML, not from
+    modular_tour_stats.csv -- this is what puts the 89-vs-1886-parcel catchment spread into
+    kpis_long.csv instead of a footnote. district_segments counts CarrierService entries (pooled
+    stops), not parcels."""
+    _write_stats(tmp_path, "P")
+    _write_carriers_xml(tmp_path, "P", [
+        ("hoy_nord", "hoy_nord", 1886, [900, 986]),
+        ("spreetal", "spreetal", 89, [89]),
+    ])
+    rows = extract_modular.extract(tmp_path, "P")
+    by_name = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+    hoy_parcels = by_name[("freight", "district_parcels_hoy_nord")]
+    assert hoy_parcels["value"] == 1886
+    assert hoy_parcels["unit"] == "parcels"
+    assert by_name[("freight", "district_segments_hoy_nord")]["value"] == 2
+    spreetal_parcels = by_name[("freight", "district_parcels_spreetal")]
+    assert spreetal_parcels["value"] == 89
+    assert by_name[("freight", "district_segments_spreetal")]["value"] == 1
+
+
+def test_district_rows_skip_legacy_carriers_without_district_attribute(tmp_path):
+    """A carrier with no "district" attribute (legacy LmdCarrierBuilder.buildCore,
+    single-provider carrier predating the district rework) is not a district and out of this
+    metric's scope -- it must not produce a district_parcels_<carrier_id> row under its own id."""
+    _write_stats(tmp_path, "P")
+    _write_carriers_xml(tmp_path, "P", [("dhl", None, 100, [60, 40])])
+    rows = extract_modular.extract(tmp_path, "P")
+    names = {r["kpi_name"] for r in rows}
+    assert not any(n.startswith("district_parcels_") or n.startswith("district_segments_")
+                   for n in names)
+
+
+def test_district_rows_absent_when_carriers_xml_missing(tmp_path):
+    """No output_carriers.xml.gz at all (every OTHER fixture in this file) must degrade to ZERO
+    district rows -- no exception, no meta flag. This is an ADDITIVE metric with nothing else
+    depending on it, so it fails silent-and-absent rather than loud, unlike modular_tour_stats.csv
+    itself (M1)."""
+    _write_stats(tmp_path, "P")
+    rows = extract_modular.extract(tmp_path, "P")
+    names = {r["kpi_name"] for r in rows}
+    assert not any(n.startswith("district_parcels_") or n.startswith("district_segments_")
+                   for n in names)
+    assert ("meta", "district_rows_unavailable") not in {(r["kpi_group"], r["kpi_name"]) for r in rows}

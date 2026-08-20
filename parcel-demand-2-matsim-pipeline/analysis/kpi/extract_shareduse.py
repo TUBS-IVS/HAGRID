@@ -39,6 +39,8 @@ geometry.reconstruct_drt_paths only tracks an occupancy COUNT per link, not
 rider identity, so extending it is exactly the kind of new events-parsing
 project the task brief says to avoid here.
 """
+import gzip
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pandas as pd
@@ -46,6 +48,10 @@ import pandas as pd
 import pax_only
 from common import row
 from pax_only import PARCEL_PREFIX  # noqa: F401  (re-exported; canonical def lives there)
+
+# Task 10: mirrors the Java single source of truth hagrid.integrated.shareduse.SharedUse
+# .LOAD_ATTRIBUTE exactly (same precedent as PARCEL_PREFIX above mirroring PARCEL_PERSON_PREFIX).
+_LOAD_ATTRIBUTE = "dvrp:load:parcels"
 
 
 def has_shareduse_stats(run_dir, meta):
@@ -216,6 +222,69 @@ def extract(run_dir, prefix):
 
     rows += _rejection_rows(run_dir, prefix, pax_rides)
     rows += _modal_share_rows(run_dir, prefix)
+    rows += _district_rows(run_dir, prefix)
+    return rows
+
+
+def _district_rows(run_dir, prefix):
+    """Task 10 (spec 2026-08-17, "make the idealisations measurable"): per-district catchment
+    size for 1c. Unlike 1d there are no MATSim freight Carriers here at all -- ParcelAgentGenerator
+    turns each pooled stop's sub-load into a dummy PARCEL-PERSON instead, carrying a "district"
+    person attribute and a dvrp:load:parcels load (one person = one pooled-stop sub-load = one
+    segment, the M2 segment-split convention). This is the "parcel persons" half of the brief's
+    "routed carriers / parcel persons" instruction -- 1d reads carriers (extract_modular), 1c
+    reads the final population instead, because that is where 1c's per-district identity lives.
+
+    district_segments_<id> is a PERSON count (one row per segment); district_parcels_<id> is the
+    summed dvrp:load:parcels load. Degrades to NO rows (not a meta flag) when
+    output_plans.xml.gz is missing/unreadable -- same additive-metric tolerance as
+    extract_modular's carriers-XML counterpart; a run with zero parcel-persons (no Shared-Use
+    demand at all) also yields no rows, which is the correct "nothing to report" answer, not a
+    degraded one.
+    """
+    plans_path = Path(run_dir) / (prefix + ".output_plans.xml.gz")
+    parcels_by_district = {}
+    segments_by_district = {}
+    try:
+        with gzip.open(plans_path, "rb") as f:
+            for _, el in ET.iterparse(f):
+                if not el.tag.endswith("person"):
+                    continue
+                person_id = el.get("id") or ""
+                if not person_id.startswith(pax_only.PARCEL_PREFIX):
+                    el.clear()
+                    continue
+                district = None
+                load = 0
+                for child in el:
+                    if child.tag.endswith("attributes"):
+                        for a in child:
+                            if not a.tag.endswith("attribute"):
+                                continue
+                            name = a.get("name")
+                            if name == "district":
+                                district = (a.text or "").strip()
+                            elif name == _LOAD_ATTRIBUTE:
+                                try:
+                                    load = int(float((a.text or "0").strip()))
+                                except ValueError:
+                                    load = 0
+                el.clear()
+                if district is None:
+                    continue
+                parcels_by_district[district] = parcels_by_district.get(district, 0) + load
+                segments_by_district[district] = segments_by_district.get(district, 0) + 1
+    except (FileNotFoundError, OSError, ET.ParseError) as e:
+        print("[shareduse] district load rows unavailable (output_plans.xml.gz missing or "
+              "unreadable): " + str(e).encode("ascii", "replace").decode("ascii"))  # ASCII only
+        return []
+    rows = []
+    # Sorted by district id -- determinism, same convention extract_modular's _district_rows uses.
+    for district in sorted(parcels_by_district):
+        rows.append(row("freight", "district_parcels_" + district, parcels_by_district[district],
+                        "parcels", "output_plans (ParcelAgentGenerator parcel-persons)"))
+        rows.append(row("freight", "district_segments_" + district, segments_by_district[district],
+                        "segments", "output_plans (ParcelAgentGenerator parcel-persons)"))
     return rows
 
 

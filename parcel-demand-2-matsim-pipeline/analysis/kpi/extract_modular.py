@@ -116,10 +116,51 @@ def extract(run_dir, prefix):
         return [row("meta", "modular_stats_unreadable", 1, "flag",
                      "modular_tour_stats.csv unreadable (" + type(exc).__name__ + ": "
                      + reason + ") - no modular KPI rows emitted, review M1")]
-    return _rows_from_stats(stats, core)
+    return _rows_from_stats(stats, core, run_dir, prefix)
 
 
-def _rows_from_stats(stats, core):
+def _district_rows(run_dir, prefix):
+    """Task 10 (spec 2026-08-17, "make the idealisations measurable"): per-district catchment
+    size, straight from the ROUTED carriers XML (LmdCarrierBuilder.buildDistrict: one carrier per
+    district, carrier id == its own "district" attribute). This is what puts the 89-parcel yard
+    into kpis_long.csv instead of a footnote -- at seven open depots the spread is 89 (spreetal)
+    to 1886 (hoy_nord), a factor of 21 nearest-depot assignment does not price in.
+
+    district_segments_<id> counts CarrierService entries (one per POOLED stop -
+    LmdCarrierBuilder.buildDistrict's own convention, a stop can carry several providers' parcels
+    pooled together), NOT parcels -- district_parcels_<id> is the parcel count.
+
+    Carriers with no "district" attribute (legacy buildCore, single-provider carriers predating
+    the district rework) are skipped -- they are not a district and out of this metric's scope,
+    same tolerance as extract()'s existing has_plan_stats gate for pre-Task-1 CSVs. A missing or
+    unreadable carriers XML degrades to NO rows at all (mirrors extract_freight's
+    _provider_cost_totals graceful fallback) rather than raising out of build_kpis -- this is an
+    ADDITIVE metric with nothing else depending on it.
+    """
+    try:
+        import carriers_parse
+        carriers = carriers_parse.parse_carriers(
+            Path(run_dir) / (prefix + ".output_carriers.xml.gz"))
+    except Exception as e:
+        print("[modular] district load rows unavailable (output_carriers.xml.gz missing or "
+              "unreadable): " + str(e).encode("ascii", "replace").decode("ascii"))  # ASCII only
+        return []
+    rows = []
+    # Sorted by carrier/district id (not the XML's own order) -- determinism, mirroring
+    # ModularTourConverter's own "never the raw Carriers map order" convention.
+    for c in sorted(carriers, key=lambda c: c.carrier_id):
+        district = c.attrs.get("district")
+        if district is None:
+            continue
+        parcels = carriers_parse.attr_int(c.attrs, "numberOfParcels")
+        rows.append(row("freight", "district_parcels_" + district, parcels, "parcels",
+                        "output_carriers (LmdCarrierBuilder.buildDistrict)"))
+        rows.append(row("freight", "district_segments_" + district, len(c.services), "stops",
+                        "output_carriers (LmdCarrierBuilder.buildDistrict)"))
+    return rows
+
+
+def _rows_from_stats(stats, core, run_dir, prefix):
     # All counts, not measurements -- ints throughout (ambiguity resolution: identity checks
     # compare ints exactly, including identity 5's delta_parcels). Pulled from `core` (already
     # int-cast inside extract()'s try/except, review Important 1) rather than re-looked-up
@@ -233,12 +274,31 @@ def _rows_from_stats(stats, core):
                 "swaps", "modular_tour_stats"),
         ]
 
+    # Zustellquoten-Konvention (2026-08-10, METHODS-LOG 2.21): dieser Arm hatte gar keine
+    # Quote -- nur delta_share_*, das die NICHT-Zustellung nach Ursache aufteilt. Der
+    # Drei-Arm-Vergleich braucht EINEN Namen auf EINER Basis: zugestellt / Nachfrage, das
+    # Not-at-home-Overlay NICHT abgezogen. parcels_served ist hier schon brutto --
+    # parcels_missed_overlay wird ausgewiesen, aber nirgends subtrahiert (nachgerechnet an
+    # m1d010: die Fehlmenge von 126 Paketen liegt UNTER dem Overlay von 393, das Overlay kann
+    # darin also nicht enthalten sein).
+    # Nenner ist parcels_demand, wo vorhanden: jsprit-unzugeordnete Pakete sind ein echter
+    # Zustellausfall und gehören in die Quote. Auf alten CSVs ohne den Task-1-Block bleibt
+    # parcels_planned der Nenner, dann fehlen sie -- dokumentierte Degradation, kein Fehler.
+    rate_denominator = parcels_demand if has_plan_stats else parcels_planned
+    if rate_denominator:
+        rows.append(row("freight", "delivery_rate", parcels_served / rate_denominator,
+                        "share", "modular_tour_stats (operational: overlay NOT deducted)"))
+
     rows.append(_identity_violation_row(
         tours_planned, tours_expired_pending, tours_dispatched, tours_completed,
         tours_dispatched_incomplete, tours_pending_eod, parcels_planned,
         parcels_expired_pending, parcels_dispatched, parcels_served,
         parcels_dispatched_unserved, parcels_pending_eod, delta,
         has_plan_stats, parcels_demand, parcels_unassigned_jsprit))
+    # Task 10: per-district catchment size (district_parcels_<id>/district_segments_<id>),
+    # sourced from the routed carriers XML, not from modular_tour_stats.csv at all -- appended
+    # last, additively, so it can never disturb the metric set/order above.
+    rows += _district_rows(run_dir, prefix)
     return [r for r in rows if r is not None]
 
 
