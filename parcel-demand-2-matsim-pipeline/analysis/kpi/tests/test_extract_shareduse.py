@@ -2,6 +2,7 @@
 """1c Task 8: extract_shareduse.py -- channel/delta stats from
 shareduse_channel_stats.csv (Task 7 format) plus D10 pax-only corrected
 passenger KPIs and the best-effort D10(c) fare split."""
+import gzip
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,6 +37,65 @@ def _seed_stats(dirpath, prefix):
     (dirpath / (prefix + ".shareduse_channel_stats.csv")).write_text(
         (FIX / (PREFIX + ".shareduse_channel_stats.csv")).read_text(encoding="utf-8"),
         encoding="utf-8")
+
+
+def _write_plans_xml(tmp_path, prefix, people):
+    """Task 10: a minimal output_plans.xml.gz fixture, mirroring a REAL 1c run's serialized
+    parcel-person attributes (verified against an actual DRT_SHAREDUSE output_plans.xml.gz: a
+    parcel-person carries dvrp:load:parcels as java.lang.Integer and district as
+    java.lang.String). `people` is a list of (person_id, district_or_None, load_or_None) tuples --
+    an ordinary pax person carries neither attribute at all, exactly like a real demographic
+    person untouched by ParcelAgentGenerator."""
+    lines = ['<?xml version="1.0" encoding="utf-8"?>', "<population>"]
+    for person_id, district, load in people:
+        lines.append('  <person id="%s">' % person_id)
+        lines.append("    <attributes>")
+        if load is not None:
+            lines.append('      <attribute name="dvrp:load:parcels" class="java.lang.Integer">%d'
+                          "</attribute>" % load)
+        if district is not None:
+            lines.append('      <attribute name="district" class="java.lang.String">%s'
+                          "</attribute>" % district)
+        lines.append("    </attributes>")
+        lines.append("  </person>")
+    lines.append("</population>")
+    path = tmp_path / (prefix + ".output_plans.xml.gz")
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def test_district_rows_from_parcel_persons(tmp_path):
+    """Task 10 (spec 2026-08-17, "make the idealisations measurable"): 1c has no MATSim freight
+    Carriers at all, so district_parcels_<id>/district_segments_<id> come from the parcel-PERSONS
+    in the final population instead (the "parcel persons" half of the brief's "routed carriers /
+    parcel persons" instruction). An ordinary pax person (no "parcel_" id prefix, no district/load
+    attributes) must not leak into any district bucket."""
+    _seed_stats(tmp_path, PREFIX)
+    _write_plans_xml(tmp_path, PREFIX, [
+        ("parcel_hoy_nord_1", "hoy_nord", 20),
+        ("parcel_hoy_nord_2", "hoy_nord", 15),
+        ("parcel_spreetal_1", "spreetal", 5),
+        ("1033824", None, None),   # ordinary pax person
+    ])
+    rows = es.extract(tmp_path, PREFIX)
+    by_name = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+    hoy_parcels = by_name[("freight", "district_parcels_hoy_nord")]
+    assert hoy_parcels["value"] == 35
+    assert hoy_parcels["unit"] == "parcels"
+    assert by_name[("freight", "district_segments_hoy_nord")]["value"] == 2
+    spreetal_parcels = by_name[("freight", "district_parcels_spreetal")]
+    assert spreetal_parcels["value"] == 5
+    assert by_name[("freight", "district_segments_spreetal")]["value"] == 1
+
+
+def test_district_rows_absent_when_output_plans_missing(tmp_path):
+    """No output_plans.xml.gz at all (every OTHER fixture in this file) must degrade to ZERO
+    district rows -- no exception, no meta flag. Additive metric, nothing else depends on it."""
+    _seed_stats(tmp_path, PREFIX)
+    rows = es.extract(tmp_path, PREFIX)
+    names = {r["kpi_name"] for r in rows}
+    assert not any(n.startswith("district_parcels_") or n.startswith("district_segments_")
+                   for n in names)
 
 
 def test_has_shareduse_stats_predicate(tmp_path):

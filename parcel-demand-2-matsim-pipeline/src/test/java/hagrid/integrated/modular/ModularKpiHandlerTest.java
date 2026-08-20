@@ -138,8 +138,11 @@ class ModularKpiHandlerTest {
         // written against this exact set. 20 originally + tours_rejected_at_splice APPENDED by
         // the whole-branch review (Finding 3), + 5 more APPENDED by Task 1 (paper-readiness
         // review F1/F3/F5/F7): 26 total. The twenty-one and their order are unchanged; position
-        // 20 is still tours_rejected_at_splice, since the five new ones land AFTER it.
-        assertThat(csv).hasSize(26);
+        // 20 is still tours_rejected_at_splice, since the five new ones land AFTER it. Task 10
+        // adds ONE more: this fixture's zeroPlanStats() carries an empty districtByTourId, so
+        // dhl_t0's + hermes_t0's four swaps all land in the synthetic "unknown" site bucket,
+        // producing exactly one peak_concurrent_swaps_unknown row -> 27 total.
+        assertThat(csv).hasSize(27);
         assertThat(List.copyOf(csv.keySet()).get(20))
                 .as("appended LAST (before Task 1) so no existing column position shifts")
                 .isEqualTo("tours_rejected_at_splice");
@@ -321,7 +324,9 @@ class ModularKpiHandlerTest {
                 .doesNotThrowAnyException();
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(26);
+        // 26 pre-Task-10 metrics + one Task 10 row: t_ok's two swaps land in the synthetic
+        // "unknown" site bucket (zeroPlanStats()'s districtByTourId is empty).
+        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(27);
 
         double dispatched = csv.get("parcels_dispatched");
         double served = csv.get("parcels_served");
@@ -433,8 +438,11 @@ class ModularKpiHandlerTest {
     void planTimeMetricsAppendedAfterToursRejectedAtSplice(@TempDir Path tmp) throws Exception {
         Id<Link> depotA = Id.createLinkId("depotA");
         Id<Link> depotB = Id.createLinkId("depotB");
+        // Task 10: districtByTourId (6th arg) left empty - this test is about the pre-existing
+        // depot-keyed global figure and the five Task-1 rows, not the new per-site rows, so both
+        // tours' swaps fall into the site-grouping's synthetic "unknown" bucket (see below).
         ModularPlanStats stats = new ModularPlanStats(15, 2, 1, 8,
-                Map.of("dhl_t0", depotA, "gls_t0", depotB));
+                Map.of("dhl_t0", depotA, "gls_t0", depotB), Map.of());
         ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
 
         // dhl_t0 (depotA): two swaps 200s apart - overlapping intervals, peak 2 at this depot.
@@ -493,13 +501,19 @@ class ModularKpiHandlerTest {
                 .as("the 21 pre-existing metrics (plus header) must be byte-identical to before")
                 .isEqualTo(expectedOriginal21);
         assertThat(lines.subList(22, lines.size()))
-                .as("exactly the five new metrics, nothing else, in the mandated order")
+                .as("exactly the five Task-1 metrics plus Task 10's one per-site row (both tours'"
+                        + " swaps fall into the synthetic 'unknown' site bucket, districtByTourId"
+                        + " being empty here), nothing else, in the mandated order")
                 .containsExactly(
                         "parcels_demand;15",
                         "parcels_unassigned_jsprit;2",
                         "parcels_missed_overlay;1",
                         "max_parcels_per_tour;8",
-                        "peak_concurrent_swaps;2");
+                        "peak_concurrent_swaps;2",
+                        // Task 10: dhl_t0 (2 swaps, peak 2) + gls_t0 (1 swap, peak 1) combined
+                        // into "unknown" -> end times {30000,30200,50000}; the first two overlap
+                        // (peak 2), the third is isolated -> site peak = 2.
+                        "peak_concurrent_swaps_unknown;2");
     }
 
     /**
@@ -519,7 +533,7 @@ class ModularKpiHandlerTest {
         Id<Link> depotA = Id.createLinkId("depotA");
         Id<Link> depotB = Id.createLinkId("depotB");
         ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0,
-                Map.of("a_t0", depotA, "b_t0", depotB));
+                Map.of("a_t0", depotA, "b_t0", depotB), Map.of());
         ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
 
         // Same absolute swap-end time at TWO DIFFERENT depots - a global (depot-blind) sweep would
@@ -548,7 +562,7 @@ class ModularKpiHandlerTest {
             + "do NOT count as concurrent (tie-break: END processed before START)")
     void peakConcurrentSwapsTieBreakEndBeforeStart(@TempDir Path tmp) throws Exception {
         Id<Link> depot = Id.createLinkId("depot");
-        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, Map.of("t_touch", depot));
+        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, Map.of("t_touch", depot), Map.of());
         ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
 
         // swap 1 occupies [30000 - 420, 30000] = [29580, 30000]; swap 2 occupies
@@ -574,7 +588,7 @@ class ModularKpiHandlerTest {
     @DisplayName("Task 1: SWAP_DONE for a tourId with no depot in planStats is grouped under "
             + "'unknown' and counted, never crashes")
     void swapDoneForUnmappedTourIdCountsUnderSyntheticUnknownDepot(@TempDir Path tmp) throws Exception {
-        ModularPlanStats emptyDepotMap = new ModularPlanStats(0, 0, 0, 0, Map.of());
+        ModularPlanStats emptyDepotMap = new ModularPlanStats(0, 0, 0, 0, Map.of(), Map.of());
         ModularKpiHandler handler =
                 new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), emptyDepotMap);
 
@@ -589,11 +603,134 @@ class ModularKpiHandlerTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * Task 10 (spec 2026-08-17, "make the idealisations measurable"): the brief's own illustrative
+     * sketch calls a {@code newHandlerWithSites(...)} factory and a {@code swap(handler, site,
+     * start, end)} helper that do not exist on this class - adapted here to the REAL construction
+     * (ctor takes a {@link ModularPlanStats}) and the REAL swap mechanic (a {@code SWAP_DONE}
+     * fires at the swap's END only, occupying a FIXED {@code [end - RETOOLING_S, end]} window -
+     * there is no separate start/end pair to pass in, and a tour must be PLANNED before any other
+     * event for it is accepted at all).
+     *
+     * <p>Three tours share depot {@code depotHoySued} / district {@code "hoy_sued"} with three
+     * mutually overlapping swaps (peak 3); one tour sits alone at depot {@code depotWittichenau} /
+     * district {@code "wittichenau"} (peak 1). Both the pre-existing depot-keyed global figure and
+     * the new district-keyed per-site figures agree on 3 here (the two groupings are not yet
+     * forced apart - {@link #peakConcurrentSwapsPerSiteDivergesFromPerDepotWhenCatchmentIsSplit}
+     * does that), so this test's job is the brief's literal claims: a per-site accessor exists,
+     * the CSV carries one row per site, and the global row is unchanged.
+     */
+    @Test
+    @DisplayName("Task 10: peak_concurrent_swaps is also reported PER SITE (district id), and the "
+            + "pre-existing global row is unchanged")
+    void peakConcurrentSwapsIsReportedPerSite(@TempDir Path tmp) throws Exception {
+        Id<Link> depotHoySued = Id.createLinkId("depotHoySued");
+        Id<Link> depotWittichenau = Id.createLinkId("depotWittichenau");
+        Map<String, Id<Link>> depotByTourId = new LinkedHashMap<>();
+        depotByTourId.put("hoy_sued_t0", depotHoySued);
+        depotByTourId.put("hoy_sued_t1", depotHoySued);
+        depotByTourId.put("hoy_sued_t2", depotHoySued);
+        depotByTourId.put("wittichenau_t0", depotWittichenau);
+        Map<String, String> districtByTourId = new LinkedHashMap<>();
+        districtByTourId.put("hoy_sued_t0", "hoy_sued");
+        districtByTourId.put("hoy_sued_t1", "hoy_sued");
+        districtByTourId.put("hoy_sued_t2", "hoy_sued");
+        districtByTourId.put("wittichenau_t0", "wittichenau");
+        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, depotByTourId, districtByTourId);
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
+
+        // hoy_sued: three swaps 100s apart - [29580,30000]/[29680,30100]/[29780,30200] all overlap
+        // at [29780,30000] -> peak 3.
+        handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "hoy_sued_t0", vehId));
+        handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued_t1", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30100, "hoy_sued_t1", vehId));
+        handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued_t2", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30200, "hoy_sued_t2", vehId2));
+        // wittichenau: one isolated swap, far away in time -> peak 1, and never overlapping
+        // hoy_sued's swaps (so the depot-keyed global figure also comes out to 3, not something
+        // bigger from an accidental cross-site merge).
+        handler.handleEvent(ModularTourEvent.planned(100, "wittichenau_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(50000, "wittichenau_t0", vehId2));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        // Package-private accessor, exercised directly (same package): the site IS the district
+        // id, not the depot link string.
+        assertThat(handler.peakConcurrentSwaps("hoy_sued")).isEqualTo(3);
+        assertThat(handler.peakConcurrentSwaps("wittichenau")).isEqualTo(1);
+        assertThat(handler.peakConcurrentSwaps("never_seen_site"))
+                .as("a site with no recorded swaps returns 0, not a lookup failure").isEqualTo(0);
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("peak_concurrent_swaps"))
+                .as("the global figure - still depot-keyed, untouched code path - must stay 3")
+                .isEqualTo(3);
+        assertThat(csv.get("peak_concurrent_swaps_hoy_sued")).isEqualTo(3);
+        assertThat(csv.get("peak_concurrent_swaps_wittichenau")).isEqualTo(1);
+
+        // Determinism (global constraint): TreeMap ordering, never insertion/HashMap order - the
+        // two site rows must appear alphabetically, right after the (untouched) 26-metric block.
+        List<String> lines = Files.readAllLines(
+                tmp.resolve("TESTRUN.modular_tour_stats.csv"), StandardCharsets.UTF_8);
+        assertThat(lines.subList(lines.size() - 2, lines.size()))
+                .as("sites sorted alphabetically, appended after every pre-existing row")
+                .containsExactly("peak_concurrent_swaps_hoy_sued;3", "peak_concurrent_swaps_wittichenau;1");
+    }
+
+    /**
+     * Task 10: forces the depot-keyed global grouping and the district-keyed per-site grouping
+     * genuinely APART - the interfaces note explicitly documents that a catchment split by {@code
+     * maxJobsPerDistrict} produces sites like {@code hoy_sued#0}/{@code hoy_sued#1} that share ONE
+     * physical depot link. Two tours here do exactly that: same depot, two different district ids,
+     * one swap each at the SAME instant (identical intervals, mirroring {@link
+     * #peakConcurrentSwapsIsPerDepotNotGlobal}'s technique). Depot-keyed grouping pools them into
+     * one bucket (peak 2); district-keyed grouping keeps them apart (peak 1 at each site) - a
+     * per-site implementation that secretly aliased "site" to "depot" would report 2 for both
+     * sub-districts here instead of 1 each.
+     */
+    @Test
+    @DisplayName("Task 10: per-site peak is keyed by DISTRICT id, not depot link - two split "
+            + "sub-districts of the same physical depot are counted SEPARATELY")
+    void peakConcurrentSwapsPerSiteDivergesFromPerDepotWhenCatchmentIsSplit(@TempDir Path tmp)
+            throws Exception {
+        Id<Link> sharedDepot = Id.createLinkId("depotHoySued");
+        Map<String, Id<Link>> depotByTourId = Map.of(
+                "hoy_sued#0_t0", sharedDepot, "hoy_sued#1_t0", sharedDepot);
+        Map<String, String> districtByTourId = Map.of(
+                "hoy_sued#0_t0", "hoy_sued#0", "hoy_sued#1_t0", "hoy_sued#1");
+        ModularPlanStats stats = new ModularPlanStats(0, 0, 0, 0, depotByTourId, districtByTourId);
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"), stats);
+
+        handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued#0_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "hoy_sued#0_t0", vehId));
+        handler.handleEvent(ModularTourEvent.planned(100, "hoy_sued#1_t0", 1));
+        handler.handleEvent(ModularTourEvent.swapDone(30000, "hoy_sued#1_t0", vehId2));
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        assertThat(handler.peakConcurrentSwaps("hoy_sued#0"))
+                .as("split sub-district #0 alone never had 2 concurrent swaps").isEqualTo(1);
+        assertThat(handler.peakConcurrentSwaps("hoy_sued#1"))
+                .as("split sub-district #1 alone never had 2 concurrent swaps").isEqualTo(1);
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("peak_concurrent_swaps"))
+                .as("the depot-keyed GLOBAL figure still pools both sub-districts at their shared"
+                        + " physical yard - unchanged behaviour, not a regression")
+                .isEqualTo(2);
+        assertThat(csv.get("peak_concurrent_swaps_hoy_sued#0")).isEqualTo(1);
+        assertThat(csv.get("peak_concurrent_swaps_hoy_sued#1")).isEqualTo(1);
+    }
+
     /** Task 1: a zero-valued fixture for tests that exercise the ORIGINAL 21 metrics only and do
      *  not care about plan-time accounting - keeps every pre-existing test's all-zero-append
-     *  invariant intact without repeating this literal at every call site. */
+     *  invariant intact without repeating this literal at every call site. Task 10: the sixth arg
+     *  (districtByTourId) is likewise empty for these tests, so any swap they fire falls into the
+     *  synthetic "unknown" site bucket - the same pre-existing fallback these tests already rely
+     *  on for the depot-keyed map (5th arg), just mirrored for the site-keyed one. */
     private static ModularPlanStats zeroPlanStats() {
-        return new ModularPlanStats(0, 0, 0, 0, Map.of());
+        return new ModularPlanStats(0, 0, 0, 0, Map.of(), Map.of());
     }
 
     // -------------------------------------------------------------------------

@@ -108,8 +108,14 @@ public final class ModularTourConverter {
         int maxParcelsPerTour = tours.stream().mapToInt(ModularFreightTour::totalParcels)
                 .max().orElse(0);
         Map<String, Id<Link>> depotByTourId = new LinkedHashMap<>();
+        // Task 10: tour.provider() is the carrier id for EVERY tour this converter ever builds
+        // (LmdCarrierBuilder.buildDistrict sets the carrier's own id to the district id) - see
+        // ModularPlanStats#districtByTourId's javadoc for why this is kept SEPARATE from
+        // depotByTourId above rather than reusing it.
+        Map<String, String> districtByTourId = new LinkedHashMap<>();
         for (ModularFreightTour tour : tours) {
             depotByTourId.put(tour.tourId(), tour.depotLink());
+            districtByTourId.put(tour.tourId(), tour.provider());
         }
 
         long plannedFromTours = tours.stream().mapToInt(ModularFreightTour::totalParcels).sum();
@@ -128,7 +134,7 @@ public final class ModularTourConverter {
         }
 
         return new ModularPlanStats(parcelsDemand, parcelsUnassignedJsprit, parcelsMissedOverlay,
-                maxParcelsPerTour, depotByTourId);
+                maxParcelsPerTour, depotByTourId, districtByTourId);
     }
 
     /** Null-safe int carrier attribute read: an absent attribute contributes 0, never throws. */
