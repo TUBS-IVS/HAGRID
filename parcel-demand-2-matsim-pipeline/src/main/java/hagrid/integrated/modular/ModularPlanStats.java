@@ -40,18 +40,19 @@ import java.util.Map;
  *                                {@link ModularFreightTour#provider()} - which, for every tour
  *                                this converter ever builds (carriers always come from
  *                                {@code LmdCarrierBuilder.buildDistrict} in {@code runModular}),
- *                                IS the carrier's own {@code "district"} attribute (the
- *                                district/depot site id, e.g. {@code hoy_sued} or
- *                                {@code hoy_sued#0} when a catchment was split by
- *                                {@code maxJobsPerDistrict}). Deliberately DISTINCT from
- *                                {@link #depotByTourId}: two split sub-districts of the SAME
- *                                physical depot (e.g. {@code hoy_sued#0}/{@code hoy_sued#1})
- *                                share one {@code depotLink} but are two different sites here -
- *                                see {@link ModularKpiHandler}'s per-site swap-peak javadoc for
- *                                why that is the deliberate grouping for the PER-SITE
- *                                {@code peak_concurrent_swaps_<site>} rows, not a physical-yard
- *                                one; the pre-existing GLOBAL figure keeps using
- *                                {@link #depotByTourId} untouched.
+ *                                IS the carrier's own {@code "district"} attribute, e.g.
+ *                                {@code hoy_sued} or {@code hoy_sued#0} when a catchment was
+ *                                split by {@code maxJobsPerDistrict}. This is a DISTRICT id, NOT
+ *                                itself a physical site id: a split sub-district's {@code #<n>}
+ *                                suffix must be stripped ({@code ModularKpiHandler.siteOf}) before
+ *                                it identifies a physical yard, since every split sub-district of
+ *                                one depot shares that one yard. Deliberately DISTINCT from
+ *                                {@link #depotByTourId}: this map is a String keyed off the
+ *                                carrier's own district attribute (fed through {@code siteOf} for
+ *                                the per-site swap-peak metric), while {@link #depotByTourId} is
+ *                                the physical {@code Id<Link>} the pre-existing GLOBAL figure
+ *                                keeps using untouched - see {@link ModularKpiHandler}'s per-site
+ *                                swap-peak javadoc for the full reasoning.
  */
 public record ModularPlanStats(long parcelsDemand, long parcelsUnassignedJsprit,
         long parcelsMissedOverlay, int maxParcelsPerTour, Map<String, Id<Link>> depotByTourId,
