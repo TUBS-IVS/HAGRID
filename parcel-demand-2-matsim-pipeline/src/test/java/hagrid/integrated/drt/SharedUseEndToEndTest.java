@@ -14,8 +14,10 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
+import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.events.handler.PersonEntersVehicleEventHandler;
 import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Activity;
 import org.matsim.api.core.v01.population.Population;
 import org.matsim.contrib.drt.run.DrtConfigGroup;
@@ -25,6 +27,8 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.events.EventsUtils;
 import org.matsim.core.events.MatsimEventsReader;
+import org.matsim.core.network.NetworkUtils;
+import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.NetworkWriter;
 import org.matsim.core.population.PopulationUtils;
 import org.matsim.core.scenario.ScenarioUtils;
@@ -228,6 +232,30 @@ class SharedUseEndToEndTest {
                         + "wittichenau provider yard")
                 .hasSize(1);
 
+        // Identity, not just cardinality: the single origin link must be the link hoy_sued's OWN
+        // coordinate snaps to on the drt sub-network - the exact snap the production preprocessor
+        // performs for a depot (LausitzDrtPreprocessor L216-231 -> ParcelAgentGenerator's
+        // NetworkUtils.getNearestLinkExactly(drtNetwork, district.depot().coord())). Both fixture
+        // demand points ({300,300} / {800,800}) are geometrically nearer wittichenau (500,500)
+        // than hoy_sued (950,300), so a regression that dropped cfg.getOpenDepots() at L228 (falling
+        // back to "all depots open") would still land every parcel on a SINGLE link - wittichenau's
+        // - and hasSize(1) alone would not notice. This assertion would catch that.
+        Map<String, Coord> depotCoords = DrtDepotReader.readBySite(Path.of(cfg.getLmdDepotCsv()));
+        Coord hoySuedCoord = depotCoords.get("hoy_sued");
+        assertThat(hoySuedCoord).as("fixture must stage a hoy_sued depot coordinate").isNotNull();
+
+        Network fullNet = NetworkUtils.readNetwork(cfg.getDrtNetworkClipped());
+        Network drtNet = NetworkUtils.createNetwork();
+        new TransportModeNetworkFilter(fullNet).filter(drtNet, Set.of(TransportMode.drt));
+        Id<Link> hoySuedLinkId = NetworkUtils.getNearestLinkExactly(drtNet, hoySuedCoord).getId();
+
+        assertThat(depotLinks)
+                .as("the single origin link must be the link hoy_sued's coordinate snaps to on "
+                        + "the drt sub-network, not wittichenau's - openDepots must actually "
+                        + "restrict which depot districts pool through, not merely happen to "
+                        + "still yield one link")
+                .containsExactly(hoySuedLinkId);
+
         // run_metadata.json must record openDepots/maxJobsPerDistrict, else a sweep stage cannot
         // be identified after the fact and two stages could be compared as if they were the same
         // configuration (RunMetadataWriter keys: open_depots / max_jobs_per_district).
@@ -285,12 +313,18 @@ class SharedUseEndToEndTest {
             // districts via DrtDepotReader.readBySite (Task 6, spec 2026-08-17 D7), which throws
             // loudly on a column-3-less row.
             createParentDirs(cfg.getLmdDepotCsv());
-            // hoy_sued sits at (700,200) - deliberately NOT on top of either demand segment
+            // hoy_sued sits at (950,300) - deliberately NOT on top of either demand segment
             // ({300,300} / {800,800} below), so opening it exercises real routing rather than a
-            // same-link pickup/delivery coincidence (which ParcelAgentGenerator skips).
+            // same-link pickup/delivery coincidence (which ParcelAgentGenerator skips), AND far
+            // enough from wittichenau (500,500) that the two snap to DIFFERENT links of the
+            // 4-node square (wittichenau ties bottom/left at distance 400 each and resolves to
+            // the bottom edge; hoy_sued is unambiguously nearest the right edge at distance 50) -
+            // needed so sharedUseRunsWithASingleOpenDepot's link-identity assertion actually
+            // discriminates (an earlier candidate, (700,200), also tied onto the SAME bottom-edge
+            // link as wittichenau and could not tell the two depots apart).
             String depotCsvBody = openDepots.isEmpty()
                     ? "provider;x;y;site\ndhl;500.0;500.0;wittichenau\n"
-                    : "provider;x;y;site\ndhl;500.0;500.0;wittichenau\ndhl;700.0;200.0;hoy_sued\n";
+                    : "provider;x;y;site\ndhl;500.0;500.0;wittichenau\ndhl;950.0;300.0;hoy_sued\n";
             Files.writeString(Path.of(cfg.getLmdDepotCsv()), depotCsvBody);
 
             // LMD parcel-demand shapefile: two segments, both B2C+B2B so multiple parcel-persons
