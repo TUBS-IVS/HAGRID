@@ -266,6 +266,16 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   und Ausschlüsse → [METHODS-LOG](METHODS-LOG.md) §2.33 Punkt 5. Blockiert die Kostenkorrektur
   **nicht**. _(added 2026-08-11)_
 
+- **`[M]` `hagrid.log.dir` wird unbedingt überschrieben — jede neue Maschine fällt einmal rein**
+  — `SimulationRunnerUtils.runSimulation` setzt `hagrid.log.dir` auf `<runDir>/logs`, auch wenn ein
+  `-Dhagrid.log.dir` explizit gesetzt wurde. Der MATSim-Controler leert dann dieses Verzeichnis und
+  kollidiert mit der offenen `hagrid.log`; der Lauf stirbt in der Guice-Injektion vor Iteration 0.
+  Workaround ist ein eigener log4j-Config außerhalb des Run-Verzeichnisses — seit 2026-08-25
+  getrackt als `logging/log4j2_runlocal.xml` (vorher nur als ungetracktes `devlog/log4j2_dev.xml`,
+  weshalb der Sim-PC am 2026-08-25 beim ersten 1c-Arm genau hier abgebrochen ist). Echter Fix: das
+  `setProperty` respektiert eine explizit gesetzte Property, dann wird die Config-Datei unnötig.
+  Reine Logging-Semantik, keine Simulationswirkung. _(added 2026-08-25)_
+
 - **`[M]` KPI-Landschaft konsolidieren** — ein Konzept für Kontaminations-Marker,
   `*_pax`-Zusatzzeilen, `pax_only`-Overrides und Meta-Rows, bevor weitere Szenarien dazukommen
   (User 2026-07-29: „damit wir nicht irgendwann in den Dashboards ein KPI-Chaos haben").
