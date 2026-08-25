@@ -12,6 +12,10 @@ Interactive single-file dashboard over the Hannover LMD capacity-sensitivity run
   between them, so a v3−v2 difference at the same capacity is pure reseed spread (the tag
   is part of the runId; `runId.hashCode()` seeds the demand layer and `CarrierVehicleFactory`).
   That difference is the board's only uncertainty estimate — measured 0.0–0.1 % at cap 30.
+- `provenance/` — what each sim-PC series actually ran. The v2/v3/v4 comparison is only a
+  reseed spread as long as the model code was identical, so the working-tree diff behind a
+  series is part of its result. `provenance/v4-sim-working-tree.patch` holds v4's (verified to
+  apply cleanly to `019fd5f`); the sim-PC tree itself was reset on 2026-08-25.
 - `board/` — React app (web-artifacts-builder scaffold: React 18 + TS + Tailwind + shadcn, Recharts).
   Deliverable: `board/bundle.html` (self-contained, ~0.8 MB).
 
