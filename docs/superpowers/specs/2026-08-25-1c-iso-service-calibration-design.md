@@ -39,6 +39,34 @@ Baseline, f140 → 9,453). 1c has no such fan. This campaign supplies it.
 
 ---
 
+## 1a. Measured fan (updated as arms land)
+
+| arm | machine | pax rides | vs target 9,076 | DRT-borne parcels | walked parcels | DRT vehicle-km |
+|---|---|---|---|---|---|---|
+| f120 = `d1c_dep7` | dev | 7,973 | −1,103 (−12.2 %) | 5,946 | 91 | 45.75 M |
+| **f130** | sim | **8,679** | **−397 (−4.4 %)** | 5,946 | **91** | 48.90 M |
+| f140 | sim | queued | | | | |
+| f135 | sim | queued | | | | |
+
+f120 → f130 buys **+706 pax rides for +10 vehicles = 70.6 per vehicle**, so the remaining 397
+predict the crossing a little above f135. Both bracketing arms are therefore queued (f140 first:
+if the chain is cut short, that is the arm that proves the target is bracketed at all).
+
+**C4 held as a prediction, not as hindsight.** The walk channel was called geometric and
+fleet-invariant *before* f130 ran, and it came back at exactly 91 parcels on exactly the same
+segments. The DRT-borne count is identical too (5,946). Fleet size moves the passenger side only.
+
+**Pairing verified for f130, not assumed:** `numberOfThreads = 12` in all three groups and
+`randomSeed = 1337` in its `output_config.xml`; preprocessing reproduced the dev figures exactly
+(955 agents, 6,037 parcels, 7 districts, the same two yard-gate skips).
+
+**Iteration count stays 150 on both arms** (user decision 2026-08-25). The dev-PC's
+`d1d_dep7_f130_it250` is a convergence probe, not the paper point — if it ever became the paper
+point, iteration count would turn into a silent asymmetry between the arms, the way tour duration
+already did once (METHODS-LOG §2.38).
+
+---
+
 ## 2. Decisions
 
 | # | Decision | Rationale |
@@ -148,6 +176,7 @@ walked`. Applies to the existing dep1/dep3/dep7 runs by re-extraction; no re-run
 | Demand input | synced dev → sim 2026-08-25, all five shapefile parts byte-identical (`dbf` SHA256 `FDAC2435EBC56D41`) |
 | Mislabelled directory | sim's `level_central` held the *old* `BC86ECC5` state (METHODS-LOG §2.30 trap); renamed to `level_ctrsnap_central`, and a correct `level_central` created |
 | JVM | `vmargs_lausitz.txt` — mirrors the dev argfile (`-Xmx48g`, ZGC, `ActiveProcessorCount=12`) rather than the Hannover `vmargs.txt` (`-Xmx124g` + `AlwaysPreTouch` on 127.8 GB, on a machine with five unexplained crashes and an open RAM suspicion) |
+| Crash alerting | **deliberately off.** The heartbeat infrastructure exists in `analysis/run-monitoring/` with measured grace windows (sim 15/30 min), but no scheduled task is registered and no `hc-config.json` exists -- only templates. User decision 2026-08-25: run unwatched. An overnight abort will not be noticed until someone reads the log |
 | Hannover v4 | 38/38 complete, all with `output_carriers` + `output_trips`; its working-tree diff is archived at `analysis/hannover-sweep/provenance/` and verified to apply to `019fd5f` before the tree was reset |
 
 **Pairing claim to verify, not assume:** the first sim arm must reproduce the dev preprocessing
@@ -161,7 +190,10 @@ numbers for its configuration (6,037 parcels on 955 agents, seven named depot li
 
 If 1c is reported at its iso-service fleet, 1d must be too. 1d's headline run `d1d_dep7` uses
 **fleet 150**; its iso-service point is **f130** (9,137 pax rides against the Baseline's 9,076).
-The paper's 1d point is therefore f130, not the f150 run. No new 1d run is needed — f130 exists.
+
+**Confirmed 2026-08-25: the paper's 1d point is f130, not the f150 run.** No new 1d run is needed —
+f130 exists — but every 1d cost and emission figure must be re-drawn from the f130 run. Any number
+still sourced from `d1d_dep7` (f150) is at the wrong operating point.
 
 ---
 
