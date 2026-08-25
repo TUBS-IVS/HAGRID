@@ -563,8 +563,26 @@ public final class SimulationRunnerUtils {
     /**
      * Generates the analysis dashboard for a completed simulation run.
      * Reads events, carriers, network from MATSim output → produces HTML.
+     *
+     * <p>No-op for scenarios that do not run the carrier modules (1c/1d): this dashboard is built
+     * from {@code output_carriers.xml.gz}, which those runs never write. Before the guard, a
+     * {@code writeDashboard=true} spec made every 1c/1d run exit non-zero from
+     * {@code HAGRIDSimulationRunner.main} although simulation, KPIs and the v2 dashboard had all
+     * completed. Their analysis channel is the Python v2 dashboard ({@link KpiDashboardTrigger}).</p>
      */
     public static void generateDashboard(HAGRIDSimulationConfig cfg) throws Exception {
+        hagrid.HagridConfig.Scenario concept =
+                hagrid.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
+        // The `isDrtScenario()` prefix is load-bearing, not defensive: isDrtWithFreight() is
+        // `isDrtScenario() && drtWithFreight`, so it is false for LMD_BASELINE and for the
+        // Hannover BASECASE — gating on runsCarrierModules alone would silently skip the
+        // dashboard the Hannover sweep reads its SUMMARY blob from.
+        if (cfg.isDrtScenario() && !runsCarrierModules(concept, cfg.isDrtWithFreight())) {
+            LOG.warn("writeDashboard=true ignored for {}: the legacy dashboard needs carriers, "
+                    + "which {} never routes. Use the v2 KPI dashboard (kpiDashboard=true).",
+                    cfg.getRunId(), concept);
+            return;
+        }
         Instant t0 = Instant.now();
         HagridPaths paths = new HagridPaths();
         paths.initializeRun(cfg.getRunId());

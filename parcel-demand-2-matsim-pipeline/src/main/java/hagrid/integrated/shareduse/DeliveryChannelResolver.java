@@ -14,7 +14,7 @@ import java.util.List;
  * run — no result may be read as "including a locker share".
  * <p>
  * Activating it needs a CODE change at the call site, not just data: the sole
- * caller {@code ParcelAgentGenerator:67} hardcodes
+ * caller {@code ParcelAgentGenerator.generate} hardcodes
  * {@code new DeliveryChannelResolver(List.of(), 500.0)}, so staging a locations
  * file alone changes nothing. Locker itself is deliberately Phase 2
  * (METHODS-LOG §2.10/§4.5).
