@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Machine-independent log4j2 config for HAGRID simulation runs.
+  Use it via  -Dlog4j2.configurationFile=logging/log4j2_runlocal.xml  in the JVM argfile.
+
+  WHY THIS FILE EXISTS
+  The packaged config (src/main/resources/log4j2.xml) resolves ${sys:hagrid.log.dir}.
+  SimulationRunnerUtils.runSimulation repoints that property INTO the run output
+  directory (`<runDir>/logs`) unconditionally -- a command-line -Dhagrid.log.dir does
+  NOT survive it. The MATSim controler then clears that very directory
+  (OutputDirectoryHierarchy) and collides with the still-open hagrid.log:
+
+      FileSystemException: <runDir>\logs\hagrid.log:
+      Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen
+      Prozess verwendet wird
+
+  The run dies during Guice injection, before iteration 0. Pinning the log path
+  outside the run directory removes the collision and touches no simulation
+  semantics -- logging destination only.
+
+  This config used to exist only as an untracked dev-local file (devlog/log4j2_dev.xml),
+  which is why the sim-PC hit the bug on 2026-08-25 the first time it ran a
+  DRT_SHAREDUSE arm: the fix did not travel with the repository. Committed so it does.
+
+  The underlying defect -- an unconditional System.setProperty that overrides an
+  explicit -D -- is recorded in the BACKLOG. Fixing it there would make this file
+  unnecessary; until then, every machine running a simulation arm needs it.
+-->
+<Configuration status="WARN">
+    <Properties>
+        <!-- Deliberately NOT ${sys:hagrid.log.dir}: that is the property being overridden. -->
+        <Property name="runLogDir">hagrid-output/logs</Property>
+    </Properties>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n" />
+        </Console>
+        <RollingFile name="RollingFile" fileName="${runLogDir}/run_hagrid.log"
+            filePattern="${runLogDir}/run_hagrid-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+            <Policies>
+                <TimeBasedTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="250 MB" />
+            </Policies>
+            <DefaultRolloverStrategy max="20" />
+        </RollingFile>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Root>
+        <Logger name="hagrid" level="info" additivity="false">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Logger>
+        <Logger name="org.matsim.core.utils.geometry.geotools.MGC" level="error" additivity="false">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Logger>
+    </Loggers>
+</Configuration>
