@@ -1,0 +1,2 @@
+# a patch must survive checkout byte-for-byte or `git apply` rejects it
+*.patch -text
