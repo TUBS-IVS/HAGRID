@@ -3,32 +3,43 @@
   Machine-independent log4j2 config for HAGRID simulation runs.
   Use it via  -Dlog4j2.configurationFile=logging/log4j2_runlocal.xml  in the JVM argfile.
 
+  NOTE ON THIS COMMENT: XML forbids a double hyphen inside a comment. The first version of
+  this file used one and log4j2 rejected the whole config with
+  "The string [double hyphen] is not permitted within comments", then fell back to
+  "No logging configuration" = no file appender at all. The run that followed appeared to
+  work, but only because the broken config had silently disabled file logging instead of
+  redirecting it, so that run has no log to read. Keep every hyphen in here single.
+
   WHY THIS FILE EXISTS
   The packaged config (src/main/resources/log4j2.xml) resolves ${sys:hagrid.log.dir}.
-  SimulationRunnerUtils.runSimulation repoints that property INTO the run output
-  directory (`<runDir>/logs`) unconditionally -- a command-line -Dhagrid.log.dir does
-  NOT survive it. The MATSim controler then clears that very directory
-  (OutputDirectoryHierarchy) and collides with the still-open hagrid.log:
+  SimulationRunnerUtils.runSimulation repoints that property INTO the run output directory
+  (runDir/logs) unconditionally; a command line D-flag does NOT survive it. The MATSim
+  controler then clears that very directory (OutputDirectoryHierarchy) and collides with the
+  still open hagrid.log:
 
-      FileSystemException: <runDir>\logs\hagrid.log:
-      Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen
-      Prozess verwendet wird
+      FileSystemException: runDir\logs\hagrid.log:
+      Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess
+      verwendet wird
 
-  The run dies during Guice injection, before iteration 0. Pinning the log path
-  outside the run directory removes the collision and touches no simulation
-  semantics -- logging destination only.
+  The run dies during Guice injection, before iteration 0. Pinning the log path outside the
+  run directory removes the collision and touches no simulation semantics: logging
+  destination only.
 
-  This config used to exist only as an untracked dev-local file (devlog/log4j2_dev.xml),
-  which is why the sim-PC hit the bug on 2026-08-25 the first time it ran a
-  DRT_SHAREDUSE arm: the fix did not travel with the repository. Committed so it does.
+  This config used to exist only as an untracked dev local file (devlog/log4j2_dev.xml),
+  which is why the sim PC hit the bug on 2026-08-25 the first time it ran a DRT_SHAREDUSE
+  arm: the fix did not travel with the repository. Committed so it does.
 
-  The underlying defect -- an unconditional System.setProperty that overrides an
-  explicit -D -- is recorded in the BACKLOG. Fixing it there would make this file
-  unnecessary; until then, every machine running a simulation arm needs it.
+  HOW TO VERIFY IT IS ACTUALLY IN EFFECT (do not assume)
+    1. the run console log contains NO "No logging configuration" and no "Error parsing"
+    2. hagrid-output/logs/run_hagrid.log exists and grows during the run
+    3. the run output directory contains NO logs/hagrid.log
+
+  The underlying defect, an unconditional System.setProperty that overrides an explicit
+  D-flag, is recorded in the BACKLOG. Fixing it there would make this file unnecessary.
 -->
 <Configuration status="WARN">
     <Properties>
-        <!-- Deliberately NOT ${sys:hagrid.log.dir}: that is the property being overridden. -->
+        <!-- Deliberately NOT the hagrid.log.dir property: that is the one being overridden. -->
         <Property name="runLogDir">hagrid-output/logs</Property>
     </Properties>
     <Appenders>
