@@ -437,12 +437,35 @@ def test_surcharge_scales_linearly_with_starts():
 
 def test_speed_is_clamped_to_the_cold_curve_range():
     """Die Kaltkurven fuer CO/NOx/VOC gelten nur bis 45 km/h. Ohne Clamp
-    extrapoliert die Formel stillschweigend -- Spec Risiko 1."""
-    from emissions_emep import load_factors, cold_start_extra
+    extrapoliert die Formel stillschweigend -- Spec Risiko 1.
+
+    Geclampt wird NUR das Kalt/Warm-Verhaeltnis Q, nicht e_hot (Ruling
+    2026-08-26): e_hot ist der Emissionsfaktor am eigenen Betriebspunkt
+    des Fahrzeugs und bleibt bis 140 km/h gueltig, waehrend Q nur bis
+    45 km/h parametrisiert ist. Der ABSOLUTE Zuschlag steigt oberhalb von
+    45 km/h also legitim weiter (e_hot waechst), waehrend die relative
+    Groesse extra/hot -- in der sich e_hot heraushebt -- oberhalb von
+    45 km/h konstant bleibt, weil sie nur noch von Q abhaengt:
+
+        extra / hot = (cold_km / km) * bc * (Q(v, ta) - 1)
+
+    Das ist der diskriminierende Test: plateaut die RATIO nicht, ist der
+    Clamp kaputt oder fehlt; plateaut der ABSOLUTWERT (faelschlich auf
+    e_hot(45) begrenzt), waere das die verworfene Doppel-Clampung."""
+    from emissions_emep import load_factors, vehicle_emissions, cold_start_extra
     fac = load_factors()
-    at_cap = cold_start_extra(1, 100.0, 45.0, "diesel", "N1-III", fac)
-    above = cold_start_extra(1, 100.0, 80.0, "diesel", "N1-III", fac)
-    assert above["NOx"] == pytest.approx(at_cap["NOx"])
+    km, segment = 100.0, "N1-III"
+    hot_45 = vehicle_emissions(km, 45.0, "diesel", segment, fac)
+    extra_45 = cold_start_extra(1, km, 45.0, "diesel", segment, fac)
+    hot_80 = vehicle_emissions(km, 80.0, "diesel", segment, fac)
+    extra_80 = cold_start_extra(1, km, 80.0, "diesel", segment, fac)
+    ratio_45 = extra_45["NOx"] / hot_45["NOx"]
+    ratio_80 = extra_80["NOx"] / hot_80["NOx"]
+    assert ratio_80 == pytest.approx(ratio_45)
+    # Positivkontrolle in die andere Richtung: der ABSOLUTE Zuschlag darf
+    # NICHT plateauen -- sonst waere e_hot faelschlich mitgeclampt, und
+    # ein spaeterer Rueckfall auf die Doppel-Clampung faellt hier durch.
+    assert extra_80["NOx"] > extra_45["NOx"]
 
 
 def test_bev_has_no_cold_surcharge():
