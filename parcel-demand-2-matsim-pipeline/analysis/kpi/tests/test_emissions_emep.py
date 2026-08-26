@@ -380,3 +380,96 @@ def test_supplement_carries_coldstart_constants():
     assert sup["cold_bc_voc_b"] == pytest.approx(0.0076)
     assert (sup["charge_window_min_low"], sup["charge_window_min_mid"],
             sup["charge_window_min_high"]) == (20.0, 40.0, 60.0)
+
+
+#: Effektive mittlere Geschwindigkeiten der Bound-Rechnung, zurueckgerechnet
+#: aus den dokumentierten Prozentsaetzen (2026-08-26). EIN v trifft NOx, CO
+#: und VOC gleichzeitig auf < 0.02 pp, obwohl deren Q-Steigungen +0.048,
+#: +0.161 und -0.286 sind -- das kann kein Zufall sein und belegt, dass es
+#: dieselbe Formel ist.
+BOUND_V_FREIGHT = 36.39
+BOUND_V_DRT = 38.87
+BOUND_KM_FREIGHT = 6252.1 / 63       # base10c: 63 Touren, 6252.1 km
+BOUND_KM_DRT = 47953.0 / 120         # base10c: 120 Fahrzeugtage, 47953 km
+
+
+def test_cold_km_matches_documented_transfer():
+    """data/README.md: Kaltdistanz je Start = 3.50 km bei ltrip 12.4, ta 10."""
+    from emissions_emep import load_factors, cold_km
+    assert cold_km(load_factors()["sup"]) == pytest.approx(3.50, abs=0.01)
+
+
+@pytest.mark.parametrize("pollutant,key,expected_pct", [
+    ("NOx", "NOx", 5.63), ("CO", "CO", 13.94),
+    ("VOC", "VOC", 3.61), ("EC", "ENERGY_MJ", 0.93)])
+def test_freight_surcharge_reproduces_documented_bound(pollutant, key, expected_pct):
+    """ANKER: reproduziert die unabhaengig gerechnete Bound aus METHODS-LOG
+    2.29 (2026-07-31) bei einem Kaltstart je Tour, ta = 10 C.
+
+    Der relative Zuschlag ist segmentunabhaengig -- ef_hot kuerzt sich
+    zwischen Zaehler und Nenner -- deshalb genuegt ein beliebiges Segment.
+    """
+    from emissions_emep import load_factors, vehicle_emissions, cold_start_extra
+    fac = load_factors()
+    km, v = BOUND_KM_FREIGHT, BOUND_V_FREIGHT
+    hot = vehicle_emissions(km, v, "diesel", "N1-III", fac)
+    extra = cold_start_extra(1, km, v, "diesel", "N1-III", fac)
+    assert 100.0 * extra[key] / hot[key] == pytest.approx(expected_pct, abs=0.05)
+
+
+@pytest.mark.parametrize("key,expected_pct", [("NOx", 1.41), ("ENERGY_MJ", 0.23)])
+def test_drt_surcharge_reproduces_documented_bound(key, expected_pct):
+    from emissions_emep import load_factors, vehicle_emissions, cold_start_extra
+    fac = load_factors()
+    km, v = BOUND_KM_DRT, BOUND_V_DRT
+    hot = vehicle_emissions(km, v, "diesel", "N1-III", fac)
+    extra = cold_start_extra(1, km, v, "diesel", "N1-III", fac)
+    assert 100.0 * extra[key] / hot[key] == pytest.approx(expected_pct, abs=0.05)
+
+
+def test_surcharge_scales_linearly_with_starts():
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    one = cold_start_extra(1, 100.0, 35.0, "diesel", "N1-III", fac)
+    five = cold_start_extra(5, 100.0, 35.0, "diesel", "N1-III", fac)
+    assert five["NOx"] == pytest.approx(5.0 * one["NOx"])
+
+
+def test_speed_is_clamped_to_the_cold_curve_range():
+    """Die Kaltkurven fuer CO/NOx/VOC gelten nur bis 45 km/h. Ohne Clamp
+    extrapoliert die Formel stillschweigend -- Spec Risiko 1."""
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    at_cap = cold_start_extra(1, 100.0, 45.0, "diesel", "N1-III", fac)
+    above = cold_start_extra(1, 100.0, 80.0, "diesel", "N1-III", fac)
+    assert above["NOx"] == pytest.approx(at_cap["NOx"])
+
+
+def test_bev_has_no_cold_surcharge():
+    """Spec E7/L1: EMEP fuehrt fuer BEV keine Kaltstartparametrisierung.
+    Die Null kommt aus den DATEN, nicht aus einer Code-Regel."""
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    extra = cold_start_extra(3, 100.0, 35.0, "bev", "N1-III", fac)
+    assert all(v == 0.0 for v in extra.values())
+
+
+def test_unparameterised_pollutants_stay_zero():
+    """Spec E8/L3: PM Exhaust, CH4 und SPN23 haben fuer Euro 7 keine
+    Kaltstartparametrisierung. Sie bleiben 0 -- als LUECKE, die Task 7 im
+    Quellenstring benennt, nicht als Messwert."""
+    from emissions_emep import load_factors, cold_start_extra, COLD_UNPARAMETERISED
+    fac = load_factors()
+    extra = cold_start_extra(1, 100.0, 35.0, "diesel", "N1-III", fac)
+    for k in COLD_UNPARAMETERISED:
+        assert extra[k] == 0.0, k
+    assert extra["NOx"] > 0.0        # Positivkontrolle: die Null ist selektiv
+
+
+def test_non_exhaust_carries_no_cold_surcharge():
+    """Abrieb ist distanzbasiert und kennt keinen Kaltstart."""
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    extra = cold_start_extra(1, 100.0, 35.0, "diesel", "N1-III", fac)
+    assert extra["PM10_NONEXHAUST"] == 0.0
+    assert extra["PM10_TYRE"] == 0.0
