@@ -43,8 +43,13 @@ def test_freight_arm_sums_tours_at_tour_mean_speed(tmp_path):
     # Tour 2:  60 km bei  60/2=30 km/h (size_l -> N1-III)
     exp = em.vehicle_emissions(120.0, 30.0, "diesel", "N1-III", fac)
     exp2 = em.vehicle_emissions(60.0, 30.0, "diesel", "N1-III", fac)
+    # Task 5: freight_arm bucht 1 Kaltstart je Tour (Spec E5, keine
+    # Task-Sequenz in der TSV) -- der Zuschlag steckt in totals (Spec E1).
+    cold1 = em.cold_start_extra(1, 120.0, 30.0, "diesel", "N1-III", fac)
+    cold2 = em.cold_start_extra(1, 60.0, 30.0, "diesel", "N1-III", fac)
     assert totals["diesel"]["CO2E_WTW"] == pytest.approx(
-        exp["CO2E_WTW"] + exp2["CO2E_WTW"])
+        exp["CO2E_WTW"] + exp2["CO2E_WTW"]
+        + cold1["CO2E_WTW"] + cold2["CO2E_WTW"])
     assert totals["bev"]["CO2E_WTW"] > 0
     assert len(detail) == 4                      # 2 Touren x 2 Antriebe
     d0 = [d for d in detail if d["powertrain"] == "diesel"][0]
@@ -70,7 +75,9 @@ def test_freight_arm_size_s_gets_the_lighter_segment(tmp_path):
     d = [x for x in detail if x["powertrain"] == "diesel"][0]
     assert d["segment"] == "N1-II"
     exp = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-II", fac)
-    assert d["ENERGY_MJ"] == pytest.approx(exp["ENERGY_MJ"])
+    # Task 5: 1 Kaltstart je Tour (Spec E5), eingerechnet in ENERGY_MJ.
+    cold = em.cold_start_extra(1, 100.0, 30.0, "diesel", "N1-II", fac)
+    assert d["ENERGY_MJ"] == pytest.approx(exp["ENERGY_MJ"] + cold["ENERGY_MJ"])
     # und deutlich unter der N1-III-Rechnung
     n3 = em.vehicle_emissions(100.0, 30.0, "diesel", "N1-III", fac)
     assert d["ENERGY_MJ"] < 0.75 * n3["ENERGY_MJ"]
@@ -605,3 +612,73 @@ def test_segment_share_absent_on_a_pax_only_run(tmp_path):
     assert "drt_co2e_wtw" in by
     assert "segment_km_share_n1_ii" not in by
     assert "segment_km_share_n1_iii" not in by
+
+
+# --- Task 5: cold-start counting + wiring ----------------------------------
+
+SOAK_S = 3600.0
+
+
+def test_cold_starts_counts_shift_start_plus_long_stays():
+    from extract_emissions import cold_starts_by_regime
+    seq = [(0, 600, "DRIVE"),
+           (600, 1200, "STAY"),          # 10 min -> zu kurz
+           (1200, 1800, "DRIVE"),
+           (1800, 7200, "STAY"),         # 90 min -> Kaltstart
+           (7200, 9000, "DRIVE")]
+    assert cold_starts_by_regime(seq, SOAK_S) == {"drt": 2, "freight_modular": 0}
+
+
+def test_cold_starts_attributes_to_the_following_regime():
+    """Spec E6: der Start geht an das Regime des FOLGENDEN Fahrblocks --
+    nur so bleibt drt_* + freight_modular_* == total_* exakt."""
+    from extract_emissions import cold_starts_by_regime
+    seq = [(0, 600, "FREIGHT_DRIVE"),
+           (600, 7200, "STAY"),
+           (7200, 9000, "DRIVE")]
+    assert cold_starts_by_regime(seq, SOAK_S) == {"drt": 1, "freight_modular": 1}
+
+
+def test_trailing_stay_without_a_following_drive_does_not_count():
+    from extract_emissions import cold_starts_by_regime
+    seq = [(0, 600, "DRIVE"), (600, 30000, "STAY")]
+    assert cold_starts_by_regime(seq, SOAK_S) == {"drt": 1, "freight_modular": 0}
+
+
+def test_stay_exactly_at_the_threshold_counts():
+    """>= , nicht > . Die Grenze wird einmal festgelegt und getestet."""
+    from extract_emissions import cold_starts_by_regime
+    seq = [(0, 600, "DRIVE"), (600, 600 + SOAK_S, "STAY"),
+           (600 + SOAK_S, 9000, "DRIVE")]
+    assert cold_starts_by_regime(seq, SOAK_S)["drt"] == 2
+
+
+def test_vehicle_that_never_drives_yields_no_cold_start():
+    from extract_emissions import cold_starts_by_regime
+    assert cold_starts_by_regime([(0, 30000, "STAY")], SOAK_S) == {
+        "drt": 0, "freight_modular": 0}
+
+
+def test_stop_between_two_drives_does_not_break_the_block():
+    """Ein Bedienhalt ist keine Auskuehlphase -- nur STAY zaehlt."""
+    from extract_emissions import cold_starts_by_regime
+    seq = [(0, 600, "DRIVE"), (600, 5000, "STOP"), (5000, 6000, "DRIVE")]
+    assert cold_starts_by_regime(seq, SOAK_S)["drt"] == 1
+
+
+def test_freight_arm_books_one_cold_start_per_tour(tmp_path):
+    """Spec E5: die TSV hat keine Task-Sequenz, also 1 je Tour."""
+    import extract_emissions as ee
+    import emissions_emep as em
+    run = tmp_path / "run"
+    (run / "analysis" / "freight").mkdir(parents=True)
+    (run / "analysis" / "freight" / "TimeDistance_perVehicle.tsv").write_text(
+        "vehicleId\tvehicleTypeId\ttravelDistance[km]\ttravelTime[s]\n"
+        "v1\tct_cep_size_m\t99.24\t9817\n", encoding="utf-8")
+    totals, detail = ee.freight_arm(str(run), em.load_factors())
+    diesel = [d for d in detail if d["powertrain"] == "diesel"][0]
+    assert diesel["n_cold"] == 1
+    assert diesel["cold_NOx"] > 0.0
+    # Der Zuschlag steckt im Total (Spec E1), nicht daneben.
+    assert totals["diesel"]["NOx"] == pytest.approx(
+        diesel["NOx"], rel=1e-9)
