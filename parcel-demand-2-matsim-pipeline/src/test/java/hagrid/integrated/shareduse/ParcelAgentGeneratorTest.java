@@ -272,4 +272,83 @@ class ParcelAgentGeneratorTest {
                 "a B2B part later in the list must win over an earlier B2C part - "
                         + "the old code picked parts.get(0) and would have returned B2C here");
     }
+
+    /**
+     * The parcel WEIGHT of a stop dropped at its own yard gate, not just the stop count.
+     *
+     * <p>A pooled stop whose delivery link IS its district's depot link cannot become a DVRP
+     * request ({@code DefaultPassengerRequestValidator} rejects {@code from == to}), so
+     * {@code generate} drops it before any agent exists. {@code skippedSameLink} already counted
+     * the STOP; nothing counted its parcels, so those parcels were invisible to every downstream
+     * consumer: they are absent from {@code parcels_injected} and cannot be reconstructed from
+     * the run output, because no agent, no plan and no event ever mentions them.
+     *
+     * <p>Measured consequence on the real scenario (spec 2026-08-25 section 3): 2 stops carrying
+     * 15 parcels vanish at {@code openDepots=all}, while the Baseline -- which routes parcels as
+     * jsprit CarrierServices and has no from==to constraint -- keeps all 6052. Reporting 1c's
+     * delivery rate on the injected base would hide exactly that difference and make both arms
+     * read as 100 percent.
+     */
+    @Test
+    void reportsTheParcelWeightOfStopsDroppedAtTheirOwnDepotLink() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        // The second delivery sits ON the depot coordinate, so it snaps to the depot link.
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 3), deliveryAt(500, 500, "dhl", 7)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(1, r.skippedSameLink(), "one stop must be dropped at the depot link");
+        assertEquals(7, r.skippedSameLinkParcels(),
+                "the dropped stop's 7 parcels must be reported, not just the stop count");
+        assertEquals(3, r.parcels(), "only the surviving stop's parcels are injected");
+    }
+
+    /**
+     * Same for the clipping path, so the two loss channels stay distinguishable: a stop outside
+     * the service area is a demand-definition loss, a stop at its own yard gate is a model
+     * artefact. Collapsing them into one number would make the artefact unattributable.
+     */
+    @Test
+    void reportsTheParcelWeightOfStopsClippedOutsideTheServiceArea() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        var districts = DeliveryDistrictBuilder.build(
+                List.of(deliveryAt(800, 800, "dhl", 3), deliveryAt(9_999_999, 0, "dhl", 2)),
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(1, r.clippedOutside());
+        assertEquals(2, r.clippedOutsideParcels());
+        assertEquals(0, r.skippedSameLinkParcels(),
+                "a clipped stop must not be counted as a yard-gate drop");
+    }
+
+    /**
+     * The parts must sum to the whole. Without this the two new counters could each be right in
+     * isolation while a third, unnamed loss path quietly swallowed parcels -- which is precisely
+     * how the 15 yard-gate parcels stayed invisible for a week.
+     */
+    @Test
+    void injectedPlusBothLossChannelsEqualsTheTotalDemandOffered() {
+        Network net = hagrid.integrated.drt.DrtE2eFixtures.buildGrid();
+        Population pop = ScenarioUtils.createScenario(ConfigUtils.createConfig()).getPopulation();
+        List<Delivery> offered = List.of(
+                deliveryAt(800, 800, "dhl", 3),
+                deliveryAt(1200, 900, "hermes", 11),
+                deliveryAt(500, 500, "dhl", 7),          // on the depot link -> dropped
+                deliveryAt(9_999_999, 0, "dhl", 2));     // outside the area -> clipped
+        int offeredParcels = offered.stream().mapToInt(Delivery::getAmount).sum();
+        var districts = DeliveryDistrictBuilder.build(offered,
+                List.of(new DepotNetwork.Depot("hoy_sued", new Coord(500, 500))), Integer.MAX_VALUE);
+
+        var r = ParcelAgentGenerator.generate(districts, square(2000), net, pop, 4711L);
+
+        assertEquals(offeredParcels,
+                r.parcels() + r.skippedSameLinkParcels() + r.clippedOutsideParcels(),
+                "injected + yard-gate drops + clipped must account for every parcel offered");
+    }
 }

@@ -55,6 +55,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
+import hagrid.integrated.shareduse.ParcelDemandProvenance;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -348,6 +349,55 @@ class SharedUseEndToEndTest {
         } finally {
             System.clearProperty("hagrid.pipeline.root");
         }
+    }
+
+    /**
+     * The preprocessing losses must reach disk, because nothing downstream can reconstruct them:
+     * a stop dropped at its own yard gate never becomes an agent, so no plan and no event mentions
+     * its parcels. Without this file the KPI layer can only report 1c's delivery rate on the
+     * injected base, which reads 100 % and is indistinguishable from the Baseline's 100 % on the
+     * full demand base (spec 2026-08-25 §3).
+     *
+     * <p>The injected count is cross-checked against the population that was actually written, not
+     * just against the file's own total: a writer that emits self-consistent but wrong numbers
+     * would satisfy the unit test and still be useless here.</p>
+     */
+    @Test
+    @DisplayName("preprocessing writes the parcel-demand provenance next to the clipped population")
+    void preprocessingWritesTheParcelDemandProvenance() throws Exception {
+        Path dir = Path.of(utils.getOutputDirectory()).toAbsolutePath();
+        Files.createDirectories(dir);
+
+        HAGRIDSimulationConfig cfg = stageAndBuildConfig(dir, List.of("hoy_sued"));
+        LausitzDrtPreprocessor.run(cfg);
+
+        Path provenance = ParcelDemandProvenance.pathFor(
+                Path.of(cfg.getPassengerPlansClipped()), cfg.getRunId());
+        assertThat(provenance).as("provenance file must be written by the preprocessing run")
+                .exists();
+
+        Map<String, Integer> m = new LinkedHashMap<>();
+        for (String line : Files.readAllLines(provenance)) {
+            String[] kv = line.split(";", 2);
+            if (kv.length == 2 && !kv[0].equals("metric")) {
+                m.put(kv[0], Integer.parseInt(kv[1].trim()));
+            }
+        }
+
+        Population pop = PopulationUtils.readPopulation(cfg.getPassengerPlansClipped());
+        int parcelsInPopulation = pop.getPersons().values().stream()
+                .filter(p -> SharedUse.isParcelPerson(p.getId().toString()))
+                .mapToInt(p -> (int) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE))
+                .sum();
+
+        assertThat(m.get("parcels_injected_preprocessing"))
+                .as("the file must agree with the population that was actually written")
+                .isEqualTo(parcelsInPopulation);
+        assertThat(m.get("parcels_offered"))
+                .as("offered must equal injected plus both loss channels")
+                .isEqualTo(m.get("parcels_injected_preprocessing")
+                        + m.get("parcels_dropped_at_depot_link")
+                        + m.get("parcels_clipped_outside_area"));
     }
 
     private static void createParentDirs(String path) throws IOException {
