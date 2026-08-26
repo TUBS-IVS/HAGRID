@@ -1596,27 +1596,17 @@ Vorfahrt, für katalysatorbestückte Fahrzeuge (unsere Flotte: Euro 7 Diesel mit
 mobile source emissions levels", *Transportation Research Part D: Transport and Environment* 43,
 123–132, doi:10.1016/j.trd.2015.12.012.
 
-**Gemessen** (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, 63 Touren, 6252,1 km —
-derselbe Lauf, auf dem die Bound 2026-07-31 gerechnet wurde; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
-
-| Größe | Wert |
-|---|---|
-| `freight_nox_coldstart_share` | **5,339 %** |
-| `drt_nox_coldstart_share` | **2,436 %** |
-| Kaltstarts je DRT-Fahrzeugtag | Mittel **1,646**, min 0, max 4, n=130 |
-| Verteilung `n_cold` (DRT) | 0→8, 1→57, 2→41, 3→21, 4→3 |
-| Regime-Invariante `drt_* + freight_modular_* == total_*` | hält exakt (Residuen 0,0012 g NOx, 0,026 kg CO₂e — CSV-Rundung, kein Bruch) |
+**Gemessen** (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, derselbe Lauf, auf dem
+die Bound 2026-07-31 gerechnet wurde; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
+`freight_nox_coldstart_share` **5,339 %**, `drt_nox_coldstart_share` **2,436 %**, im Mittel
+**1,646** Kaltstarts je DRT-Fahrzeugtag (n=130). Volle Verteilung, Regime-Invarianz-Residuen und
+die Erklärung der 8 Fahrzeugtage mit `n_cold = 0`: `analysis/kpi/data/README.md`, Abschnitt
+„Kaltstart".
 
 **Der Kopplungsgewinn ist real.** Die dokumentierte Bound von 1,41 % war explizit „je
-Kaltstart", also für genau einen gerechnet. Gemessen enthält ein DRT-Fahrzeugtag im Mittel
-**1,646** Starts, und die NOx-Quote ist **2,44 %**. Die alte Caveat-Schätzung „bei 5 Starts
-~7 %" war pessimistisch — real sind es 1,65 Starts. Die Bound war richtig, die DRT-Seite war
+Kaltstart", also für genau einen gerechnet; gemessen sind es 1,646 Starts im Mittel. Die alte
+Caveat-Schätzung „bei 5 Starts ~7 %" war pessimistisch. Die Bound war richtig, die DRT-Seite war
 untersetzt, nicht falsch.
-
-**8 von 130 DRT-Fahrzeugtagen zeigen `n_cold = 0`.** Kein Defekt: bei diesen Fahrzeugen ist der
-erste Fahrblock des Tages `FREIGHT_DRIVE`, der Schichtbeginn-Kaltstart geht also an
-`freight_modular`; der spätere Wechsel auf Pax-Fahrt findet mit warmem Motor statt (keine
-STAY ≥ 60 min dazwischen).
 
 **Historische Herleitung der Bound** (gerechnet 2026-07-31, vor der Implementierung — die
 Formeln sind unverändert die produktiv verwendeten; die Tabelle unten geht von genau **einem**
