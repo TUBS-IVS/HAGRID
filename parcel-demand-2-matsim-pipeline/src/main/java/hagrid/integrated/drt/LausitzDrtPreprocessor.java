@@ -6,6 +6,7 @@ import hagrid.integrated.PopulationClipper;
 import hagrid.integrated.freight.LausitzFreightPreprocessor;
 import hagrid.integrated.freight.LmdDemandReader;
 import hagrid.integrated.shareduse.ParcelAgentGenerator;
+import hagrid.integrated.shareduse.ParcelDemandProvenance;
 import hagrid.simulation.HAGRIDSimulationConfig;
 import hagrid.utils.GeoUtils;
 import hagrid.utils.demand.Delivery;
@@ -232,6 +233,19 @@ public final class LausitzDrtPreprocessor {
             LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",
                     r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
             PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());
+            // The preprocessing losses have to be written down here or they are gone: a stop
+            // dropped at its own yard gate never becomes an agent, so no plan and no event
+            // mentions its parcels and the KPI layer cannot reconstruct them. Without this the
+            // 1c delivery rate can only be stated on the INJECTED base, where it reads 100 % and
+            // is indistinguishable from the Baseline's 100 % on the full demand base
+            // (spec 2026-08-25 section 3).
+            Path provenance = ParcelDemandProvenance.pathFor(
+                    Path.of(cfg.getPassengerPlansClipped()), cfg.getRunId());
+            ParcelDemandProvenance.write(provenance, r);
+            LOG.info("SHAREDUSE: {} parcels offered, {} injected, {} dropped at their own depot "
+                    + "link, {} clipped outside the area -> {}",
+                    r.parcelsOffered(), r.parcels(), r.skippedSameLinkParcels(),
+                    r.clippedOutsideParcels(), provenance);
         }
 
         // Record WHAT these artifacts were built from. The run id encodes only

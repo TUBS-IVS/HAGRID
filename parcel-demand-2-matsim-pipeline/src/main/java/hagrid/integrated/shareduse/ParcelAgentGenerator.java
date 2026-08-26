@@ -36,7 +36,26 @@ public final class ParcelAgentGenerator {
     private static final Logger LOG = LogManager.getLogger(ParcelAgentGenerator.class);
     private static final GeometryFactory GF = new GeometryFactory();
 
-    public record Result(int personsAdded, int parcels, int skippedSameLink, int clippedOutside) {
+    /**
+     * @param personsAdded          parcel-persons written into the population
+     * @param parcels               parcels carried by those persons (the injected demand)
+     * @param skippedSameLink       stops dropped because their delivery link IS their depot link
+     * @param clippedOutside        stops dropped because they fall outside the service area
+     * @param skippedSameLinkParcels parcels on the yard-gate stops. A model artefact
+     *        ({@code DefaultPassengerRequestValidator} rejects {@code from == to}), NOT a delivery
+     *        failure -- and unreconstructable downstream, because no agent, plan or event ever
+     *        mentions these parcels. Reported so the KPI layer can state the delivery rate on the
+     *        demand base the Baseline uses instead of the injected base (spec 2026-08-25 section 3).
+     * @param clippedOutsideParcels parcels on the out-of-area stops. Kept apart from the yard-gate
+     *        count on purpose: this one is a demand-definition loss, the other a model artefact.
+     */
+    public record Result(int personsAdded, int parcels, int skippedSameLink, int clippedOutside,
+                         int skippedSameLinkParcels, int clippedOutsideParcels) {
+
+        /** Every parcel offered to {@code generate}: injected plus both loss channels. */
+        public int parcelsOffered() {
+            return parcels + skippedSameLinkParcels + clippedOutsideParcels;
+        }
     }
 
     private ParcelAgentGenerator() {
@@ -77,6 +96,7 @@ public final class ParcelAgentGenerator {
         PopulationFactory pf = population.getFactory();
 
         int persons = 0, parcels = 0, skipped = 0, outside = 0, index = 0;
+        int skippedParcels = 0, outsideParcels = 0;
         for (DeliveryDistrictBuilder.District district : districts) {
             Link depotLink = NetworkUtils.getNearestLinkExactly(drtNetwork, district.depot().coord());
             for (DeliveryDistrictBuilder.PooledStop stop : district.stops()) {
@@ -85,11 +105,13 @@ public final class ParcelAgentGenerator {
                 if (!serviceArea.contains(GF.createPoint(new org.locationtech.jts.geom.Coordinate(
                         stop.coord().getX(), stop.coord().getY())))) {
                     outside++;
+                    outsideParcels += stop.totalParcels();
                     continue;
                 }
                 Link segmentLink = NetworkUtils.getNearestLinkExactly(drtNetwork, stop.coord());
                 if (depotLink.getId().equals(segmentLink.getId())) {
                     skipped++;                       // DefaultPassengerRequestValidator rejects from==to
+                    skippedParcels += stop.totalParcels();
                     LOG.warn("parcel stop {} snaps to its depot link {} - skipped", index,
                             depotLink.getId());
                     continue;
@@ -141,8 +163,9 @@ public final class ParcelAgentGenerator {
                 }
             }
         }
-        LOG.info("ParcelAgentGenerator: {} parcel-persons ({} parcels), {} outside area, {} same-link skipped",
-                persons, parcels, outside, skipped);
-        return new Result(persons, parcels, skipped, outside);
+        LOG.info("ParcelAgentGenerator: {} parcel-persons ({} parcels), {} outside area "
+                + "({} parcels), {} same-link skipped ({} parcels)",
+                persons, parcels, outside, outsideParcels, skipped, skippedParcels);
+        return new Result(persons, parcels, skipped, outside, skippedParcels, outsideParcels);
     }
 }

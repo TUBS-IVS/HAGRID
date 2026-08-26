@@ -419,3 +419,138 @@ def test_extract_skips_fare_rows_when_column_absent(tmp_path):
     assert k["drt_rides_pax_only"]["value"] == 1
     assert "fare_revenue_pax_only" not in k
     assert "parcel_fare_revenue" not in k
+
+# --------------------------------------------------------------------- Zustellquote 1c (2026-08-26)
+# Der Handler nennt die zu Fuss zugestellten Pakete "never_submitted" (es wurde nie ein
+# DRT-Request gestellt) und meldet daneben parcels_undelivered=0 -- zusammen ergab das
+# delivery_rate=0.9849 neben "0 unzugestellt", was sich widerspricht. Am echten f140-Lauf
+# gemessen: 945 Paket-Personen fahren DRT, 10 laufen, ALLE 955 kommen an parcelDelivery an.
+# Dazu 15 Pakete, die im Preprocessing am eigenen Hoftor verworfen werden und in keiner
+# Run-Datei stehen -- die liefert erst die Provenance-Datei aus dem Schwesterverzeichnis.
+
+def _run_dir_with_sibling(tmp_path, prefix):
+    """Layout wie in echt: run_dir unter hagrid-matsim-output/, Preprocessing-Artefakte unter
+    hagrid-output/<prefix>/ -- dieselbe Schwesterverzeichnis-Konvention wie build_kpis.py."""
+    run_dir = tmp_path / "hagrid-matsim-output" / prefix
+    run_dir.mkdir(parents=True)
+    sibling = tmp_path / "hagrid-output" / prefix
+    sibling.mkdir(parents=True)
+    return run_dir, sibling
+
+
+def _write_provenance(sibling, prefix, offered, injected, dropped, clipped):
+    lines = [
+        "metric;value",
+        "parcels_offered;%d" % offered,
+        "parcels_injected_preprocessing;%d" % injected,
+        "parcels_dropped_at_depot_link;%d" % dropped,
+        "parcels_clipped_outside_area;%d" % clipped,
+        "stops_dropped_at_depot_link;2",
+        "stops_clipped_outside_area;0",
+    ]
+    (sibling / (prefix + "_parcel_demand_provenance.csv")).write_text(
+        "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_channel_stats(run_dir, prefix, injected, delivered, never_submitted, undelivered,
+                         segments_never_submitted):
+    lines = [
+        "metric;value",
+        "segments_never_submitted;%d" % segments_never_submitted,
+        "parcels_injected;%d" % injected,
+        "parcels_submitted;%d" % delivered,
+        "parcels_never_submitted;%d" % never_submitted,
+        "parcels_delivered;%d" % delivered,
+        "parcels_delivered_late;0",
+        "parcels_undelivered;%d" % undelivered,
+        "delivery_rate_total;%r" % (delivered / injected),
+    ]
+    (run_dir / (prefix + ".shareduse_channel_stats.csv")).write_text(
+        "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_trips(run_dir, prefix, drt_persons, walk_persons):
+    """output_trips.csv.gz mit genau den Spalten, die ein echter Lauf schreibt."""
+    lines = ["person;main_mode;end_activity_type"]
+    for i in range(drt_persons):
+        lines.append("parcel_hoy_sued_%d;drt;parcelDelivery" % i)
+    for i in range(walk_persons):
+        lines.append("parcel_hoy_nord_%d;walk;parcelDelivery" % i)
+    lines.append("12345;car;home")          # ein Pax-Trip, der nicht mitzaehlen darf
+    with gzip.open(run_dir / (prefix + ".output_trips.csv.gz"), "wt", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
+def _full_fixture(tmp_path, walk_persons=10):
+    prefix = "SU"
+    run_dir, sibling = _run_dir_with_sibling(tmp_path, prefix)
+    _write_channel_stats(run_dir, prefix, 6037, 5946, 91, 0, 10)
+    _write_provenance(sibling, prefix, 6052, 6037, 15, 0)
+    _write_trips(run_dir, prefix, drt_persons=945, walk_persons=walk_persons)
+    return run_dir, prefix
+
+
+def test_walked_parcels_count_as_delivered_when_the_trips_confirm_them(tmp_path):
+    """Die Fussgaenger kommen an, gehoeren also in den Zaehler -- und die Basis ist die
+    NACHFRAGE (6052), nicht die injizierte Menge (6037). Auf der injizierten Basis kaeme 1.0
+    heraus, ununterscheidbar von der Baseline, obwohl 1c 15 Pakete weniger zustellt."""
+    run_dir, prefix = _full_fixture(tmp_path)
+
+    k = _rows_by_name(es.extract(run_dir, prefix))
+
+    assert k["parcels_walked"]["value"] == 91
+    assert k["parcels_drt_borne"]["value"] == 5946
+    assert k["parcels_dropped_at_depot_link"]["value"] == 15
+    assert k["parcels_in_demand"]["value"] == 6052
+    assert k["delivery_rate"]["value"] == pytest.approx(6037 / 6052)
+
+
+def test_drt_borne_share_keeps_the_number_todays_delivery_rate_actually_holds(tmp_path):
+    """0.9849 ist kein Fehler, nur falsch etikettiert: es ist der DRT-getragene Anteil. Er
+    bleibt erhalten, aber unter einem Namen, der sagt was er misst."""
+    run_dir, prefix = _full_fixture(tmp_path)
+
+    k = _rows_by_name(es.extract(run_dir, prefix))
+
+    assert k["drt_borne_share"]["value"] == pytest.approx(5946 / 6037)
+    assert k["delivery_rate"]["value"] != pytest.approx(5946 / 6037)
+
+
+def test_parts_sum_to_the_demand(tmp_path):
+    """Teile gegen das Ganze -- der Check, der die 15 Pakete ueberhaupt sichtbar gemacht hat."""
+    run_dir, prefix = _full_fixture(tmp_path)
+
+    k = _rows_by_name(es.extract(run_dir, prefix))
+
+    assert (k["parcels_drt_borne"]["value"] + k["parcels_walked"]["value"]
+            + k["parcels_dropped_at_depot_link"]["value"]
+            + k["parcels_undelivered"]["value"]) == k["parcels_in_demand"]["value"]
+
+
+def test_walk_claim_is_dropped_when_the_trips_do_not_confirm_it(tmp_path):
+    """DER diskriminierende Fall. Zeigen die Trips WENIGER Fussgaenger als der Handler
+    never_submitted meldet, ist "never_submitted == zu Fuss zugestellt" nicht belegt. Dann darf
+    die Quote nicht auf die volle Basis gehoben werden -- sonst waere parcels_walked bloss ein
+    Umbenennen von never_submitted, und kein Test koennte das von einer Messung unterscheiden."""
+    run_dir, prefix = _full_fixture(tmp_path, walk_persons=4)   # 4 statt 10
+
+    k = _rows_by_name(es.extract(run_dir, prefix))
+
+    assert "parcels_walked" not in k
+    assert k["delivery_rate"]["value"] == pytest.approx(5946 / 6037)
+    assert k["walk_channel_unconfirmed"]["value"] == 1
+
+
+def test_legacy_run_without_provenance_keeps_its_old_delivery_rate(tmp_path):
+    """Alte Laeufe haben keine Provenance-Datei. Sie duerfen sich nicht veraendern, sonst
+    verschieben sich rueckwirkend Zahlen in bestehenden Dashboards."""
+    prefix = "SU"
+    run_dir, _ = _run_dir_with_sibling(tmp_path, prefix)
+    _write_channel_stats(run_dir, prefix, 6037, 5946, 91, 0, 10)
+    _write_trips(run_dir, prefix, drt_persons=945, walk_persons=10)
+
+    k = _rows_by_name(es.extract(run_dir, prefix))
+
+    assert k["delivery_rate"]["value"] == pytest.approx(5946 / 6037)
+    assert "parcels_in_demand" not in k
+    assert "parcels_dropped_at_depot_link" not in k

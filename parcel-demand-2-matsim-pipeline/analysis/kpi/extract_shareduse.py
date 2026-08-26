@@ -118,15 +118,7 @@ def extract(run_dir, prefix):
     # sonst drei verschiedene Namen auflösen müsste. delivery_rate_total bleibt stehen, damit
     # bestehende 1c-Dashboards nicht brechen -- die zwei Zeilen sind KEIN versehentliches
     # Duplikat, wer eine davon aufräumt, muss beide Konsumenten prüfen.
-    if "delivery_rate_total" in stats:
-        rows.append(row("freight", "delivery_rate", float(stats["delivery_rate_total"]),
-                        "share", "shareduse_channel_stats (= delivery_rate_total)"))
-    elif "parcels_delivered" in stats and "parcels_injected" in stats:
-        injected = int(stats["parcels_injected"])
-        if injected:
-            rows.append(row("freight", "delivery_rate",
-                            int(stats["parcels_delivered"]) / injected, "share",
-                            "computed parcels_delivered/parcels_injected (legacy CSV)"))
+    rows.extend(_delivery_rate_rows(run_dir, prefix, stats))
 
     # C1 delay rename: the handler now writes mean_time_to_delivery_s (in-window
     # deliveries only) and OMITS the line when nothing was delivered -- never
@@ -336,3 +328,132 @@ def _modal_share_rows(run_dir, prefix):
     return [row("system", "modal_share_" + str(mode) + "_pax_only", float(share),
                 "share", "output_trips pax-filter")
             for mode, share in shares.items()]
+
+
+# --------------------------------------------------------------------------- Zustellquote (2026-08-26)
+#
+# Was hier repariert wird: der Handler meldete gleichzeitig `parcels_undelivered;0` und
+# `delivery_rate_total;0.9849`. Beides kann nicht stimmen. Die fehlenden 1,5 % sind die Pakete,
+# deren DRT-Anfrage nie gestellt wurde -- die aber trotzdem ankommen, weil MATSim auf ein
+# Walk-Leg zurueckfaellt (am f140-Lauf gemessen: 945 Paket-Personen per drt, 10 per walk, alle
+# 955 enden auf parcelDelivery, und in output_drt_rejections steht keine einzige Paketzeile).
+# `delivery_rate_total` misst also den DRT-getragenen ANTEIL, nicht die Zustellquote.
+#
+# Die zweite Haelfte liegt ausserhalb des Run-Verzeichnisses: Stopps, die am eigenen Depot-Link
+# haengen, werden im Preprocessing verworfen (from == to ist keine gueltige DVRP-Anfrage) und
+# existieren in KEINER Ausgabedatei. Ohne die Provenance-Datei laesst sich die Quote nur auf der
+# injizierten Basis bilden -- dort steht dann 100 %, ununterscheidbar von der Baseline, obwohl
+# 1c fuenfzehn Pakete weniger zustellt.
+
+PROVENANCE_SUFFIX = "_parcel_demand_provenance.csv"
+
+
+def _read_provenance(run_dir, prefix):
+    """Preprocessing-Verluste aus hagrid-output/<prefix>/ -- dieselbe Schwesterverzeichnis-
+    Konvention wie build_kpis.py (drt_fleet) und extract_modular.py (carriers). Fehlt die Datei
+    (jeder Lauf vor 2026-08-26), wird None zurueckgegeben und alles bleibt beim Alten."""
+    f = Path(run_dir).parent.parent / "hagrid-output" / prefix / (prefix + PROVENANCE_SUFFIX)
+    try:
+        d = {}
+        for line in f.read_text(encoding="utf-8").splitlines():
+            parts = line.split(";", 1)
+            if len(parts) == 2 and parts[0] != "metric":
+                d[parts[0]] = int(parts[1].strip())
+        return d or None
+    except Exception:
+        return None
+
+
+def _count_walked_parcel_persons(run_dir, prefix):
+    """Paket-Personen, die ihr Ziel zu Fuss erreicht haben, aus output_trips. Gemessen, nicht aus
+    `never_submitted` umbenannt: nur so laesst sich pruefen, ob die beiden Quellen dasselbe
+    meinen. None, wenn die Datei fehlt oder die Spalten nicht da sind -- dann wird nichts
+    behauptet."""
+    f = Path(run_dir) / (prefix + ".output_trips.csv.gz")
+    try:
+        df = pd.read_csv(f, sep=";", usecols=["person", "main_mode"])
+    except Exception:
+        return None
+    parcels = df[pax_only.parcel_mask(df["person"])]
+    return int(parcels[parcels["main_mode"] == "walk"]["person"].nunique())
+
+
+def _delivery_rate_rows(run_dir, prefix, stats):
+    """Die Zerlegung plus EINE Quote. Die Quote wird nur dann auf die volle Nachfragebasis
+    gehoben, wenn die Trips den Fussgaenger-Kanal bestaetigen."""
+    out = []
+    if "parcels_delivered" not in stats or "parcels_injected" not in stats:
+        # Vor-I1-CSV ohne Paketzaehler: nur die Alt-Quote, falls vorhanden.
+        if "delivery_rate_total" in stats:
+            out.append(row("freight", "delivery_rate", float(stats["delivery_rate_total"]),
+                           "share", "shareduse_channel_stats (= delivery_rate_total)"))
+        return out
+
+    drt_borne = int(stats["parcels_delivered"])
+    injected = int(stats["parcels_injected"])
+    walked_parcels = int(stats.get("parcels_never_submitted", 0))
+    walk_segments = int(stats.get("segments_never_submitted", 0))
+
+    def legacy_rate():
+        if "delivery_rate_total" in stats:
+            return row("freight", "delivery_rate", float(stats["delivery_rate_total"]),
+                       "share", "shareduse_channel_stats (= delivery_rate_total)")
+        if injected:
+            return row("freight", "delivery_rate", drt_borne / injected, "share",
+                       "computed parcels_delivered/parcels_injected (legacy CSV)")
+        return None
+
+    out.append(row("freight", "parcels_drt_borne", drt_borne, "parcels",
+                   "shareduse_channel_stats parcels_delivered -- parcels a DRT vehicle carried"))
+    if injected:
+        out.append(row("freight", "drt_borne_share", drt_borne / injected, "share",
+                       "parcels_delivered/parcels_injected -- the DRT-carried share. This is the "
+                       "number that used to be published as delivery_rate; it is NOT a delivery "
+                       "rate, because the parcels outside it arrive on foot"))
+
+    prov = _read_provenance(run_dir, prefix)
+    if prov is not None:
+        for key in ("parcels_offered", "parcels_dropped_at_depot_link",
+                    "parcels_clipped_outside_area"):
+            if key in prov:
+                name = "parcels_in_demand" if key == "parcels_offered" else key
+                out.append(row("freight", name, prov[key], "parcels",
+                               "parcel_demand_provenance (preprocessing)"))
+
+    walk_persons = _count_walked_parcel_persons(run_dir, prefix)
+    confirmed = walk_persons is not None and walk_persons == walk_segments
+
+    if not confirmed:
+        # Die beiden Quellen sind sich uneinig (oder die Trips fehlen). Dann wird der
+        # Fussgaenger-Kanal NICHT behauptet und die Quote bleibt auf der alten Basis -- der
+        # Widerspruch wird ausgewiesen, statt still eine Zahl zu heben.
+        seen = "no" if walk_persons is None else str(walk_persons)
+        out.append(row("meta", "walk_channel_unconfirmed", 1, "flag",
+                       "output_trips reports " + seen + " walking parcel persons, the handler "
+                       "reports " + str(walk_segments) + " never-submitted segments -- "
+                       "parcels_walked withheld and delivery_rate left on the DRT-borne base"))
+        r = legacy_rate()
+        if r is not None:
+            out.append(r)
+        return out
+
+    out.append(row("freight", "parcels_walked", walked_parcels, "parcels",
+                   "shareduse_channel_stats parcels_never_submitted, confirmed against "
+                   "output_trips (" + str(walk_persons) + " parcel persons with main_mode=walk, "
+                   "all ending at parcelDelivery) -- delivered, but not by the DRT fleet"))
+
+    if prov is None or "parcels_offered" not in prov:
+        # Ohne Provenance ist die Nachfragebasis unbekannt; alte Laeufe behalten ihre Zahl.
+        r = legacy_rate()
+        if r is not None:
+            out.append(r)
+        return out
+
+    demand = prov["parcels_offered"]
+    if demand:
+        out.append(row("freight", "delivery_rate", (drt_borne + walked_parcels) / demand, "share",
+                       "(parcels_drt_borne + parcels_walked) / parcels_in_demand -- same "
+                       "convention as the Baseline (delivered/demand, no overlay subtracted, "
+                       "METHODS-LOG 2.21). The shortfall against 1.0 is the preprocessing "
+                       "yard-gate drop, a model artefact, not a delivery failure"))
+    return out
