@@ -493,6 +493,15 @@ def test_unknown_powertrain_in_cold_data_is_a_pure_data_gap():
     fac["hybrid"] = fac["diesel"]  # hot factors vorhanden, cold nicht
     extra = cold_start_extra(1, 100.0, 35.0, "hybrid", "N1-III", fac)
     assert all(v == 0.0 for v in extra.values())
+    # Gegenrichtung (Review Important 2): fuehrt das Cold-Sheet die
+    # Powertrain sehr wohl (hier absichtlich dazugegeben), MUSS der
+    # Zuschlag > 0 sein -- sonst waere die vorige Assertion identisch
+    # gegen ein hartcodiertes `if powertrain != "diesel": return zeros"
+    # gruen geblieben, und die Null kaeme aus einer Coderegel statt aus
+    # den Daten. Per Mutation verifiziert (Fix-Runde 2026-08-26).
+    fac["cold"]["hybrid"] = fac["cold"]["diesel"]
+    extra_present = cold_start_extra(1, 100.0, 35.0, "hybrid", "N1-III", fac)
+    assert extra_present["NOx"] > 0.0
 
 
 def test_unknown_segment_on_a_known_cold_powertrain_raises():

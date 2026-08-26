@@ -192,7 +192,11 @@ doi:10.1016/j.trd.2015.12.012.
 Gemessen (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, 63 Touren,
 6252.1 km; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
 
-- `freight_nox_coldstart_share` = **5.339 %**
+- `freight_nox_coldstart_share` = **5.339 %**. Liegt knapp UNTER der unten
+  gerechneten Bound (5.63 % bei ta=10 C): die Bound setzte eine EINZIGE
+  Flottenmittelgeschwindigkeit an, der produktive Pfad gewichtet je Tour
+  und ef(v) ist nichtlinear in v - die Abweichung ist ein Artefakt dieser
+  Vereinfachung in der Bound-Rechnung, kein Widerspruch.
 - `drt_nox_coldstart_share` = **2.436 %**
 - Kaltstarts je DRT-Fahrzeugtag: Mittel **1.646** (min 0, max 4, n=130);
   Verteilung 0:8 / 1:57 / 2:41 / 3:21 / 4:3.
@@ -200,9 +204,16 @@ Gemessen (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, 63 Touren,
   gerechnet. Gemessen sind es 1.646 Starts im Mittel - die alte
   Caveat-Schaetzung ("~5 Starts -> ~7 %") war pessimistisch, real sind es
   1.65 Starts und 2.44 %. Die DRT-Seite war damit untersetzt, nicht falsch.
-- Regime-Invariante `drt_* + freight_modular_* == total_*` haelt exakt auf
-  dem 1d-Lauf (Residuen 0.0012 g NOx, 0.026 kg CO2e = CSV-Rundung, kein
-  Bruch).
+- Die Regime-Zurechnung (welcher Kaltstart an `drt` vs. an
+  `freight_modular` geht) ist KEIN Fall fuer die Invariante
+  `drt_* + freight_modular_* == total_*` - die haelt tautologisch, weil
+  `total_*` als Summe ueber die Arme definiert ist (extract_emissions.py),
+  egal welchem Regime ein Start zugerechnet wird oder selbst wenn einer
+  verloren ginge. Was die Zurechnung tatsaechlich absichert, sind die
+  Key-Swap-Tests mit der asymmetrischen drt=2/freight_modular=1-Fixture:
+  `test_drt_arm_wires_the_drt_cold_start_count_not_the_freight_one` und
+  `test_extract_wires_freight_modular_cold_starts_to_the_correct_regime`
+  (tests/test_extract_emissions.py).
 - 8 von 130 DRT-Fahrzeugtagen zeigen `n_cold = 0`. Das ist korrekt, kein
   Defekt: bei diesen Fahrzeugen ist der ERSTE Fahrblock des Tages
   FREIGHT_DRIVE, der Schichtbeginn-Kaltstart geht also an

@@ -1599,9 +1599,18 @@ mobile source emissions levels", *Transportation Research Part D: Transport and 
 **Gemessen** (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, derselbe Lauf, auf dem
 die Bound 2026-07-31 gerechnet wurde; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
 `freight_nox_coldstart_share` **5,339 %**, `drt_nox_coldstart_share` **2,436 %**, im Mittel
-**1,646** Kaltstarts je DRT-Fahrzeugtag (n=130). Volle Verteilung, Regime-Invarianz-Residuen und
-die Erklärung der 8 Fahrzeugtage mit `n_cold = 0`: `analysis/kpi/data/README.md`, Abschnitt
-„Kaltstart".
+**1,646** Kaltstarts je DRT-Fahrzeugtag (n=130). Der Frachtwert liegt knapp UNTER der eigenen
+Bound (5,63 %, ta=10 °C): die Bound rechnete mit einer einzigen Flottenmittelgeschwindigkeit,
+der produktive Pfad gewichtet je Tour und ef(v) ist nichtlinear — ein Artefakt der
+Bound-Vereinfachung, kein Widerspruch. Volle Verteilung und die Erklärung der 8 Fahrzeugtage
+mit `n_cold = 0`: `analysis/kpi/data/README.md`, Abschnitt „Kaltstart". Was die Regime-
+Zurechnung (drt vs. freight_modular) tatsächlich absichert, sind die Key-Swap-Tests mit der
+asymmetrischen drt=2/freight_modular=1-Fixture
+(`test_drt_arm_wires_the_drt_cold_start_count_not_the_freight_one`,
+`test_extract_wires_freight_modular_cold_starts_to_the_correct_regime`,
+`tests/test_extract_emissions.py`) — NICHT die Identität `drt_* + freight_modular_* ==
+total_*`, die tautologisch hält, weil `total_*` als Summe über die Arme definiert ist, egal
+welchem Regime ein Start zugerechnet wird.
 
 **Der Kopplungsgewinn ist real.** Die dokumentierte Bound von 1,41 % war explizit „je
 Kaltstart", also für genau einen gerechnet; gemessen sind es 1,646 Starts im Mittel. Die alte
