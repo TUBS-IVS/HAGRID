@@ -169,11 +169,53 @@ Quellen und Vorbehalte: METHODS-LOG 2.26. Kurz:
     szenariodefiniert und haengt an keiner externen Massenannahme -
     deshalb die Pflicht-Begleitung zur Massenvariante.
 
-## Kaltstart: quantifizierte Untergrenze (gerechnet 2026-07-31)
+## Kaltstart: implementiert (gemessen 2026-08-26)
 
-Kaltstart ist NICHT modelliert. Der Fehlbetrag ist gerechnet, nicht
-geschaetzt, nach Kap. 1.A.3.b.i-iv Gl. (10) in der Euro-6+-Fassung mit
-beta-Reduktionsfaktor:
+Der Kaltstart-Zuschlag ist implementiert und in die bestehenden KPIs
+eingerechnet; je Schadstoff kommt eine `*_coldstart_share`-Zeile dazu
+(kalt / (hot+kalt), Einheit `fraction`).
+
+Zaehlung: konventioneller Freight 1 Kaltstart je Tour
+(`TimeDistance_perVehicle.tsv` hat keine Task-Sequenz, eine >60-min-Pause
+mitten in der Tour ist datenseitig unsichtbar - die Frachtzahl bleibt damit
+selbst nach Implementierung eine, deutlich engere, Untergrenze). DRT und
+modularer Arm: 1 Start bei Schichtbeginn PLUS je STAY-Block >= 60 min, auf
+den wieder eine Fahrt folgt, zugerechnet an das REGIME des FOLGENDEN
+Fahrblocks. Die 60-Minuten-Schwelle ist keine Setzung: EPA (1994)
+definiert Kaltstart als jeden Start >= 1 h nach Ende der Vorfahrt, fuer
+katalysatorbestueckte Fahrzeuge - unsere Flotte ist Euro 7 Diesel mit
+DPF+SCR -, zitiert ueber Reiter, M. S. & Kockelman, K. M. (2016), "The
+problem of cold starts: A closer look at mobile source emissions levels",
+Transportation Research Part D: Transport and Environment 43, 123-132,
+doi:10.1016/j.trd.2015.12.012.
+
+Gemessen (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, 63 Touren,
+6252.1 km; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
+
+- `freight_nox_coldstart_share` = **5.339 %**
+- `drt_nox_coldstart_share` = **2.436 %**
+- Kaltstarts je DRT-Fahrzeugtag: Mittel **1.646** (min 0, max 4, n=130);
+  Verteilung 0:8 / 1:57 / 2:41 / 3:21 / 4:3.
+- Die Bound unten war explizit "je Kaltstart", also fuer genau einen
+  gerechnet. Gemessen sind es 1.646 Starts im Mittel - die alte
+  Caveat-Schaetzung ("~5 Starts -> ~7 %") war pessimistisch, real sind es
+  1.65 Starts und 2.44 %. Die DRT-Seite war damit untersetzt, nicht falsch.
+- Regime-Invariante `drt_* + freight_modular_* == total_*` haelt exakt auf
+  dem 1d-Lauf (Residuen 0.0012 g NOx, 0.026 kg CO2e = CSV-Rundung, kein
+  Bruch).
+- 8 von 130 DRT-Fahrzeugtagen zeigen `n_cold = 0`. Das ist korrekt, kein
+  Defekt: bei diesen Fahrzeugen ist der ERSTE Fahrblock des Tages
+  FREIGHT_DRIVE, der Schichtbeginn-Kaltstart geht also an
+  `freight_modular`; der spaetere Wechsel auf Pax-Fahrt findet mit warmem
+  Motor statt (keine STAY >= 60 min dazwischen).
+- `kpi_emissions_vehicles.csv` traegt seit commit `084ede3` `n_cold` und
+  die `cold_<KEY>`-Spalten je Entity.
+
+Rechenrezept und historische Herleitung der Bound (gerechnet 2026-07-31,
+vor der Implementierung; die Formeln sind unveraendert die produktiv
+verwendeten - die Tabelle unten geht von GENAU EINEM Kaltstart je Entity
+aus, siehe oben fuer die gemessene Zaehlung), nach Kap. 1.A.3.b.i-iv
+Gl. (10) in der Euro-6+-Fassung mit beta-Reduktionsfaktor:
 
     E_COLD = beta * bc * km * e_HOT * (Q - 1)
 
@@ -205,25 +247,23 @@ Ergebnis auf `base10c` (63 Touren, 6252 km; DRT 120 Fahrzeugtage, 47953 km):
 | DRT NOx | +1.41 % | +1.66 % | — |
 | DRT Energie/CO2 | +0.23 % | +0.35 % | — |
 
-ENTSCHEIDUNG: die Regel dieses Plans (>= 5 % -> implementieren) greift fuer
-NOx auf der Frachtseite. Der Zuschlag ist als Backlog-Punkt unter dem
-Nachhaltigkeits-`[H]` angelegt. Bis dahin gilt:
+ENTSCHEIDUNG (historisch): die Regel dieses Plans (>= 5 % -> implementieren)
+griff fuer NOx auf der Frachtseite. Der Zuschlag ist implementiert
+(commit `084ede3` und Vorlaeufer); die gemessenen Zahlen stehen oben.
+Was von der damaligen Bound-Rechnung noch gilt:
 
-- Alle berichteten NOx-Zahlen sind eine **UNTERGRENZE**, ca. 5-6 % zu
-  niedrig auf der Frachtseite, ca. 1.4 % je Kaltstart auf der DRT-Seite.
-  Die Abweichung ist EINSEITIG.
 - CO2 und Energie sind praktisch unberuehrt (< 1.5 %), also unter dem
   jsprit-Rauschboden (~6.5 %) - die Kernaussagen des Papers haengen nicht
   daran.
 - PM-Auspuff hat fuer Euro 7 KEINE Kaltstart-Parametrisierung im Sheet
   (Euro 5+ nutzt laut Kap. 1.A.3.b.i-iv eine eigene Gleichung mit
-  absolutem Kaltfaktor). Irrelevant fuer unsere Bilanz: Auspuff-PM ist
-  0.89 g gegen 316.6 g Abrieb im selben Lauf.
-- Die DRT-Zahl ist **je Kaltstart** zu lesen und skaliert linear. Ein
-  Fahrzeugtag enthaelt lange STAY-Phasen; ob und wie oft der Motor darin
-  thermisch auskuehlt, ist ohne Thermomodell nicht entscheidbar. Bei 5
-  echten Kaltstarts je Fahrzeugtag laege die DRT-Seite bei ~7 % NOx, also
-  in derselben Groessenordnung wie die Frachtseite.
+  absolutem Kaltfaktor) - eine Luecke, keine Null. Irrelevant fuer unsere
+  Bilanz: Auspuff-PM ist 0.89 g gegen 316.6 g Abrieb im selben Lauf.
+- BEV-Arm: 0 Kaltstarts, weil EMEP keine BEV-Kaltstartparametrisierung
+  fuehrt. Real haben BEV einen erheblichen Kaltverbrauch, dominiert von
+  der Kabinenheizung - die Naeherung ist EINSEITIG zugunsten des BEV-Arms,
+  und zwar in genau dem Vergleich, der der Aufhaenger des Papers werden
+  soll.
 
 ## Limitations (Paper-Rohtext)
 
@@ -263,17 +303,22 @@ Nachhaltigkeits-`[H]` angelegt. Bis dahin gilt:
   Kurvenaufloesung entfaellt (laendlicher Raum: unkritisch fuer Deltas).
   Gemessen liegen alle Arme im selben Band: Fracht 36.4-37.1, Pax
   37.5-37.7 km/h - kein Arm-Effekt, den die Kurven aufloesen wuerden.
-- Kaltstart nicht modelliert. Kein Schaetzwert, sondern gerechnet: NOx
-  **+5.6 %** (Fracht, ta = 10 C; Band 4.7-6.0 %), CO2/Energie < 1 %, DRT
-  +1.4 % je Kaltstart. Die NOx-Zahlen des Papers sind damit eine
-  UNTERGRENZE. Herleitung, Formeln und Sensitivitaeten: Abschnitt
-  "Kaltstart" oben. Implementierung steht im Backlog.
+- Kaltstart ist implementiert (gemessen 2026-08-26):
+  `freight_nox_coldstart_share` 5.339 %, `drt_nox_coldstart_share` 2.436 %
+  (1.646 Starts/Fahrzeugtag im Mittel, n=130). Verbleibend: konventioneller
+  Freight zaehlt nur 1 Start je Tour (Datenluecke in
+  `TimeDistance_perVehicle.tsv`), die Frachtzahl ist damit weiterhin eine
+  engere Untergrenze; der BEV-Arm hat 0 Kaltstarts (EMEP-Methodenluecke,
+  real hat BEV einen erheblichen Kaltverbrauch dominiert von der
+  Kabinenheizung - einseitig zugunsten BEV in genau dem Vergleich, der der
+  Aufhaenger des Papers werden soll). Herleitung, Formeln, Zaehlregel:
+  Abschnitt "Kaltstart" oben.
 - Idle an Servicestopps: Engine-off-Annahme (Auslieferung/Boarding).
 - Euro-7-Faktoren aus Grenzwerten projiziert (Norm ab ~2026/27).
 - km-Kanal traegt jsprit-Heuristik-Rauschen (~6.5 % Boden, Seed-Messung
   2026-07-28) -> Paper-Zahlen als Mittel + Min/Max ueber >= 10 Runs. Der
-  Lasteffekt-Bound (~5 %) liegt UNTER diesem Rauschboden, der
-  Kaltstart-Bound fuer NOx knapp darunter.
+  Lasteffekt-Bound (~5 %) liegt UNTER diesem Rauschboden, die gemessene
+  Fracht-Kaltstart-Quote fuer NOx (5.34 %) knapp darunter.
 - 1d-Zurechnung: `drt_vehicle_km` traegt keinen Freight/Pax-Kanal
   (METHODS-LOG 2.14, "not corrected"). Der Emissionskanal loest das fuer
   seine eigenen Zahlen: der regimebasierte Split ueber die
@@ -304,8 +349,14 @@ Nachhaltigkeits-`[H]` angelegt. Bis dahin gilt:
   3.2 % (Fracht, je Tour) neben 96.7 % (DRT, je Fahrzeugtag); daraus
   "DRT ist nicht elektrifizierbar" zu lesen waere falsch. Jede Flotte
   traegt ihre Einheit-Definition in der eigenen Provenance-Spalte. Die
-  belastbare Groesse waere der laengste Fahrblock zwischen zwei
-  ausreichend langen STAY-Phasen (Ladefenster-Analyse, Backlog).
+  belastbare Groesse ist der laengste Fahrblock zwischen zwei ausreichend
+  langen STAY-Phasen: `drive_block_max_km_<20|40|60>` gegen
+  `ev_range_km_low/mid/high`. Gemessen (1d-Lauf): 445.5 km selbst im
+  grosszuegigsten 20-min-Fenster, gegen maximal angenommene 250 km Reichweite
+  - die geometrische Schranke ist bindend, DRT ist in der jetzigen
+  Disposition NICHT reichweitenfrei elektrifizierbar (sagt nichts ueber
+  eine anders disponierte Flotte). Details: BACKLOG-DONE ("Ladefenster-
+  Analyse").
 - Netzintensitaet Strom ist ein ausgewiesener Sensitivitaetsparameter
   (emep_supplement.csv). Die BEV-Abrieb-Multiplikatoren sind KEINE freie
   Annahme, sondern die guidebook-eigenen ICE->BEV-Verhaeltnisse des

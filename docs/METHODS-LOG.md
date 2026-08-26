@@ -1574,17 +1574,54 @@ der *angenommenen* Paketsegmente in den KPIs steht. Ja: `shareduse_channel_stats
 `segments_delivered` (im geprüften Lauf 2884, bei 3104 `segments_submitted` und 3127
 `segments_injected`). Die Obergrenze ist also ohne Java-Eingriff berechenbar.
 
-### 2.29 Kaltstart: gerechnete Untergrenze, nicht geschätzte Limitation — NOx-Zahlen sind zu niedrig
+### 2.29 Kaltstart: die Untergrenze war richtig — jetzt implementiert und gemessen
 
-_(gerechnet 2026-07-31, Task 9 des EMEP/EEA-Plans)_
+_(Bound gerechnet 2026-07-31, Task 9 des EMEP/EEA-Plans; Implementierung + Messung
+2026-08-26, `docs/superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md`,
+commit `084ede3`)_
 
-Kaltstart ist im Emissionskanal **nicht modelliert**. Das ist eine Limitation wie jede andere —
-nur ist sie hier **quantifiziert** statt bloß erwähnt, und das Ergebnis kehrt die geplante
-Konsequenz um: die Entscheidungsregel des Plans („< 5 % → dokumentierte Limitation, fertig")
-greift nicht, weil NOx auf der Frachtseite darüber liegt.
+Kaltstart war im Emissionskanal nicht modelliert; der Fehlbetrag war **gerechnet, nicht
+geschätzt** (Bound-Tabelle unten), und die Entscheidungsregel des Plans („≥ 5 % → implementieren")
+griff für NOx auf der Frachtseite. Der Zuschlag ist jetzt implementiert und **eingerechnet**
+(nicht separat ausgewiesen): je Schadstoff kommt eine `*_coldstart_share`-Zeile dazu
+(kalt / (hot + kalt), Einheit `fraction`).
 
-**Methode** (EMEP/EEA GB 2023 – Update 2025, Kap. 1.A.3.b.i–iv Gl. (10) in der
-Euro-6+-Fassung mit β-Reduktionsfaktor):
+**Zählregel.** Konventioneller Freight: 1 Kaltstart je Tour (`TimeDistance_perVehicle.tsv` hat
+keine Task-Sequenz, eine >60-min-Pause mitten in der Tour ist datenseitig unsichtbar — L2 unten).
+DRT und modularer Arm: 1 Start bei Schichtbeginn plus je STAY-Block ≥ 60 min, auf den wieder
+eine Fahrt folgt, zugerechnet an das Regime des **folgenden** Fahrblocks. Die 60-Minuten-Schwelle
+ist belegt, nicht gesetzt: EPA (1994) definiert Kaltstart als jeden Start ≥ 1 h nach Ende der
+Vorfahrt, für katalysatorbestückte Fahrzeuge (unsere Flotte: Euro 7 Diesel mit DPF+SCR), zitiert
+über Reiter, M. S. & Kockelman, K. M. (2016), "The problem of cold starts: A closer look at
+mobile source emissions levels", *Transportation Research Part D: Transport and Environment* 43,
+123–132, doi:10.1016/j.trd.2015.12.012.
+
+**Gemessen** (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`, 63 Touren, 6252,1 km —
+derselbe Lauf, auf dem die Bound 2026-07-31 gerechnet wurde; `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`):
+
+| Größe | Wert |
+|---|---|
+| `freight_nox_coldstart_share` | **5,339 %** |
+| `drt_nox_coldstart_share` | **2,436 %** |
+| Kaltstarts je DRT-Fahrzeugtag | Mittel **1,646**, min 0, max 4, n=130 |
+| Verteilung `n_cold` (DRT) | 0→8, 1→57, 2→41, 3→21, 4→3 |
+| Regime-Invariante `drt_* + freight_modular_* == total_*` | hält exakt (Residuen 0,0012 g NOx, 0,026 kg CO₂e — CSV-Rundung, kein Bruch) |
+
+**Der Kopplungsgewinn ist real.** Die dokumentierte Bound von 1,41 % war explizit „je
+Kaltstart", also für genau einen gerechnet. Gemessen enthält ein DRT-Fahrzeugtag im Mittel
+**1,646** Starts, und die NOx-Quote ist **2,44 %**. Die alte Caveat-Schätzung „bei 5 Starts
+~7 %" war pessimistisch — real sind es 1,65 Starts. Die Bound war richtig, die DRT-Seite war
+untersetzt, nicht falsch.
+
+**8 von 130 DRT-Fahrzeugtagen zeigen `n_cold = 0`.** Kein Defekt: bei diesen Fahrzeugen ist der
+erste Fahrblock des Tages `FREIGHT_DRIVE`, der Schichtbeginn-Kaltstart geht also an
+`freight_modular`; der spätere Wechsel auf Pax-Fahrt findet mit warmem Motor statt (keine
+STAY ≥ 60 min dazwischen).
+
+**Historische Herleitung der Bound** (gerechnet 2026-07-31, vor der Implementierung — die
+Formeln sind unverändert die produktiv verwendeten; die Tabelle unten geht von genau **einem**
+Kaltstart je Entity aus, siehe oben für die gemessene Zählung). EMEP/EEA GB 2023 – Update 2025,
+Kap. 1.A.3.b.i–iv Gl. (10) in der Euro-6+-Fassung mit β-Reduktionsfaktor:
 
 ```
 E_COLD = β · bc · km · e_HOT · (Q − 1)
@@ -1617,26 +1654,28 @@ Aussage ist also nicht ein Artefakt der ltrip-Wahl.
 | DRT NOx | +1,41 % | +1,66 % |
 | DRT Energie/CO₂ | +0,23 % | +0,35 % |
 
-**Was daraus für das Paper folgt:**
+**Was von der Bound trotzdem als Limitation stehen bleibt (L1–L4, Design-Spec §4):**
 
-1. **Alle berichteten NOx-Zahlen sind eine UNTERGRENZE**, auf der Frachtseite um ~5–6 %. Die
-   Abweichung ist **einseitig** (der wahre Wert liegt darüber, nie darunter) und trifft Diesel
-   und BEV **nicht** gleich — der BEV-Arm hat keinen Kaltstart, sein Vorteil wäre also größer.
-   Die Richtungsaussagen bleiben damit gültig; die Niveauaussage für NOx nicht.
-2. **CO₂ und Energie sind unberührt** (< 1,5 %), also unter dem jsprit-Rauschboden von ~6,5 %.
-   Die Kernaussagen des Papers hängen nicht am Kaltstart.
-3. **PM-Auspuff hat für Euro 7 keine Kaltstart-Parametrisierung** im Appendix-4-Sheet (Euro 5+
-   nutzt laut Kapitel eine eigene Gleichung mit absolutem Kaltfaktor). Für unsere Bilanz
-   irrelevant: Auspuff-PM ist 0,89 g gegen 316,6 g Abrieb im selben Lauf (§2.27).
-4. **Die DRT-Zahl ist „je Kaltstart" zu lesen und skaliert linear.** Ein Fahrzeugtag enthält
-   lange STAY-Phasen; ob der Motor darin thermisch auskühlt, ist ohne Thermomodell nicht
-   entscheidbar. Bei 5 echten Kaltstarts je Fahrzeugtag läge die DRT-Seite bei ~7 % NOx, also
-   in derselben Größenordnung wie die Frachtseite. Das ist **keine** Aussage über die
-   Realität, sondern die Angabe, wie empfindlich die Zahl auf eine Größe reagiert, die wir
-   nicht messen.
+1. **L1 — Der BEV-Arm hat keinen Kaltstart, und das schmeichelt ihm.** EMEP führt für BEV keine
+   Kaltstartparametrisierung, der Zuschlag ist dort also 0. Real haben BEV einen erheblichen
+   Kaltverbrauch, dominiert von der Kabinenheizung. Die Näherung ist **einseitig zugunsten des
+   BEV-Arms** — und zwar in genau dem Vergleich, der der Aufhänger des Papers werden soll. Nicht
+   abschwächen.
+2. **L2 — Konventioneller Freight sieht nur einen Start je Tour.** Eine >60-min-Pause innerhalb
+   einer Tour ist in `TimeDistance_perVehicle.tsv` unsichtbar; die Frachtzahl ist damit selbst
+   nach Implementierung noch eine (deutlich engere) Untergrenze.
+3. **L3 — PM-Auspuff bleibt unparametrisiert.** Für Euro 7 fehlt die Kaltstartparametrisierung
+   im Appendix-4-Sheet (Euro 5+ nutzt eine eigene Gleichung mit absolutem Kaltfaktor). Für die
+   Bilanz irrelevant — 0,89 g Auspuff-PM gegen 316,6 g Abrieb im selben Lauf (§2.27) —, aber eine
+   Lücke, keine Null.
+4. **L4 — Nur RANGE 1 (ta > 0).** Bei ta = 10 °C korrekt; eine Winter-Auswertung bräuchte
+   RANGE 2, deren Koeffizienten deshalb mit committet sind.
 
-**Konsequenz:** Backlog-Punkt „Kaltstart-Zuschlag implementieren" (`[H]`, ~0,5 d) angelegt;
-Formeln und Sensitivitäten liegen rechenfertig in `analysis/kpi/data/README.md`.
+**Konsequenz:** Backlog-Punkt „Kaltstart-Zuschlag implementieren" ist umgesetzt und nach
+BACKLOG-DONE verschoben (Zahlen s. oben). Der gekoppelte `[M]`-Punkt „Ladefenster-Analyse" ist
+ebenfalls beantwortet — mit einem bindenden geometrischen Befund, der einen neuen Backlog-Punkt
+(energetisches Lademodell) nach sich zieht statt ihn zu schließen; siehe BACKLOG-DONE und
+BACKLOG. Siehe auch den ergänzten Vorbehalt am Kopf von §2.36.
 
 ### 2.30 Demand-Input-Drift Dev-PC ↔ Sim-PC: 0,53 % verschiedene Nachfrage
 
@@ -2128,6 +2167,12 @@ Verrechnung), §2.31 (das Instrument, das diesen Defekt überhaupt sichtbar gema
 > wie die verglichenen Differenzen. Das ist vor einer Wiederverwendung zu prüfen, nicht zu
 > unterstellen. Die Baseline bleibt laut Beschluss bewusst providergebunden und wird **nicht** neu
 > gerechnet — der Headline-Vergleich enthält danach Konsolidierung und Integration gemeinsam.
+>
+> **Nachtrag 2026-08-26:** §2.36–§2.38 selbst führen keine NOx-Zahlen, aber ihre Läufe sind die
+> Datenbasis, aus der solche Zahlen abgeleitet würden — und jede so abgeleitete NOx-Zahl wäre aus
+> **zwei unabhängigen Gründen** Altstand, nicht nur einem: (a) sie läge vor dem
+> Kaltstart-Zuschlag (§2.29) — reine Hot-Emissionen, ohne Kaltstart —, **und** (b) sie läge vor
+> der Depotlogik-Umstellung von oben. Beide Gründe zusammen nennen, nicht nur den Depot-Vorbehalt.
 
 
 `trägt` · 2026-08-17 · **Der dritte und letzte der drei 1d-Hebel ist vermessen; keiner schließt die Lücke.**
