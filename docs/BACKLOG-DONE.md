@@ -23,8 +23,9 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-08-26._
   alte Bound (1,41 % „je Kaltstart") war richtig, nur untersetzt. Die 8 Fahrzeugtage mit
   `n_cold=0` sind korrekt, nicht defekt (Erklärung: README). `kpi_emissions_vehicles.csv` trägt
   seit commit `084ede3` `n_cold` und `cold_<KEY>`. Vier Limitations bleiben (L1–L4, u. a. BEV-Arm
-  ohne Kaltstart, einseitig zugunsten BEV). Suite 432 → 438 Tests. Volle Zahlen (Verteilung,
-  Invarianz-Residuen), Zählregel und Rechenrezept: `analysis/kpi/data/README.md` Abschnitt
+  ohne Kaltstart, einseitig zugunsten BEV). Suite 392 → 438 Tests. Volle Zahlen (Verteilung,
+  Regime-Zurechnung per Key-Swap-Tests abgesichert), Zählregel und Rechenrezept:
+  `analysis/kpi/data/README.md` Abschnitt
   „Kaltstart"; Entscheidung und L1–L4: METHODS-LOG §2.29; Design-Spec:
   `docs/superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md`. Commits bis `084ede3`,
   Branch `hendrik`.
@@ -35,7 +36,9 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-08-26._
   Fensterbreiten sind ein Sweep, weil ein DRT-Fahrzeug jederzeit neu disponiert werden kann und
   nur die kurzen Fenster operativ verlässlich sind. Gemessen (1d-Lauf):
   `drive_block_max_km_20/40/60` = 445,5 / 548,2 / 548,2 km, monoton; alle neun
-  `drive_block_exceed_<w>_<schwelle>` ungleich null, bis 96 %. Selbst im großzügigsten
+  `drive_block_exceed_<w>_<schwelle>` (Anteil der FAHRZEUGE, deren längster Block die Schwelle
+  überschreitet, nicht Anteil der Blöcke) ungleich null, Maximum 96,15 % bei w=60 min / 150 km
+  Schwelle. Selbst im großzügigsten
   20-min-Fenster (jede STAY dieser Länge lädt voll — die optimistischste mögliche Annahme, ohne
   Ladeleistung/Batteriekapazität/Infrastruktur) liegt der längste Fahrblock bei 445,5 km gegen
   maximal angenommene 250 km Reichweite: **die geometrische Schranke ist bindend.** DRT ist in

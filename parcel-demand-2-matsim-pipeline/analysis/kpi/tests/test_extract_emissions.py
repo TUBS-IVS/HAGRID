@@ -491,7 +491,7 @@ def test_extract_emits_intensities_only_when_counts_are_supplied(tmp_path):
     import extract_emissions as ee
     ll = ee.load_link_lengths(_network(tmp_path), {"l1", "l2"})
     veh_path = {"drt_1": [("l1", 1, 20, 10.0), ("l2", 1, 20, 20.0)]}
-    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0, "task_seq": []}}}
     common = dict(recon=recon, veh_path=veh_path,
                   network_gz=_network(tmp_path))
     rows_no, _ = ee.extract(tmp_path, "test", **common)
@@ -568,7 +568,7 @@ def test_intensity_rows_need_a_parcel_km_basis(tmp_path):
     (freight_modular_* vs. drt_*) ist dort die richtige Zerlegung."""
     import extract_emissions as ee
     veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
-    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0, "task_seq": []}}}
     rows, _ = ee.extract(tmp_path, "test", recon=recon, veh_path=veh_path,
                          network_gz=_network(tmp_path),
                          n_pax=40, n_parcels=500)
@@ -589,7 +589,7 @@ def test_ev_range_rows_carry_their_entity_definition(tmp_path):
     sieht das Dokument nie."""
     import extract_emissions as ee
     veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
-    recon = {"per_veh": {"drt_1": {"drive_s": 200.0}}}
+    recon = {"per_veh": {"drt_1": {"drive_s": 200.0, "task_seq": []}}}
     rows, _ = ee.extract(_run_dir(tmp_path), "test", recon=recon,
                          veh_path=veh_path, network_gz=_network(tmp_path))
     by = _rows_by_name(rows)
@@ -623,7 +623,7 @@ def test_segment_share_is_not_diluted_by_the_drt_fleet(tmp_path):
     # derselbe Lauf plus ein DRT-Arm, dessen km die Vans deutlich uebersteigen
     veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
     with_drt, _ = ee.extract(tmp_path, "test",
-                             recon={"per_veh": {"drt_1": {"drive_s": 200.0}}},
+                             recon={"per_veh": {"drt_1": {"drive_s": 200.0, "task_seq": []}}},
                              veh_path=veh_path, network_gz=_network(tmp_path))
     a, b = _rows_by_name(freight_only), _rows_by_name(with_drt)
     assert "drt_co2e_wtw" in b                       # der Arm ist wirklich da
@@ -640,7 +640,7 @@ def test_segment_share_absent_on_a_pax_only_run(tmp_path):
     import extract_emissions as ee
     veh_path = {"drt_1": [("l1", 1, 0, 10.0), ("l2", 1, 0, 20.0)]}
     rows, _ = ee.extract(tmp_path, "test",
-                         recon={"per_veh": {"drt_1": {"drive_s": 200.0}}},
+                         recon={"per_veh": {"drt_1": {"drive_s": 200.0, "task_seq": []}}},
                          veh_path=veh_path, network_gz=_network(tmp_path))
     by = _rows_by_name(rows)
     assert "drt_co2e_wtw" in by

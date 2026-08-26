@@ -129,9 +129,10 @@ def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
     for LCV (guidebook ch. 1.A.3.b.i-iv p. 62 f. restricts the load
     correction to HDV, and ch. 1.A.3.b.vi does the same for tyre/brake
     wear via LCF_T / LCF_B). There is deliberately no load/payload
-    argument -- see the plan's Global Constraints. Idle and cold-start are
-    NOT modelled (documented limitation: engine-off at service stops
-    assumed; cold-start bounded in the plan's docs task).
+    argument -- see the plan's Global Constraints. Cold start is NOT part
+    of this hot-only function -- it is added on top, additively, by
+    cold_start_extra() (Spec E1). Idle remains unmodelled (documented
+    limitation: engine-off at service stops assumed).
 
     Raises KeyError on an unknown segment -- a new vehicle type must fail
     loudly rather than be silently priced as N1-III.

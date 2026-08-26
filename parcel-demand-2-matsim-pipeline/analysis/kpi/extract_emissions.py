@@ -457,7 +457,10 @@ def intensity_rows(alloc, n_pax, n_parcels, sup=None):
 # ------------------------------------------- 7: KPI rows + detail CSV
 
 SRC = ("EMEP/EEA GB 2023 - Update 2025, App.4 Tier-3 (Okt 2025, "
-       "COPERT 5.9.1), LCV Euro 7 DPF+SCR, segment per vehicle type")
+       "COPERT 5.9.1), LCV Euro 7 DPF+SCR, segment per vehicle type. "
+       "Diesel rows fold in a cold-start surcharge (see *_coldstart_share); "
+       "BEV rows carry none -- EMEP has no BEV cold parameterisation, so "
+       "diesel-vs-BEV is one-sided in the BEV arm's favour")
 EV_THRESHOLDS = ("low", "mid", "high")     # -> sup["ev_range_km_<key>"]
 
 # (kpi_metric, emis_key, unit, to_unit_factor)
@@ -580,10 +583,12 @@ _COLD_SRC = (
     "cold-start surcharge FOLDED INTO the matching absolute row (share = "
     "cold / (hot + cold)). EMEP/EEA GB 2023 - Update 2025 ch. 1.A.3.b.i-iv "
     "eq. (10), Euro 6+ form; one cold start per tour (conventional freight, "
-    "no task sequence in the TSV) or per STAY >= 60 min followed by driving "
-    "(DRT / modular). Threshold: EPA (1994) via Reiter & Kockelman 2016, "
-    "Transportation Research Part D 43, 123-132, "
-    "doi:10.1016/j.trd.2015.12.012. ta=10 C")
+    "no task sequence in the TSV) or one at shift start plus one per STAY "
+    ">= 60 min followed by driving (DRT / modular), attributed to the "
+    "regime of the FOLLOWING driving block. Threshold: EPA (1994) via "
+    "Reiter & Kockelman 2016, Transportation Research Part D 43, 123-132, "
+    "doi:10.1016/j.trd.2015.12.012. ta=10 C. CO2E_TTW's cold term omits "
+    "N2O (source's cold N2O < hot) -- conservative, a slight understatement")
 
 _COLD_GAP_SRC = (
     " -- THIS ZERO IS A GAP, NOT A MEASUREMENT: Appendix 4 carries no "
@@ -699,6 +704,15 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
     link_len = None
     windows = {}
     if veh_path and recon is not None and network_gz is not None:
+        per_veh_in = (recon or {}).get("per_veh", {})
+        if per_veh_in and not any("task_seq" in d for d in per_veh_in.values()):
+            raise ValueError(
+                "recon['per_veh'] has entries but none carry 'task_seq' -- "
+                "reconstruct() always writes this key (even as [] for a "
+                "vehicle with no finished tasks), so a missing key means a "
+                "stale producer or a hand-built recon dict, not a real "
+                "vehicle state. Cold-start counting would silently return "
+                "0 without it.")
         used = {p[0] for path in veh_path.values() for p in path}
         link_len = load_link_lengths(network_gz, used)
         # Fenster VOR dem DRT-Arm bestimmen: sie sind dessen Ausschlussmenge.
@@ -802,6 +816,7 @@ def drive_block_rows(veh_path, per_veh, link_len, sup):
     werden bewusst NICHT ueber _soak_seconds() geroutet.
     """
     rows = []
+    missing_geometry = 0
     for key in CHARGE_WINDOWS:
         w_min = sup["charge_window_min_" + key]
         split_s = w_min * 60.0
@@ -813,8 +828,15 @@ def drive_block_rows(veh_path, per_veh, link_len, sup):
                 continue
             best = 0.0
             for (b0, b1) in _blocks_from_seq(seq, split_s):
-                km = sum(link_len.get(e[0], 0.0) / 1000.0 for e in path
-                         if len(e) > 3 and b0 <= e[3] <= b1)
+                km = 0.0
+                for e in path:
+                    if not (len(e) > 3 and b0 <= e[3] <= b1):
+                        continue
+                    length = link_len.get(e[0])
+                    if length is None:  # no geometry -> skip, do not count 0
+                        missing_geometry += 1
+                        continue
+                    km += length / 1000.0
                 best = max(best, km)
             if best > 0:
                 maxima.append(best)
@@ -829,7 +851,13 @@ def drive_block_rows(veh_path, per_veh, link_len, sup):
                             "drive_block_exceed_" + str(int(w_min)) + "_"
                             + str(int(thr)),
                             share, "share",
-                            src + " [threshold=" + str(int(thr)) + " km]"))
+                            src + " [threshold=" + str(int(thr)) + " km] "
+                            "[share of VEHICLES whose longest block "
+                            "exceeds, not share of blocks]"))
+    if missing_geometry:
+        print("drive_block_rows: skipped %d link entries with no geometry "
+              "(0 km would have been counted, biasing electrification "
+              "optimistic)" % missing_geometry)
     return rows
 
 
