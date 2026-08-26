@@ -65,13 +65,100 @@ def transform(df):
     return pd.DataFrame(out)[cols]
 
 
+COLD_SHEET = "COLD_EMISSIONS_PARAMETERS"
+COLD_POLLUTANTS = ("CO", "NOx", "VOC", "EC")
+#: Fuer Euro 7 fuehrt das Sheet KEINE Kaltstartparametrisierung fuer diese
+#: drei -- sie bleiben im Rechenkern sichtbar unparametrisiert statt still 0
+#: (Spec E8/L3). Hier nur dokumentiert, gefiltert wird ueber COLD_POLLUTANTS.
+#: NAME BEWUSST ANDERS als emissions_emep.COLD_UNPARAMETERISED: dort stehen
+#: die AUSGABE-Schluessel ("PM_EXHAUST"), hier die xlsx-Schreibweisen
+#: ("PM Exhaust"). Gleicher Name fuer zwei Schreibweisen waere eine Falle.
+COLD_UNPARAMETERISED_XLSX = ("PM Exhaust", "CH4", "SPN23")
+COLD_COLMAP_FIXED = {"Segment": "segment", "Pollutant": "pollutant",
+                      "Range": "range", "Alpha": "a", "Beta": "b",
+                      "Gamma": "c", "Min Speed [km/h]": "vmin",
+                      "Max Speed [km/h]": "vmax"}
+_COLD_KEY = ("segment", "pollutant", "range")
+_COLD_VALS = ("a", "b", "c", "vmin", "vmax", "tmin", "tmax")
+
+
+def _resolve_cold_temp_columns(columns):
+    """The sheet's temperature headers contain U+2103 (DEGREE CELSIUS,
+    'Min Temperature [℃]' / 'Max Temperature [℃]'), which is not safe to
+    reproduce byte-for-byte across encodings/editors. Resolve by prefix
+    instead of exact string match."""
+    tmin_col = None
+    tmax_col = None
+    for col in columns:
+        if col.startswith("Min Temperature"):
+            tmin_col = col
+        elif col.startswith("Max Temperature"):
+            tmax_col = col
+    if tmin_col is None or tmax_col is None:
+        raise ValueError(
+            "could not resolve Min/Max Temperature columns in "
+            + COLD_SHEET + "; available columns: " + str(list(columns)))
+    return tmin_col, tmax_col
+
+
+def transform_cold(df):
+    """Filter the COLD_EMISSIONS_PARAMETERS sheet to Euro 7 Diesel LCV and
+    map to the committed CSV schema.
+
+    The sheet resolves parameters per MONTH. For Euro 7 LCV the values look
+    month-invariant, but that was never verified against the file -- so it is
+    ASSERTED here and the collapse to one row per (segment, pollutant, range)
+    only happens if it holds. Silently taking January would produce a number
+    that looks measured and is not.
+
+    No Technology column exists in this sheet (unlike HOT_EMISSIONS_PARAMETERS),
+    and there are no Battery electric rows: the BEV cold surcharge is zero
+    because the SOURCE has nothing, not because the code decided so.
+    """
+    tmin_col, tmax_col = _resolve_cold_temp_columns(df.columns)
+    colmap = dict(COLD_COLMAP_FIXED)
+    colmap[tmin_col] = "tmin"
+    colmap[tmax_col] = "tmax"
+
+    lcv = df[(df["Category"] == "Light Commercial Vehicles")
+             & (df["Fuel"] == "Diesel")
+             & (df["Segment"].isin(SEGMENTS))
+             & (df["Euro Standard"] == "Euro 7")
+             & (df["Pollutant"].isin(COLD_POLLUTANTS))]
+    if lcv.empty:
+        raise ValueError("no Euro 7 Diesel LCV rows in " + COLD_SHEET)
+
+    ren = lcv.rename(columns=colmap)[list(_COLD_KEY) + list(_COLD_VALS)]
+    grouped = ren.groupby(list(_COLD_KEY), sort=False)
+    for key, part in grouped:
+        uniq = part[list(_COLD_VALS)].drop_duplicates()
+        if len(uniq) != 1:
+            raise ValueError(
+                "month variance in " + COLD_SHEET + " for " + str(key)
+                + ": " + str(len(uniq)) + " distinct parameter sets across "
+                "months. The collapse to one row is not valid here -- pick a "
+                "month explicitly and document it.")
+
+    out = grouped.first().reset_index()
+    out["powertrain"] = "diesel"
+    out["source"] = SOURCE
+    cols = ["powertrain", "segment", "pollutant", "range", "a", "b", "c",
+            "vmin", "vmax", "tmin", "tmax", "source"]
+    return out[cols]
+
+
 def main(xlsx_path):
-    df = pd.read_excel(xlsx_path, sheet_name="HOT_EMISSIONS_PARAMETERS")
-    out = transform(df)
-    dest = Path(__file__).resolve().parent / "data" / "emep_hot_factors.csv"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(dest, index=False)
-    print("wrote " + str(dest) + " (" + str(len(out)) + " rows)")
+    data = Path(__file__).resolve().parent / "data"
+    data.mkdir(parents=True, exist_ok=True)
+
+    hot = transform(pd.read_excel(xlsx_path,
+                                  sheet_name="HOT_EMISSIONS_PARAMETERS"))
+    hot.to_csv(data / "emep_hot_factors.csv", index=False)
+    print("wrote emep_hot_factors.csv (" + str(len(hot)) + " rows)")
+
+    cold = transform_cold(pd.read_excel(xlsx_path, sheet_name=COLD_SHEET))
+    cold.to_csv(data / "emep_cold_factors.csv", index=False)
+    print("wrote emep_cold_factors.csv (" + str(len(cold)) + " rows)")
 
 
 if __name__ == "__main__":
