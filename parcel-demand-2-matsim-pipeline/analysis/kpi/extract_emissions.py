@@ -489,8 +489,8 @@ _RANGE_SRC = {
     "drt": ("per VEHICLE-DAY km vs ev_range_km_* (emep_supplement.csv). NOT "
             "an electrification verdict: a vehicle-day is not a continuous "
             "shift -- it contains STAY phases in which charging is possible. "
-            "Comparable to the freight rows only after a charging-window "
-            "analysis (BACKLOG)"),
+            "Use drive_block_max_km_* instead, which measures the longest "
+            "CONTIGUOUS driving block"),
     "freight": ("per TOUR km vs ev_range_km_* (emep_supplement.csv). One "
                 "tour IS one continuous shift (depot to depot), so an "
                 "exceedance here is a genuine range constraint"),
@@ -698,11 +698,96 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
                 rows.append(row("environment", "total_" + metric + sfx,
                                 grand[pt][key] * f, unit, SRC))
     rows += _range_rows(detail, fac["sup"])
+    if "drt" in arms and link_len is not None:
+        rows += drive_block_rows(veh_path,
+                                 (recon or {}).get("per_veh", {}),
+                                 link_len, fac["sup"])
     rows += _segment_share_rows(detail)
     if "drt" in arms and link_len is not None:
         rows += _intensity_rows_for_drt(veh_path, link_len, arms["drt"][1],
                                         n_pax, n_parcels, fac["sup"])
     return rows, detail
+
+
+CHARGE_WINDOWS = ("low", "mid", "high")    # -> sup["charge_window_min_<key>"]
+
+_BLOCK_SRC = (
+    "longest contiguous driving block between two STAY phases of at least "
+    "<W> min, vs ev_range_km_* (emep_supplement.csv). This is an OPTIMISTIC "
+    "bound, not an electrification verdict: it assumes every STAY of that "
+    "length suffices to recharge, with no charging power, battery capacity "
+    "or depot infrastructure modelled. Window lengths are a sweep because a "
+    "DRT vehicle can be re-dispatched at any moment -- the SHORT windows are "
+    "the ones that can be relied on. See METHODS-LOG")
+
+
+def _blocks_from_seq(task_seq, split_s):
+    """[(t0, t1)] der Fahrbloecke zwischen STAYs >= split_s.
+
+    Ein Fahrblock laeuft ueber BEIDE Regime hinweg (DRIVE + FREIGHT_DRIVE):
+    die Batterie kennt kein Regime, nur eine STAY >= split_s laedt. STOP/
+    RETOOLING brechen den Block nicht -- sie verlaengern nur den Zeitraum,
+    ohne selbst Fahr-km beizutragen (siehe Docstring drive_block_rows).
+    """
+    blocks, cur = [], None
+    for (t0, t1, bucket) in task_seq:
+        if bucket == _SOAK_TASK and (t1 - t0) >= split_s:
+            if cur is not None:
+                blocks.append(cur)
+                cur = None
+            continue
+        if bucket not in _DRIVE_REGIME and bucket != _SOAK_TASK:
+            continue                   # STOP/RETOOLING gehoeren in den Block
+        if bucket in _DRIVE_REGIME:
+            cur = (cur[0], t1) if cur else (t0, t1)
+    if cur is not None:
+        blocks.append(cur)
+    return blocks
+
+
+def drive_block_rows(veh_path, per_veh, link_len, sup):
+    """Ladefenster-KPI: laengster Fahrblock je Fenster-Schwelle.
+
+    Loest die alte ev_range_exceed_drt_*-Zeile inhaltlich ab, ohne sie zu
+    entfernen: dort ist der Nenner ein VOLLER Fahrzeugtag inklusive aller
+    Standzeiten, hier ist er ein tatsaechlich zusammenhaengender Fahrblock.
+
+    Die charge_window_min_* Schwellen sind eine EIGENE Konstante, unabhaengig
+    von coldstart_soak_min -- auch wenn charge_window_min_high zufaellig
+    denselben Zahlenwert (60 min) traegt. Eine ist Motor-/Katalysatorphysik
+    (EPA 1994), die andere eine betriebliche DRT-Dispositionsannahme; sie
+    werden bewusst NICHT ueber _soak_seconds() geroutet.
+    """
+    rows = []
+    for key in CHARGE_WINDOWS:
+        w_min = sup["charge_window_min_" + key]
+        split_s = w_min * 60.0
+        src = _BLOCK_SRC.replace("<W>", str(int(w_min)))
+        maxima = []
+        for veh, path in (veh_path or {}).items():
+            seq = per_veh.get(veh, {}).get("task_seq", [])
+            if not seq:
+                continue
+            best = 0.0
+            for (b0, b1) in _blocks_from_seq(seq, split_s):
+                km = sum(link_len.get(e[0], 0.0) / 1000.0 for e in path
+                         if len(e) > 3 and b0 <= e[3] <= b1)
+                best = max(best, km)
+            if best > 0:
+                maxima.append(best)
+        if not maxima:
+            continue
+        rows.append(row("environment", "drive_block_max_km_" + str(int(w_min)),
+                        max(maxima), "km", src))
+        for thr_key in EV_THRESHOLDS:
+            thr = sup["ev_range_km_" + thr_key]
+            share = sum(1 for m in maxima if m > thr) / len(maxima)
+            rows.append(row("environment",
+                            "drive_block_exceed_" + str(int(w_min)) + "_"
+                            + str(int(thr)),
+                            share, "share",
+                            src + " [threshold=" + str(int(thr)) + " km]"))
+    return rows
 
 
 def write_detail(detail, meta, path):
