@@ -40,6 +40,43 @@ EMIS_KEYS = ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O", "CO2",
              "CO2E_TTW", "CO2E_WTW", "ENERGY_MJ", "PM10_TYRE", "PM10_BRAKE",
              "PM10_ROAD", "PM10_NONEXHAUST")
 
+#: Fahr-Tasknamen aus drt_service_time._classify -> KPI-Flottenname. Ein
+#: Kaltstart wird dem Regime des FOLGENDEN Fahrblocks zugerechnet (Spec E6):
+#: nur so bleibt drt_* + freight_modular_* == total_* exakt.
+_DRIVE_REGIME = {"DRIVE": "drt", "FREIGHT_DRIVE": "freight_modular"}
+_SOAK_TASK = "STAY"
+
+
+def cold_starts_by_regime(task_seq, soak_s):
+    """Kaltstarts je Regime aus der klassifizierten Task-Folge.
+
+    Zaehlregel: ein Start zu Schichtbeginn (der erste Fahrblock ueberhaupt)
+    plus jede STAY-Phase >= soak_s, auf die wieder ein Fahrblock folgt. Eine
+    STAY-Phase am Tagesende zaehlt nicht -- sie startet nichts.
+
+    soak_s = 3600 nach EPA (1994): ein Start >= 1 h nach Ende der Vorfahrt
+    ist kalt, weil der Katalysator dann abgekuehlt ist. Zitiert ueber
+    Reiter & Kockelman 2016 -- belegt, nicht gesetzt.
+
+    Nur STAY bricht einen Fahrblock: ein STOP ist ein Bedienhalt, in dem der
+    Motor nach unserer Systemgrenze zwar aus ist, der Katalysator aber nicht
+    auskuehlt.
+    """
+    counts = {"drt": 0, "freight_modular": 0}
+    armed = True                       # Schichtbeginn zaehlt als kalt
+    for (t0, t1, bucket) in task_seq:
+        if bucket == _SOAK_TASK:
+            if (t1 - t0) >= soak_s:
+                armed = True
+            continue
+        regime = _DRIVE_REGIME.get(bucket)
+        if regime is None:
+            continue                   # STOP / RETOOLING brechen nichts
+        if armed:
+            counts[regime] += 1
+            armed = False
+    return counts
+
 
 def segment_for_type(type_id, capacity=None):
     """N1 segment for a carrier vehicleTypeId.
@@ -66,14 +103,19 @@ def _zero_totals():
     return {pt: {k: 0.0 for k in EMIS_KEYS} for pt in POWERTRAINS}
 
 
-def _add_entity(totals, detail, fleet, entity, vtype, segment, km, v_kmh, fac):
+def _add_entity(totals, detail, fleet, entity, vtype, segment, km, v_kmh, fac,
+                n_cold=0):
     for pt in POWERTRAINS:
         out = em.vehicle_emissions(km, v_kmh, pt, segment, fac)
+        cold = em.cold_start_extra(n_cold, km, v_kmh, pt, segment, fac)
         for k in EMIS_KEYS:
+            out[k] += cold[k]          # Spec E1: eingerechnet, nicht daneben
             totals[pt][k] += out[k]
         d = {"fleet": fleet, "entity": entity, "vehicle_type": vtype,
-             "segment": segment, "km": km, "v_kmh": v_kmh, "powertrain": pt}
+             "segment": segment, "km": km, "v_kmh": v_kmh, "powertrain": pt,
+             "n_cold": n_cold}
         d.update({k: out[k] for k in EMIS_KEYS})
+        d.update({"cold_" + k: cold[k] for k in EMIS_KEYS})
         detail.append(d)
 
 
@@ -114,8 +156,11 @@ def freight_arm(run_dir, fac):
         if km <= 0 or tt_h <= 0:
             continue
         segment = segment_for_type(vtype, caps.get(vtype))   # raises if unknown
+        # Spec E5: die TSV hat keine Task-Sequenz -- ein mitten in der Tour
+        # liegender Kaltstart ist aus dieser Quelle unsichtbar. 1 je Tour ist
+        # daher eine dokumentierte Untergrenze, kein gemessener Wert.
         _add_entity(totals, detail, "freight", str(r["vehicleId"]), vtype,
-                    segment, km, km / tt_h, fac)
+                    segment, km, km / tt_h, fac, n_cold=1)
     return totals, detail
 
 
@@ -188,7 +233,7 @@ def _in_windows(t, wins):
     return False
 
 
-def modular_freight_arm(veh_path_ts, windows, link_len, fac):
+def modular_freight_arm(veh_path_ts, windows, link_len, fac, cold_starts=None):
     """Freight emissions for the modular (1d) arm, where freight rides in the
     DRT vehicles and no analysis/freight/ TSV exists.
 
@@ -203,6 +248,10 @@ def modular_freight_arm(veh_path_ts, windows, link_len, fac):
     ((link_id, occ_pax, occ_parcels, t)). Mean speed is freight km divided by
     the summed freight window duration, i.e. the same
     distance-over-driving-time definition the conventional arm uses.
+
+    `cold_starts` is {veh: n} from cold_starts_by_regime(...)["freight_modular"]
+    per vehicle (extract() builds it from recon); default None -> 0, same as
+    every existing caller before this parameter existed.
     """
     totals, detail = _zero_totals(), []
     for veh, path in (veh_path_ts or {}).items():
@@ -221,8 +270,9 @@ def modular_freight_arm(veh_path_ts, windows, link_len, fac):
         drive_h = sum(t1 - t0 for t0, t1 in wins) / 3600.0
         if km <= 0 or drive_h <= 0:
             continue
+        n_cold = (cold_starts or {}).get(veh, 0)
         _add_entity(totals, detail, "freight_modular", veh, "drt_modular",
-                    DRT_SEGMENT, km, km / drive_h, fac)
+                    DRT_SEGMENT, km, km / drive_h, fac, n_cold=n_cold)
     return totals, detail
 
 
@@ -262,8 +312,11 @@ def drt_arm(veh_path, recon, link_len, fac, exclude_windows=None):
             km += link_len.get(entry[0], 0.0) / 1000.0
         if drive_s <= 0 or km <= 0:
             continue
+        seq = per_veh.get(veh, {}).get("task_seq", [])
+        n_cold = cold_starts_by_regime(
+            seq, fac["sup"]["coldstart_soak_min"] * 60.0)["drt"]
         _add_entity(totals, detail, "drt", veh, "drt_minibus", DRT_SEGMENT,
-                    km, km / (drive_s / 3600.0), fac)
+                    km, km / (drive_s / 3600.0), fac, n_cold=n_cold)
     return totals, detail
 
 
@@ -602,8 +655,14 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
         arms["drt"] = drt_arm(veh_path, recon, link_len, fac,
                               exclude_windows=windows)
         if windows:
+            soak_s = fac["sup"]["coldstart_soak_min"] * 60.0
+            per_veh = (recon or {}).get("per_veh", {})
+            fm_cold = {v: cold_starts_by_regime(
+                           per_veh.get(v, {}).get("task_seq", []),
+                           soak_s)["freight_modular"]
+                       for v in windows}
             arms["freight_modular"] = modular_freight_arm(
-                veh_path, windows, link_len, fac)
+                veh_path, windows, link_len, fac, cold_starts=fm_cold)
 
     rows, detail = [], []
     grand = _zero_totals()
