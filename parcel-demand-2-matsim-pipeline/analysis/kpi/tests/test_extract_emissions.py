@@ -524,6 +524,40 @@ def test_write_detail(tmp_path):
     assert "RUN1" in txt and "freight_dhl_veh_a_1" in txt
 
 
+def test_write_detail_carries_cold_start_columns(tmp_path):
+    """_add_entity computes n_cold and cold_<K> per detail entry (Spec E1)
+    -- write_detail's header must carry them into the CSV, not silently
+    drop them on the way to the artefact a human audits. Assert on the
+    PARSED CSV, not the detail dict: the defect is dict-right/file-wrong,
+    so a dict-only assertion would not have caught it."""
+    import csv as csv_mod
+    import extract_emissions as ee
+
+    class Meta:
+        run_id = "RUN1"
+    rows, detail = ee.extract(_run_dir(tmp_path), "test")
+    out = tmp_path / "kpi_emissions_vehicles.csv"
+    ee.write_detail(detail, Meta(), out)
+
+    expected = next(d for d in detail
+                     if d["entity"] == "freight_dhl_veh_a_1"
+                     and d["powertrain"] == "diesel")
+    assert expected["n_cold"] == 1              # fixture anchor: freight_arm fixes n_cold=1
+    assert expected["cold_NOx"] > 0.0            # diesel has a cold-start parametrisation
+
+    with open(out, encoding="utf-8", newline="") as f:
+        parsed_rows = list(csv_mod.DictReader(f, delimiter=";"))
+    header = list(parsed_rows[0].keys())
+    assert "n_cold" in header
+    assert "cold_NOx" in header
+
+    csv_row = next(r for r in parsed_rows
+                   if r["entity"] == "freight_dhl_veh_a_1"
+                   and r["powertrain"] == "diesel")
+    assert float(csv_row["n_cold"]) == expected["n_cold"]
+    assert float(csv_row["cold_NOx"]) == pytest.approx(expected["cold_NOx"])
+
+
 def test_intensity_rows_need_a_parcel_km_basis(tmp_path):
     """Die Massenzurechnung ist eine 1c-Konstruktion: dort fahren Pakete als
     PERSONEN mit (PARCEL_PERSON_PREFIX) und tauchen deshalb in occ_parcels

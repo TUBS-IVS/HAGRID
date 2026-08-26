@@ -835,9 +835,17 @@ def drive_block_rows(veh_path, per_veh, link_len, sup):
 
 def write_detail(detail, meta, path):
     """kpi_emissions_vehicles.csv -- one row per entity x powertrain,
-    ';'-separated like the other kpi_* CSVs."""
-    header = ["run_id", "fleet", "entity", "vehicle_type", "segment", "km",
-              "v_kmh", "powertrain"] + list(EMIS_KEYS)
+    ';'-separated like the other kpi_* CSVs.
+
+    Carries n_cold and the cold_<K> block that _add_entity already computes
+    per entry (Spec E1): without them, the CSV a human audits for the
+    cold-start share doesn't have the columns to check it with. n_cold sits
+    right after powertrain; the absolute EMIS_KEYS block and the cold_
+    block stay adjacent and in the same order so the two are easy to
+    compare column-by-column, not interleaved key-by-key."""
+    header = (["run_id", "fleet", "entity", "vehicle_type", "segment", "km",
+               "v_kmh", "powertrain", "n_cold"] + list(EMIS_KEYS)
+              + ["cold_" + k for k in EMIS_KEYS])
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(header)
