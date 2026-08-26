@@ -266,18 +266,21 @@ def cold_start_extra(n_starts, km, v_kmh, powertrain, segment, fac):
         c = cold.get(poll)
         if c is None:                      # COLD_UNPARAMETERISED -> Luecke
             continue
-        # v wird VOR dem ef()-Aufruf auf die Kaltzeile geclampt, nicht erst
-        # in cold_q(): sonst waechst ef_hot(v) oberhalb von vmax der
-        # Kaltkurve unbemerkt weiter, waehrend Q schon plateaut -- der
-        # Zuschlag wuerde dann trotz Clamp weiter mit v steigen.
-        v_c = min(max(float(v_kmh), c["vmin"]), c["vmax"])
-        out[key] = ckm * ef(v_c, coefs[poll]) * cold_bc(key, sup) * (
-            cold_q(v_c, c, ta) - 1.0)
+        # ef() bekommt die tatsaechliche Geschwindigkeit, ungeclampt (bis
+        # zum Gueltigkeitsbereich der HOT-Kurve, bis 140 km/h): e_hot ist
+        # der Emissionsfaktor am eigenen Betriebspunkt des Fahrzeugs. Nur
+        # cold_q() clampt, gegen die Kaltzeile (bis 45 km/h) -- das
+        # Kalt/Warm-VERHAELTNIS Q ist die Groesse, die dort parametrisiert
+        # ist, nicht e_hot. Multiplikativ auf e_hot bleibt der absolute
+        # Zuschlag oberhalb von 45 km/h korrekt weiter steigen (Ruling
+        # 2026-08-26): eine Doppel-Clampung wuerde ein schnelles Fahrzeug
+        # rechnerisch auf 45 km/h zwingen und den Zuschlag unterschaetzen.
+        out[key] = ckm * ef(v_kmh, coefs[poll]) * cold_bc(key, sup) * (
+            cold_q(v_kmh, c, ta) - 1.0)
 
     ec_cold = cold.get("EC")
     if ec_cold is not None:
-        v_c = min(max(float(v_kmh), ec_cold["vmin"]), ec_cold["vmax"])
-        ec = ckm * ef(v_c, coefs["EC"]) * (cold_q(v_c, ec_cold, ta) - 1.0)
+        ec = ckm * ef(v_kmh, coefs["EC"]) * (cold_q(v_kmh, ec_cold, ta) - 1.0)
         out["ENERGY_MJ"] = ec
         out["CO2"] = ec * sup["ttw_co2_g_per_mj_diesel"]
         # N2O bekommt bewusst KEINEN Zuschlag: die Quelle gibt urban cold 9
