@@ -7,7 +7,51 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-08-17._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-08-26._
+
+---
+
+## 2026-08-26
+
+- **`[H]` Kaltstart-Zuschlag implementiert und gemessen.** Zuschlag
+  `cold_km * ef_hot(v) * bc(ltrip) * (Q(v, ta) - 1)` in die bestehenden KPIs eingerechnet, je
+  Schadstoff eine `*_coldstart_share`-Zeile. Zählung: konventioneller Freight 1 Start je Tour
+  (Datenlücke `TimeDistance_perVehicle.tsv`, keine Task-Sequenz); DRT/modularer Arm 1 bei
+  Schichtbeginn plus je STAY-Block ≥ 60 min mit folgender Fahrt, zugerechnet an das Regime des
+  folgenden Fahrblocks. 60-min-Schwelle belegt: EPA (1994) via Reiter & Kockelman (2016),
+  *Transportation Research Part D* 43, 123–132, doi:10.1016/j.trd.2015.12.012.
+  Gemessen (`LMD_BASELINE_13052025_bandz_central_iter0_jsprit100`,
+  `DRT_MODULAR_13052025_d1d_dep7_f130_iter150_jsprit100`): `freight_nox_coldstart_share` 5,339 %,
+  `drt_nox_coldstart_share` 2,436 % (1,646 Starts/Fahrzeugtag im Mittel, min 0, max 4, n=130;
+  Verteilung 0:8/1:57/2:41/3:21/4:3). Die alte Bound war „je Kaltstart" gerechnet (DRT 1,41 %) —
+  richtig, aber untersetzt, kein Fehler. Regime-Invariante `drt_* + freight_modular_* ==
+  total_*` hält exakt (Residuen 0,0012 g NOx, 0,026 kg CO₂e = CSV-Rundung). Nebenbefund: 8 von
+  130 DRT-Fahrzeugtagen mit `n_cold=0` sind korrekt (erster Fahrblock ist FREIGHT_DRIVE, der
+  Schichtbeginn-Kaltstart geht an `freight_modular`). `kpi_emissions_vehicles.csv` trägt seit
+  commit `084ede3` `n_cold` und `cold_<KEY>`. Vier Limitations bleiben (L1 BEV-Arm ohne
+  Kaltstart, einseitig zugunsten BEV; L2 Freight-Zählung ist selbst noch eine Untergrenze; L3
+  PM-Auspuff unparametrisiert; L4 nur RANGE 1). Suite 432 → 438 Tests. Design-Spec, Herleitung,
+  Zahlen: METHODS-LOG §2.29, `analysis/kpi/data/README.md` Abschnitt „Kaltstart",
+  `docs/superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md`. Commits bis `084ede3`,
+  Branch `hendrik`.
+
+- **`[M]` Ladefenster-Analyse für die DRT-Elektrifizierbarkeit — beantwortet, mit bindendem
+  Befund.** Neue KPI `drive_block_max_km_<20|40|60>` (längster zusammenhängender Fahrblock
+  zwischen zwei STAYs ≥ Fensterbreite `w`) gegen `ev_range_km_low/mid/high` gehalten; die
+  Fensterbreiten sind ein Sweep, weil ein DRT-Fahrzeug jederzeit neu disponiert werden kann und
+  nur die kurzen Fenster operativ verlässlich sind. Gemessen (1d-Lauf):
+  `drive_block_max_km_20/40/60` = 445,5 / 548,2 / 548,2 km, monoton; alle neun
+  `drive_block_exceed_<w>_<schwelle>` ungleich null, bis 96 %. Selbst im großzügigsten
+  20-min-Fenster (jede STAY dieser Länge lädt voll — die optimistischste mögliche Annahme, ohne
+  Ladeleistung/Batteriekapazität/Infrastruktur) liegt der längste Fahrblock bei 445,5 km gegen
+  maximal angenommene 250 km Reichweite: **die geometrische Schranke ist bindend.** DRT ist in
+  der jetzigen Disposition NICHT ohne Zwischenladen elektrifizierbar — das sagt nichts über eine
+  anders disponierte Flotte und ist keine Aussage „DRT ist nicht elektrifizierbar" an sich.
+  Ersetzt die Aussagekraft von `ev_range_exceed_drt_*` (dessen Nenner ein ganzer Fahrzeugtag inkl.
+  aller Standzeit war). Per Design-Spec-Eskalationspfad (§5) öffnet ein bindender geometrischer
+  Befund einen neuen Backlog-Punkt statt die Frage zu schließen: **`[H]` Energetisches
+  Lademodell** (Ladeleistung, Batteriekapazität, SoC-Verlauf) in BACKLOG.md angelegt. Details:
+  wie oben.
 
 ---
 

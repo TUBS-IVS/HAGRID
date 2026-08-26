@@ -135,27 +135,24 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
 ### `[H]` Nachhaltigkeitsparameter einbauen
 
 Emissions-/CO₂-/Energie-KPIs und -Parameter ins Modell + Dashboard. Berührt Autonomie-Switch
-(E-Antrieb) und die Kostenfunktion. **Status: Plan 2026-07-28 AUSGEFÜHRT (Tasks 1–9), 2026-07-31.**
-→ [Plan](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md). Ergebnis: KPI-Gruppe
+(E-Antrieb) und die Kostenfunktion. **Status: Plan 2026-07-28 AUSGEFÜHRT (Tasks 1–9), 2026-07-31;
+Kaltstart-Zuschlag + STAY-Ladefenster-Analyse AUSGEFÜHRT, 2026-08-26.**
+→ [Plan 2026-07-28](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md),
+[Design 2026-08-26](superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md). Ergebnis: KPI-Gruppe
 `environment` in `build_kpis` (drei Arme freight / freight_modular / drt, Diesel + BEV,
-Non-Exhaust segmentdifferenziert, EV-Reichweiten-Sweep, `kpi_emissions_vehicles.csv`).
-Methodenwahl, Klassenmapping, Systemgrenze und Caveats: [METHODS-LOG](METHODS-LOG.md)
-§1.4/§2.7/§2.26–§2.29; Faktor-Provenance und Limitations-Rohtext:
-`analysis/kpi/data/README.md`. _(added 2026-07-14, abgeschlossen 2026-07-31)_
+Non-Exhaust segmentdifferenziert, EV-Reichweiten-Sweep, `kpi_emissions_vehicles.csv`), plus
+Kaltstart-Zuschlag und `drive_block_max_km_*`. Methodenwahl, Klassenmapping, Systemgrenze und
+Caveats: [METHODS-LOG](METHODS-LOG.md) §1.4/§2.7/§2.26–§2.29; Faktor-Provenance und
+Limitations-Rohtext: `analysis/kpi/data/README.md`. Nachweis: [BACKLOG-DONE](BACKLOG-DONE.md).
+_(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
 
-- **`[H]` Kaltstart-Zuschlag implementieren (~0,5 d)** — die Bound-Rechnung hat die 5-%-Schwelle
-  gerissen (Fracht-NOx +5,6 %, DRT +1,4 % je Kaltstart; CO₂/Energie < 1 %). Solange er fehlt, sind
-  **alle berichteten NOx-Zahlen eine einseitige Untergrenze**. Formeln, Faktoren und der
-  ausgewiesene ltrip-Transfer liegen fertig in `analysis/kpi/data/README.md` (Abschnitt
-  „Kaltstart"); ein Kaltstart je Tour bzw. Fahrzeugtag, Kaltdistanz 3,5 km. _(added 2026-07-31)_
-- **`[M]` Ladefenster-Analyse für die DRT-Elektrifizierbarkeit (~0,5–1 d)** — die
-  `ev_range_exceed_drt_*`-Zeilen sind **keine** Elektrifizierbarkeitsaussage (Freight-Tour =
-  Schicht, DRT-Fahrzeugtag ≠ Schicht; 3,2 % neben 96,7 % nebeneinander gelesen ergibt den falschen
-  Schluss). Belastbar ist der **längste Fahrblock zwischen zwei ausreichend langen STAY-Phasen** —
-  die DVRP-Task-Events liefern das schon. Frachtseite ist beantwortet (längste Tour 183 km, nicht
-  reichweitenbegrenzt), DRT-Seite offen. Eskalationspfad falls bindend: Opportunity-Charging über
-  Idle-Fenster → Flottenaufschlag als Annahme → `ev`/`edrt`-Contrib (schwergewichtig).
-  _(added 2026-07-31, zusammengelegt 2026-08-17)_
+- **`[H]` Energetisches Lademodell für die DRT-Flotte (Ladeleistung, Batteriekapazität,
+  SoC-Verlauf)** — Nachfolger von „Ladefenster-Analyse" (BACKLOG-DONE 2026-08-26): die
+  geometrische Schranke ist **bindend** (`drive_block_max_km_20` = 445,5 km gegen maximal
+  angenommene `ev_range_km_high` = 250 km, unter der optimistischsten Annahme — jede 20-min-STAY
+  lädt voll), also greift der Eskalationspfad aus dem Design-Spec §5: das ist kein geschlossener
+  Befund mehr, sondern ein eigener Modellierungsschritt. Sagt NICHTS über eine anders disponierte
+  Flotte aus. _(added 2026-08-26)_
 - **`[H]` BEV-Szenario + Planetary-Boundaries-Einbettung (SOS)** — **wäre der methodische
   Aufhänger des Papers.** ~5–8 Tage, **keine neuen Sim-Runs** (reiner Faktortausch; EV-Plumbing
   existiert). Bausteine: BEV-EC-Kurven + Netz-CO₂-Intensität als Sensitivität (dominiert das
