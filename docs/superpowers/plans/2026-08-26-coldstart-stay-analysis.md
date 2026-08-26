@@ -35,6 +35,14 @@ bc      = a - b*ltrip  fuer CO/NOx/VOC, sonst 1.0                       # Tab. 3
 Q       = a*v + b*ta + c, Boden 1.0, v geclampt auf [vmin, vmax]
 ```
 
+> **Korrektur 2026-08-26 (während Task 3 gefunden).** Geclampt wird **nur Q**, nicht `ef_hot`.
+> Die Gleichung ist multiplikativ auf `e_hot`, und `e_hot` ist der Heißfaktor *des Fahrzeugs bei
+> seiner Geschwindigkeit*; allein die Q-Tabelle endet bei 45 km/h. Wer beide Faktoren clampt,
+> rechnet den Kaltüberschuss so, als wäre das Fahrzeug 45 km/h gefahren, und untersetzt schnelle
+> Fahrzeuge. Der ursprüngliche Testfall in Task 3 verlangte fälschlich einen flachen Absolutwert
+> und ist auf die Ratio-Form korrigiert. Keine berichtete Zahl bewegt sich dadurch — alle
+> Entitätsgeschwindigkeiten liegen bei 34–40 km/h.
+
 **Wichtige Eigenschaft, auf der die Tests aufbauen:** der *relative* Zuschlag
 `extra / hot = (cold_km / entity_km) * bc * (Q - 1)` ist **segmentunabhängig**, weil `ef_hot`
 sich herauskürzt. Tests brauchen deshalb keine Segment-Fixture.
@@ -421,12 +429,25 @@ def test_surcharge_scales_linearly_with_starts():
 
 def test_speed_is_clamped_to_the_cold_curve_range():
     """Die Kaltkurven fuer CO/NOx/VOC gelten nur bis 45 km/h. Ohne Clamp
-    extrapoliert die Formel stillschweigend -- Spec Risiko 1."""
-    from emissions_emep import load_factors, cold_start_extra
+    extrapoliert Q stillschweigend -- Spec Risiko 1.
+
+    Assertiert wird die RATIO, nicht der Absolutwert: extra/hot =
+    (cold_km/km) * bc * (Q-1) haengt nur ueber Q von v ab, weil ef_hot sich
+    kuerzt. Der ABSOLUTE Zuschlag darf und muss mit v weiter steigen -- er
+    ist multiplikativ auf ef_hot, und geclampt wird nur die Q-Tabelle.
+    """
+    from emissions_emep import (load_factors, cold_start_extra,
+                                vehicle_emissions)
     fac = load_factors()
-    at_cap = cold_start_extra(1, 100.0, 45.0, "diesel", "N1-III", fac)
-    above = cold_start_extra(1, 100.0, 80.0, "diesel", "N1-III", fac)
-    assert above["NOx"] == pytest.approx(at_cap["NOx"])
+    km = 100.0
+    hot45 = vehicle_emissions(km, 45.0, "diesel", "N1-III", fac)
+    hot80 = vehicle_emissions(km, 80.0, "diesel", "N1-III", fac)
+    x45 = cold_start_extra(1, km, 45.0, "diesel", "N1-III", fac)
+    x80 = cold_start_extra(1, km, 80.0, "diesel", "N1-III", fac)
+    assert (x80["NOx"] / hot80["NOx"]
+            == pytest.approx(x45["NOx"] / hot45["NOx"]))
+    # Gegenrichtung: ein Rueckfall auf Doppel-Clamping muss laut scheitern.
+    assert x80["NOx"] > x45["NOx"]
 
 
 def test_bev_has_no_cold_surcharge():
