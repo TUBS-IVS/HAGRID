@@ -749,3 +749,36 @@ def test_extract_wires_freight_modular_cold_starts_to_the_correct_regime(tmp_pat
             if x["fleet"] == "freight_modular" and x["powertrain"] == "diesel"][0]
     assert d_drt["n_cold"] == 2               # nicht die freight_modular-Zahl (1)
     assert d_fm["n_cold"] == 1                # nicht die drt-Zahl (2)
+
+
+def test_drive_blocks_split_at_long_stays_only():
+    from extract_emissions import drive_block_rows
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    # v1: 3 Fahrten, dazwischen eine 30-min- und eine 90-min-STAY
+    per_veh = {"v1": {"task_seq": [
+        (0, 600, "DRIVE"), (600, 2400, "STAY"),        # 30 min
+        (2400, 3000, "DRIVE"), (3000, 8400, "STAY"),   # 90 min
+        (8400, 9000, "DRIVE")]}}
+    # je Fahr-Task ein Link a 10 km
+    veh_path = {"v1": [("L", 0, 0, 300.0), ("L", 0, 0, 2700.0),
+                       ("L", 0, 0, 8700.0)]}
+    link_len = {"L": 10000.0}
+    rows = {r["kpi_name"]: r["value"]
+            for r in drive_block_rows(veh_path, per_veh, link_len, sup)}
+    # w=20 min: beide STAYs trennen -> 3 Bloecke a 10 km
+    assert rows["drive_block_max_km_20"] == pytest.approx(10.0)
+    # w=60 min: nur die 90-min-STAY trennt -> Bloecke 20 km und 10 km
+    assert rows["drive_block_max_km_60"] == pytest.approx(20.0)
+
+
+def test_drive_block_row_source_denies_an_electrification_verdict():
+    from extract_emissions import drive_block_rows
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    per_veh = {"v1": {"task_seq": [(0, 600, "DRIVE")]}}
+    rows = drive_block_rows({"v1": [("L", 0, 0, 300.0)]}, per_veh,
+                            {"L": 10000.0}, sup)
+    assert rows, "expected at least one row"
+    for r in rows:
+        assert "optimistic" in r["source"].lower()
