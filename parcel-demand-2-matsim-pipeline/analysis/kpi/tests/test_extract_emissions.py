@@ -782,3 +782,69 @@ def test_drive_block_row_source_denies_an_electrification_verdict():
     assert rows, "expected at least one row"
     for r in rows:
         assert "optimistic" in r["source"].lower()
+
+
+# --- Task 6 review carry-over: _blocks_from_seq's regime-agnostic merging
+# and STOP/RETOOLING pass-through are a deliberate deviation from the design
+# spec (a battery does not know about task regimes) and had no direct
+# regression test. drive_block_rows tests above only ever fed single-regime
+# DRIVE sequences, so a reintroduction of per-regime splitting would not
+# have failed any existing test.
+
+def test_blocks_merge_across_regimes_without_a_long_stay():
+    """A DRIVE block directly followed by a FREIGHT_DRIVE block (no STAY
+    >= split_s between them) must merge into ONE block. Splitting per
+    regime would halve this block and make electrification look better
+    than it is."""
+    from extract_emissions import _blocks_from_seq
+    seq = [(0, 600, "DRIVE"), (600, 1200, "FREIGHT_DRIVE")]
+    blocks = _blocks_from_seq(seq, SOAK_S)
+    # Exactly one block spanning both regimes -- not [(0, 600), (600, 1200)].
+    assert blocks == [(0, 1200)]
+
+
+def test_stop_and_retooling_do_not_split_or_extend_a_block():
+    """STOP/RETOOLING between two drives must not split the block, and a
+    trailing STOP/RETOOLING after the last drive must not extend the block
+    past that drive's end."""
+    from extract_emissions import _blocks_from_seq
+    seq = [(0, 600, "DRIVE"),
+           (600, 900, "STOP"),
+           (900, 1500, "DRIVE"),
+           (1500, 900000, "RETOOLING")]     # dangling task after the block
+    blocks = _blocks_from_seq(seq, SOAK_S)
+    # Single block; end is the 2nd DRIVE's t1 (1500), NOT the RETOOLING's
+    # t1 (900000) and NOT split into (0, 600) / (900, 1500).
+    assert blocks == [(0, 1500)]
+
+
+def test_coldstart_share_is_cold_over_total():
+    from extract_emissions import coldstart_share_rows
+    detail = [{"fleet": "freight", "powertrain": "diesel",
+               "NOx": 100.0, "cold_NOx": 5.0,
+               "PM_EXHAUST": 2.0, "cold_PM_EXHAUST": 0.0}]
+    rows = {r["kpi_name"]: r["value"] for r in coldstart_share_rows(detail)}
+    assert rows["freight_nox_coldstart_share"] == pytest.approx(0.05)
+    assert rows["total_nox_coldstart_share"] == pytest.approx(0.05)
+
+
+def test_unparameterised_share_row_names_the_gap():
+    """Ein 0-Anteil bei PM darf nicht wie eine Messung aussehen."""
+    from extract_emissions import coldstart_share_rows
+    detail = [{"fleet": "freight", "powertrain": "diesel",
+               "NOx": 100.0, "cold_NOx": 5.0,
+               "PM_EXHAUST": 2.0, "cold_PM_EXHAUST": 0.0}]
+    pm = [r for r in coldstart_share_rows(detail)
+          if r["kpi_name"] == "freight_pm_exhaust_coldstart_share"][0]
+    assert pm["value"] == 0.0
+    assert "no Euro 7 cold parameterisation" in pm["source"]
+    nox = [r for r in coldstart_share_rows(detail)
+           if r["kpi_name"] == "freight_nox_coldstart_share"][0]
+    assert "no Euro 7 cold parameterisation" not in nox["source"]
+
+
+def test_bev_gets_no_share_rows():
+    from extract_emissions import coldstart_share_rows
+    detail = [{"fleet": "drt", "powertrain": "bev",
+               "NOx": 0.0, "cold_NOx": 0.0}]
+    assert coldstart_share_rows(detail) == []
