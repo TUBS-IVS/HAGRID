@@ -296,3 +296,67 @@ def test_non_exhaust_dominates_exhaust_pm_and_survives_electrification():
     assert e["PM10_TYRE"] > d["PM10_TYRE"]      # Masse steigt
     assert e["PM10_ROAD"] > d["PM10_ROAD"]      # Masse steigt
     assert e["PM10_BRAKE"] < d["PM10_BRAKE"]    # Rekuperation
+
+
+def _fake_cold_sheet():
+    cols = ["Category", "Fuel", "Segment", "Euro Standard", "Pollutant",
+            "Range", "Month", "Alpha", "Beta", "Gamma",
+            "Min Speed [km/h]", "Max Speed [km/h]",
+            "Min Temperature [℃]", "Max Temperature [℃]"]
+    months = ["January", "February", "March"]
+    rows = []
+    for m in months:
+        rows += [
+            ["Light Commercial Vehicles", "Diesel", "N1-III", "Euro 7", "NOx",
+             "RANGE 1", m, 0.0480610964982746, 0.0, 14.6608380769528, 5, 45, 0, 50],
+            ["Light Commercial Vehicles", "Diesel", "N1-III", "Euro 7", "NOx",
+             "RANGE 2", m, 0.151, -2.435, 14.019, 5, 45, -10, 0],
+            ["Light Commercial Vehicles", "Diesel", "N1-II", "Euro 7", "EC",
+             "RANGE 1", m, 0.0, -0.008, 1.34, 10, 130, -10, 30],
+            # muss herausgefiltert werden: falsche Euro-Norm bzw. falsche Kategorie
+            ["Light Commercial Vehicles", "Diesel", "N1-III", "Euro 5", "NOx",
+             "RANGE 1", m, 9.9, 9.9, 9.9, 5, 45, 0, 50],
+            ["Passenger Cars", "Petrol", "Mini", "Euro 7", "CO",
+             "RANGE 1", m, 9.9, 9.9, 9.9, 5, 45, 0, 50],
+        ]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def test_transform_cold_filters_and_maps_columns():
+    from emep_factor_extract import transform_cold
+    out = transform_cold(_fake_cold_sheet())
+    assert set(out["powertrain"]) == {"diesel"}
+    assert set(out["segment"]) == {"N1-II", "N1-III"}
+    assert set(out["pollutant"]) == {"NOx", "EC"}
+    # Monate sind kollabiert: 3 Monate x 3 gueltige Zeilen -> 3 Zeilen
+    assert len(out) == 3
+    nox1 = out[(out["pollutant"] == "NOx") & (out["range"] == "RANGE 1")].iloc[0]
+    assert nox1["a"] == pytest.approx(0.0480610964982746)
+    assert nox1["b"] == pytest.approx(0.0)
+    assert nox1["c"] == pytest.approx(14.6608380769528)
+    assert nox1["vmin"] == 5 and nox1["vmax"] == 45
+    assert nox1["tmin"] == 0 and nox1["tmax"] == 50
+    assert "COPERT 5.9.1" in nox1["source"]
+    assert "2023 - Update 2025" in nox1["source"]
+
+
+def test_transform_cold_keeps_both_ranges():
+    """RANGE 2 (t < 0) wird mit committet, obwohl bei ta = 10 nur RANGE 1
+    ausgewertet wird -- eine spaetere Winter-Sensitivitaet soll eine
+    Datenzeile sein, keine Code-Aenderung (Spec A / L4)."""
+    from emep_factor_extract import transform_cold
+    out = transform_cold(_fake_cold_sheet())
+    assert set(out[out["pollutant"] == "NOx"]["range"]) == {"RANGE 1", "RANGE 2"}
+
+
+def test_transform_cold_rejects_month_variance():
+    """Die Monatsinvarianz ist der ungeprueftste Punkt des ganzen Pakets.
+    Gilt sie nicht, MUSS die Extraktion abbrechen -- still Januar zu nehmen
+    waere eine erfundene Zahl mit korrektem Aussehen."""
+    from emep_factor_extract import transform_cold
+    df = _fake_cold_sheet().copy()
+    mask = ((df["Month"] == "February") & (df["Pollutant"] == "NOx")
+            & (df["Range"] == "RANGE 1"))
+    df.loc[mask, "Alpha"] = 0.999
+    with pytest.raises(ValueError, match="month"):
+        transform_cold(df)
