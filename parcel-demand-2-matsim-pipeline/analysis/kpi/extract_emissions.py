@@ -576,6 +576,48 @@ def _segment_share_rows(detail):
     return rows
 
 
+_COLD_SRC = (
+    "cold-start surcharge FOLDED INTO the matching absolute row (share = "
+    "cold / (hot + cold)). EMEP/EEA GB 2023 - Update 2025 ch. 1.A.3.b.i-iv "
+    "eq. (10), Euro 6+ form; one cold start per tour (conventional freight, "
+    "no task sequence in the TSV) or per STAY >= 60 min followed by driving "
+    "(DRT / modular). Threshold: EPA (1994) via Reiter & Kockelman 2016, "
+    "Transportation Research Part D 43, 123-132, "
+    "doi:10.1016/j.trd.2015.12.012. ta=10 C")
+
+_COLD_GAP_SRC = (
+    " -- THIS ZERO IS A GAP, NOT A MEASUREMENT: Appendix 4 carries no "
+    "Euro 7 cold parameterisation for this pollutant")
+
+
+def coldstart_share_rows(detail):
+    """Anteil des Kaltstarts an der jeweiligen Gesamtemission.
+
+    Nur der Diesel-Arm: im BEV-Arm ist der Zaehler konstruktionsbedingt 0
+    (das Cold-Sheet hat keine BEV-Zeilen), eine Anteilszeile waere dort eine
+    Aussage ueber eine Konstante.
+    """
+    diesel = [d for d in detail if d["powertrain"] == "diesel"]
+    if not diesel:
+        return []
+    gap = set(em.COLD_UNPARAMETERISED)
+    fleets = sorted({d["fleet"] for d in diesel})
+    rows = []
+    for scope in fleets + ["total"]:
+        part = diesel if scope == "total" else [
+            d for d in diesel if d["fleet"] == scope]
+        for metric, key, _unit, _f in _KPI_METRICS:
+            tot = sum(d.get(key, 0.0) for d in part)
+            cold = sum(d.get("cold_" + key, 0.0) for d in part)
+            if tot <= 0:
+                continue
+            src = _COLD_SRC + (_COLD_GAP_SRC if key in gap else "")
+            rows.append(row("environment",
+                            scope + "_" + metric + "_coldstart_share",
+                            cold / tot, "fraction", src))
+    return rows
+
+
 def _intensity_rows_for_drt(veh_path, link_len, drt_detail, n_pax, n_parcels,
                             sup):
     """Mass/slot allocation rows for the shared-use (1c) arm.
@@ -703,6 +745,7 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
                                  (recon or {}).get("per_veh", {}),
                                  link_len, fac["sup"])
     rows += _segment_share_rows(detail)
+    rows += coldstart_share_rows(detail)
     if "drt" in arms and link_len is not None:
         rows += _intensity_rows_for_drt(veh_path, link_len, arms["drt"][1],
                                         n_pax, n_parcels, fac["sup"])
