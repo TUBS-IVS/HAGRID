@@ -368,9 +368,15 @@ def test_supplement_carries_coldstart_constants():
     assert sup["coldstart_soak_min"] == 60.0
     assert sup["ambient_temp_c"] == 10.0
     assert sup["ltrip_km"] == 12.4
-    for k in ("cold_beta_a0", "cold_beta_a1", "cold_beta_b0", "cold_beta_b1",
-              "cold_bc_co_a", "cold_bc_co_b", "cold_bc_nox_a", "cold_bc_nox_b",
-              "cold_bc_voc_a", "cold_bc_voc_b"):
-        assert k in sup, k
+    assert sup["cold_beta_a0"] == pytest.approx(0.6474)
+    assert sup["cold_beta_a1"] == pytest.approx(0.02545)
+    assert sup["cold_beta_b0"] == pytest.approx(0.00974)
+    assert sup["cold_beta_b1"] == pytest.approx(0.000385)
+    assert sup["cold_bc_co_a"] == pytest.approx(0.2022)
+    assert sup["cold_bc_co_b"] == pytest.approx(0.0064)
+    assert sup["cold_bc_nox_a"] == pytest.approx(0.1719)
+    assert sup["cold_bc_nox_b"] == pytest.approx(0.0055)
+    assert sup["cold_bc_voc_a"] == pytest.approx(0.2398)
+    assert sup["cold_bc_voc_b"] == pytest.approx(0.0076)
     assert (sup["charge_window_min_low"], sup["charge_window_min_mid"],
             sup["charge_window_min_high"]) == (20.0, 40.0, 60.0)
