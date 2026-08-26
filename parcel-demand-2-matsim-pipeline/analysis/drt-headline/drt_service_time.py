@@ -313,11 +313,13 @@ def reconstruct(events_path, fleet_file=None):
     # ---- classify the buffered tasks against each vehicle's freight-excursion windows ----
     # Deferred to here (not done while streaming) for the reason given in the docstring.
     windows_by_veh = {v: freight_windows(m) for v, m in excursion_marks.items()}
+    task_seq = {}             # vehicle -> [(t0, t1, bucket)], sorted by t0
     for v, recs in done_tasks.items():
         windows = windows_by_veh.get(v, ())
         d = task_time.setdefault(v, {k: 0.0 for k in COMPOSITION_KEYS})
         for (t0, t1, ttype) in recs:
             key = _classify(ttype, t0, windows)
+            task_seq.setdefault(v, []).append((t0, t1, key))
             d[key] = d.get(key, 0.0) + max(0.0, t1 - t0)
             if key in PRODUCTIVE_KEYS:
                 # Freight tasks extend the active window too. For a COMPLETED excursion this
@@ -331,6 +333,8 @@ def reconstruct(events_path, fleet_file=None):
                     first_prod[v] = t0
                 if v not in last_prod or t1 > last_prod[v]:
                     last_prod[v] = t1
+    for v in task_seq:
+        task_seq[v].sort(key=lambda r: r[0])
     #: True when this run carries ANY Modular freight activity -- the signal extract_drt uses
     #: to decide whether the 1d contamination provenance row applies. Derived from what was
     #: actually observed, not from the scenario name.
@@ -421,6 +425,12 @@ def reconstruct(events_path, fleet_file=None):
             "ratio_sim": (occt / sim_horizon) if sim_horizon > 0 else 0.0,
             "occ_seg_time": occ_seg_time.get(v, {}),
             "occ_seg_count": occ_seg_count.get(v, {}),
+            # Additiv (Plan 2026-08-26 Task 4): die klassifizierte Task-Folge.
+            # Traegt die Kaltstart-Zaehlung (60-min-Regel) UND die
+            # Ladefenster-KPI. Bewusst dieselbe _classify-Entscheidung wie die
+            # Aggregate darueber -- zwei Wahrheiten ueber denselben Task waeren
+            # ein Defekt.
+            "task_seq": task_seq.get(v, []),
         }
 
     # fleet ratios = sum numerators / sum denominators (correct aggregate, not mean of ratios)
