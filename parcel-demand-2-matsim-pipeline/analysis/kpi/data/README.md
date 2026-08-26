@@ -351,12 +351,15 @@ Was von der damaligen Bound-Rechnung noch gilt:
   traegt ihre Einheit-Definition in der eigenen Provenance-Spalte. Die
   belastbare Groesse ist der laengste Fahrblock zwischen zwei ausreichend
   langen STAY-Phasen: `drive_block_max_km_<20|40|60>` gegen
-  `ev_range_km_low/mid/high`. Gemessen (1d-Lauf): 445.5 km selbst im
-  grosszuegigsten 20-min-Fenster, gegen maximal angenommene 250 km Reichweite
-  - die geometrische Schranke ist bindend, DRT ist in der jetzigen
-  Disposition NICHT reichweitenfrei elektrifizierbar (sagt nichts ueber
-  eine anders disponierte Flotte). Details: BACKLOG-DONE ("Ladefenster-
-  Analyse").
+  `ev_range_km_low/mid/high`. Die Metrik ist bereits die OPTIMISTISCHE
+  Grenze: sie nimmt an, dass jede STAY-Phase >= Fensterbreite das Fahrzeug
+  VOLL nachlaedt - ohne Ladeleistung, Batteriekapazitaet oder Infrastruktur
+  im Modell. Gemessen (1d-Lauf): 445.5 km selbst im grosszuegigsten
+  20-min-Fenster, gegen maximal angenommene 250 km Reichweite - die
+  geometrische Schranke ist bindend TROTZ dieser optimistischen Annahme,
+  DRT ist in der jetzigen Disposition NICHT reichweitenfrei elektrifizierbar
+  (sagt nichts ueber eine anders disponierte Flotte). Details: BACKLOG-DONE
+  ("Ladefenster-Analyse").
 - Netzintensitaet Strom ist ein ausgewiesener Sensitivitaetsparameter
   (emep_supplement.csv). Die BEV-Abrieb-Multiplikatoren sind KEINE freie
   Annahme, sondern die guidebook-eigenen ICE->BEV-Verhaeltnisse des

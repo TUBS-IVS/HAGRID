@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-08-17. Durchsicht + Kürzung **838 → 495 Zeilen**: das Dokument hatte
+_Zuletzt aktualisiert: 2026-08-26. Durchsicht + Kürzung **838 → 495 Zeilen**: das Dokument hatte
 seine eigene Abgrenzungsregel verletzt (35 Bullets mit ≥8 Zeilen = 59 % der Datei, überwiegend
 Findings-Narrative). Erledigtes entfernt, Befundtexte nach METHODS-LOG verschoben oder gestrichen,
 wo sie dort schon standen; **30 `file:line`-Referenzen geprüft, 20 waren verschoben**; ein
