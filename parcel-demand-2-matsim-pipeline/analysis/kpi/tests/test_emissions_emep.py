@@ -475,6 +475,69 @@ def test_bev_has_no_cold_surcharge():
     fac = load_factors()
     extra = cold_start_extra(3, 100.0, 35.0, "bev", "N1-III", fac)
     assert all(v == 0.0 for v in extra.values())
+    # Positivkontrolle: derselbe Aufruf mit "diesel" statt "bev", gleiche
+    # km/v, ist NICHT 0 -- die BEV-Null ist selektiv (Datenluecke), nicht
+    # ein Bug, der cold_start_extra() fuer JEDE Powertrain 0 liefert.
+    diesel_extra = cold_start_extra(3, 100.0, 35.0, "diesel", "N1-III", fac)
+    assert diesel_extra["NOx"] > 0.0
+
+
+def test_unknown_powertrain_in_cold_data_is_a_pure_data_gap():
+    """Fix-Runde Important 2: fac["cold"] ist jetzt nach Powertrain
+    geschluesselt. Eine im Cold-Sheet unbekannte Powertrain (hier
+    aufgebaut, nicht "bev") muss denselben weichen Nullpfad nehmen wie
+    BEV -- die Powertrain-Ebene bekommt einen .get()-Fallback, nicht ein
+    hartes Segment-KeyError."""
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    fac["hybrid"] = fac["diesel"]  # hot factors vorhanden, cold nicht
+    extra = cold_start_extra(1, 100.0, 35.0, "hybrid", "N1-III", fac)
+    assert all(v == 0.0 for v in extra.values())
+
+
+def test_unknown_segment_on_a_known_cold_powertrain_raises():
+    """Fix-Runde Important 3: anders als eine fehlende Powertrain ist ein
+    fehlendes SEGMENT bei einer Powertrain, die das Cold-Sheet sehr wohl
+    fuehrt (diesel), ein Datenfehler und muss laut scheitern -- wie der
+    Hot-Pfad bei einem unbekannten Segment (Modulvertrag :136-137), nicht
+    still als 0 durchgereicht werden.
+
+    Der Diskriminator baut ein Segment, das bei den HOT-Faktoren existiert
+    (also nicht schon vorher an `fac[powertrain][segment]` scheitert) aber
+    in den Cold-Faktoren fehlt -- genau die Konstellation, die vor der
+    Fix-Runde `.get(segment, {})` still auf 0 abbildete."""
+    from emissions_emep import load_factors, cold_start_extra
+    fac = load_factors()
+    fac["diesel"]["N1-FAKE"] = fac["diesel"]["N1-III"]  # hot vorhanden, cold nicht
+    with pytest.raises(KeyError):
+        cold_start_extra(1, 100.0, 35.0, "diesel", "N1-FAKE", fac)
+
+
+def test_missing_cold_csv_fails_loudly(tmp_path):
+    """Important 1: eine fehlende/umbenannte emep_cold_factors.csv darf
+    NICHT als leerer Kaltstart-Zuschlag (jede Entitaet 0.00 %) verschwinden
+    -- sie muss beim Laden scheitern, genau wie die Hot-CSV es an :34 tut.
+
+    Baut ein Datenverzeichnis mit gueltiger Hot-CSV + Supplement, aber
+    OHNE emep_cold_factors.csv -- damit der Fehlschlag eindeutig von der
+    fehlenden Cold-Datei kommt und nicht schon frueher, beim Hot-Laden."""
+    import shutil
+    from emissions_emep import DATA_DIR, load_factors
+    shutil.copy(DATA_DIR / "emep_hot_factors.csv", tmp_path / "emep_hot_factors.csv")
+    shutil.copy(DATA_DIR / "emep_supplement.csv", tmp_path / "emep_supplement.csv")
+    with pytest.raises(FileNotFoundError):
+        load_factors(data_dir=str(tmp_path))
+
+
+def test_cold_q_rejects_ambient_temp_outside_its_range():
+    """Cheap item 4: RANGE 1 gilt nur fuer tmin..tmax (hier 0..50 fuer
+    NOx). ambient_temp_c = -5 waere RANGE-2-Gebiet und darf nicht
+    stillschweigend mit den RANGE-1-Koeffizienten ausgewertet werden."""
+    from emissions_emep import load_factors, cold_q
+    fac = load_factors()
+    coef = fac["cold"]["diesel"]["N1-III"]["NOx"]
+    with pytest.raises(ValueError):
+        cold_q(35.0, coef, -5.0)
 
 
 def test_unparameterised_pollutants_stay_zero():
@@ -490,9 +553,15 @@ def test_unparameterised_pollutants_stay_zero():
 
 
 def test_non_exhaust_carries_no_cold_surcharge():
-    """Abrieb ist distanzbasiert und kennt keinen Kaltstart."""
+    """Abrieb ist distanzbasiert und kennt keinen Kaltstart.
+
+    NONEXHAUST wird in cold_start_extra() als EIGENSTAENDIGE 0.0 initialisiert
+    (kein tyre+brake+road-Summe wie im Hot-Pfad) -- dass das Aggregat 0 ist,
+    beweist also NICHT, dass die Komponenten es sind. Alle vier pruefen."""
     from emissions_emep import load_factors, cold_start_extra
     fac = load_factors()
     extra = cold_start_extra(1, 100.0, 35.0, "diesel", "N1-III", fac)
     assert extra["PM10_NONEXHAUST"] == 0.0
     assert extra["PM10_TYRE"] == 0.0
+    assert extra["PM10_BRAKE"] == 0.0
+    assert extra["PM10_ROAD"] == 0.0

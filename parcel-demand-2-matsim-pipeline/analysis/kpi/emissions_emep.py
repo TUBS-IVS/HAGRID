@@ -174,23 +174,32 @@ _COLD_BC_KEYS = {"CO": "co", "NOx": "nox", "VOC": "voc"}
 
 
 def load_cold_factors(data_dir=None):
-    """-> {segment: {pollutant: coef}} fuer RANGE 1 (ta > 0).
+    """-> {powertrain: {segment: {pollutant: coef}}} fuer RANGE 1 (ta > 0).
 
     Nur RANGE 1 wird geladen: bei ambient_temp_c = 10 ist das der gueltige
     Bereich. RANGE 2/3 stehen mit in der CSV, damit eine Winter-Sensitivitaet
     eine Datenauswahl ist und keine Extraktion (Spec L4).
+
+    Keyed by powertrain (not just segment): das CSV fuehrt fuer BEV keine
+    Zeilen, und das muss im geladenen Dict SICHTBAR bleiben ("es gibt hier
+    nichts") statt beim Parsen verworfen zu werden -- sonst kann der
+    BEV-Nullzuschlag in cold_start_extra() nur noch aus einer Code-Regel
+    kommen, nicht aus den Daten (Important 2, Fix-Runde 2026-08-26).
+
+    Kein exists()-Guard: eine fehlende/verschobene CSV soll beim Laden
+    laut scheitern (FileNotFoundError von open()), nicht mit einem leeren
+    Dict jeden Kaltstartzuschlag stillschweigend auf 0 setzen (Important 1).
     """
     d = Path(data_dir) if data_dir else DATA_DIR
     cold = {}
     path = d / "emep_cold_factors.csv"
-    if not path.exists():
-        return cold
     with open(path, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             if r["range"] != "RANGE 1":
                 continue
             coef = {k: float(r[k]) for k in _COLD_NUM}
-            cold.setdefault(r["segment"], {})[r["pollutant"]] = coef
+            cold.setdefault(r["powertrain"], {}).setdefault(
+                r["segment"], {})[r["pollutant"]] = coef
     return cold
 
 
@@ -229,7 +238,18 @@ def cold_q(v_kmh, coef, ta):
     der Hot-Kurve: CO/NOx/VOC sind hier nur bis 45 km/h parametrisiert,
     waehrend die Hot-Kurven bis 140 gehen. Ohne diesen eigenen Clamp
     extrapoliert die Formel stillschweigend.
+
+    ta wird NICHT geclampt, sondern gegen [tmin, tmax] der KALTZEILE
+    geprueft und wirft sonst laut: anders als bei v gibt es fuer ta keinen
+    Gueltigkeitsbereich-Uebertrag zwischen RANGE 1/2/3, ein ta ausserhalb
+    von RANGE 1 (0..50 C typischerweise) waere schlicht die falsche Zeile
+    -- z. B. ambient_temp_c = -5 wuerde sonst still mit den RANGE-1-
+    Koeffizienten (gueltig ab 0 C) ausgewertet.
     """
+    if not (coef["tmin"] <= ta <= coef["tmax"]):
+        raise ValueError(
+            "ambient_temp_c=%s outside cold curve range [%s, %s]"
+            % (ta, coef["tmin"], coef["tmax"]))
     v = min(max(float(v_kmh), coef["vmin"]), coef["vmax"])
     return max(1.0, coef["a"] * v + coef["b"] * ta + coef["c"])
 
@@ -243,10 +263,20 @@ def cold_start_extra(n_starts, km, v_kmh, powertrain, segment, fac):
     ist die Kaltdistanz, und die wird je Start angesetzt statt als Anteil
     an der Gesamtfahrleistung (siehe cold_km()).
 
-    BEV bekommt 0, weil das Cold-Sheet keine BEV-Zeilen fuehrt. ACHTUNG,
+    BEV bekommt 0, weil das Cold-Sheet keine BEV-Zeilen fuehrt -- das ist
+    ein Nachschlag im geladenen Dict (fac["cold"].get(powertrain) is None),
+    keine "if powertrain != diesel"-Regel im Code: die Null muss aus den
+    DATEN kommen, sonst kann load_cold_factors() "es gibt hier nichts"
+    fuer eine Powertrain gar nicht mehr ausdruecken (Important 2). ACHTUNG,
     das ist einseitig ZUGUNSTEN des BEV-Arms: real hat ein BEV sehr wohl
     einen Kaltverbrauch, dominiert von der Kabinenheizung. Ausgewiesene
     Limitation, siehe data/README.md.
+
+    Ein fehlendes SEGMENT bei einer Powertrain, die im Cold-Sheet sehr
+    wohl Zeilen fuehrt, ist dagegen keine dokumentierte Luecke, sondern
+    ein Datenfehler -- die Segment-Indizierung ist bewusst ein hartes
+    `[segment]` (KeyError), konsistent mit vehicle_emissions() (Important
+    3). Nur die Powertrain-Ebene bekommt den weichen `.get(...)`-Fallback.
 
     Abrieb (PM10_*) bekommt keinen Zuschlag -- er ist distanzbasiert.
     """
@@ -254,11 +284,15 @@ def cold_start_extra(n_starts, km, v_kmh, powertrain, segment, fac):
     out = {k: 0.0 for k in EXHAUST_KEYS}
     out.update({"ENERGY_MJ": 0.0, "CO2E_WTW": 0.0, "PM10_TYRE": 0.0,
                 "PM10_BRAKE": 0.0, "PM10_ROAD": 0.0, "PM10_NONEXHAUST": 0.0})
-    if powertrain != "diesel" or n_starts <= 0 or km <= 0:
+    if n_starts <= 0 or km <= 0:
         return out
 
-    coefs = fac["diesel"][segment]
-    cold = fac.get("cold", {}).get(segment, {})
+    cold_pt = fac["cold"].get(powertrain)
+    if cold_pt is None:            # keine Kaltstartparametrisierung ueberhaupt
+        return out                 # fuer diese Powertrain -- z.B. BEV (Datenluecke)
+
+    coefs = fac[powertrain][segment]
+    cold = cold_pt[segment]        # unbekanntes Segment -> KeyError, siehe oben
     ta = sup["ambient_temp_c"]
     ckm = n_starts * cold_km(sup)
 
