@@ -78,6 +78,17 @@ def cold_starts_by_regime(task_seq, soak_s):
     return counts
 
 
+def _soak_seconds(fac):
+    """Kaltstart-Schwelle in Sekunden aus dem Supplement (dort in Minuten).
+
+    Single-Source-Helper: drt_arm und extract() brauchten vorher beide
+    unabhaengig `fac["sup"]["coldstart_soak_min"] * 60.0` -- eine spaetere
+    Aenderung an nur einer der beiden Stellen haette die drt- und die
+    freight_modular-Schwelle stillschweigend auseinanderlaufen lassen.
+    """
+    return fac["sup"]["coldstart_soak_min"] * 60.0
+
+
 def segment_for_type(type_id, capacity=None):
     """N1 segment for a carrier vehicleTypeId.
 
@@ -313,8 +324,7 @@ def drt_arm(veh_path, recon, link_len, fac, exclude_windows=None):
         if drive_s <= 0 or km <= 0:
             continue
         seq = per_veh.get(veh, {}).get("task_seq", [])
-        n_cold = cold_starts_by_regime(
-            seq, fac["sup"]["coldstart_soak_min"] * 60.0)["drt"]
+        n_cold = cold_starts_by_regime(seq, _soak_seconds(fac))["drt"]
         _add_entity(totals, detail, "drt", veh, "drt_minibus", DRT_SEGMENT,
                     km, km / (drive_s / 3600.0), fac, n_cold=n_cold)
     return totals, detail
@@ -655,7 +665,7 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
         arms["drt"] = drt_arm(veh_path, recon, link_len, fac,
                               exclude_windows=windows)
         if windows:
-            soak_s = fac["sup"]["coldstart_soak_min"] * 60.0
+            soak_s = _soak_seconds(fac)
             per_veh = (recon or {}).get("per_veh", {})
             fm_cold = {v: cold_starts_by_regime(
                            per_veh.get(v, {}).get("task_seq", []),

@@ -682,3 +682,70 @@ def test_freight_arm_books_one_cold_start_per_tour(tmp_path):
     # Der Zuschlag steckt im Total (Spec E1), nicht daneben.
     assert totals["diesel"]["NOx"] == pytest.approx(
         diesel["NOx"], rel=1e-9)
+
+
+# --- Task 5 review (Important): the arms must select the CORRECT regime key,
+# not merely a nonzero one -- a swapped ["drt"] <-> ["freight_modular"]
+# selection would still pass every prior test (n_cold was always 0 or the
+# same on both sides in the fixtures used so far). Both fixtures below give
+# the two regimes DIFFERENT nonzero counts so the numbers cannot be confused.
+
+def test_drt_arm_wires_the_drt_cold_start_count_not_the_freight_one():
+    """drt_arm reads cold_starts_by_regime(...)["drt"]. A real STAY >= soak
+    followed by a driving block must land there -- and the fixture also
+    contains a FREIGHT_DRIVE cold start with a DIFFERENT count, so a swap to
+    ["freight_modular"] inside drt_arm would produce 1, not 2, here."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    # Schichtbeginn FREIGHT_DRIVE (-> freight_modular=1), dann zwei separate
+    # >=60-min-STAYs vor je einem DRIVE (-> drt=2). drt und freight_modular
+    # sind absichtlich UNGLEICH.
+    seq = [(0, 600, "FREIGHT_DRIVE"),
+           (600, 4200, "STAY"),          # 60 min -> Kaltstart
+           (4200, 4800, "DRIVE"),
+           (4800, 8400, "STAY"),         # 60 min -> Kaltstart
+           (8400, 9000, "DRIVE")]
+    veh_path = {"drt_1": [("l1", 0, 0, 10.0), ("l2", 1, 0, 20.0)]}
+    recon = {"per_veh": {"drt_1": {"drive_s": 1200.0, "task_seq": seq}}}
+    ll = {"l1": 1200.0, "l2": 800.0}
+    _, detail = ee.drt_arm(veh_path, recon, ll, fac)
+    d = [x for x in detail if x["powertrain"] == "diesel"][0]
+    assert d["n_cold"] == 2                  # die DRT-Zahl aus der Mischung
+    assert d["n_cold"] != 1                  # NICHT die freight_modular-Zahl
+
+
+def test_extract_wires_freight_modular_cold_starts_to_the_correct_regime(tmp_path):
+    """extract() baut fm_cold aus cold_starts_by_regime(...)["freight_modular"]
+    und drt_arm zieht ["drt"] aus derselben task_seq. Dieselbe Mischung wie
+    oben (drt=2, freight_modular=1) macht BEIDE Selektionsstellen
+    vertauschungssicher: waehlt eine der beiden den falschen Key, landet
+    die jeweils andere Zahl im Detail."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    fac = em.load_factors()
+    seq = [(0, 600, "FREIGHT_DRIVE"),
+           (600, 4200, "STAY"),
+           (4200, 4800, "DRIVE"),
+           (4800, 8400, "STAY"),
+           (8400, 9000, "DRIVE")]
+    # l2 liegt im Freight-Fenster (t=300), l1 liegt in der Pax-Fahrt (t=4500)
+    veh_path = {"drt_1": [("l2", 0, 0, 300.0), ("l1", 0, 0, 4500.0)]}
+    recon = {"per_veh": {"drt_1": {"drive_s": 1200.0, "task_seq": seq}}}
+    ev = tmp_path / "TEST.drt_events_filtered.txt"
+    ev.write_text(
+        '<event time="0.0" type="dvrpTaskStarted" dvrpVehicle="drt_1" '
+        'taskType="MODULAR_FREIGHT_DRIVE" dvrpMode="drt"  />\n'
+        '<event time="600.0" type="dvrpTaskEnded" dvrpVehicle="drt_1" '
+        'taskType="MODULAR_FREIGHT_DRIVE" dvrpMode="drt"  />\n',
+        encoding="utf-8")
+    rows, detail = ee.extract(tmp_path, "test", recon=recon,
+                              veh_path=veh_path,
+                              network_gz=_network(tmp_path),
+                              drt_task_events=ev)
+    d_drt = [x for x in detail
+             if x["fleet"] == "drt" and x["powertrain"] == "diesel"][0]
+    d_fm = [x for x in detail
+            if x["fleet"] == "freight_modular" and x["powertrain"] == "diesel"][0]
+    assert d_drt["n_cold"] == 2               # nicht die freight_modular-Zahl (1)
+    assert d_fm["n_cold"] == 1                # nicht die drt-Zahl (2)
