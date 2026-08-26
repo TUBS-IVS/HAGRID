@@ -360,3 +360,17 @@ def test_transform_cold_rejects_month_variance():
     df.loc[mask, "Alpha"] = 0.999
     with pytest.raises(ValueError, match="month"):
         transform_cold(df)
+
+
+def test_supplement_carries_coldstart_constants():
+    from emissions_emep import load_factors
+    sup = load_factors()["sup"]
+    assert sup["coldstart_soak_min"] == 60.0
+    assert sup["ambient_temp_c"] == 10.0
+    assert sup["ltrip_km"] == 12.4
+    for k in ("cold_beta_a0", "cold_beta_a1", "cold_beta_b0", "cold_beta_b1",
+              "cold_bc_co_a", "cold_bc_co_b", "cold_bc_nox_a", "cold_bc_nox_b",
+              "cold_bc_voc_a", "cold_bc_voc_b"):
+        assert k in sup, k
+    assert (sup["charge_window_min_low"], sup["charge_window_min_mid"],
+            sup["charge_window_min_high"]) == (20.0, 40.0, 60.0)
