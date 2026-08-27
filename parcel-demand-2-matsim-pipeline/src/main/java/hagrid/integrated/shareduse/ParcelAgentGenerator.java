@@ -75,15 +75,47 @@ public final class ParcelAgentGenerator {
         return parts.get(0);
     }
 
-    /** M2 (segment-split): split a pooled stop's total parcel amount into sub-loads of at most
-     *  SharedUse.PARCEL_SLOTS each (filling full slots first, then the remainder), e.g. 45 -> [20,20,5]. */
-    private static List<Integer> splitLoad(int amount) {
+    /**
+     * M2 (segment-split): split a pooled stop's total parcel amount into sub-loads of at most
+     * {@link SharedUse#PARCEL_SLOTS} each, spread EVENLY over the fewest chunks that fit,
+     * e.g. 45 -&gt; [15,15,15].
+     *
+     * <p><b>Why even and not full-slots-first (2026-08-27).</b> The earlier version filled full
+     * slots first, so 45 became [20,20,5]. A segment of exactly PARCEL_SLOTS fits only a vehicle
+     * whose whole parcel dimension is free, and that is not a theoretical concern: in the
+     * {@code d1c_dep7_f140_chi600} run, of 52 size-20 legs <b>0 %</b> ever boarded a vehicle that
+     * already carried a parcel, against 33–67 % for sizes below 10. Those segments consequently
+     * queued a median <b>10.2 h</b> for a parcel-empty vehicle and <b>22.4 %</b> of them ran past
+     * the 21:00 delivery window, while every size below 10 lost nothing at all — 335 undelivered
+     * parcels, all of them from the largest segments. Filling full slots first maximises the
+     * number of such segments (67 of 945); the even split leaves 5, and it is the operationally
+     * realistic choice anyway, since no depot loads 20+20+5 when 15+15+15 is available.
+     *
+     * <p>The chunk COUNT is deliberately identical to the old split ({@code ceil(amount/SLOTS)}),
+     * so the reshape adds no requests and no door visits. It is not quite free: evening out a
+     * small remainder chunk raises the door dwell, because {@code segmentDwellSeconds} saturates
+     * at 8 parcels — measured on the dep7 demand, +4.0 vehicle-hours in total, against a
+     * 1066 vehicle-hour idle pool. Depot loading is unchanged (linear below its own cap).
+     *
+     * <p>Chunks differ by at most one parcel. A chunk can still equal PARCEL_SLOTS when the
+     * amount is an exact multiple of it (20 -&gt; [20], 40 -&gt; [20,20]); moving those off the
+     * boundary would need an extra chunk, i.e. an extra door visit, and is deliberately not done
+     * here.
+     *
+     * <p>Package-private so a test can assert the arithmetic directly, without routing it
+     * through a full population build (same reason as
+     * {@code ChiGateInsertionCostCalculator#detourOnlySeconds}).
+     */
+    static List<Integer> splitLoad(int amount) {
         List<Integer> subLoads = new java.util.ArrayList<>();
-        int remaining = amount;
-        while (remaining > 0) {
-            int chunk = Math.min(SharedUse.PARCEL_SLOTS, remaining);
-            subLoads.add(chunk);
-            remaining -= chunk;
+        if (amount <= 0) {
+            return subLoads;
+        }
+        int chunks = (amount + SharedUse.PARCEL_SLOTS - 1) / SharedUse.PARCEL_SLOTS;
+        int base = amount / chunks;
+        int remainder = amount % chunks;
+        for (int i = 0; i < chunks; i++) {
+            subLoads.add(base + (i < remainder ? 1 : 0));
         }
         return subLoads;
     }

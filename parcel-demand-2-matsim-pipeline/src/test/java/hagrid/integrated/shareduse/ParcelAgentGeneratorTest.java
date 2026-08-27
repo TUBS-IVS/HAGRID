@@ -4,6 +4,7 @@ import hagrid.integrated.DeliveryDistrictBuilder;
 import hagrid.integrated.DepotNetwork;
 import hagrid.utils.demand.Delivery;
 import hagrid.utils.demand.Delivery.ParcelType;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -123,7 +124,13 @@ class ParcelAgentGeneratorTest {
                 .map(p -> (Integer) p.getAttributes().getAttribute(SharedUse.LOAD_ATTRIBUTE))
                 .sorted()
                 .collect(Collectors.toList());
-        assertEquals(List.of(5, 20, 20), loads);
+        // EVEN, not full-slots-first (changed 2026-08-27). This asserts the distribution end to
+        // end, i.e. that the even split actually reaches the written LOAD_ATTRIBUTE and is not
+        // merely a property of splitLoad in isolation. It used to read [5, 20, 20]; a segment of
+        // exactly PARCEL_SLOTS fits only a parcel-empty vehicle and those segments lost 22.4 % of
+        // their parcels to the delivery window - see ParcelAgentGenerator#splitLoad for the
+        // measurement.
+        assertEquals(List.of(15, 15, 15), loads);
 
         Set<String> ids = new HashSet<>();
         for (Person p : persons) {
@@ -350,5 +357,103 @@ class ParcelAgentGeneratorTest {
         assertEquals(offeredParcels,
                 r.parcels() + r.skippedSameLinkParcels() + r.clippedOutsideParcels(),
                 "injected + yard-gate drops + clipped must account for every parcel offered");
+    }
+
+    // ------------------------------------------------------------------ segment split (2026-08-27)
+    //
+    // Root cause of the 335 parcels lost at chi=600 (systematic investigation 2026-08-27): the
+    // split filled full slots first, so a 45-parcel stop became [20,20,5]. A 20-parcel segment
+    // fits ONLY a vehicle whose whole parcel dimension is free -- measured in the chi=600 run:
+    // of 52 size-20 legs, 0 % ever boarded a vehicle that already carried a parcel, against
+    // 33-67 % for sizes below 10. Those segments therefore queue a median 10.2 h for a
+    // parcel-empty vehicle and 22.4 % of them run past the 21:00 window, while sizes below 10
+    // lost nothing at all. Filling full slots first maximises the number of such segments (67 of
+    // 945) and it is an implementation artefact, not a property of the concept -- no operator
+    // loads 20+20+5 when 15+15+15 is available.
+    //
+    // The split is now EVEN over the same number of chunks: same segment count, same number of
+    // door visits, same total depot loading, and 67 -> 5 segments left on the capacity boundary.
+
+    @Test
+    @DisplayName("a pooled stop is split evenly, not by filling full slots first")
+    void splitsEvenlyRatherThanFillingFullSlotsFirst() {
+        // the exact case the old javadoc advertised as [20,20,5]
+        assertEquals(List.of(15, 15, 15), ParcelAgentGenerator.splitLoad(45),
+                "filling full slots first leaves two segments on the 20-slot boundary, where "
+                        + "only a completely parcel-empty vehicle can serve them");
+    }
+
+    /**
+     * The evenness must not be bought with extra requests. Chunk count drives the number of
+     * door visits and therefore the dwell the fleet has to absorb; if the reshape added
+     * segments it would trade one cost for another instead of removing one.
+     */
+    @Test
+    @DisplayName("the reshape does not change how many segments a stop produces")
+    void keepsTheChunkCountOfTheFullSlotsFirstSplit() {
+        for (int amount = 1; amount <= 200; amount++) {
+            int expected = (amount + SharedUse.PARCEL_SLOTS - 1) / SharedUse.PARCEL_SLOTS;
+            assertEquals(expected, ParcelAgentGenerator.splitLoad(amount).size(),
+                    "chunk count changed for amount=" + amount);
+        }
+    }
+
+    @Test
+    @DisplayName("no sub-load ever exceeds the vehicle's parcel slots")
+    void neverExceedsTheVehicleParcelSlots() {
+        for (int amount = 1; amount <= 200; amount++) {
+            for (int chunk : ParcelAgentGenerator.splitLoad(amount)) {
+                assertTrue(chunk <= SharedUse.PARCEL_SLOTS,
+                        "amount=" + amount + " produced a chunk of " + chunk
+                                + ", which could never fit a vehicle");
+                assertTrue(chunk > 0, "amount=" + amount + " produced an empty chunk");
+            }
+        }
+    }
+
+    /**
+     * "Even" has to mean even: the whole point is to keep every chunk as far below the capacity
+     * boundary as the chunk count allows. Chunks may differ by 1 (integer division), never more.
+     */
+    @Test
+    @DisplayName("sub-loads of one stop differ by at most one parcel")
+    void subLoadsDifferByAtMostOne() {
+        for (int amount = 1; amount <= 200; amount++) {
+            List<Integer> chunks = ParcelAgentGenerator.splitLoad(amount);
+            int min = chunks.stream().mapToInt(Integer::intValue).min().orElseThrow();
+            int max = chunks.stream().mapToInt(Integer::intValue).max().orElseThrow();
+            assertTrue(max - min <= 1, "amount=" + amount + " split unevenly into " + chunks);
+        }
+    }
+
+    /** Conservation: the parts must sum to the whole, or parcels appear or vanish silently. */
+    @Test
+    @DisplayName("the sub-loads sum to the stop's parcel amount")
+    void subLoadsSumToTheAmount() {
+        for (int amount = 1; amount <= 200; amount++) {
+            int sum = ParcelAgentGenerator.splitLoad(amount).stream()
+                    .mapToInt(Integer::intValue).sum();
+            assertEquals(amount, sum, "amount=" + amount + " was not conserved by the split");
+        }
+    }
+
+    /**
+     * An exact multiple of the slot count cannot be moved off the boundary without adding a
+     * chunk, so it deliberately stays there. This documents the residual: 5 of 945 segments in
+     * the dep7 demand are stops of exactly 20 parcels, and only lowering the effective cap
+     * would move them.
+     */
+    @Test
+    @DisplayName("an exact multiple of the slot count stays on the boundary")
+    void anExactMultipleOfTheSlotCountStaysOnTheBoundary() {
+        assertEquals(List.of(20), ParcelAgentGenerator.splitLoad(20));
+        assertEquals(List.of(20, 20), ParcelAgentGenerator.splitLoad(40));
+    }
+
+    @Test
+    @DisplayName("a stop below the slot count is a single unchanged sub-load")
+    void aStopBelowTheSlotCountIsOneSubLoad() {
+        assertEquals(List.of(7), ParcelAgentGenerator.splitLoad(7));
+        assertEquals(List.of(1), ParcelAgentGenerator.splitLoad(1));
     }
 }
