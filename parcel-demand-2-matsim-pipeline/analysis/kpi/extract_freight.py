@@ -123,18 +123,40 @@ def extract(run_dir, prefix, pf=None):
     total = sum(_int_attr(a, "numberOfParcels") for a in attrs.values())
     missed = sum(_int_attr(a, "missedParcels") for a in attrs.values())
     unassigned = sum(_int_attr(a, "unassignedParcels") for a in attrs.values())
-    delivered = total - missed - unassigned
+    # Zustellquoten-Konvention (Entscheidung 2026-08-10, METHODS-LOG 2.21):
+    # `delivery_rate` ist die ARMÜBERGREIFEND vergleichbare, OPERATIVE Quote
+    # -- zugestellt / Nachfrage, das Not-at-home-Overlay wird NICHT abgezogen.
+    # Grund: das Overlay existiert nur in diesem Arm (LmdCarrierBuilder setzt es,
+    # 1c und 1d melden roh) und es ist im POC kosmetisch, weil weder Rücktransport
+    # noch Packstation-Zustellung simuliert werden. Unter demselben KPI-Namen las
+    # der Vergleich damit netto (Baseline 93,6 %) gegen brutto (1c 93,7 %, 1d 97,9 %)
+    # und kehrte das Vorzeichen der Kernaussage um: operativ liegt dieser Arm bei
+    # ~100 %, weil jsprit bei FleetSize.INFINITE immer ein Fahrzeug nachlegen kann.
+    # Der Netto-Wert geht nicht verloren, er wandert in delivery_rate_net_overlay.
+    #
+    # Bewusst NICHT mitgezogen: parcels_handled und parcels_per_vehicle_km bleiben
+    # netto. parcels_handled ist der Nenner von economics.freight_cost_per_parcel;
+    # eine Umstellung würde die €-Kennzahl still mitverschieben, und die
+    # Kostenfunktion wird separat überarbeitet (BACKLOG [H] Kostenfunktion).
+    delivered_net = total - missed - unassigned
+    delivered_operational = total - unassigned
     rows += [
         row("freight", "parcels_handled",
-            parcels_handled_lv if parcels_handled_lv is not None else delivered,
+            parcels_handled_lv if parcels_handled_lv is not None else delivered_net,
             "parcels", "Load_perVehicle" if parcels_handled_lv is not None
             else "carrier attributes (fallback: Load_perVehicle empty for service-based carriers)"),
         row("freight", "parcels_total", total, "parcels", "carrier attributes"),
         row("freight", "parcels_missed", missed, "parcels", "carrier attributes"),
         row("freight", "parcels_unassigned", unassigned, "parcels", "carrier attributes"),
+        row("freight", "parcels_delivered_operational", delivered_operational, "parcels",
+            "carrier attributes (overlay NOT deducted)"),
         row("freight", "delivery_rate",
-            (delivered / total) if total else 1.0, "share", "computed"),
+            (delivered_operational / total) if total else 1.0, "share",
+            "computed (operational: overlay NOT deducted)"),
+        row("freight", "delivery_rate_net_overlay",
+            (delivered_net / total) if total else 1.0, "share",
+            "computed (not-at-home overlay deducted -- NOT comparable across arms)"),
         row("freight", "parcels_per_vehicle_km",
-            (delivered / km) if km else 0.0, "parcels/km", "computed"),
+            (delivered_net / km) if km else 0.0, "parcels/km", "computed"),
     ]
     return rows

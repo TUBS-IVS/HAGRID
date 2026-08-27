@@ -34,7 +34,13 @@ def test_extract_freight_kpis():
     assert k["parcels_total"]["value"] == 500
     assert k["parcels_missed"]["value"] == 10
     assert k["parcels_unassigned"]["value"] == 5
-    assert k["delivery_rate"]["value"] == pytest.approx(485 / 500)
+    # Zustellquoten-Konvention (2026-08-10): delivery_rate ist OPERATIV, das
+    # Not-at-home-Overlay (parcels_missed) wird NICHT abgezogen -- nur unassigned zaehlt
+    # als Zustellausfall. Der Netto-Wert steht daneben.
+    assert k["delivery_rate"]["value"] == pytest.approx(495 / 500)
+    assert k["delivery_rate_net_overlay"]["value"] == pytest.approx(485 / 500)
+    assert k["parcels_delivered_operational"]["value"] == 495
+    # bewusst netto belassen (Nenner von economics.freight_cost_per_parcel)
     assert k["parcels_per_vehicle_km"]["value"] == pytest.approx(485 / 4047.687, abs=1e-6)
 
 
