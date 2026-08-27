@@ -16,7 +16,7 @@ without freight (no LMD) simply produce no tiles at all, and runs whose
 provider extraction skipped a given vehicle type/summary row render fewer
 tiles."""
 from render import (_kpi, _tile, _fmt_de, _fmt_pct, _panel, _series, chart_js, provider_slot,
-                     _donut, size_marker)
+                     _donut, size_marker, _render_group)
 
 import re
 
@@ -705,19 +705,6 @@ def _scatter(vehicles, xcol, ycol, title, cid, xlabel, ylabel, height=260):
                        "scales": {"x": {"title": {"display": True, "text": xlabel}},
                                   "y": {"title": {"display": True, "text": ylabel}}}}}
     return (title, cid, cfg, height)
-
-
-def _render_group(title_h2, charts):
-    """Wrap a list of (title, cid, cfg, height) chart tuples (Nones allowed
-    and filtered out) in a `<h2>` + `.grid2` section. Empty groups render
-    nothing."""
-    charts = [c for c in charts if c]
-    if not charts:
-        return "", ""
-    panels = [_panel(t, cid, h) for t, cid, _cfg, h in charts]
-    js = [chart_js(cid, cfg) for _, cid, cfg, _h in charts]
-    html = "<h2>" + title_h2 + '</h2><div class="grid2">' + "".join(panels) + "</div>"
-    return html, "\n".join(js)
 
 
 # ---------------------------------------------------------------------------
