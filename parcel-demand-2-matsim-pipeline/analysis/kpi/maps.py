@@ -63,10 +63,54 @@ HOYERSWERDA_CENTER = [51.44, 14.24]
 
 # --------------------------------------------------------------- vehicles
 
-def _build_vehicles(veh_path, link_geo):
+def _polyline_runs(subpath, link_geo):
+    """[(link_id, _)] -> simplified [[lat,lon], ...] runs. Extracted so the
+    occupancy and usage bucketings below cannot drift apart."""
+    runs = []
+    for run in geometry.polyline_runs(subpath, link_geo or {}):
+        simplified = geometry.douglas_peucker(geometry.drop_collinear(run), 1e-5)
+        if simplified:
+            runs.append([[round(lat, 5), round(lon, 5)] for lat, lon in simplified])
+    return runs
+
+
+def _usage_key(occ_pax, occ_parcels, in_freight_window):
+    """The four map categories. Freight is recognised two ways because the two
+    integrated arms model it differently: 1c carries parcels as `parcel_`
+    persons, so `occ_parcels` counts them directly, while 1d moves freight in
+    capsules and leaves occ_parcels at 0 -- there the MODULAR_FREIGHT_DRIVE
+    task window is what marks a freight leg (geometry.py:72-74).
+
+    "both" is therefore reachable on 1c only: a capsule swap is exclusive by
+    construction, which is a property of the scenario, not of this code."""
+    freight = occ_parcels > 0 or in_freight_window
+    if occ_pax > 0:
+        return "both" if freight else "pax"
+    return "freight" if freight else "empty"
+
+
+def _build_vehicles(veh_path, link_geo, veh_path_ts=None, freight_wins=None):
     """veh_path[v] = [(link_id, occ), ...] -> {v: {"segs": {"<occ>": [[[lat,lon],...] per run]},
-    "stops": []}}. `stops` is filled in later by _attach_stops(). A vehicle
-    whose links are all absent from link_geo keeps segs={} (not dropped)."""
+    "usegs": {"pax"|"freight"|"both"|"empty": [...]}, "stops": []}}. `stops` is
+    filled in later by _attach_stops(). A vehicle whose links are all absent
+    from link_geo keeps segs={} (not dropped).
+
+    `usegs` is built only when the DETAILED paths are supplied (4-tuples with
+    the pax/parcel split and the event time, geometry.reconstruct_drt_paths_detailed);
+    without them the map simply offers occupancy colouring alone, as before."""
+    from extract_emissions import _in_windows   # single source of truth for the windows
+
+    # Usage buckets duplicate every polyline, so they are only built when the run
+    # actually carries freight on the DRT fleet. On a baseline/married run the
+    # usage mode would say nothing the occupancy colouring does not already show,
+    # and building it anyway grew the married250 page from 6.1 MB to 8.8 MB
+    # (test_real_married250 budget). Data-driven, not a scenario check: 1c is
+    # recognised by occ_parcels, 1d by its freight windows.
+    has_freight = bool(freight_wins) or any(
+        parcels > 0
+        for path in (veh_path_ts or {}).values()
+        for _lid, _pax, parcels, _t in path)
+
     vehicles = {}
     for veh, path in (veh_path or {}).items():
         by_occ = {}
@@ -74,14 +118,24 @@ def _build_vehicles(veh_path, link_geo):
             by_occ.setdefault(occ, []).append((link_id, occ))
         segs = {}
         for occ, subpath in by_occ.items():
-            runs = []
-            for run in geometry.polyline_runs(subpath, link_geo or {}):
-                simplified = geometry.douglas_peucker(geometry.drop_collinear(run), 1e-5)
-                if simplified:
-                    runs.append([[round(lat, 5), round(lon, 5)] for lat, lon in simplified])
+            runs = _polyline_runs(subpath, link_geo)
             if runs:
                 segs[str(occ)] = runs
-        vehicles[veh] = {"segs": segs, "stops": []}
+
+        usegs = {}
+        ts_path = (veh_path_ts or {}).get(veh) if has_freight else None
+        if ts_path:
+            wins = (freight_wins or {}).get(veh, ())
+            by_use = {}
+            for link_id, occ_pax, occ_parcels, t in ts_path:
+                key = _usage_key(occ_pax, occ_parcels, _in_windows(t, wins))
+                by_use.setdefault(key, []).append((link_id, 0))
+            for key, subpath in by_use.items():
+                runs = _polyline_runs(subpath, link_geo)
+                if runs:
+                    usegs[key] = runs
+
+        vehicles[veh] = {"segs": segs, "usegs": usegs, "stops": []}
     return vehicles
 
 
@@ -392,7 +446,8 @@ def _compute_center(pu, do, link_geo, depots):
 # --------------------------------------------------------------- public API
 
 def build_map_data(run_dir, prefix, veh_path=None, link_geo=None, fev=None,
-                    carriers=None, excluded=None, n_sample=None):
+                    carriers=None, excluded=None, n_sample=None,
+                    veh_path_ts=None, freight_wins=None):
     """Assembles the map_data dict consumed verbatim by render_maps.py
     (Task 8). `lmd` stays `{}` unless `fev` (a freight_events.FreightEvents)
     is supplied, in which case it is built from `fev`/`carriers`/`excluded`/
@@ -402,7 +457,7 @@ def build_map_data(run_dir, prefix, veh_path=None, link_geo=None, fev=None,
     link_geo = link_geo or {}
     excluded = excluded or set()
 
-    vehicles = _build_vehicles(veh_path, link_geo)
+    vehicles = _build_vehicles(veh_path, link_geo, veh_path_ts, freight_wins)
     legs = _load_legs(run_dir, prefix, n_sample)
     pu, do = _pu_do(legs)
     _attach_stops(vehicles, legs)

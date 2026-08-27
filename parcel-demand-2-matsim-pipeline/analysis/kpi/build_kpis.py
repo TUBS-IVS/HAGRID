@@ -256,10 +256,20 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     import maps, render_maps
     blocks = None
     if not no_events and (drt_cache is not None or frt_cache is not None):
+        # Usage-mode colouring needs to know which legs carried freight. 1c gets
+        # that from occ_parcels in veh_path_ts for free; 1d leaves occ_parcels at
+        # 0 and marks freight with MODULAR_FREIGHT_DRIVE task windows instead, so
+        # only that arm pays for the extra cache scan.
+        freight_wins = {}
+        if drt_cache is not None and meta.scenario == "DRT_MODULAR":
+            from extract_emissions import freight_windows
+            freight_wins = freight_windows(drt_cache)
+
         md = maps.build_map_data(run_dir, meta.prefix, veh_path=veh_path,
                                  link_geo=link_geo, fev=fev,
                                  carriers=pf.carriers if pf is not None else None,
-                                 excluded=pf.excluded if pf is not None else None)
+                                 excluded=pf.excluded if pf is not None else None,
+                                 veh_path_ts=veh_path_ts, freight_wins=freight_wins)
         maps.write(md, out / "map_data.json")
         blocks = render_maps.build_blocks(md, uid="m0")
 
