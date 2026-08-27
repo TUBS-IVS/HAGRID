@@ -64,18 +64,42 @@ def _options(pairs, all_value, all_label):
 _MODULAR_MAP_CAPTION = "Frachtexkursionen erscheinen als leere Fahrten"
 
 
+def _has_usage(drt):
+    """True when at least one vehicle carries usage buckets, i.e. the detailed
+    paths reached maps._build_vehicles. Baseline/LMD runs and runs built before
+    the usage colouring simply keep occupancy-only maps."""
+    for v in (drt.get("vehicles") or {}).values():
+        if v.get("usegs"):
+            return True
+    return False
+
+
 def _drt_html(drt, uid):
     veh_opts = _options(list((drt.get("vehicles") or {}).keys()), "__all__", "Alle")
+    usage = _has_usage(drt)
+    # The 1d caption was a stand-in for exactly the distinction the usage mode
+    # now draws, so it is only shown when that mode is unavailable.
     caption = ('<div style="font-size:11px;color:var(--muted);margin:-4px 0 8px">'
-               + _MODULAR_MAP_CAPTION + "</div>") if drt.get("modular_contaminated") else ""
+               + _MODULAR_MAP_CAPTION + "</div>") if (
+                   drt.get("modular_contaminated") and not usage) else ""
+    mode_ctrl = ""
+    if usage:
+        mode_ctrl = (
+            '<label>Färben nach '
+            '<input type="radio" name="drt_color_' + uid + '" value="occ" checked> Belegung '
+            '<input type="radio" name="drt_color_' + uid + '" value="usage"> Nutzungsart'
+            "</label>")
     return (
         '<div class="panel">' + caption + '<div style="' + _CTRL_STYLE + '">'
         '<label>Fahrzeug <select id="drt_sel_' + uid + '">' + veh_opts + "</select></label>"
+        + mode_ctrl +
         '<label><input type="checkbox" id="drt_depots_' + uid + '" checked> Depots</label>'
         '<label><input type="checkbox" id="drt_heatpu_' + uid + '"> Heatmap Einstiege</label>'
         '<label><input type="checkbox" id="drt_heatdo_' + uid + '"> Heatmap Ausstiege</label>'
         "</div>"
-        '<div id="map_drt_' + uid + '" style="' + _MAP_STYLE + '"></div></div>')
+        + ('<div id="drt_legend_' + uid + '" style="display:none;font-size:11px;'
+           'color:var(--muted);margin:0 0 6px"></div>' if usage else "")
+        + '<div id="map_drt_' + uid + '" style="' + _MAP_STYLE + '"></div></div>')
 
 
 def _lmd_html(lmd, uid):
@@ -123,6 +147,14 @@ _DRT_JS = """
     var lvl = occ > cap ? cap : occ;
     return alphaSeq(0.25 + 0.75 * lvl / cap);
   }
+  var USAGE_COLORS = {pax: CAT[0], freight: CAT[2], both: CAT[1], empty: OTHER};
+  var USAGE_LABELS = {pax: 'nur Passagiere', freight: 'nur Fracht',
+                      both: 'beides', empty: 'leer'};
+  function usageColor(key){ return USAGE_COLORS[key] || OTHER; }
+  function colorMode(){
+    var r = document.querySelector('input[name="drt_color___UID__"]:checked');
+    return r ? r.value : 'occ';
+  }
   function stopBadge(n, kind){
     var bg = kind === 'pu' ? V('--seq') : OTHER;
     return L.divIcon({className: 'drt-badge', iconSize: [18, 18],
@@ -139,9 +171,10 @@ _DRT_JS = """
   function addVehicle(vname, withStops){
     var v = (MD.vehicles || {})[vname];
     if (!v) return;
-    var segs = v.segs || {};
+    var byUsage = colorMode() === 'usage' && v.usegs && Object.keys(v.usegs).length;
+    var segs = byUsage ? v.usegs : (v.segs || {});
     Object.keys(segs).forEach(function(key){
-      var color = occColor(parseInt(key, 10));
+      var color = byUsage ? usageColor(key) : occColor(parseInt(key, 10));
       (segs[key] || []).forEach(function(pts){
         if (pts && pts.length >= 2)
           L.polyline(pts, {color: color, weight: 3, opacity: 0.85}).addTo(tours);
@@ -171,6 +204,31 @@ _DRT_JS = """
   }
   var elSel = document.getElementById('drt_sel___UID__');
   if (elSel) elSel.addEventListener('change', function(e){ renderTours(e.target.value); });
+  var legend = document.getElementById('drt_legend___UID__');
+  function updateLegend(){
+    if (!legend) return;
+    if (colorMode() !== 'usage'){ legend.style.display = 'none'; return; }
+    // Only categories that actually occur are listed, so "beides" disappears by
+    // itself on 1d (a capsule swap is exclusive) instead of being hardcoded away.
+    var seen = {};
+    Object.keys(MD.vehicles || {}).forEach(function(vn){
+      Object.keys((MD.vehicles[vn] || {}).usegs || {}).forEach(function(k){ seen[k] = 1; });
+    });
+    legend.innerHTML = ['pax', 'freight', 'both', 'empty'].filter(function(k){ return seen[k]; })
+      .map(function(k){
+        return '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
+             + 'background:' + usageColor(k) + ';margin:0 4px 0 12px;vertical-align:middle">'
+             + '</span>' + USAGE_LABELS[k];
+      }).join('');
+    legend.style.display = 'block';
+  }
+  Array.prototype.forEach.call(document.getElementsByName('drt_color___UID__'), function(el){
+    el.addEventListener('change', function(){
+      updateLegend();
+      renderTours((elSel && elSel.value) || '__all__');
+    });
+  });
+  updateLegend();
   var elDep = document.getElementById('drt_depots___UID__');
   if (elDep) elDep.addEventListener('change', function(e){
     if (e.target.checked) depotG.addTo(map); else map.removeLayer(depotG); });
