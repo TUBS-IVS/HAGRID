@@ -250,8 +250,17 @@ def extract(run_dir, prefix, pf=None):
         tour_hours = prov_hours.get(prov, 0.0)
         avg_lf = (lf_sum / lf_n) if lf_n else 0.0
         delivered_net = parcels_total - parcels_missed
-        delivery_rate = ((parcels_total - parcels_missed - parcels_unassigned) / parcels_total
+        # Geschwister-Defekt zur Headline-Quote (Konvention 2026-08-10, s.
+        # extract_freight.py): auch hier war delivery_rate netto gerechnet, also nicht
+        # armübergreifend lesbar -- und eine per-Provider-Tabelle, deren Quoten auf einer
+        # anderen Basis stehen als die Headline, widerspricht ihr sichtbar. delivery_rate
+        # ist jetzt operativ (Overlay NICHT abgezogen), der Netto-Wert bleibt daneben.
+        # delivered_net trägt weiter parcels_per_km und cost_per_parcel -- unverändert,
+        # damit die €-Kennzahlen sich nicht still mitverschieben.
+        delivery_rate = ((parcels_total - parcels_unassigned) / parcels_total
                           if parcels_total else 1.0)
+        delivery_rate_net = ((parcels_total - parcels_missed - parcels_unassigned) / parcels_total
+                              if parcels_total else 1.0)
         stops_per_h = (stops_n / tour_hours) if tour_hours else 0.0
         stops_per_km = (stops_n / km) if km else 0.0
         parcels_per_km = (delivered_net / km) if km else 0.0
@@ -262,7 +271,10 @@ def extract(run_dir, prefix, pf=None):
             prow(prov, "parcels_missed", parcels_missed, "parcels",
                  "carrier attributes (re-allocated)"),
             prow(prov, "parcels_unassigned", parcels_unassigned, "parcels", "carrier attributes"),
-            prow(prov, "delivery_rate", delivery_rate, "share", "computed"),
+            prow(prov, "delivery_rate", delivery_rate, "share",
+                 "computed (operational: overlay NOT deducted)"),
+            prow(prov, "delivery_rate_net_overlay", delivery_rate_net, "share",
+                 "computed (overlay deducted -- NOT comparable across arms)"),
             prow(prov, "vehicles", vehicles_n, "vehicles", "computed"),
             prow(prov, "tours", tours, "tours", "TimeDistance_perCarrier"),
             prow(prov, "km", km, "km", "TimeDistance_perCarrier"),
