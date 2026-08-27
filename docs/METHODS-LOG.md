@@ -2591,6 +2591,57 @@ Modellerweiterung.
 
 Verwandt: §2.19 (die ursprüngliche, breiter gefasste Limitation).
 
+### 2.46 Die Segmentaufteilung, nicht das χ-Gate, verursachte die nicht zugestellten Pakete in 1c
+
+`trägt` · Untersuchung 2026-08-27, behoben `2ff5dbb`. **Defekt, nicht Limitation.**
+
+`splitLoad` zerlegte gepoolte Stopps „volle Plätze zuerst" (45 → [20,20,5]). Ein Segment von
+genau `PARCEL_SLOTS`=20 passt nur in ein Fahrzeug, dessen Paketdimension **vollständig** frei ist.
+Gemessen an `d1c_dep7_f140_chi600`: von 52 Legs der Größe 20 ist **keines** (0 %) in ein Fahrzeug
+eingestiegen, das schon ein Paket trug — gegen 33–67 % bei Größen unter 10. Diese Segmente warten
+im Median **10,2 h** auf ein paketleeres Fahrzeug, und **22,4 %** laufen über das 21:00-Fenster
+hinaus. Alle 335 nicht zugestellten Pakete kamen aus den größten Segmenten; unter 10 Paketen ging
+kein einziges verloren.
+
+Ausfallrate je Segmentgröße, in jedem Arm streng monoton:
+
+| Größe | n | χ→∞ | χ=600 | χ=300 | χ=150 |
+|---|---|---|---|---|---|
+| 1–4 | 508 | 0 % | 0 % | 6,3 % | 13,0 % |
+| 10–14 | 101 | 0 % | 0 % | 40,6 % | 75,2 % |
+| 15–19 | 48 | 0 % | 4,2 % | 66,7 % | 91,7 % |
+| 20 | 67 | 0 % | 22,4 % | 79,1 % | 94,0 % |
+
+**χ war der Stressor, nicht die Ursache.** Die eigenen erreichbaren Umwege der 17 Opfer lagen bei
+111–534 s, also in *jedem* Arm unter dem Gate — auch bei χ→∞, wo überhaupt nichts verfällt. Und
+das Ergebnis je Segment ist **nicht monoton in χ**: `parcel_hoy_sued_256_p0` verfällt bei χ=600,
+wird bei χ=300 zugestellt und verfällt bei χ=150 wieder; die Verfallsmengen sind nicht
+verschachtelt. Das schließt „der Gate blockt sie" und „die Kostenfunktion deprioritisiert sie"
+gleichermaßen aus — beides wäre monoton. Es ist ein Wettlauf um paketleere Fahrzeuge, den der
+Gate über die Retry-Queue neu mischt.
+
+**Behebung:** gleichmäßige Aufteilung über dieselbe Blockanzahl (`ceil(amount/SLOTS)`), also keine
+zusätzlichen Requests und keine zusätzlichen Haustür-Besuche. Segmente auf der Kapazitätsgrenze
+**67 → 5** von 945 (die 5 sind Stopps mit genau 20 Paketen; sie wegzubekommen würde einen
+zusätzlichen Besuch kosten und wird bewusst nicht gemacht). Nicht ganz kostenlos: das Auffüllen
+kleiner Restblöcke erhöht die Haustür-Standzeit, weil `segmentDwellSeconds` bei 8 Paketen sättigt
+— gemessen **+4,0 Fahrzeugstunden** auf der dep7-Nachfrage gegen 1.066 Fahrzeugstunden Idle. Die
+Depot-Beladung bleibt unverändert.
+
+⚠️ **Konsequenz für die Zahlen:** die Aufteilung ändert die Nachfrage-Population, also sind
+1c-Läufe über `2ff5dbb` hinweg nicht vergleichbar. Das gemessene χ-Raster (χ = 150/300/450/600/900
+bei f140) und der Iso-Service-Punkt f140 liegen auf der **alten** Aufteilung und überzeichnen die
+Ausfälle. Nachgemessen werden gezielt f140 und χ=600 (User-Entscheidung 2026-08-27); die alte
+Kurve bleibt als Diagnosebasis erhalten und ist als „alte Aufteilung" zu etikettieren.
+
+**Was das Instrument nicht konnte:** die Rejections-Datei enthält **null** Paketzeilen — ein nicht
+eingefügtes Paket kehrt in die Retry-Queue zurück und fällt ohne Event hinter seinem Fenster
+heraus (§2.31). Die Ursache war nur durch Verfolgen derselben Segment-IDs über alle vier Arme
+auffindbar, nicht aus einem einzelnen Lauf.
+
+Verwandt: §2.31 (χ-Zähler saturieren; die Detour-Minima als Instrument), §3.11 (die drei in dieser
+Untersuchung zurückgezogenen Aussagen).
+
 ---
 
 ## 3 · Zurückgezogene Befunde
@@ -2830,6 +2881,32 @@ Baseline" sind zurückgezogen; alte Baseline-Läufe sind wegen des Fensters *nic
 wohl aber wegen Versprechens-Vergleichbarkeit und Demand-Stand neu zu fahren gewesen.
 
 ---
+
+### 3.11 „Das χ-Gate ist die Ursache der nicht zugestellten Pakete in 1c" (drei Fassungen)
+
+**Geglaubt** (2026-08-27, im Lauf eines einzigen Tages dreimal umformuliert):
+1. *„χ=600 ist nahezu inert"* — aus der Erstordnungs-Tabelle der Detour-Minima (dort ~1 % der
+   Pakete oberhalb 600 s).
+2. *„Bei der Iso-Service-Flotte hat χ keinen brauchbaren Betriebsbereich"* — allein auf den
+   χ=300-Punkt gestützt.
+3. *„Der DRT-Kostenrechner sieht 1.500 s Standzeit und zieht praktisch immer etwas anderes vor"*
+   — als Erklärung, warum die großen Segmente nie eingefügt werden.
+
+**Gemessen** (2026-08-27): (1) χ=600 sperrt 5,6 % der Pakete, nicht ~1 % — die Erstordnungs-Kurve
+liegt bei χ=300 um Faktor 7,4 daneben, und das Verhältnis gemessen/vorhergesagt springt über die
+Punkte auf 1,56 / 7,4 / 5,6, es gibt also **keine Korrekturregel**. (2) Es gibt einen
+Betriebsbereich mit scharfem Knick genau bei χ≈600: 27 Pax-Fahrten je pp Zustellung zwischen 600
+und ∞, aber nur 6,9 zwischen 300 und 600. (3) `InsertionCostCalculator` rankt Einfügungen **für
+einen** Request, nicht Requests gegeneinander — eine teure aber zulässige Einfügung würde genommen;
+Verletzungen werden ohnehin bepreist, nicht abgelehnt (`DiscourageSoftConstraintViolations`). Die
+Ursache war die Segmentaufteilung (§2.46), nicht der Gate: die Opfer lagen in *jedem* Arm unter dem
+Gate, und ihr Ergebnis ist nicht monoton in χ.
+
+**Was bleibt:** die Detour-Minima aus §2.31 taugen zur **Platzierung** von Sweep-Punkten
+(Reihenfolge, Größenordnung), nicht zur Vorhersage — als quantitatives Instrument sind sie
+zurückgezogen. Und: χ ist ein **Stressor** des Wettlaufs um paketleere Fahrzeuge, kein direkter
+Verursacher der Ausfälle. Die Lehre für die Methodik ist die Fehlersuche selbst — die Ursache war
+erst durch Verfolgen derselben Segment-IDs über vier Arme sichtbar, aus keinem einzelnen Lauf.
 
 ## 4 · Bewusst ausgeklammert
 
