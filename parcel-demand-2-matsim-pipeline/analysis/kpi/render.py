@@ -6,6 +6,7 @@ geometry, no plotly — Chart.js 4 (vendored, ~205 KB) is the only script.
 Palette = validated dataviz reference palette (categorical slots fixed order;
 sequential blue; ink/grid tokens), light + dark via prefers-color-scheme."""
 import html
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,6 +253,24 @@ def _series(ts, name):
 def chart_js(cid, cfg):
     """One `mk(id, resolveColors(cfg));` statement for a chart config."""
     return "mk(" + json.dumps(cid) + ", resolveColors(" + json.dumps(cfg) + "));"
+
+
+def _render_group(title_h2, charts):
+    """Wrap a list of (title, cid, cfg, height) chart tuples (Nones allowed
+    and filtered out) in a `<h2>` + `.grid2` section. Empty groups render
+    nothing.
+
+    Moved here from `render_lmd` when `render_modular` became its second
+    caller (board rework block 1). `render_drt` keeps its own variant: that
+    one takes additional `toggle`/`badge_titles` arguments, so unifying the
+    two would change the DRT tab for no gain here."""
+    charts = [c for c in charts if c]
+    if not charts:
+        return "", ""
+    panels = [_panel(t, cid, h) for t, cid, _cfg, h in charts]
+    js = [chart_js(cid, cfg) for _, cid, cfg, _h in charts]
+    html = "<h2>" + title_h2 + '</h2><div class="grid2">' + "".join(panels) + "</div>"
+    return html, "\n".join(js)
 
 
 def _donut(cid, title, labels, values, color_marker, height=200, center_label=None):
@@ -502,24 +521,57 @@ def render_page(title, body_html, body_js, extra_head=""):
             + (JS_RESOLVE % ()) + body_js + "</script>")
 
 
+def _scenario_of(kpis):
+    """The run's scenario, from the `scenario` column of kpis_long (every row
+    carries the same value). "" when the column or the frame is missing, which
+    makes `_second_tab` fall back to the pre-rework behaviour."""
+    if kpis.empty or "scenario" not in kpis.columns:
+        return ""
+    vals = kpis["scenario"].dropna().unique()
+    return str(vals[0]) if len(vals) else ""
+
+
+#: Scenario -> (tab label, renderer module). These arms carry freight on the
+#: DRT fleet and run no CarrierModule, so they have no providers, vehicle types
+#: or carriers -- render_lmd would draw an empty tab for them (board rework).
+#: Everything not listed keeps the LMD tab.
+_MECHANISM_TABS = {
+    "DRT_SHAREDUSE": ("Cargo-Hitching", "render_shareduse"),
+    "DRT_MODULAR": ("Kapsel-Tausch", "render_modular"),
+}
+
+
+def _second_tab(data, uid, compact=False, map_block=None):
+    """The tab beside DRT, as (label, html, js): the LMD tab for arms with
+    their own van fleet, a mechanism tab for the integrated scenarios.
+
+    The renderer is imported at call time, not at module level, for the same
+    circular-import reason as render_run_page's imports (every tab renderer
+    imports names back out of this module)."""
+    label, module = _MECHANISM_TABS.get(_scenario_of(data.kpis), ("LMD", "render_lmd"))
+    renderer = importlib.import_module(module)
+    h, j = renderer.build_tab(data, uid, compact=compact, map_block=map_block)
+    return label, h, j
+
+
 def render_run_page(data, title, maps=None):
-    """Full run dashboard: DRT tab + LMD tab (as applicable) + KPI table.
+    """Full run dashboard: DRT tab + a second tab (LMD or, for the integrated
+    scenarios, a mechanism tab -- see _second_tab) + KPI table.
 
     `data`: RunData (see load_run_data). `maps`: optional {"drt": block,
     "lmd": block} passed through to the tab builders as map_block.
 
-    render_drt.build_tab / render_lmd.build_tab (Tasks 5/7) are the real
-    renderers -- no fallback, no placeholder (v2 Plan C Task 10). Imported
+    render_drt.build_tab (Task 5) and the renderer _second_tab picks are the
+    real renderers -- no fallback, no placeholder (v2 Plan C Task 10). Imported
     here (not at module level) since both import names back out of this
     module -- a module-level import would be circular."""
     import render_drt
-    import render_lmd
 
     maps = maps or {}
     kpis = data.kpis
 
     has_drt = (not kpis.empty) and (kpis["kpi_group"] == "passenger").any()
-    has_lmd = (not data.provider.empty) or (
+    has_freight_tab = (not data.provider.empty) or (
         (not kpis.empty) and (kpis["kpi_group"] == "freight").any())
 
     tab_defs = []          # (label, html, js)
@@ -528,9 +580,8 @@ def render_run_page(data, title, maps=None):
         html, js = render_drt.build_tab(data, "rd", map_block=maps.get("drt"))
         tab_defs.append(("DRT", html, js))
 
-    if has_lmd:
-        html, js = render_lmd.build_tab(data, "rl", map_block=maps.get("lmd"))
-        tab_defs.append(("LMD", html, js))
+    if has_freight_tab:
+        tab_defs.append(_second_tab(data, "rl", map_block=maps.get("lmd")))
 
     if not tab_defs:
         body = render_kpi_table(kpis)
@@ -582,10 +633,10 @@ def render_comparison_page(runs, title):
     Tab 0 (comparison: headline grouped bars + timeseries overlays + full
     KPI comparison table) sources kpis/ts off `r["data"]` but is otherwise
     byte-for-byte the same logic as before Task 10. Per-run tabs are the
-    real compact DRT/LMD tab builders (imported here, not at module level,
-    for the same circular-import reason as render_run_page)."""
+    real compact tab builders -- render_drt plus whatever _second_tab picks
+    (imported there, not at module level, for the same circular-import reason
+    as render_run_page)."""
     import render_drt
-    import render_lmd
 
     charts, js = [], []
 
@@ -675,7 +726,7 @@ def render_comparison_page(runs, title):
     cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table + notes
 
     # per-run tabs: real compact DRT/LMD tab builders, gated by presence
-    # exactly like render_run_page's has_drt/has_lmd.
+    # exactly like render_run_page's has_drt/has_freight_tab.
     tabs_html = ['<div class="tab on">' + cmp_tab + "</div>"]
     run_js = []
     for i, r in enumerate(runs):
@@ -683,7 +734,7 @@ def render_comparison_page(runs, title):
         kpis = data.kpis
         uid = "run" + str(i)
         has_drt = (not kpis.empty) and (kpis["kpi_group"] == "passenger").any()
-        has_lmd = (not data.provider.empty) or (
+        has_freight_tab = (not data.provider.empty) or (
             (not kpis.empty) and (kpis["kpi_group"] == "freight").any())
 
         body_parts, js_parts = [], []
@@ -691,8 +742,8 @@ def render_comparison_page(runs, title):
             h, j = render_drt.build_tab(data, uid, compact=True)
             body_parts.append(h)
             js_parts.append(j)
-        if has_lmd:
-            h, j = render_lmd.build_tab(data, uid, compact=True)
+        if has_freight_tab:
+            _label, h, j = _second_tab(data, uid, compact=True)
             body_parts.append(h)
             js_parts.append(j)
 
@@ -703,7 +754,8 @@ def render_comparison_page(runs, title):
                         + "</button>" for i, r in enumerate(runs)) + "</div>")
 
     # __slots (per-bar colors) needs a tiny resolver extension.
-    # The per-run compact tabs are built by render_drt/render_lmd build_tab and
+    # The per-run compact tabs are built by render_drt and _second_tab's
+    # renderer (build_tab) and
     # can emit a modal donut (centerTotal), vlines, feeder toggles or drilldowns,
     # so this page must DEFINE those plugins too -- same set render_run_page ships
     # (otherwise e.g. the modal donut's centerTotal plugin is undefined here and
