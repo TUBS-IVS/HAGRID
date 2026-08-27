@@ -107,7 +107,9 @@ HEADLINE_KPIS = [
     ("drt_rejection_rate", "Ablehnungsquote", 100.0, "%"),
     ("service_ratio_shift", "Service-Zeit (Schicht)", 100.0, "%"),
     ("drt_vehicle_km", "DRT-Fahrzeug-km", 1.0, "km"),
-    ("delivery_rate", "Zustellquote", 100.0, "%"),
+    # Operative Basis (Overlay NICHT abgezogen) -- der Zusatz steht im Label, weil
+    # genau dieser Balken die drei Arme nebeneinander stellt (METHODS-LOG 2.21).
+    ("delivery_rate", "Zustellquote (operativ)", 100.0, "%"),
     # Shared-Use channel outcomes: on a chi sweep the delta lives here -- runs
     # without these rows (baseline) simply skip the bar/cell (see the
     # `v is None -> continue` guard and the "-" union-table fallback below).

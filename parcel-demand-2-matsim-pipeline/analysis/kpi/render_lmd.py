@@ -169,9 +169,15 @@ def _tiles(data):
     # 9. Zustellquote
     v = _kpi(kpis, "delivery_rate")
     if v is not None:
-        t.append(_tile(_fmt_pct(v), "Zustellquote",
-                        tip="Anteil zugestellter Pakete an allen Paketen (ohne missed/"
-                            "unassigned)."))
+        t.append(_tile(_fmt_pct(v), "Zustellquote (operativ)",
+                        tip="Zugestellt / Nachfrage. OPERATIV: als Ausfall zaehlen nur Pakete, "
+                            "die keinem Fahrzeug zugewiesen werden konnten (unassigned) -- das "
+                            "Not-at-home-Overlay wird NICHT abgezogen. Es ist im POC kosmetisch "
+                            "(weder Ruecktransport noch Packstation-Zustellung werden "
+                            "simuliert) und existiert nur in diesem Arm, deshalb waere eine "
+                            "Netto-Quote nicht mit 1c/1d vergleichbar (METHODS-LOG 2.21). "
+                            "Der Nettowert steht als delivery_rate_net_overlay in der "
+                            "KPI-Tabelle."))
 
     # 10. Stopps [sub: stops/h = stops / freight_tour_hours]
     stops = _all(provider, "stops")
