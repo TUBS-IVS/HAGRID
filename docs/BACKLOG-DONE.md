@@ -11,6 +11,30 @@ Neueste zuerst. _Zuletzt aktualisiert: 2026-08-26._
 
 ---
 
+## 2026-08-28
+
+- **`[M]` Zustellquoten-Konvention M10-konform gemacht — eine Basis in allen drei Armen.**
+  Vorher trug jeder Arm seine eigene Quote auf eigener Basis: Baseline `delivery_rate` netto
+  (Not-at-home-Overlay abgezogen), 1c `delivery_rate_total` brutto, 1d gar keine, und der
+  Provider-Block der Baseline wiederholte den Netto-Fehler. Unter ähnlich klingenden Namen las
+  ein Drei-Arm-Vergleich damit netto gegen brutto und **kehrte das Vorzeichen der Kernaussage
+  um** (Baseline 93,6 % neben 1c 93,7 % liest sich als Parität; auf einer Konvention sind es
+  ~100 % gegen 93,7 %, also ~6,3 pp Integrationspreis).
+  Jetzt: **ein** Name `delivery_rate`, kpi_group `freight`, Basis „zugestellt / Nachfrage,
+  Overlay NICHT abgezogen“ in `extract_freight`, `extract_modular`, `extract_shareduse` (Alias
+  auf `delivery_rate_total`) und `extract_freight_provider`. Der Netto-Wert bleibt als
+  `delivery_rate_net_overlay` erhalten; `parcels_handled` und `parcels_per_vehicle_km` bleiben
+  bewusst netto (Nenner von `economics.freight_cost_per_parcel`, s. `[H]` Kostenfunktion).
+  Im Dashboard heißt die Kachel jetzt „Zustellquote (operativ)“ und der Tooltip nennt Basis
+  und Begründung — der Baseline-Tooltip beschrieb bis dahin noch die alte Netto-Basis, wies
+  aber bereits 100,0 % aus.
+  **Nachweis:** `00f4c6b` (Extraktion + `tests/test_delivery_rate_convention.py`, pinnt die
+  Konvention statt der Einzelwerte), `ec5fd90` (Beschriftung), Branch `hendrik`; gemessen auf
+  `basew21` 100,0 % operativ neben 93,6 % netto. Konsequenz für die Zahlen:
+  [METHODS-LOG](METHODS-LOG.md) §2.21.
+
+---
+
 ## 2026-08-26
 
 - **`[H]` Kaltstart-Zuschlag implementiert und gemessen.** Zuschlag
