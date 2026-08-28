@@ -14,6 +14,7 @@ import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -66,6 +67,8 @@ public class DashboardGenerator {
     private Map<String, Double> evtSvcDurSec;
     /** eventVehicleId → number of service-start events */
     private Map<String, Integer> evtStopCount;
+    /** eventVehicleId → access/egress km, on the same visits as {@link #evtTourKm} */
+    private Map<String, StemKm> evtStemKm;
 
     public DashboardGenerator(String runId, Network network,
                               FreightEventHandler eventHandler,
@@ -95,6 +98,76 @@ public class DashboardGenerator {
     public DashboardGenerator setLowUtilThreshold(double threshold) {
         this.lowUtilThreshold = threshold;
         return this;
+    }
+
+    /** Access and egress ("stem") distance of one executed tour, in km. */
+    record StemKm(double accessKm, double egressKm) {
+        double totalKm() { return accessKm + egressKm; }
+    }
+
+    /**
+     * Access/egress distance of one tour, measured on the links the vehicle actually
+     * drove -- never on the planned route.
+     *
+     * <p>{@code visits} are the vehicle's link-leave visits plus the depot link of its
+     * tour-end activity, i.e. exactly the summands of {@link #evtTourKm}; {@code svc}
+     * are its service start/end events. A link left at or before the FIRST service start
+     * is access (depot to first stop), a link left at or after the LAST service end is
+     * egress (last stop back to the depot). Everything in between is inter-stop
+     * line-haul and belongs to neither.</p>
+     *
+     * <p>The two buckets are mutually exclusive by construction -- access wins the tie
+     * for the pathological single-stop tour with zero service duration -- so their sum
+     * can never exceed the tour distance built from the same visits. That is what makes
+     * the stem SHARE a ratio of two numbers on one basis.</p>
+     *
+     * <p>Both are zero for a vehicle without service events: with no first stop there is
+     * no depot-to-first-stop leg to measure.</p>
+     */
+    static StemKm eventStemKm(List<LinkVisit> visits, List<ServiceEvent> svc,
+                              ToDoubleFunction<String> linkKm) {
+        double firstStart = Double.NaN;
+        double lastEnd = Double.NaN;
+        for (ServiceEvent e : svc) {
+            if (e.isStart()) {
+                if (Double.isNaN(firstStart) || e.timeSec() < firstStart) firstStart = e.timeSec();
+            } else if (Double.isNaN(lastEnd) || e.timeSec() > lastEnd) {
+                lastEnd = e.timeSec();
+            }
+        }
+        if (Double.isNaN(firstStart) || Double.isNaN(lastEnd)) return new StemKm(0, 0);
+
+        double access = 0;
+        double egress = 0;
+        for (LinkVisit v : visits) {
+            if (v.timeSec() <= firstStart) access += linkKm.applyAsDouble(v.linkId());
+            else if (v.timeSec() >= lastEnd) egress += linkKm.applyAsDouble(v.linkId());
+        }
+        return new StemKm(access, egress);
+    }
+
+    /**
+     * Access/egress km for every vehicle in the run, keyed by event vehicle id.
+     *
+     * <p>Deliberately fed from the same {@code getVehicleTours()} visit lists and the
+     * same network link lengths that {@link #evtTourKm} is summed from, so the stem
+     * SHARE is a ratio of two numbers on one basis. An earlier version took the
+     * numerator from the planned carrier route and the denominator from the events,
+     * mixing a planned with an executed distance inside a single percentage.</p>
+     */
+    static Map<String, StemKm> eventStemKmByVehicle(FreightEventHandler eventHandler,
+                                                    Network network) {
+        ToDoubleFunction<String> linkKm = id -> {
+            Link l = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(id));
+            return l != null ? l.getLength() / 1000.0 : 0.0;
+        };
+        Map<String, StemKm> out = new LinkedHashMap<>();
+        for (var e : eventHandler.getVehicleTours().entrySet()) {
+            List<ServiceEvent> svc = eventHandler.getServiceEvents()
+                    .getOrDefault(e.getKey(), List.of());
+            out.put(e.getKey(), eventStemKm(e.getValue(), svc, linkKm));
+        }
+        return out;
     }
 
     /**
@@ -140,6 +213,9 @@ public class DashboardGenerator {
             evtSvcDurSec.put(vehId, totalSvcDur);
             evtStopCount.put(vehId, stops);
         }
+
+        // 4) Access/egress km per vehicle - same visits and link lengths as (1)
+        evtStemKm = eventStemKmByVehicle(eventHandler, network);
 
         LOG.info("Event maps: {} vehicles, {} with tours, {} with service events",
                 evtTourKm.size(), evtDepSec.size(), evtSvcDurSec.size());
@@ -524,14 +600,8 @@ public class DashboardGenerator {
                     vtLabel = vtype != null ? vtype.label() : "Unknown";
                 }
 
-                // First service distance (stem): sum network link lengths for the first leg's route
-                double stemKm = 0;
-                if (!t.legs().isEmpty()) {
-                    for (String lid : t.legs().getFirst().routeLinkIds()) {
-                        Link stemLink = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(lid));
-                        if (stemLink != null) stemKm += stemLink.getLength() / 1000.0;
-                    }
-                }
+                // Depot legs (stem), event-based: depot -> first stop + last stop -> depot
+                StemKm stem = evtStemKm.getOrDefault(vehId, new StemKm(0, 0));
 
                 if (!first) sb.append(",");
                 first = false;
@@ -540,12 +610,12 @@ public class DashboardGenerator {
                     {"vid":"%s","carrier":"%s","provider":"%s","vtype":"%s",\
                     "km":%.2f,"durH":%.3f,"travelH":%.3f,"svcH":%.3f,\
                     "depH":%.3f,"parcels":%d,"cap":%d,"loadFactor":%.3f,\
-                    "stops":%d,"stemKm":%.2f,\
+                    "stops":%d,"stemKm":%.2f,"stemInKm":%.2f,"stemOutKm":%.2f,\
                     "costTotal":%.1f,"costDist":%.1f,"costTime":%.1f,"costFix":%.1f}""",
                     escJson(vehId), escJson(c.carrierId()), escJson(c.provider()), escJson(vtLabel),
                     km, tourDurSec / 3600.0, travelDurSec / 3600.0, svcDurSec / 3600.0,
                     depSec / 3600.0, parcels, cap, loadFactor,
-                    stops, stemKm,
+                    stops, stem.totalKm(), stem.accessKm(), stem.egressKm(),
                     0.0, 0.0, 0.0, 0.0  // per-vehicle costs not available in carrier XML; use carrier-level
                 ));
             }
@@ -1843,7 +1913,8 @@ public class DashboardGenerator {
      */
     private String buildRoutingEfficiencyJson() {
         // Aggregate per provider
-        // [sumStops, sumKm, sumDurH, sumTravelH, sumSvcH, sumParcels, sumStemKm, count, sumCost, sumCap]
+        // [sumStops, sumKm, sumDurH, sumTravelH, sumSvcH, sumParcels, sumStemKm, count, sumCost,
+        //  sumCap, sumStemInKm, sumStemOutKm]
         Map<String, double[]> byProv = new LinkedHashMap<>();
 
         for (ParsedCarrier c : carriers) {
@@ -1875,16 +1946,10 @@ public class DashboardGenerator {
                 double travelH   = Math.max(0, durH - svcDurSec / 3600.0);
                 int    stops     = evtStopCount.getOrDefault(vehId, 0);
 
-                // Stem distance: sum network link lengths for the first leg's route
-                double stemKm = 0;
-                if (!t.legs().isEmpty()) {
-                    for (String lid : t.legs().getFirst().routeLinkIds()) {
-                        Link stemLink = network.getLinks().get(org.matsim.api.core.v01.Id.createLinkId(lid));
-                        if (stemLink != null) stemKm += stemLink.getLength() / 1000.0;
-                    }
-                }
+                // Depot legs (stem), event-based: depot -> first stop + last stop -> depot
+                StemKm stem = evtStemKm.getOrDefault(vehId, new StemKm(0, 0));
 
-                byProv.computeIfAbsent(prov, k -> new double[10]);
+                byProv.computeIfAbsent(prov, k -> new double[12]);
                 double[] row = byProv.get(prov);
                 row[0] += stops;
                 row[1] += km;
@@ -1892,8 +1957,10 @@ public class DashboardGenerator {
                 row[3] += travelH;
                 row[4] += svcDurSec / 3600.0;
                 row[5] += parcels;
-                row[6] += stemKm;
+                row[6] += stem.totalKm();
                 row[7] += 1; // count
+                row[10] += stem.accessKm();
+                row[11] += stem.egressKm();
                 // Real cost per tour: share of carrier's dist+time+overtime cost + vehicle fixed cost
                 // Divide carrier variable cost by non-excluded tour count (not total)
                 // so that cost allocated to included tours is not diluted by excluded ones.
@@ -1925,6 +1992,8 @@ public class DashboardGenerator {
             double travelRatio = r[2] > 0 ? r[3] / r[2] * 100 : 0; // % of tour spent driving
             double svcRatio = r[2] > 0 ? r[4] / r[2] * 100 : 0;
             double stemRatio = r[1] > 0 ? r[6] / r[1] * 100 : 0;
+            double stemInRatio = r[1] > 0 ? r[10] / r[1] * 100 : 0;
+            double stemOutRatio = r[1] > 0 ? r[11] / r[1] * 100 : 0;
             double avgCostPerTour = n > 0 ? r[8] / n : 0;
             double kmPerParcel = r[5] > 0 ? r[1] / r[5] : 0;
             double costPerParcel = r[5] > 0 ? r[8] / r[5] : 0;
@@ -1936,11 +2005,12 @@ public class DashboardGenerator {
                 "\"avgDurH\":%.2f,\"avgTravelH\":%.2f,\"avgSvcH\":%.2f,\"avgParcels\":%.1f," +
                 "\"stopsPerHour\":%.1f,\"parcelsPerKm\":%.2f,\"kmPerParcel\":%.2f," +
                 "\"travelPct\":%.1f,\"svcPct\":%.1f,\"stemPct\":%.1f," +
+                "\"stemInPct\":%.1f,\"stemOutPct\":%.1f," +
                 "\"avgCostPerTour\":%.1f,\"costPerParcel\":%.2f,\"avgCap\":%.0f,\"avgLoadPct\":%.1f}",
                 escJson(e.getKey()), n, avgStops, avgKm,
                 avgDurH, avgTravelH, avgSvcH, avgParcels,
                 stopsPerHour, parcelsPerKm, kmPerParcel,
-                travelRatio, svcRatio, stemRatio,
+                travelRatio, svcRatio, stemRatio, stemInRatio, stemOutRatio,
                 avgCostPerTour, costPerParcel, avgCap, avgLoadFactor));
         }
         sb.append("]");
@@ -2479,7 +2549,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div style="padding:6px 22px 12px;overflow-x:auto">
 <div class="cc" style="padding:0;overflow:hidden">
 <table class="rtbl" id="routEffTable">
-<thead><tr><th title="Logistics service provider / CEP carrier">Provider</th><th class="num" title="Total number of delivery tours (one per vehicle)">Tours</th><th class="num" title="Average number of delivery stops per tour">Avg Stops</th><th class="num" title="Average tour distance in km (depot \u2192 deliveries \u2192 depot)">Avg km</th><th class="num" title="Average tour duration in hours (departure to return)">Avg Dur (h)</th><th class="num" title="Delivery stops per hour \u2014 route density efficiency">Stops/h</th><th class="num" title="Delivery stops per km driven \u2014 spatial density">Stops/km</th><th class="num" title="Parcels delivered per km driven">Parcels/km</th><th class="num" title="Parcels delivered per hour (incl. service time)">Parcels/h</th><th class="num" title="Kilometres driven per parcel delivered (inverse of Parcels/km). Lower = better">km/Parcel</th><th class="num" title="Average driving speed = Tour km / Travel time (excl. service time at stops)">Speed (km/h)</th><th class="num" title="Percentage of tour time spent driving (vs. standing/servicing)">Travel %%</th><th class="num" title="Percentage of tour time spent at delivery stops (loading/unloading)">Service %%</th><th class="num" title="Stem distance: %% of total km from depot to first delivery stop (dead mileage)">Stem %%</th><th class="num" title="Average vehicle utilisation = parcels / vehicle capacity">Utilisation %%</th><th class="num" title="Average cost per tour = (distance cost + time cost + overtime) / tours + vehicle fixedCostsPerDay">\u20AC/Tour</th><th class="num" title="Average cost per parcel delivered = total provider cost / parcels delivered">\u20AC/Parcel</th></tr></thead>
+<thead><tr><th title="Logistics service provider / CEP carrier">Provider</th><th class="num" title="Total number of delivery tours (one per vehicle)">Tours</th><th class="num" title="Average number of delivery stops per tour">Avg Stops</th><th class="num" title="Average tour distance in km (depot \u2192 deliveries \u2192 depot)">Avg km</th><th class="num" title="Average tour duration in hours (departure to return)">Avg Dur (h)</th><th class="num" title="Delivery stops per hour \u2014 route density efficiency">Stops/h</th><th class="num" title="Delivery stops per km driven \u2014 spatial density">Stops/km</th><th class="num" title="Parcels delivered per km driven">Parcels/km</th><th class="num" title="Parcels delivered per hour (incl. service time)">Parcels/h</th><th class="num" title="Kilometres driven per parcel delivered (inverse of Parcels/km). Lower = better">km/Parcel</th><th class="num" title="Average driving speed = Tour km / Travel time (excl. service time at stops)">Speed (km/h)</th><th class="num" title="Percentage of tour time spent driving (vs. standing/servicing)">Travel %%</th><th class="num" title="Percentage of tour time spent at delivery stops (loading/unloading)">Service %%</th><th class="num" title="Depot legs as %% of driven km: depot \u2192 first stop PLUS last stop \u2192 depot. Numerator and denominator both from executed link-leave events, never from the planned route.">Stem %%</th><th class="num" title="Average vehicle utilisation = parcels / vehicle capacity">Utilisation %%</th><th class="num" title="Average cost per tour = (distance cost + time cost + overtime) / tours + vehicle fixedCostsPerDay">\u20AC/Tour</th><th class="num" title="Average cost per parcel delivered = total provider cost / parcels delivered">\u20AC/Parcel</th></tr></thead>
 <tbody id="routEffBody"></tbody>
 </table>
 </div>
@@ -3208,13 +3278,14 @@ rebuildMap();
       '</td><td class="num">'+spd.toFixed(1)+
       '</td><td class="num">'+r.travelPct.toFixed(1)+
       '</td><td class="num">'+r.svcPct.toFixed(1)+
-      '</td><td class="num">'+r.stemPct.toFixed(1)+
+      '</td><td class="num" title="depot\u2192first stop '+r.stemInPct.toFixed(1)+'%% + last stop\u2192depot '+r.stemOutPct.toFixed(1)+'%%">'+r.stemPct.toFixed(1)+
       '</td><td class="num '+lfCls+'">'+r.avgLoadPct.toFixed(1)+
       '</td><td class="num">'+r.avgCostPerTour.toFixed(1)+
       '</td><td class="num">'+r.costPerParcel.toFixed(2)+'</td></tr>';
   });
   // --- TOTAL row ---
   var tTours=0,tStops=0,tKm=0,tDurH=0,tTravelH=0,tSvcH=0,tParcels=0,tStemKm=0,tCost=0,tCap=0;
+  var tStemInKm=0,tStemOutKm=0;
   ROUT_EFF.forEach(function(r){
     tTours+=r.tours;
     tStops+=r.avgStops*r.tours;
@@ -3224,6 +3295,8 @@ rebuildMap();
     tSvcH+=r.avgSvcH*r.tours;
     tParcels+=r.avgParcels*r.tours;
     tStemKm+=(r.stemPct/100)*r.avgKm*r.tours;
+    tStemInKm+=(r.stemInPct/100)*r.avgKm*r.tours;
+    tStemOutKm+=(r.stemOutPct/100)*r.avgKm*r.tours;
     tCost+=r.avgCostPerTour*r.tours;
     tCap+=r.avgCap*r.tours;
   });
@@ -3239,6 +3312,8 @@ rebuildMap();
   var tTravelPct=tDurH>0?tTravelH/tDurH*100:0;
   var tSvcPct=tDurH>0?tSvcH/tDurH*100:0;
   var tStemPct=tKm>0?tStemKm/tKm*100:0;
+  var tStemInPct=tKm>0?tStemInKm/tKm*100:0;
+  var tStemOutPct=tKm>0?tStemOutKm/tKm*100:0;
   var tAvgLoadPct=tCap>0?tParcels/tCap*100:0;
   var tAvgCostPerTour=tTours>0?tCost/tTours:0;
   var tCostPerParcel=tParcels>0?tCost/tParcels:0;
@@ -3260,7 +3335,7 @@ rebuildMap();
     '<td class="num" title="\u03A3(km) / \u03A3(travel hours) = '+tKm.toFixed(0)+'km / '+tTravelH.toFixed(1)+'h = '+tSpd.toFixed(1)+' km/h">'+tSpd.toFixed(1)+'</td>'+
     '<td class="num" title="\u03A3(travel hours) / \u03A3(tour duration) \u00D7 100 = '+tTravelH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tTravelPct.toFixed(1)+'%%">'+tTravelPct.toFixed(1)+'</td>'+
     '<td class="num" title="\u03A3(service hours) / \u03A3(tour duration) \u00D7 100 = '+tSvcH.toFixed(1)+'h / '+tDurH.toFixed(1)+'h = '+tSvcPct.toFixed(1)+'%%">'+tSvcPct.toFixed(1)+'</td>'+
-    '<td class="num" title="\u03A3(stem km) / \u03A3(km) \u00D7 100 = '+tStemKm.toFixed(1)+'km / '+tKm.toFixed(0)+'km = '+tStemPct.toFixed(1)+'%%">'+tStemPct.toFixed(1)+'</td>'+
+    '<td class="num" title="\u03A3(depot-leg km) / \u03A3(km) \u00D7 100 = '+tStemKm.toFixed(1)+'km / '+tKm.toFixed(0)+'km = '+tStemPct.toFixed(1)+'%% \u2014 depot\u2192first stop '+tStemInPct.toFixed(1)+'%%, last stop\u2192depot '+tStemOutPct.toFixed(1)+'%%">'+tStemPct.toFixed(1)+'</td>'+
     '<td class="num '+tLfCls+'" title="\u03A3(parcels) / \u03A3(capacity) \u00D7 100 = '+tParcels.toFixed(0)+' / '+tCap.toFixed(0)+' = '+tAvgLoadPct.toFixed(1)+'%%">'+tAvgLoadPct.toFixed(1)+'</td>'+
     '<td class="num" title="\u03A3(cost) / \u03A3(tours) = '+tCost.toFixed(0)+'\u20AC / '+tTours+' = '+tAvgCostPerTour.toFixed(1)+'\u20AC">'+tAvgCostPerTour.toFixed(1)+'</td>'+
     '<td class="num" title="\u03A3(cost) / \u03A3(parcels) = '+tCost.toFixed(0)+'\u20AC / '+tParcels.toFixed(0)+' = '+tCostPerParcel.toFixed(2)+'\u20AC">'+tCostPerParcel.toFixed(2)+'</td></tr>';
