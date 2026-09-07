@@ -158,6 +158,17 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-17._
   Läufe: `m1d010/015/020/030/040` + `ctrl1d`/`m1d050` (Sim-PC). Einzelseed-Vorbehalt für
   absolute km-/Stunden-Niveaus bleibt (§2.1/§2.17); Cross-Machine-Demand-Vorbehalt → §2.30.
 
+  **Annotation 2026-08-27 — die Kurvenform überlebt die Depotumstellung nicht.** Gemessen wurde
+  sie auf der providergebundenen Depotlage bei Flotte 120 und 127 Touren. Auf der bezirksscharfen
+  Stufe (§2.41) bei Flotte 135 und 46 Touren stellt θ=0,15 **alle** 6.052 Pakete zu (46/46 Touren
+  disponiert, 0 abgelaufen, 0 am Splicer abgelehnt) statt 67,1 % — die **Paketachse dieser Kurve
+  ist damit gegenstandslos**, das Gate bindet dort nicht mehr über Zustellverluste, sondern nur
+  noch über die Dispatch-*Geschwindigkeit* (§2.47-Nachbar: 15 der 46 Touren gehen um 07:16 raus,
+  die übrigen 31 tröpfeln bis 11:45). Was bleibt, ist [0,1–0,3] als **Suchraum**; wo darin das
+  Optimum liegt, ist auf der neuen Stufe **nicht gemessen** — θ=0,15 wurde unbesehen aus der alten
+  Kampagne übernommen. Sweep 0,10/0,20 bei f135/iter250 läuft seit 2026-08-27. Die Pax-Prozente
+  oben sind zusätzlich gegen den zurückgezogenen Bezugswert `basew21` = 8.973 normiert (§2.48).
+
 - **Joint-Cost-Allokation: marginale Attribution** — `trägt` · 2026-07-20 (M11)
   Paketkosten = akzeptierter `totalTimeLoss` × Fahrzeug-Zeitrate + Zustell-km × km-Rate
   (nutzt die χ-Messung wieder); Pax tragen die Basis-Flottenkosten. Regel ist *vor* den Runs
@@ -1785,6 +1796,14 @@ die **unperturbierte Referenz**. **Offen: der Rerun**, der die Datei erzeugt (be
 Betriebspunkte (`m1d010`, θ=0,10, Sim-PC · `chid600w21`, χ=600, Dev-PC), beide gegen die
 10-Sitzer-Baseline `basew21`:
 
+> **Annotation 2026-08-27 — die Absolutzahlen dieser Tabelle sind nicht mehr anschlussfähig.**
+> Alle drei Läufe stammen von vor dem 2026-08-11, vergleichen also Gleiches mit Gleichem; die
+> *relativen* Aussagen unten tragen weiter. Nicht übertragbar sind die Bezugswerte: `basew21` =
+> 8.973 ist als armübergreifender Anker zurückgezogen (§2.48, Ersatz 9.183), die Läufe sind bei
+> 150 Iterationen unkonvergiert (§2.47), und die 1c/1d-Punkte fallen zusätzlich unter die
+> Depot-Hinfälligkeit (§2.41). Diese Zahlen dürfen nicht neben Nach-REGRET-Zahlen in dieselbe
+> Tabelle.
+
 | | Pakete zugestellt (brutto) | Pax-Fahrten | Δ Pax gegen basew21 |
 |---|---|---|---|
 | Baseline `basew21` | ~100 % (6052, unassigned 0) | 8973 | — |
@@ -2639,8 +2658,1098 @@ eingefügtes Paket kehrt in die Retry-Queue zurück und fällt ohne Event hinter
 heraus (§2.31). Die Ursache war nur durch Verfolgen derselben Segment-IDs über alle vier Arme
 auffindbar, nicht aus einem einzelnen Lauf.
 
+**Nachmessung auf der gleichmäßigen Aufteilung** (2026-08-28/29, Arme
+`d1c_dep7_f140[_chi900|_chi600]_evensplit`, alle drei mit identischer Population, Hash
+`DA17247C…`):
+
+| χ=600 | alt | gleichmäßig |
+|---|---|---|
+| nicht zugestellte Pakete | 395 | **268** (−32 %) |
+| Zustellquote | 0,9323 | **0,9532** |
+| Pakete per DRT | 5.551 | 5.678 |
+| Pax-Fahrten | 9.217 | 8.928 |
+| Fahrzeug-km | 51.894 | 50.642 |
+
+Die Paketzahlen stehen auf der KPI-Basis, gegengerechnet mit der Teile-summieren-sich-zum-Ganzen-
+Probe: 6.052 = zugestellt + zu Fuß + Hoftor + nicht zugestellt geht in **beiden** Armen exakt auf
+(5.551+91+15+395 und 5.678+91+15+268). ⚠️ Eine frühere Fassung dieser Zeile nannte 335 → 196 und
+−41 % — diese Zahlen kamen aus einem eigenen Segment-Skript und lagen auf einer anderen Basis als
+die daneben zitierte Quote, mit der sie sich nicht verrechnen ließen. Zurückgezogen.
+
+Der Mechanismus trägt: die Ausfälle bleiben streng auf die größten Segmente konzentriert, und von
+den fünf verbliebenen 20er-Segmenten kam **jedes** durch.
+
+| Größe | alt: n / Ausfälle | gleichmäßig: n / Ausfälle |
+|---|---|---|
+| 1–9 | 729 / 0 | 692 / 0 |
+| 10–14 | 101 / 0 | 154 / 4 (2,6 %) |
+| 15–19 | 48 / 2 (4,2 %) | 94 / 9 (9,6 %) |
+| 20 | 67 / 15 (22,4 %) | 5 / **0** |
+
+⚠️ **Diese Tabelle ist noch nicht auf der KPI-Basis nachgerechnet.** Sie stammt aus demselben
+Segment-Skript, dessen Paketsummen sich nicht mit der KPI-Schicht verrechnen ließen (s. oben), und
+ihre Ausfallzahlen sind entsprechend nicht bestätigt. Unabhängig belegt ist allein die
+Spaltenbesetzung: die Verschiebung **67 → 5** an der Kapazitätsgrenze wurde vor den Läufen direkt an
+der Population auf dem Sim-PC geprüft. Die Verteilungsaussage — Ausfälle sitzen oben, die 20er-
+Spalte ist geleert — ist vor einer Zitierung neu abzuleiten.
+
+⚠️ **Die Mengenvorhersage lag daneben, und das präzisiert den Mechanismus.** Erwartet waren 5,1
+verfallene Segmente (alte Bucket-Raten auf die neue Verteilung angewandt), gemessen wurden 13. Der
+Fehler steckt in der Annahme, die Ausfallrate sei eine Eigenschaft der Segmentgröße. Ist sie
+nicht: die 62 Segmente, die von Größe 20 nach unten gewandert sind, haben die Rate **in ihren
+Zielbuckets angehoben** — 15–19 von 4,2 auf 9,6 %, 10–14 von 0 auf 2,6 %. Die knappe Ressource ist
+**paketfreie Fahrzeugkapazität insgesamt**, nicht die 20-Platz-Kante. Umverteilen verschiebt den
+Wettlauf, es beendet ihn nicht — das Paketvolumen, das große zusammenhängende Kapazität braucht,
+ist unverändert. Folge für die zurückgestellte Cap-Frage: eine niedrigere Obergrenze hilft weiter,
+mit abnehmendem Ertrag und steigender Standzeit.
+
+Auf der **Pax-Achse** ist über die sechs Zellen (alt/gleichmäßig × χ→∞/900/600) keine Ordnung
+erkennbar: 9.036 / 9.266 / 9.286 / 9.164 / 9.217 / 8.928. Die gleichmäßige Aufteilung — eine
+Intervention im Umfang von ~1 % des Idle-Pools — bewegt bei χ→∞ um +230 und bei χ=900 um −122,
+mit Vorzeichenwechsel. Das ist chaotische Empfindlichkeit, kein Effekt, und der Anlass für den
+Seed-Fächer (§2.52).
+
 Verwandt: §2.31 (χ-Zähler saturieren; die Detour-Minima als Instrument), §3.11 (die drei in dieser
-Untersuchung zurückgezogenen Aussagen).
+Untersuchung zurückgezogenen Aussagen), §2.52 (der Fächer, der die Pax-Achse vermisst).
+
+---
+
+### 2.47 150 MATSim-Iterationen sind nicht konvergiert — 250 ist der Standard
+
+`trägt` · gemessen 2026-08-25/27, Nutzerentscheidung 2026-08-27 („250 iters ist gesetzter
+Goldstandard"). **Betrifft jede Pax-Fahrtenzahl im Dokument, die aus einem 150er-Lauf stammt.**
+
+**Warum überhaupt ein Fenster.** `fractionOfIterationsToDisableInnovation = 0.9` schaltet die
+Planinnovation bei Iteration 135 von 150 bzw. 225 von 250 ab — aus dem `output_config_reduced.xml`
+der Läufe gelesen, nicht angenommen. Jede Reihe hat dort eine Stufe. Ein Plateaufenster muss
+deshalb *nach* der Abschaltung beginnen; verwendete Kennzahl ist der Mittelwert über 226–249, der
+Endwert der Einzeliteration nur Nebenangabe.
+
+**Die Messung.** Der einzige unkontaminierte 150↔250-Vergleich ist 1d `f130`: identischer JAR,
+identische Konfiguration, einziger Unterschied `maxIter`.
+
+| Lauf | Fenster | Plateau | sd | Endwert | Reststeigung |
+|---|---|---|---|---|---|
+| 1d `f130` @150 | 136–149 | 9.192 | 43,5 | 9.137 | −10,09 |
+| 1d `f130` @250 | 226–249 | **8.973** | 30,8 | 8.946 | −3,43 |
+
+Das Plateau fällt um **219 Fahrten (−2,4 %)**. Der einzige gemessene Seed-Abstand auf diesem Kanal
+beträgt 48 Fahrten (`d1d_nopart` 9.590 gegen `d1d_nopart_s2` 9.638, Plateau) — die Differenz ist
+das 4,6-fache davon und damit kein Rauschen.
+
+**Konvergenznachweis.** Im 250er-Fenster in Achterblöcken zerfällt die Steigung gegen null:
+−2,38 / −1,96 / −0,38. Bei 150 tut sie das nicht, dort steht −10,09 über das ganze Fenster. Die
+beiden Kalibrierläufe sind ebenfalls eingeschwungen, aber nicht gleich sauber: `f135_it250`
+−7,93 / +0,89 / +0,26 (die letzten zwei Drittel flach), `basew21_it250` −6,08 / −6,25 / +1,01 —
+dort trägt das erste Drittel die Reststeigung von −2,49, das Plateau 9.183 ist deshalb eine
+leichte **Obergrenze**.
+
+**Was hier NICHT belegt ist.** Das Baseline-Paar `basew21` @150 → @250 bewegt sich um **+156** in
+die *Gegenrichtung* — zwischen den beiden liegt aber ein Codewechsel (§2.48), das Paar vermischt
+Iterationszahl und Code und ist für diese Frage unbrauchbar. Das **Vorzeichen** des
+Iterationseffekts ist damit an genau *einem* Punkt gemessen. Dass 150er-Zahlen verzerrt sind,
+steht; in welche Richtung, ist nur für 1d belegt. Ob 250 auch für 1c genügt, ist nicht gemessen.
+
+**Preis.** Je 250er-Lauf auf dem Dev-PC ohne konkurrierende Läufe gemessen: 9,0 h (`f135_it250`)
+bis 19,0 h (`f130_it250`, davon 3,5 h Einmal-Stall). Die Streuung ist ungeklärt — die Kettenlogs
+zeigen keine Überlappung — und macht ETA-Angaben für Ketten entsprechend unsicher.
+
+---
+
+### 2.48 Die 150er-Baseline `basew21` ist nicht gegen Läufe nach `158cc8c` vergleichbar
+
+`trägt` · entdeckt 2026-08-27 durch eine geplante Regressionsprobe. **Zurückgezogen wird ein
+Bezugswert, kein Befund:** REGRET_INSERTION selbst steht seit §2.34 und ist unstrittig — neu ist,
+dass der Wechsel die *alte Baseline als Vergleichsanker* entwertet.
+
+**Die Probe.** Weil die Innovation bei 0,9·maxIter abschaltet (§2.47), müssen die Iterationen
+0–134 eines 250er-Laufs **bit-identisch** zu denen des 150er-Laufs sein, solange Code und Inputs
+gleich sind. Die Probe kostet nichts und lief als Beifang der Konvergenzmessung mit.
+
+**Sie schlug fehl — 0 von 135 Iterationen stimmen überein**, schon it. 0 mit 905 gegen 900
+Fahrten. Die Inputs sind es nicht: DRT-Flotte (10.466 B) und Population (79.377.199 B, 41.874
+Personen) sind per SHA256 bitgleich. In den Fenstern mit aktiver Innovation liegt der Abstand weit
+außerhalb des Rauschens:
+
+| Fenster | alt (@150) | neu (@250) | Δ |
+|---|---|---|---|
+| it. 0–49 | 7.405 (sd 1641) | 7.592 (sd 1641) | +187 |
+| it. 50–99 | 9.159 (sd 180) | 9.537 (sd 234) | +379 |
+| it. 100–134 | 9.474 (sd 82) | 9.774 (sd 64) | **+300 ≈ 4σ** |
+
+**Ursache:** `158cc8c` (2026-08-11) stellte die jsprit-Konstruktionsheuristik auf REGRET_INSERTION
+um (§2.34). Die Baseline-Fracht fällt dadurch von **52 auf 41** Touren und Fahrzeuge
+(52 × 0,79 = 41,08) und von 3.724,7 auf 2.701,5 Fahrzeug-km — elf Lieferwagen weniger im Netz, die
+den Pax-Verkehr entsprechend weniger behindern.
+
+**Folge.** `basew21` @150 (Plateau 9.027 / Endwert 8.973) ist als **armübergreifender Bezugswert
+zurückgezogen**. Ersetzt durch `basew21_it250` (Plateau **9.183** / Endwert 9.143), gefahren auf
+demselben JAR wie sämtliche 1d-Arme der Depotstufe.
+
+**Was dadurch NICHT falsch wird.** §2.32 und die θ-Kurve in §1.2 sind intern konsistent — ihre
+Läufe stammen sämtlich von vor dem 2026-08-11 und vergleichen Gleiches mit Gleichem, ihre
+*relativen* Aussagen tragen weiter. Nicht übertragbar sind die **absoluten** Bezugszahlen: jede
+Δ-Angabe gegen „basew21 = 8.973" gilt nur innerhalb jener Kohorte und darf nicht neben
+Nach-REGRET-Zahlen in dieselbe Tabelle.
+
+**Eine dabei widerlegte Hypothese.** Als Ursache war zunächst `27f18b3` (Bezirkscarrier /
+Missed-Delivery-Overlay) vermutet, gestützt auf alte 387 gegen 1d-seitige 415 verfehlte Pakete.
+Der fertige Lauf zeigt in *beiden* Baselines `parcels_missed` 387, `parcels_handled` 5.665 und
+`delivery_rate_net_overlay` 0,936054 — identisch. Das Overlay war unverändert; die Hypothese ist
+erledigt.
+
+**Reproduktion.** `drt_customer_stats_drt.csv` beider Läufe iterationsweise gegenüberstellen;
+Inputgleichheit über SHA256 der `*_drt_fleet.xml.gz` und `*_drt_population.xml.gz` aus den in
+`*_prepare.log` protokollierten Pfaden.
+
+
+### 2.49 Stem % im Java-Dashboard: nur der Hinweg, und Zähler/Nenner auf verschiedenen Basen
+
+`trägt` · entdeckt 2026-08-28 beim Gegenlesen eines Papersatzes. Betrifft die Spalte **Stem %**
+der Routing-Efficiency-Tabelle in `DashboardGenerator` — also die Zahl, aus der die
+Hannover-Kapazitätsstudie ihre Anfahrtsanteile zitiert.
+
+**Zwei Defekte in einer Kennzahl.**
+
+1. **Nur das erste Leg.** Gezählt wurde `t.legs().getFirst()`, also Depot → erster Stopp. Der
+   Rückweg vom letzten Stopp zum Depot fiel raus. Der Spalten-Tooltip nannte die Zahl trotzdem
+   „dead mileage" — als Leerfahrtanteil war sie damit zu niedrig, als Anfahrtsanteil korrekt.
+2. **Gemischte Distanzbasis.** Der Zähler kam aus den *geplanten* Routen-Links des Carrier-Plans,
+   der Nenner (`evtTourKm`) aus den *gefahrenen* Link-Leave-Events. §2.33 dokumentiert zwischen
+   Plan- und Ausführungsdistanz eine systematische Lücke von ~4,6 % mit ungeklärtem Mechanismus;
+   die ging ungeprüft in jeden Prozentwert ein.
+
+**Behoben 2026-08-28** (User-Entscheidung): beide Depot-Legs, Zähler *und* Nenner aus denselben
+Event-Visits und denselben Netzwerk-Linklängen. Die Berechnung liegt jetzt in
+`precomputeEventMaps()`, sodass Provider-Tabelle, TOTAL-Zeile und Fahrzeug-Blob dieselbe Zahl
+benutzen; der planbasierte Pfad ist entfernt.
+
+**Einschränkung, bewusst in Kauf genommen.** Bereits gefahrene Runs werden **nicht** neu erzeugt —
+alle vorhandenen Dashboards tragen weiter die alte Definition. Alte und neue Boards sind
+maschinell unterscheidbar: der `ROUT_EFF`-Blob eines neuen Boards führt zusätzlich `stemInPct` und
+`stemOutPct`, ein alter nicht. Wer beide Vintages in eine Zeitreihe mischt, mischt zwei
+Definitionen.
+
+**Was unter der alten Definition gemessen ist** (v2/v3/v4, je 38 Caps, Σ stem km / Σ km):
+
+| | c = 30 | c = 400 |
+|---|---|---|
+| netzwerkweit | **37,3 %** (37,1–37,4) | 24,3 % (24,1–24,6) |
+| Provider-Maximum (amazon) | **42,1 %** (42,0–42,2) | 28,1 % (27,9–28,2) |
+
+Die im Paperentwurf zitierten **35,0 % / 40,0 %** sind damit zurückgezogen: sie stammen aus der
+Zeile **c = 40** des alten Provider-Exports (dort netzwerkweit 34,96 %, amazon 40,0 %), nicht aus
+dem niedrigsten Cap. Wer die Zahl als Anfahrtsanteil zitiert, nimmt die Tabelle oben.
+
+**Noch nicht gemessen:** wie viel der Rückweg hinzufügt. Der Wert der neuen Definition liegt
+zwangsläufig höher, um wie viel, sagt erst ein Lauf mit dem neuen Code — die vorhandenen Boards
+tragen das Rückleg nirgends, es ist aus ihnen nicht rekonstruierbar.
+
+
+
+### 2.50 Der Walk-Fallback in 1c — 91 Pakete kommen ohne Fahrzeug an, und nichts protokolliert das
+
+`trägt` · Messung 2026-08-28 am Arm `d1c_dep7_f140_evensplit`. **Modell-Artefakt, 1c-only.**
+
+Zwischen der Baseline-Nachfrage (6.052) und den DRT-getragenen Paketen (5.946) liegen 106. Sie
+zerfallen in zwei Kanäle, beide unabhängig belegt (Summe geht exakt auf: 5.946 + 91 + 15 + 0):
+
+| Kanal | Pakete | Was passiert |
+|---|---|---|
+| DRT | 5.946 | regulär, per Fahrzeug |
+| **Walk-Fallback** | **91** | Router lehnt bei der Routensuche ab, MATSim setzt ein Walk-Leg, Paket kommt an |
+| **Hoftor-Verwurf** | **15** | 2 gepoolte Stopps schnappen auf ihren eigenen Depot-Link ⇒ Start == Ziel ⇒ keine gültige DVRP-Anfrage, im Preprocessing übersprungen |
+
+Der Walk-Kanal ist **flotten- und χ-invariant**: über den ganzen Flottenfächer (f120–f140) und das
+ganze χ-Raster (150–∞) stehen konstant 91 Pakete in 10 Personen. Er entsteht am Ort, nicht am
+Paket — `parcel_hoy_sued_299_p0/_p1/_p2` sind drei Teile desselben Stopps und laufen alle drei.
+
+**Größenordnung, parcel-gewichtet:** 42 der 91 laufen 97 m (Depotkante → Tür, belanglos), 41 laufen
+**2,3–6,7 km**, der Extremfall 9 Pakete über 6.747 m in 1,78 h; zusammen 192 Paket-km zu Fuß.
+
+**Was es NICHT ist:** eine Kostenverzerrung. Als Fahrten hätten die langen Fälle rund 40
+Fahrzeug-km gekostet, gegen 51.989 km Flottenleistung — ~0,1 %, in Kosten und Emissionen nicht
+messbar. Eine frühere Formulierung in diese Richtung ist zurückgezogen.
+
+**Was es ist:** (a) ein Plausibilitätsproblem — ein Zusteller, der 9 Pakete 6,7 km weit trägt, ist
+kein Lieferkonzept, sondern ein Routing-Fallback, und 1,5 % der 1c-Zustellungen laufen darüber;
+(b) ein Sichtbarkeitsproblem — **es wird keine Ablehnung geloggt** (`output_drt_rejections` enthält
+null Paketzeilen), die Pakete zählen als zugestellt, und ohne die gezielte Gegenprobe auf
+`output_trips` taucht der Kanal in keiner Kennzahl auf.
+
+**Konvention:** beide Kanäle zählen als zugestellt, die Quote steht auf der Nachfragebasis 6.052
+(gleiche Konvention wie die Baseline, §2.21). Die Lücke zu 1,0 sind genau die 15 Hoftor-Pakete —
+ein 1c-only-Artefakt, keine Zustellschwäche: die Baseline routet Pakete als jsprit-`CarrierService`
+und kennt die `from == to`-Schranke nicht.
+
+Verwandt: §2.46 (die Segmentaufteilung als eigentliche Ausfallursache), §2.31 (warum ein nicht
+eingefügtes Paket ohne Event verschwindet).
+
+---
+
+### 2.51 Ein Pfad von 252 Zeichen tötet einen fertigen Lauf im Shutdown — und die JVM bleibt stehen
+
+`trägt` · gemessen 2026-09-01 auf dem Sim-PC. **Infrastruktur-Defekt, Kosten 34 h Maschinenzeit.**
+
+Zwei unabhängige Defekte, die zusammen einen ganzen Seed-Fächer verschluckt haben.
+
+**(a) Natives SQLite bricht ab Pfadlänge 252.** `DrtZonalWaitTimesAnalyzer.notifyShutdown` schreibt
+ein GeoPackage über GeoTools → JDBC → `org.sqlite.core.NativeDB._open`. Per Bisektion auf dem
+Sim-PC gemessen, mit dem Treiber aus dem Projekt-Jar:
+
+| Pfadlänge | 240 | 245 | 248 | 250 | **251** | **252** | 255 | 263 |
+|---|---|---|---|---|---|---|---|---|
+| `sqlite_open` | OK | OK | OK | OK | **OK** | **FAIL** | FAIL | FAIL |
+
+Das ist MAX_PATH 260 minus die 8 Bytes, die SQLite für den Journal-Namen reserviert.
+`LongPathsEnabled=1` hilft nur Java, nicht nativem Code — im selben Lauf-Verzeichnis liegen
+295-Zeichen-PNGs, die Java anstandslos geschrieben hat. Die erste Fassung des Tests hatte **keine
+Trennschärfe** (sie scheiterte bei jeder Länge, auch bei nachweislich funktionierenden) und wurde
+erst mit Positivkontrolle brauchbar.
+
+⚠️ **Die bestehenden Tags stehen exakt auf der Kante.** Der Tag steckt im Verzeichnis- *und* im
+Dateinamen, jedes Zeichen kostet also zwei:
+
+| Tag | Pfad des `.drt_waitStats_drt_zonal.gpkg` | |
+|---|---|---|
+| `d1c_dep7_f140_chi600_evensplit` | **251** | das letzte funktionierende Zeichen |
+| `d1c_dep7_f140_chi600_evensplit_s1338` | 263 | FAIL |
+| `d1c_f140_c600_es_s1338` | 235 | OK |
+
+Ein Zeichen mehr in irgendeinem künftigen Tag — 1c, 1d oder Hannover — und derselbe stille
+Shutdown-Crash nach voller Rechenzeit. Der dauerhafte Fix ist ein kürzerer Ausgabe-Root, nicht
+kürzere Tags (→ BACKLOG).
+
+**(b) Die JVM beendet sich nach dem Absturz nicht.** Die Exception tötete `main`, aber der
+`MemoryObserver`-Heartbeat ist ein Non-Daemon-Thread und loggte weiter im Minutentakt — bei
+eingefrorenem CPU-Zähler (38.991,6 s in zwei Messungen 30 s auseinander). Also kehrte `cmd /c` nie
+zurück, die Kette rückte nie vor, und die drei folgenden Seeds starteten nie.
+
+**Was der Watcher nicht konnte:** beide Liveness-Zweige fragten „läuft ein Prozess?“ — und eine
+verkeilte JVM antwortet mit ja. Ersetzt durch **CPU-Akkumulation**: vier aufeinanderfolgende
+5-Minuten-Proben mit exakt unverändertem CPU-Zähler töten den Arm (eine gesunde MATSim-JVM zeigt
+nie 20 Minuten exakt null CPU), dahinter ein 9-h-Wallclock-Deckel; die Kette läuft danach mit dem
+nächsten Seed weiter.
+
+**Datenlage des verlorenen Arms:** alle 150 Iterationen waren fertig, aber `analysis/` und die
+Shutdown-CSVs (`shareduse_channel_stats`, DRT-Legs, Vehicle-Stats) fehlen vollständig.
+Events/Plans/Trips liegen vor — eine Rekonstruktion daraus stünde aber auf einer ~3 % anderen
+Basis als die CSV-gestützten Replikate und wurde deshalb bewusst **nicht** gemacht; der Lauf wurde
+verworfen.
+
+---
+
+### 2.52 Seed-Fächer 1c: warum die Flotte NICHT vor der Streuung rekalibriert wird
+
+`trägt` · Entscheidung 2026-09-01, abgeschlossen 2026-09-02. **Ergebnis: f140 bleibt.**
+
+**Anlass.** Bei f140/χ=600/gleichmäßig fehlten im Anker 148 Fahrten auf das Iso-Service-Ziel
+9.076, und 4,4 % der Pakete blieben liegen. Die naheliegende Reaktion — Flotte hochkalibrieren — wäre auf n=1
+nicht begründbar: die gleichmäßige Aufteilung hat die Pax-Zahl um **+230** bewegt, obwohl sie nur
+~1 % des Idle-Pools berührt (§2.46). Das Defizit ist kleiner als der Ausschlag einer
+Fast-Null-Intervention.
+
+**Aufbau.** Vier Replikate 1338–1341 auf den Anker 1337 (dessen `matsim_seed` in
+`run_metadata.json` verifiziert) ⇒ n=5 am Betriebspunkt f140/χ=600/gleichmäßig.
+
+**Entscheidungsregel, vorab festgelegt** (steht im Kopf des Chain-Skripts, damit sie nicht
+nachträglich an die Zahlen angepasst wird):
+
+- 9.076 **innerhalb** der Spannweite der fünf Replikate ⇒ f140 bleibt, keine Rekalibrierung.
+- 9.076 **außerhalb** ⇒ *ein* Flottenschritt aus der bestehenden Iso-Service-Kurve, und dieser
+  neue Punkt braucht seinerseits ≥ 3 Seeds.
+
+Die Zustellquote ist dabei **kein zweites Ziel**: Iso-Service pinnt die Flotte, die Quote fällt als
+Ergebnis an. Der Rest ist der gemessene Preis der 10-Minuten-Schranke, kein Defekt.
+
+**Ergebnis** (5 Replikate, jeder Seed gegen das `matsim_seed` im eigenen `run_metadata.json`
+geprüft, alle fünf mit identischem Populations-Hash):
+
+| Seed | Pax-Fahrten | Zustellquote | nicht zugestellt | Fahrzeug-km |
+|---|---|---|---|---|
+| 1337 (Anker) | 8.928 | 0,9532 | 268 | 50.642 |
+| 1338 | 9.243 | 0,9374 | 364 | 52.278 |
+| 1339 | 9.176 | 0,9549 | 258 | 51.359 |
+| 1340 | 9.135 | 0,9369 | 367 | 51.492 |
+| 1341 | 9.245 | 0,9316 | 399 | 52.207 |
+| **Mittel** | **9.145** | **0,9428** | **331** | **51.596** |
+| sd | 130 | 0,0106 | 64 | 674 |
+
+**Die Regel greift auf „keine Rekalibrierung“.** Das Ziel 9.076 liegt innerhalb der Spannweite
+8.928–9.245 und nur 0,53 sd unter dem Mittel; das Mittel liegt mit **+69 Fahrten (+0,8 %)**
+sogar *über* dem Ziel. Der Anker, auf dem das vermeintliche Defizit beruhte, war mit −1,67 sd die
+**tiefste** der fünf Ziehungen — „148 Fahrten fehlen“ hat den unteren Rand der Verteilung für das
+Niveau gelesen. Genau das war der Grund, den Fächer der Rekalibrierung vorzuziehen.
+
+⚠️ **Die Frachtseite ist die rauhe, nicht die Pax-Seite** — das kehrt die Erwartung um, mit der
+der Fächer begründet wurde. Variationskoeffizienten: Pax-Fahrten 1,4 %, Fahrzeug-km 1,3 %,
+Zustellquote 1,1 % — aber **nicht zugestellte Pakete 19,3 %** (258–399 bei n=5). Die *Zahl* der
+Ausfälle ist die volatile Größe, nicht die Quote, weil sie ein kleiner Rest auf einer großen Basis
+ist. Konsequenz: eine Aussage der Form „χ=600 kostet N Pakete“ ist aus einem Einzellauf **nicht**
+belastbar (± ein Fünftel), eine Aussage über die Quote schon. Und wegen Limitation 1 ist auch
+diese 19,3 % noch eine Untergrenze.
+
+⚠️ **Limitation 1 — die Frachtstreuung ist eine Untergrenze.** Der Fächer variiert nur
+`config.global().setRandomSeed`. Die Paketpopulation wird mit hart verdrahtetem `4711` erzeugt
+(`LausitzDrtPreprocessor:232`), und dieser Random steuert ausschließlich den Jitter der
+Anmeldezeiten (`ParcelAgentGenerator:184`). Nachfrage, Sub-Loads und Anmeldezeiten sind über alle
+Seeds identisch — belegt dadurch, dass jeder Arm denselben Populations-Hash `DA17247C…` erzeugen
+muss und sonst vor der Simulation abbricht. Für die Pax-Achse ist das gewollt; für die Frachtseite
+heißt es, dass eine Zufallsquelle festgehalten ist.
+
+⚠️ **Limitation 2 — 150 Iterationen, entgegen §2.47.** Der Fächer läuft mit `maxIter=150`, wie der
+Anker und die gesamte 1c-Kampagne; seit 2026-08-27 gilt aber 250 als Goldstandard. **Für 1c ist der
+Iterationseffekt nie gemessen worden** — die −219 stammen aus 1d, und §2.47 hält selbst fest, dass
+das Vorzeichen an genau einem Punkt bestimmt ist. Die Frage ist bewusst vertagt
+(Nutzerentscheidung 2026-09-01). Konsequenz: Streuung und Kalibrierpunkt stehen auf einer Basis,
+die nicht die publizierte sein wird, solange kein 1c-Lauf mit 250 Iterationen existiert.
+
+Verwandt: §2.46 (warum die Pax-Achse rauh ist), §2.47 (der Iterationsstandard), §2.51 (warum der
+erste Anlauf des Fächers verloren ging).
+
+### 2.53 Die Region hat keine Pendler-Doppelspitze — die Off-Peak-Prämisse der Modular-Literatur trägt hier nicht
+
+`trägt` · gemessen 2026-09-01, ausgelöst von der Frage, ob das flache Nachfrageprofil des
+Bediengebiets ein Flotten- oder ein Zuschnittsartefakt ist. Beides ist ausgeschlossen.
+
+**Drei Profile aus `lausitz-100pct.plans.xml.gz`, nach Wohnort geschnitten** (Index = % des
+Tagesmaximums, alle Modi, Abfahrtsstunde):
+
+| Std | Deutschland (1.195.422 P.) | Ring 25 km (290.982 P.) | Bediengebiet (41.848 P.) |
+|---|---|---|---|
+| 07 | **100** | 90 | 86 |
+| 10 | **66** | 70 | 79 |
+| 15 | 92 | **100** | **100** |
+| 19 | 49 | 52 | 54 |
+| 20 | 38 | 40 | 46 |
+
+Deutschland hat die klassische Doppelspitze mit Maximum um 07:00 und Mittagstal bei 66 %. Ring
+und Bediengebiet haben ihr Maximum um 15:00 und **kein Tal**. Auf 07:00 normiert ist der
+Gradient monoton — 15:00-Index 92 / 111 / 116 —, das Bediengebiet ist also das Extrem einer
+regionalen Eigenschaft, nicht ein Sonderfall für sich.
+
+**Der Zuschnitt ist intakt.** 41.848 Personen wohnen im Bediengebiet, der Lauf hat 41.874.
+Es wurde niemand weggeschnitten; die Flachheit ist nicht durch fehlende Auspendler erzeugt.
+
+**Es liegt nicht an fehlenden Arbeitsplätzen.** 72 % der Arbeits-/Bildungsaktivitäten der
+Bewohner liegen **im** Bediengebiet (18.190 gegen 7.062 außerhalb), dazu 11.149 von
+Einpendlern — das Gebiet ist netto Arbeitsort. Die Pendlerspitze existiert auch: Arbeits- und
+Bildungswege haben ihr Maximum um 06:00–07:00 und stellen dort 59 % bzw. 58 % aller Fahrten.
+
+**Es liegt auch nicht an Schichtarbeit oder an der Wegezweckmischung.** Der Anteil von
+Arbeit+Bildung an allen Wegen ist 19,7 % (Gebiet) / 23,0 % (Ring) / 22,6 % (Rest DE), und die
+*zeitliche Verteilung der Arbeitswege ist praktisch identisch* — 07:00 trägt 19,0 / 20,1 /
+20,4 % der jeweiligen Arbeitswege. Die Morgenspitzen-Komponente ist überall dieselbe.
+
+**Was übrig bleibt: die Pendlerspitze wird überstimmt, nicht vermisst.** Die Bewohner machen
+2,62 Wege/Person gegen 2,35–2,37 im Ring und im Rest DE, und der Überschuss ist diskretionär
+(1,41 „other"-Wege/Person gegen 1,18). Diese Wege haben ihr Maximum um 14–15 Uhr. Dazu passt
+die Altersstruktur — 41,5 % über 60, **19,8 % über 75** gegen ~15 % im Ring und im Rest DE —,
+aber die Kausalität ist nicht belegt, und für die Flachheit des demografisch unauffälligen
+Rings erklärt sie nichts. Der Restmechanismus ist offen.
+
+**Konsequenz für 1d.** Die Erzählung „Frachttouren in die Off-Peak-Zeiten legen" setzt eine
+Doppelspitze voraus, die hier nachweislich fehlt. Innerhalb des Zustellfensters ist
+08:00–09:00 mit Index 74 zwar die *günstigste* Tagesstunde (Belegung 86–95 von 120 gegen
+97–107 in 12–17 h) — der Dispatcher setzt die Fracht also nicht falsch. Aber der Frachtblock
+braucht dort 34–36 Fahrzeuge gleichzeitig, und das Loch ist 25–34 groß: **kein Tagesloch ist
+groß genug.** Deshalb war der Gleichzeitigkeits-Cap ein Nullergebnis — er verschiebt aus einem
+zu kleinen Loch in ein noch kleineres. Ausreichend große Löcher gibt es erst nach 19:00
+(frei 21–35 bis 20:00, danach 46–63; Nachfrageindex 54 / 46 / 39). Das ist eine
+Scope-Limitation der Fallstudie und gehört so ins Paper, nicht als Mangel: eine schrumpfende,
+alternde Region ohne Pendlerspitze ist genau das Umfeld, für das integrierte Bedienung
+vorgeschlagen wird.
+
+**Messvorbehalt.** Der Parser zählt nur Aktivitäten mit `end_time`, nicht die mit `max_dur` —
+109.447 statt ~144.000 Wegen der Bewohner, also ~24 % fehlen. Die fehlenden dürften
+mittags/nachmittags liegen (kurze Erledigungen), der Fehler zeichnet den Morgenpeak also eher
+zu stark. Für die Aussage „keine Doppelspitze" ist er konservativ. Alle drei Gruppen sind
+gleich behandelt.
+
+Verwandt: §2.26 (warum integrierte Arme keine Pro-Einheit-Kosten tragen), §2.47 (Iterationsstandard).
+
+---
+
+### 2.54 Die 9.000 DRT-Fahrten/Tag sind nicht der weggefallene Linien-ÖV
+
+`trägt` (Kernaussage) · gemessen 2026-09-01, ausgelöst von der Frage, ob die DRT-Nachfrage im
+Bediengebiet ein Artefakt der ÖV-Abschaltung ist. Sie ist es nicht.
+
+**Die Größenordnung.** Das Clip hat 41.937 Personen, davon 33.224 mit Wegen, 144.393 Wege/Tag
+(3,44 je Einwohner). Darauf: 7.992 DRT-Wege bei Flotte 80 (5,53 %), 9.036 bei Flotte 140.
+Die Rejection-Rate ist 1 % (f80) bzw. 0 % (f120) — die Zahl ist **kein Kapazitätsartefakt**,
+sondern das Nachfrage-Gleichgewicht.
+
+**Die Schiene zurückzuschalten ändert nichts.** `RailScheduleFilter` wirft Bus und Tram raus und
+behält die Schiene; beide Varianten sind bei identischer Flotte gelaufen:
+
+| Lauf (it150) | drt | pt |
+|---|---|---|
+| `fleet80_depot` (DRT-only) | 5,62 % | 0,78 % |
+| `fleet80_depot_railpt` (Schiene an) | 5,68 % | 0,81 % |
+
+**+0,06 pp.** Der Schienenanteil der ÖV-Abschaltung trägt die Nachfrage nicht.
+
+**Auch der Bus trägt sie nicht.** Jeder DRT-Weg des f80-Laufs, zurückverfolgt auf seinen Modus in
+den geclippten Eingangsplänen (Schlüssel `person` + `trip_number`):
+
+| Herkunft der 7.992 DRT-Wege | car | bike | ride | **pt** | walk |
+|---|---|---|---|---|---|
+| | 35,5 % | 29,5 % | 22,6 % | **10,6 %** | 1,8 % |
+
+Nur **849 Fahrten** waren im Input `pt`. Umgekehrt landen von den 12.258 zuordenbaren Ex-`pt`-Wegen
+43,4 % auf `walk`, 25,6 % auf `ride`, 13,7 % auf `car` und nur 6,9 % auf `drt`. Selbst eine
+vollständige Rückkehr des Busnetzes könnte höchstens ~10 % der DRT-Nachfrage erklären.
+
+**Kein Fernwege-Effekt.** DRT-Wege haben Median 4,58 km, p90 7,72 km, Maximum 16,96 km (gegen
+car-Median 4,23 km bei Maximum 439 km). Das DRT frisst keine Wege, für die es nicht gedacht ist.
+
+⚠️ **Messvorbehalt — die Herkunftszerlegung ist kompositorisch, nicht kausal.** Die Eingangspläne
+sind `plans-initial` (`score="0.0"`, ein Plan je Person), also kein konvergiertes Basis-Gleichgewicht.
+Der Lauf driftet auch fern vom DRT: der Radanteil fällt von 19,2 % (Input) auf 6,9 %. „29,5 % der
+DRT-Fahrten kamen vom Rad" heißt daher **nicht**, dass das DRT sie geholt hat. Die entscheidende
+Zelle — derselbe Clip, Bus und Schiene an, kein DRT — ist nicht gefahren (→ BACKLOG). Der
+Schienenvergleich oben ist davon nicht betroffen: dort stehen zwei echte Läufe gegeneinander.
+
+**Konsequenz fürs Paper.** Der Sprinti-Vergleich (Region Hannover) ist der falsche Maßstab: Sprinti
+ist eine *Ergänzung* zu einem intakten Bus- und Bahnnetz, unser DRT ist dessen *Ersatz*. Pro Kopf
+0,19–0,22 gegen ~0,009 Fahrten/Einwohner/Tag ist deshalb kein Plausibilitätsdefekt, sondern der
+Designunterschied. Die ehrliche Referenzgröße ist die Fahrgastleistung des ersetzten Busnetzes.
+Die verbleibende offene Frage ist nicht der ÖV, sondern der vom ÖV **kopierte DRT-ASC** (→ BACKLOG).
+
+**Reproduktion.** `hagrid-matsim-output/DRT_BASELINE_13052025_fleet80_depot{,_railpt}_iter150_jsprit100/`
+(`*.modestats.csv`, `*.drt_customer_stats_drt.csv`, `*.output_trips.csv.gz`) gegen
+`hagrid-output/DRT_BASELINE_13052025_fleet80_depot/*_drt_population.xml.gz`.
+
+Verwandt: §2.53 (das flache Nachfrageprofil derselben Bevölkerung), §2.47 (Iterationsstandard).
+
+---
+
+### 2.55 Der Strom-Emissionsfaktor steht auf einer anderen Systemgrenze als der Diesel — zugunsten BEV
+
+`trägt` · gemessen 2026-09-03. **Defekt, nicht Limitation.** Betrifft jede BEV-Zahl im Dokument.
+
+Die Systemgrenze ist Well-to-Wheel für **beide** Antriebe (§1.4). Diesel trägt 74,22 g CO₂/MJ TTW
+plus 18,9 g CO₂e/MJ Vorkette (JEC WTW v5, B7), gemessen über alle Arme **94,30 g CO₂e/MJ**
+(die Differenz zu 93,12 sind CH₄ und N₂O über GWP100).
+
+`grid_co2e_g_per_mj` = 105,6 entspricht 380 g/kWh, also dem **UBA-Strommix 2023** (379 g/kWh;
+2024: 353, 2025 vorläufig: 344). Das ist die **direkte** Kennzahl: Verbrennung im Kraftwerk, ohne
+Brennstoffvorkette, ohne Methanschlupf, ohne Netzverluste.
+
+Beim Strom ist die Kraftwerksverbrennung aber **nicht** das Gegenstück zum Diesel-TTW — im
+Fahrzeug verbrennt nichts, die Kraftwerksemission gehört auf die WTT-Seite. Es steht damit eine
+*unvollständige* Strom-WTT gegen eine *vollständige* Diesel-WTW. Die Asymmetrie begünstigt das
+**BEV**, nicht den Diesel.
+
+**Korrekter Wert, gefunden 2026-09-03** — UBA Climate Change **16/2026**, Icha & Lauf,
+„Entwicklung der spezifischen Treibhausgas-Emissionen des deutschen Strommix in den Jahren
+1990–2025", Umweltbundesamt Dessau-Roßlau, März 2026, DOI 10.60810/openumwelt-8399,
+**Tabelle 3** (Datenstand Februar 2026):
+
+| Indikator, g/kWh | 2022 | 2023 | 2024* | 2025** |
+|---|---:|---:|---:|---:|
+| direkter CO₂-Faktor | 433 | **379** | 353 | 344 |
+| direkte THG ohne Vorketten | 441 | 387 | 361 | 352 |
+| **THG mit Vorketten** | 503 | **442** | 414 | **406** |
+| davon Vorketten | 62 | 56 | 53 | 54 |
+
+\* vorläufig · \*\* geschätzt. Unsere 105,6 g/MJ = 380 g/kWh sind die Zeile *direkter CO₂-Faktor
+2023* (379). Der grenzrichtige Wert derselben Quelle für dasselbe Jahr ist **442** — das Modell
+liegt **16,3 % zu niedrig**.
+
+Zwei Präzisierungen aus dem Methodenteil des Reports (§2.7–2.9 dort):
+
+- Die Faktoren beziehen sich auf **Stromverbrauch**, und `inländischer Stromverbrauch =
+  Bruttostromerzeugung − Kraftwerkseigenverbrauch − Leitungsverluste − Pumparbeit −
+  Stromhandelssaldo`. **Netzverluste sind bereits enthalten**; ergänzt werden muss nur der
+  fahrzeugseitige Ladeverlust.
+- Die Zeile „THG mit Vorketten" enthält CH₄ und N₂O über GWP100 — dieselbe Bilanzierung wie
+  unsere Dieselseite.
+
+**Wirkung** (2025 mit Vorkette = 112,78 g/MJ, plus Ladeverluste × 1/0,93):
+
+| Arm | BEV alt (105,6) | BEV neu | Δ BEV | gg. Diesel alt → neu |
+|---|---:|---:|---:|---|
+| Baseline `basew21_it250` | 4.983,5 kg | 5.722,9 kg | +14,8 % | −65,2 % → **−60,1 %** |
+| 1d `dep7_f135_it250` | 4.806,6 kg | 5.519,7 kg | +14,8 % | −65,2 % → **−60,0 %** |
+| 1c `f140_chi900` | 4.897,3 kg | 5.623,9 kg | +14,8 % | −65,1 % → **−59,9 %** |
+
+Jahrgang und Grenze wirken gegenläufig und heben sich **nicht** auf: die Aktualisierung
+2023 → 2025 zieht um −8,1 % nach unten, die Vorkette drückt um +17,7 % nach oben, netto +6,8 %
+auf den Faktor und mit den Ladeverlusten +14,8 % auf das Ergebnis. Nur den Jahrgang zu
+aktualisieren hätte die Zahl **verbessert** und den Defekt stehengelassen.
+
+**Zerlegung des BEV-Vorteils** (1d, korrigiert):
+
+```
+Effizienz Antrieb    3,214 x   (146.290 MJ Diesel gegen 45.517 MJ Strom)
+Intensitaet je MJ    0,836 x   (94,30 Diesel-WTW gegen 112,78 Netz)
+Ladeverluste         0,930 x
+                     2,499 x   =  -60,0 %
+```
+
+Der Strom ist je MJ **20 % schmutziger als Diesel-WTW**. Der gesamte BEV-Vorteil kommt aus dem
+Antriebsstrang; Intensität und Ladeverluste zusammen fressen ein Fünftel davon wieder auf. Das
+ist der Grund, warum die Netzintensität nicht weggelassen werden darf: sie ist der einzige Term,
+in dem das Vorzeichen der Intensitätskomponente wechseln kann.
+
+**Ladeverluste: 7 %** (Entscheidung User 2026-09-03). ADAC misst an der 11-kW-Wallbox über fünf
+Modelle 5,1–7,0 % (Mercedes CLA 350 EQ 6,9 · Renault R5 E-Tech 5,1 · Tesla Model Y 6,1 · Volvo
+EX30 7,0 · VW ID.7 6,9). Der Steckdosenfall (12,7–24,2 %) ist Endverbraucherladen und nicht
+unser Depotfall. Die EMEP-BEV-Kurve ist Fahrzeugverbrauch, die Verluste liegen davor —
+netzseitige Energie also × 1/0,93, im 1d-Arm **+7,53 %**.
+
+**BEV-Kaltverbrauch bleibt offen, aber die Struktur steht.** Es sind zwei physikalisch
+verschiedene Effekte, und sie unterscheiden sich um mehr als den Faktor 20:
+
+| | Struktur | Größe (1d) |
+|---|---|---:|
+| Warmlauf (Batterie/Antrieb, erste km) | distanzbasiert, wie der Diesel-Kaltstart: `n × cold_km × EC × (Q−1)` bei n = 251 Starts, cold_km = 3,50 km | +0,52 / +1,21 / +1,89 % bei Q = 1,3 / 1,7 / 2,1 |
+| Dauerheizung (Kabine) | zeitbasiert, `P × Betriebsstunden` über 1.300 Fahr- bzw. 1.719 aktive Stunden | +10,3 % (1 kW) · +20,6 % (2 kW) · +30,9 % (3 kW) |
+
+Die verbreitete Faustzahl „bis zu 70 % Mehrverbrauch auf den ersten 5 km" beschreibt **nur den
+Warmlauf** und ist damit der kleinere der beiden Posten; als pauschaler Tagesaufschlag angesetzt
+wäre sie um das 35- bis 70-fache zu groß. Warum die Dauerheizung hier so schwer wiegt: bei
+247,9 Wh/km und 37 km/h Mittelgeschwindigkeit liegt die Traktionsleistung bei **9,2 kW**, ein
+2-kW-Heizer sind davon 22 % — die Flotte ist wegen langsamer Fahrt und langer Betriebszeit
+ungewöhnlich nebenverbraucherexponiert. Kalibrieranker: ADAC-Winterreichweitentests liegen
+typisch bei −20 bis −30 % Reichweite, die 2-kW-Rechnung bei −20,6 %.
+
+**Quellenwahl: UBA** (Entscheidung User 2026-09-03), nicht JEC WTW v5. Begründung: JEC hätte
+Quellenkonsistenz mit der Diesel-Vorkette gebracht, liefert aber EU-Mix; bei einer deutschen
+Fallstudie wiegt die geografische Auflösung schwerer, weil der deutsche Mix stark vom
+EU-Schnitt abweicht. Der Grenzzuschnitt ist im `source`-String auszuweisen, weil die Diesel-
+und die Stromseite damit aus zwei Quellen kommen.
+
+**Zum unteren Sweep-Punkt: „Klimaneutralität 2045" ist als Stromfaktor nicht zitierbar**
+(geprüft 2026-09-03). Weder die UBA-Szenarienseite noch der Projektionsbericht 2026 führen einen
+g/kWh-Wert für das Zieljahr. Zusätzlich wäre das Label angreifbar: UBAs eigene Projektion 2026
+weist für 2045 **212,5 Mt CO₂e Restemissionen brutto** aus, d. h. die Quelle projiziert die
+Klimaneutralität selbst nicht. Der methodisch saubere Weg wären die per-Technologie-
+Lebenszyklusfaktoren aus UBA CC **11/2026** „Emissionsbilanz erneuerbarer Energieträger"
+(Lauf, Memmler & Schneider, Januar 2026 — derselbe Report, aus dem CC 16/2026 seine Vorketten
+baut; PV §4.1.3, Wind onshore §4.2.3, offshore §4.3.3, Wasserkraft §4.4.3, PV-Faktoren aus
+Sphera/Fraunhofer IBP, Hengstler et al. 2021), gewichtet mit einer 2045-Mixannahme — die
+Mixannahme wäre dann aber selbst wieder ein Szenario.
+
+Gewählter Ersatz: die **Vorketten-Zeile derselben Tabelle 3**, 54 g/kWh (2025), als *Schranke*
+etikettiert („direkte Verbrennungsemissionen null, Vorketten auf heutigem Niveau"), nicht als
+Szenario. ⚠️ Die 54 g/kWh sind die Vorkette eines Mixes, der bereits ~55 % erneuerbar ist; ihre
+Zusammensetzung verschiebt sich mit dem Wegfall der fossilen Förderkette, und ob der reine
+EE-Wert darüber oder darunter liegt, ist aus CC 11/2026 auszulesen und hier **nicht** geprüft.
+
+Resultierender Sweep (× 1/0,93 Ladeverluste):
+
+| Punkt | g/kWh | g/MJ | Baseline | 1d | 1c |
+|---|---:|---:|---:|---:|---:|
+| `high` 2023 endgültig | 442 | 122,78 | 6.230,3 (−57 %) | 6.009,1 (−56 %) | 6.122,6 (−56 %) |
+| `mid` 2025 geschätzt | 406 | 112,78 | 5.722,9 (−60 %) | 5.519,7 (−60 %) | 5.623,9 (−60 %) |
+| `low` nur Vorketten | 54 | 15,00 | 761,2 (−95 %) | 734,1 (−95 %) | 748,0 (−95 %) |
+
+**Die Spannweite −56 % bis −95 % ist der Befund**, nicht ein Nebenergebnis: der Stromfaktor
+dominiert die BEV-Bilanz vollständig. Ein Einzelwert hätte das verdeckt — dieselbe Lehre wie beim
+verworfenen 250-km-Einzelgate (§1.4-Kontext) und beim χ-Raster (§2.46).
+
+Verwandt: §1.4 (Systemgrenze WTW), §4.4 (volle LCA bewusst ausgeklammert). Reproduktion:
+`hagrid-matsim-output/DRT_MODULAR_13052025_d1d_dep7_f135_it250_iter250_jsprit100/analysis/`
+(`kpis_long.csv`, `kpi_emissions_vehicles.csv`), Parameter in
+`analysis/kpi/data/emep_supplement.csv`.
+
+---
+
+### 2.56 EV-Reichweiten aus belegten Fahrzeugen — und die erste externe Gegenprobe des BEV-Verbrauchskanals
+
+`trägt` · gemessen 2026-09-03. Ersetzt die unbelegten Schwellen 150/200/250 km.
+
+Die drei alten `ev_range_km_*` trugen als einzige Zeilen von `emep_supplement.csv` **keine
+Quelle**, nur ein Plausibilitätslabel („pessimistic/mid/optimistic real-world range, e-LCV").
+Bei unserem eigenen gemessenen BEV-Verbrauch von **247,9 Wh/km** entsprachen sie 37 / 50 /
+62 kWh nutzbarer Batterie — deutlich unter Markt.
+
+Neue Ableitung: **nutzbare Kapazität eines real existierenden Fahrzeugs ÷ unserem gemessenen
+Verbrauch.** Nicht die Herstellerreichweite, weil die WLTP-basiert ist und nicht zu unserem
+Fahrprofil (37 km/h Mittelgeschwindigkeit) passt.
+
+| Fahrzeug | nutzbar | Schwelle | Herstellerangabe | impliziert |
+|---|---:|---:|---:|---:|
+| Ford Tourneo Tourer | 70 kWh | **282 km** | 370 km (WLTP) | 189 Wh/km (−24 %) |
+| VW ID.Buzz, 6-Sitzer | 86 kWh | **347 km** | — | — |
+| Mercedes eSprinter | 113 kWh | **456 km** | 440 km (ADAC) | **257 Wh/km (+3,5 %)** |
+
+**Der eSprinter-Wert ist die erste externe Validierung des BEV-EC-Kanals überhaupt**: 257 gegen
+unsere 247,9 Wh/km, 3,5 % Abweichung — eine unabhängige Datenblattangabe gegen die
+guidebook-interne BEV-Kurve am Betriebspunkt unserer Läufe. Der Ford-WLTP-Wert liegt dagegen
+24 % daneben, was die Entscheidung gegen WLTP nachträglich stützt.
+
+Gemessene Überschreitung (Anteil der **Fahrzeuge**, deren längster Fahrblock die Schwelle reißt):
+
+| | 282 km (70 kWh) | 347 km (86 kWh) | 456 km (113 kWh) |
+|---|---|---|---|
+| **1d f135_it250**, n = 135 | | | |
+| 20-min-Fenster | 23,7 % (32 Fz) | 14,1 % (19 Fz) | **2,2 % (3 Fz)** |
+| 40-min-Fenster | 42,2 % (57 Fz) | 28,1 % (38 Fz) | 5,9 % (8 Fz) |
+| 60-min-Fenster | 54,1 % (73 Fz) | 41,5 % (56 Fz) | 12,6 % (17 Fz) |
+| **Baseline it250**, n = 120 | | | |
+| 20-min-Fenster | 45,8 % (55 Fz) | 28,3 % (34 Fz) | 5,0 % (6 Fz) |
+| 40-min-Fenster | 66,7 % (80 Fz) | 46,7 % (56 Fz) | 16,7 % (20 Fz) |
+| 60-min-Fenster | 74,2 % (89 Fz) | 61,7 % (74 Fz) | 31,7 % (38 Fz) |
+
+Die Frachtseite bleibt bei **0 % an allen drei Schwellen** (längste Tour 158,8 km). Dass dort
+alles null ist, ist hier der Befund und nicht ein Nullresultat aus zu hohen Schwellen — die
+Trennschärfe sitzt jetzt auf dem Fahrblock-Kanal, siehe §3.12.
+
+Reproduktion: `analysis/kpi/data/emep_supplement.csv` (`ev_range_km_*`), Zeilen
+`drive_block_exceed_<w>_<thr>` in `kpis_long.csv` der beiden it250-Läufe.
+
+---
+
+### 2.57 χ=900 ist der Betriebspunkt: volle Zustellung, deterministisch, ohne messbaren Pax-Preis
+
+`trägt` · Seed-Fächer gefahren 2026-09-02/03, n=5 gegen n=5. **Ergebnis: χ=900 statt χ=600.**
+
+Nach dem χ=600-Fächer (§2.52) blieb die Frage, was die 10-Minuten-Schranke eigentlich kauft. Bei
+χ=600 bleiben 268 Pakete liegen, bei χ=900 keines — der Pax-Unterschied sah nach nichts aus, war
+aber n=1. Also derselbe Fächer auf χ=900: Seeds 1338–1341 auf den Anker 1337.
+
+| Seed | Pax-Fahrten | per Fahrzeug | nicht zugestellt | Quote | Fahrzeug-km |
+|---|---|---|---|---|---|
+| 1337 (Anker) | 9.164 | 5.946 | 0 | 0,997521 | 51.409 |
+| 1338 | 8.970 | 5.946 | 0 | 0,997521 | 51.528 |
+| 1339 | 8.954 | 5.946 | 0 | 0,997521 | 51.270 |
+| 1340 | 9.219 | 5.946 | 0 | 0,997521 | 51.639 |
+| 1341 | 8.999 | 5.946 | 0 | 0,997521 | 50.580 |
+
+Beide Fächer gegeneinander, zweiseitiger t-Test bei df=8 (kritisch |t| = 2,31):
+
+| | χ=600 | χ=900 | Δ | t | |
+|---|---|---|---|---|---|
+| nicht zugestellt | 331,2 ± 63,8 | **0,0 ± 0,0** | −331 | **11,60** | trennbar |
+| Pax-Fahrten | 9.145,4 ± 130,1 | 9.061,2 ± 121,6 | −84 | 1,06 | nicht trennbar |
+| Fahrzeug-km | 51.596 ± 674 | 51.285 ± 417 | −311 | 0,88 | nicht trennbar |
+| Wartezeit ⌀ | 697,0 ± 7,7 s | 687,6 ± 4,0 s | −9,4 s | 2,43 | grenzwertig |
+
+Die χ=900-Spannweite (8.954–9.219) liegt **vollständig innerhalb** der χ=600-Spannweite
+(8.928–9.245); beide enthalten das Iso-Service-Ziel 9.076.
+
+**Der tragende Befund ist die Determiniertheit der Frachtseite.** Bei χ=900 stehen in allen fünf
+Läufen 5.946 Pakete per Fahrzeug, 0 nicht zugestellt und die Quote auf sechs Dezimalen gleich —
+**sd exakt null**. Bei χ=600 war `parcels_undelivered` mit cv 19,3 % die volatilste Größe im
+Modell. Damit ist die Volatilität aus §2.52 erklärt: sie ist kein Modellrauschen, sondern ein
+**Artefakt des Betriebs an der Schranke**. Wenn χ bindet, entscheidet der Wettlauf um paketleere
+Fahrzeuge (§2.46), welche Segmente durchkommen, und der hängt an der Mobsim-Ziehung; oberhalb der
+Schranke gibt es keinen Wettlauf. Dasselbe Muster schwächer in den Fahrzeug-km (sd 674 → 417).
+
+⚠️ **Zur grenzwertigen Wartezeit.** Sie ist bei χ=900 **kürzer**, also mit *mehr* Paketen besser —
+Gegenrichtung zur Erwartung. Drei Gründe, daraus nichts zu bauen: t=2,43 gegen kritisch 2,31 ist
+knapp; es ist einer von vier Tests, bei vier Tests liegt die Wahrscheinlichkeit eines
+Fehlalarms bei ~19 %; und χ=900 hat gleichzeitig weniger Fahrgäste (−84), was eine kürzere
+Wartezeit ohne jeden Paketbezug erklärt. Menge und Service sind hier nicht identifizierbar
+getrennt.
+
+**Schluss.** χ=900 stellt jedes Paket zu, das eine gültige Anfrage wurde, tut das
+seed-unabhängig, und kostet auf der Fahrgastseite nichts, was mit n=5 messbar wäre. Der
+Punktschätzer −84 Fahrten (−0,9 %) ist die Obergrenze des Preises, nicht sein Nachweis.
+
+**Was von der Lücke zu 100 % bleibt**, und beides hat mit χ nichts zu tun: die **91 Pakete im
+Walk-Fallback** (§2.50, flotten- und χ-invariant) und die **15 Hoftor-Verwürfe** (Modellartefakt,
+im Preprocessing behebbar). „Zu 100 % per Fahrzeug zugestellt“ ist bei χ=900 also 98,25 %.
+
+Verwandt: §2.46 (der Wettlauf), §2.50 (die zwei anderen Kanäle), §2.52 (der χ=600-Fächer),
+§3.13 (der zurückgezogene Knick).
+
+---
+
+### 2.58 Der Dispositions-Umschlag war 16 Minuten zu optimistisch — und hat den ersten Budget-Arm getötet
+
+**Der Befund.** Der Modular-Dispatcher entscheidet „kann diese Tour noch fertig werden?" mit
+`now + 2·RETOOLING_S + plannedDuration > latestEnd`. Der Splicer, der die Tour tatsächlich in
+einen Fahrzeugplan einhängt, entscheidet mit der **real gerouteten** Fertigstellung gegen
+`min(latestEnd, vehicle.getServiceEndTime())`. Das sind zwei verschiedene Größen, und die
+Differenz ist gemessen worden — Anker `d1d_dep7_f130_it250`, it.250, alle 46 Dispatch-Events:
+
+| | min | p50 | p90 | max |
+|---|---|---|---|---|
+| `routedDurationS − plannedDurationS` | 912 s | 1.783 s | 2.475 s | 3.243 s |
+| **Fehler des Umschlags** (= davon − 2·RETOOLING_S) | 72 s | **943 s** | **1.635 s** | **2.403 s** |
+
+Der Umschlag ist also im Median **~16 Minuten**, im p90 **~27 Minuten** und schlimmstenfalls
+**40 Minuten** zu optimistisch. Drei Ursachen, alle im Code belegt
+(`ModularTourScheduler:121` gegen `ModularTourDispatcher:269`):
+
+1. **Die Anfahrt Fahrzeug→Depot fehlt.** jsprit plant ab Depot; keine Planzeitgröße enthält den
+   Weg dorthin. Das war im Klassen-Javadoc qualitativ notiert („guaranteed optimistic in that one
+   respect") — nur nie beziffert.
+2. **Auto-Netz-Freifluss statt DRT-Netz mit Stau.**
+3. **`vehicle.getServiceEndTime()` wurde ignoriert**, obwohl der Splicer das Minimum aus beidem
+   nimmt.
+
+**Warum das erst jetzt weh tat.** Unter dem reinen θ-Gate gehen alle 46 Touren um ~07:16 raus, mit
+~10 h Vorlauf gegen eine ~3,8-h-Kette. Der Fehler ist dort nicht bindend — der Anker verfällt
+**null** Touren. Erst der Look-ahead-Budget-Arm hält Touren bis in die Nähe ihrer Frist zurück,
+und dort ist die Frist falsch.
+
+**Wie es sich äußerte.** `d1d_f130_bud` wurde bei Iteration 130/250 abgebrochen. Verfallene Touren
+je Iteration: 0 bis it.55, dann 14 (it.80), 20 (it.100), 24 (it.120), **33 (it.127)** — von 46.
+Im Log steht die Ursache als Dreierkette innerhalb derselben Sekunde: Budget lehnt ab →
+Verfallshülle feuert ihren „letzte Gelegenheit"-Override → **der Splicer lehnt genau diesen
+Override ab** → nächster Simstep: `expired pending`. Override-Zahl ≈ Splicer-Absagen ≈ Verfälle,
+in jeder Iteration. Der Override kam systematisch zu spät, weil er gegen eine Frist feuerte, die
+schon vorbei war.
+
+**Und es verschlimmerte sich selbst.** Fahrten je Iteration gegen den Anker, gleicher
+Iterationsindex: +63 (it.60), +382 (it.80), +437 (it.100), +486 (it.120). Rückkopplung: Fracht
+blockiert → Pax-Service besser → mehr Modenwahl auf DRT → höhere Pax-Last in N−1 → Budget
+schrumpft → mehr Fracht blockiert. Der selbstreferenzielle Regler konvergiert, aber gegen
+„Fracht verliert". Die +460 bis +520 Fahrten sind **kein Ergebnis**, sie sind der Gegenwert für
+zwei Drittel nicht ausgeführter Touren.
+
+**Konsequenz für die Auswertung.** `d1d_f130_bud` liefert **keine** zitierbare Zahl. Was daraus
+bleibt, ist der Mechanismus — und die Warnung, dass ein Gate, das Aufträge zurückhält, eine
+ehrliche Frist braucht, sonst verwandelt es Zurückhalten in Verlieren.
+
+**Was geändert wurde** (Plan `2026-09-05-honest-envelope-and-urgency-ramp`):
+
+- **Ehrliche Frist.** Die Kettendauer wird selbstreferenziell **gelernt** — `FreightChainProfile`
+  merkt sich je Tour das längste real geroutete `routedDurationS` der letzten k Iterationen
+  (max, nicht Mittel: zu klein verliert Pakete, zu groß kostet einen früheren Dispatch). Für eine
+  noch nie disponierte Tour dient `ModularTourScheduler.minimumChainDurationS` — eine bewiesene
+  Freifluss-Untergrenze auf dem **DRT**-Netz über die echte Stoppfolge inklusive beider
+  Retoolings — mal `CHAIN_BOOTSTRAP_FACTOR = 1,25`. Dieser Faktor ist die **einzige geratene
+  Zahl** des Fixes; er bindet praktisch nur in Iteration 0 und wird über die neuen CSV-Zeilen
+  `chain_ratio_p90` / `chain_ratio_max` durch Messung ersetzt.
+- **`min(latestEnd, max serviceEnd)`** als Kappe, Maximum über die Flotte: die Verfallsprüfung
+  läuft, bevor ein Fahrzeug gewählt ist, und eine Tour ist erst tot, wenn *kein* Fahrzeug sie
+  mehr könnte.
+- **Rampe statt Klippe** (Vorschlag des Nutzers, „Strafe für verfallende Touren"). Statt eines
+  binären Overrides in der letzten Sekunde wächst eine Dringlichkeit über
+  `budgetUrgencyLeadS = 3600 s` Restschlupf von 0 auf die volle Reserve:
+  `projFreight + 1 ≤ budget(bin) + urgency`, `urgency = (1 − slack/lead)·h·fleet`. Der Endpunkt
+  ist genau die Reserve, nicht eine gewählte Skala — bei voller Rampe liest das Gate
+  `projFreight + 1 ≤ fleet − passengerBusy`, also „nimm sie, wenn wirklich ein Fahrzeug frei ist".
+  Damit sinkt die Genauigkeitsanforderung an die Frist von Minuten auf Größenordnung.
+
+**Zwei Eigenschaften, die man kennen muss.** (a) Bei `headroom = 0` ist die Rampe **inert** — sie
+schaltet die Reserve frei, und es gibt keine. Nur der terminale Zweig bei Schlupf 0 kann dann noch
+tragen. Das ist Absicht und per Test festgenagelt, damit ein künftiger Headroom-Sweep bis 0 nicht
+als „Rampe kaputt" gelesen wird. (b) Die Reihenfolge der Pending-Liste bleibt der C7-Interleave;
+die Ordnung nach Dringlichkeit entsteht über die **Zulassung**, nicht über Sortieren — eine
+weniger dringende Tour weiter vorn wird abgelehnt, wo eine dringendere weiter hinten durchkommt.
+
+**Offen und ausdrücklich nicht gemessen.** Die ehrliche Frist gilt **unbedingt**, nicht nur unter
+`budgetMode=selfref` — sonst unterschiede sich der Budget-Arm in zwei Dingen zugleich von jedem
+Bestandsarm und wäre nie einfaktoriell vergleichbar. Dass sie auf dem Anker **inert** ist, ist per
+Test gepinnt (großer Schlupf ⇒ gleiche Entscheidung), aber der Anker wurde **nicht neu gerechnet**.
+Das ist eine begründete Annahme, keine Messung.
+
+**ERGEBNIS DES FIXES (`d1d_f130_bud2`, 250 Iterationen, 06.09.2026) — Gate 1 erneut durchgefallen.**
+30 von 46 Touren disponiert, **16 verfallen**, **3.639 von 6.052 Paketen** zugestellt. Die
+scheinbaren +387 Fahrten gegenüber dem Anker sind mit 2.413 nicht zugestellten Paketen bezahlt und
+sind kein Ergebnis. Die Diagnose zerfällt in drei Teile:
+
+- **Fix 1 hat gewirkt.** `tours_rejected_at_splice = 0` (im getöteten Arm ≈ Verfallszahl). Die
+  Dreierkette Override → Splicer-Absage → Verfall existiert nicht mehr. Die ehrliche Frist ist
+  richtig, und sie ist der Teil dieses Plans, der bleibt.
+- **Fix 2 trägt nicht, und der terminale Zweig ist unerreichbar.** `budget_overrides_expiry = 0`:
+  der Unendlich-Zweig bei Schlupf ≤ 0 hat kein einziges Mal gefeuert. Die gelernte Kettendauer ist
+  eine Fließkommazahl, die Frist liegt damit zwischen zwei 1-s-Ticks — bei `now` davor greift die
+  Rampe (Endpunkt `h*fleet` = 19,5 Fahrzeuge, zu wenig), bei `now` danach hat die Verfallsprüfung
+  die Tour bereits entfernt. Das ist **wörtlich der Fall, vor dem das gelöschte
+  `isLastDispatchOpportunity` in seinem Javadoc warnte**; die Rampe ersetzt diesen Wächter nicht.
+  Die Rampe selbst ist nicht inert (`budget_urgency_admits = 10`), aber chancenlos gegen 776.917
+  abgelehnte Versuche.
+- **Der Regler zielt richtig — die Tourlänge sperrt ihn aus.** Gemessen an den
+  Task-Time-Profilen von it.250 verschiebt das Budget die Fracht genau dorthin, wofür es gebaut
+  wurde: Mittagsfracht von 33,0 auf 14,0 Fahrzeuge (10:00), dafür **10,0 / 10,0 / 8,0 Fahrzeuge um
+  18/19/20 Uhr, wo der Anker exakt null hat**. Der Dispatcher ist also weniger gierig geworden und
+  nutzt das Abendtal. Er kommt nur nicht weit genug: alle 16 verfallenen Touren sterben zwischen
+  **17:00 und 17:41**, an der letzten Dispatchgelegenheit. Eine 3,5-h-Tour hat eine reale Kette von
+  ~4,0 h und muss deshalb um 17:00 starten, um `latestEnd` 21:00 zu halten — und um 17:00 sind nur
+  15,1 Fahrzeuge frei, mitten in der **Tageshöchstlast** (116,2 Pax-belegt um 16:00). Das Tal
+  beginnt um 18:00, eine Stunde nach der Frist.
+
+**Nebenbefund, der eine geratene Zahl ersetzt.** `chain_ratio_p90 = 1,094`, `chain_ratio_max =
+1,137` über 30 Dispatches: `CHAIN_BOOTSTRAP_FACTOR = 1,25` überschätzt das Verhältnis von realer
+gerouteter Kette zur Freifluss-Untergrenze; gemessen sind ~1,15. Der Faktor bindet nur vor der
+ersten Beobachtung einer Tour, also praktisch nur in Iteration 0 — die Überschätzung war folgenlos.
+
+**Instrumentenfehler, protokolliert.** Der Laufwächter zählte „expired pending“ in der
+`logfileWarningsErrors.log`; die WARNs des Dispatchers landen in der Konsolen-Log. Zwei
+Statusmeldungen lang wurden deshalb „0 Verfälle“ berichtet, während der Arm seit Iteration 63
+Touren verlor. Ein Wächter, dessen Fehlerzweig nicht greift, meldet Stille als Erfolg — dieselbe
+Lehre wie 2026-08, nur mit der falschen Datei statt dem verworfenen stderr.
+
+**ZURÜCKGENOMMEN, noch am selben Tag: „die Region hat kein Tal“.** Der erste Schluss aus diesem
+Arm lautete, der Look-ahead-Regler könne hier prinzipiell nicht greifen, weil §2.53 keine ruhigen
+Bins lässt. Das ist eine Überdehnung von §2.53, die über die fehlende Pendler-*Doppelspitze*
+spricht, nicht über eine flache Tageslinie. Die gemessene Kurve des Ankers zeigt ein **großes**
+Abendtal — freie Fahrzeuge 30,4 / 37,9 / 38,4 / 51,8 um 18/19/20/21 Uhr gegen 9,6 um 10 Uhr. Das
+Tal ist da; es liegt nur hinter der 21:00-Zustellgrenze, sobald die Kette 4 h lang ist. Die Sperre
+ist die **Tourlänge gegen das Zustelltagsende**, nicht die Nachfragestruktur der Region.
+
+Daraus folgt die noch nie gelaufene Zelle: **kurze Touren PLUS Budget**. Der 2,0-h-Arm
+(`d1d_dep7_f130_dur20_it250`: 81 Touren, alle disponiert, alle 6.052 Pakete, aber −238 Fahrten)
+scheiterte daran, dass er ohne Regler wieder alle 81 Touren um 07:16 rauswarf. Das Budget allein
+scheiterte daran, dass es ans Tal nicht heranreicht. Zusammen verschiebt die kurze Tour die letzte
+Dispatchgelegenheit von 17:00 auf ~18:35, also **in** das Tal hinein statt eine Stunde davor.
+
+Verwandt: §2.18 (Splicer-Absage ≠ Verfall — hier sind die beiden verkettet), §2.47 (Konvergenz),
+§2.51 (der Pfadlängen-Tod eines fertigen Laufs), §2.53 (die Doppelspitze — und wofür sie NICHT
+herhalten darf).
+
+---
+
+### 2.59 Die DRT-Threadzahl verändert das Ergebnis — und sie steht in einer ungetrackten Datei
+
+`trägt` · gefunden 2026-09-06 beim Auswerten des Baseline-Paars b120rgs.
+
+**Der Befund.** `multiModeDrt/drt/numberOfThreads` ist ergebnisrelevant. Zwei Baseline-Läufe
+auf dem Dev, gleicher Seed 1337, gleiche Population (SHA256 byteidentisch), gleiche 150
+Iterationen, unterscheiden sich in **genau diesem einen** Parameter — und liefern 9.076
+gegen 8.973 Fahrten, also **−103**. Das ist größer als der Iterationseffekt selbst (§3.14,
++67) und liegt in derselben Größenordnung wie ein Seed-Wechsel (sd 130, §2.52).
+
+Belegt mit einem vollständigen Parameter-Diff über alle Config-Pfade, eine Extraktion für
+alle Dateien (Pfad-Strings normalisiert, Run-Tag herausgerechnet):
+
+| Vergleich | Pfade | abweichend | Fahrten |
+|---|---|---|---|
+| dev b120rg@150 vs. dev basew21@150 | 310 | 4 — drei kosmetische Pfadstrings, **einer real: drt-Threads 12 vs. 14** | 9.076 vs. 8.973 |
+| dev b120rg@150 vs. **sim** b120rgs@150 | 310 | **0** | 9.076 vs. **9.076** |
+| sim b120rgs@150 vs. @250 | 310 | 2 — `lastIteration` + Ausgabepfad | 9.076 vs. 9.143 |
+
+Die mittlere Zeile ist der Grund, warum die obere als Kausalaussage trägt und nicht als eine
+Ziehung von zweien: **bei identischer Config ist das Modell hier maschinenübergreifend exakt
+deterministisch** — dieselbe ganze Zahl auf zwei verschiedenen Rechnern. Wo Gleiches Gleiches
+erzeugt, ist ein Unterschied von 103 Fahrten dem einen abweichenden Parameter zuzurechnen.
+
+**Woher die 12 kommt.** `DrtConfigGroup` setzt `numberOfThreads` per Default auf
+`Runtime.getRuntime().availableProcessors()` (im Bytecode von `drt-2025.0-2025w13.jar`
+nachgesehen); `global.numberOfThreads` wird dort nur für eine **Warnung** gelesen und
+propagiert NICHT. Auf 12 kommt der Wert nur, weil `vmargs_lausitz.txt` die JVM mit
+`-XX:ActiveProcessorCount=12` deckelt — deshalb meldet auch die 24-Kern-Maschine 12.
+
+⚠️ **Diese Datei ist ungetrackt und auf dem Dev gar nicht vorhanden.** Ein ergebnisänderndes
+Modellparameter hängt damit an einer Datei, die weder versioniert noch zwischen den Rechnern
+synchronisiert ist. Genau so ist der Wert bei basew21 auf 14 gerutscht. Steht im BACKLOG.
+
+**Stand der laufenden Kampagne.** Unkritisch: beide Baseline-Hälften und alle χ=900-1c-Arme
+(vier es-Arme, zwei i250-Arme) tragen 12, jeweils aus ihrer eigenen `output_config.xml`
+geprüft. Betroffen ist ausschließlich der Altlauf basew21@150.
+
+---
+
+### 2.60 Die Flottenkapazität hat zwei Taschen, und die Tourlänge entscheidet, welche erreichbar sind
+
+**Der Befund.** Aus den Task-Time-Profilen des Ankers `d1d_dep7_f130_it250` (it.250, Flotte 130)
+ergibt sich die für Fracht verfügbare Kapazität als `130 − pax_belegt(t) − h·130` mit h = 0,15.
+Sie ist nicht flach und sie ist auch nicht einfach „tagsüber knapp“, sondern **zweigipflig mit
+einem Loch**:
+
+| Zeit | frei für Fracht |
+|---|---|
+| 08:00–13:00 | 16 bis 28 Fz (**Vormittagstasche**) |
+| 13:30–17:15 | 0 bis −11 Fz (**Loch**, Tagesspitze 116,2 Pax-belegt um 16:00) |
+| ab 17:15 | 12 bis 32 Fz (**Abendtasche**) |
+
+Der Anker fährt seine gesamte Fracht 08:00–14:00 und hat nach 15:00 **null**. Die Abendtasche wird
+heute nicht genutzt — nicht aus Mangel an Kapazität, sondern weil eine Tour ganz in eine Tasche
+passen muss und die Kette einer 3,5-h-Tour dafür zu lang ist.
+
+**Die Schwelle, geschlossen gerechnet.** Mit `Kette = (Tourdauer + 2·RETOOLING_S) · r` und dem
+gemessenen Routing-Verhältnis r (p90 1,094 / max 1,137, aus `d1d_f130_bud2`, 30 Dispatches) folgt
+aus der Breite der Abendtasche eine maximale Tourdauer:
+
+| Zustellschluss | Abendtasche | max. Tourdauer (r = p90) | (r = max) |
+|---|---|---|---|
+| **21:00** (Studienannahme) | 3,8 h | 3,19 h | **3,06 h** |
+| 21:30 | 4,2 h | 3,65 h | 3,50 h |
+| 22:00 | 4,8 h | 4,11 h | 3,94 h |
+
+Die heutigen 3,5 h liegen **über** der 21:00-Schwelle — das ist der geschlossene Ausdruck dafür,
+warum in `d1d_f130_bud2` alle 16 Verfälle zwischen 17:00 und 17:41 liegen. 21:30 würde die
+heutige Tourlänge gerade eben tragen (3,50 h verfügbar gegen 3,5 h Bedarf, also **null Marge**);
+das wäre allerdings eine Änderung der Zustellfenster-Annahme für alle drei Arme und wurde
+deshalb nicht gewählt.
+
+**Der Preis der kürzeren Tour.** Die Gesamtarbeit ist invariant (gemessen: 46 × 3,5 h = 161 und
+81 × 2,0 h = 162 Tour-Stunden), die Tourenzahl skaliert also mit 1/Dauer — und mit ihr die
+Depot-Trips, da jede Tour zwei Retoolings am Depot kostet:
+
+| Tourdauer | Touren | Depot-Trips vs. heute |
+|---|---|---|
+| 2,0 h | ~80 | +75 % |
+| 2,5 h | ~64 | +40 % |
+| **3,0 h** | **~54** | **+17 %** |
+| 3,5 h | 46 | ±0 |
+
+Gewählt wurde **3,0 h bei unverändertem 21:00-Schluss** (Nutzerentscheidung 2026-09-06): unter der
+konservativen Schwelle von 3,06 h, und +17 % Depot-Trips statt der +75 %, die 2,0 h gekostet
+hätten.
+
+**Was diese Rechnung NICHT leistet, ausdrücklich.** (a) Die Pax-Kurve stammt aus dem Anker, der
+abends keine Fracht fährt; fährt dort Fracht, ändert sich Servicequalität und damit Modenwahl,
+und die Kurve verschiebt sich. Es ist ein Screening erster Ordnung, keine Prognose. (b) Die
+Abendtasche hat eine Delle (5,3 freie Fz um 18:30). Die begrenzt den **Durchsatz**, nicht die
+Dauer — wie viele Touren tatsächlich hineinpassen, beantwortet nur die Simulation. (c) Die
+Tourenzahl je Dauer ist aus zwei Stützpunkten interpoliert; wie jsprit die Arbeit bei 3,0 h
+tatsächlich schneidet, steht erst nach dem Lauf fest.
+
+**Wert der Rechnung.** Sie ersetzt einen Tourdauer-Sweep. Die Schwelle ist ein Verhältnis aus
+Taschenbreite und Kettenlänge und damit scharf; abgetastet werden musste sie nicht, nur der eine
+Punkt darunter muss simuliert werden.
+
+Verwandt: §2.53 (die Doppelspitze — und wofür sie NICHT herhalten darf), §2.58 (warum der
+Budgetregler die Abendtasche findet, aber nicht erreicht).
+
+---
+
+### 2.61 Zwei gestapelte Reserven: theta schaltet den Disponenten ab, bevor das Budget gefragt wird
+
+**Der Lauf.** `d1d_f130_d30_bud` (3,0-h-Touren + selfref-Budget k=5, h=0,15, lead=3600, Zustellschluss
+unveraendert 21:00, 250 Iterationen) sollte den Verfall aus §2.58 beheben. Er hat ihn nicht behoben:
+
+| | Anker `d1d_dep7_f130_it250` | `d1d_f130_bud2` (3,5 h) | `d1d_f130_d30_bud` (3,0 h) |
+|---|---|---|---|
+| Touren geplant / disponiert | 46 / 46 | 46 / 30 | 54 / 34 |
+| Pakete | 6.052 | 3.639 | **3.551** |
+| Pax-Fahrten | 8.946 | 9.263 | 9.346 |
+| Fahrzeug-km | 50.133 | 51.027 | 51.519 |
+
+Die kuerzere Tour hat nichts gewonnen. Beide Budget-Arme fahren MEHR Kilometer als der Anker und
+stellen dabei rund 41 % der Pakete nicht zu.
+
+**Was die Tourdauer geleistet hat, und was nicht.** Die Prognose aus §2.60 traf, soweit sie die
+Planung betraf: jsprit schneidet dieselbe Arbeit bei 3,0 h in **exakt 54 Touren** (vorhergesagt ~54
+aus zwei Stuetzpunkten), Summe der Pakete ueber alle geplanten Touren 6.052, 108 Retoolings. Die
+Kettenlaengen liegen bei p50 3,24 h / max 3,45 h, also unter der berechneten Taschenbreite von
+3,8 h. Die Schwellenrechnung selbst ist damit nicht widerlegt — sie war nur nicht die bindende
+Beschraenkung.
+
+**Die bindende Beschraenkung.** Alle 20 Verfaelle liegen zwischen 17:29 und 17:53, jeder exakt an
+der Wand `now + Kette = 75600`, und `budget_overrides_expiry` ist **0**. Der terminale Zweig der
+Rampe haette einen Tick vorher feuern muessen. Er konnte nicht: `idleThreshold` (theta) ist eine
+harte Konjunktion der `while`-Bedingung in `ModularTourDispatcher` und steht **vor** dem
+Budget-Gate. Faellt der Leerlaufanteil unter theta, wird der Schleifenkoerper nie betreten — die
+Tour wird nie angesehen, die Rampe nie ausgewertet, der terminale Zweig nie erreicht. Gemessen an
+it.250 (STAY-Spalte der Task-Time-Profile, Schwelle 0,15·130 = 19,5 Fz):
+
+| Zeit | STAY | Anteil | Schleife |
+|---|---|---|---|
+| 17:15 | 17,0 | 0,131 | blockiert |
+| 17:30 | 17,4 | 0,134 | blockiert |
+| 17:40 | 14,9 | 0,115 | blockiert |
+| 18:30 | 13,7 | 0,105 | blockiert |
+| 18:35 | 20,2 | 0,155 | laeuft — alle 20 Touren sind da bereits tot |
+
+Dass ueberhaupt 34 Touren rauskamen, liegt an kurzen Momenten, in denen der Momentanwert die
+5-Minuten-Mittel ueberschritt; die Disposition troepfelte.
+
+**Die Fracht draengt sich selbst unter die Schwelle.** Gegen den Anker, dieselbe Spalte, 17:30:
+
+| | Anker | bud3 |
+|---|---|---|
+| STAY (leer) | 31,7 | 17,4 |
+| auf Fracht | 0 | 8,5 |
+| Pax-belegt | 98,3 | 104,1 |
+
+Von 14,3 fehlenden Leerfahrzeugen sind **8,5 die Fracht selbst** und **5,8 zusaetzlich
+Pax-belegt** — bessere Servicequalitaet zieht Nachfrage (9.346 statt 8.946 Fahrten). Das ist die
+Rueckkopplung aus §2.58, hier erstmals zerlegt. Das System begrenzt sich bei 13 Frachtfahrzeugen
+am Abend selbst.
+
+**Der eigentliche Konstruktionsfehler.** theta = 0,15 und `budgetHeadroom` h = 0,15 reservieren
+**dieselben 19,5 Fahrzeuge doppelt**, zusammen 30 % der Flotte — und die groebere der beiden
+Reserven entscheidet. theta ist ein flacher Boden ohne Vorausschau; das Budget ist derselbe
+Gedanke binweise und vorausschauend. Solange theta davorsteht, kann das Budget nicht Regler sein,
+sondern nur mitreden, wenn theta ohnehin offen ist.
+
+**Was das ueber §2.60 sagt.** Vorbehalt (a) dort — die Pax-Kurve stammt aus dem Anker, der abends
+keine Fracht faehrt — ist eingetreten: die Abendtasche oeffnet in diesem Lauf um 18:35 statt um
+17:15. Der Vorbehalt war richtig formuliert und hat gehalten. **Nicht** vorgesehen war theta: die
+Schwellenrechnung in §2.60 kennt nur Taschenbreite und Kettenlaenge und uebersieht, dass ein
+zweiter, haerterer Riegel davorsitzt. Die Rechnung bleibt gueltig als notwendige Bedingung, sie
+ist aber nicht hinreichend.
+
+**Was NICHT gezeigt ist.** Ob theta = 0,02 die Pakete tatsaechlich rettet, ist offen — der Arm
+`d1d_f130_d30_th02` laeuft. theta war der Schutz der Passagiere; ob das Budget ihn ohne messbaren
+Pax-Preis uebernimmt, entscheidet `wait_mean` und `drt_rejections` gegen 689,5 s / 39 (Anker).
+
+Verwandt: §2.58 (der Umschlagfehler, der den ersten Budget-Arm toetete), §2.60 (die
+Taschenrechnung und ihre Vorbehalte).
+
+---
+
+### 2.62 250 Iterationen für 1c: der Modal Split bewegt sich klar, die Fahrtenzahl nicht — und die Iso-Service-Frage ist damit offen
+
+`trägt` · Fächer abgeschlossen 2026-09-07, n=5 gepaart (Seeds 1337–1341, f140, χ=900).
+Kette: `3 of 3 arms clean` nach den drei Nachzüglern, je ~10,2 h.
+
+Jeder Arm ändert gegen seinen 150er-Zwilling **ausschließlich `maxIter`** — geprüft mit
+`analysis/kpi/config_diff.py` (eine Abweichung von 307 Pfaden) und mit dem Populations-Hash
+(alle zehn Läufe `DA17247C…`). Beide Absicherungen waren nötig: der 1337er-Anker trägt einen
+anderen Tag (`d1c_dep7_f140_chi900_evensplit`) — genau die Konstellation, die das
+basew21-Paar zerlegt hat (§3.14).
+
+| Seed | Fahrten 150 | Fahrten 250 | Δ |
+|---|---|---|---|
+| 1337 | 9.164 | 9.183 | +19 |
+| 1338 | 8.970 | 9.317 | +347 |
+| 1339 | 8.954 | 9.153 | +199 |
+| 1340 | 9.219 | 9.232 | +13 |
+| 1341 | 8.999 | 9.228 | +229 |
+
+Gepaarte t-Tests, df=4, kritisch 2,78:
+
+| Größe | Δ (250 − 150) | t | |
+|---|---|---|---|
+| Walk-Modal-Share | **−2,86 pp ± 0,15** | **41,7** | trennbar |
+| Fahrzeug-km | **+1.598 ± 787** | **4,54** | trennbar |
+| Pax-Fahrten | +161,4 ± 143,8 | 2,51 | nicht trennbar |
+| Wartezeit ⌀ | +10,3 ± 11,6 s | 1,99 | nicht trennbar |
+
+**Der Befund ist die Aufspaltung.** „Der Iterationseffekt ist nicht messbar“ wäre falsch: der
+Modal Split verschiebt sich mit t=41,7 — der schärfste Effekt, der in diesem Modell bisher
+gemessen wurde — und die Flottenleistung mit t=4,54. Nur die **Fahrtenzahl** bleibt im Rauschen,
+und ihr Effekt streut über den Faktor 27 (+13 bis +347). Zwischen Iteration 150 und 250 ist der
+Mode Choice also noch deutlich in Bewegung; er landet nur nicht überwiegend auf dem DRT.
+Derselbe Walk-Share-Sprung steht auch in der Baseline (19,3 % → 16,2 % gegen 19,2 % → 16,2 %
+bei 1c) — er ist szenariounabhängig und verzerrt den Armvergleich daher nicht.
+
+Nebenbei: die Streuung der Fahrtenzahl **halbiert** sich von sd 122 auf sd 62 (−49 %), was zur
+Konvergenzerwartung passt. Und die Frachtseite ist auch iterationsinvariant: `delivery_rate` =
+0,997521 auf sechs Dezimalen in **allen zehn** Läufen — §2.57 hatte das nur seed-invariant
+gezeigt.
+
+⚠️ **Die Iso-Service-Frage ist durch diesen Fächer NICHT beantwortet, sondern eröffnet.**
+
+| | 1c (n=5) | Baseline (n=1) | Δ |
+|---|---|---|---|
+| @150 | 9.061,2 ± 121,6 | 9.076 | −14,8 → t=0,27, nicht trennbar |
+| @250 | 9.222,6 ± 62,1 | 9.143 | **+79,6 → t=2,86, grenzwertig trennbar** |
+
+Bei 150 Iterationen sitzt 1c praktisch auf der Baseline; bei 250 liegt es 79,6 Fahrten darüber,
+und das ist **knapp jenseits der Schwelle** — aber nur, wenn man den Baseline-Wert als exakt
+behandelt. Er ist n=1. Sobald man der Baseline eine eigene Seed-Streuung zugesteht, kippt es
+zurück:
+
+| angenommene Baseline-sd | n | t |
+|---|---|---|
+| 62 (die 1c-sd bei 250) | 3 | 1,76 |
+| 122 (die 1c-sd bei 150) | 3 | 1,05 |
+| 62 | 5 | 2,03 |
+| 122 | 5 | 1,30 |
+
+**Das Urteil hängt an einer Streuung, die für die Baseline nie gemessen wurde.** Solange die
+fehlt, ist „1c ist bei 250 Iterationen nicht mehr iso-service“ genauso unbelegt wie das
+Gegenteil. Was es klärt, ist ein Baseline-Seed-Fächer bei 250 — drei zusätzliche Seeds, rund
+32 h. Steht im BACKLOG.
+
+⚠️ **Eigene Zahl korrigiert:** ich hatte den 250er-Abstand als „+78 Fahrten = 0,64 sd, deutlich
+innerhalb der Streuung“ gemeldet. Der Abstand war gegen die **150er**-Streuung normiert; gegen
+die tatsächliche 250er-Streuung sind es **1,28 sd**. „Deutlich innerhalb“ war zu stark.
+
+Verwandt: §2.57 (χ=900 als Betriebspunkt), §2.59 (Threadzahl), §3.14 (die +170-Rücknahme).
 
 ---
 
@@ -2907,6 +4016,116 @@ Gate, und ihr Ergebnis ist nicht monoton in χ.
 zurückgezogen. Und: χ ist ein **Stressor** des Wettlaufs um paketleere Fahrzeuge, kein direkter
 Verursacher der Ausfälle. Die Lehre für die Methodik ist die Fehlersuche selbst — die Ursache war
 erst durch Verfolgen derselben Segment-IDs über vier Arme sichtbar, aus keinem einzelnen Lauf.
+
+### 3.12 „Die geometrische Reichweitenschranke ist bindend, DRT ist nicht reichweitenfrei elektrifizierbar"
+
+**Geglaubt** (2026-08-26, BACKLOG-DONE „Ladefenster-Analyse", `data/README.md`): der längste
+Fahrblock von 445,5 km (1d) bzw. 566,2 km (Baseline) übersteigt die maximal angenommene
+Reichweite von 250 km selbst im großzügigsten 20-min-Fenster — die Schranke sei damit
+**bindend** und die Flotte in der jetzigen Disposition nicht reichweitenfrei elektrifizierbar.
+
+**Gemessen** (2026-09-03, nach §2.56): die Aussage hing an den 250 km, und die entsprachen bei
+unserem eigenen Verbrauch **62 kWh** nutzbarer Batterie — weit unter Markt. Mit einem real
+existierenden 113-kWh-Fahrzeug reißen im 20-min-Fenster **3 von 135 Fahrzeugtagen (2,2 %)**
+die Reichweite, nicht 31,1 %. Die Baseline liegt bei 6 von 120 (5,0 %).
+
+**Was bleibt:** der längste Einzelblock (500,4 km im 1d-Arm) liegt weiter über 456 km, die
+Schranke ist also nicht verschwunden — sie ist von einem **Flottenproblem zu einem
+Randproblem** geworden. Nicht mehr belastbar ist jede Formulierung, die „nicht
+elektrifizierbar" oder „Schranke bindend" enthält.
+
+⚠️ **Nachtrag desselben Tages, eigene Überdehnung korrigiert.** Hier stand zuerst „97,8 % der
+Fahrzeugtage sind fahrbar". Das ist zu stark: `drive_block_exceed` unterstellt, dass jede
+STAY-Phase ≥ Fensterbreite das Fahrzeug **voll** nachlädt, und das sind bei 113 kWh im
+20-min-Fenster **339 kW** je Halt (170 kW bei 40 min, 113 kW bei 60 min). Eine reale
+Depot-Wallbox liefert in 20 min 3,67 kWh bei 11 kW bzw. 7,33 kWh bei 22 kW — 15 bzw. 30 km.
+Die Kennzahl ist also nicht ladeannahmefrei, sondern trägt die optimistischste Ladeannahme,
+die es gibt. Wer sie ohne diesen Satz zitiert, verkauft eine Obergrenze als Machbarkeit —
+derselbe Fehlertyp wie die zurückgezogene Fassung darüber, nur mit umgekehrtem Vorzeichen.
+
+**Die annahmefreie Gegenkennzahl** ist der Energiebedarf je Fahrzeugtag gegen die
+Batteriekapazität — sie sagt, wie viele Fahrzeugtage *mindestens einmal* zwischenladen müssen,
+egal wie der Tag angeordnet ist:
+
+| Batterie | 1d f135 (n=135) | Baseline (n=120) |
+|---|---|---|
+| Ford 70 kWh | 107 (79,3 %), max 1,92 × | 111 (92,5 %), max 2,05 × |
+| VW ID.Buzz 86 kWh | 85 (63,0 %), max 1,57 × | 100 (83,3 %), max 1,67 × |
+| Mercedes eSprinter 113 kWh | **30 (22,2 %)**, max 1,19 × | 47 (39,2 %), max 1,27 × |
+
+Median-Fahrzeugtag 1d 93,8 kWh, p95 125,4, max 134,7.
+
+**Belastbare Fassung, beide Zahlen als Klammer:** *22,2 % der Fahrzeugtage brauchen mindestens
+eine Zwischenladung (Untergrenze, annahmefrei); 2,2 % stranden selbst bei idealisiertem
+Vollnachladen an jedem 20-min-Halt (Obergrenze der Machbarkeit).* Keine der beiden Zahlen ist
+allein die Antwort — die Antwort liegt dazwischen und braucht ein energetisches Lademodell
+(BACKLOG `[H]`, CHECKLIST B-1/B-2).
+
+**Lehre — dieselbe wie §2.55, am selben Tag zweimal:** ein Parameter ohne Quelle trug ein
+Vorzeichen. Bei der Netzintensität war es der Grenzzuschnitt, hier die Batteriegröße. Beide
+Male sah die Kette in sich konsistent aus, weil die unbelegte Zahl nie gegen den *eigenen*
+Verbrauchskanal des Modells geprüft worden war — der die Antwort schon enthielt.
+
+**Konsequenz:** die Begründung des BACKLOG-Punkts `[H]` Energetisches Lademodell zitiert die
+zurückgezogene Fassung und ist nachgezogen. Das Arbeitspaket bleibt sinnvoll, aber seine Frage
+lautet jetzt „wie teuer ist der Ausläufer" und nicht mehr „ist es überhaupt möglich".
+
+Verwandt: §2.56 (die neuen Schwellen und die externe Gegenprobe), §2.55 (derselbe Fehlertyp
+auf der Netzintensität).
+
+---
+
+### 3.13 „Scharfer Knick bei χ≈600: 27 Pax-Fahrten je pp Zustellung“
+
+`zurückgezogen` · 2026-09-03, durch die beiden Seed-Fächer (§2.52, §2.53). Vierte Rücknahme auf
+dieser Achse — siehe §3.11 für die ersten drei.
+
+**Geglaubt.** §3.11 hielt als „was bleibt“ fest, es gebe einen Betriebsbereich mit scharfem Knick
+genau bei χ≈600: 27 Pax-Fahrten je Prozentpunkt Zustellung zwischen 600 und ∞, aber nur 6,9
+zwischen 300 und 600. Das war die Begründung, χ=600 als Betriebspunkt zu wählen.
+
+**Gemessen.** Der Quotient ist **Rauschen geteilt durch einen kleinen Nenner**. Der Zähler oberhalb
+600 sind 181 Fahrten — 1,4 sd bei einer gemessenen Streuung von sd 130 (§2.52). Der Nenner sind
+6,5 pp, weil oberhalb 600 fast keine Pakete mehr dazukommen; unter 600 sind es 34,9 pp. Der
+„Knick“ misst also nicht die Steilheit eines Tauschs, sondern nur, dass χ oberhalb 600 die
+Paketlast kaum noch bewegt (5.551 → 5.946, +7 %). Mit n=5 auf beiden Punkten trennen sich die
+Pax-Mittel nicht (t=1,06).
+
+**Was bleibt.** Der Tausch Pakete gegen Fahrgäste ist real, aber am **unteren** χ-Ende, nicht am
+oberen: 9.695 Fahrten bei χ=150 gegen 9.163 bei χ=450 sind −532 bei einer Paketlast von +110 %,
+also rund 4 sd. Die Vorzeichen-Logik — mehr einfügbare Pakete, mehr Standzeit, im Gleichgewicht
+weniger Fahrgäste — trägt; sie ist nur dort sichtbar, wo χ die Paketlast wirklich bewegt. Und die
+Richtung der Betriebspunkt-Wahl kehrt sich um: nicht χ=600, sondern χ=900 (§2.57).
+
+⚠️ **Ebenfalls zu eng gefasst war meine eigene Zwischenaussage** „die Fahrgast-Servicequalität ist
+über das ganze χ-Raster festgenagelt“. Sie stimmt als Beobachtung (Wartezeit ⌀ 688–702 s bei
+verdreifachter Paketlast), trägt aber keine Null: die Spanne über das **ganze** Raster beträgt
+14,6 s bei je n=1, die Spanne über fünf Seeds bei **einem** χ dagegen 21,3 s. Die Flachheit
+**begrenzt** den Serviceeffekt, sie beweist ihn nicht als abwesend. Ebenso ungetrennt bleibt, ob
+die Flachheit vom Mode-Choice-Gleichgewicht oder von 19 % Flottenauslastung kommt — dafür bräuchte
+es einen Lauf ohne Mode Choice oder mit deutlich kleinerer Flotte.
+
+### 3.14 „Der Iterationseffekt der Baseline beträgt +170 Fahrten“
+
+`zurückgezogen` · 2026-09-06, durch das saubere Paar b120rgs.
+
+**Geglaubt.** basew21 8.973 (150) → 9.143 (250) = **+170**. Die Zahl stand als Begründung
+dafür, dass sich die Baseline beim Übergang auf den 250er-Goldstandard (§2.47) messbar
+bewegt, und war das Maß, gegen das der 1c-Iterationseffekt gehalten werden sollte.
+
+**Gemessen.** Das Paar änderte **zwei** Dinge: die Iterationszahl *und* die DRT-Threadzahl
+(14 bei der 150er-Hälfte, 12 bei der 250er — §2.59). Das saubere Paar, bei dem außer
+`lastIteration` nichts abweicht, ist b120rgs auf dem Sim: 9.076 → 9.143 = **+67**.
+
+**Was bleibt.** Die Richtung und der 250er-Standard selbst; nur die Größe war um den Faktor
+2,5 zu hoch. Bemerkenswert bleibt die Rangfolge: der **Nebeneffekt der Threadzahl (−103) ist
+größer als der Effekt, den zu messen der ganze 250er-Aufwand dient (+67)**.
+
+⚠️ **Ebenfalls falsch war meine eigene Diagnose des basew21-Defekts.** Ich hatte ihn der
+Population zugeschrieben und daraufhin den POPHASH-Check gebaut. Die Populationen aller drei
+Dev-Läufe sind byteidentisch (`f76fe8a8…`, dieselbe, die auch das Sim-Paar meldet) — **der
+POPHASH-Check hätte diesen Fehler nicht gefangen**. Die Absicherung eines Paarvergleichs muss
+ein vollständiger Config-Diff sein, nicht ein Hash über die Eingangspopulation. Im BACKLOG.
 
 ## 4 · Bewusst ausgeklammert
 

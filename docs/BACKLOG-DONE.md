@@ -7,7 +7,91 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-08-26._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-09-07._
+
+---
+
+## 2026-09-07
+
+- **`[H]` 250-Iterationen-Fächer für 1c abgeschlossen, n=5 gepaart.** Seeds 1339–1341 als
+  Nachzügler hinter dem Baseline-Paar (Kette wartete 5,08 h auf die freie Maschine, dann
+  `3 of 3 arms clean`, je ~10,2 h). Ergebnis: der Modal Split verschiebt sich klar
+  (−2,86 pp Walk, t=41,7), die Flottenleistung auch (+1.598 km, t=4,54) — die **Fahrtenzahl**
+  bleibt im Rauschen (+161 ± 144, t=2,51) und streut über den Faktor 27. Streuung halbiert
+  sich (sd 122 → 62). → [METHODS-LOG](METHODS-LOG.md) §2.62. Beide Absicherungen gefahren:
+  Config-Diff (1 Abweichung von 307) **und** Populations-Hash (alle zehn identisch).
+- **`[H]` Baseline-Paar b120rgs gefahren, `2 of 2 halves clean`** (6,92 h / 10,75 h), Paar per
+  POPHASH verifiziert. 9.076 → 9.143 = **+67**. Fracht in beiden Hälften identisch (41 Touren,
+  2.701,54 km, 6.052/6.052). Damit ist der ältere Wert **+170 zurückgezogen** (§3.14).
+- **Gefunden: die DRT-Threadzahl ist ergebnisrelevant** (−103 Fahrten bei sonst identischer
+  Config) und hängt an der ungetrackten `vmargs_lausitz.txt`. → §2.59. Werkzeug
+  `analysis/kpi/config_diff.py` daraus entstanden und selbstgetestet.
+- **Behoben: Watcher starb an einem einzelnen Verbindungsaussetzer** (Exit 3, obwohl der Sim
+  lief). Toleranz jetzt 12 aufeinanderfolgende Fehlversuche; Verlust und Rückkehr werden je
+  einmal gemeldet statt still zu sterben.
+
+---
+
+## 2026-09-03
+
+- **`[H]` χ=900-Seed-Fächer gefahren — χ=900 ist der Betriebspunkt, χ=600 ist es nicht.** Vier Arme
+  1338–1341 auf dem Sim (je ~5,75 h, alle `ARM … OK`), plus Anker 1337 ⇒ n=5; Chain-Bilanz
+  „4 of 4 arms clean“, jeder Seed gegen sein `matsim_seed` geprüft, alle Populations-Hashes
+  identisch. Ergebnis: nicht zugestellte Pakete 331 ± 64 → **0 ± 0** (t=11,6), Pax-Fahrten
+  −84 (t=1,06, nicht trennbar), χ=900-Spannweite vollständig innerhalb der χ=600-Spannweite.
+  → [METHODS-LOG](METHODS-LOG.md) §2.57. Nebenbefund: die Frachtvolatilität aus §2.52 ist ein
+  Artefakt des Betriebs *an* der Schranke, oberhalb ist die Frachtseite deterministisch.
+- **Behoben: der `rc`-Bug der Seed-Ketten.** `Start-Process -PassThru` füllt `ExitCode` hier nicht;
+  die χ=600-Kette meldete deshalb „0 of 4 arms clean“, obwohl alle vier sauber waren. Die Kette
+  liest das Verdikt jetzt aus dem Log der .bat. Verifiziert an der χ=900-Kette („4 of 4“).
+- **Die .bat nimmt χ als Argument** statt es hart zu verdrahten; beide Usage-Guards getestet
+  (exit 2, keine JVM gestartet), gpkg-Pfadlänge für die neuen Tags bei 235 Zeichen geprüft.
+
+---
+
+## 2026-09-02
+
+- **`[H]` Seed-Fächer f140/χ=600 — gefahren und ausgewertet, Ergebnis: f140 bleibt.** Vier Arme
+  1338–1341 auf dem Sim (je ~6,1 h, alle mit `ARM … OK - exit 0, kpis_long.csv present`), plus
+  der Anker 1337 ⇒ n=5. Jeder Seed gegen das `matsim_seed` im eigenen `run_metadata.json`
+  geprüft, alle fünf mit identischem Populations-Hash `DA17247C…`. Zahlen und die Auswertung
+  gegen die vorab fixierte Regel → [METHODS-LOG](METHODS-LOG.md) §2.52.
+  ⚠️ Der erste Anlauf am 30.08. ging vollständig verloren (252-Zeichen-Pfad + nicht terminierende
+  JVM, → §2.51); Ursache gemessen, Tag gekürzt, Watchdog auf CPU-Akkumulation umgestellt.
+
+- **`[H]` Flotte rekalibrieren — entfällt.** Die Regel greift auf „keine Rekalibrierung“: das Ziel
+  9.076 liegt innerhalb der Spannweite 8.928–9.245, das Mittel liegt mit +69 Fahrten darüber, und
+  der Anker war mit −1,67 sd die tiefste der fünf Ziehungen. Das vermeintliche Defizit von 148
+  Fahrten war eine Ziehung, kein Niveau. 1d bleibt damit auch von einer Nachkalibrierung
+  verschont. Nachweis → [METHODS-LOG](METHODS-LOG.md) §2.52.
+
+---
+
+## 2026-09-01
+
+Vier 1c-Punkte aus dem BACKLOG genommen — zwei erledigt, zwei durch §3.11 überholt. Sie standen
+dort seit 2026-08-13 und beschrieben einen Stand, den die Untersuchung vom 27.08. abgelöst hat.
+
+- **`[H]` χ=600-Anker-Rerun auf dem Fix — erledigt.** Gefahren als `d1c_dep7_f140_chi600`
+  (alte Aufteilung) und nach `2ff5dbb` als `d1c_dep7_f140_chi600_evensplit`. Nachweis: beide
+  Lauf-Verzeichnisse mit `analysis/kpis_long.csv` auf dem Sim-PC; Zahlen und Vergleich in
+  [METHODS-LOG](METHODS-LOG.md) §2.46.
+
+- **`[H]` χ-Sweep fahren — erledigt, aber NICHT mit dem geplanten Raster.** Der Punkt verlangte
+  ein Raster **unter 200 s**, begründet mit den Detour-Minima. Diese Begründung ist in
+  [METHODS-LOG](METHODS-LOG.md) §3.11 zurückgezogen — die Erstordnungs-Kurve lag bei χ=300 um
+  Faktor 7,4 daneben, und es gibt keine Korrekturregel. Gefahren wurde deshalb
+  150/300/450/600/900 bei f140. Das Ergebnis: der Knick liegt bei χ≈600, also **oberhalb** des
+  geplanten Rasters — hätte man unter 200 s gemessen, wäre er nicht gefunden worden.
+
+- **`[M]` Konkurrenz-Diagnose — erledigt, und sie hat die Ursache gefunden.** Reines
+  Postprocessing wie geplant (0 Runs): welches Fahrzeug bot das Umweg-Minimum, was tat es
+  stattdessen. Ergebnis ist die Segmentaufteilung, nicht der Gate —
+  [METHODS-LOG](METHODS-LOG.md) §2.46, behoben in `2ff5dbb`. Der Frame stimmte: die verfallene
+  Menge, nicht die Null-Segmente.
+
+- **`[L]` `BIN_WIDTH_S = 100` zu grob — hinfällig.** Galt nur für das Raster unter 200 s, das nie
+  gefahren wurde. Bei 150–900 s sind 100-s-Bins angemessen; nichts zu tun.
 
 ---
 
