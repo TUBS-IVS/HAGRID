@@ -33,42 +33,85 @@ Strukturschaden repariert, drei neue Defekte aufgenommen → Nachweis in
 
 ## High
 
+### `[M]` Stem-KPI: Neuzahlen fahren und in den Sweep ziehen
+
+Die Definition ist seit 2026-08-28 korrigiert (METHODS-LOG §2.49), Zahlen dazu gibt es noch keine.
+Offen: (1) ein Hannover-Board mit dem neuen Code erzeugen und den Zuwachs durch das Rückleg
+messen; (2) `extract_sweep.py` um `ROUT_EFF` erweitern (`stem_pct_network`,
+`stem_pct_provider_max`), damit die Zahl nicht wieder von Hand aus einer CSV-Zeile abgelesen wird;
+(3) `stemInPct` als Vintage-Weiche einbauen, sonst mischt der Extractor beide Definitionen.
+
 ### `[H]` Shared-Use / Cargo-Hitching (Szenario 1c)
 
 Minibus mit 2D-Kapazität (Sitze + Pakete), Online-DVRP-Insertion.
-**Status: implementiert, in Validierungs-/Run-Phase** (2026-07-28). Implementierung, Reviews und
-χ→0-Validierung sind durch → [BACKLOG-DONE](BACKLOG-DONE.md); Architektur- und
-Parameter-Entscheidungen → [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
+**Status: implementiert, Betriebspunkt in Messung** (2026-09-01). Implementierung, Reviews und
+χ→0-Validierung → [BACKLOG-DONE](BACKLOG-DONE.md); Architektur- und Parameter-Entscheidungen
+→ [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
 → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md) ·
 [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md) _(added 2026-07-14)_
 
-⚠️ **Beide bisherigen 1c-Betriebspunkte sind hinfällig** (χ-Gate-Rechenfehler, behoben 2026-08-13
-→ [METHODS-LOG](METHODS-LOG.md) §2.35). Anker und Raster müssen neu gemessen werden:
+Stand: χ-Raster (150/300/450/600/900 bei f140) und Iso-Service-Punkt f140 sind gemessen, durch die
+Segmentaufteilung `2ff5dbb` überholt und für χ = 600/900/∞ nachgemessen
+(→ [METHODS-LOG](METHODS-LOG.md) §2.46). **χ=900 ist der Betriebspunkt** (→ [METHODS-LOG](METHODS-LOG.md) §2.57): dort wird jedes
+Paket zugestellt, das eine gültige Anfrage wurde, und zwar seed-unabhängig (n=5, sd null auf der
+Frachtseite), während χ=600 im Mittel 331 ± 64 Pakete liegen lässt. Der Pax-Preis ist mit n=5
+gegen n=5 nicht messbar (−84 Fahrten, t=1,06).
 
-- **`[H]` χ=600-Anker-Rerun auf dem Fix** — Voraussetzung für jeden 1c-Vergleich und für den Sweep.
-  Wie weit die Quote fällt, ist aus der alten Datei **nicht invertierbar** (§2.35) — Messung, keine
-  Rechnung. Bestehende Config, ~7–12 h. _(added 2026-08-13)_
-- **`[H]` χ-Sweep fahren, Raster **unter** 200 s** (M6: Sweep statt Einzelpunkt) — oberhalb ~200 s
-  bewegt sich die zulässige Menge kaum, dort kauft man eine flache Kurve. χ=0 ist ein eigenes
-  Politikszenario, nicht der Randwert. Begründung und erwartete Aussage →
-  [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
-- **`[M]` Konkurrenz-Diagnose** — 0 Runs, reines Postprocessing aus vorhandenen Events: welches
-  Fahrzeug bot das Umweg-Minimum, was tat es stattdessen. ⚠️ Frame ist die **verfallene** Menge,
-  nicht die 19 Null-Segmente (die sind ein Artefakt des behobenen Fehlers).
-  → [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
+Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen Kanälen:
+
+- **`[H]` Baseline-Seed-Fächer bei 250 Iterationen — die Iso-Service-Frage hängt daran** — 1c
+  liegt bei 250 Iterationen 79,6 Fahrten über der Baseline. Gegen den Baseline-Wert als
+  Konstante ist das grenzwertig trennbar (t=2,86 gegen 2,78); unter **jeder** plausiblen
+  Baseline-Streuung nicht mehr (t=1,05–2,03). Der Baseline-Wert bei 250 ist n=1, ihre
+  Seed-Streuung ist nie gemessen worden — das Urteil hängt also an einer Zahl, die fehlt
+  (§2.62). Drei zusätzliche Seeds `b120rgs` bei 250, ~10,75 h je Lauf, rund 32 h. Bis dahin
+  ist **weder** „iso-service bei 250“ **noch** das Gegenteil belegt. _(added 2026-09-07)_
+- **`[H]` `vmargs_lausitz.txt` versionieren — eine ungetrackte Datei bestimmt ein
+  ergebnisänderndes Modellparameter** — `-XX:ActiveProcessorCount=12` darin deckelt
+  `Runtime.availableProcessors()`, und daraus zieht `DrtConfigGroup` seinen Default für
+  `numberOfThreads`. Die Threadzahl ist NICHT ergebnisneutral: 12 gegen 14 sind −103 Fahrten
+  bei sonst identischer Config (§2.59). Die Datei ist ungetrackt und auf dem **Dev gar nicht
+  vorhanden** — genau so ist basew21 auf 14 gerutscht. Entweder in die Versionskontrolle oder
+  den Wert explizit in die Config schreiben, wo er sichtbar ist. _(added 2026-09-06)_
+- **`[H]` Paarvergleiche mit vollem Config-Diff absichern, nicht nur mit dem POPHASH** — der
+  POPHASH-Check prüft die Eingangspopulation; bei basew21 waren die Populationen byteidentisch
+  und der Defekt saß trotzdem in der Config (§3.14). Ein Diff über alle 310 Config-Pfade hätte
+  ihn sofort gezeigt. Werkzeug liegt jetzt unter `analysis/kpi/config_diff.py` (selbstgetestet
+  am basew21-Paar: 1 substanzielle Abweichung; Negativkontrolle gegen sich selbst: 0). Offen
+  ist nur noch, es in die Auswertung fest einzuhängen. _(added 2026-09-06)_
+- **`[H]` Walk-Fallback abstellen oder ausweisen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
+  der Routensuche ab, MATSim setzt ein Walk-Leg, das Paket zählt als zugestellt, und **nichts wird
+  geloggt** (§2.50). 41 der 91 laufen 2,3–6,7 km. Flotten- und χ-invariant, also nicht durch
+  Kapazität oder χ zu beheben. Entweder Ursache am Ort beheben oder als eigener Kanal im
+  Dashboard ausweisen — aber nicht stillschweigend mitzählen. _(added 2026-09-03)_
+- **`[M]` Hoftor-Verwurf beheben — 15 Pakete (0,25 %)** — zwei gepoolte Stopps schnappen auf ihren
+  eigenen Depot-Link, `from == to` ist keine gültige DVRP-Anfrage, im Preprocessing verworfen
+  (§2.50). Auf eine Nachbarkante snappen statt verwerfen; die Baseline kennt die Schranke nicht,
+  also ist das ein reiner 1c-Nachteil aus dem Modell. _(added 2026-09-03)_
+- **`[H]` Segment-Größentabelle auf der KPI-Basis neu ableiten** — die Verteilungstabelle in
+  [METHODS-LOG](METHODS-LOG.md) §2.46 (Ausfälle je Segmentgröße) stammt aus einem Skript, dessen
+  Paketsummen sich nicht mit der KPI-Schicht verrechnen ließen — die Totale sind dort auf 395/268
+  korrigiert, die Verteilung ist noch nicht nachgerechnet. Bis dahin **nicht zitierbar**. Reines
+  Postprocessing, 0 Runs. _(added 2026-09-02)_
+- **`[M]` Paketausfälle nie aus einem Einzellauf berichten** — der Fächer zeigt für
+  `parcels_undelivered` einen Variationskoeffizienten von **19,3 %** (258–399 bei n=5), gegen 1,1 %
+  bei der Quote und 1,4 % bei den Pax-Fahrten (§2.52). Aussagen der Form „χ kostet N Pakete“
+  brauchen Replikate; Quotenaussagen nicht. Betrifft alle 1c-Tabellen im Paper und die
+  Dashboard-Kacheln, die absolute Ausfallzahlen zeigen. _(added 2026-09-02)_
+- **`[H]` Ausgabe-Root kürzen — die 252-Zeichen-Falle entschärfen** — jeder bestehende Tag steht
+  exakt auf der letzten funktionierenden Länge; ein Zeichen mehr und ein fertiger Lauf stirbt still
+  im Shutdown, nach voller Rechenzeit (→ [METHODS-LOG](METHODS-LOG.md) §2.51). Betrifft 1c, 1d und
+  Hannover gleichermaßen. Der Fix gehört an den Pfad, nicht an die Tags. _(added 2026-09-01)_
+- **`[M]` 250-Iterationen-Kontrollpunkt für 1c** — vertagt (Nutzerentscheidung 2026-09-01). Für 1c
+  ist der Iterationseffekt nie gemessen; die −219 stammen aus 1d (§2.47). Ein Lauf f140/χ=600 mit
+  `maxIter=250` gegen den vorhandenen 150er wäre dasselbe Versuchsdesign wie die 1d-Messung.
+  Solange er fehlt, steht der Betriebspunkt auf einer Basis, die nicht die publizierte ist.
+  _(added 2026-09-01)_
 - **`[M]` Laufzeit-Regression 7,0 h → 11,9 h klären** — identische 1c-Config, gleicher Rechner,
-  **+70 %**; über 24 Pflichtläufe ~120 h. Diskriminator: zwei 5-Iterations-Läufe mit/ohne
-  `recordEvaluation`, ~1 h. Kandidatenliste → [METHODS-LOG](METHODS-LOG.md) §2.35.
-  _(added 2026-08-13)_
-- **`[M]` Zustellquoten-Konvention M10-konform machen** — die KPI-Schicht mischt netto (Baseline)
-  und brutto/operativ (1c/1d) unter ähnlichen Namen. Je Arm dieselbe Konvention exportieren
-  (brutto überall + Overlay als separate Zeile) → [METHODS-LOG](METHODS-LOG.md) §2.21.
-  _(added 2026-07-31)_
-- **`[L]` `BIN_WIDTH_S = 100` in `analysis/kpi/chi_detour.py:65` ist für das neue Raster zu grob** —
-  unter 200 s bleiben zwei Bins. Betrifft nur die Histogramme in `kpi_distributions.csv`, Quantile
-  sind unberührt. _(added 2026-08-13)_
-- **Offen: Shared-Use-Hälfte des Nachfrage-Bandes** — an den χ-Sweep hängen, kostet dort nur einen
-  zusätzlichen Punkt.
+  **+70 %**. Diskriminator: zwei 5-Iterations-Läufe mit/ohne `recordEvaluation`, ~1 h.
+  Kandidatenliste → [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
+- **Offen: Shared-Use-Hälfte des Nachfrage-Bandes** — an den nächsten Sweep hängen, kostet dort
+  nur einen zusätzlichen Punkt.
 - **Offen: PPC (Passenger-Parcel Compensation) prüfen** — vor der Evaluation entscheiden, ob der
   Mechanismus reinkommt → [METHODS-LOG](METHODS-LOG.md) §4.1. _(added 2026-07-15)_
 
@@ -111,6 +154,15 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   der Baseline: die Cap-Asymmetrie erklärt die Tourenzahl vollständig. Der Frachtaufschlag je Paket
   fällt von +33,9 % auf +12,6 %, die **Pax-Seite verbessert sich nicht** (+4,5–7,4 % je Fahrt über
   alle Caps). Ergebnis und M11-Zerlegung → [METHODS-LOG](METHODS-LOG.md) §2.38.
+- **✅ Flottenkalibrierung auf der Depotstufe abgeschlossen (2026-08-27)** — neue Baseline
+  `basew21_it250` = 9.183 Fahrten (Plateau 226–249); 1d trifft sie bei **135 Fahrzeugen**
+  (9.214, +31 = unter dem Seed-Abstand 48). Gemessene Steigung 48,2 Fahrten/Fahrzeug, exakter
+  Treffpunkt 134,4. 150 Iterationen sind unkonvergiert, 250 ist Standard → METHODS-LOG §2.47;
+  `basew21`@150 als Anker zurückgezogen → §2.48. _(added 2026-08-27)_
+- **`[H]` θ-Sensitivität auf der Depotstufe — LÄUFT seit 2026-08-27** — θ=0,15 wurde unbesehen aus
+  der alten Kampagne übernommen, das Gate bindet auf der neuen Stufe anders (46/46 Touren
+  disponiert, aber nur 15 um 07:16, Rest bis 11:45). Kette `run_theta1d_chain.bat`: θ=0,20 dann
+  θ=0,10 bei f135/iter250. Auswerten gegen 9.214. _(added 2026-08-27)_
 - **`[H]` Flotten-Nachjustierung bei 7 h** — `f150d70` bedient **3,87 % mehr Fahrten** als die
   Baseline, die Systemsumme mischt dort also „kostet mehr" mit „leistet mehr". Faire Cap-Parität
   braucht bei 7 h die kleinste Flotte, die 9.076 Fahrten noch trifft. ⚠️ **Nicht hochrechenbar** —
@@ -147,12 +199,14 @@ Limitations-Rohtext: `analysis/kpi/data/README.md`. Nachweis: [BACKLOG-DONE](BAC
 _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
 
 - **`[H]` Energetisches Lademodell für die DRT-Flotte (Ladeleistung, Batteriekapazität,
-  SoC-Verlauf)** — Nachfolger von „Ladefenster-Analyse" (BACKLOG-DONE 2026-08-26): die
-  geometrische Schranke ist **bindend** (`drive_block_max_km_20` = 445,5 km gegen maximal
-  angenommene `ev_range_km_high` = 250 km, unter der optimistischsten Annahme — jede 20-min-STAY
-  lädt voll), also greift der Eskalationspfad aus dem Design-Spec §5: das ist kein geschlossener
-  Befund mehr, sondern ein eigener Modellierungsschritt. Sagt NICHTS über eine anders disponierte
-  Flotte aus. _(added 2026-08-26)_
+  SoC-Verlauf)** — Nachfolger von „Ladefenster-Analyse" (BACKLOG-DONE 2026-08-26).
+  ⚠️ **Begründung 2026-09-03 nachgezogen:** die ursprüngliche Fassung („Schranke bindend",
+  445,5 km gegen 250 km) ist **zurückgezogen** → [METHODS-LOG](METHODS-LOG.md) §3.12; die 250 km
+  waren unbelegt und entsprachen 62 kWh. Mit belegten Fahrzeugen reißen im 20-min-Fenster
+  **3 von 135** Fahrzeugtagen die 456-km-Schwelle. Das Paket bleibt sinnvoll, aber die Frage
+  lautet jetzt „wie teuer ist der Ausläufer" statt „ist es überhaupt möglich" — also
+  SoC-Nachlauf gegen Ladeleistung und Ladeort, kein Machbarkeitsnachweis. Arbeitsschritte:
+  [CHECKLIST-emissions](CHECKLIST-emissions.md) B-1/B-2. _(added 2026-08-26, revidiert 2026-09-03)_
 - **`[H]` BEV-Szenario + Planetary-Boundaries-Einbettung (SOS)** — **wäre der methodische
   Aufhänger des Papers.** ~5–8 Tage, **keine neuen Sim-Runs** (reiner Faktortausch; EV-Plumbing
   existiert). Bausteine: BEV-EC-Kurven + Netz-CO₂-Intensität als Sensitivität (dominiert das
@@ -169,10 +223,15 @@ _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
 
 ### `[H]` Kostenfunktion reviewen
 
-`analysis/kpi/economics.py` ist **weiterhin ein Platzhalter** (verifiziert 2026-08-17) — alle
-`*_placeholder`-€-KPIs im Dashboard stehen unter Vorbehalt → [METHODS-LOG](METHODS-LOG.md) §2.6.
-Die **Parametrisierung steht** seit 2026-08-17 in `analysis/kpi/cost_parameters.csv` (v0.7-draft,
-Herleitung und Scope im CSV-Kopf); damit sind die Kosten von §2.36–§2.38 gerechnet.
+**✅ Für LAUSITZ umgesetzt (2026-08-28).** `analysis/kpi/cost_model.py` leitet die `DERIVED`-Sätze
+aus `cost_parameters.csv` ab (Selbsttest gegen die im CSV dokumentierten 28,99 / 33,45 / 14,80 /
+16,60 / 18,80 / 22,74 €), `economics.py` wertet C auf Flotten-Aggregaten aus und ist ins Dashboard
+verdrahtet (`render_drt`/`render_lmd`/`render`). **Hannover bleibt bewusst auf dem Platzhalter**
+(User-Entscheidung 2026-08-28) — die Umschaltung hängt an `study_area`. Gegenproben: 220,9 €/Tour
+gegen die im CSV vermerkten „ca. 221 € für 7 h", 1,60 €/Paket im Literaturband. Tests
+`tests/test_cost_model.py` (17). Gemessen am gematchten Paar: Baseline 88.942 € gegen 1d 87.950 €,
+also **−1,1 %**, auf allen vier Kanälen kleiner. `*_placeholder`-Vorbehalt → §2.6 gilt nur noch
+für Hannover.
 
 **⚠️ Blockiert, nicht offen (User-Entscheidung 2026-08-16/17):** die Original-Kostenfunktion wird
 **nicht angefasst**, eine neue Klasse kommt erst **nach dem hendrik→master-Merge (~Oktober) und
@@ -180,6 +239,23 @@ nach den Hannover-Läufen**; bis dahin läuft die Bewertung rein post-hoc in Pyt
 `lmd-vehicle-types.xml` bleibt unberührt. Was fehlt, ist der Merge, nicht die Entscheidung.
 _(added 2026-07-14, aktualisiert 2026-08-17)_
 
+- **`[H]` durH-Basis ist eine Setzung mit Vorzeichenwirkung** — Personal = `c_time × durH`, durH =
+  `drt_tour_hours_total` (aktive Spanne, Nutzerentscheidung 2026-08-28). `shift_h` (24 h) drehte den
+  Armvergleich auf +4.307 €, `occupied_h` auf −7.949 €. Gehört als Sensitivität ins Paper, nicht nur
+  in den Code. _(added 2026-08-28)_
+- **`[H]` ArbZG-Zulässigkeit der DRT-Schichten** (löst den `REVIEW`-Status von
+  `max_daily_working_hours_legal` ab) — Fahrzeuge sind im Mittel **16,1 h** aktiv (max 20,7 h), also
+  über dem 10-h-Maximum: mindestens **zwei Fahrer je Fahrzeug und Tag**. C bepreist Stunden, nicht
+  Schichten, unterstellt also freien Wechsel ohne Mindestschicht und ohne bezahlte Übergabe
+  (`cost_drivers_per_vehicle_min` weist das aus). LMD ist unkritisch (Touren 6,0 h ⌀, 7,06 h max).
+  _(added 2026-08-28)_
+- **`[M]` Überstunden- und Abendzuschlag nicht instrumentiert** — beide brauchen durH je Fahrzeug
+  bzw. Tageszeitauflösung, die `economics.extract` an seiner Stelle in `build_kpis` nicht hat.
+  Headline unberührt (`overtime_factor` = 0), die 0,30-Sensitivität wäre aber ~16 % des
+  Personalkanals. Als `cost_*_instrumented`-Flags sichtbar. _(added 2026-08-28)_
+- **`[M]` `kpi_vehicles.csv` trägt die Frachtseite nicht** — nur **10 von 41** Frachtzeilen haben
+  `distance_km`/`duration_h`, Summe 585 km gegen 2.702 km aus `kpis_long`. C rechnet deshalb auf
+  Flotten-Aggregaten; als Basis wäre die Datei still um Faktor 4,6 falsch gewesen. _(added 2026-08-28)_
 - **`[H]` Kostenmodell-Sektion im METHODS-LOG anlegen** — die Herleitung (Lohn-Vollkosten,
   Overhead-Kürzungsalgebra, M11-Zurechnung) lebt derzeit **nur** im CSV-Kopf. Das ist
   paper-facing Methodik und gehört ins METHODS-LOG, bevor daraus ein Methods-Kapitel wird.
@@ -216,6 +292,29 @@ sollen auf derselben Kostenversion stehen.
 
 Die dauerhafte Reparatur im Java-Pfad läuft über `[H]` Kostenfunktion reviewen und ersetzt diesen
 Punkt später. _(added 2026-08-11, gekürzt 2026-08-17)_
+
+### `[H]` Pax-Nachfrage im Lausitz-Clip: Kontrolllauf ohne DRT und der kopierte DRT-ASC
+
+Anlass (User 2026-09-01): 9.036 DRT-Fahrten/Tag auf 41.937 Einwohner wirken gegenüber realen
+Systemen hoch. Der naheliegende Verdacht — das kommt vom entfernten Linien-ÖV — ist als Treiber
+widerlegt (Schiene an/aus bewegt den DRT-Anteil um +0,06 pp; nur 10,6 % der DRT-Fahrten waren im
+Input `pt`) → [METHODS-LOG](METHODS-LOG.md) §2.54. Offen bleiben zwei Punkte:
+
+- **`[H]` Kontrolllauf ohne DRT auf demselben Clip fahren** — identische Konfiguration, Bus und
+  Schiene an, kein DRT, Iterationen nach §2.47. Liefert zwei Dinge auf einmal: (1) den *kausalen*
+  DRT-Effekt statt der heutigen Kompositionsschätzung gegen `plans-initial`; (2) die Probe, ob das
+  Clip überhaupt den kalibrierten Lausitz-Modal-Split reproduziert — der Radanteil fällt vom Input
+  (19,2 %) auf 6,9 % im Lauf, und der Input ist unkonvergiert (`score="0.0"`, ein Plan/Person).
+  Ohne diesen Arm ist jede Aussage über DRT-induzierte Verlagerung unbelegt (§2.54 Messvorbehalt).
+  _(added 2026-09-01)_
+
+- **`[H]` DRT-ASC-Sensitivität rechnen und als Limitation ausweisen** — der DRT-ASC wird vom ÖV
+  kopiert: `setConstant(ptParams.getConstant())` (−1,2987) und `marginalUtilityOfTraveling = 0`
+  ([DrtConfigComposer.java:126-128](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/drt/DrtConfigComposer.java#L126)).
+  Ein Tür-zu-Tür-Dienst wird damit bewertet wie ein Taktbus, obwohl der ÖV-ASC gerade das
+  Unbeobachtete am Bus aufsammelt (Haltestellenweg, Fahrplanbindung, Umsteigen). Zu tun: ASC-Fächer
+  auf dem Baseline-Arm, Modal-Split und DRT-Fahrleistung als Bandbreite statt als Punktwert, dann
+  benannte Limitation ins METHODS-LOG. _(added 2026-09-01)_
 
 ---
 
