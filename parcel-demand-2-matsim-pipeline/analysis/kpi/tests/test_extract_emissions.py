@@ -431,17 +431,23 @@ def test_extract_freight_only_run(tmp_path):
     assert "total_co2e_wtw" in by
     assert by["freight_co2e_wtw"]["unit"] == "kg"
     assert by["freight_nox"]["unit"] == "g"
-    # Rev. B: Sweep-Rows statt Einzel-Gate, plus Mix-Transparenz
-    for thr in (150, 200, 250):
+    # Rev. B: Sweep-Rows statt Einzel-Gate, plus Mix-Transparenz. Die
+    # Schwellen kommen aus dem Supplement, nicht hart aus dem Test -- sonst
+    # bricht er bei jedem Fahrzeugwechsel, ohne dass etwas kaputt ist.
+    import emissions_emep as _em
+    _thr = [int(_em.load_factors()["sup"]["ev_range_km_" + k])
+            for k in ("low", "mid", "high")]
+    for thr in _thr:
         assert "ev_range_exceed_freight_" + str(thr) in by
     assert "ev_range_exceed_freight" not in by      # kein Einzelwert mehr
     assert by["segment_km_share_n1_iii"]["value"] == pytest.approx(1.0)
     assert by["segment_km_share_n1_ii"]["value"] == pytest.approx(0.0)
     assert "2023 - Update 2025" in by["freight_co2e_wtw"]["source"]
     assert "drt_co2e_wtw" not in by                     # kein DRT-Input uebergeben
-    # EV-Sweep: Touren sind 120/60 km -> bei 150/200/250 km alle 0
+    # EV-Sweep: Touren sind 120/60 km -> unter jeder Schwelle also alle 0
     assert by["ev_range_max_km_freight_tour"]["value"] == pytest.approx(120.0)
-    for thr in (150, 200, 250):
+    assert min(_thr) > 120.0
+    for thr in _thr:
         assert by["ev_range_exceed_freight_" + str(thr)]["value"] == 0.0
     assert "EMEP/EEA" in by["freight_co2e_wtw"]["source"]
     # BEV-Arm hat konstruktionsbedingt kein TTW-CO2
@@ -455,11 +461,12 @@ def test_extract_sweep_resolves_at_the_low_threshold(tmp_path, monkeypatch):
     import extract_emissions as ee
     fac = em.load_factors()
     fac["sup"]["ev_range_km_low"] = 100.0        # Tour 1 (120 km) reisst
+    high = int(fac["sup"]["ev_range_km_high"])
     monkeypatch.setattr(em, "load_factors", lambda data_dir=None: fac)
     rows, _ = ee.extract(_run_dir(tmp_path), "test")
     by = _rows_by_name(rows)
     assert by["ev_range_exceed_freight_100"]["value"] == pytest.approx(0.5)
-    assert by["ev_range_exceed_freight_250"]["value"] == 0.0
+    assert by["ev_range_exceed_freight_" + str(high)]["value"] == 0.0
 
 
 def test_extract_mixed_fleet_reports_segment_shares(tmp_path):
@@ -593,8 +600,10 @@ def test_ev_range_rows_carry_their_entity_definition(tmp_path):
     rows, _ = ee.extract(_run_dir(tmp_path), "test", recon=recon,
                          veh_path=veh_path, network_gz=_network(tmp_path))
     by = _rows_by_name(rows)
-    drt_src = by["ev_range_exceed_drt_150"]["source"]
-    fr_src = by["ev_range_exceed_freight_150"]["source"]
+    import emissions_emep as _em
+    low = int(_em.load_factors()["sup"]["ev_range_km_low"])
+    drt_src = by["ev_range_exceed_drt_" + str(low)]["source"]
+    fr_src = by["ev_range_exceed_freight_" + str(low)]["source"]
     assert "VEHICLE-DAY" in drt_src and "charging" in drt_src
     assert "NOT an electrification verdict" in drt_src
     assert "TOUR" in fr_src and "continuous shift" in fr_src
@@ -882,3 +891,45 @@ def test_bev_gets_no_share_rows():
     detail = [{"fleet": "drt", "powertrain": "bev",
                "NOx": 0.0, "cold_NOx": 0.0}]
     assert coldstart_share_rows(detail) == []
+
+
+def test_grid_sweep_rows_are_linear_and_agree_with_the_core(tmp_path):
+    """A-1b: drei Netzpunkte je Flotte plus netzseitige Energie.
+
+    Die Invariante, die den redundanten mid-Punkt rechtfertigt: er MUSS gleich
+    `<fleet>_co2e_wtw_bev` sein. Laufen Kern und Sweep auseinander, faellt das
+    sonst niemandem auf (METHODS-LOG 2.55)."""
+    import emissions_emep as em
+    import extract_emissions as ee
+    sup = em.load_factors()["sup"]
+    rows, _ = ee.extract(_run_dir(tmp_path), "test")
+    by = _rows_by_name(rows)
+
+    for label in ("freight", "total"):
+        for pt in ee.GRID_POINTS:
+            assert label + "_co2e_wtw_bev_grid_" + pt in by
+        assert by[label + "_energy_grid_bev"]["unit"] == "MJ"
+        # Ladeverlust genau einmal: netzseitig > fahrzeugseitig
+        veh = by[label + "_energy_final_bev"]["value"]
+        grid = by[label + "_energy_grid_bev"]["value"]
+        assert grid == pytest.approx(veh / (1.0 - sup["charging_loss_share"]))
+        # Invariante: mid == der Kernwert
+        assert (by[label + "_co2e_wtw_bev_grid_mid"]["value"]
+                == pytest.approx(by[label + "_co2e_wtw_bev"]["value"]))
+        # geordnet und linear im Faktor
+        lo = by[label + "_co2e_wtw_bev_grid_low"]["value"]
+        hi = by[label + "_co2e_wtw_bev_grid_high"]["value"]
+        assert lo < by[label + "_co2e_wtw_bev_grid_mid"]["value"] < hi
+        assert (hi / lo == pytest.approx(sup["grid_co2e_g_per_mj_high"]
+                                         / sup["grid_co2e_g_per_mj_low"]))
+        assert "METHODS-LOG 2.55" in by[label + "_co2e_wtw_bev_grid_low"]["source"]
+
+
+def test_grid_sweep_absent_without_any_arm(tmp_path):
+    """Kein Arm -> keine Sweep-Zeilen (statt drei Nullen, die nach Messung
+    aussehen)."""
+    import extract_emissions as ee
+    empty = tmp_path / "empty_run"
+    empty.mkdir()
+    rows, _ = ee.extract(empty, "test")
+    assert not [r for r in rows if "_co2e_wtw_bev_grid_" in r["kpi_name"]]

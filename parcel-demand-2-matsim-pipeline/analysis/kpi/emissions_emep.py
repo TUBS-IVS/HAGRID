@@ -120,6 +120,24 @@ def non_exhaust_pm10(km, v_kmh, powertrain, segment, sup):
     return tyre, brake, road
 
 
+def grid_energy(vehicle_mj, sup):
+    """Grid-side electricity for `vehicle_mj` measured at the battery.
+
+    The EMEP BEV EC curve is VEHICLE-side consumption, but the UBA grid factor
+    prices a kWh drawn from the grid, so the charging loss sits exactly between
+    the two and has to be added here rather than folded into ENERGY_MJ:
+    ENERGY_MJ stays vehicle-side because `ev_range_km_*` is derived from it
+    (usable battery / our own Wh/km), and a grid-side ENERGY_MJ would silently
+    shift those thresholds by 7.5 %.
+
+    Transmission losses are NOT added -- the UBA factor refers to electricity
+    CONSUMPTION (Bruttostromerzeugung minus Kraftwerkseigenverbrauch,
+    Leitungsverluste, Pumparbeit, Stromhandelssaldo), so they are already in
+    it. Adding them here would double-count. See METHODS-LOG 2.55.
+    """
+    return vehicle_mj / (1.0 - sup["charging_loss_share"])
+
+
 def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
     """Full pollutant vector [g; ENERGY_MJ in MJ; SPN23 in #] for `km`
     driven at mean travelling speed `v_kmh` by a vehicle of N1 `segment`.
@@ -151,10 +169,18 @@ def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
                            + sup["gwp_n2o"] * out["N2O"])
         out["CO2E_WTW"] = out["CO2E_TTW"] + ec * sup["wtt_co2e_g_per_mj_diesel"]
     elif powertrain == "bev":
-        ec = km * ef(v_kmh, fac["bev"][segment]["EC"])
+        # Nebenverbraucher gehen in ENERGY_MJ, nicht erst in die CO2e-Kette:
+        # Heizung und Basislast ziehen aus derselben Batterie wie die
+        # Traktion, also muss auch die REICHWEITE sie tragen. ev_range_km_*
+        # ist deshalb aus 285.1 Wh/km abgeleitet (247.9 Traktion x 1.15) und
+        # nicht aus der Traktion allein -- die beiden haengen zusammen, eine
+        # Aenderung hier ohne die andere waere eine unbeheizte Reichweite.
+        # Diesel bekommt keinen Gegenpart: dort ist Kabinenwaerme Abwaerme.
+        ec = km * ef(v_kmh, fac["bev"][segment]["EC"]) * (
+            1.0 + sup["aux_load_share_bev"])
         out = {k: 0.0 for k in EXHAUST_KEYS}
         out["ENERGY_MJ"] = ec
-        out["CO2E_WTW"] = ec * sup["grid_co2e_g_per_mj"]
+        out["CO2E_WTW"] = grid_energy(ec, sup) * sup["grid_co2e_g_per_mj_mid"]
     else:
         raise ValueError("unknown powertrain: " + str(powertrain))
     tyre, brake, road = non_exhaust_pm10(km, v_kmh, powertrain, segment, sup)
