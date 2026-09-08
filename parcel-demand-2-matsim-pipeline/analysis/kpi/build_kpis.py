@@ -210,7 +210,9 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
         print("[build] chi detour skipped: " + note)  # ASCII only
         rows.append(common_row("meta", "chi_detour_skipped", 1, "flag", note))
 
-    rows += economics.extract(rows, fleet_size=meta.fleet_size)
+    # meta gates the cost model (Lausitz -> unified, Hannover -> legacy
+    # placeholder); pf carries the LMD vehicle-type mix the van capital needs.
+    rows += economics.extract(rows, fleet_size=meta.fleet_size, meta=meta, pf=pf)
 
     kpi_writer.write_long(rows, meta, out / "kpis_long.csv")
     kpi_writer.write_wide(rows, meta, out / "kpis_wide.csv")

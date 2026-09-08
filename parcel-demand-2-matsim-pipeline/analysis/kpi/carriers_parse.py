@@ -10,6 +10,7 @@ parse the same way.
 from __future__ import annotations  # PEP 563: keep `list[str]` etc. lazy for Python 3.8 (sim-PC)
 
 import gzip
+import io
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -166,11 +167,24 @@ def _carrier_tours(carrier_el):
     return tours
 
 
+def _open_maybe_gzip(path: Path):
+    """Open a MATSim XML that may or may not be gzipped. MATSim's own writers emit .xml.gz, but
+    the INTEGRATED (1d) carriers are a preprocessing artefact written UNCOMPRESSED
+    (hagrid-output/<run>/carriers/<run>_lmd_carriers_routed.xml). Sniffing the gzip magic bytes
+    beats trusting the suffix: the 1d file is named .xml and is genuinely plain, and a caller
+    that guessed wrong used to fail with an opaque "Not a gzipped file".
+    """
+    path = Path(path)
+    with io.open(path, "rb") as probe:
+        gzipped = probe.read(2) == bytes((0x1F, 0x8B))  # gzip magic
+    return gzip.open(path, "rb") if gzipped else io.open(path, "rb")
+
+
 def parse_carriers(carriers_xml_gz: Path) -> list[CarrierDef]:
     """Stream-parse carriers.xml.gz -> list[CarrierDef]. Namespace-agnostic
     (tag-suffix matching); parses the selected <plan> only."""
     out = []
-    with gzip.open(Path(carriers_xml_gz), "rb") as f:
+    with _open_maybe_gzip(carriers_xml_gz) as f:
         for _, el in ET.iterparse(f):
             if el.tag.endswith("carrier"):
                 out.append(CarrierDef(
@@ -188,7 +202,7 @@ def parse_carriers(carriers_xml_gz: Path) -> list[CarrierDef]:
 def parse_vehicle_types(vtypes_xml_gz: Path) -> dict[str, VehTypeDef]:
     """Stream-parse carriersVehicleTypes.xml.gz -> {type_id: VehTypeDef}."""
     out = {}
-    with gzip.open(Path(vtypes_xml_gz), "rb") as f:
+    with _open_maybe_gzip(vtypes_xml_gz) as f:
         for _, el in ET.iterparse(f):
             if el.tag.endswith("vehicleType"):
                 type_id = el.get("id")

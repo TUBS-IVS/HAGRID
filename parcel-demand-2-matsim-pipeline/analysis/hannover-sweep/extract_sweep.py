@@ -31,18 +31,23 @@ CAPA_LIMIT_FRAC = 0.9      # parcels > 0.9 * cap -> capacity-limited
 V1_CAPS = list(range(30, 401, 10))                       # 38 points
 
 # Original v2 arm (sim-PC, 2026-07-23/27): 30-150 step 10. Extended 2026-08-01/10
-# by the dev-PC with 160-290, and 2026-08-11/12 with 70 (the run lost to the July
-# JVM crash), 300 and 310. Caps 320-400 are still being produced -- add them as
-# they land; v3 already covers that range.
-V2_CAPS = list(range(30, 151, 10)) + list(range(160, 311, 10))     # 29 points
-V2_MISSING = tuple(range(320, 401, 10))                            # still running
+# by the dev-PC with 160-290, 2026-08-11/12 with 70 (the run lost to the July JVM
+# crash), 300 and 310, and finally 2026-08-13/14 with 320-400. COMPLETE.
+V2_CAPS = list(range(30, 401, 10))                                 # 38 points
+V2_MISSING = ()                                                    # complete 2026-08-14
 
 # v3 arm (sim-PC, 2026-08-01/10): 30-400 step 10. COMPLETE as of 2026-08-12 --
 # the three ZGC EXCEPTION_ACCESS_VIOLATION casualties (170v3, 270v3, 330v3) were
 # redone on G1, and 390v3/400v3 finished.
 V3_CAPS = list(range(30, 401, 10))                                 # 38 points
 
-EXPECTED_RUNS = {"v1": 39, "v2": 29, "v3": 38}   # v1 includes the 120_v2 replicate
+# v4 arm (sim-PC, 2026-08-15/25): 30-400 step 10, reseed replicate on the SAME
+# code (sim HEAD 019fd5f == the v3 commit), so v2/v3/v4 are three draws of the
+# same model and their spread IS the sweep's uncertainty estimate. COMPLETE
+# 2026-08-25, 38/38, and the only arm that finished without a single GC crash.
+V4_CAPS = list(range(30, 401, 10))                                 # 38 points
+
+EXPECTED_RUNS = {"v1": 39, "v2": 38, "v3": 38, "v4": 38}  # v1 incl. the 120_v2 replicate
 
 # V2_MISSING is not decoration: present + missing must partition the full grid, so
 # moving a cap out of the missing list without adding it to V2_CAPS (or vice versa)
@@ -51,9 +56,10 @@ _full_grid = list(range(30, 401, 10))
 if sorted(V2_CAPS + list(V2_MISSING)) != _full_grid:
     raise ValueError(f"V2_CAPS + V2_MISSING must partition {_full_grid[0]}..{_full_grid[-1]} "
                      f"step 10; got {len(V2_CAPS)} + {len(V2_MISSING)} caps with overlaps or gaps")
-if len(V2_CAPS) != EXPECTED_RUNS["v2"] or len(V3_CAPS) != EXPECTED_RUNS["v3"]:
-    raise ValueError(f"list lengths v2={len(V2_CAPS)} v3={len(V3_CAPS)} disagree with "
-                     f"EXPECTED_RUNS {EXPECTED_RUNS} - update both in the same edit")
+_declared = {"v2": len(V2_CAPS), "v3": len(V3_CAPS), "v4": len(V4_CAPS)}
+if any(_declared[s] != EXPECTED_RUNS[s] for s in _declared):
+    raise ValueError(f"list lengths {_declared} disagree with EXPECTED_RUNS "
+                     f"{EXPECTED_RUNS} - update both in the same edit")
 
 
 def board(name: str) -> str:
@@ -67,19 +73,18 @@ def run_list():
     old-code runs tagged 50v2_l / 300v2 (file dates 2026-02-19, "v2" was just
     the tag back then). Only 120_v2 is a genuine replicate (120 also exists).
 
-    v2 and v3 at the same capacity are genuine replicates, not duplicates: the
-    tag is part of the runId and runId.hashCode() seeds both the demand-layer
+    v2, v3 and v4 at the same capacity are genuine replicates, not duplicates:
+    the tag is part of the runId and runId.hashCode() seeds both the demand-layer
     RNG and CarrierVehicleFactory (CarrierGenerator.java:87-89). The Hannover
-    LMD code path itself was verified identical between the two arms."""
+    LMD code path itself was verified identical across the arms."""
     runs = []
     for cap in V1_CAPS:
         tag = {50: "50v2_l", 300: "300v2"}.get(cap, str(cap))
         runs.append(("v1", cap, None, DESKTOP / board(tag)))
     runs.append(("v1", 120, "120_v2", DESKTOP / board("120_v2")))
-    for cap in V2_CAPS:
-        runs.append(("v2", cap, None, V2_DIR / board(f"{cap}v2")))
-    for cap in V3_CAPS:
-        runs.append(("v3", cap, None, V2_DIR / board(f"{cap}v3")))
+    for series, caps in (("v2", V2_CAPS), ("v3", V3_CAPS), ("v4", V4_CAPS)):
+        for cap in caps:
+            runs.append((series, cap, None, V2_DIR / board(f"{cap}{series}")))
     return runs
 
 

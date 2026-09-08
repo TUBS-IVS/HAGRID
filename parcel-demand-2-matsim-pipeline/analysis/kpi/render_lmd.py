@@ -228,14 +228,30 @@ def _tiles(data):
                         tip="Reine Fahrzeit / gesamte Tourdauer (Fahrzeit + "
                             "Servicezeit an den Stopps)."))
 
-    # 17. Kosten gesamt [sub: economic freight_cost_per_parcel EUR/Paket]
-    v = _kpi(kpis, "freight_total_costs")
+    # 17. Kosten der Van-Flotte -- unified model (Lausitz) or the legacy
+    # jsprit plan cost (Hannover). Never both: the legacy rate overstates
+    # distance by ~70 % and understates the daily total by ~15 % (see the
+    # crosscheck_legacy_* rows in cost_parameters.csv), so the two numbers
+    # are not interchangeable and must not sit side by side.
+    v = _kpi(kpis, "cost_lmd_total")
     if v is not None:
-        per_parcel = _kpi(kpis, "freight_cost_per_parcel")
+        per_parcel = _kpi(kpis, "cost_per_parcel")
         sub = (_fmt_de(per_parcel, 2) + " EUR/Paket") if per_parcel is not None else ""
-        t.append(_tile(_fmt_de(v) + " EUR", "Kosten gesamt", sub,
-                        tip="Gesamtkosten (Distanz + Zeit + Fixkosten + Ueberstunden) "
-                            "ueber alle Carrier, nach Low-Util-Umverteilung."))
+        t.append(_tile(_fmt_de(v) + " EUR", "Kosten Van-Flotte", sub,
+                        tip="Direkte Betriebskosten der Van-Flotte aus "
+                            "cost_parameters.csv (Personal je Tourstunde, "
+                            "Fahrzeugkapital je Betriebstag, Verschleiss je km, "
+                            "Energie aus ENERGY_MJ). Trennbar von der Pax-Flotte, "
+                            "weil beide Flotten disjunkt sind - deshalb hat "
+                            "EUR/Paket hier einen echten Zaehler."))
+    else:
+        v = _kpi(kpis, "freight_total_costs")
+        if v is not None:
+            per_parcel = _kpi(kpis, "freight_cost_per_parcel")
+            sub = (_fmt_de(per_parcel, 2) + " EUR/Paket") if per_parcel is not None else ""
+            t.append(_tile(_fmt_de(v) + " EUR", "Kosten gesamt", sub,
+                            tip="Gesamtkosten (Distanz + Zeit + Fixkosten + Ueberstunden) "
+                                "ueber alle Carrier, nach Low-Util-Umverteilung."))
 
     # 18. Fixkosten = sum over real providers of provider cost_fixed
     fixed = _pv_sum(pv, "cost_fixed")

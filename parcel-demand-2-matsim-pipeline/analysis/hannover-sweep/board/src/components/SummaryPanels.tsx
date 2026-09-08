@@ -30,7 +30,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { KPIS, SERIES_VAR, fmt, pooledCoverage, spreadStat, summaryRows, type KpiDef } from "@/lib/data";
+import { KPIS, POOLED, SERIES_VAR, fmt, pooledCoverage, spreadStat, summaryRows, type KpiDef } from "@/lib/data";
 
 const INK2 = "var(--chart-ink2)";
 const TICKS = [30, 100, 200, 300, 400];
@@ -46,7 +46,7 @@ function Swatches({ showV1, rel }: { showV1: boolean; rel: boolean }) {
     <div className="mb-4 flex flex-wrap gap-x-5 gap-y-1" style={{ color: INK2 }}>
       <span className="inline-flex items-center gap-1.5 text-xs">
         <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: `var(${SERIES_VAR.v2})` }} />
-        Mittelwert v2/v3{rel && " (= 0-Linie)"}
+        Mittelwert {POOLED.join("/")}{rel && " (= 0-Linie)"}
       </span>
       <span className="inline-flex items-center gap-1.5 text-xs">
         <span
@@ -141,7 +141,7 @@ function Panel({ kpi, showV1, rel }: { kpi: KpiDef; showV1: boolean; rel: boolea
               }
               const v = Number(value);
               if (name === "v1") return [rel ? `${signed(v)} %` : fmt(v, digits), "v1"];
-              return [rel ? "0 % (Referenz)" : fmt(v, digits), "Mittelwert v2/v3"];
+              return [rel ? "0 % (Referenz)" : fmt(v, digits), `Mittelwert ${POOLED.join("/")}`];
             }}
           />
           {rel && <ReferenceLine y={0} stroke={`var(${SERIES_VAR.v2})`} strokeWidth={2} />}
@@ -196,9 +196,11 @@ export default function SummaryPanels({ showV1, rel }: { showV1: boolean; rel: b
         ))}
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
-        Mittelwert und Band über die Replikat-Arme v2 und v3 bei gleicher Kapazität — beide fahren denselben
+        Mittelwert und Band über die Replikat-Arme v2, v3 und v4 bei gleicher Kapazität — alle drei fahren denselben
         Hannover-Code und unterscheiden sich nur im Seed, ihre Spanne ist daher die Unsicherheit dieses Sweeps und kein
-        Codeeffekt. Kein Standardabweichungsband: bei n = 2 schätzt eine SD nichts, die beobachtete Spanne schon.
+        Codeeffekt. Kein Standardabweichungsband: bei n = 3 ist eine SD noch ein schlechter Schätzer, die beobachtete
+        Spanne dagegen eine Aussage. Mit drei vollständigen Armen ist das Band erstmals eine echte Drei-Punkt-Spanne
+        und nicht mehr der Abstand zweier Läufe.
         {rel ? (
           <>
             {" "}
@@ -214,7 +216,8 @@ export default function SummaryPanels({ showV1, rel }: { showV1: boolean; rel: b
             „relativ" umschalten.
           </>
         )}{" "}
-        Band nur, wo zwei Runs vorliegen ({nBand} von {cov.total} Kapazitäten); nur ein Run bei {cov.n1.join("/")} —
+        Band nur, wo mindestens zwei Runs vorliegen ({nBand} von {cov.total} Kapazitäten); nur ein Run bei{" "}
+        {cov.n1.join("/")} —
         dort ist die Linie ein Einzelwert ohne Unsicherheitsaussage
         {cov.n0.length > 0 && <> und bei {cov.n0.join("/")} fehlt der Arm ganz</>}. v1 ist ein anderer Codestand
         (Merger-Split fehlt) und geht nie in den Mittelwert ein.

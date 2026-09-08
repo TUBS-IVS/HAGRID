@@ -23,7 +23,10 @@ def test_build_writes_all_csvs(tmp_path):
     # drt + freight + economics all present in one canonical file
     assert ";passenger;drt_rides;9171;" in long_txt
     assert ";freight;parcels_total;500;" in long_txt
-    assert ";economic;freight_cost_per_parcel;" in long_txt
+    # Lausitz runs go through the unified cost model (economics.extract ->
+    # cost_model); the legacy freight_cost_per_parcel is Hannover-only now.
+    assert ";economic;cost_per_parcel;" in long_txt
+    assert ";economic;cost_total;" in long_txt
 
     # FROZEN-SCHEMA REGRESSION: 1e long-CSV header must not change.
     long_header = long_txt.splitlines()[0]
@@ -199,7 +202,7 @@ def test_drt_less_run_still_gets_lmd_link_geometry(tmp_path):
     assert md["lmd"]["heat"], md["lmd"]
 
 
-def _write_modular_stats(run_dir, prefix):
+def _write_modular_stats(run_dir, prefix, budget=None):
     """A conforming modular_tour_stats.csv (every conservation identity holds) so
     extract_modular.extract runs clean -- the point of this fixture is exercising
     has_modular_stats()/build()'s marker wiring, not extract_modular's own
@@ -214,7 +217,37 @@ def _write_modular_stats(run_dir, prefix):
              "freight_vehicle_hours;21.75",
              "tours_completed_late;1", "parcels_served_late;12",
              "tours_rejected_at_splice;3"]
+    if budget is not None:
+        lines.append("budget_active;1")
+        lines.append("budget_blocked_dispatches;" + str(budget[0]))
+        lines.append("budget_overrides_expiry;" + str(budget[1]))
     (Path(run_dir) / (prefix + ".modular_tour_stats.csv")).write_text("\n".join(lines))
+
+
+def test_budget_rows_reach_the_canonical_kpis_long_csv(tmp_path):
+    """Task 6 (plan 2026-09-04). The extractor-level tests prove the rows are BUILT; this
+    proves they are WRITTEN -- the same "rows exist in memory and reach neither kpis_long.csv
+    nor the dashboard" failure mode that once hid the whole `modular` group. A budget arm whose
+    counters never leave the extractor is exactly as uninterpretable as one that never counted:
+    a low freight throughput could then be the gate, the splicer or the budget, with nothing in
+    the published CSV to separate them."""
+    d = tmp_path / "drtrun_modular_budget"
+    shutil.copytree(FIX, d)
+    _write_modular_stats(d, "DRT_TEST", budget=(41, 2))
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert ";modular;budget_active;" in long_txt
+    blocked = [ln for ln in long_txt.splitlines()
+               if ";modular;budget_blocked_dispatches;" in ln]
+    overrides = [ln for ln in long_txt.splitlines()
+                 if ";modular;budget_overrides_expiry;" in ln]
+    assert len(blocked) == 1, long_txt
+    assert len(overrides) == 1, long_txt
+    # unequal values, so a transposition between the two names fails here too
+    assert float(blocked[0].split(";")[6]) == 41.0, blocked
+    assert float(overrides[0].split(";")[6]) == 2.0, overrides
 
 
 def test_no_events_build_still_carries_the_modular_contamination_marker(tmp_path):
