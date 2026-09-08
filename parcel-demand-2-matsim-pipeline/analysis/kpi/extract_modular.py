@@ -58,6 +58,47 @@ things, all documented at their point of use below:
    delta_share_undispatched and delta_share_dispatched_incomplete are omitted when
    delta_parcels == 0 (the other zero-delta case: a run that delivered everything).
 
+Task 6 (self-referential capacity budget, plan 2026-09-04) added a tenth thing:
+10. The budget's dispatch counters. `budget_active` is a FLAG row Java writes on every run
+    (1 = the budget ran, 0 = budgetMode=off) and `budget_blocked_dispatches` /
+    `budget_overrides_expiry` exist ONLY when it ran. That asymmetry is the point, not an
+    oversight: "the budget was off" and "the budget was on and never bound" are completely
+    different runs, and a pair of zeros with no flag would make them identical here. This
+    extractor MIRRORS the Java convention (ModularKpiHandler.notifyShutdown states it once)
+    rather than re-deriving one:
+      budget_active == 0 -> emit the flag row alone, no counters;
+      budget_active == 1 -> emit the flag row plus both counters, zeros included.
+    `budget_blocked_dispatches` counts ATTEMPTS, not tours -- when the budget is tight every
+    pending tour is re-checked every simstep, so one tour held all morning contributes
+    thousands. It is a pressure measure and must never be read against tours_planned; the unit
+    string says "attempts" for exactly that reason. `budget_overrides_expiry` is the honesty
+    check on the arm: a high count means the budget was overridden into decoration and the run
+    is really the old theta gate wearing a new name. Together with tours_rejected_at_splice
+    ("the tour never fit") and tours_expired_pending ("the gate was too tight") they are the
+    THREE separate causes a tour can fail to go out; conflating any two points the theta sweep
+    at the wrong knob (METHODS-LOG 2.18). Absent entirely on any CSV written before this
+    feature -- same silent backward-compat as the Task-1 block above, no flag row for it.
+
+The honest-envelope plan (2026-09-05, METHODS-LOG 2.58) added an eleventh:
+11. `budget_urgency_admits` and the chain-ratio pair. The binary "last dispatch opportunity"
+    override was replaced by a RAMP: as a tour's remaining slack falls below
+    budgetUrgencyLeadS its urgency grows from 0 to the full headroom reserve, so it leaves
+    while the splicer can still place it. `budget_urgency_admits` counts the dispatches that
+    ONLY the ramp made possible -- refused at urgency 0, admitted with it, deadline not yet
+    passed. It is the counter that says whether the ramp did anything at all: a run with
+    budget_urgency_admits == 0 exercised no ramp and is the plain budget arm under a new name,
+    however healthy the rest of the CSV looks. It is deliberately separate from
+    budget_overrides_expiry, which is now the terminal branch (deadline already passed) -- the
+    two must not be summed, since a large override count still means the budget was decorative.
+
+    `chain_ratio_p90` / `chain_ratio_max` are the observed routedDurationS divided by the
+    scheduler's free-flow lower bound, i.e. the measurement that retires
+    Modular.CHAIN_BOOTSTRAP_FACTOR (1.25, the one guessed constant of that fix). They exist
+    ONLY when at least one tour was dispatched -- `chain_ratio_samples` says how many -- and
+    ABSENCE rather than NaN is how "nothing was dispatched" is stated, matching the
+    budget_active convention one level up. Same silent backward-compat: absent on every CSV
+    written before 2026-09-05, no flag row for it.
+
 Unreadable-CSV policy (review M1): a MISSING modular_tour_stats.csv is a different case --
 `has_modular_stats` gates every call into `extract`, so that stays silent
 (has_modular_stats() == False, no row at all). A file that EXISTS but is 0 bytes
@@ -137,13 +178,30 @@ def _district_rows(run_dir, prefix):
     _provider_cost_totals graceful fallback) rather than raising out of build_kpis -- this is an
     ADDITIVE metric with nothing else depending on it.
     """
-    try:
-        import carriers_parse
-        carriers = carriers_parse.parse_carriers(
-            Path(run_dir) / (prefix + ".output_carriers.xml.gz"))
-    except Exception as e:
-        print("[modular] district load rows unavailable (output_carriers.xml.gz missing or "
-              "unreadable): " + str(e).encode("ascii", "replace").decode("ascii"))  # ASCII only
+    # TWO locations, because the two scenario families write carriers at different stages.
+    # LMD_BASELINE lets MATSim's own carriers module write <prefix>.output_carriers.xml.gz into the
+    # run dir. DRT_MODULAR never runs that module -- its carriers are a PREPROCESSING artefact
+    # (LausitzFreightPreprocessor -> jsprit -> ModularTourConverter) and land uncompressed under
+    # hagrid-output/<run_id>/carriers/. Same sibling-directory convention as build_kpis.py's own
+    # drt_fleet lookup. Tried in order, first readable one wins; the baseline path stays FIRST so
+    # a run that has both keeps reading MATSim's executed output rather than the plan.
+    import carriers_parse
+    candidates = [
+        Path(run_dir) / (prefix + ".output_carriers.xml.gz"),
+        (Path(run_dir).parent.parent / "hagrid-output" / prefix / "carriers"
+         / (prefix + "_lmd_carriers_routed.xml")),
+    ]
+    carriers = None
+    misses = []
+    for cand in candidates:
+        try:
+            carriers = carriers_parse.parse_carriers(cand)
+            break
+        except Exception as e:
+            misses.append(cand.name + " (" + str(e) + ")")
+    if carriers is None:
+        print("[modular] district load rows unavailable, no readable carriers XML: "
+              + " | ".join(misses).encode("ascii", "replace").decode("ascii"))  # ASCII only
         return []
     rows = []
     # Sorted by carrier/district id (not the XML's own order) -- determinism, mirroring
@@ -286,6 +344,52 @@ def _rows_from_stats(stats, core, run_dir, prefix):
     for _name in sorted(stats):
         if _name.startswith("peak_concurrent_swaps_"):
             rows.append(row("modular", _name, int(stats[_name]), "swaps", "modular_tour_stats"))
+
+    # Task 6 (plan 2026-09-04): the capacity-budget counters. See docstring item 10 for the
+    # full convention; the short version is that `budget_active` is the discriminator between
+    # "budget off" and "budget on, never bound", and the counters exist only in the second
+    # case. `in stats` (not .get()) because the three states -- absent / off / on -- are three
+    # different runs, and .get()-with-a-default would collapse the first two.
+    #
+    # The two counter lookups are stats[...] and NOT stats.get(...) on purpose: a CSV that says
+    # budget_active;1 and omits a counter can only come from a Java-side bug, and this module's
+    # documented policy (review Important 1) is that a genuine bug outside the narrow
+    # read/required-field try/except must raise for real rather than be relabelled
+    # "modular_stats_unreadable".
+    if "budget_active" in stats:
+        budget_active = int(stats["budget_active"])
+        rows.append(row("modular", "budget_active", budget_active, "flag",
+                        "modular_tour_stats (1 = budgetMode=selfref ran, 0 = off)"))
+        if budget_active:
+            rows.append(row("modular", "budget_blocked_dispatches",
+                            int(stats["budget_blocked_dispatches"]), "attempts",
+                            "modular_tour_stats (per ATTEMPT, not per tour - see module docstring)"))
+            rows.append(row("modular", "budget_overrides_expiry",
+                            int(stats["budget_overrides_expiry"]), "dispatches",
+                            "modular_tour_stats (high = the budget was decorative)"))
+            # 2026-09-05 (METHODS-LOG 2.58). .get() with a None default here and NOT stats[...]
+            # -- unlike the two counters above, because a budget_active;1 CSV written between
+            # Task 6 and this plan legitimately has no urgency row, and that is a readable old
+            # run rather than a Java-side bug. A missing row therefore emits nothing, exactly
+            # like the pre-Task-6 CSVs the block above tolerates.
+            if stats.get("budget_urgency_admits") is not None:
+                rows.append(row("modular", "budget_urgency_admits",
+                                int(stats["budget_urgency_admits"]), "dispatches",
+                                "modular_tour_stats (0 = the urgency ramp never bound)"))
+            # The ratio pair is present only when something was dispatched; chain_ratio_samples
+            # carries that fact, so it is emitted whenever it exists and the pair follows it.
+            if stats.get("chain_ratio_samples") is not None:
+                samples = int(stats["chain_ratio_samples"])
+                rows.append(row("modular", "chain_ratio_samples", samples, "dispatches",
+                                "modular_tour_stats (routed/free-flow-bound sample count)"))
+                if samples:
+                    rows.append(row("modular", "chain_ratio_p90",
+                                    float(stats["chain_ratio_p90"]), "ratio",
+                                    "modular_tour_stats (routedDurationS / minimumChainDurationS;"
+                                    " retires CHAIN_BOOTSTRAP_FACTOR=1.25)"))
+                    rows.append(row("modular", "chain_ratio_max",
+                                    float(stats["chain_ratio_max"]), "ratio",
+                                    "modular_tour_stats (worst observed routed/bound ratio)"))
 
     # Zustellquoten-Konvention (2026-08-10, METHODS-LOG 2.21): dieser Arm hatte gar keine
     # Quote -- nur delta_share_*, das die NICHT-Zustellung nach Ursache aufteilt. Der

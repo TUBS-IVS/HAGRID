@@ -120,8 +120,23 @@ import java.util.function.ToIntFunction;
  * hoy_sued#0}/{@code hoy_sued#1}, that shares one physical yard with its siblings; the metric
  * must aggregate those back together or it understates exactly the concurrency it exists to
  * measure). {@link #notifyShutdown} appends one {@code peak_concurrent_swaps_<site>} row per
- * physical site that ever recorded a swap, after the twenty-six pre-existing metric names. See
- * {@link #siteOf}'s and {@link #swapEndTimesBySite()}'s javadoc for the full reasoning.</p>
+ * physical site that ever recorded a swap, after the twenty-six pre-existing metric names and
+ * after the Task 6 budget block described next. See {@link #siteOf}'s and
+ * {@link #swapEndTimesBySite()}'s javadoc for the full reasoning.</p>
+ *
+ * <p><b>Task 6 budget rows (plan 2026-09-04), and why they are a correctness requirement rather
+ * than reporting polish:</b> the look-ahead capacity budget adds a THIRD reason a planned tour
+ * does not go out, next to the two this class already separates — {@code tours_rejected_at_splice}
+ * ("the tour never fit") and {@code tours_expired_pending} ("the gate was too tight"). Published
+ * together they stay distinguishable; published as one lump they would leave a budget arm exactly
+ * as uninterpretable as the pre-Finding-3 CSV was, and METHODS-LOG 2.18 records what that cost the
+ * last time. {@link #notifyShutdown} therefore writes {@code budget_active} on EVERY run
+ * (1 = the budget ran, 0 = {@code budgetMode=off}) and — only when it ran —
+ * {@code budget_blocked_dispatches} and {@code budget_overrides_expiry}. The flag is what keeps
+ * "the budget was off" distinguishable from "the budget was on and never bound"; the counters'
+ * exact semantics, including that the first counts ATTEMPTS and not tours, are stated at their
+ * emission site. {@link ModularBudgetStats} explains how they cross the QSim/controler
+ * boundary.</p>
  *
  * <p><b>Conservation identities (design §4; assert in test, log — never throw — at shutdown):</b>
  * <ol>
@@ -226,10 +241,29 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      *  once by {@link ModularTourConverter#planStats} right after {@code convert} and handed in by
      *  {@link ModularDispatchModule} - this handler never touches a {@code Carriers} object. */
     private final ModularPlanStats planStats;
+    /**
+     * Task 6 (plan 2026-09-04): the look-ahead capacity budget's two dispatch counters, or
+     * {@code null} when {@code budgetMode=off}. The NULLNESS is the published on/off flag - see
+     * {@link #notifyShutdown} for the {@code budget_active} convention and
+     * {@link ModularBudgetStats} for why the counters travel in an object rather than in events.
+     */
+    private final ModularBudgetStats budgetStats;
 
+    /** Budget OFF: writes {@code budget_active;0} and no counter rows. */
     public ModularKpiHandler(OutputDirectoryHierarchy controlerIO, ModularPlanStats planStats) {
+        this(controlerIO, planStats, null);
+    }
+
+    /**
+     * @param budgetStats the controller-scoped budget counters, or {@code null} for
+     *                    {@code budgetMode=off}. Never a zero-valued stand-in: "off" and "on but
+     *                    never bound" must not produce the same CSV.
+     */
+    public ModularKpiHandler(OutputDirectoryHierarchy controlerIO, ModularPlanStats planStats,
+                             ModularBudgetStats budgetStats) {
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
         this.planStats = planStats;
+        this.budgetStats = budgetStats;
     }
 
     @Override
@@ -387,6 +421,62 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
                 "parcels_missed_overlay;" + planStats.parcelsMissedOverlay(),
                 "max_parcels_per_tour;" + planStats.maxParcelsPerTour(),
                 "peak_concurrent_swaps;" + peakConcurrentSwaps()));
+        // Task 6 (plan 2026-09-04): the look-ahead capacity budget. APPENDED after the
+        // twenty-six fixed names above, before the variable-count per-site block below - same
+        // append-only discipline; nothing above moves.
+        //
+        // THE CONVENTION, stated once, here (the extractor mirrors it, it does not redefine it):
+        // budget_active is written on EVERY run - 1 when the budget was on, 0 when budgetMode=off -
+        // and the two counter rows exist ONLY when it was on. A reader holding the CSV can
+        // therefore always separate the two cases that would otherwise look identical:
+        //
+        //   budget off              -> budget_active;0                and NO counter rows
+        //   on, but never binding   -> budget_active;1                budget_blocked_dispatches;0
+        //                                                             budget_overrides_expiry;0
+        //
+        // Emitting zeros in the OFF case with no flag was the alternative and is rejected: those
+        // two runs answer different questions, and a zero that means "the feature was not running"
+        // is exactly the kind of number that gets quoted as "the budget never bound".
+        //
+        // WHY BOTH COUNTERS ARE NEEDED, not just the first: budget_blocked_dispatches is the THIRD
+        // reason a tour does not go out, alongside tours_rejected_at_splice ("the tour never fit")
+        // and tours_expired_pending ("the gate was too tight") - see this class's javadoc and
+        // METHODS-LOG 2.18 for what conflating those two cost. budget_overrides_expiry is the
+        // honesty check on the arm as a whole: a high count means the budget was overridden into
+        // decoration and the run is really the old theta gate wearing a new name.
+        //
+        // UNITS DIFFER, deliberately. budget_blocked_dispatches counts ATTEMPTS, not tours: when
+        // the budget is tight every pending tour is re-checked every simstep, so one tour held all
+        // morning contributes thousands. It is a pressure measure, never a tour count, and must
+        // not be compared against tours_planned.
+        lines.add("budget_active;" + (budgetStats == null ? 0 : 1));
+        if (budgetStats != null) {
+            lines.add("budget_blocked_dispatches;" + budgetStats.blockedDispatches());
+            lines.add("budget_overrides_expiry;" + budgetStats.expiryOverrides());
+            // THE THIRD REGIME, and the one that says whether the 2026-09-05 ramp did anything.
+            // A dispatch the budget refused at urgency 0 can be admitted two ways: because the
+            // ramp granted part of the reserve (here) or because the honest deadline had already
+            // passed (budget_overrides_expiry). Publishing only the second would make a run in
+            // which the ramp never bound indistinguishable from one in which it carried every
+            // marginal tour - and the first of those tested nothing, while looking healthy.
+            lines.add("budget_urgency_admits;" + budgetStats.urgencyAdmits());
+            // The measured routed-vs-free-flow-bound ratio, i.e. what Modular.CHAIN_BOOTSTRAP_FACTOR
+            // is guessing at. It is the only invented constant in the honest-envelope fix, and it
+            // can only be retired by measurement if the measurement leaves the run.
+            //
+            // ABSENCE, not an empty cell and not NaN, is how "nothing was dispatched" is said -
+            // the same convention the budget rows themselves use one level up (budget_active;0
+            // with no counter rows). Every value in this file is a number that a reader parses as
+            // one; an empty cell throws in the reader, and the literal NaN is worse, because it
+            // parses and then propagates silently through any mean taken downstream.
+            // chain_ratio_samples is always written, so "no dispatches" is still stated
+            // explicitly rather than left to the absence of the other two rows.
+            lines.add("chain_ratio_samples;" + budgetStats.chainRatioSamples());
+            if (budgetStats.chainRatioSamples() > 0) {
+                lines.add("chain_ratio_p90;" + budgetStats.chainRatioP90());
+                lines.add("chain_ratio_max;" + budgetStats.chainRatioMax());
+            }
+        }
         // Task 10 (spec 2026-08-17, "make the idealisations measurable"): one MORE row per site
         // that ever recorded a swap, APPENDED after the twenty-six names above - same append-only
         // discipline as everything else in this list, except this final block's row COUNT is not
@@ -617,4 +707,5 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         }
         return peak;
     }
+
 }

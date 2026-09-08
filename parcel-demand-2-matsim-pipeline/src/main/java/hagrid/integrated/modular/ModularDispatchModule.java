@@ -35,8 +35,10 @@ import java.util.List;
 /**
  * Guice composition for DRT_MODULAR (1d, U-Shift capsule swap): one DRT fleet that serves
  * passengers AND executes offline jsprit-planned freight excursions. Controller half: the KPI
- * handler. QSim half (via {@code installOverridingQSimModule}, the {@code SharedUseModule}-proven
- * mechanism for QSim-scope keys): three REBINDS of native keys plus two new singletons.
+ * handler, and - only when {@code budgetMode=selfref} - the {@link PassengerLoadProfile} (plan
+ * 2026-09-04, Task 5). QSim half (via {@code installOverridingQSimModule}, the
+ * {@code SharedUseModule}-proven mechanism for QSim-scope keys): three REBINDS of native keys plus
+ * two new singletons.
  *
  * <ul>
  *   <li>{@link ScheduleTimingUpdater} — rebuilt exactly as {@code DrtModeOptimizerQSimModule}
@@ -165,6 +167,20 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
      *  exceeds this; 1.0 is the never-dispatch control arm, 0.0 dispatches whenever any vehicle
      *  is idle. */
     private final double idleThreshold;
+    private final int maxConcurrentFreight;
+    private final java.util.List<Modular.DispatchWindow> freightWindows;
+    /** Task 4/5 (plan 2026-09-04): {@code OFF} builds NO {@link PassengerLoadProfile} at all. */
+    private final Modular.BudgetMode budgetMode;
+    /** {@code k} handed to {@link PassengerLoadProfile}; inert while {@link #budgetMode} is OFF. */
+    private final int budgetSmoothing;
+    /** Reserve as a SHARE of fleet size; inert while {@link #budgetMode} is OFF. */
+    private final double budgetHeadroom;
+    /**
+     * Slack over which a pending tour's urgency ramps to the full reserve (plan 2026-09-05).
+     * Inert while {@link #budgetMode} is OFF - the ramp only offsets the budget, and there is no
+     * budget to offset - but the honest chain duration it is measured against applies always.
+     */
+    private final double budgetUrgencyLeadS;
     /** Task 1: plan-time accounting the module hands the KPI handler (see {@link #install}'s
      *  provider binding, below - {@link ModularKpiHandler} is no longer {@code @Inject}-
      *  constructed because Guice has no binding for this plain, caller-supplied record). */
@@ -172,10 +188,60 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
 
     public ModularDispatchModule(DrtConfigGroup drtCfg, List<ModularFreightTour> tours,
                                  double idleThreshold, ModularPlanStats planStats) {
+        this(drtCfg, tours, idleThreshold, Modular.DEFAULT_MAX_CONCURRENT_FREIGHT,
+                java.util.List.of(), planStats);
+    }
+
+    /** Budget OFF: the pre-2026-09-04 composition, no {@link PassengerLoadProfile} anywhere. */
+    public ModularDispatchModule(DrtConfigGroup drtCfg, java.util.List<ModularFreightTour> tours,
+                                 double idleThreshold, int maxConcurrentFreight,
+                                 java.util.List<Modular.DispatchWindow> freightWindows,
+                                 ModularPlanStats planStats) {
+        this(drtCfg, tours, idleThreshold, maxConcurrentFreight, freightWindows,
+                Modular.DEFAULT_BUDGET_MODE, Modular.DEFAULT_BUDGET_SMOOTHING,
+                Modular.DEFAULT_BUDGET_HEADROOM, planStats);
+    }
+
+    /**
+     * Fullest form: adds the self-referential capacity budget (plan 2026-09-04, Task 5).
+     *
+     * @param budgetMode      {@code OFF} (default) binds no {@link PassengerLoadProfile} and hands
+     *                        the dispatcher {@code null}, so an OFF run does not even pay for the
+     *                        per-tick passenger-busy scan; {@code SELFREF} binds exactly one
+     *                        controller-scoped profile and injects THAT instance
+     * @param budgetSmoothing {@code k} for the profile; inert while {@code budgetMode} is OFF
+     * @param budgetHeadroom  reserve as a SHARE of fleet size; inert while OFF
+     */
+    public ModularDispatchModule(DrtConfigGroup drtCfg, java.util.List<ModularFreightTour> tours,
+                                 double idleThreshold, int maxConcurrentFreight,
+                                 java.util.List<Modular.DispatchWindow> freightWindows,
+                                 Modular.BudgetMode budgetMode, int budgetSmoothing,
+                                 double budgetHeadroom, ModularPlanStats planStats) {
+        this(drtCfg, tours, idleThreshold, maxConcurrentFreight, freightWindows, budgetMode,
+                budgetSmoothing, budgetHeadroom, Modular.DEFAULT_BUDGET_URGENCY_LEAD_S, planStats);
+    }
+
+    /**
+     * Fullest form: adds the urgency ramp's lead time (plan 2026-09-05, Fix 2).
+     *
+     * @param budgetUrgencyLeadS slack over which urgency ramps to the full reserve, in seconds
+     */
+    public ModularDispatchModule(DrtConfigGroup drtCfg, java.util.List<ModularFreightTour> tours,
+                                 double idleThreshold, int maxConcurrentFreight,
+                                 java.util.List<Modular.DispatchWindow> freightWindows,
+                                 Modular.BudgetMode budgetMode, int budgetSmoothing,
+                                 double budgetHeadroom, double budgetUrgencyLeadS,
+                                 ModularPlanStats planStats) {
         super(drtCfg.getMode());
+        this.budgetUrgencyLeadS = budgetUrgencyLeadS;
         this.drtCfg = drtCfg;
         this.tours = List.copyOf(tours);
         this.idleThreshold = idleThreshold;
+        this.maxConcurrentFreight = maxConcurrentFreight;
+        this.freightWindows = java.util.List.copyOf(freightWindows);
+        this.budgetMode = budgetMode == null ? Modular.DEFAULT_BUDGET_MODE : budgetMode;
+        this.budgetSmoothing = budgetSmoothing;
+        this.budgetHeadroom = budgetHeadroom;
         this.planStats = planStats;
     }
 
@@ -202,11 +268,79 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
         // module's OWN planStats field - the module "holds the stats", per design.
         com.google.inject.Provider<OutputDirectoryHierarchy> controlerIOProvider =
                 binder().getProvider(OutputDirectoryHierarchy.class);
+        // Task 6 (plan 2026-09-04): the KPI handler also publishes the budget's two dispatch
+        // counters, so it needs the counter object - and needs to be able to tell "the budget was
+        // OFF" from "the budget was ON and never bound", which are completely different runs. The
+        // discriminator is the object's EXISTENCE: under budgetMode=off nothing is bound, the
+        // handler receives null, and it writes budget_active;0 with no counter rows at all.
+        // binder().getProvider(...) is legal before the key is bound further down (Guice resolves
+        // providers lazily) - but it is only DEREFERENCED when budgetOn, so an off run never asks
+        // Guice for a binding that does not exist.
+        final boolean budgetOn = budgetMode == Modular.BudgetMode.SELFREF;
+        final com.google.inject.Provider<ModularBudgetStats> budgetStatsProvider =
+                budgetOn ? binder().getProvider(ModularBudgetStats.class) : null;
         bind(ModularKpiHandler.class)
-                .toProvider(() -> new ModularKpiHandler(controlerIOProvider.get(), planStats))
+                .toProvider(() -> new ModularKpiHandler(controlerIOProvider.get(), planStats,
+                        budgetStatsProvider == null ? null : budgetStatsProvider.get()))
                 .asEagerSingleton();
         addEventHandlerBinding().to(ModularKpiHandler.class);
         addControlerListenerBinding().to(ModularKpiHandler.class);
+
+        // Controller scope, plan 2026-09-04 Task 5: the self-referential passenger-load profile.
+        // Bound the SAME way ModularKpiHandler is - one eager singleton, referenced by both the
+        // controler-listener binding and (below) the QSim-scoped dispatcher provider - because it
+        // must OUTLIVE the dispatcher: ModularTourDispatcher is QSim-scoped and resets every
+        // iteration by construction (the 1c dd34b23 lesson), while the whole point of the profile
+        // is to carry iteration N-1's measurement into iteration N.
+        //
+        // WHY THIS DIRECTION OF INJECTION IS THE LEGAL ONE (VERIFY-SOURCE:
+        // QSimProvider.get() -> `injector.createChildInjector(module)`): the QSim injector is a
+        // CHILD of the controler injector, so a QSim-scoped provider can resolve a controller-scope
+        // binding, and getter.get(PassengerLoadProfile.class) below returns THIS singleton rather
+        // than a second copy. The reverse would not work. A second instance would be a silent
+        // disaster rather than an error: the QSim copy would be reconstructed every iteration,
+        // never receive notifyIterationEnds, never bootstrap, and budget() would return
+        // POSITIVE_INFINITY forever - a run that looks like it used the feature and did not.
+        // ModularBudgetWiringTest asserts the identity inside a real MATSim run, not by reasoning.
+        //
+        // budgetMode=off binds NOTHING here: no instance is created and none is registered, so an
+        // OFF run cannot accidentally pay for the dispatcher's per-tick passenger-busy scan (the
+        // dispatcher's `profile == null` sentinel is what switches that scan off). PassengerLoadProfile
+        // has no injectable constructor, so if this binding is absent, an accidental
+        // getInstance(PassengerLoadProfile.class) anywhere fails loudly instead of JIT-creating one.
+        if (budgetOn) {
+            bind(PassengerLoadProfile.class)
+                    .toProvider(() -> new PassengerLoadProfile(budgetSmoothing))
+                    .asEagerSingleton();
+            addControlerListenerBinding().to(PassengerLoadProfile.class);
+            // Task 6: the counter object, bound EXACTLY like the profile - one eager singleton,
+            // referenced by the controler-listener binding (which zeroes it at every iteration
+            // start, so the counters describe the same single iteration every other row in
+            // modular_tour_stats.csv describes) and by the QSim-scoped dispatcher provider below
+            // (which increments it). Two instances here would be the same silent disaster the
+            // profile's comment describes: the KPI handler would publish an all-zero pair from an
+            // object the dispatcher never touched, i.e. a run that looks like a clean pass of a
+            // stricter gate. ModularBudgetStats has no injectable constructor either, so a missing
+            // binding fails loudly instead of JIT-creating a second copy.
+            bind(ModularBudgetStats.class)
+                    .toProvider(ModularBudgetStats::new)
+                    .asEagerSingleton();
+            addControlerListenerBinding().to(ModularBudgetStats.class);
+        }
+
+        // The learned chain duration is bound UNCONDITIONALLY, outside the budgetOn branch (plan
+        // 2026-09-05, Fix 1). It is not a feature of the budget arm: the expiry sweep needs an
+        // honest answer to "how long does this tour hold a vehicle" in every arm, and gating it
+        // on budgetMode would mean the budget arm differs from every existing arm in TWO ways and
+        // could never be compared one-factor. Same shape as the profile above - one eager
+        // singleton, referenced by the listener binding that rolls it and by the QSim-scoped
+        // dispatcher that feeds and reads it - for the same reason: two instances would mean the
+        // dispatcher teaches one object and asks another, which never bootstraps and silently
+        // leaves every tour on the bootstrap factor forever.
+        bind(FreightChainProfile.class)
+                .toProvider(() -> new FreightChainProfile(budgetSmoothing))
+                .asEagerSingleton();
+        addControlerListenerBinding().to(FreightChainProfile.class);
 
         // ---- QSim half ---------------------------------------------------------------------
         // ScheduleTimingUpdater, VehicleEntry.EntryFactory and DrtOptimizer are QSim-scope keys
@@ -248,8 +382,21 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                 // EventsManager is QSim-visible and NOT modal (VERIFY-SOURCE: the native module
                 // resolves it the same way for DefaultUnplannedRequestInserter,
                 // DrtModeOptimizerQSimModule.java:114).
+                //
+                // Task 5: the budget arguments. getter.get(...) - NOT getModal - because the
+                // profile is a plain controller-scope key, resolved through the QSim injector's
+                // parent (see the binding above). When the budget is OFF the profile is neither
+                // looked up nor created and the dispatcher receives exactly the (null, 0.0) pair
+                // its own budget-off overload would have passed, so the OFF path is the old path.
                 bindModal(ModularTourDispatcher.class).toProvider(modalProvider(getter ->
                         new ModularTourDispatcher(getMode(), tours, idleThreshold,
+                                maxConcurrentFreight, freightWindows,
+                                budgetOn ? getter.get(PassengerLoadProfile.class) : null,
+                                budgetOn ? budgetHeadroom : 0.0,
+                                budgetOn ? getter.get(ModularBudgetStats.class) : null,
+                                // Unconditional, unlike the three above - see the binding.
+                                getter.get(FreightChainProfile.class),
+                                budgetUrgencyLeadS,
                                 getter.getModal(Fleet.class),
                                 getter.getModal(DrtScheduleInquiry.class),
                                 getter.getModal(ModularTourScheduler.class),

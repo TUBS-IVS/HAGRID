@@ -3815,6 +3815,80 @@ Verwandt: §2.55 (Netzintensität, Ladeverluste), §2.56 (die Schwellen), §3.12
 
 ---
 
+### 2.64 theta = 0,02: die Fracht wandert in den Abend, alle Pakete kommen an, und die Pax-Seite zahlt dafür
+
+**Der Lauf.** `d1d_f130_d30_th02` — identisch zu `d1d_f130_d30_bud` bis auf **einen** Faktor:
+`idleThreshold` 0,15 → 0,02. Gleicher Seed (1337), gleiche Flotte (130), gleiche Tourdauer
+(3,0 h), gleiches Budget (selfref, k=5, h=0,15, lead=3600 s), gleicher Zustellschluss (21:00),
+250 Iterationen. Er bestaetigt die Diagnose aus §2.61.
+
+**Vollzustellung, und sie ist konvergiert, nicht gelost.** 54 von 54 Touren disponiert, 6.052 von
+6.052 Paketen, `tours_expired_pending = 0`, `tours_rejected_at_splice = 0`, `delta_parcels = 0`.
+Entscheidend fuer die Belastbarkeit: im Plateau 226–249 stehen **22 aufeinanderfolgende
+Nullen** (nur it.226 und it.227 verlieren je eine Tour). Die Null bei it.250 ist damit der
+konvergierte Zustand und kein gluecklicher Einzelzug — vor it.225, solange die Innovation
+noch lief, schwankte der Wert zwischen 0 und 6 je Iteration.
+
+**Der Effekt, den der Arm eigentlich zeigen sollte.** Die Fracht verlaesst die Vormittagsspitze
+und fuellt das Abendtal (Fracht-Fahrzeugstunden, it.250):
+
+| | Anker `d1d_dep7_f130_it250` | `th02` |
+|---|---|---|
+| vor 14:00 | 153,8 | **66,9** |
+| 14:00–17:00 | 6,1 | 3,1 |
+| ab 17:00 | **0,0** | **95,7** |
+
+Punktuell: um 10:00 stehen 14,8 statt 33,0 Fahrzeuge auf Fracht, um 18–19 Uhr 30–31 statt null.
+Der Anker faehrt nach 15:00 gar keine Fracht mehr.
+
+**Der Preis, gegen den Anker bei identischer Zustellmenge** (Plateau-Mittel 226–249, damit
+Einzeliterationen nicht taeuschen):
+
+| | Anker | th02 | Δ |
+|---|---|---|---|
+| Pax-Fahrten (Spanne) | 8.973 (107) | 9.179 (131) | **+206** |
+| Wartezeit ⌀ | 698,4 s | 710,0 s | **+11,6 s** |
+| Ablehnungen ⌀ | 32,6 | 36,1 | **+3,5** |
+| Fahrzeug-km (it.250) | 50.133 | 51.136 | **+1.003** |
+| Touren (→ Depot-Trips) | 46 | 54 | **+17 %** |
+
+Die +206 Fahrten liegen ueber der Plateau-Spanne von 131 und sind damit real; sie sind ein
+Gleichgewichtseffekt der Modenwahl, keine Serviceverbesserung — die Wartezeit steigt
+gleichzeitig. Ob dieser Tausch gut ist, ist eine Bewertungs- und keine Messfrage.
+
+**Warum §2.61 recht behaelt.** Bei identischer Iteration verlor `bud3` (theta = 0,15) kumuliert
+2.167 Touren bis it.182, `th02` 207 — Faktor 10. `budget_overrides_expiry` stieg von 4 auf 63:
+der terminale Zweig der Rampe, der in `bud3` ueber 250 Iterationen praktisch nie feuerte, wird
+mit gesenktem theta regelmaessig erreicht. theta war der bindende Riegel, nicht die Tourdauer und
+nicht der Umschlagfehler aus §2.58.
+
+**Die Restverfaelle vor dem Plateau waren physisch, nicht regelbedingt.** In it.195 (6 Verfaelle,
+Sterbezeiten 17:15–17:43) lag die STAY-Spalte bei **1,0 bis 1,9 Fahrzeugen von 130**, bei 20–30
+auf Fracht. Kein Gate hielt die Touren zurueck; es gab kein Fahrzeug. Genau einer der sechs ging
+auf den Splicer zurueck. Mit abgeschalteter Innovation entspannt sich das von selbst.
+
+**Was NICHT gezeigt ist, ausdruecklich.** (a) **n = 1.** Kein Seed-Faecher; die Plateau-Spanne
+(107–196 Fahrten je nach Arm) misst Iterationsrauschen innerhalb EINES Seeds, nicht
+Seed-Streuung. Der Vergleich mit dem Anker steht und faellt damit. (b) Der Vergleich
+`th02` ↔ `bud3` bei den Pax-Zahlen ist **irrefuehrend** und wird hier bewusst nicht gefuehrt:
+`bud3` laesst 41 % der Pakete liegen und hat deshalb mehr Kapazitaet fuer Passagiere frei. Nur
+der Anker ist iso-service. (c) `chain_ratio_p90 = 1,1507` liegt jetzt **knapp ueber** dem
+Bootstrap-Faktor `CHAIN_BOOTSTRAP_FACTOR = 1,15`, der aus `bud2` gemessen wurde. Hier hat das
+nichts gekostet — der Faktor bindet nur vor der ersten Beobachtung einer Tour — aber der Wert
+sitzt auf der Kante und gehoert beim naechsten Arm nachgeprueft. (d) `parcels_missed_overlay =
+415` ist ein statistisches Not-at-home-Overlay aus dem Planbau, kein Zustellausfall dieses Arms;
+es steht im Anker auf derselben 415.
+
+**Zurueckgezogen aus dem Verlauf dieser Untersuchung.** Ich hatte am 08.09. aus `it.250` allein
+berichtet, die Ablehnungen seien gegenueber dem Anker „fast halbiert“ (18 gegen 33). Im
+Plateau-Mittel sind sie **hoeher** (36,1 gegen 32,6). Bei zweistelligen Zaehlwerten ist eine
+Einzeliteration Rauschen; nur das Plateau-Mittel zaehlt.
+
+Verwandt: §2.58 (der Umschlagfehler), §2.60 (Taschenrechnung, notwendig aber nicht
+hinreichend), §2.61 (theta als Riegel).
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**

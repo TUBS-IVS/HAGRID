@@ -99,12 +99,13 @@ public final class SimulationRunnerUtils {
      * Parses a single scenario specification of the form
      * {@code concept=...,date=...,maxIter=...,jspritIter=...,writeDashboard=true}.
      *
-     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for the single
-     * multi-value key {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
-     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}), the delimiter WITHIN its value -
-     * there is no escaping mechanism. A token with no {@code =} is therefore accepted ONLY when
-     * the immediately preceding key was {@code openDepots}: it is then a continuation of that
-     * value and is re-joined with a comma. Deliberately narrow (fix round 1, review Important 1):
+     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for the two
+     * multi-value keys {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
+     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}) and {@code freightWindows}
+     * (dispatch windows, e.g. {@code freightWindows=07:00-13:00,16:45-18:30}), the delimiter
+     * WITHIN its value - there is no escaping mechanism. A token with no {@code =} is therefore
+     * accepted ONLY when the immediately preceding key was one of those two: it is then a
+     * continuation of that value and is re-joined with a comma. Deliberately narrow:
      * for every OTHER key a bare token is still rejected with {@code "Invalid token: ..."}, the
      * same as before this key existed - otherwise a stray token after e.g. {@code tag=...} would
      * be silently absorbed into that key's value (a mangled run-directory name with no error),
@@ -114,6 +115,10 @@ public final class SimulationRunnerUtils {
      * @param spec comma-separated key=value string
      * @return parsed configuration
      */
+    /** Keys whose VALUE may itself contain commas, so a bare token continues them. */
+    private static final java.util.Set<String> MULTI_VALUE_KEYS =
+            java.util.Set.of("openDepots", "freightWindows");
+
     public static HAGRIDSimulationConfig parseScenario(String spec) {
         if (spec == null || spec.isBlank()) {
             throw new IllegalArgumentException("Empty scenario specification");
@@ -123,10 +128,10 @@ public final class SimulationRunnerUtils {
         String lastKey = null;
         for (String token : spec.split(",")) {
             if (!token.contains("=")) {
-                // Only openDepots is a multi-value key today - narrowed here (not "any bare
-                // token continues the previous key") so a typo after an unrelated key still
-                // fails loudly instead of being silently absorbed (review Important 1).
-                if (!"openDepots".equals(lastKey) || token.isBlank()) {
+                // Only openDepots and freightWindows are multi-value keys - narrowed here
+                // (not "any bare token continues the previous key") so a typo after an unrelated
+                // key still fails loudly instead of being silently absorbed (review Important 1).
+                if (lastKey == null || !MULTI_VALUE_KEYS.contains(lastKey) || token.isBlank()) {
                     throw new IllegalArgumentException("Invalid token: " + token);
                 }
                 map.put(lastKey, map.get(lastKey) + "," + token.trim());
@@ -191,6 +196,42 @@ public final class SimulationRunnerUtils {
                         .filter(s -> !s.isEmpty())
                         .toList();
         int maxJobsPerDistrict = positiveInt(map.getOrDefault("maxJobsPerDistrict", "300"), "maxJobsPerDistrict");
+        // Two-wave freight dispatch (2026-08-30). BOTH default to the pre-2026-08-30 behaviour,
+        // so an unset key leaves every existing run bit-identical. maxConcurrentFreight states
+        // the PASSENGER-side budget the idle-share gate cannot express; freightWindows shifts
+        // work off the passenger peak. See Modular.parseWindows for why a window later than
+        // ~16:38 expires tours instead of deferring them.
+        int maxConcurrentFreight = nonNegInt(map.getOrDefault("maxConcurrentFreight",
+                Integer.toString(hagrid.integrated.modular.Modular.DEFAULT_MAX_CONCURRENT_FREIGHT)),
+                "maxConcurrentFreight");
+        java.util.List<hagrid.integrated.modular.Modular.DispatchWindow> freightWindows =
+                hagrid.integrated.modular.Modular.parseWindows(
+                        map.getOrDefault("freightWindows", "").trim());
+        // Self-referential capacity budget (plan 2026-09-04). All three default to the
+        // pre-2026-09-04 behaviour: budgetMode=off constructs no PassengerLoadProfile at all, so
+        // an unset key leaves every existing run bit-identical AND free of the per-tick
+        // passenger-busy scan. These are plain scalar keys - deliberately NOT in MULTI_VALUE_KEYS,
+        // which exists only for keys whose own value may contain a comma.
+        hagrid.integrated.modular.Modular.BudgetMode budgetMode = budgetMode(
+                map.getOrDefault("budgetMode",
+                        hagrid.integrated.modular.Modular.DEFAULT_BUDGET_MODE.name()),
+                "budgetMode");
+        int budgetSmoothing = positiveInt(map.getOrDefault("budgetSmoothing",
+                Integer.toString(hagrid.integrated.modular.Modular.DEFAULT_BUDGET_SMOOTHING)),
+                "budgetSmoothing");
+        // Share of fleet size, not a vehicle count; the default IS theta, which is what makes the
+        // first budget arm a one-factor experiment (see Modular.DEFAULT_BUDGET_HEADROOM).
+        double budgetHeadroom = shareDouble(map.getOrDefault("budgetHeadroom",
+                Double.toString(hagrid.integrated.modular.Modular.DEFAULT_BUDGET_HEADROOM)),
+                "budgetHeadroom");
+        // Urgency ramp lead (plan 2026-09-05). Seconds of remaining slack over which a pending
+        // tour's urgency ramps from 0 to the full reserve, replacing the binary "last dispatch
+        // opportunity" override that killed d1d_f130_bud. Inert while budgetMode=off - the ramp
+        // only offsets the budget - but the honest chain duration it is measured against applies
+        // in every arm.
+        double budgetUrgencyLeadS = positiveDouble(map.getOrDefault("budgetUrgencyLeadS",
+                Double.toString(hagrid.integrated.modular.Modular.DEFAULT_BUDGET_URGENCY_LEAD_S)),
+                "budgetUrgencyLeadS");
 
         // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
         // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold,
@@ -259,13 +300,18 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict);
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={} maxConcurrentFreight={} freightWindows={} budgetMode={} budgetSmoothing={} budgetHeadroom={} budgetUrgencyLeadS={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict,
+                maxConcurrentFreight == 0 ? "unlimited" : maxConcurrentFreight,
+                freightWindows.isEmpty() ? "always-open" : freightWindows,
+                budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS);
 
         return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
                 drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed,
-                idleThreshold, maxTourDuration, openDepots, maxJobsPerDistrict);
+                idleThreshold, maxTourDuration, openDepots, maxJobsPerDistrict,
+                maxConcurrentFreight, freightWindows,
+                budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS);
     }
 
     /**
@@ -454,11 +500,18 @@ public final class SimulationRunnerUtils {
                 hagrid.integrated.modular.ModularPlanStats planStats =
                         hagrid.integrated.modular.ModularTourConverter.planStats(routed, tours);
                 controler.addOverridingModule(new hagrid.integrated.modular.ModularDispatchModule(
-                        drtCfg, tours, cfg.getIdleThreshold(), planStats));
+                        drtCfg, tours, cfg.getIdleThreshold(), cfg.getMaxConcurrentFreight(),
+                        cfg.getFreightWindows(), cfg.getBudgetMode(), cfg.getBudgetSmoothing(),
+                        cfg.getBudgetHeadroom(), cfg.getBudgetUrgencyLeadS(), planStats));
                 LOG.info("MODULAR run '{}' (DRT fleet {}, {} freight tours, idleThreshold={}, cap={}s,"
+                        + " maxConcurrentFreight={}, freightWindows={}, budgetMode={},"
+                        + " budgetSmoothing={}, budgetHeadroom={}, budgetUrgencyLeadS={},"
                         + " unassigned={}).",
                         cfg.getRunId(), cfg.getFleetSize(), tours.size(), cfg.getIdleThreshold(),
-                        cfg.getMaxTourDurationSeconds(), planStats.parcelsUnassignedJsprit());
+                        cfg.getMaxTourDurationSeconds(), cfg.getMaxConcurrentFreight(),
+                        cfg.getFreightWindows(), cfg.getBudgetMode(), cfg.getBudgetSmoothing(),
+                        cfg.getBudgetHeadroom(), cfg.getBudgetUrgencyLeadS(),
+                        planStats.parcelsUnassignedJsprit());
             } else {
                 LOG.info("DRT passenger-only run '{}' (fleet {}).", cfg.getRunId(), cfg.getFleetSize());
             }
@@ -715,6 +768,66 @@ public final class SimulationRunnerUtils {
             case "false", "0", "no" -> false;
             default -> throw new IllegalArgumentException("Invalid boolean for " + name + ": " + s);
         };
+    }
+
+    /**
+     * Parses {@code budgetMode} (plan 2026-09-04). Case-insensitive on the way in and mapped to
+     * the enum constant, the same convention {@code studyArea} uses
+     * ({@code StudyArea.valueOf(raw.trim().toUpperCase())}); the loud, allowed-set-naming failure
+     * message is the {@link #bool(String, String)} convention. {@code valueOf} alone would name
+     * the bad value but not what IS allowed, and a typo here silently switching the budget off
+     * would produce a run that looks like it used the feature and did not.
+     */
+    private static hagrid.integrated.modular.Modular.BudgetMode budgetMode(String s, String name) {
+        String raw = s.trim();
+        for (hagrid.integrated.modular.Modular.BudgetMode m
+                : hagrid.integrated.modular.Modular.BudgetMode.values()) {
+            if (m.name().equalsIgnoreCase(raw)) {
+                return m;
+            }
+        }
+        StringBuilder allowed = new StringBuilder();
+        for (hagrid.integrated.modular.Modular.BudgetMode m
+                : hagrid.integrated.modular.Modular.BudgetMode.values()) {
+            if (allowed.length() > 0) allowed.append(", ");
+            allowed.append(m.name().toLowerCase(Locale.ROOT));
+        }
+        throw new IllegalArgumentException("Invalid " + name + ": '" + s + "' - allowed values are "
+                + allowed + " (case-insensitive)");
+    }
+
+    /**
+     * Parses a strictly positive, finite double (e.g. {@code budgetUrgencyLeadS}).
+     *
+     * <p>Zero is rejected, not clamped: a zero urgency lead would divide by zero in the ramp and,
+     * worse, would silently restore the binary override the ramp exists to replace - a run that
+     * looks configured and is not.
+     */
+    private static double positiveDouble(String s, String name) {
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (!(v > 0.0) || Double.isInfinite(v)) {
+                throw new IllegalArgumentException(
+                        name + " must be positive and finite: " + v);
+            }
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
+    }
+
+    /** Parses a SHARE: a double that must lie in [0.0, 1.0] (e.g. {@code budgetHeadroom}). */
+    private static double shareDouble(String s, String name) {
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (!(v >= 0.0 && v <= 1.0)) {
+                throw new IllegalArgumentException(
+                        name + " is a SHARE and must lie in [0.0, 1.0]: " + v);
+            }
+            return v;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid number for " + name + ": " + s, ex);
+        }
     }
 
     public static boolean parseBool(String s) {

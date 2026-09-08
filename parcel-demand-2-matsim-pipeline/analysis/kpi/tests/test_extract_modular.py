@@ -18,6 +18,12 @@ Task 2 (paper-readiness fixwave, review F1/I6/M1/M2/M4, METHODS-LOG 2.16) added:
   delta_parcels == 0;
 - the unreadable-CSV policy (M1): a 0-byte or header-only modular_tour_stats.csv now
   degrades to a single meta row instead of raising out of build_kpis.
+
+Task 6 (self-referential capacity budget, plan 2026-09-04) added the budget rows:
+budget_active (always written by Java) plus budget_blocked_dispatches /
+budget_overrides_expiry (only when the budget ran). The tests below pin the three-state
+behaviour -- absent / off / on -- because collapsing any two of them is what makes a budget
+arm uninterpretable: an off run publishing zeros would be quoted as "the budget never bound".
 """
 import gzip
 import sys
@@ -158,9 +164,15 @@ def _write_carriers_xml(tmp_path, prefix, carriers):
         lines.append("    <plans></plans>")
         lines.append("  </carrier>")
     lines.append("</carriers>")
-    path = tmp_path / (prefix + ".output_carriers.xml.gz")
+    _write_gz(tmp_path / (prefix + ".output_carriers.xml.gz"), lines)
+    return lines
+
+
+def _write_gz(path, lines):
     with gzip.open(path, "wt", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+
 
 
 def _meta(prefix):
@@ -412,6 +424,159 @@ def test_per_site_swap_peak_rows_absent_on_csv_predating_the_feature(tmp_path):
     assert not any(n.startswith("peak_concurrent_swaps_") for n in names)
 
 
+def _write_stats_with_budget(tmp_path, prefix, active, blocked=None, overrides=None):
+    """The conforming base fixture plus Task 6's budget block, written the way Java writes it:
+    `budget_active` always, the two counters only when active. Deliberately UNEQUAL counter
+    values (7 vs 3) -- equal ones would let a transposed pair pass unnoticed."""
+    _write_stats(tmp_path, prefix)
+    path = tmp_path / (prefix + ".modular_tour_stats.csv")
+    extra = ["budget_active;" + str(active)]
+    if active:
+        extra.append("budget_blocked_dispatches;" + str(blocked))
+        extra.append("budget_overrides_expiry;" + str(overrides))
+    path.write_text(path.read_text() + "\n" + "\n".join(extra))
+
+
+def test_budget_rows_surfaced_when_the_budget_ran(tmp_path):
+    """Task 6. The two counters must reach kpis_long.csv under their own names, with the
+    units that carry their semantics: blocked dispatches are ATTEMPTS (one tour held all
+    morning contributes thousands), overrides are dispatches. The values are unequal so a
+    transposition fails here rather than being published as a plausible pair."""
+    _write_stats_with_budget(tmp_path, "B", active=1, blocked=7, overrides=3)
+    rows = extract_modular.extract(tmp_path, "B")
+    by_key = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+
+    assert by_key[("modular", "budget_active")]["value"] == 1
+    assert by_key[("modular", "budget_blocked_dispatches")]["value"] == 7
+    assert by_key[("modular", "budget_blocked_dispatches")]["unit"] == "attempts"
+    assert by_key[("modular", "budget_overrides_expiry")]["value"] == 3
+    assert by_key[("modular", "budget_overrides_expiry")]["unit"] == "dispatches"
+
+
+def test_budget_off_is_distinguishable_from_budget_on_but_never_bound(tmp_path):
+    """THE OFF/ON DISCRIMINATION TEST, Python half. budgetMode=off and "the budget ran and
+    never blocked anything" are different runs and must not extract to the same rows. If the
+    off case emitted zeros, the two would be identical here and a reader of kpis_long.csv
+    could not tell a feature that was switched off from a feature that measured nothing."""
+    off_dir = tmp_path / "off"
+    on_dir = tmp_path / "on"
+    off_dir.mkdir()
+    on_dir.mkdir()
+    _write_stats_with_budget(off_dir, "X", active=0)
+    _write_stats_with_budget(on_dir, "X", active=1, blocked=0, overrides=0)
+
+    off = {(r["kpi_group"], r["kpi_name"]): r["value"]
+           for r in extract_modular.extract(off_dir, "X")}
+    on = {(r["kpi_group"], r["kpi_name"]): r["value"]
+          for r in extract_modular.extract(on_dir, "X")}
+
+    assert off[("modular", "budget_active")] == 0
+    assert ("modular", "budget_blocked_dispatches") not in off
+    assert ("modular", "budget_overrides_expiry") not in off
+
+    assert on[("modular", "budget_active")] == 1
+    # a MEASURED zero: present, and readable as one
+    assert on[("modular", "budget_blocked_dispatches")] == 0
+    assert on[("modular", "budget_overrides_expiry")] == 0
+
+    assert off != on
+
+
+def _write_stats_with_ramp(tmp_path, prefix, urgency, samples, p90=None, mx=None):
+    """The budget block plus the 2026-09-05 ramp rows, written the way Java writes them:
+    `budget_urgency_admits` alongside the other counters, and the chain-ratio PAIR only when
+    `chain_ratio_samples` is non-zero. Counter values are pairwise unequal (7 / 3 / 5) so a
+    transposition fails here rather than being published as a plausible triple."""
+    _write_stats_with_budget(tmp_path, prefix, active=1, blocked=7, overrides=3)
+    path = tmp_path / (prefix + ".modular_tour_stats.csv")
+    extra = ["budget_urgency_admits;" + str(urgency),
+             "chain_ratio_samples;" + str(samples)]
+    if samples:
+        extra.append("chain_ratio_p90;" + str(p90))
+        extra.append("chain_ratio_max;" + str(mx))
+    path.write_text(path.read_text() + "\n" + "\n".join(extra))
+
+
+def test_ramp_rows_surfaced_with_their_own_names(tmp_path):
+    """METHODS-LOG 2.58. The ramp counter must reach kpis_long.csv under its OWN name and not
+    be folded into budget_overrides_expiry: the two answer opposite questions -- "the ramp
+    carried this tour in time" versus "the deadline had already passed and the budget was
+    overridden". Summing them would hide exactly the failure the ramp was built to remove."""
+    _write_stats_with_ramp(tmp_path, "R", urgency=5, samples=46, p90=1.31, mx=1.44)
+    by_key = {(r["kpi_group"], r["kpi_name"]): r
+              for r in extract_modular.extract(tmp_path, "R")}
+
+    assert by_key[("modular", "budget_urgency_admits")]["value"] == 5
+    assert by_key[("modular", "budget_urgency_admits")]["unit"] == "dispatches"
+    # unchanged and NOT merged with the ramp counter
+    assert by_key[("modular", "budget_overrides_expiry")]["value"] == 3
+    assert by_key[("modular", "chain_ratio_samples")]["value"] == 46
+    assert by_key[("modular", "chain_ratio_p90")]["value"] == 1.31
+    assert by_key[("modular", "chain_ratio_p90")]["unit"] == "ratio"
+    assert by_key[("modular", "chain_ratio_max")]["value"] == 1.44
+
+
+def test_ramp_counter_zero_is_a_measured_zero(tmp_path):
+    """A run in which the ramp never bound must publish a READABLE zero, not an absent row.
+    budget_urgency_admits == 0 is the signal that the arm is the plain budget arm under a new
+    name and tested no mechanism -- if that case simply omitted the row it would be
+    indistinguishable from a pre-2026-09-05 CSV, i.e. from a run where the question does not
+    apply at all."""
+    _write_stats_with_ramp(tmp_path, "Z", urgency=0, samples=46, p90=1.2, mx=1.3)
+    by_key = {(r["kpi_group"], r["kpi_name"]): r["value"]
+              for r in extract_modular.extract(tmp_path, "Z")}
+    assert by_key[("modular", "budget_urgency_admits")] == 0
+
+
+def test_chain_ratio_pair_absent_when_nothing_was_dispatched(tmp_path):
+    """ABSENCE, not NaN and not zero, is how "no dispatches" is stated -- a ratio of 0.0 is a
+    meaningful and very wrong statement about the tours, and a literal NaN parses and then
+    propagates silently through any mean taken downstream. chain_ratio_samples still carries
+    the fact explicitly, so the absence is never left to be inferred."""
+    _write_stats_with_ramp(tmp_path, "N", urgency=0, samples=0)
+    by_key = {(r["kpi_group"], r["kpi_name"]): r["value"]
+              for r in extract_modular.extract(tmp_path, "N")}
+    assert by_key[("modular", "chain_ratio_samples")] == 0
+    assert ("modular", "chain_ratio_p90") not in by_key
+    assert ("modular", "chain_ratio_max") not in by_key
+
+
+def test_ramp_rows_absent_on_a_task6_csv_without_them(tmp_path):
+    """Backward compat WITHIN the budget block, which is why these lookups use .get() while
+    the two Task-6 counters use stats[...]. A CSV written between Task 6 and 2026-09-05 says
+    budget_active;1 and legitimately has no ramp rows -- that is a readable old run, not the
+    Java-side bug the strict lookups guard against."""
+    _write_stats_with_budget(tmp_path, "T6", active=1, blocked=7, overrides=3)
+    by_key = {(r["kpi_group"], r["kpi_name"]): r["value"]
+              for r in extract_modular.extract(tmp_path, "T6")}
+    assert by_key[("modular", "budget_active")] == 1
+    assert by_key[("modular", "budget_blocked_dispatches")] == 7
+    assert ("modular", "budget_urgency_admits") not in by_key
+    assert ("modular", "chain_ratio_samples") not in by_key
+
+
+def test_budget_rows_absent_on_csv_predating_the_feature(tmp_path):
+    """Backward compat, same silent-absence convention as the Task-1 block: a CSV written
+    before Task 6 has no budget_active row at all, and that must extract cleanly with no
+    budget rows and no flag row apologising for them."""
+    _write_stats(tmp_path, "OLDBUD")
+    names = {r["kpi_name"] for r in extract_modular.extract(tmp_path, "OLDBUD")}
+    assert not any(n.startswith("budget_") for n in names)
+
+
+def test_budget_active_without_counters_raises_rather_than_degrading(tmp_path):
+    """A CSV claiming budget_active;1 while omitting a counter can only come from a Java-side
+    bug. This module's documented policy (review Important 1) is that such a bug raises for
+    real instead of being relabelled "modular_stats_unreadable" -- the M1 degradation covers
+    a 0-byte/header-only file and nothing else. Pinned so a future well-meaning .get() with a
+    default cannot quietly publish a fabricated zero."""
+    _write_stats(tmp_path, "BROKEN")
+    path = tmp_path / "BROKEN.modular_tour_stats.csv"
+    path.write_text(path.read_text() + "\nbudget_active;1")
+    with pytest.raises(KeyError):
+        extract_modular.extract(tmp_path, "BROKEN")
+
+
 def test_district_rows_from_output_carriers(tmp_path):
     """Task 10 (spec 2026-08-17, "make the idealisations measurable"): district_parcels_<id> /
     district_segments_<id> come straight from the ROUTED carriers XML, not from
@@ -457,3 +622,60 @@ def test_district_rows_absent_when_carriers_xml_missing(tmp_path):
     assert not any(n.startswith("district_parcels_") or n.startswith("district_segments_")
                    for n in names)
     assert ("meta", "district_rows_unavailable") not in {(r["kpi_group"], r["kpi_name"]) for r in rows}
+
+
+def _write_modular_carriers_xml(root, prefix, carriers):
+    """The 1d location AND format: DRT_MODULAR never runs MATSim's carriers module, so its
+    carriers are a PREPROCESSING artefact written UNCOMPRESSED to
+    hagrid-output/<run_id>/carriers/<run_id>_lmd_carriers_routed.xml -- a SIBLING of the MATSim
+    output tree, not a file inside the run dir. Both differences (place and compression) are why
+    the district rows used to fall through on every real 1d run: the reader looked only in the run
+    dir and called gzip.open unconditionally."""
+    lines = _write_carriers_xml(root, prefix + "__unused__", carriers)
+    d = root / "hagrid-output" / prefix / "carriers"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / (prefix + "_lmd_carriers_routed.xml")).write_text(
+        "\n".join(lines), encoding="utf-8")
+
+
+def _modular_run_dir(root, prefix):
+    """A run dir nested like the real thing, because the reader resolves the preprocessing
+    carriers RELATIVE to it (run_dir.parent.parent / "hagrid-output" / ...). A flat tmp_path
+    would miss the sibling directory and make this test pass for the wrong reason."""
+    d = root / "hagrid-matsim-output" / (prefix + "_iter150_jsprit100")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def test_district_rows_from_modular_preprocessing_carriers(tmp_path):
+    """1d reads its districts from the preprocessing carriers file, not from a MATSim output.
+    Before the two-candidate lookup this degraded to ZERO district rows on every real 1d run
+    while the data sat on disk -- and kpis_long.csv showed nothing at all, only a stdout line
+    named the miss."""
+    run_dir = _modular_run_dir(tmp_path, "P")
+    _write_stats(run_dir, "P")
+    _write_modular_carriers_xml(tmp_path, "P", [
+        ("hoy_sued#0", "hoy_sued#0", 1589, [1] * 298),
+        ("hoy_sued#1", "hoy_sued#1", 2415, [1] * 297),
+    ])
+    rows = extract_modular.extract(run_dir, "P")
+    by_name = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+    assert by_name[("freight", "district_parcels_hoy_sued#0")]["value"] == 1589
+    assert by_name[("freight", "district_segments_hoy_sued#0")]["value"] == 298
+    assert by_name[("freight", "district_parcels_hoy_sued#1")]["value"] == 2415
+    assert by_name[("freight", "district_segments_hoy_sued#1")]["value"] == 297
+
+
+def test_matsim_carriers_win_over_the_preprocessing_copy(tmp_path):
+    """Precedence, pinned on DIFFERENT parcel counts so the assertion can tell WHICH file was
+    read: with both present, MATSim's output_carriers.xml.gz is the EXECUTED plan and must win
+    over the preprocessing artefact. A reader that simply tried the new path first would pass the
+    test above and still silently re-baseline every LMD_BASELINE run."""
+    run_dir = _modular_run_dir(tmp_path, "P")
+    _write_stats(run_dir, "P")
+    _write_carriers_xml(run_dir, "P", [("hoy_nord", "hoy_nord", 1886, [900, 986])])
+    _write_modular_carriers_xml(tmp_path, "P", [("hoy_nord", "hoy_nord", 4242, [1, 1, 1])])
+    rows = extract_modular.extract(run_dir, "P")
+    by_name = {(r["kpi_group"], r["kpi_name"]): r for r in rows}
+    assert by_name[("freight", "district_parcels_hoy_nord")]["value"] == 1886
+    assert by_name[("freight", "district_segments_hoy_nord")]["value"] == 2
