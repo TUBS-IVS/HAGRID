@@ -473,6 +473,48 @@ _KPI_METRICS = [("co2e_wtw", "CO2E_WTW", "kg", 1e-3),
                 ("energy_final", "ENERGY_MJ", "MJ", 1.0)]
 _BEV_SKIP = {"co2e_ttw", "co2"}          # im BEV-Arm konstruktionsbedingt 0
 
+#: Netzintensitaets-Sweep -> sup["grid_co2e_g_per_mj_<key>"]. Ein EINZELWERT
+#: waere hier derselbe Fehler wie das verworfene 250-km-Einzelgate: der
+#: BEV-Wert ist LINEAR im Faktor, die drei Punkte spannen -56 bis -95 %
+#: gegenueber Diesel. Die Spannweite IST das Ergebnis (METHODS-LOG 2.55).
+GRID_POINTS = ("low", "mid", "high")
+
+_GRID_SRC = (
+    "BEV CO2e-WTW = grid-side electricity x grid_co2e_g_per_mj_<point> "
+    "(emep_supplement.csv). Grid-side = ENERGY_MJ / (1 - charging_loss_share); "
+    "transmission losses are already inside the UBA factor, charging losses "
+    "are not. The <point> spread is the finding, not a tolerance -- the BEV "
+    "result is linear in this factor. See METHODS-LOG 2.55")
+
+
+def _grid_sweep_rows(label, totals_bev, sup):
+    """Drei BEV-CO2e-Zeilen je Flotte plus die netzseitige Energie.
+
+    Abgeleitet aus ENERGY_MJ statt im Emissionskern gerechnet: der BEV-Pfad
+    ist `CO2E_WTW = grid_energy(EC) * faktor`, also exakt linear im Faktor --
+    die drei Punkte sind damit keine Naeherung, sondern dieselbe Rechnung mit
+    getauschter Konstante. Das haelt EMIS_KEYS, die Detail-CSV und
+    cold_start_extra unberuehrt (ein CO2E_WTW_{LOW,MID,HIGH} im Kern haette
+    alle drei angefasst, fuer null zusaetzliche Information).
+
+    Der `_mid`-Punkt ist absichtlich redundant zu `<fleet>_co2e_wtw_bev`: die
+    Gleichheit ist als Invariante getestet, sonst koennten Kern und Sweep
+    auseinanderlaufen, ohne dass es auffaellt.
+    """
+    ec = totals_bev.get("ENERGY_MJ", 0.0)
+    if ec <= 0:
+        return []
+    grid_mj = em.grid_energy(ec, sup)
+    rows = [row("environment", label + "_energy_grid_bev", grid_mj, "MJ",
+                _GRID_SRC)]
+    for pt in GRID_POINTS:
+        g = sup["grid_co2e_g_per_mj_" + pt]
+        rows.append(row("environment",
+                        label + "_co2e_wtw_bev_grid_" + pt,
+                        grid_mj * g * 1e-3, "kg",
+                        _GRID_SRC + " [grid=" + ("%.2f" % g) + " g/MJ]"))
+    return rows
+
 
 def _percentile(sorted_vals, q):
     if not sorted_vals:
@@ -753,6 +795,10 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
                     continue
                 rows.append(row("environment", "total_" + metric + sfx,
                                 grand[pt][key] * f, unit, SRC))
+    for fleet, (totals, _d) in arms.items():
+        rows += _grid_sweep_rows(fleet, totals["bev"], fac["sup"])
+    if arms:
+        rows += _grid_sweep_rows("total", grand["bev"], fac["sup"])
     rows += _range_rows(detail, fac["sup"])
     if "drt" in arms and link_len is not None:
         rows += drive_block_rows(veh_path,

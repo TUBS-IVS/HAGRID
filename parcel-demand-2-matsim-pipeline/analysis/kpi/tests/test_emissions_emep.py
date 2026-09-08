@@ -127,7 +127,10 @@ def test_supplement_present_and_plausible():
     import emissions_emep as em
     sup = em.load_factors()["sup"]
     required = ["ttw_co2_g_per_mj_diesel", "wtt_co2e_g_per_mj_diesel",
-                "grid_co2e_g_per_mj", "gwp_ch4", "gwp_n2o",
+                "grid_co2e_g_per_mj_low", "grid_co2e_g_per_mj_mid",
+                "grid_co2e_g_per_mj_high", "charging_loss_share",
+                "aux_load_share_bev",
+                "gwp_ch4", "gwp_n2o",
                 "n2o_g_per_km_diesel_lcv",
                 "pm10_frac_tyre", "pm10_frac_brake", "pm10_frac_road",
                 "bev_tyre_mult", "bev_brake_mult", "bev_road_mult",
@@ -146,9 +149,22 @@ def test_supplement_present_and_plausible():
     assert sup["bev_road_mult"] > 1.0
     assert (sup["ev_range_km_low"] < sup["ev_range_km_mid"]
             < sup["ev_range_km_high"])
-    # die untere Schwelle muss unter der laengsten gemessenen Tour (183 km)
-    # liegen, sonst ist der Sweep in jedem Lauf trivial 0 (Messung 2026-07-31)
-    assert sup["ev_range_km_low"] < 183.0
+    # Seit 2026-09-03 sind die drei Schwellen belegte Fahrzeuge (nutzbare
+    # Batterie / unser eigener gemessener Verbrauch 247.9 Wh/km), nicht mehr
+    # die unbelegten 150/200/250. Die fruehere Assertion "low < 183 km"
+    # forderte Trennschaerfe auf dem FRACHT-Kanal; die liegt jetzt auf dem
+    # Fahrblock-Kanal (Bloecke 423-566 km), und Fracht-Ueberschreitung 0 bei
+    # allen drei Schwellen IST der Befund ("nicht reichweitenbegrenzt"),
+    # kein Nullresultat aus zu hohen Schwellen. Was hier bleibt: die
+    # Schwellen muessen ueber dem alten, unbelegten Satz liegen und im
+    # Marktband eines e-LCV.
+    assert sup["ev_range_km_low"] > 200.0
+    assert sup["ev_range_km_high"] < 600.0
+    # Netz-Sweep: geordnet, und der mid-Punkt traegt den aktuellen Jahrgang
+    assert (sup["grid_co2e_g_per_mj_low"] < sup["grid_co2e_g_per_mj_mid"]
+            < sup["grid_co2e_g_per_mj_high"])
+    assert 0.0 < sup["charging_loss_share"] < 0.25
+    assert 0.0 < sup["aux_load_share_bev"] < 0.5
 
 
 def test_nonexhaust_bases_are_segment_resolved_as_the_source_has_them():
@@ -228,9 +244,15 @@ def test_vehicle_emissions_bev_zero_exhaust_grid_wtw():
     for k in ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O",
               "CO2", "CO2E_TTW"):
         assert out[k] == 0.0, k
-    ec = 100.0 * em.ef(80.0, fac["bev"]["N1-III"]["EC"])
+    sup = fac["sup"]
+    # ENERGY_MJ traegt die Nebenverbraucher mit -- sie ziehen aus derselben
+    # Batterie und muessen deshalb auch in ev_range_km_* stecken.
+    ec = (100.0 * em.ef(80.0, fac["bev"]["N1-III"]["EC"])
+          * (1.0 + sup["aux_load_share_bev"]))
     assert out["ENERGY_MJ"] == pytest.approx(ec)
-    assert out["CO2E_WTW"] == pytest.approx(ec * fac["sup"]["grid_co2e_g_per_mj"])
+    assert out["CO2E_WTW"] == pytest.approx(
+        ec / (1.0 - sup["charging_loss_share"])
+        * sup["grid_co2e_g_per_mj_mid"])
     # BEV: mehr Reifen- und Strassen-, weniger Bremsabrieb als Diesel
     d = em.vehicle_emissions(100.0, 80.0, "diesel", "N1-III", fac)
     assert out["PM10_TYRE"] > d["PM10_TYRE"]
@@ -574,3 +596,61 @@ def test_non_exhaust_carries_no_cold_surcharge():
     assert extra["PM10_TYRE"] == 0.0
     assert extra["PM10_BRAKE"] == 0.0
     assert extra["PM10_ROAD"] == 0.0
+
+
+def test_grid_energy_adds_charging_loss_but_not_transmission_loss():
+    """Der Ladeverlust sitzt zwischen Netz und Batterie, die Netzverluste
+    stecken schon im UBA-Faktor (er bezieht sich auf STROMVERBRAUCH). Genau
+    einmal aufschlagen, nicht zweimal -- METHODS-LOG 2.55."""
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    assert em.grid_energy(93.0, sup) == pytest.approx(100.0, rel=1e-3)
+    # monoton und niemals kleiner als die Fahrzeugseite
+    assert em.grid_energy(10.0, sup) > 10.0
+
+
+def test_bev_wtw_is_linear_in_the_grid_factor():
+    """Traegt den Sweep: drei Punkte sind dieselbe Rechnung mit getauschter
+    Konstante, keine Naeherung. Wenn diese Linearitaet bricht, ist
+    extract_emissions._grid_sweep_rows falsch."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    sup = fac["sup"]
+    base = em.vehicle_emissions(100.0, 60.0, "bev", "N1-III", fac)
+    sup["grid_co2e_g_per_mj_mid"] = 2.0 * sup["grid_co2e_g_per_mj_mid"]
+    doubled = em.vehicle_emissions(100.0, 60.0, "bev", "N1-III", fac)
+    assert doubled["CO2E_WTW"] == pytest.approx(2.0 * base["CO2E_WTW"])
+    assert doubled["ENERGY_MJ"] == pytest.approx(base["ENERGY_MJ"])
+
+
+def test_aux_load_hits_bev_only_and_scales_energy_and_co2e_together():
+    """Nebenverbraucher wirken auf ENERGY_MJ (und damit mittelbar auf die
+    Reichweitenschwellen), nicht nur auf die CO2e-Kette. Diesel bekommt
+    keinen Zuschlag: Kabinenwaerme ist dort Abwaerme."""
+    import emissions_emep as em
+    fac = em.load_factors()
+    sup = fac["sup"]
+    d0 = em.vehicle_emissions(100.0, 60.0, "diesel", "N1-III", fac)
+    b0 = em.vehicle_emissions(100.0, 60.0, "bev", "N1-III", fac)
+    share = sup["aux_load_share_bev"]
+    sup["aux_load_share_bev"] = 0.0
+    d1 = em.vehicle_emissions(100.0, 60.0, "diesel", "N1-III", fac)
+    b1 = em.vehicle_emissions(100.0, 60.0, "bev", "N1-III", fac)
+    assert d1["ENERGY_MJ"] == pytest.approx(d0["ENERGY_MJ"])
+    assert d1["CO2E_WTW"] == pytest.approx(d0["CO2E_WTW"])
+    assert b0["ENERGY_MJ"] == pytest.approx(b1["ENERGY_MJ"] * (1.0 + share))
+    assert b0["CO2E_WTW"] == pytest.approx(b1["CO2E_WTW"] * (1.0 + share))
+    assert b0["PM10_NONEXHAUST"] == pytest.approx(b1["PM10_NONEXHAUST"])
+
+
+def test_range_thresholds_match_the_aux_inclusive_consumption():
+    """Die Kopplung, die beim Einbau der Nebenverbraucher fast durchrutschte:
+    ev_range_km_* MUSS aus dem nebenverbraucher-inklusiven Verbrauch kommen,
+    sonst steht eine unbeheizte Reichweite gegen einen beheizten Verbrauch.
+    247.9 Wh/km Traktion x (1 + aux) -- gemessen auf d1d_dep7_f135_it250."""
+    import emissions_emep as em
+    sup = em.load_factors()["sup"]
+    wh = 247.9 * (1.0 + sup["aux_load_share_bev"])
+    for key, kwh in (("low", 70.0), ("mid", 86.0), ("high", 113.0)):
+        assert sup["ev_range_km_" + key] == pytest.approx(
+            kwh * 1000.0 / wh, rel=2e-3), key
