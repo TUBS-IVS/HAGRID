@@ -178,6 +178,18 @@ public class HAGRIDSimulationConfig {
      * district (spec D8), so this field is ignored there.
      */
     private final int maxJobsPerDistrict;
+    /** DRT_MODULAR only: concurrency cap on vehicles committed to freight; 0 = unlimited. */
+    private final int maxConcurrentFreight;
+    /** DRT_MODULAR only: dispatch windows; empty = always open. */
+    private final List<Modular.DispatchWindow> freightWindows;
+    /** DRT_MODULAR only: self-referential capacity budget (plan 2026-09-04); OFF = default. */
+    private final Modular.BudgetMode budgetMode;
+    /** DRT_MODULAR only: {@code k}, the number of completed iterations the profile averages over. */
+    private final int budgetSmoothing;
+    /** DRT_MODULAR only: reserve as a SHARE of fleet size, in [0,1]. */
+    private final double budgetHeadroom;
+    /** DRT_MODULAR only: slack over which urgency ramps to the full reserve, in seconds. */
+    private final double budgetUrgencyLeadS;
 
     /**
      * Creates a new scenario configuration, defaulting to {@link StudyArea#HANNOVER} and fleet size 50.
@@ -359,7 +371,8 @@ public class HAGRIDSimulationConfig {
         this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
                 zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
                 drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold,
-                maxTourDurationSeconds, List.of(), 300);
+                maxTourDurationSeconds, List.of(), 300,
+                Modular.DEFAULT_MAX_CONCURRENT_FREIGHT, List.of());
     }
 
     /**
@@ -385,6 +398,91 @@ public class HAGRIDSimulationConfig {
                           boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
                           boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds,
                           List<String> openDepots, int maxJobsPerDistrict) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold,
+                maxTourDurationSeconds, openDepots, maxJobsPerDistrict,
+                Modular.DEFAULT_MAX_CONCURRENT_FREIGHT, List.of());
+    }
+
+    /**
+     * Adds the two-wave freight-dispatch keys (2026-08-30) on top of every other parameter. All
+     * shorter constructors default {@code maxConcurrentFreight} to 0 (unlimited) and
+     * {@code freightWindows} to empty (always open), i.e. to the behaviour before that date; this
+     * one defaults the self-referential capacity-budget keys (plan 2026-09-04) to
+     * {@link Modular#DEFAULT_BUDGET_MODE} (OFF) / {@link Modular#DEFAULT_BUDGET_SMOOTHING} /
+     * {@link Modular#DEFAULT_BUDGET_HEADROOM}.
+     *
+     * @param maxConcurrentFreight max vehicles holding an unperformed freight task, 0 = unlimited
+     * @param freightWindows       dispatch windows; empty = always open
+     * @throws IllegalArgumentException if {@code maxConcurrentFreight} is negative
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds,
+                          List<String> openDepots, int maxJobsPerDistrict,
+                          int maxConcurrentFreight, List<Modular.DispatchWindow> freightWindows) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold,
+                maxTourDurationSeconds, openDepots, maxJobsPerDistrict,
+                maxConcurrentFreight, freightWindows,
+                Modular.DEFAULT_BUDGET_MODE, Modular.DEFAULT_BUDGET_SMOOTHING,
+                Modular.DEFAULT_BUDGET_HEADROOM);
+    }
+
+    /**
+     * Fullest constructor: adds the self-referential capacity-budget keys (plan 2026-09-04) on top
+     * of every other parameter. All shorter constructors default them to
+     * {@link Modular#DEFAULT_BUDGET_MODE} (OFF), {@link Modular#DEFAULT_BUDGET_SMOOTHING} (5) and
+     * {@link Modular#DEFAULT_BUDGET_HEADROOM} (0.15), i.e. to the behaviour before that date -
+     * with the budget OFF the last two are inert.
+     *
+     * <p>Validated HERE rather than in the dispatcher, so a bad value fails at wiring time instead
+     * of on the first tick of a 16 h mobsim.</p>
+     *
+     * @param budgetMode      {@code OFF} (default) or {@code SELFREF}; {@code null} means OFF
+     * @param budgetSmoothing {@code k}, the number of completed iterations the passenger-load
+     *                        profile averages over; must be &gt;= 1
+     * @param budgetHeadroom  reserve as a SHARE of fleet size, must lie in {@code [0,1]}
+     * @param budgetUrgencyLeadS seconds of remaining slack over which a pending tour's urgency
+     *                        ramps from 0 to the full reserve (plan 2026-09-05); must be positive
+     * @throws IllegalArgumentException if {@code budgetSmoothing} is &lt; 1,
+     *                                  {@code budgetHeadroom} is outside {@code [0,1]} or
+     *                                  {@code budgetUrgencyLeadS} is not positive
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds,
+                          List<String> openDepots, int maxJobsPerDistrict,
+                          int maxConcurrentFreight, List<Modular.DispatchWindow> freightWindows,
+                          Modular.BudgetMode budgetMode, int budgetSmoothing, double budgetHeadroom) {
+        this(concept, date, maxIterations, jspritIterations, zoneBasedCachingEnabled,
+                zoneBasedCachingThresholdMeters, uTurnPenaltyCost, tag, studyArea, fleetSize,
+                drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold,
+                maxTourDurationSeconds, openDepots, maxJobsPerDistrict, maxConcurrentFreight,
+                freightWindows, budgetMode, budgetSmoothing, budgetHeadroom,
+                Modular.DEFAULT_BUDGET_URGENCY_LEAD_S);
+    }
+
+    /**
+     * Fullest form: adds the urgency ramp's lead time (plan 2026-09-05). The overload above keeps
+     * every pre-2026-09-05 caller compiling against the default lead, so a test or tool that does
+     * not care about the ramp does not have to name it.
+     */
+    public HAGRIDSimulationConfig(String concept, LocalDate date, int maxIterations, int jspritIterations,
+                          boolean zoneBasedCachingEnabled, double zoneBasedCachingThresholdMeters,
+                          double uTurnPenaltyCost, String tag, StudyArea studyArea, int fleetSize,
+                          boolean drtWithFreight, boolean kpiDashboard, double chiThreshold,
+                          boolean noParcels, long seed, double idleThreshold, int maxTourDurationSeconds,
+                          List<String> openDepots, int maxJobsPerDistrict,
+                          int maxConcurrentFreight, List<Modular.DispatchWindow> freightWindows,
+                          Modular.BudgetMode budgetMode, int budgetSmoothing, double budgetHeadroom,
+                          double budgetUrgencyLeadS) {
         this.concept = Objects.requireNonNull(concept, "concept must not be null");
         this.date = Objects.requireNonNull(date, "date must not be null");
         if (maxIterations < 0) {
@@ -437,6 +535,39 @@ public class HAGRIDSimulationConfig {
         this.maxTourDurationSeconds = maxTourDurationSeconds;
         this.openDepots = openDepots == null ? List.of() : List.copyOf(openDepots);
         this.maxJobsPerDistrict = maxJobsPerDistrict;
+        if (maxConcurrentFreight < 0) {
+            throw new IllegalArgumentException(
+                    "maxConcurrentFreight must be >= 0 (0 = unlimited): " + maxConcurrentFreight);
+        }
+        this.maxConcurrentFreight = maxConcurrentFreight;
+        this.freightWindows = freightWindows == null ? List.of() : List.copyOf(freightWindows);
+        // Self-referential capacity budget (plan 2026-09-04). Validated here so a bad value fails
+        // at wiring time, not on the first tick of a 16 h mobsim. budgetSmoothing/budgetHeadroom
+        // are validated REGARDLESS of budgetMode: a run whose spec says budgetSmoothing=0 has a
+        // typo whether or not the budget is on, and silently accepting it in OFF runs would make
+        // the same spec valid or invalid depending on an unrelated key.
+        if (budgetSmoothing < 1) {
+            throw new IllegalArgumentException(
+                    "budgetSmoothing is the number of completed iterations the passenger-load"
+                            + " profile averages over and must be >= 1: " + budgetSmoothing);
+        }
+        if (!(budgetHeadroom >= 0.0 && budgetHeadroom <= 1.0)) {
+            throw new IllegalArgumentException(
+                    "budgetHeadroom is a SHARE of fleet size and must lie in [0.0, 1.0]: "
+                            + budgetHeadroom);
+        }
+        // Positive and finite, for the same reason budgetSmoothing is checked regardless of
+        // budgetMode: zero would divide by zero in the ramp AND silently restore the binary
+        // override the ramp exists to replace, which is a run that looks configured and is not.
+        if (!(budgetUrgencyLeadS > 0.0) || Double.isInfinite(budgetUrgencyLeadS)) {
+            throw new IllegalArgumentException(
+                    "budgetUrgencyLeadS is the slack over which urgency ramps to the full reserve"
+                            + " and must be positive and finite: " + budgetUrgencyLeadS);
+        }
+        this.budgetMode = budgetMode == null ? Modular.DEFAULT_BUDGET_MODE : budgetMode;
+        this.budgetSmoothing = budgetSmoothing;
+        this.budgetHeadroom = budgetHeadroom;
+        this.budgetUrgencyLeadS = budgetUrgencyLeadS;
         String baseRunId = concept.toUpperCase() + "_" + date.format(RUN_ID_DATE_FMT);
         this.runId = this.tag.isEmpty() ? baseRunId : baseRunId + "_" + this.tag;
         this.paths = new HagridPaths(studyArea);
@@ -755,6 +886,91 @@ public class HAGRIDSimulationConfig {
      */
     public int getMaxTourDurationSeconds() {
         return maxTourDurationSeconds;
+    }
+
+    /**
+     * Returns the DRT_MODULAR concurrency cap: the maximum number of vehicles that may hold an
+     * unperformed freight task at the same time. {@code 0} = unlimited, which reproduces the
+     * behaviour before 2026-08-30. Sized from the PASSENGER-side budget (the baseline's free
+     * capacity per hour), which the idle-share gate cannot express because it measures the
+     * modular fleet's own slack. Only meaningful for {@code DRT_MODULAR}.
+     *
+     * @return concurrency cap, 0 = unlimited
+     */
+    public int getMaxConcurrentFreight() {
+        return maxConcurrentFreight;
+    }
+
+    /**
+     * Returns the DRT_MODULAR dispatch windows; empty = always open. A window later than ~16:38
+     * does not defer work, it expires it - see {@link Modular#parseWindows}. Only meaningful for
+     * {@code DRT_MODULAR}.
+     *
+     * @return dispatch windows, empty = always open
+     */
+    public List<Modular.DispatchWindow> getFreightWindows() {
+        return freightWindows;
+    }
+
+    /**
+     * Returns the self-referential capacity-budget mode (plan 2026-09-04). {@code OFF} is the
+     * default and reproduces the pre-2026-09-04 gate exactly - no {@code PassengerLoadProfile} is
+     * constructed at all, so an OFF run does not pay for the per-tick passenger-busy scan.
+     * {@code SELFREF} derives the per-bin budget from the run's OWN previous iterations, never
+     * from the Baseline arm. Only meaningful for {@code DRT_MODULAR}.
+     *
+     * @return budget mode, never {@code null}
+     */
+    public Modular.BudgetMode getBudgetMode() {
+        return budgetMode;
+    }
+
+    /**
+     * Returns {@code k}, the number of completed iterations the passenger-load profile averages
+     * over. Default {@link Modular#DEFAULT_BUDGET_SMOOTHING} (5); {@code k=1} is the most
+     * responsive and the most likely to oscillate, since the dispatcher becomes part of its own
+     * fixed point. Inert while {@link #getBudgetMode()} is {@code OFF}.
+     *
+     * @return smoothing window in completed iterations, always &gt;= 1
+     */
+    public int getBudgetSmoothing() {
+        return budgetSmoothing;
+    }
+
+    /**
+     * Returns the budget headroom: the reserve held back in every spanned bin, as a SHARE of fleet
+     * size - NOT a vehicle count. Always in {@code [0.0, 1.0]}. Inert while
+     * {@link #getBudgetMode()} is {@code OFF}.
+     *
+     * <p><b>The default {@link Modular#DEFAULT_BUDGET_HEADROOM} (0.15) is theta, and that is
+     * deliberate: it makes the first budget arm a one-factor experiment</b> (user decision
+     * 2026-09-04). For the CURRENT bin, {@code budget(bin) = fleet - passengerBusy - h*fleet}
+     * with {@code h = theta} is algebraically the same condition as the theta gate
+     * {@code idle/fleet > theta}. So {@code h = 0.15} reproduces the calibrated gate in the
+     * current bin and changes ONLY the refusal of commitments that would collide in a LATER bin -
+     * the one mechanism this feature adds. {@code h = 0} would have changed the gate's sharpness
+     * and added look-ahead simultaneously, leaving the two inseparable. The sensitivity sweep
+     * (plan Task 8) is what measures the reserve, not a guess made up front.</p>
+     *
+     * @return headroom share of fleet size, in {@code [0.0, 1.0]}
+     */
+    public double getBudgetHeadroom() {
+        return budgetHeadroom;
+    }
+
+    /**
+     * Returns the urgency ramp's lead time in seconds (plan 2026-09-05): the remaining slack over
+     * which a pending tour's urgency grows from 0 to the full headroom reserve.
+     *
+     * <p>Replaces the binary "last dispatch opportunity" override, which fired at the last instant
+     * the (optimistic) envelope allowed and was refused by the splicer in the same second - the
+     * mechanism that expired 31 of 46 tours in {@code d1d_f130_bud}. Inert while
+     * {@code budgetMode=off}, since the ramp only offsets a budget that is then absent.</p>
+     *
+     * @return lead time in seconds, strictly positive
+     */
+    public double getBudgetUrgencyLeadS() {
+        return budgetUrgencyLeadS;
     }
 
     /**

@@ -141,8 +141,9 @@ class ModularKpiHandlerTest {
         // 20 is still tours_rejected_at_splice, since the five new ones land AFTER it. Task 10
         // adds ONE more: this fixture's zeroPlanStats() carries an empty districtByTourId, so
         // dhl_t0's + hermes_t0's four swaps all land in the synthetic "unknown" site bucket,
-        // producing exactly one peak_concurrent_swaps_unknown row -> 27 total.
-        assertThat(csv).hasSize(27);
+        // producing exactly one peak_concurrent_swaps_unknown row -> 27, plus Task 6's
+        // always-written budget_active flag (budget OFF here, so no counter rows) -> 28.
+        assertThat(csv).hasSize(28);
         assertThat(List.copyOf(csv.keySet()).get(20))
                 .as("appended LAST (before Task 1) so no existing column position shifts")
                 .isEqualTo("tours_rejected_at_splice");
@@ -324,9 +325,10 @@ class ModularKpiHandlerTest {
                 .doesNotThrowAnyException();
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        // 26 pre-Task-10 metrics + one Task 10 row: t_ok's two swaps land in the synthetic
-        // "unknown" site bucket (zeroPlanStats()'s districtByTourId is empty).
-        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(27);
+        // 26 pre-Task-10 metrics + Task 6's budget_active + one Task 10 row: t_ok's two swaps
+        // land in the synthetic "unknown" site bucket (zeroPlanStats()'s districtByTourId is
+        // empty).
+        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(28);
 
         double dispatched = csv.get("parcels_dispatched");
         double served = csv.get("parcels_served");
@@ -385,10 +387,10 @@ class ModularKpiHandlerTest {
         assertThat(Files.exists(path)).as("CSV must be written even for a legitimately freight-free run").isTrue();
         List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
         assertThat(lines.get(0)).isEqualTo("metric;value");
-        assertThat(lines).as("header + all 26 metrics").hasSize(27);
+        assertThat(lines).as("header + all 26 metrics + Task 6's budget_active").hasSize(28);
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).hasSize(26);
+        assertThat(csv).hasSize(27);
         csv.values().forEach(v -> assertThat(v).isEqualTo(0.0));
     }
 
@@ -501,15 +503,20 @@ class ModularKpiHandlerTest {
                 .as("the 21 pre-existing metrics (plus header) must be byte-identical to before")
                 .isEqualTo(expectedOriginal21);
         assertThat(lines.subList(22, lines.size()))
-                .as("exactly the five Task-1 metrics plus Task 10's one per-site row (both tours'"
-                        + " swaps fall into the synthetic 'unknown' site bucket, districtByTourId"
-                        + " being empty here), nothing else, in the mandated order")
+                .as("exactly the five Task-1 metrics, then Task 6's budget block (OFF here, so the"
+                        + " flag row alone), then Task 10's one per-site row (both tours' swaps"
+                        + " fall into the synthetic 'unknown' site bucket, districtByTourId being"
+                        + " empty here), nothing else, in the mandated order")
                 .containsExactly(
                         "parcels_demand;15",
                         "parcels_unassigned_jsprit;2",
                         "parcels_missed_overlay;1",
                         "max_parcels_per_tour;8",
                         "peak_concurrent_swaps;2",
+                        // Task 6: written on EVERY run. 0 = budgetMode=off, and NO counter rows
+                        // follow - that absence is what keeps an off run distinguishable from a
+                        // run whose budget was on and simply never bound.
+                        "budget_active;0",
                         // Task 10: dhl_t0 (2 swaps, peak 2) + gls_t0 (1 swap, peak 1) combined
                         // into "unknown" -> end times {30000,30200,50000}; the first two overlap
                         // (peak 2), the third is isolated -> site peak = 2.
@@ -748,7 +755,114 @@ class ModularKpiHandlerTest {
                 .doesNotContainKey("peak_concurrent_swaps_hoy_sued#1");
     }
 
-    /** Task 1: a zero-valued fixture for tests that exercise the ORIGINAL 21 metrics only and do
+    // ---------------------------------------------- Task 6: capacity-budget rows (plan 2026-09-04)
+
+    /**
+     * THE OFF/ON DISCRIMINATION TEST. {@code budgetMode=off} and "the budget was on and never
+     * bound" are completely different runs and must not produce the same CSV. The obvious
+     * implementation - always emit the two counters, zero when off - makes them byte-identical,
+     * and a zero that means "the feature was not running" is exactly the number that later gets
+     * quoted as "the budget never bound". Both halves run here so the test cannot pass by only
+     * ever seeing one of them.
+     */
+    @Test
+    @DisplayName("Task 6: budgetMode=off output is distinguishable from 'on but never bound'")
+    void budgetOffIsDistinguishableFromBudgetOnButNeverBound(@TempDir Path tmp) throws Exception {
+        Path off = tmp.resolve("off");
+        Path on = tmp.resolve("on");
+        new ModularKpiHandler(fixtureControlerIO(off, "TESTRUN"), zeroPlanStats())
+                .notifyShutdown(fixtureShutdownEvent());
+        // A brand-new stats object: the budget RAN and simply never blocked anything.
+        new ModularKpiHandler(fixtureControlerIO(on, "TESTRUN"), zeroPlanStats(),
+                new ModularBudgetStats()).notifyShutdown(fixtureShutdownEvent());
+
+        Map<String, Double> offCsv = readMetricCsv(off, "TESTRUN.modular_tour_stats.csv");
+        Map<String, Double> onCsv = readMetricCsv(on, "TESTRUN.modular_tour_stats.csv");
+
+        assertThat(offCsv.get("budget_active"))
+                .as("the flag is written on EVERY run - its absence would make an old CSV and an"
+                        + " off run indistinguishable too")
+                .isEqualTo(0.0);
+        assertThat(offCsv)
+                .as("an off run must not publish counters at all: a 0 there reads as 'the budget"
+                        + " never bound', which is a measured claim this run cannot make")
+                .doesNotContainKey("budget_blocked_dispatches")
+                .doesNotContainKey("budget_overrides_expiry");
+
+        assertThat(onCsv.get("budget_active")).isEqualTo(1.0);
+        assertThat(onCsv.get("budget_blocked_dispatches"))
+                .as("on but never bound: a MEASURED zero, and it must be present to be readable"
+                        + " as one")
+                .isEqualTo(0.0);
+        assertThat(onCsv.get("budget_overrides_expiry")).isEqualTo(0.0);
+
+        assertThat(onCsv)
+                .as("the two runs must not produce the same rows")
+                .isNotEqualTo(offCsv);
+    }
+
+    /**
+     * Pins WHICH counter goes into WHICH row, with two deliberately unequal values - equal ones
+     * would let a transposed pair pass unnoticed, and this is the one place where the dispatcher's
+     * two very differently-meaning numbers are turned into named output.
+     */
+    @Test
+    @DisplayName("Task 6: the two budget counters land in their own rows, not each other's")
+    void budgetCountersAreNotTransposed(@TempDir Path tmp) throws Exception {
+        ModularBudgetStats stats = new ModularBudgetStats();
+        for (int i = 0; i < 7; i++) {
+            stats.recordBlockedDispatch();
+        }
+        for (int i = 0; i < 3; i++) {
+            stats.recordExpiryOverride();
+        }
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"),
+                zeroPlanStats(), stats);
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("budget_active")).isEqualTo(1.0);
+        assertThat(csv.get("budget_blocked_dispatches")).isEqualTo(7.0);
+        assertThat(csv.get("budget_overrides_expiry")).isEqualTo(3.0);
+    }
+
+    /**
+     * The counters describe ONE iteration, like every other row in this file
+     * ({@link ModularKpiHandler#reset(int)} clears the per-tour state each iteration and the CSV
+     * is written at shutdown). A run-wide total mixed into a table of last-iteration numbers would
+     * be a different basis under the same header - the "ratio with numerator and denominator on
+     * different bases" failure. The reset lives on {@link ModularBudgetStats}, so it is pinned
+     * here against the published row rather than against the counter's own getter.
+     */
+    @Test
+    @DisplayName("Task 6: the published counters cover the LAST iteration only, not the whole run")
+    void budgetCountersAreResetPerIteration(@TempDir Path tmp) throws Exception {
+        ModularBudgetStats stats = new ModularBudgetStats();
+        ModularKpiHandler handler = new ModularKpiHandler(fixtureControlerIO(tmp, "TESTRUN"),
+                zeroPlanStats(), stats);
+        // iteration 0: 5 blocked, 2 overridden
+        for (int i = 0; i < 5; i++) {
+            stats.recordBlockedDispatch();
+        }
+        stats.recordExpiryOverride();
+        stats.recordExpiryOverride();
+        // iteration 1 begins: MATSim fires IterationStarts before the mobsim builds the QSim
+        stats.notifyIterationStarts(null);
+        handler.reset(1);
+        stats.recordBlockedDispatch();
+
+        handler.notifyShutdown(fixtureShutdownEvent());
+
+        Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("budget_blocked_dispatches"))
+                .as("iteration 1 blocked ONE dispatch; 6 would mean the counter accumulated across"
+                        + " iterations while every other row describes iteration 1 alone")
+                .isEqualTo(1.0);
+        assertThat(csv.get("budget_overrides_expiry")).isEqualTo(0.0);
+    }
+
+        /** Task 1: a zero-valued fixture for tests that exercise the ORIGINAL 21 metrics only and do
      *  not care about plan-time accounting - keeps every pre-existing test's all-zero-append
      *  invariant intact without repeating this literal at every call site. Task 10: the sixth arg
      *  (districtByTourId) is likewise empty for these tests, so any swap they fire falls into the
