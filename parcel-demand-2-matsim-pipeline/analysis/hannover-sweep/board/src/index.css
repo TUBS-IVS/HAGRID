@@ -71,6 +71,12 @@
      so 6 is the next unbound slot. v3 is additionally dashed, so the three
      series never rely on colour alone. */
   --c-v3: #e87ba4;
+  /* v4: slot 7 of the reference palette (#eb6834) sits only ΔE 12.9 from v3's
+     pink in normal vision — below the 15 floor — so it is re-stepped to a darker
+     sienna, which validates at ΔE 21.7 against pink and passes every light-mode
+     check. v4 is additionally dotted (v3 dashed), so with four series identity
+     never rests on colour alone. */
+  --c-v4: #a0522d;
   --lim-capa: #eda100;
   --lim-wt: #4a3aa7;
   --lim-both: #e34948;
@@ -89,6 +95,14 @@
   --c-v1: #3987e5;
   --c-v2: #199e70;
   --c-v3: #d55181;   /* slot 6, dark step */
+  /* Lighter than the light-mode step on purpose: on a dark surface the warm
+     hues (green/pink/sienna) crowd together under deuteranopia, so v4 separates
+     by LIGHTNESS instead. Sits at L 0.75 vs the band's 0.67 ceiling — exceeding
+     it upward on a dark ground means more contrast, not less. KNOWN, PRE-EXISTING
+     and NOT caused by v4: --c-v2 vs --c-v3 are only ΔE 1.6 apart in deuteranopia
+     here, i.e. the same colour for red-green-blind readers; the dashed/dotted
+     line styles are what keeps the four arms apart in dark mode. */
+  --c-v4: #e89b5a;
   --lim-capa: #c98500;
   --lim-wt: #9085e9;
   --lim-both: #e66767;

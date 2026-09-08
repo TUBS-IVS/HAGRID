@@ -2,14 +2,16 @@
 // Normalisation happens here at render time (each series to its own c=30 mean).
 import raw from "@/data/sweep_data.json";
 
-export type Series = "v1" | "v2" | "v3";
+export type Series = "v1" | "v2" | "v3" | "v4";
 
-/** Every series in fixed display order. v3 is the 2026-08 sim-PC arm; it runs the
-    SAME Hannover code as v2 (verified identical for CarrierServiceMerger, Router,
-    CarrierGenerator, DemandProcessor, DashboardGenerator, HAGRIDSimulationRunner),
-    so v2 and v3 at the same capacity are REPLICATES, not a version comparison:
-    the tag is part of the runId and runId.hashCode() reseeds the demand layer. */
-export const SERIES: Series[] = ["v1", "v2", "v3"];
+/** Every series in fixed display order. v3 and v4 are the 2026-08 sim-PC arms;
+    they run the SAME Hannover code as v2 (verified identical for
+    CarrierServiceMerger, Router, CarrierGenerator, DemandProcessor,
+    DashboardGenerator, HAGRIDSimulationRunner), so v2/v3/v4 at the same capacity
+    are REPLICATES, not a version comparison: the tag is part of the runId and
+    runId.hashCode() reseeds the demand layer. Three complete arms mean the
+    uncertainty band below is a three-point spread, not a two-point range. */
+export const SERIES: Series[] = ["v1", "v2", "v3", "v4"];
 
 export interface Run {
   series: Series;
@@ -83,23 +85,25 @@ export function kpiValue(run: Run, key: KpiKey): number {
 const capsOf = (s: Series) =>
   [...new Set(RUNS.filter((r) => r.series === s).map((r) => r.cap))].sort((a, b) => a - b);
 
-export const V1_CAPS = capsOf("v1");
-export const V2_CAPS = capsOf("v2");
-export const V3_CAPS = capsOf("v3");
 export const ALL_CAPS = [...new Set(RUNS.map((r) => r.cap))].sort((a, b) => a - b);
 
-/** Caps present for a series. Derived, not hard-coded: the arms have different
-    and changing coverage (v2 lacks 70; v3 lacks the runs still pending). */
+/** Caps present per series, built FROM `SERIES` so a new arm needs no edit here.
+    The previous version ended in a ternary whose final branch was v3, which meant
+    any series added later silently inherited v3's capacities — the same class of
+    bug as the once-hard-coded axis ticks below. Deriving it makes that
+    impossible: an arm with no runs comes back empty and shows as empty. */
+const CAPS = Object.fromEntries(SERIES.map((s) => [s, capsOf(s)])) as Record<Series, number[]>;
+
 export function capsFor(series: Series): number[] {
-  return series === "v1" ? V1_CAPS : series === "v2" ? V2_CAPS : V3_CAPS;
+  return CAPS[series];
 }
 
 /** X-axis ticks for one series: every multiple of 50 inside its actual capacity
     range, plus both endpoints. Derived on purpose — a hard-coded list stops
     labelling the moment a series grows (v2 went 150 -> 280, v3 reaches 380), and
     an unlabelled axis tail reads as if the data ended there. */
-export function capTicks(series: Series): number[] {
-  const caps = capsFor(series);
+export function capTicks(series: LimitSeries): number[] {
+  const caps = capsForLimit(series);
   const lo = caps[0];
   const hi = caps[caps.length - 1];
   const marks: number[] = [];
@@ -112,12 +116,14 @@ export const SERIES_LABEL: Record<Series, string> = {
   v1: "v1 (Alt, Feb–Apr 26)",
   v2: "v2 (Merger-Split, Sim+Dev)",
   v3: "v3 (Merger-Split, Replikat)",
+  v4: "v4 (Merger-Split, Replikat 2)",
 };
 
 export const SERIES_VAR: Record<Series, string> = {
   v1: "--c-v1",
   v2: "--c-v2",
   v3: "--c-v3",
+  v4: "--c-v4",
 };
 
 function runsAt(series: Series, cap: number): Run[] {
@@ -186,7 +192,7 @@ export function deltaRows(
 /** The arms that carry the current code and may therefore be pooled into one
     mean. v1 is a DIFFERENT code version — it stays a reference line and is never
     averaged in, however the summary section is toggled. */
-export const POOLED: Series[] = ["v2", "v3"];
+export const POOLED: Series[] = ["v2", "v3", "v4"];
 
 export interface SummaryRow {
   cap: number;
@@ -201,9 +207,9 @@ export interface SummaryRow {
 /** Pooled mean of the replicate arms per capacity, with their min-max spread as
     the uncertainty band, plus v1 alongside for the optional overlay.
 
-    Why min-max and not a standard deviation: n is 2 at best, where an SD is not
-    an estimate of anything. The observed range between two independently seeded
-    runs of identical code is the honest statement of what this sweep resolves. */
+    Why min-max and not a standard deviation: n is 3 at best, where an SD is a
+    very poor estimate. The observed range over independently seeded runs of
+    identical code is the honest statement of what this sweep resolves. */
 export function summaryRows(key: KpiKey): SummaryRow[] {
   return ALL_CAPS.map((cap) => {
     const vals = RUNS.filter((r) => POOLED.includes(r.series) && r.cap === cap).map((r) => kpiValue(r, key));
@@ -251,6 +257,38 @@ export function pooledCoverage(): { n1: number[]; n0: number[]; total: number } 
   };
 }
 
+/** A limit-chart tab: one real arm, or "mean" = all pooled replicate arms at
+    once. Deliberately NOT a member of `Series`: "mean" is a view over runs, not
+    an arm, so it must never leak into SERIES, SERIES_VAR, the badges or the
+    sweep chart — where it would claim a fifth measured series that doesn't exist. */
+export type LimitSeries = Series | "mean";
+
+export const MEAN_SERIES = "mean" as const;
+/** Derived from POOLED, so a fifth replicate arm relabels this tab by itself. */
+export const MEAN_LABEL = `Ø ${POOLED.join("+")}`;
+
+function limitRunsAt(series: LimitSeries, cap: number): Run[] {
+  return series === MEAN_SERIES
+    ? RUNS.filter((r) => POOLED.includes(r.series) && r.cap === cap)
+    : runsAt(series, cap);
+}
+
+/** Caps a tab can draw. For "mean" that is every capacity carrying at least one
+    pooled run — paired with `pooledN`, which states how many runs actually stand
+    behind it, so a capacity backed by one arm is never silently presented as an
+    average over three. */
+export function capsForLimit(series: LimitSeries): number[] {
+  return series === MEAN_SERIES
+    ? ALL_CAPS.filter((cap) => limitRunsAt(MEAN_SERIES, cap).length > 0)
+    : capsFor(series);
+}
+
+/** How many runs each capacity of a tab averages over, as a min-max. */
+export function pooledN(series: LimitSeries): { min: number; max: number } {
+  const ns = capsForLimit(series).map((cap) => limitRunsAt(series, cap).length);
+  return { min: Math.min(...ns), max: Math.max(...ns) };
+}
+
 export interface LimitRow {
   cap: number;
   capa_only: number;
@@ -259,20 +297,42 @@ export interface LimitRow {
   neither: number;
 }
 
-/** Stacked rows per capacity for one series; share=true -> % of tours, else counts. Replicated caps use the mean. */
-export function limitRows(series: Series, share: boolean): LimitRow[] {
-  const caps = capsFor(series);
-  return caps.map((cap) => {
-    const rs = runsAt(series, cap);
-    const mean = (k: LimitKey) => rs.reduce((s, r) => s + r.limits[k], 0) / rs.length;
-    const total = rs.reduce((s, r) => s + r.limits.total_tours, 0) / rs.length;
-    const val = (k: LimitKey) => (share ? (mean(k) / total) * 100 : mean(k));
+/** Class counts and tour total per capacity, averaged over whichever runs the tab
+    covers. Single source for BOTH limit charts — the stacked areas and the line
+    view used to carry two copies of this averaging, which is how they could have
+    drifted apart. */
+function limitRowsWithTotal(series: LimitSeries) {
+  return capsForLimit(series).map((cap) => {
+    const rs = limitRunsAt(series, cap);
+    const mean = (k: LimitKey | "total_tours") => rs.reduce((s, r) => s + r.limits[k], 0) / rs.length;
     return {
       cap,
-      capa_only: val("capa_only"),
-      worktime_only: val("worktime_only"),
-      both: val("both"),
-      neither: val("neither"),
+      capa_only: mean("capa_only"),
+      worktime_only: mean("worktime_only"),
+      both: mean("both"),
+      neither: mean("neither"),
+      total: mean("total_tours"),
+    };
+  });
+}
+
+/** Stacked rows per capacity; share=true -> % of tours, else counts.
+
+    On the "mean" tab a share is the RATIO OF MEANS (pooled class count / pooled
+    tour total), not the mean of the per-arm ratios. The paper CSV
+    (`build_paper_analysis.py`) uses the mean of ratios, so the two differ in
+    principle — measured over all 38 capacities the gap is at most 0.09 pp,
+    because the replicates land within a few tours of each other. Recorded here
+    so the discrepancy is a known bound rather than something to re-derive. */
+export function limitRows(series: LimitSeries, share: boolean): LimitRow[] {
+  return limitRowsWithTotal(series).map((r) => {
+    const val = (v: number) => (share ? (v / r.total) * 100 : v);
+    return {
+      cap: r.cap,
+      capa_only: val(r.capa_only),
+      worktime_only: val(r.worktime_only),
+      both: val(r.both),
+      neither: val(r.neither),
     };
   });
 }
@@ -288,27 +348,12 @@ export interface LimitLineRow {
     separateBoth=false -> "both" tours are counted into BOTH the capacity and the
     worktime curve (paper-figure convention); separateBoth=true -> three curves,
     the single-limit curves stay *_only. share=true -> % of tours, else counts. */
-export function limitLineRows(series: Series, share: boolean, separateBoth: boolean): LimitLineRow[] {
+export function limitLineRows(series: LimitSeries, share: boolean, separateBoth: boolean): LimitLineRow[] {
   return limitRowsWithTotal(series).map(({ cap, capa_only, worktime_only, both, total }) => {
     const scale = (v: number) => (share ? (v / total) * 100 : v);
     return separateBoth
       ? { cap, capa: scale(capa_only), worktime: scale(worktime_only), both: scale(both) }
       : { cap, capa: scale(capa_only + both), worktime: scale(worktime_only + both), both: null };
-  });
-}
-
-function limitRowsWithTotal(series: Series) {
-  const caps = capsFor(series);
-  return caps.map((cap) => {
-    const rs = RUNS.filter((r) => r.series === series && r.cap === cap);
-    const mean = (k: LimitKey | "total_tours") => rs.reduce((s, r) => s + r.limits[k], 0) / rs.length;
-    return {
-      cap,
-      capa_only: mean("capa_only"),
-      worktime_only: mean("worktime_only"),
-      both: mean("both"),
-      total: mean("total_tours"),
-    };
   });
 }
 
@@ -328,6 +373,20 @@ const seriesBadge = (s: Series) => {
   return `${s}: ${nRuns(s)} Runs (Kapa ${capRange(s)}${g.length ? `, ohne ${g.join("/")}` : ""})`;
 };
 
+/** Coverage sentence for the sweep footnote — DERIVED, never written by hand.
+    The previous footnote was a prose list of gaps ("v2-70 nie nachgeholt, v2
+    endet bei 280, v3 fehlen 170/270/330, 390/400 noch nicht fertig"). Every one
+    of those claims outlived the runs that filled them: by the time v2 and v3
+    were 38/38 the board was still telling the reader the arms had holes. A hole
+    that isn't there reads as a result just as badly as one that is missed, so
+    this is computed from the data like the badges above it. */
+export function coverageNote(): string {
+  return SERIES.map((s) => {
+    const g = gapsIn(s);
+    return g.length ? `${s} fehlen ${g.join("/")}` : `${s} vollständig (${nRuns(s)} Runs)`;
+  }).join("; ");
+}
+
 export const META = {
   region: "Region Hannover (Stadt)",
   demand: "Bedarf 13.05.2025 (Di)",
@@ -335,6 +394,7 @@ export const META = {
   v1: seriesBadge("v1"),
   v2: seriesBadge("v2"),
   v3: seriesBadge("v3"),
+  v4: seriesBadge("v4"),
   worktimeLimitH: (raw as { worktime_limit_h: number }).worktime_limit_h,
   capaLimitFrac: (raw as { capa_limit_frac: number }).capa_limit_frac,
 };

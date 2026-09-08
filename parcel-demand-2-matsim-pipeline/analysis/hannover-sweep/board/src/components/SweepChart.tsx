@@ -16,7 +16,9 @@ import { SERIES, SERIES_LABEL, SERIES_VAR, fmt, runPoints, sweepRows, type KpiDe
 
 // v3 dashed: it shares v2's code path, so the two are replicates of each other.
 // A non-colour channel keeps them apart where the curves nearly coincide.
-const DASH: Partial<Record<Series, string>> = { v3: "5 4" };
+// Secondary encoding, not decoration: four overlapping series must not depend on
+// colour alone, and in dark mode v2/v3 are near-identical under deuteranopia.
+const DASH: Partial<Record<Series, string>> = { v3: "5 4", v4: "2 3" };
 
 const INK2 = "var(--chart-ink2)";
 

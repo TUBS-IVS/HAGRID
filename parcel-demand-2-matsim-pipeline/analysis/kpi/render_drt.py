@@ -39,6 +39,27 @@ _COST_TIP = (
     "Studie: hohe Kosten je Fzg-h korrelieren signifikant mit DRT-Einstellung."
 )
 
+# Unified cost model (Lausitz). Every caveat here is load-bearing: the tile
+# shows one euro figure, and each of these sentences is a reason it is not
+# the number a reader might assume it is.
+_COST_TIP_UNIFIED = (
+    "DIREKTE BETRIEBSKOSTEN aus cost_parameters.csv v0.7-draft: Personal, "
+    "Fahrzeugkapital, Verschleiss, Energie. NICHT Systemgesamtkosten - ohne "
+    "Leitstelle, Buchungsplattform, Werkstatt, Depot und Verwaltung "
+    "(overhead_factor = 0, kuerzt sich in jedem Verhaeltnis zwischen Armen "
+    "exakt heraus). Personal = c_time x durH, durH = Spanne erste bis letzte "
+    "Aufgabe inkl. Standzeit (Nutzerentscheidung 2026-08-28); die Wahl der "
+    "Basis dreht das Vorzeichen des Armvergleichs. VORBEHALT: Fahrzeuge sind "
+    "im Mittel 16 h aktiv, also ueber dem ArbZG-Maximum von 10 h - der Satz "
+    "unterstellt freien Fahrerwechsel ohne Mindestschicht und ohne bezahlte "
+    "Uebergabe. Ueberstundenzuschlag und Abendzuschlag sind NICHT "
+    "instrumentiert (Faktor 0 bzw. fehlende Tageszeitaufloesung). "
+    "In 1c/1d gibt es kein EUR/Fahrt oder EUR/Paket: ein Fahrzeug traegt "
+    "beide Dienste, die Aufteilung braucht die Massenzuteilung aus "
+    "METHODS-LOG 2.26. Arme sind ueber die Tagessumme bei gleicher "
+    "Aufgabe zu vergleichen."
+)
+
 
 def _tip_src(desc, kpis, name):
     """Tooltip text plus the row's ACTUAL `source` column (E4). On a
@@ -281,13 +302,29 @@ def _tiles(data):
                             "pt; Fahrplan ist rail-only). Kein Kettennachweis am "
                             "Bahnsteig - Naehe-Proxy."))
 
-    # 21. Kosten (Platzhalter) [sub: drt_cost_per_ride_placeholder + Currie/Fournier]
-    v = _kpi(kpis, "drt_cost_bottom_up_placeholder")
+    # 21. Kosten -- unified model (Lausitz) or the legacy placeholder (Hannover).
+    # Only ever ONE cost tile: showing both would put two different euro
+    # figures for the same run side by side with nothing to tell them apart.
+    v = _kpi(kpis, "cost_total")
     if v is not None:
-        per_ride = _kpi(kpis, "drt_cost_per_ride_placeholder")
-        sub = ((_fmt_de(per_ride, 2) + " EUR/Fahrt • Currie/Fournier-Benchmark")
-               if per_ride is not None else "")
-        t.append(_tile(_fmt_de(v) + " EUR", "Kosten (Platzhalter)", sub, tip=_COST_TIP))
+        per_ride = _kpi(kpis, "cost_per_ride")
+        share = _kpi(kpis, "cost_labour_share")
+        if per_ride is not None:
+            sub = _fmt_de(per_ride, 2) + " EUR/Fahrt"
+        elif share is not None:
+            # integrated arm: no EUR/Fahrt without an allocation rule
+            sub = _fmt_pct(share) + " Personalanteil"
+        else:
+            sub = ""
+        t.append(_tile(_fmt_de(v) + " EUR", "Direkte Betriebskosten", sub,
+                        tip=_COST_TIP_UNIFIED))
+    else:
+        v = _kpi(kpis, "drt_cost_bottom_up_placeholder")
+        if v is not None:
+            per_ride = _kpi(kpis, "drt_cost_per_ride_placeholder")
+            sub = ((_fmt_de(per_ride, 2) + " EUR/Fahrt • Currie/Fournier-Benchmark")
+                   if per_ride is not None else "")
+            t.append(_tile(_fmt_de(v) + " EUR", "Kosten (Platzhalter)", sub, tip=_COST_TIP))
 
     # 22. Pooling-Quote [sub: sharing_factor]
     v = _kpi(kpis, "pooling_rate")

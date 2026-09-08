@@ -15,26 +15,51 @@ import RunsTable from "@/components/RunsTable";
 import SummaryPanels from "@/components/SummaryPanels";
 import SweepChart from "@/components/SweepChart";
 import Tiles from "@/components/Tiles";
-import { KPIS, META, SERIES, SERIES_VAR, type KpiDef, type Series } from "@/lib/data";
+import {
+  KPIS,
+  MEAN_LABEL,
+  MEAN_SERIES,
+  META,
+  POOLED,
+  SERIES,
+  SERIES_VAR,
+  coverageNote,
+  pooledN,
+  type KpiDef,
+  type LimitSeries,
+  type Series,
+} from "@/lib/data";
 
-/** The two comparisons worth showing, and why they differ: v2/v3 against v1 is a
-    real code difference (merger-split fix), v3 against v2 is the same code twice
-    and therefore the run-to-run reseed noise floor. */
+/** The comparisons worth showing, and why they differ: v2/v3/v4 against v1 is a
+    real code difference (merger-split fix), while the pairs among v2/v3/v4 are the
+    same code twice and therefore the run-to-run reseed noise floor. With three
+    replicate arms there are three such floor pairs instead of one, which is what
+    turns the noise floor from a single number into a range. */
 const DELTA_PAIRS: { id: string; series: Series; ref: Series; label: string }[] = [
   { id: "v2-v1", series: "v2", ref: "v1", label: "v2 vs v1" },
   { id: "v3-v1", series: "v3", ref: "v1", label: "v3 vs v1" },
+  { id: "v4-v1", series: "v4", ref: "v1", label: "v4 vs v1" },
   { id: "v3-v2", series: "v3", ref: "v2", label: "v3 vs v2" },
+  { id: "v4-v2", series: "v4", ref: "v2", label: "v4 vs v2" },
+  { id: "v4-v3", series: "v4", ref: "v3", label: "v4 vs v3" },
 ];
 
-function SeriesTabs({ value, onChange }: { value: Series; onChange: (s: Series) => void }) {
+/** One tab per arm plus a pooled-mean tab. Only the limit charts use tabs at all
+    (the sweep chart draws every arm at once and the summary section already shows
+    the pooled mean with its spread band), so this is the single tab strip — the
+    arm-only variant it replaced had no remaining caller. */
+function LimitSeriesTabs({ value, onChange }: { value: LimitSeries; onChange: (s: LimitSeries) => void }) {
   return (
-    <Tabs value={value} onValueChange={(v) => onChange(v as Series)}>
+    <Tabs value={value} onValueChange={(v) => onChange(v as LimitSeries)}>
       <TabsList className="h-8">
         {SERIES.map((s) => (
           <TabsTrigger key={s} value={s} className="h-6 text-xs">
             {s}
           </TabsTrigger>
         ))}
+        <TabsTrigger value={MEAN_SERIES} className="h-6 text-xs">
+          {MEAN_LABEL}
+        </TabsTrigger>
       </TabsList>
     </Tabs>
   );
@@ -71,16 +96,18 @@ export default function App() {
   const [kpi, setKpi] = useState<KpiDef>(KPIS.find((k) => k.key === "vehicles")!);
   const [pct, setPct] = useState(false);
   const [cap, setCap] = useState(100);
-  const [limitSeries, setLimitSeries] = useState<Series>("v1");
+  const [limitSeries, setLimitSeries] = useState<LimitSeries>("v1");
   const [limitShare, setLimitShare] = useState(true);
   const [separateBoth, setSeparateBoth] = useState(false);
-  const [lineSeries, setLineSeries] = useState<Series>("v1");
+  const [lineSeries, setLineSeries] = useState<LimitSeries>("v1");
   const [deltaKpi, setDeltaKpi] = useState<KpiDef>(KPIS.find((k) => k.key === "vehicles")!);
   const [deltaRel, setDeltaRel] = useState(true);
   const [deltaPairId, setDeltaPairId] = useState(DELTA_PAIRS[0].id);
   const [summaryV1, setSummaryV1] = useState(false);
   const [summaryRel, setSummaryRel] = useState(true);
   const deltaPair = DELTA_PAIRS.find((p) => p.id === deltaPairId)!;
+  const meanN = pooledN(MEAN_SERIES);
+  const showMeanNote = limitSeries === MEAN_SERIES || lineSeries === MEAN_SERIES;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -108,15 +135,16 @@ export default function App() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="outline" className="cursor-help gap-1">
-                    <Info className="h-3 w-3" /> v2/v3 = Replikate
+                    <Info className="h-3 w-3" /> v2/v3/v4 = Replikate
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-80 text-xs">
-                  v1 = alter Codestand. v2 und v3 laufen denselben Hannover-Code (Merger-Split-Fix, 0 unzustellbare
+                  v1 = alter Codestand. v2, v3 und v4 laufen denselben Hannover-Code (Merger-Split-Fix, 0 unzustellbare
                   Pakete) und sind bei gleicher Kapazität echte Replikate: der Tag steckt im runId, und
-                  runId.hashCode() setzt den Seed der Bedarfsschicht neu. Ihre Differenz ist also
+                  runId.hashCode() setzt den Seed der Bedarfsschicht neu. Ihre Streuung ist also
                   Reseed-Streuung, kein Codeeffekt — das ist der einzige Unsicherheitsschätzer, den dieser Sweep
-                  hergibt. Serien werden nie in einer Kurve gemischt.
+                  hergibt. Mit drei vollständigen Replikat-Armen ist er erstmals eine Drei-Punkt-Spanne statt des
+                  Abstands zweier Läufe. Serien werden nie in einer Kurve gemischt.
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -163,9 +191,9 @@ export default function App() {
             <SweepChart kpi={kpi} pct={pct} />
             <p className="mt-2 text-xs text-muted-foreground">
               Linien = Mittelwert je Kapazität und Serie, Punkte = einzelne Runs. Normierung je Serie auf ihr eigenes
-              c=30. v3 gestrichelt, weil es dieselbe Codebasis wie v2 fährt. Lücken sind fehlende Runs, keine
-              Ergebnisse: v2-70 nie nachgeholt, v2 endet bei 280 (Dev-PC gestoppt), v3 fehlen 170/270/330 (JVM-Crash,
-              Nachlauf angestoßen) sowie 390/400 (zum Extraktionszeitpunkt noch nicht fertig).
+              c=30. v3 gestrichelt, v4 gepunktet — beide fahren dieselbe Codebasis wie v2, und bei vier Serien darf die
+              Identität nicht an der Farbe allein hängen. Lücken wären fehlende Runs, keine Ergebnisse:{" "}
+              {coverageNote()}.
             </p>
           </CardContent>
         </Card>
@@ -176,7 +204,7 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <CardTitle className="text-base">Was limitiert die Touren?</CardTitle>
               <div className="flex gap-3">
-                <SeriesTabs value={limitSeries} onChange={setLimitSeries} />
+                <LimitSeriesTabs value={limitSeries} onChange={setLimitSeries} />
                 <Tabs value={limitShare ? "share" : "count"} onValueChange={(v) => setLimitShare(v === "share")}>
                   <TabsList className="h-8">
                     <TabsTrigger value="share" className="h-6 text-xs">Anteil</TabsTrigger>
@@ -191,7 +219,7 @@ export default function App() {
             <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-4 border-t pt-4">
               <h3 className="text-sm font-semibold">Limitierende Touren als Linien</h3>
               <div className="flex flex-wrap items-center gap-3">
-                <SeriesTabs value={lineSeries} onChange={setLineSeries} />
+                <LimitSeriesTabs value={lineSeries} onChange={setLineSeries} />
                 <div className="flex items-center gap-2">
                   <Switch id="separate-both" checked={separateBoth} onCheckedChange={setSeparateBoth} />
                   <Label htmlFor="separate-both" className="text-xs text-muted-foreground">
@@ -205,6 +233,17 @@ export default function App() {
               Klassifikation je Tour: Arbeitszeit limitiert = Tourdauer &gt; {META.worktimeLimitH} h (Overtime wird
               bepreist, kommt aber vor) · Kapazität limitiert = Pakete &gt; {Math.round(META.capaLimitFrac * 100)} % der
               Fahrzeugkapazität. Schalter aus: doppelt limitierte Touren zählen in beiden Kurven mit.
+              {showMeanNote && (
+                <>
+                  {" "}
+                  <strong>{MEAN_LABEL}</strong> mittelt die Klassenzahlen je Kapazität über die Replikat-Arme{" "}
+                  {POOLED.join(", ")} —{" "}
+                  {meanN.min === meanN.max
+                    ? `durchweg ${meanN.min} Runs je Kapazität`
+                    : `${meanN.min}–${meanN.max} Runs je Kapazität, also nicht überall gleich viele`}
+                  . Anteile sind dabei das Verhältnis der Mittelwerte, nicht der Mittelwert der Anteile.
+                </>
+              )}
             </p>
           </CardContent>
         </Card>

@@ -10,12 +10,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { capTicks, fmt, limitLineRows, type Series } from "@/lib/data";
+import { capTicks, fmt, limitLineRows, type LimitSeries } from "@/lib/data";
 
 const INK2 = "var(--chart-ink2)";
 
 interface Props {
-  series: Series;
+  series: LimitSeries;
   share: boolean;
   separateBoth: boolean;
 }
