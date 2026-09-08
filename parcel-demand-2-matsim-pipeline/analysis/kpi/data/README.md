@@ -75,9 +75,21 @@ Je Zeile Quelle in der `source`-Spalte; Zeilen, die NICHT aus dem
 Guidebook stammen, beginnen mit "NOT a guidebook value" (WTT-Diesel,
 Strommix, GWP100). Euro-7-Faktoren sind aus Grenzwerten PROJIZIERT (Norm
 greift fuer LCV ab ~2026/27) - im Paper kennzeichnen.
-`ev_range_km_{low,mid,high}` sind Sweep-Schwellen, kein Pass/Fail-Gate:
-bei 250 km ist die Ueberschreitung in allen 12 geprueften Laeufen 0 %
-(laengste Tour 183 km), Trennschaerfe nur bei ~150 km.
+`ev_range_km_{low,mid,high}` = 245.5 / 301.7 / 396.4 km sind Sweep-Schwellen,
+kein Pass/Fail-Gate, und seit 2026-09-03 aus BELEGTEN Fahrzeugen abgeleitet:
+nutzbare Kapazitaet (Ford Tourneo 70 / VW ID.Buzz 86 / Mercedes eSprinter
+113 kWh) geteilt durch 285.1 Wh/km = unseren gemessenen Traktionsverbrauch
+247.9 Wh/km mal 1.15 Nebenverbraucher (aux_load_share_bev, METHODS-LOG 2.63) -
+nicht aus der WLTP-Herstellerreichweite, die 24 % danebenliegt. Die
+Nebenverbraucher MUESSEN in der Schwelle stecken, weil sie aus derselben
+Batterie ziehen wie die Traktion; die Datenblatt-Gegenprobe unten laeuft
+dagegen gegen die Traktion allein, weil Hersteller-Bestwerte ohne Heizung
+gefahren werden. Der
+eSprinter-Datenblattwert (257 Wh/km) ist die externe Gegenprobe des
+BEV-EC-Kanals, 3.5 % Abweichung. Auf der Frachtseite ist die
+Ueberschreitung an allen drei Schwellen 0 % (laengste Tour 158.8 km) - das
+IST der Befund; die Trennschaerfe sitzt auf dem Fahrblock-Kanal.
+METHODS-LOG 2.56.
 
 Der TTW-CO2-Faktor ist quellenintern hergeleitet: 3.169 kg CO2/kg Diesel
 / 42.695 MJ/kg (CO2-je-kg-Fuel-Tabelle bzw. Tab. 3-28 "Default calorific
@@ -365,14 +377,30 @@ Was von der damaligen Bound-Rechnung noch gilt:
   `ev_range_km_low/mid/high`. Die Metrik ist bereits die OPTIMISTISCHE
   Grenze: sie nimmt an, dass jede STAY-Phase >= Fensterbreite das Fahrzeug
   VOLL nachlaedt - ohne Ladeleistung, Batteriekapazitaet oder Infrastruktur
-  im Modell. Gemessen (1d-Lauf): 445.5 km selbst im grosszuegigsten
-  20-min-Fenster, gegen maximal angenommene 250 km Reichweite - die
-  geometrische Schranke ist bindend TROTZ dieser optimistischen Annahme,
-  DRT ist in der jetzigen Disposition NICHT reichweitenfrei elektrifizierbar
-  (sagt nichts ueber eine anders disponierte Flotte). Details: BACKLOG-DONE
-  ("Ladefenster-Analyse").
-- Netzintensitaet Strom ist ein ausgewiesener Sensitivitaetsparameter
-  (emep_supplement.csv). Die BEV-Abrieb-Multiplikatoren sind KEINE freie
+  im Modell. ZURUECKGEZOGEN (2026-09-03, METHODS-LOG 3.12): hier stand
+  "die geometrische Schranke ist bindend, DRT ist nicht reichweitenfrei
+  elektrifizierbar". Diese Aussage hing an den unbelegten 250 km, die bei
+  unserem eigenen gemessenen Verbrauch von 247.9 Wh/km nur 62 kWh nutzbarer
+  Batterie entsprechen - weit unter Markt. Mit belegten Fahrzeugen
+  (METHODS-LOG 2.56) reissen im 20-min-Fenster 9 von 135 Fahrzeugtagen
+  (6.7 %) die 396.4-km-Schwelle des Mercedes eSprinter, nicht 31 %; Baseline
+  21 von 120 (17.5 %), 1c 5.4 % [2.1-9.3] ueber fuenf Seeds.
+  ACHTUNG, diese Kennzahl ist NICHT ladeannahmefrei: sie unterstellt
+  Vollnachladen in jedem Fenster, also 339 kW je Halt bei 113 kWh in 20 min -
+  eine 11-kW-Wallbox liefert dort 15 km. Die annahmefreie Gegenkennzahl ist
+  der Energiebedarf je Fahrzeugtag gegen die Batterie: 42.2 % der 1d-Tage
+  brauchen mindestens eine Zwischenladung (Baseline 72.5 %, 1c 42.7 %).
+  Belastbar ist nur die Klammer aus beiden Zahlen, und die Antwort dazwischen
+  braucht ein energetisches Lademodell. Details METHODS-LOG 3.12.
+- Netzintensitaet Strom ist ein SWEEP ueber drei Punkte
+  (`grid_co2e_g_per_mj_{low,mid,high}` = 15.00 / 112.78 / 122.78 g/MJ, UBA
+  CC 16/2026 Tab. 3 "THG mit Vorketten"). Bis 2026-09-03 stand hier ein
+  Einzelwert von 105.6 g/MJ, und der war die DIREKTE CO2-Kennzahl 2023, also
+  eine andere Systemgrenze als die Dieselseite - Defekt, behoben, siehe
+  METHODS-LOG 2.55. Die Ladeverluste (7 %, `charging_loss_share`) sitzen
+  zwischen Netz und Batterie und werden NUR in der CO2e-Kette aufgeschlagen;
+  ENERGY_MJ bleibt fahrzeugseitig, damit die `ev_range_km_*`-Ableitung dazu
+  konsistent bleibt. Die BEV-Abrieb-Multiplikatoren sind KEINE freie
   Annahme, sondern die guidebook-eigenen ICE->BEV-Verhaeltnisse des
   Medium-Pkw (Reifen 1.0841 / Bremse 0.2113 / Strasse 1.1267) - ein
   deklarierter Kategorientransfer, weil die Quelle keine BEV-Zeile fuer
