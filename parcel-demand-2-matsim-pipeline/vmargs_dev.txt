@@ -1,0 +1,13 @@
+-Xms16g
+-Xmx48g
+-Xss512k
+-XX:MaxDirectMemorySize=4g
+-XX:ActiveProcessorCount=12
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:+ExitOnOutOfMemoryError
+-XX:HeapDumpPath=hagrid-output\logs\jvm\heapdump_dev.hprof
+-XX:ErrorFile=hagrid-output\logs\jvm\hs_err_dev_%p.log
+-XX:+UseZGC
+--add-opens
+java.base/java.lang=ALL-UNNAMED
+-Dlog4j2.configurationFile=devlog/log4j2_dev.xml

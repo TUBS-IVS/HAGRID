@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DEV-ONLY log4j2 config, used via -Dlog4j2.configurationFile in vmargs_dev.txt.
+     The packaged config resolves ${sys:hagrid.log.dir}, which SimulationRunnerUtils:288
+     repoints INTO the run output directory at runtime. The MATSim controler then wipes
+     that same directory (LausitzDrtConfigurator:143, deleteDirectoryIfExists) and collides
+     with the still-open hagrid.log. Pinning the log path outside the run directory removes
+     the race without touching any simulation semantics. -->
+<Configuration status="WARN">
+    <Properties>
+        <Property name="devLogDir">hagrid-output/logs</Property>
+    </Properties>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n" />
+        </Console>
+        <RollingFile name="RollingFile" fileName="${devLogDir}/dev_hagrid.log"
+            filePattern="${devLogDir}/dev_hagrid-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+            <Policies>
+                <TimeBasedTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="250 MB" />
+            </Policies>
+            <DefaultRolloverStrategy max="20" />
+        </RollingFile>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Root>
+        <Logger name="hagrid" level="info" additivity="false">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Logger>
+        <Logger name="org.matsim.core.utils.geometry.geotools.MGC" level="error" additivity="false">
+            <AppenderRef ref="Console" />
+        </Logger>
+        <Logger name="org.matsim.core.mobsim.qsim.qnetsimengine.QueueWithBuffer" level="error" additivity="false">
+            <AppenderRef ref="Console" />
+        </Logger>
+    </Loggers>
+</Configuration>
