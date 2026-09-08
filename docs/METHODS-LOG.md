@@ -3169,11 +3169,16 @@ Zwei Präzisierungen aus dem Methodenteil des Reports (§2.7–2.9 dort):
 
 **Wirkung** (2025 mit Vorkette = 112,78 g/MJ, plus Ladeverluste × 1/0,93):
 
-| Arm | BEV alt (105,6) | BEV neu | Δ BEV | gg. Diesel alt → neu |
-|---|---:|---:|---:|---|
-| Baseline `basew21_it250` | 4.983,5 kg | 5.722,9 kg | +14,8 % | −65,2 % → **−60,1 %** |
-| 1d `dep7_f135_it250` | 4.806,6 kg | 5.519,7 kg | +14,8 % | −65,2 % → **−60,0 %** |
-| 1c `f140_chi900` | 4.897,3 kg | 5.623,9 kg | +14,8 % | −65,1 % → **−59,9 %** |
+| Arm | BEV vorher (105,6, ohne Aux) | BEV jetzt | gg. Diesel vorher → jetzt |
+|---|---:|---:|---|
+| Baseline `basew21_it250` | 4.983,5 kg | **6.581,4 kg** | −65,2 % → **−54,1 %** |
+| 1d `dep7_f135_it250` | 4.806,6 kg | **6.347,8 kg** | −65,2 % → **−54,0 %** |
+| 1c `f140_c900_i250`, 5 Seeds | 4.897,3 kg (Projektion) | **6.579,2 kg** [6.494,9–6.659,2] | −65,1 % → **−54,0 %** |
+
+„BEV jetzt" enthält drei Korrekturen gemeinsam: Grenzzuschnitt (+6,8 % auf den Faktor),
+Ladeverluste (× 1/0,93) und Nebenverbraucher (× 1,15, §2.57). Die 1c-Zeile ist seit
+2026-09-08 **gemessen** (fünf Seeds, iter250, evensplit — vorher eine Projektion aus dem
+iter150-Raster).
 
 Jahrgang und Grenze wirken gegenläufig und heben sich **nicht** auf: die Aktualisierung
 2023 → 2025 zieht um −8,1 % nach unten, die Vorkette drückt um +17,7 % nach oben, netto +6,8 %
@@ -3183,10 +3188,11 @@ aktualisieren hätte die Zahl **verbessert** und den Defekt stehengelassen.
 **Zerlegung des BEV-Vorteils** (1d, korrigiert):
 
 ```
-Effizienz Antrieb    3,214 x   (146.290 MJ Diesel gegen 45.517 MJ Strom)
+Effizienz Antrieb    2,795 x   (146.290 MJ Diesel gegen 52.344 MJ Strom,
+                                letzteres inkl. Nebenverbraucher)
 Intensitaet je MJ    0,836 x   (94,30 Diesel-WTW gegen 112,78 Netz)
 Ladeverluste         0,930 x
-                     2,499 x   =  -60,0 %
+                     2,173 x   =  -54,0 %
 ```
 
 Der Strom ist je MJ **20 % schmutziger als Diesel-WTW**. Der gesamte BEV-Vorteil kommt aus dem
@@ -3243,11 +3249,11 @@ Resultierender Sweep (× 1/0,93 Ladeverluste):
 
 | Punkt | g/kWh | g/MJ | Baseline | 1d | 1c |
 |---|---:|---:|---:|---:|---:|
-| `high` 2023 endgültig | 442 | 122,78 | 6.230,3 (−57 %) | 6.009,1 (−56 %) | 6.122,6 (−56 %) |
-| `mid` 2025 geschätzt | 406 | 112,78 | 5.722,9 (−60 %) | 5.519,7 (−60 %) | 5.623,9 (−60 %) |
-| `low` nur Vorketten | 54 | 15,00 | 761,2 (−95 %) | 734,1 (−95 %) | 748,0 (−95 %) |
+| `high` 2023 endgültig | 442 | 122,78 | 7.165,0 (−50 %) | 6.910,6 (−50 %) | 7.162,6 (−50 %) |
+| `mid` 2025 geschätzt | 406 | 112,78 | 6.581,4 (−54 %) | 6.347,8 (−54 %) | 6.579,2 (−54 %) |
+| `low` nur Vorketten | 54 | 15,00 | 875,3 (−94 %) | 844,3 (−94 %) | 875,1 (−94 %) |
 
-**Die Spannweite −56 % bis −95 % ist der Befund**, nicht ein Nebenergebnis: der Stromfaktor
+**Die Spannweite −50 % bis −94 % ist der Befund**, nicht ein Nebenergebnis: der Stromfaktor
 dominiert die BEV-Bilanz vollständig. Ein Einzelwert hätte das verdeckt — dieselbe Lehre wie beim
 verworfenen 250-km-Einzelgate (§1.4-Kontext) und beim χ-Raster (§2.46).
 
@@ -3273,9 +3279,14 @@ Fahrprofil (37 km/h Mittelgeschwindigkeit) passt.
 
 | Fahrzeug | nutzbar | Schwelle | Herstellerangabe | impliziert |
 |---|---:|---:|---:|---:|
-| Ford Tourneo Tourer | 70 kWh | **282 km** | 370 km (WLTP) | 189 Wh/km (−24 %) |
-| VW ID.Buzz, 6-Sitzer | 86 kWh | **347 km** | — | — |
-| Mercedes eSprinter | 113 kWh | **456 km** | 440 km (ADAC) | **257 Wh/km (+3,5 %)** |
+| Ford Tourneo Tourer | 70 kWh | **245,5 km** | 370 km (WLTP) | 189 Wh/km (−24 %) |
+| VW ID.Buzz, 6-Sitzer | 86 kWh | **301,7 km** | — | — |
+| Mercedes eSprinter | 113 kWh | **396,4 km** | 440 km (ADAC) | **257 Wh/km (+3,5 %)** |
+
+Geteilt wird durch **285,1 Wh/km** = 247,9 Traktion × 1,15 Nebenverbraucher (§2.57): eine
+Reichweite muss die Nebenverbraucher tragen, weil sie aus derselben Batterie ziehen. Die
+Spalte „impliziert" vergleicht dagegen gegen die **Traktion allein** — die Hersteller-
+Bestwerte (ADAC, WLTP) fahren ohne Heizung, gegen 285,1 wäre das die falsche Paarung.
 
 **Der eSprinter-Wert ist die erste externe Validierung des BEV-EC-Kanals überhaupt**: 257 gegen
 unsere 247,9 Wh/km, 3,5 % Abweichung — eine unabhängige Datenblattangabe gegen die
@@ -3284,18 +3295,28 @@ guidebook-interne BEV-Kurve am Betriebspunkt unserer Läufe. Der Ford-WLTP-Wert 
 
 Gemessene Überschreitung (Anteil der **Fahrzeuge**, deren längster Fahrblock die Schwelle reißt):
 
-| | 282 km (70 kWh) | 347 km (86 kWh) | 456 km (113 kWh) |
+| | 245,5 km (70 kWh) | 301,7 km (86 kWh) | 396,4 km (113 kWh) |
 |---|---|---|---|
 | **1d f135_it250**, n = 135 | | | |
-| 20-min-Fenster | 23,7 % (32 Fz) | 14,1 % (19 Fz) | **2,2 % (3 Fz)** |
-| 40-min-Fenster | 42,2 % (57 Fz) | 28,1 % (38 Fz) | 5,9 % (8 Fz) |
-| 60-min-Fenster | 54,1 % (73 Fz) | 41,5 % (56 Fz) | 12,6 % (17 Fz) |
+| 20-min-Fenster | 31,9 % (43 Fz) | 19,3 % (26 Fz) | **6,7 % (9 Fz)** |
+| 40-min-Fenster | 56,3 % (76 Fz) | 36,3 % (49 Fz) | 16,3 % (22 Fz) |
+| 60-min-Fenster | 65,2 % (88 Fz) | 48,1 % (65 Fz) | 27,4 % (37 Fz) |
 | **Baseline it250**, n = 120 | | | |
-| 20-min-Fenster | 45,8 % (55 Fz) | 28,3 % (34 Fz) | 5,0 % (6 Fz) |
-| 40-min-Fenster | 66,7 % (80 Fz) | 46,7 % (56 Fz) | 16,7 % (20 Fz) |
-| 60-min-Fenster | 74,2 % (89 Fz) | 61,7 % (74 Fz) | 31,7 % (38 Fz) |
+| 20-min-Fenster | 56,7 % (68 Fz) | 40,0 % (48 Fz) | 17,5 % (21 Fz) |
+| 40-min-Fenster | 71,7 % (86 Fz) | 60,8 % (73 Fz) | 35,8 % (43 Fz) |
+| 60-min-Fenster | 78,3 % (94 Fz) | 70,8 % (85 Fz) | 50,8 % (61 Fz) |
+| **1c f140_c900_i250**, n = 140, 5 Seeds, Mittel [min–max] | | | |
+| 20-min-Fenster | 45,9 [42,1–50,7] % | 29,0 [24,3–36,4] % | 5,4 [2,1–9,3] % |
+| 40-min-Fenster | 64,6 [61,4–68,6] % | 47,6 [45,7–51,4] % | 16,0 [12,9–20,7] % |
+| 60-min-Fenster | 76,0 [71,4–77,9] % | 60,9 [54,3–65,7] % | 25,3 [22,1–29,3] % |
 
-Die Frachtseite bleibt bei **0 % an allen drei Schwellen** (längste Tour 158,8 km). Dass dort
+⚠️ Der Seed-Fächer auf der 1c-Zeile zeigt, wie schmal die Aussage im **Tail** ist: bei
+396,4 km und 20 min streut sie über fünf Seeds von 2,1 auf 9,3 % (3 bis 13 Fahrzeuge). Eine
+Einzellaufzahl aus diesem Eck ist damit nicht belastbar — Baseline und 1d haben je n=1 und
+tragen dieselbe Unsicherheit, sie ist dort nur nicht sichtbar.
+
+Die Frachtseite bleibt bei **0 % an allen drei Schwellen** (längste Tour 158,8 km, unter
+der niedrigsten Schwelle von 245,5 km). Dass dort
 alles null ist, ist hier der Befund und nicht ein Nullresultat aus zu hohen Schwellen — die
 Trennschärfe sitzt jetzt auf dem Fahrblock-Kanal, siehe §3.12.
 
@@ -3753,6 +3774,47 @@ Verwandt: §2.57 (χ=900 als Betriebspunkt), §2.59 (Threadzahl), §3.14 (die +1
 
 ---
 
+### 2.63 BEV-Nebenverbraucher: 15 % Aufschlag, und die Kopplung an die Reichweite
+
+`trägt` · Nutzerentscheidung 2026-09-08. **Annahme, keine Quelle.**
+
+EMEP führt keine BEV-Nebenverbraucher- und keine BEV-Kaltstartparametrisierung — der BEV-Arm
+stand damit bei **0**, während ein realer 10-Sitzer Kabinenheizung, Lüfter, Licht und
+Steuergeräte aus derselben Batterie speist. Statt eines Sweeps ein Einzelwert
+(Nutzerentscheidung, das Modell soll einfach bleiben): `aux_load_share_bev` = **0,15** des
+Traktionsverbrauchs bei `ambient_temp_c` = 10 °C.
+
+Einordnung: 0,15 von 9,2 kW Traktionsleistung = **1,38 kW** Dauerlast. Band bei 10 °C —
+Wärmepumpe 0,3–0,75 kW, Widerstandsheizung 0,8–1,5 kW, Basis-Nebenverbraucher 0,3–0,5 kW.
+1,38 kW ist die **Summe** und liegt in der oberen Hälfte; das rechtfertigt die
+Türöffnungsfrequenz des DRT-Betriebs (9.148 Fahrten plus 892 Frachtstopps am Tag), die in einem
+Pkw-Testzyklus nicht vorkommt. Deshalb ist die Größe als **Nebenverbraucher** benannt und nicht
+als „Heizung": als reiner Wärmepumpen-Heizwert wäre 15 % bei 10 °C zu hoch.
+
+Die Annahme wirkt **gegen** das BEV — die konservative Richtung, weil die übrigen
+Vereinfachungen des Kanals (BEV-Kaltstart 0, keine Batterie-LCA) alle für das BEV wirken.
+
+**Eingerechnet, nicht nur deklariert.** Ein deklarierter, aber nicht angewandter Aufschlag hätte
+bedeutet, dass jede BEV-Zahl im Dokument bewusst 15 % zu niedrig ist — schlechter als eine
+offengelegte Annahme.
+
+⚠️ **Die Kopplung, die dabei fast durchgerutscht ist.** Der Aufschlag geht in `ENERGY_MJ`, nicht
+erst in die CO₂e-Kette — also muss auch `ev_range_km_*` ihn tragen: der gemessene Verbrauch
+steigt von 247,9 auf **285,1 Wh/km**, die Schwellen fallen von 282/347/456 auf
+**245,5/301,7/396,4 km**. Hätte man nur den Verbrauch erhöht, stände eine *unbeheizte*
+Reichweite gegen einen *beheizten* Verbrauch und die Machbarkeitsaussage wäre zu optimistisch
+geblieben — der Tail wächst durch die Korrektur von 3 auf 9 Fahrzeuge (§3.12). Ein Test pinnt
+die Kopplung fest (`test_range_thresholds_match_the_aux_inclusive_consumption`).
+
+**Vereinfachung, offen deklariert:** der Aufschlag wird **je km** angesetzt, physikalisch ist der
+Effekt **je Stunde**. Alle Arme liegen im Band 36–38 km/h, deshalb verschiebt das den
+Armvergleich nicht — bei deutlich anderer Reisegeschwindigkeit wäre die Umrechnung neu zu
+prüfen. Diesel bekommt keinen Gegenpart: dort ist Kabinenwärme Abwärme.
+
+Verwandt: §2.55 (Netzintensität, Ladeverluste), §2.56 (die Schwellen), §3.12 (der Tail).
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**
@@ -4026,8 +4088,11 @@ Reichweite von 250 km selbst im großzügigsten 20-min-Fenster — die Schranke 
 
 **Gemessen** (2026-09-03, nach §2.56): die Aussage hing an den 250 km, und die entsprachen bei
 unserem eigenen Verbrauch **62 kWh** nutzbarer Batterie — weit unter Markt. Mit einem real
-existierenden 113-kWh-Fahrzeug reißen im 20-min-Fenster **3 von 135 Fahrzeugtagen (2,2 %)**
-die Reichweite, nicht 31,1 %. Die Baseline liegt bei 6 von 120 (5,0 %).
+existierenden 113-kWh-Fahrzeug reißen im 20-min-Fenster **9 von 135 Fahrzeugtagen (6,7 %)**
+die Reichweite, nicht 31,1 %. Die Baseline liegt bei 21 von 120 (17,5 %), 1c bei 5,4 %
+[2,1–9,3] über fünf Seeds. (Die erste Fassung dieses Eintrags nannte 3 von 135 — das war ohne
+die Nebenverbraucher aus §2.63, die die Reichweite von 456 auf 396,4 km drücken. Der Tail ist
+damit dreimal so groß wie zuerst gerechnet.)
 
 **Was bleibt:** der längste Einzelblock (500,4 km im 1d-Arm) liegt weiter über 456 km, die
 Schranke ist also nicht verschwunden — sie ist von einem **Flottenproblem zu einem
@@ -4047,17 +4112,20 @@ derselbe Fehlertyp wie die zurückgezogene Fassung darüber, nur mit umgekehrtem
 Batteriekapazität — sie sagt, wie viele Fahrzeugtage *mindestens einmal* zwischenladen müssen,
 egal wie der Tag angeordnet ist:
 
-| Batterie | 1d f135 (n=135) | Baseline (n=120) |
-|---|---|---|
-| Ford 70 kWh | 107 (79,3 %), max 1,92 × | 111 (92,5 %), max 2,05 × |
-| VW ID.Buzz 86 kWh | 85 (63,0 %), max 1,57 × | 100 (83,3 %), max 1,67 × |
-| Mercedes eSprinter 113 kWh | **30 (22,2 %)**, max 1,19 × | 47 (39,2 %), max 1,27 × |
+| Batterie | 1d f135 (n=135) | Baseline (n=120) | 1c (n=140, 5 Seeds) |
+|---|---|---|---|
+| Ford 70 kWh | 117 (86,7 %), max 2,21 × | 112 (93,3 %), max 2,36 × | 97,0 [94,3–97,9] % |
+| VW ID.Buzz 86 kWh | 99 (73,3 %), max 1,80 × | 107 (89,2 %), max 1,92 × | 87,1 [85,0–89,3] % |
+| Mercedes eSprinter 113 kWh | **57 (42,2 %)**, max 1,37 × | 87 (72,5 %), max 1,46 × | 42,7 [37,9–46,4] % |
 
-Median-Fahrzeugtag 1d 93,8 kWh, p95 125,4, max 134,7.
+Median-Fahrzeugtag (kWh, inkl. Nebenverbraucher): 1d 107,9 · Baseline 123,1 · 1c 109,9
+[106,7–111,4]. p95 144,2 / 150,8 / 134,7. Max 154,9 / 164,9 / 148,0. Alle drei Arme gemessen
+auf dem it250-Stand; 1c mit Seed-Fächer (§2.62).
 
-**Belastbare Fassung, beide Zahlen als Klammer:** *22,2 % der Fahrzeugtage brauchen mindestens
-eine Zwischenladung (Untergrenze, annahmefrei); 2,2 % stranden selbst bei idealisiertem
-Vollnachladen an jedem 20-min-Halt (Obergrenze der Machbarkeit).* Keine der beiden Zahlen ist
+**Belastbare Fassung, beide Zahlen als Klammer** (113-kWh-Fahrzeug): *42,2 % der Fahrzeugtage
+brauchen mindestens eine Zwischenladung (Untergrenze, annahmefrei); 6,7 % stranden selbst bei
+idealisiertem Vollnachladen an jedem 20-min-Halt (Obergrenze der Machbarkeit).* Baseline
+72,5 % / 17,5 %, 1c 42,7 % / 5,4 %. Keine der beiden Zahlen ist
 allein die Antwort — die Antwort liegt dazwischen und braucht ein energetisches Lademodell
 (BACKLOG `[H]`, CHECKLIST B-1/B-2).
 

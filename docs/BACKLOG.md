@@ -203,7 +203,7 @@ _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
   ⚠️ **Begründung 2026-09-03 nachgezogen:** die ursprüngliche Fassung („Schranke bindend",
   445,5 km gegen 250 km) ist **zurückgezogen** → [METHODS-LOG](METHODS-LOG.md) §3.12; die 250 km
   waren unbelegt und entsprachen 62 kWh. Mit belegten Fahrzeugen reißen im 20-min-Fenster
-  **3 von 135** Fahrzeugtagen die 456-km-Schwelle. Das Paket bleibt sinnvoll, aber die Frage
+  **9 von 135** Fahrzeugtagen die 396,4-km-Schwelle. Das Paket bleibt sinnvoll, aber die Frage
   lautet jetzt „wie teuer ist der Ausläufer" statt „ist es überhaupt möglich" — also
   SoC-Nachlauf gegen Ladeleistung und Ladeort, kein Machbarkeitsnachweis. Arbeitsschritte:
   [CHECKLIST-emissions](CHECKLIST-emissions.md) B-1/B-2. _(added 2026-08-26, revidiert 2026-09-03)_
