@@ -59,7 +59,17 @@ gegen n=5 nicht messbar (−84 Fahrten, t=1,06).
 
 Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen Kanälen:
 
-- **`[H]` Baseline-Seed-Fächer bei 250 Iterationen — die Iso-Service-Frage hängt daran** — 1c
+- **`[H]` Flotten-Sweep über alle drei Szenarien statt kalibrierter Einzelpunkte** — der
+  Baseline-Fächer (§2.65) hat gezeigt, dass f140 bei 250 Iterationen um 166 Fahrten
+  überversorgt ist; die ganze Szenarienaussage hängt damit an einer Kalibrierung, die im
+  falschen Iterationsregime gemacht wurde. Kurvenvergleich statt Punktvergleich macht das
+  robust. **Rasterweite mindestens 10 Fahrzeuge** — 5 Fahrzeuge sind 326 kg = 2,0 sd des
+  Laufrauschens und bei n=1 unsichtbar. Vorbedingung: die Paketbasis in der Auswertung
+  vereinheitlichen (Baseline trägt den Not-at-home-Overlay, 1c und 1d nicht — das verschiebt
+  jede Kurve gegen die anderen auf genau der Achse, um die es geht). 9 neue Läufe unter
+  Wiederverwendung von b120rgs@120 (n=5) und 1c f140@140 (n=5), ~4 Tage. **Noch nicht
+  freigegeben.** _(added 2026-09-09)_
+- **`[H]` ~~Baseline-Seed-Fächer bei 250 Iterationen~~ ERLEDIGT 2026-09-09** — 1c
   liegt bei 250 Iterationen 79,6 Fahrten über der Baseline. Gegen den Baseline-Wert als
   Konstante ist das grenzwertig trennbar (t=2,86 gegen 2,78); unter **jeder** plausiblen
   Baseline-Streuung nicht mehr (t=1,05–2,03). Der Baseline-Wert bei 250 ist n=1, ihre
@@ -159,10 +169,33 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   (9.214, +31 = unter dem Seed-Abstand 48). Gemessene Steigung 48,2 Fahrten/Fahrzeug, exakter
   Treffpunkt 134,4. 150 Iterationen sind unkonvergiert, 250 ist Standard → METHODS-LOG §2.47;
   `basew21`@150 als Anker zurückgezogen → §2.48. _(added 2026-08-27)_
+- **✅ θ ist kein Feinregler, sondern ein harter Riegel VOR dem Budget (2026-09-08)** —
+  `idleThreshold` ist eine Konjunktion der `while`-Bedingung in `ModularTourDispatcher` und steht
+  vor dem Budget-Gate: faellt der Leerlaufanteil darunter, wird der Schleifenkoerper nie betreten
+  und Rampe wie Verfall-Override sind unerreichbar. θ=0,15 und `budgetHeadroom`=0,15 reservieren
+  dieselben 19,5 Fahrzeuge doppelt. Mit θ=0,02 faellt der Verfall von 2.167 auf 207 (kumuliert bis
+  it.182) und der Arm stellt alle 6.052 Pakete zu → [METHODS-LOG](METHODS-LOG.md) §2.61, §2.64.
+  _(added 2026-09-08)_
+
 - **`[H]` θ-Sensitivität auf der Depotstufe — LÄUFT seit 2026-08-27** — θ=0,15 wurde unbesehen aus
   der alten Kampagne übernommen, das Gate bindet auf der neuen Stufe anders (46/46 Touren
   disponiert, aber nur 15 um 07:16, Rest bis 11:45). Kette `run_theta1d_chain.bat`: θ=0,20 dann
   θ=0,10 bei f135/iter250. Auswerten gegen 9.214. _(added 2026-08-27)_
+- **`[H]` Seed-Faecher 1d NEU AUFSETZEN — Lauf am 09.09. gestorben** — `d1d_f130_d30_s2337`
+  starb bei it.170/250 ohne Spur (kein Reboot, keine `hs_err`, kein OOM, kein Kernel-Power-Ereignis;
+  ganzer Prozessbaum inkl. `cmd.exe` weg). `s3337` startete deshalb nie. **MATSim hat hier keinen
+  Wiederaufsetzpunkt** — `setFirstIteration(0)` steht hart in `LausitzDrtConfigurator:141` und
+  `HAGRIDScenarioBuilder:145`, `output_plans` wird erst am Ende geschrieben. Neu starten mit
+  `run_seedfan1d.bat`. ⚠️ **Vorher KEIN `mvn package`**: der Faecher muss denselben JAR benutzen wie
+  `th02` (06.09. 13:55), sonst ist es ein Codevergleich statt eines Seed-Faechers.
+  _(added 2026-09-09)_
+
+- **`[H]` Ankerlauf auf dem AKTUELLEN JAR** — der Anker `d1d_dep7_f130_it250` stammt vom 25.08.
+  und damit von einem aelteren Codestand als `th02`. Die Pax-Differenz in
+  [METHODS-LOG](METHODS-LOG.md) §2.64 (c) vergleicht deshalb zwei Codestaende. Ein Ankerlauf
+  (seed=1337, `idleThreshold=0.15`, `maxTourDuration=12600`, kein Budget) auf dem 06.09.-JAR klaert
+  in einem 14-h-Lauf, ob der alte Anker als Vergleichsbasis haltbar ist. _(added 2026-09-09)_
+
 - **`[H]` Flotten-Nachjustierung bei 7 h** — `f150d70` bedient **3,87 % mehr Fahrten** als die
   Baseline, die Systemsumme mischt dort also „kostet mehr" mit „leistet mehr". Faire Cap-Parität
   braucht bei 7 h die kleinste Flotte, die 9.076 Fahrten noch trifft. ⚠️ **Nicht hochrechenbar** —
