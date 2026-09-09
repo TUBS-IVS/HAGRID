@@ -7,7 +7,50 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-09-07._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-09-09._
+
+---
+
+## 2026-09-09
+
+- **`[H]` Baseline-Seed-Fächer bei 250 Iterationen gefahren — `4 of 4 arms clean`.** Seeds
+  1338–1341 als `b120rgs_s<seed>` (der Tag musste den Seed tragen, sonst hätten sich alle Arme
+  eine runId geteilt und einander überschrieben), je ~10,7 h, POPCHECK: alle vier
+  Populations-Hashes identisch. Damit n=5 gegen n=5 über dieselben Seeds.
+  **Ergebnis: f140 ist bei 250 Iterationen NICHT iso-service** — 1c bedient +166,4 ± 122,4
+  Fahrten mehr (gepaart t=3,04). Die Mehremission (+173 kg) ist dagegen nicht trennbar
+  (t=1,54), und je Service liegen beide 0,22 % auseinander. 1c ist größer, nicht
+  ineffizienter. → [METHODS-LOG](METHODS-LOG.md) §2.65.
+- **Widerlegt: „Elektrifizierung rettet 1c“.** An einem Einzelpaar sah 1c unter BEV besser aus
+  — der Anker war zufällig die höchste Baseline-Ziehung. Über alle fünf Seiten-Paare ist 1c
+  unter BEV mit +1,46 % minimal ungünstiger als unter Diesel (+1,23 %).
+- **Der Watcher hat drei VPN-Aussetzer überstanden** (165, 45, 30 min) und Verlust wie Rückkehr
+  je einmal gemeldet. Die Vorgängerversion war an einem einzelnen 25-s-Timeout gestorben.
+
+---
+
+## 2026-09-08
+
+- **`[H]` Selbstreferenzielles Kapazitätsbudget für 1d implementiert und zum Tragen gebracht —
+  `54/54 Touren, 6.052/6.052 Pakete`.** `PassengerLoadProfile` (binweises Look-ahead-Budget aus den
+  eigenen Vorit erationen), `FreightChainProfile` (gelernte Kettendauer, MAX statt Mittel) und die
+  Urgency-Rampe mit terminalem Zweig. Szenario-Schlüssel `budgetUrgencyLeadS`; neue KPI-Zeilen
+  `budget_urgency_admits`, `chain_ratio_p90/max`. Commits `8a3e8bb` / `43b46a7` / `3246a3d` auf
+  `hendrik` (gepusht `7da217b..3246a3d`), Suite 649/649 aus geleertem `target/` + 478 Python-Tests.
+  Ergebnis und Preis → [METHODS-LOG](METHODS-LOG.md) §2.64.
+- **Drei Fehlschläge auf dem Weg, alle mit Diagnose im `.bat`-Header festgehalten:** `run_bud.bat`
+  (bei it.130 gekillt, 31–33 von 46 Touren verfielen), `run_bud2.bat` (30/46 — terminaler Zweig
+  unerreichbar, weil `slack <= 0` bei einer Fließkomma-Kettendauer zwischen zwei Ticks liegt),
+  `run_bud3.bat` (34/54 — 3,0-h-Touren allein reichen nicht). Erst `run_bud4.bat` mit θ=0,02 trägt.
+- **Der Test, dessen Fehlen einen 22-h-Lauf gekostet hat:**
+  `terminalBranchFiresOnTheLastTickNotTheLastInstant` konstruiert eine gelernte Kette von 1350,5 s,
+  sodass die Frist bei 74249,5 s **zwischen** zwei Ticks fällt. Jede vorherige Fixture hatte
+  ganzzahlige Kettendauern, `slack == 0` war erreichbar, und der Zweig sah getestet aus. Bei
+  Rückmutation auf `slack <= 0` stirbt genau dieser Test und kein anderer.
+- **⚠️ Zwei Sessions, ein Branch — zwei Kollisionen.** Die METHODS-LOG-Einträge §2.60/§2.61 sind in
+  einem fremden Commit (`9f81be9`, „chi=900 operating point“) gelandet, weil beide Sessions
+  gleichzeitig in dieselbe Datei schrieben; und eine §2.59 musste umnummeriert werden. Gegenmittel:
+  Datei unmittelbar vor jedem Schreiben neu einlesen und die Nummer prüfen.
 
 ---
 

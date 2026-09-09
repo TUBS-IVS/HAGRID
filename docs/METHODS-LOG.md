@@ -3703,6 +3703,9 @@ Taschenrechnung und ihre Vorbehalte).
 
 ### 2.62 250 Iterationen für 1c: der Modal Split bewegt sich klar, die Fahrtenzahl nicht — und die Iso-Service-Frage ist damit offen
 
+> **Nachtrag 2026-09-09:** beantwortet in §2.65 — der Baseline-Fächer steht, f140 ist bei
+> 250 Iterationen überversorgt (+166 Fahrten, t=3,04).
+
 `trägt` · Fächer abgeschlossen 2026-09-07, n=5 gepaart (Seeds 1337–1341, f140, χ=900).
 Kette: `3 of 3 arms clean` nach den drei Nachzüglern, je ~10,2 h.
 
@@ -3877,7 +3880,14 @@ Bootstrap-Faktor `CHAIN_BOOTSTRAP_FACTOR = 1,15`, der aus `bud2` gemessen wurde.
 nichts gekostet — der Faktor bindet nur vor der ersten Beobachtung einer Tour — aber der Wert
 sitzt auf der Kante und gehoert beim naechsten Arm nachgeprueft. (d) `parcels_missed_overlay =
 415` ist ein statistisches Not-at-home-Overlay aus dem Planbau, kein Zustellausfall dieses Arms;
-es steht im Anker auf derselben 415.
+es steht im Anker auf derselben 415. (e) **Der Anker und dieser Arm wurden von
+VERSCHIEDENEN Codestaenden erzeugt.** `d1d_dep7_f130_it250` lief am 25.08.2026; seither haben
+`9a37dd1`, `2ff5dbb` und `2200a89` Java angefasst, und `th02` lief auf dem JAR vom 06.09. Die
+Pax-Differenz oben vergleicht damit streng genommen zwei Codestaende und nicht nur zwei
+Konfigurationen. Die drei Commits sind 1c- bzw. Dashboard-seitig und sollten den 1d-Mobsim nicht
+beruehren — **verifiziert ist das nicht**. Der Preis-Befund (c) wird erst durch einen Ankerlauf
+auf dem aktuellen JAR belastbar. Dieser Vorbehalt wurde am 08.09. beim Aufsetzen des Seed-Faechers
+gefunden, also NACH der ersten Fassung dieses Eintrags.
 
 **Zurueckgezogen aus dem Verlauf dieser Untersuchung.** Ich hatte am 08.09. aus `it.250` allein
 berichtet, die Ablehnungen seien gegenueber dem Anker „fast halbiert“ (18 gegen 33). Im
@@ -3886,6 +3896,47 @@ Einzeliteration Rauschen; nur das Plateau-Mittel zaehlt.
 
 Verwandt: §2.58 (der Umschlagfehler), §2.60 (Taschenrechnung, notwendig aber nicht
 hinreichend), §2.61 (theta als Riegel).
+
+---
+
+### 2.65 f140 ist bei 250 Iterationen NICHT iso-service — 1c ist überversorgt, nicht ineffizient
+
+`trägt` · Baseline-Seed-Fächer abgeschlossen 2026-09-09 (`4 of 4 arms clean`, je ~10,7 h, alle
+vier Populations-Hashes identisch `F76FE8A8…`). Beantwortet die Frage, die §2.62 offenlassen
+musste, weil der Baseline-Wert dort n=1 war.
+
+Jetzt n=5 gegen n=5 über **dieselben fünf Seeds**, alles außer dem Szenario gleich:
+
+| Größe (1c − Baseline) | Δ gepaart | t (df=4, krit. 2,78) | |
+|---|---|---|---|
+| DRT-Fahrzeug-km | **+3.317 ± 892** | **8,31** | trennbar |
+| Pax-Fahrten | **+166,4 ± 122,4** | **3,04** | trennbar |
+| CO₂e wtw | +173,3 ± 251,8 kg | 1,54 | nicht trennbar |
+
+**Der tragende Befund: f140 ist bei 250 Iterationen überversorgt.** 1c bedient 166 Fahrten mehr
+als die Baseline, und das ist gesichert (gepaart t=3,04; als Zweistichprobe t=3,12 bei df=8 gegen
+krit. 2,31). Bei 150 Iterationen war der Abstand −14,8 Fahrten (t=0,27) — die Kalibrierung
+hängt also an der Iterationszahl, und f140 stammt aus dem 150er-Regime.
+
+⚠️ **Daraus folgt NICHT, dass 1c ineffizienter ist.** Auf konsistenter Paketbasis (beide brutto)
+emittiert die Baseline 0,9352 und 1c 0,9372 kg je Service — **+0,22 %**. Die Mehremission ist
+nicht trennbar (t=1,54); trennbar sind nur die Mehr-km, und die entsprechen der größeren Flotte.
+Pro Fahrzeug fährt 1c **weniger** (378 gegen 413 km). 1c ist größer, nicht schlechter.
+
+**Was strukturell bleibt — unabhängig von jeder Kalibrierung:** die gesamte dedizierte
+Frachtflotte sind 732 kg = 5,2 % des Systemtotals, gefahren mit 2,24 Paketen/km über 41 Touren
+und 2.701,54 km. Das ist die **Obergrenze** dessen, was Cargo-Hitching je einsparen kann, und es
+muss sie holen, ohne selbst km hinzuzufügen. Die Zerlegung geht auf: +3.317 km × 0,2704 kg/km =
++897 kg gegen −732 kg eingesparte Frachtflotte = **+165 kg vorhergesagt, +173 gemessen**.
+
+**Elektrifizierung dreht das nicht.** Unter BEV liegt 1c mit +1,46 % sogar minimal ungünstiger
+als unter Diesel (+1,23 %) — geprüft über alle fünf Seiten-Paare, nicht an einem Einzelpaar,
+bei dem der Anker zufällig die höchste Baseline-Ziehung ist.
+
+**Frachtseite der Baseline exakt seed-invariant:** 41 Touren, 2.701,54 km, Quote 1,000 in allen
+fünf Läufen — jsprit hängt an seinem eigenen festen Seed, nicht am Mobsim-Seed.
+
+Verwandt: §2.62 (der 1c-250er-Fächer), §3.14 (die +170-Rücknahme), §2.59 (Threadzahl).
 
 ---
 
