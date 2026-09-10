@@ -255,16 +255,20 @@ def extract(run_dir, prefix, pf=None):
         # armübergreifend lesbar -- und eine per-Provider-Tabelle, deren Quoten auf einer
         # anderen Basis stehen als die Headline, widerspricht ihr sichtbar. delivery_rate
         # ist jetzt operativ (Overlay NICHT abgezogen), der Netto-Wert bleibt daneben.
-        # delivered_net trägt weiter parcels_per_km und cost_per_parcel -- unverändert,
-        # damit die €-Kennzahlen sich nicht still mitverschieben.
+        # NACHTRAG 2026-09-10: auch der Netto-Rest ist hier gestrichen. parcels_per_km
+        # und cost_per_parcel stehen jetzt brutto, gleiche Basis wie delivery_rate --
+        # das Overlay entfernt keinen jsprit-Job, die Fahrzeuge fahren jedes Paket
+        # (Begründung am Code in extract_freight.py). delivered_net bleibt nur noch
+        # Zwischenwert für delivery_rate_net_overlay.
         delivery_rate = ((parcels_total - parcels_unassigned) / parcels_total
                           if parcels_total else 1.0)
         delivery_rate_net = ((parcels_total - parcels_missed - parcels_unassigned) / parcels_total
                               if parcels_total else 1.0)
         stops_per_h = (stops_n / tour_hours) if tour_hours else 0.0
         stops_per_km = (stops_n / km) if km else 0.0
-        parcels_per_km = (delivered_net / km) if km else 0.0
-        cost_per_parcel = cost_total / max(1, delivered_net)
+        delivered_operational = parcels_total - parcels_unassigned
+        parcels_per_km = (delivered_operational / km) if km else 0.0
+        cost_per_parcel = cost_total / max(1, delivered_operational)
 
         rows += [
             prow(prov, "parcels_total", parcels_total, "parcels", "carrier attributes"),
@@ -290,7 +294,8 @@ def extract(run_dir, prefix, pf=None):
             prow(prov, "stops", stops_n, "stops", "computed"),
             prow(prov, "stops_per_h", stops_per_h, "stops/h", "computed"),
             prow(prov, "stops_per_km", stops_per_km, "stops/km", "computed"),
-            prow(prov, "parcels_per_km", parcels_per_km, "parcels/km", "computed"),
+            prow(prov, "parcels_per_km", parcels_per_km, "parcels/km",
+                 "computed (gross: overlay NOT deducted)"),
             prow(prov, "cost_per_parcel", cost_per_parcel, "EUR/parcel", "computed"),
             prow(prov, "excluded_vehicles", excluded_n, "vehicles", "computed"),
         ]

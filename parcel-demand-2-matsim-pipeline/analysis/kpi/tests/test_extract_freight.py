@@ -40,8 +40,12 @@ def test_extract_freight_kpis():
     assert k["delivery_rate"]["value"] == pytest.approx(495 / 500)
     assert k["delivery_rate_net_overlay"]["value"] == pytest.approx(485 / 500)
     assert k["parcels_delivered_operational"]["value"] == 495
-    # bewusst netto belassen (Nenner von economics.freight_cost_per_parcel)
-    assert k["parcels_per_vehicle_km"]["value"] == pytest.approx(485 / 4047.687, abs=1e-6)
+    # Brutto-Basis (2026-09-10): das Not-at-home-Overlay ist ein Etikett, kein
+    # Transportvorgang -- LmdCarrierBuilder legt JEDEN Stopp mit voller capacityDemand
+    # als jsprit-Job an und wuerfelt "missed" erst danach, ohne den Service zu kuerzen.
+    # Die Fahrzeuge fahren also jedes Paket; nur unassigned ist echter Zustellausfall.
+    assert k["parcels_per_vehicle_km"]["value"] == pytest.approx(495 / 4047.687, abs=1e-6)
+    assert k["parcels_per_vehicle_km"]["value"] != pytest.approx(485 / 4047.687, abs=1e-6)   # alte Netto-Basis, Overlay abgezogen
 
 
 def test_freight_cost_aggregate_matches_provider_sum():
@@ -134,7 +138,10 @@ def test_extract_freight_falls_back_when_load_per_vehicle_is_empty(tmp_path):
     assert k["freight_vehicles"]["value"] == 3
     assert k["freight_vehicles"]["source"] == "TimeDistance_perVehicle"
     assert "avg_max_load" not in k
-    assert k["parcels_handled"]["value"] == 485  # delivered = 500 - 10 - 5 (fallback)
+    # Brutto (2026-09-10): 500 - 5 unassigned. Das Overlay (10) wird NICHT mehr
+    # abgezogen. Dieser Fallback ist der Pfad, den jeder reale Lauf nimmt.
+    assert k["parcels_handled"]["value"] == 495
+    assert k["parcels_handled"]["value"] != 485, "alte Netto-Basis mit Overlay-Abzug"
 
 
 def test_extract_freight_omits_vehicles_when_time_distance_per_vehicle_missing(tmp_path):

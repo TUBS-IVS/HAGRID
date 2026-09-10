@@ -134,15 +134,26 @@ def extract(run_dir, prefix, pf=None):
     # ~100 %, weil jsprit bei FleetSize.INFINITE immer ein Fahrzeug nachlegen kann.
     # Der Netto-Wert geht nicht verloren, er wandert in delivery_rate_net_overlay.
     #
-    # Bewusst NICHT mitgezogen: parcels_handled und parcels_per_vehicle_km bleiben
-    # netto. parcels_handled ist der Nenner von economics.freight_cost_per_parcel;
-    # eine Umstellung würde die €-Kennzahl still mitverschieben, und die
-    # Kostenfunktion wird separat überarbeitet (BACKLOG [H] Kostenfunktion).
+    # NACHTRAG 2026-09-10: der Netto-Rest ist gestrichen. parcels_handled und
+    # parcels_per_vehicle_km stehen jetzt ebenfalls BRUTTO, auf derselben Basis wie
+    # delivery_rate. Begründung am Code, nicht an der Konvention: LmdCarrierBuilder
+    # legt jeden Stopp mit voller capacityDemand als jsprit-Service an und würfelt
+    # "missed" ERST DANACH, ohne den Service zu kürzen oder zu entfernen. Die Flotte
+    # plant und fährt also jedes Paket; das Overlay ist ein Etikett, kein
+    # Transportvorgang. Eine physische Kennzahl (Pakete je Fahrzeug-km) und ein
+    # Kostennenner dürfen nicht auf einer Menge stehen, die nie gefahren wurde.
+    # Praktische Folge: die Baseline verglich sich mit 5.665 Paketen gegen 1c mit
+    # 6.037 -- zwei Drittel des scheinbaren Servicevorsprungs von 1c waren Artefakt.
+    # Bewusst NICHT gestrichen: parcels_missed und delivery_rate_net_overlay bleiben
+    # als Modellausgabe stehen, sie sind nur keine Basis mehr.
+    # ÄNDERT die €-Kennzahl: freight_cost_per_parcel sinkt um den Overlay-Anteil
+    # (Baseline 1,719 -> 1,609 EUR/Paket, -6,4 %). Das ist gewollt -- der alte Wert
+    # verteilte die Kosten aller gefahrenen Pakete auf einen Teil davon.
     delivered_net = total - missed - unassigned
     delivered_operational = total - unassigned
     rows += [
         row("freight", "parcels_handled",
-            parcels_handled_lv if parcels_handled_lv is not None else delivered_net,
+            parcels_handled_lv if parcels_handled_lv is not None else delivered_operational,
             "parcels", "Load_perVehicle" if parcels_handled_lv is not None
             else "carrier attributes (fallback: Load_perVehicle empty for service-based carriers)"),
         row("freight", "parcels_total", total, "parcels", "carrier attributes"),
@@ -157,6 +168,7 @@ def extract(run_dir, prefix, pf=None):
             (delivered_net / total) if total else 1.0, "share",
             "computed (not-at-home overlay deducted -- NOT comparable across arms)"),
         row("freight", "parcels_per_vehicle_km",
-            (delivered_net / km) if km else 0.0, "parcels/km", "computed"),
+            (delivered_operational / km) if km else 0.0, "parcels/km",
+            "computed (gross: overlay NOT deducted)"),
     ]
     return rows
