@@ -6,7 +6,8 @@
 > BACKLOG-DONE, der Punkt wird hier dann **gelöscht**, nicht abgehakt stehengelassen.
 
 **Legende:** `[ ]` offen · `[~]` in Arbeit · `[x]` fertig, Ergebnis noch nicht ausgelagert
-**Stand:** 2026-09-08 — A-1b / A-2 / A-3 / B-3 erledigt und entfernt, Nebenverbraucher eingerechnet, alle drei Arme gemessen (1c mit Seed-Fächer) → METHODS-LOG §2.55, §2.56, §2.63, §3.12
+**Stand:** 2026-09-10 — A-1b / A-2 / A-3 / B-3 erledigt und entfernt, Nebenverbraucher eingerechnet, alle drei Arme durch denselben Extraktor gemessen (Baseline 3 Seeds, 1c 5 Seeds, 1d n=1) → METHODS-LOG §2.55, §2.56, §2.63, §2.67, §3.12.
+⚠️ **Der Engpass ist kein Emissionspunkt mehr, sondern der 1d-Seed-Fächer** — das Drei-Arm-Delta liegt unter dem Seed-Rauschen (§2.67, BACKLOG).
 
 ---
 
@@ -148,10 +149,16 @@ verteilt — einzeln gelesen wirkt jede harmloser als sie ist.
 - `[ ]` **D-4** Weitere Schadstoffe als KPI freischalten: CO, VOC, CH4, N2O, SPN23 und die
   drei PM10-Einzelkanäle werden **gerechnet**, stehen aber nur in
   `kpi_emissions_vehicles.csv`. Je Schadstoff eine Zeile in `_KPI_METRICS`.
+  ↓ **Abgewertet 2026-09-10 (§2.67):** die Intensität ist über alle Arme flach
+  (CO₂e 0,07 % Streuung, NOₓ 0,5 %, PM10 0,2 %). Weitere Schadstoffe erzeugen Spalten, keine
+  Befunde — sie sind alle dieselbe Fahrleistung mit einem anderen Faktor. Nur machen, wenn ein
+  Reviewer sie sehen will.
 - `[ ]` **D-5** Stem-/Deadhead-Kennzahl für den **konventionellen** Frachtarm. Heute gibt es
   `deadhead_km_planned` nur modular (1d: 47,7 % der Fracht-km); die Baseline hat keinen
   Vergleichswert, deshalb ist „1d fährt je Stopp mehr Anfahrt" nur einseitig belegt.
 - `[ ]` **D-6** Multi-Seed-Aggregation für den Emissionskanal (→ `[H]` Multi-Run-Aggregation).
+  Stand 2026-09-10: Baseline (3) und 1c (5) sind **von Hand** über Seeds aggregiert (§2.67), 1d
+  hat noch keinen Fächer. Sobald er läuft, lohnt das Werkzeug — vorher nicht.
 
 ---
 

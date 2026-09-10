@@ -64,9 +64,11 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   überversorgt ist; die ganze Szenarienaussage hängt damit an einer Kalibrierung, die im
   falschen Iterationsregime gemacht wurde. Kurvenvergleich statt Punktvergleich macht das
   robust. **Rasterweite mindestens 10 Fahrzeuge** — 5 Fahrzeuge sind 326 kg = 2,0 sd des
-  Laufrauschens und bei n=1 unsichtbar. Vorbedingung: die Paketbasis in der Auswertung
-  vereinheitlichen (Baseline trägt den Not-at-home-Overlay, 1c und 1d nicht — das verschiebt
-  jede Kurve gegen die anderen auf genau der Achse, um die es geht). 9 neue Läufe unter
+  Laufrauschens und bei n=1 unsichtbar. ~~Vorbedingung: die Paketbasis vereinheitlichen~~ — **erledigt
+  2026-09-10** (§2.66): das Not-at-home-Overlay ist aus `parcels_handled`,
+  `parcels_per_vehicle_km` und dem Kostennenner gestrichen, alle drei Arme stehen brutto.
+  ⚠️ Bereits vorhandene `kpis_long.csv` tragen noch die alte Basis und müssen für den
+  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`). 9 neue Läufe unter
   Wiederverwendung von b120rgs@120 (n=5) und 1c f140@140 (n=5), ~4 Tage. **Noch nicht
   freigegeben.** _(added 2026-09-09)_
 - **`[H]` ~~Baseline-Seed-Fächer bei 250 Iterationen~~ ERLEDIGT 2026-09-09** — 1c
@@ -188,7 +190,10 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   `HAGRIDScenarioBuilder:145`, `output_plans` wird erst am Ende geschrieben. Neu starten mit
   `run_seedfan1d.bat`. ⚠️ **Vorher KEIN `mvn package`**: der Faecher muss denselben JAR benutzen wie
   `th02` (06.09. 13:55), sonst ist es ein Codevergleich statt eines Seed-Faechers.
-  _(added 2026-09-09)_
+  ⚠️ **Auch die Emissionsseite haengt daran** (2026-09-10): das Diesel-Delta 1d gegen
+  Baseline ist 329,5 kg, die Baseline-Seedspanne 328,7 kg — Verhaeltnis 1,002, und 1c ueberlappt
+  die Baseline ohnehin. Ohne Faecher ist keine der beiden Emissionsdifferenzen zitierfaehig,
+  siehe [METHODS-LOG](METHODS-LOG.md) §2.67. _(added 2026-09-09)_
 
 - **`[H]` Ankerlauf auf dem AKTUELLEN JAR** — der Anker `d1d_dep7_f130_it250` stammt vom 25.08.
   und damit von einem aelteren Codestand als `th02`. Die Pax-Differenz in
