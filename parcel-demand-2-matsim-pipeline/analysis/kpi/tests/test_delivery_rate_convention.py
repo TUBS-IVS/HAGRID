@@ -52,12 +52,14 @@ def test_baseline_keeps_the_net_value_under_its_own_name():
     assert k["parcels_delivered_operational"]["value"] == 500 - 5
 
 
-def test_baseline_cost_denominator_stays_net():
-    """parcels_handled ist der Nenner von economics.freight_cost_per_parcel. Die
-    Konventionsaenderung darf die EUR-Kennzahl nicht still mitverschieben -- die
-    Kostenfunktion wird separat ueberarbeitet."""
+def test_load_per_vehicle_path_is_untouched_by_the_overlay_decision():
+    """Diese Fixture hat ein befuelltes Load_perVehicle.tsv, also greift MATSims eigene
+    handledDemand-Buchfuehrung -- die kannte das Overlay noch nie. Der Brutto-Wechsel von
+    2026-09-10 betrifft ausschliesslich den carrier-attribute-Fallback, und genau den
+    nimmt jeder reale Lauf (service-basierte Carrier => Load_perVehicle header-only)."""
     k = _by_name(extract_freight(FIX_BASELINE, "DRT_TEST"))
-    assert k["parcels_handled"]["value"] == 410, "Load_perVehicle-Pfad, unveraendert"
+    assert k["parcels_handled"]["value"] == 410
+    assert k["parcels_handled"]["source"] == "Load_perVehicle"
 
 
 # --------------------------------------------------------------------------- Provider
@@ -83,6 +85,34 @@ def test_provider_rates_follow_the_same_convention_as_the_headline():
         assert k["delivery_rate"] >= k["delivery_rate_net_overlay"], prov
         checked += 1
     assert checked, "die Fixture muss mindestens einen Provider mit Quoten liefern"
+
+
+def test_provider_physical_and_cost_bases_are_gross():
+    """Nachtrag 2026-09-10. Der Provider-Block trug die Quoten seit 2026-08-10 brutto,
+    liess aber parcels_per_km und cost_per_parcel weiter auf der Netto-Basis stehen --
+    dieselbe gemischte Basis wie in der Headline. Beide sind PHYSISCHE bzw. auf physische
+    Leistung bezogene Groessen: die Fahrzeuge fahren jedes Paket, das Overlay entfernt
+    keinen einzigen jsprit-Job. Der Nenner ist deshalb parcels_total - parcels_unassigned,
+    genau wie bei delivery_rate."""
+    rows = efp.extract(FIX_LMD, "MINI")
+    per_provider = {}
+    for r in rows:
+        per_provider.setdefault(r["provider"], {})[r["kpi_name"]] = r["value"]
+
+    checked = 0
+    for prov, k in per_provider.items():
+        if "parcels_per_km" not in k or not k.get("km"):
+            continue
+        gross = k["parcels_total"] - k["parcels_unassigned"]
+        net = k["parcels_total"] - k["parcels_missed"]
+        assert k["parcels_per_km"] == pytest.approx(gross / k["km"]), prov
+        if net != gross:   # nur wo das Overlay ueberhaupt greift, diskriminiert der Test
+            assert k["parcels_per_km"] != pytest.approx(net / k["km"]), prov
+            assert k["cost_per_parcel"] != pytest.approx(
+                k["cost_total"] / max(1, net)), prov
+            checked += 1
+        assert k["cost_per_parcel"] == pytest.approx(k["cost_total"] / max(1, gross)), prov
+    assert checked, "die Fixture muss mindestens einen Provider mit missed > 0 liefern"
 
 
 # --------------------------------------------------------------------------- 1d Modular
