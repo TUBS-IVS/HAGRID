@@ -999,6 +999,8 @@ Sensitivität, BACKLOG.)
 
 ### 2.21 Szenarienvergleich 1c/1d/Baseline: drei Lieferversprechen, Netto vs. Brutto, Sitzplatz-Confound
 
+> **Nachtrag 2026-09-10 (§2.66):** diese Entscheidung stellte nur `delivery_rate` auf brutto um und liess `parcels_handled`, `parcels_per_vehicle_km` und den Kostennenner bewusst netto. Dieser Rest ist inzwischen ebenfalls gestrichen — die Zahlen unten, die auf 5.665 Paketen stehen, sind entsprechend zu lesen.
+
 `trägt` · 2026-07-29 · erweitert §2.15 um die Punkte, die dort fehlen.
 1. **Drei Versprechen:** die LMD-Baseline plant 08:00–20:00 (`LmdCarrierBuilder:43-45`),
    Shared-Use nach M5 B2B 07:30–17:00 / B2C 07:30–20:00 (§1.2), 1d einheitlich **07:30–21:00
@@ -3176,7 +3178,7 @@ Zwei Präzisierungen aus dem Methodenteil des Reports (§2.7–2.9 dort):
 | 1c `f140_c900_i250`, 5 Seeds | 4.897,3 kg (Projektion) | **6.579,2 kg** [6.494,9–6.659,2] | −65,1 % → **−54,0 %** |
 
 „BEV jetzt" enthält drei Korrekturen gemeinsam: Grenzzuschnitt (+6,8 % auf den Faktor),
-Ladeverluste (× 1/0,93) und Nebenverbraucher (× 1,15, §2.57). Die 1c-Zeile ist seit
+Ladeverluste (× 1/0,93) und Nebenverbraucher (× 1,15, §2.63). Die 1c-Zeile ist seit
 2026-09-08 **gemessen** (fünf Seeds, iter250, evensplit — vorher eine Projektion aus dem
 iter150-Raster).
 
@@ -3937,6 +3939,136 @@ bei dem der Anker zufällig die höchste Baseline-Ziehung ist.
 fünf Läufen — jsprit hängt an seinem eigenen festen Seed, nicht am Mobsim-Seed.
 
 Verwandt: §2.62 (der 1c-250er-Fächer), §3.14 (die +170-Rücknahme), §2.59 (Threadzahl).
+
+### 2.66 Das Not-at-home-Overlay ist jetzt überall gestrichen — die Baseline stand 387 Pakete zu niedrig
+
+`trägt` · 2026-09-10, auf Nachdruck des Users („das hatten wir jetzt schon 3x“ — zu Recht:
+§2.21 stellte 2026-08-10 nur `delivery_rate` auf brutto um, §2.65 rechnete die Paketbasis von Hand
+brutto, und der Code trug den Abzug weiter).
+
+**Der Befund am Code, nicht an der Konvention.** `LmdCarrierBuilder` legt jeden Stopp mit voller
+`capacityDemand` als jsprit-Service an und würfelt „missed“ **erst danach** — die Schleife
+hängt nur eine Service-ID an eine Liste, sie kürzt oder entfernt keinen Job. Die Flotte plant
+und fährt also **jedes** Paket. Das Overlay ist ein Etikett, kein Transportvorgang; im POC
+existiert weder Rücktransport noch Packstation-Zustellung, und es gibt das Overlay nur im
+Baseline-Arm (1c und 1d melden roh).
+
+**Was das verzerrt hat.** Der Abzug lief nicht in einer Quote, sondern in einer **physischen**
+Kennzahl und einem **Kostennenner**: `parcels_handled`, `parcels_per_vehicle_km` und
+`freight_cost_per_parcel` standen auf 5.665 statt 6.052. Damit verglich sich die Baseline auf
+genau der Achse, um die es im Szenarienvergleich geht, mit 6,4 % weniger Paketen als 1c.
+
+**Der scheinbare Servicevorsprung von 1c war damit vollständig Artefakt — und das Vorzeichen
+dreht sich.** Beide Arme haben dieselbe Nachfrage von 6.052 Paketen (`parcels_in_demand`).
+1c f120 stellt davon 5.946 per DRT zu, 91 laufen (`parcels_walked`) und 15 bleiben am
+Depot-Link liegen (`parcels_dropped_at_depot_link`) — also **6.037** beim Kunden. Die
+Baseline stellt brutto **6.052** zu. Der Vergleich las vorher 5.665 gegen 6.037 und gab 1c
++372 Pakete Vorsprung; korrekt sind 6.052 gegen 6.037, also **15 Pakete Rückstand.** Der
+Kostennenner verteilte zudem die Kosten aller gefahrenen Pakete auf einen Teil davon.
+
+**Gestrichen 2026-09-10.** Basis ist jetzt durchgängig `parcels_total - parcels_unassigned`,
+dieselbe wie bei `delivery_rate`; `unassigned` bleibt abgezogen, weil das ein echter
+Zustellausfall ist (jsprit konnte den Job nicht vergeben). Betroffen: `extract_freight.py`
+(Headline) und `extract_freight_provider.py` (Provider-Block, derselbe Geschwister-Defekt wie
+2026-08-10).
+
+Gemessen an `basew21_it250`, alle 164 KPIs des Laufs neu gerechnet — **genau drei bewegen sich:**
+
+| KPI | vorher | nachher | |
+|---|---|---|---|
+| `parcels_handled` | 5.665 | **6.052** | +6,8 % |
+| `parcels_per_vehicle_km` | 2,09695 | **2,2402** | +6,8 % |
+| `cost_per_parcel` | 1,59857 | **1,49635 EUR** | −6,4 % |
+
+Die 2,2402 bestätigen nebenbei §2.65 — dort war die Obergrenzen-Zerlegung bereits von Hand mit
+2,24 Paketen/km gerechnet. Die €-Verschiebung ist **gewollt** und war der Grund, aus dem der
+Abzug 2026-08-10 stehenblieb; sie macht die Kennzahl richtig, nicht falsch.
+
+**Was bewusst bleibt.** `parcels_missed` und `delivery_rate_net_overlay` stehen weiter in der
+KPI-Tabelle — sie sind eine Modellausgabe und dokumentieren, was gewürfelt wurde. Sie sind nur
+keine Basis mehr für irgendeine physische oder monetäre Größe. Der
+`Load_perVehicle`-Pfad (MATSims eigene `handledDemand`-Buchführung) ist unberührt; er kannte
+das Overlay nie, greift aber bei service-basierten Carriern ohnehin nicht — jeder reale Lauf
+nimmt den Fallback.
+
+⚠️ **Alle vor dem 2026-09-10 erzeugten `kpis_long.csv` tragen die alte Basis.** Maschinell
+unterscheidbar am `source`-Feld von `parcels_per_vehicle_km`: neu steht dort
+`computed (gross: overlay NOT deducted)`, alt nur `computed`. Wer €/Paket oder Pakete/km über
+Vintages hinweg vergleicht, mischt zwei Basen.
+
+Verwandt: §2.21 (die halbe Umstellung von 2026-08-10), §2.65 (rechnete schon brutto).
+
+---
+
+### 2.67 Der Emissionskanal ist ein Kilometerzähler — und das Drei-Arm-Delta liegt unter dem Seed-Rauschen
+
+`trägt` · gemessen 2026-09-08/10. Alle drei Arme durch **denselben** Extraktor gerechnet: Baseline
+`b120rgs` (f120, Sim, 3 Seeds), 1c `d1c_f140_c900_i250` (f140, Sim, 5 Seeds), 1d
+`d1d_dep7_f135_it250` (f135, Dev, 1 Lauf) — alle it250, Netz-Mittelpunkt, operative Zustellquote
+1,0 (§2.66). Der Sim steht auf einem älteren HEAD; damit die Zahlen dieselbe Grenze tragen, lief der
+aktuelle Analysecode aus `%TEMP%\kpicur` gegen die Sim-Läufe mit `build_kpis.py --out-dir`
+(`ensure_caches` steigt bei vorhandenen Event-Caches aus, also **null Schreibzugriffe** in die
+Run-Ordner — nachgezählt).
+
+| Arm | Flotten-km | Diesel CO₂e kg | BEV mid kg | Δ BEV | Netz low–high |
+|---|---:|---:|---:|---:|---:|
+| Baseline, 3 Seeds | 52.231 | **14.124,1** [14.006,0–14.334,7] | 6.484,5 [6.427,9–6.581,4] | −54,1 % | 862–7.059 |
+| 1c, 5 Seeds | 52.883 | **14.301,8** [14.109,7–14.472,9] | 6.579,2 [6.494,9–6.659,2] | −54,0 % | 875–7.163 |
+| 1d f135, 1 Lauf | 51.009 | **13.794,6** | 6.347,8 | −54,0 % | 844–6.911 |
+
+**Befund 1 — die Intensität ist über alle Arme flach.**
+
+| Arm | g CO₂e/km | g NOₓ/km | g PM10/km |
+|---|---:|---:|---:|
+| Baseline | 270,415 | 0,08841 | 0,05890 |
+| 1c | 270,441 | 0,08823 | 0,05894 |
+| 1d f135 | 270,433 | 0,08836 | 0,05888 |
+| 1d w1117 | 270,418 | 0,08817 | 0,05890 |
+| 1d bud2 | 270,587 | 0,08811 | 0,05900 |
+| 1d d30_bud | 270,616 | 0,08799 | 0,05899 |
+
+CO₂e streut **0,07 %**, NOₓ 0,5 %, PM10 0,2 % — über Konzepte, die sich in Flottengröße
+(120/130/135/140), Betriebsform und Frachtorganisation unterscheiden. Das Geschwindigkeitsprofil ist
+damit praktisch armunabhängig, und **jede Emissionsdifferenz zwischen den Armen IST eine
+Fahrleistungsdifferenz.** Der Kanal trägt gegenüber `drt_vehicle_km` keine eigene Information;
+eigenständig sind nur zwei Schichten: der Kaltstart (0,4 % CO₂e, 2,4–2,7 % NOₓ) und die
+BEV-/Netzebene. Für D-4 der Emissions-Checkliste heißt das: weitere Schadstoffe freizuschalten
+erzeugt Spalten, keine Befunde. Die Nenner sind armgerecht — bei der Baseline fährt die LMD-Flotte
+eigene 2.701,5 km, in 1d ist der Regime-Split rückstandsfrei (`drt_* + freight_modular_* == total_*`,
+`extract_emissions.py:45`), die Frachtkilometer stecken also in denselben Flottenkilometern.
+
+**Befund 2 — das 1d-Delta ist genau eine Seed-Breite groß.** Die Baseline-Seedspanne beträgt
+**328,7 kg**; 1d liegt **329,5 kg** unter dem Baseline-Mittel, Verhältnis **1,002**. Und 1d hat
+**keinen Seed-Fächer**. Das Vorzeichen ist plausibel (1d fährt 2,3 % weniger km), die Größe ist
+nicht belegt. Für 1c überlappt das Band [14.109,7–14.472,9] das Baseline-Band [14.006,0–14.334,7]
+— die +1,26 % sind nicht von Seed-Rauschen getrennt.
+
+⚠️ **Ohne 1d-Seed-Fächer ist keine der beiden Emissionsdifferenzen zitierfähig.** Die −54 %
+Elektrifizierung sind davon unberührt: sie sind ein Verhältnis aus Wirkungsgrad × Netzintensität ×
+Ladeverlusten und hängen an keiner Route — in allen drei Armen −54,0/−54,1 %.
+
+**Befund 3 — die Budget-Arme sind emissionsseitig nicht vergleichbar.** `d1d_f130_bud2` erreicht
+Zustellquote 0,601, `d1d_f130_d30_bud` 0,587, `d1d_f130_w1117` 0,947. w1117 sieht mit −5,4 % gegen
+die Baseline am besten aus und lässt 5,3 % der Pakete liegen; die Budget-Arme liegen bei ~40 %
+Ausfall (16 bzw. 20 Touren `expired_pending`). Weniger Arbeit, weniger Emissionen — das ist kein
+Vorteil. Emissionsseitig vergleichbar ist nur, was Quote 1,0 erreicht.
+
+**Befund 4 — Dev und Sim liefern bitidentische Läufe.** `basew21_it250` (Dev) und `b120rgs` Seed
+1337 (Sim) stimmen in allen verglichenen KPIs auf jede Stelle überein: CO₂e 14.334,7 kg, Fahrten
+9.143, Fahrzeug-km 50.312, Pakete 6.052, Touren 41. Der Baseline-Fächer hat damit faktisch **vier**
+Seeds; das „s" im Tag `b120rgs` markiert die Maschine, nicht eine Konfiguration.
+
+⚠️ **Vintage-Regel für den Emissionskanal.** Emissionen entstehen **nachgelagert**
+(`build_kpis.py` → `extract_emissions.py`), nicht im MATSim-Lauf; im Java-Code gibt es kein
+Emissionsmodell. Ein Lauf trägt deshalb nicht seinen eigenen Stand, sondern den des Codes zum
+Zeitpunkt seines **KPI-Builds**. Gefunden am 08.09.: die drei neuen 1d-Arme standen auf
+bev/diesel = 0,400 statt 0,4605, also **15 % zu niedrig auf der BEV-Seite** — der
+Nebenverbraucher-Aufschlag (§2.63) war erst nach ihrem Build entstanden. Erkennbar ohne
+Datumsvergleich am Verhältnis selbst, weil es ohne Aufschlag armunabhängig 0,400 ist. Damit ist das
+der dritte Vintage-Fall in vier Tagen, neben dem JAR-Vintage (§2.64e) und der Paketbasis (§2.66).
+
+Verwandt: §2.55 (die BEV-Korrekturkette), §2.63 (Nebenverbraucher), §2.66 (Paketbasis),
+§3.12 (die Reichweitenklammer), §2.62/§2.65 (die Iso-Service-Frage hinter den Flottengrößen).
 
 ---
 
