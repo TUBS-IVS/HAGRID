@@ -115,8 +115,18 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
                                     ((m, "m"), (q, "q"), (lower, "lower"), (upper, "upper"), (scale, "scale")))
     if not (len(m) == len(prior) == len(lower) == len(upper) == len(scale)):
         raise ValueError("carrier arrays must have the same length")
-    if (m < 0).any() or not np.isclose(m.sum(), 1., atol=_ATOL, rtol=_RTOL):
+    market_weight_input_sum = float(m.sum())
+    if (m < 0).any() or not np.isclose(market_weight_input_sum, 1., atol=_ATOL, rtol=_RTOL):
         raise ValueError("m must be a nonnegative simplex")
+    market_weight_normalization_factor = 1. / market_weight_input_sum
+    m = m * market_weight_normalization_factor
+    normalization_anchor = int(np.argmax(m))
+    for _ in range(2):
+        correction = 1. - float(m.sum())
+        if correction == 0.:
+            break
+        m[normalization_anchor] += correction
+    market_weight_normalized_sum = float(m.sum())
     if not np.isfinite(b) or not 0 <= b <= 1 or (lower > upper).any() or (lower < 0).any() or (upper > 1).any() or (scale <= 0).any():
         raise ValueError("invalid carrier bounds, scales, or B2B target")
     feasible_low, feasible_high = float(m @ lower), float(m @ upper)
@@ -190,6 +200,9 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
                             "conditioning_objective_status": conditioning_status,
                             "log_conditioning_objective": log_conditioning,
                             "market_b2b": balance, "feasible_range": [feasible_low, feasible_high],
+                            "market_weight_input_sum": market_weight_input_sum,
+                            "market_weight_normalization_factor": market_weight_normalization_factor,
+                            "market_weight_normalized_sum": market_weight_normalized_sum,
                             "target_requested": requested_b, "target_adjustment": target_adjustment,
                             "solver": solver}}
 
