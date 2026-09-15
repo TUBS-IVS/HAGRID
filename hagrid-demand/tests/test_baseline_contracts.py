@@ -10,6 +10,80 @@ import numpy as np
 import pytest
 
 
+_RESOLVE_STAGE_SUBPROCESS = """
+import os
+from pathlib import Path
+import sys
+import time
+from hagrid_demand.common.cache import resolve_stage
+
+root = Path(sys.argv[1])
+mode = sys.argv[2]
+cache_root = root / 'cache'
+
+if mode == 'holder':
+    def build(work):
+        (work / 'result.json').write_text('{\"winner\": true}', encoding='utf-8')
+        (root / 'holder-started').write_text('ready', encoding='utf-8')
+        deadline = time.monotonic() + 10
+        while not (root / 'release-holder').exists():
+            if time.monotonic() > deadline:
+                raise TimeoutError('holder release marker was not written')
+            time.sleep(.01)
+    resolve_stage(root / 'run-holder', 'reference', 'fingerprint', cache_root=cache_root,
+                  dependencies={'source': 'abc'}, build=build, validate=lambda work: None)
+elif mode == 'waiter':
+    (root / 'waiter-started').write_text('ready', encoding='utf-8')
+    def build(work):
+        (root / 'waiter-built').write_text('unexpected', encoding='utf-8')
+        (work / 'result.json').write_text('{\"waiter\": true}', encoding='utf-8')
+    resolve_stage(root / 'run-waiter', 'reference', 'fingerprint', cache_root=cache_root,
+                  dependencies={'source': 'abc'}, build=build, validate=lambda work: None)
+elif mode == 'crash-owner':
+    def build(work):
+        (root / 'crash-owner-started').write_text('ready', encoding='utf-8')
+        os._exit(0)
+    resolve_stage(root / 'run-crash-owner', 'reference', 'fingerprint', cache_root=cache_root,
+                  dependencies={'source': 'abc'}, build=build, validate=lambda work: None)
+elif mode == 'recovery':
+    def build(work):
+        (work / 'result.json').write_text('{\"recovered\": true}', encoding='utf-8')
+    resolve_stage(root / 'run-recovery', 'reference', 'fingerprint', cache_root=cache_root,
+                  dependencies={'source': 'abc'}, build=build, validate=lambda work: None)
+else:
+    raise ValueError(mode)
+"""
+
+
+def _stage_process(tmp_path, mode):
+    package_root = Path(__file__).parents[1] / "src"
+    return subprocess.Popen(
+        [sys.executable, "-c", _RESOLVE_STAGE_SUBPROCESS, str(tmp_path), mode],
+        cwd=Path(__file__).parents[1],
+        env={**os.environ, "PYTHONPATH": f"{package_root}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _wait_for_marker(marker, *processes):
+    deadline = time.monotonic() + 5
+    while not marker.exists():
+        finished = [process for process in processes if process.poll() is not None]
+        if finished:
+            output = [process.communicate() for process in finished]
+            raise AssertionError(f"process exited before marker {marker.name}: {output}")
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for marker {marker.name}")
+        time.sleep(0.01)
+
+
+def _assert_process_succeeded(process):
+    stdout, stderr = process.communicate(timeout=10)
+    assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+
+
 def test_named_rng_is_order_independent_and_channels_are_separate():
     """Changing the named stream must change draws; argument ordering must not."""
     from hagrid_demand.common.rng import named_rng
@@ -289,6 +363,44 @@ def test_resolve_stage_waiter_reuses_winner_after_a_build_outlasts_old_deadline(
     assert not failures
     assert all(not thread.is_alive() for thread in (winner_thread, waiter_thread))
     assert calls == ["winner"]
+
+
+def test_resolve_stage_subprocess_waiter_reuses_os_lock_winner(tmp_path):
+    """A separate process waits on the held OS lock and then reuses its winner."""
+    holder = _stage_process(tmp_path, "holder")
+    waiter = None
+    try:
+        _wait_for_marker(tmp_path / "holder-started", holder)
+        waiter = _stage_process(tmp_path, "waiter")
+        _wait_for_marker(tmp_path / "waiter-started", holder, waiter)
+        assert holder.poll() is None
+        assert waiter.poll() is None
+        assert not (tmp_path / "waiter-built").exists()
+        (tmp_path / "release-holder").write_text("release", encoding="utf-8")
+        _assert_process_succeeded(holder)
+        _assert_process_succeeded(waiter)
+    finally:
+        (tmp_path / "release-holder").write_text("release", encoding="utf-8")
+        for process in (holder, waiter):
+            if process is not None and process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+    stage = tmp_path / "cache" / "reference" / "fingerprint"
+    assert json.loads((stage / "result.json").read_text(encoding="utf-8")) == {"winner": True}
+    assert not (tmp_path / "waiter-built").exists()
+
+
+def test_resolve_stage_subprocess_recovers_after_owner_abruptly_exits(tmp_path):
+    """OS process-exit cleanup releases a lock held by an abruptly terminated owner."""
+    owner = _stage_process(tmp_path, "crash-owner")
+    _wait_for_marker(tmp_path / "crash-owner-started", owner)
+    _assert_process_succeeded(owner)
+    assert not (tmp_path / "cache" / "reference" / "fingerprint").exists()
+
+    recovery = _stage_process(tmp_path, "recovery")
+    _assert_process_succeeded(recovery)
+    stage = tmp_path / "cache" / "reference" / "fingerprint"
+    assert json.loads((stage / "result.json").read_text(encoding="utf-8")) == {"recovered": True}
 
 
 def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_failure(tmp_path, monkeypatch):
