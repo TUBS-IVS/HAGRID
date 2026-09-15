@@ -85,3 +85,17 @@ Review validation:
 - `python -B -m pytest tests/test_baseline_series.py -q` — 11 passed.
 - `python -B -m pytest -q` — 92 passed. The same two unrelated `pyproj`/NumPy deprecation warnings remain in `tests/test_logistics_osm.py`.
 - Package resource files were unchanged in this review round, so the prior external wheel-resource smoke remains applicable; no new resource migration was introduced.
+
+## Review round 2 — market metadata semantics
+
+The normalized market row previously exposed Amazon's raw `percent` unit and `estimated_midpoint_assumption` status as if they described the calculated probability. A new RED test failed on the 2024 Amazon row with `unit='percent'`.
+
+`market_inputs.json` now materializes source/cell/status/unit metadata beside every 2022 carrier share, every 2016–2022 carrier change, the post-2022 multiplier, and each Amazon fitting point. Validation requires those structured values and carries their metadata into the series computation.
+
+All normalized market output rows now use `unit='share'` and `status='derived_projection'`. Raw metadata appears separately as `source_status`, `source_unit`, `source_reference`, and `source_notebook_cell`; this is asserted for Amazon and every projected carrier in 2024.
+
+Review validation:
+
+- `python -B -m pytest tests/test_baseline_series.py -q` — 12 passed.
+- `python -B -m pytest -q` — 93 passed; the two unrelated `pyproj`/NumPy deprecation warnings remain.
+- Rebuilt a wheel, installed it outside the repository, and verified the installed package's 2024 Amazon row has derived `share`/`derived_projection` output metadata plus raw `percent` source metadata.

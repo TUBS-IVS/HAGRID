@@ -6,17 +6,30 @@
   "carrier_anchor": {
     "year_start": 2016,
     "year_end": 2022,
-    "shares": {"DHL": 49, "Hermes": 13, "UPS": 12, "DPD": 11, "GLS": 8, "FedEx/TNT": 6},
-    "change_2016_2022": {"DHL": 6, "Hermes": -1.5, "UPS": 0.2, "DPD": -0.5, "GLS": 1, "FedEx/TNT": -0.2},
-    "post_2022_multiplier": 2.25
+    "shares": {
+      "DHL": {"value": 49, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"},
+      "Hermes": {"value": 13, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"},
+      "UPS": {"value": 12, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"},
+      "DPD": {"value": 11, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"},
+      "GLS": {"value": 8, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"},
+      "FedEx/TNT": {"value": 6, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed", "unit": "percent"}
+    },
+    "change_2016_2022": {
+      "DHL": {"value": 6, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"},
+      "Hermes": {"value": -1.5, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"},
+      "UPS": {"value": 0.2, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"},
+      "DPD": {"value": -0.5, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"},
+      "GLS": {"value": 1, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"},
+      "FedEx/TNT": {"value": -0.2, "source": "Pitney Bowes Parcel Shipping Index", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "observed_change", "unit": "percentage_points"}
+    },
+    "post_2022_multiplier": {"value": 2.25, "source": "Notebook projection rule", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2", "status": "projection_assumption", "unit": "multiplier"}
   },
   "amazon": {
-    "years": [2017, 2020, 2022],
-    "shares": [0.5432098765, 10, 20],
-    "initial_guess": [22, 2020, 1.1],
-    "source": "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5",
-    "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5",
-    "status": "estimated_midpoint_assumption",
-    "unit": "percent"
+    "points": [
+      {"year": 2017, "value": 0.5432098765, "source": "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5", "status": "estimated", "unit": "percent"},
+      {"year": 2020, "value": 10, "source": "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5", "status": "estimated_midpoint_assumption", "unit": "percent"},
+      {"year": 2022, "value": 20, "source": "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5", "status": "estimated_midpoint_assumption", "unit": "percent"}
+    ],
+    "initial_guess": {"values": [22, 2020, 1.1], "source": "Notebook fitting initialization", "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5", "status": "fit_assumption", "unit": "[percent, year, inverse_year]"}
   }
 }
