@@ -229,6 +229,7 @@ def test_reference_run_publishes_the_frozen_consumer_contract_and_dhl_identity(f
     profiles = pd.read_parquet(run / "reference_carrier_profiles.parquet")
     reconciliation = json.loads((run / "reference_reconciliation.json").read_text(encoding="utf-8"))
     state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    runtime = json.loads((run / "runtime.json").read_text(encoding="utf-8"))
 
     assert {"site_id", "plz", "segment", "population", "employees", "branch", "weight",
             "historical_share", "structural_share", "reference_annual", "allocation_status"}.issubset(sites.columns)
@@ -240,11 +241,14 @@ def test_reference_run_publishes_the_frozen_consumer_contract_and_dhl_identity(f
     assert "dhl_retained_mean" not in sites.columns
     assert {"year", "segment", "carrier", "market_share", "q_prior", "q_scale", "lower", "upper", "q_adjusted", "share"}.issubset(profiles.columns)
     assert {"market", "providers", "adjusted_q", "conditional", "diagnostics", "reference_balance"}.issubset(reconciliation)
-    assert {"initial_endpoints", "expanded_endpoints", "reachable_range", "log_k", "status"}.issubset(
+    assert {"initial_endpoints", "expanded_endpoints", "reachable_range", "log_k", "status", "residual"}.issubset(
         reconciliation["reference_balance"]
     )
+    assert {"python", "packages"}.issubset(runtime)
+    assert {"numpy", "scipy", "pandas", "geopandas", "shapely", "pyarrow"}.issubset(runtime["packages"])
     assert isinstance(state["baseline_fingerprint"], str) and len(state["baseline_fingerprint"]) == 64
     assert {"structure", "geometry", "series", "scope"}.issubset(state["baseline_fingerprint_artifacts"])
+    assert "series/volume.parquet" in state["baseline_fingerprint_artifacts"]["series"]
 
     dhl_market_share = profiles.loc[profiles.carrier.eq("DHL"), "market_share"].iloc[0]
     expected = postal.dhl_retained_mean.sum() * state["config"]["reference_operating_days"] / dhl_market_share

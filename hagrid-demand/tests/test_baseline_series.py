@@ -17,6 +17,7 @@ def test_source_classification_and_packaged_series_values():
     volume = series["volume"].set_index("year")
     assert volume.loc[2021, "value"] == 4.51e9
     assert not volume.loc[volume.index.to_series().between(2024, 2028), "status"].eq("observed").any()
+    assert {"curve", "provenance"}.issubset(volume.columns)
 
 
 def test_volume_fit_policy_keeps_legacy_estimates_out_of_observed_only_primary_values():
@@ -170,10 +171,23 @@ def test_foundation_reader_verifies_artifact_hashes_and_required_columns(tmp_pat
                                         "schema": ["site_id", "recipient_type"], "crs": None}},
     }
     (tmp_path / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (tmp_path / "run.json").write_text(json.dumps({"status": "complete"}), encoding="utf-8")
+    (tmp_path / "run.json").write_text(json.dumps({
+        "run_id": "fixture", "status": "complete_with_calibration_blockers", "completed_stages": [
+            "ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard",
+        ],
+    }), encoding="utf-8")
+    manifest.update({"run_id": "fixture", "run_status": "complete_with_calibration_blockers"})
+    (tmp_path / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     tables = read_foundation(tmp_path)
     assert tables["sites.csv"].columns.tolist() == ["site_id", "recipient_type"]
+    run_state = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
+    run_state["completed_stages"] = ["ingest"]
+    (tmp_path / "run.json").write_text(json.dumps(run_state), encoding="utf-8")
+    with pytest.raises(ValueError, match="completed all expected producer stages"):
+        read_foundation(tmp_path)
+    run_state["completed_stages"] = ["ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard"]
+    (tmp_path / "run.json").write_text(json.dumps(run_state), encoding="utf-8")
     sites.write_text("site_id,recipient_type\nb,business\n", encoding="utf-8")
     with pytest.raises(ValueError, match="hash"):
         read_foundation(tmp_path)

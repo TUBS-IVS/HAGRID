@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import uuid
+import importlib.metadata
 
 import geopandas as gpd
 import pandas as pd
@@ -58,6 +60,7 @@ def _raw_source_paths(config: dict) -> list[Path]:
         paths.append(Path(config["weekly_source"]))
     elif config.get("foundation_run"):
         paths.append(Path(config["foundation_run"]) / "artifact_manifest.json")
+        paths.append(Path(config["foundation_run"]) / "run.json")
         paths.append(Path(config["weekly_source"]))
     return paths
 
@@ -153,6 +156,7 @@ def _write_sources(config: dict, output: Path) -> None:
         source_manifest = json.loads((output / "sources.json").read_text(encoding="utf-8"))
         source_manifest.update({"mode": "foundation_run", "foundation_run": config["foundation_run"],
                                 "foundation_manifest": resource_hash(Path(config["foundation_run"]) / "artifact_manifest.json"),
+                                "foundation_run_state": resource_hash(Path(config["foundation_run"]) / "run.json"),
                                 "invalid_employees": int(sites.invalid_employees.sum())})
         _json(output / "sources.json", source_manifest)
         return
@@ -276,12 +280,18 @@ def _run_state(run: Path, config: dict) -> dict:
     return {"run_id": run.name, "status": "running", "config": config, "completed_stages": []}
 
 
+def _runtime_payload() -> dict:
+    packages = {name: importlib.metadata.version(name) for name in
+                ("numpy", "scipy", "pandas", "geopandas", "shapely", "pyarrow")}
+    return {"python": platform.python_version(), "packages": packages}
+
+
 def _frozen_reference_artifacts(run: Path) -> dict:
     """Hash the public reference contract that downstream stages are allowed to consume."""
     groups = {
         "structure": ("reference_sites.parquet", "reference_postal.parquet"),
         "geometry": ("reference_geometry.parquet",),
-        "series": ("series/market.parquet", "series/b2b.parquet", "series/providers.parquet", "series/weekly.parquet"),
+        "series": ("series/market.parquet", "series/b2b.parquet", "series/volume.parquet", "series/providers.parquet", "series/weekly.parquet"),
         "scope": ("sources/postal_support.parquet", "reference_checks.json"),
         "reconciliation": ("reference_carrier_profiles.parquet", "reference_reconciliation.json"),
         "regional": ("reference_regional_annual.json", "checks.json"),
@@ -327,6 +337,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
     else:
         run.mkdir(parents=True, exist_ok=False)
         _json(run / "config.resolved.json", config)
+        _json(run / "runtime.json", _runtime_payload())
         _json(run / "run.json", _run_state(run, config))
     try:
         source_dependencies = {"source_files": _raw_source_paths(config)}

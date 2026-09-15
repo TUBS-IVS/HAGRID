@@ -8,6 +8,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import tempfile
 import threading
@@ -23,6 +24,11 @@ from hagrid_demand.common.rng import RNG_VERSION
 _MANIFEST = "stage_manifest.json"
 _LOCAL_LOCKS: dict[str, threading.Lock] = {}
 _LOCAL_LOCKS_GUARD = threading.Lock()
+
+
+def runtime_identity() -> dict:
+    return {"python": platform.python_version(), **{name: importlib.metadata.version(name) for name in
+            ("numpy", "scipy", "pandas", "geopandas", "shapely", "pyarrow")}}
 
 
 def _semantic(value: Any, *, resource_tree: bool = False) -> Any:
@@ -80,7 +86,7 @@ def stage_key(name: str, dependencies: dict, config: dict, code_hashes: dict, *,
         "code": _semantic(code_hashes, resource_tree=True),
         "schema_version": config.get("schema_version", SCHEMA_VERSION),
         "rng_version": config.get("rng_version", RNG_VERSION),
-        "packages": {"numpy": importlib.metadata.version("numpy"), "scipy": importlib.metadata.version("scipy")},
+        "runtime": runtime_identity(),
     })
 
 
@@ -110,7 +116,7 @@ def _complete_manifest(path: Path, *, stage_name: str, fingerprint: str, depende
         "dependencies": dependency_snapshot,
         "schema_version": SCHEMA_VERSION,
         "rng_version": RNG_VERSION,
-        "runtime": {"numpy": importlib.metadata.version("numpy"), "scipy": importlib.metadata.version("scipy")},
+        "runtime": runtime_identity(),
         "artifacts": _artifact_hashes(path),
     }
 
@@ -138,9 +144,7 @@ def _valid_manifest_shape(manifest: Any) -> bool:
     if not isinstance(manifest.get("dependencies"), dict):
         return False
     runtime = manifest.get("runtime")
-    if not isinstance(runtime, dict) or set(runtime) != {"numpy", "scipy"} or not all(
-        isinstance(version, str) for version in runtime.values()
-    ):
+    if runtime != runtime_identity():
         return False
     return _valid_artifact_map(manifest.get("artifacts"))
 
@@ -165,7 +169,7 @@ def _is_valid_stage(path: Path, *, stage_name: str, fingerprint: str, dependency
             and manifest.get("schema_version") == SCHEMA_VERSION
             and type(manifest.get("rng_version")) is int
             and manifest.get("rng_version") == RNG_VERSION
-            and manifest.get("runtime") == {"numpy": importlib.metadata.version("numpy"), "scipy": importlib.metadata.version("scipy")}
+            and manifest.get("runtime") == runtime_identity()
             and bool(manifest.get("artifacts"))
             and manifest["artifacts"] == _artifact_hashes(path)
         )

@@ -561,6 +561,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
             "expanded_endpoints": eta_diagnostics["expanded_endpoints"],
             "expanded_residuals": eta_diagnostics["expanded_residuals"],
             "reachable_range": eta_diagnostics["reachable_range"],
+            "residual": achieved_b - b,
         },
     }
     checks = {"scope_ledger": scope_ledger, "k": k, "k_status": k_status, "log_k": log_k,

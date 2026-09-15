@@ -149,18 +149,19 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
         legacy = indexed.loc[year] if year in indexed.index and indexed.loc[year].status == "legacy_estimate" else None
         if year in indexed.index and indexed.loc[year].status == "observed":
             anchor = indexed.loc[year]
-            value, status, provenance = float(anchor.value), anchor.status, anchor
+            value, status, provenance, curve = float(anchor.value), anchor.status, anchor, "observed_anchor"
         elif policy == "legacy_assumptions" and legacy is not None:
-            value, status, provenance = float(legacy.value), legacy.status, legacy
+            value, status, provenance, curve = float(legacy.value), legacy.status, legacy, "legacy_assumption"
         elif "linear" in fits:
-            value, status, provenance = candidate["linear"], "forecast", spec
+            value, status, provenance, curve = candidate["linear"], "forecast", spec, "linear"
         else:
-            value, status, provenance = np.nan, "fit_failed", spec
+            value, status, provenance, curve = np.nan, "fit_failed", spec, None
         candidate_metadata = {}
         for model in ("linear", "logistic", "exponential"):
             candidate_metadata[f"{model}_fit_status"] = "ok" if model in fits else "failed"
             candidate_metadata[f"{model}_fit_error"] = errors.get(model)
-        rows.append({"year": year, "value": value, "status": status, "unit": provenance["unit"],
+        rows.append({"year": year, "value": value, "status": status, "unit": provenance["unit"], "curve": curve,
+                     "provenance": provenance["source"],
                      "fit_policy": policy, "fit_status": "ok" if not errors else "partial_failure",
                      "source": provenance["source"], "notebook_cell": provenance["notebook_cell"],
                      "legacy_value": float(legacy.value) if legacy is not None else np.nan,

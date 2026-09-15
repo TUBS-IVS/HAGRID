@@ -50,7 +50,11 @@ def _foundation_fixture(tmp_path):
         "artifacts": artifacts,
     }
     (foundation / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (foundation / "run.json").write_text(json.dumps({"status": "complete_with_calibration_blockers"}), encoding="utf-8")
+    (foundation / "run.json").write_text(json.dumps({
+        "run_id": "fixture-foundation",
+        "status": "complete_with_calibration_blockers",
+        "completed_stages": ["ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard"],
+    }), encoding="utf-8")
 
     config = json.loads(raw_config.read_text(encoding="utf-8"))
     config.update({"source_mode": "foundation_run", "foundation_run": "foundation", "output_dir": "foundation-output"})
