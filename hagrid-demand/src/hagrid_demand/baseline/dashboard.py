@@ -60,9 +60,15 @@ def _report_markdown(report: dict) -> str:
     )
 
 
-def build_report_data(reference_dir: Path, config: dict, run_id: str, baseline_fingerprint: str) -> dict:
+def build_report_data(reference_dir: Path, config: dict | None = None, run_id: str | None = None,
+                      baseline_fingerprint: str | None = None) -> dict:
     """Build display data only from the frozen semantic reference artifacts."""
     reference_dir = Path(reference_dir)
+    if config is None:
+        state, config, _ = _load_complete_run(reference_dir)
+        run_id, baseline_fingerprint = state["run_id"], state["baseline_fingerprint"]
+    if run_id is None or baseline_fingerprint is None:
+        raise ValueError("run_id and baseline_fingerprint are required")
     postal = pd.read_parquet(reference_dir / "reference_postal.parquet")
     profiles = pd.read_parquet(reference_dir / "reference_carrier_profiles.parquet")
     checks = json.loads((reference_dir / "reference_checks.json").read_text(encoding="utf-8"))
@@ -95,6 +101,21 @@ def build_report_data(reference_dir: Path, config: dict, run_id: str, baseline_f
         },
         "status": "complete_reference",
     }
+    daily_path = reference_dir / "daily_aggregates.parquet"
+    if daily_path.is_file():
+        daily = pd.read_parquet(daily_path)
+        if {"date", "plz", "segment", "carrier", "count"}.issubset(daily.columns):
+            daily["date"] = pd.to_datetime(daily["date"]).dt.strftime("%Y-%m-%d")
+            postal_amount = daily.groupby(["date", "plz"], as_index=False)["count"].sum()
+            denominator = postal_amount.groupby("date")["count"].transform("sum")
+            normalized = postal_amount.copy()
+            normalized["share"] = (normalized["count"] / denominator).astype(object).where(denominator.ne(0), None)
+            report["views"]["daily"] = {
+                "daily_amount": daily.groupby(["date", "segment", "carrier"], as_index=False)["count"].sum().to_dict(orient="records"),
+                "postal_amount": postal_amount.to_dict(orient="records"),
+                "normalized_postal_share": normalized.to_dict(orient="records"),
+            }
+            report["status"] = "complete_daily"
     return report
 
 
@@ -149,7 +170,7 @@ def _load_complete_run(run: Path) -> tuple[dict, dict, Path]:
         config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("baseline run is incomplete") from exc
-    if not isinstance(state, dict) or state.get("status") != "complete_reference" or not isinstance(config, dict):
+    if not isinstance(state, dict) or state.get("status") not in {"complete_reference", "complete_daily"} or not isinstance(config, dict):
         raise ValueError("baseline run is incomplete")
     if state.get("config_sha256") != resource_hash(run / "config.resolved.json"):
         raise ValueError("baseline configuration hash does not match run state")
@@ -161,14 +182,32 @@ def _load_complete_run(run: Path) -> tuple[dict, dict, Path]:
     return state, config, dashboard_root
 
 
-def _stage_status(state: dict) -> dict[str, str]:
+def _stage_status(state: dict, run: Path | None = None) -> dict[str, str]:
+    """Read persisted run/stage statuses; partial artefacts are never success."""
     complete = set(state.get("completed_stages", []))
+    manifest_stages = {}
+    if run is not None:
+        try:
+            manifest = json.loads((Path(run) / "stage_manifest.json").read_text(encoding="utf-8"))
+            if isinstance(manifest, dict) and isinstance(manifest.get("stages"), dict):
+                manifest_stages = manifest["stages"]
+        except (OSError, json.JSONDecodeError):
+            pass
+    run_status = state.get("status") if isinstance(state.get("status"), str) else "running"
     result = {stage: "not_run" for stage, _ in _STAGES}
-    result["overview"] = "complete"
-    result["data_quality"] = "complete" if "sources" in complete else "not_run"
-    result["market_b2b"] = "complete" if "series" in complete else "not_run"
-    result["regional_reference"] = "complete" if "reference" in complete else "not_run"
-    result["checks"] = "complete" if "reference" in complete else "not_run"
+    aliases = {"data_quality": "sources", "market_b2b": "series", "regional_reference": "reference",
+               "daily": "daily", "calendar": "calendar", "carriers": "daily", "checks": "reference"}
+    for stage, source in aliases.items():
+        record = manifest_stages.get(source)
+        status = record.get("status") if isinstance(record, dict) else None
+        if status in {"not_run", "running", "complete", "failed", "blocked"}:
+            result[stage] = status
+        elif source in complete:
+            # completed_stages is the persisted status artefact written by the workflow.
+            result[stage] = "complete"
+        elif run_status in {"failed", "blocked"} and source in manifest_stages:
+            result[stage] = run_status
+    result["overview"] = "complete" if run_status.startswith("complete") else run_status if run_status in {"failed", "blocked", "running"} else "not_run"
     return result
 
 
@@ -185,7 +224,7 @@ def _entry(run: Path, state: dict, report: dict, dashboard_root: Path) -> tuple[
         "reference_year": report["reference_year"],
         "regional_annual": report["regional_annual"],
         "status": state["status"],
-        "stages": _stage_status(state),
+        "stage_status": _stage_status(state, run),
         # The catalog is self-contained so the single dashboard document can
         # present its semantic reference/B2B/quality views without fetching
         # run-specific HTML or trusting a stale presentation cache.
@@ -216,7 +255,65 @@ def _catalog(output_dir: Path, dashboard_root: Path) -> dict:
             if candidate.is_dir() and (entry := _candidate_entry(candidate, dashboard_root)) is not None:
                 key, value = entry
                 runs[key] = value
-    return {"schema_version": _CATALOG_SCHEMA_VERSION, "runs": runs}
+    return {"schema_version": _CATALOG_SCHEMA_VERSION, "runs": list(runs.values())}
+
+
+def build_report_data_for_run(run: Path) -> dict:
+    """Build report data for a completed baseline or adapt a historical/failed run."""
+    run = Path(run).resolve()
+    try:
+        state, config, _ = _load_complete_run(run)
+        return build_report_data(run, config, state["run_id"], state["baseline_fingerprint"])
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        from .report_adapters import adapt_existing_report
+        return adapt_existing_report(run)
+
+
+def register_report(run: Path, dashboard_root: Path) -> dict:
+    """Atomically upsert a run's report in the shared catalog without semantic writes."""
+    run, dashboard_root = Path(run).resolve(), Path(dashboard_root).resolve()
+    try:
+        state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("run state is required for dashboard registration") from exc
+    if not isinstance(state, dict) or not isinstance(state.get("run_id"), str):
+        raise ValueError("run state is invalid for dashboard registration")
+    report = build_report_data_for_run(run)
+    try:
+        report_path = Path(os.path.relpath(run / "report_data.json", dashboard_root)).as_posix()
+    except ValueError:
+        report_path = (run / "report_data.json").as_uri()
+    entry = {"run_id": state["run_id"], "kind": "baseline", "baseline_fingerprint": state.get("baseline_fingerprint"),
+             "report_data_path": report_path, "report_data_hash": resource_hash(run / "report_data.json") if (run / "report_data.json").is_file() else None,
+             "stage_status": _stage_status(state, run), "stages": _stage_status(state, run), "status": state.get("status"),
+             "views": report.get("views", {}), "report": report}
+    dashboard_root.mkdir(parents=True, exist_ok=True)
+    with file_lock(dashboard_root / ".report_catalog.lockfile"):
+        catalog_path = dashboard_root / "report_catalog.json"
+        try:
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            catalog = {"schema_version": _CATALOG_SCHEMA_VERSION, "runs": []}
+        old = catalog.get("runs", []) if isinstance(catalog, dict) else []
+        if isinstance(old, dict):
+            old = list(old.values())
+        key = (entry["run_id"], entry["baseline_fingerprint"])
+        catalog = {"schema_version": _CATALOG_SCHEMA_VERSION,
+                   "runs": sorted([candidate for candidate in old if (candidate.get("run_id"), candidate.get("baseline_fingerprint")) != key] + [entry], key=lambda item: (item["run_id"], str(item.get("baseline_fingerprint"))))}
+        _atomic_json(catalog_path, catalog)
+    return entry
+
+
+def render_catalog(dashboard_root: Path) -> Path:
+    """Publish the one dashboard shell atomically while holding the catalog lock."""
+    dashboard_root = Path(dashboard_root).resolve(); dashboard_root.mkdir(parents=True, exist_ok=True)
+    with file_lock(dashboard_root / ".report_catalog.lockfile"):
+        try:
+            catalog = json.loads((dashboard_root / "report_catalog.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            catalog = {"schema_version": _CATALOG_SCHEMA_VERSION, "runs": []}
+        _atomic_text(dashboard_root / "index.html", _index(catalog))
+    return dashboard_root / "index.html"
 
 
 def _index(catalog: dict) -> str:
@@ -230,13 +327,13 @@ def _index(catalog: dict) -> str:
 <title>HAGRID Dashboard</title><style>
 :root{{color-scheme:light;font-family:system-ui,sans-serif;color:#18303b;background:#f4f7f8}}body{{margin:0}}header{{background:#173d50;color:#fff;padding:22px max(24px,calc((100vw - 1160px)/2))}}main{{max-width:1160px;margin:auto;padding:18px 24px}}nav{{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}}button,select{{font:inherit;padding:7px 10px;border:1px solid #b9cbd2;border-radius:5px;background:#fff}}button.active{{background:#126a89;color:#fff}}.filters{{display:flex;flex-wrap:wrap;gap:10px;background:#e9f0f2;padding:12px;border-radius:6px}}pre{{white-space:pre-wrap;background:#fff;border:1px solid #dce5e8;padding:14px;overflow:auto}}.status{{font-weight:600}}small{{color:#48616d}}</style></head><body>
 <header><small>HAGRID / KONSOLIDIERTE AUSWERTUNG</small><h1>Nachfrage-Dashboard</h1><p>Referenz und spätere Stages teilen einen Einstieg; nicht berechnete Stages sind ausdrücklich markiert.</p></header>
-<main><div class="filters"><label>Run <select id="run"></select></label><label>Jahr <select id="year"><option value="2021">2021</option></select></label><label>Segment <select id="segment"><option value="all">Alle</option><option value="private">Privat</option><option value="business">Geschäftlich</option></select></label><label>Anbieter <select id="carrier"><option value="all">Alle</option></select></label></div>
+<main><div class="filters"><label>Run <select id="run"></select></label><label>Jahr <select id="year"><option value="2021">2021</option></select></label><label>Datum <input id="date" type="date"></label><label>Region <input id="region" placeholder="PLZ/Region"></label><label>Segment <select id="segment"><option value="all">Alle</option><option value="private">Privat</option><option value="business">Geschäftlich</option></select></label><label>Anbieter <select id="carrier"><option value="all">Alle</option></select></label></div>
 <nav>{navigation}</nav><p id="status" class="status"></p><pre id="view"></pre></main>
 <script>const catalogFile='report_catalog.json';const catalog={payload};const stages={stages};const store='hagrid-baseline-filters-v1';
-const byId=id=>document.getElementById(id);const run=byId('run');const year=byId('year');const segment=byId('segment');const carrier=byId('carrier');
-const params=()=>new URLSearchParams(location.hash.replace(/^#/,''));function selected(){{const p=params();const saved=JSON.parse(localStorage.getItem(store)||'{{}}');return {{run:p.get('run')||saved.run||Object.keys(catalog.runs)[0]||'',stage:p.get('stage')||saved.stage||'overview',year:p.get('year')||saved.year||'2021',segment:p.get('segment')||saved.segment||'all',carrier:p.get('carrier')||saved.carrier||'all'}}}}
-function write(s){{localStorage.setItem(store,JSON.stringify(s));location.hash=new URLSearchParams(s).toString()}}const viewForStage={{overview:'reference',data_quality:'quality',market_b2b:'market_b2b',regional_reference:'reference',checks:'quality'}};function refresh(){{const s=selected();run.innerHTML='';Object.entries(catalog.runs).forEach(([key,e])=>{{const o=document.createElement('option');o.value=key;o.textContent=e.run_id+' · '+e.baseline_fingerprint.slice(0,12);run.append(o)}});if(!catalog.runs[s.run])s.run=Object.keys(catalog.runs)[0]||'';run.value=s.run;year.value=s.year;segment.value=s.segment;const e=catalog.runs[s.run];const profiles=e?.views?.market_b2b?.carrier_profiles||[];const remembered=carrier.value||s.carrier;carrier.innerHTML='<option value="all">Alle</option>';[...new Set(profiles.map(p=>p.carrier).filter(Boolean))].forEach(name=>{{const o=document.createElement('option');o.value=name;o.textContent=name;carrier.append(o)}});carrier.value=[...carrier.options].some(o=>o.value===remembered)?remembered:'all';s.carrier=carrier.value;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.stage===s.stage));byId('status').textContent=e?('Stage '+s.stage+': '+(e.stages[s.stage]||'not_run')+' · Run '+e.run_id):'Kein vollständiger Referenzlauf vorhanden.';const view=e?.views?.[viewForStage[s.stage]]||{{status:e?(e.stages[s.stage]||'not_run'):'not_run'}};byId('view').textContent=e?JSON.stringify({{filters:{{year:s.year,segment:s.segment,carrier:s.carrier}},stage:s.stage,view,catalog_file:catalogFile}},null,2):''}}
-[run,year,segment,carrier].forEach(x=>x.addEventListener('change',()=>{{const s=selected();s.run=run.value;s.year=year.value;s.segment=segment.value;s.carrier=carrier.value;write(s)}}));document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{{const s=selected();s.stage=b.dataset.stage;write(s)}}));addEventListener('hashchange',refresh);refresh();</script></body></html>"""
+const byId=id=>document.getElementById(id);const run=byId('run');const year=byId('year');const date=byId('date');const region=byId('region');const segment=byId('segment');const carrier=byId('carrier');const entries=catalog.runs||[];
+const params=()=>new URLSearchParams(location.hash.replace(/^#/,''));function selected(){{const p=params();const saved=JSON.parse(localStorage.getItem(store)||'{{}}');return {{run:p.get('run')||saved.run||entries[0]?.run_id||'',stage:p.get('stage')||saved.stage||'overview',year:p.get('year')||saved.year||'2021',date:p.get('date')||saved.date||'',region:p.get('region')||saved.region||'',segment:p.get('segment')||saved.segment||'all',carrier:p.get('carrier')||saved.carrier||'all'}}}}
+function write(s){{localStorage.setItem(store,JSON.stringify(s));location.hash=new URLSearchParams(s).toString()}}const viewForStage={{overview:'reference',data_quality:'quality',market_b2b:'market_b2b',regional_reference:'reference',checks:'quality'}};function refresh(){{const s=selected();run.innerHTML='';entries.forEach(e=>{{const o=document.createElement('option');o.value=e.run_id;o.textContent=e.run_id+' · '+String(e.baseline_fingerprint||'historical').slice(0,12);run.append(o)}});let e=entries.find(x=>x.run_id===s.run)||entries[0];if(e)s.run=e.run_id;run.value=s.run;year.value=s.year;date.value=s.date;region.value=s.region;segment.value=s.segment;const profiles=e?.views?.market_b2b?.carrier_profiles||e?.report?.views?.market_b2b?.carrier_profiles||[];const remembered=s.carrier;carrier.innerHTML='<option value="all">Alle</option>';[...new Set(profiles.map(p=>p.carrier).filter(Boolean))].forEach(name=>{{const o=document.createElement('option');o.value=name;o.textContent=name;carrier.append(o)}});carrier.value=[...carrier.options].some(o=>o.value===remembered)?remembered:'all';s.carrier=carrier.value;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.stage===s.stage));const stages=e?.stage_status||e?.stages||{{}};byId('status').textContent=e?('Stage '+s.stage+': '+(stages[s.stage]||'not_run')+' · Run '+e.run_id):'Kein Lauf vorhanden.';const views=e?.views||e?.report?.views||{{}};const view=views[viewForStage[s.stage]]||{{status:e?(stages[s.stage]||'not_run'):'not_run'}};byId('view').textContent=e?JSON.stringify({{filters:{{year:s.year,date:s.date,region:s.region,segment:s.segment,carrier:s.carrier}},stage:s.stage,view,catalog_file:catalogFile}},null,2):''}}
+[run,year,date,region,segment,carrier].forEach(x=>x.addEventListener('change',()=>{{const s=selected();s.run=run.value;s.year=year.value;s.date=date.value;s.region=region.value;s.segment=segment.value;s.carrier=carrier.value;write(s)}}));document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{{const s=selected();s.stage=b.dataset.stage;write(s)}}));addEventListener('hashchange',refresh);refresh();</script></body></html>"""
 
 
 def render_baseline(run: Path) -> Path:
@@ -246,9 +343,5 @@ def render_baseline(run: Path) -> Path:
     report = build_report_data(run, config, state["run_id"], state["baseline_fingerprint"])
     _atomic_json(run / "report_data.json", report)
     _atomic_text(run / "report.md", _report_markdown(report))
-    dashboard_root.mkdir(parents=True, exist_ok=True)
-    with file_lock(dashboard_root / ".report_catalog.lockfile"):
-        catalog = _catalog(Path(config["output_dir"]), dashboard_root)
-        _atomic_json(dashboard_root / "report_catalog.json", catalog)
-        _atomic_text(dashboard_root / "index.html", _index(catalog))
-    return dashboard_root / "index.html"
+    register_report(run, dashboard_root)
+    return render_catalog(dashboard_root)
