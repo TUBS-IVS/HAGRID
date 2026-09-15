@@ -1,4 +1,3 @@
-"""Deterministic HAGRID demand baseline stages."""
 """Deterministic, auditable reference baseline."""
 
 __all__ = ["render_baseline", "run_baseline"]

@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import os
 from pathlib import Path
-import shutil
 import uuid
 
 import pandas as pd
 
 from hagrid_demand.common.provenance import resource_hash
+
+
+def _valid_report(value: object, run_id: str) -> bool:
+    if not isinstance(value, dict) or value.get("run_id") != run_id or value.get("status") != "complete_reference":
+        return False
+    if type(value.get("reference_year")) is not int or value["reference_year"] != 2021:
+        return False
+    if type(value.get("operating_days")) is not int or value["operating_days"] <= 0:
+        return False
+    if not isinstance(value.get("regional_annual"), (int, float)) or not math.isfinite(value["regional_annual"]):
+        return False
+    return isinstance(value.get("postal"), list) and isinstance(value.get("excluded_quantities"), dict) and isinstance(value.get("b2b_adjustment"), dict) and isinstance(value.get("remaining_potentials"), dict)
 
 
 def _write_json(path: Path, value: dict) -> None:
@@ -24,6 +36,12 @@ def _write_text(path: Path, value: str) -> None:
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     temporary.write_text(value, encoding="utf-8")
     os.replace(temporary, path)
+
+
+def _restore(source: Path, target: Path) -> None:
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(source.read_bytes())
+    os.replace(temporary, target)
 
 
 def _report_data(run: Path) -> dict:
@@ -86,10 +104,10 @@ def render_baseline(run: Path) -> Path:
             cached = run / "report" / "report_data.json"
             if not cached.is_file() or expected != resource_hash(cached):
                 raise ValueError("baseline report artifact hash mismatch")
-            shutil.copy2(cached, public)
+            _restore(cached, public)
             markdown = run / "report" / "report.md"
             if markdown.is_file():
-                shutil.copy2(markdown, run / "report.md")
+                _restore(markdown, run / "report.md")
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("baseline run has incomplete stage manifest") from exc
     config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
@@ -108,7 +126,7 @@ def render_baseline(run: Path) -> Path:
                 candidate_manifest = json.loads((candidate / "stage_manifest.json").read_text(encoding="utf-8"))
                 schema = {"run_id", "reference_year", "operating_days", "regional_annual", "postal", "excluded_quantities", "b2b_adjustment", "remaining_potentials", "status"}
                 expected = candidate_manifest.get("stages", {}).get("report", {}).get("run_artifacts", {}).get("report/report_data.json")
-                if candidate_state.get("status") == "complete_reference" and expected == resource_hash(data) and {"reference", "report"}.issubset(candidate_manifest.get("stages", {})) and schema.issubset(candidate_data) and candidate_data.get("status") == "complete_reference" and candidate_data.get("run_id") == candidate.name:
+                if candidate_state.get("status") == "complete_reference" and expected == resource_hash(data) and {"reference", "report"}.issubset(candidate_manifest.get("stages", {})) and schema.issubset(candidate_data) and _valid_report(candidate_data, candidate.name):
                     reports.append((candidate_data, data))
             except (OSError, TypeError, json.JSONDecodeError):
                 continue
