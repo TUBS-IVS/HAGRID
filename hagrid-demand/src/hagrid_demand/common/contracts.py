@@ -8,9 +8,22 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from hagrid_demand.common.provenance import canonical_digest
+
 
 ATOL = 1e-8
 RTOL = 1e-10
+
+
+def verified_scope_id(postal_codes) -> str:
+    """Hash the normalized verified postal support consumed by a reference run."""
+    try:
+        values = [str(value).strip() for value in postal_codes]
+    except TypeError as exc:
+        raise ValueError("verified postal support must be iterable") from exc
+    if not values or any(not value for value in values):
+        raise ValueError("verified postal support must contain non-empty postal codes")
+    return canonical_digest({"verified_postal_support": sorted(set(values))})
 
 
 @dataclass(frozen=True)

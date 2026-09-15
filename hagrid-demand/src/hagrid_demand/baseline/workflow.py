@@ -15,6 +15,7 @@ import geopandas as gpd
 import pandas as pd
 
 from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage_key
+from hagrid_demand.common.contracts import verified_scope_id
 from hagrid_demand.common.provenance import canonical_json, resource_hash
 from hagrid_demand.data import (build_business, build_residential, read_dhl, read_hermes,
                                 read_persons, read_plz)
@@ -223,6 +224,7 @@ def _write_reference(config: dict, source: Path, series_dir: Path, potentials_di
     profiles, b2b = _profiles(series_dir, config["reference_year"])
     source_sites = gpd.read_parquet(source / "sites.parquet")
     postal_scope = gpd.read_parquet(source / "postal_support.parquet")
+    scope_id = verified_scope_id(postal_scope.plz.astype(str).tolist())
     invalid = source_sites.loc[source_sites.recipient_type.eq("business") & source_sites.invalid_employees.astype(bool)
                                & source_sites.plz.isin(postal_scope.plz), "site_id"].astype(str).tolist()
     if invalid:
@@ -247,9 +249,10 @@ def _write_reference(config: dict, source: Path, series_dir: Path, potentials_di
     carrier_profiles = carrier_profiles[["year", "segment", "carrier", "market_share", "q_prior", "q_scale", "lower", "upper", "q_adjusted", "share"]]
     carrier_profiles.to_parquet(output / "reference_carrier_profiles.parquet", index=False)
     _json(output / "reference_reconciliation.json", solved["reconciliation"])
-    _json(output / "reference_regional_annual.json", {"year": config["reference_year"], "regional_annual": solved["regional_annual"]})
+    _json(output / "reference_regional_annual.json", {"year": config["reference_year"], "regional_annual": solved["regional_annual"],
+                                                         "scope_id": scope_id})
     checks = {**solved["checks"], "source_quality": solved["source_quality"], "implied_rates": solved["implied_rates"],
-              "regional_annual": solved["regional_annual"]}
+              "regional_annual": solved["regional_annual"], "scope_id": scope_id}
     _json(output / "reference_checks.json", checks)
     _json(output / "checks.json", checks)
 

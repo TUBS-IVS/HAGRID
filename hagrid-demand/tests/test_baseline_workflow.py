@@ -98,6 +98,31 @@ def test_projection_consumes_the_canonical_reference_artifacts(fixture_config):
     assert all(len(value) == 64 for value in result.checks["hashes"].values())
 
 
+def test_external_projection_uses_the_scope_id_from_canonical_reference_artifacts(fixture_config):
+    import pandas as pd
+
+    from hagrid_demand.baseline.projection import project_annual
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    run = run_baseline(fixture_config, "projection-external-scope")
+    annual = json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))
+    checks = json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))
+    assert annual["scope_id"] == checks["scope_id"]
+    reference = {"regional_annual": annual["regional_annual"], "scope_id": annual["scope_id"],
+                 "sites": pd.read_parquet(run / "reference_sites.parquet")}
+    series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
+    cfg = {"memory": {"fixed": 1}, "regional_level": {"mode": "external_annual_series", "series": [{
+        "year": 2021, "value": annual["regional_annual"], "unit": "packages/year", "provenance": "fixture",
+        "scope": annual["scope_id"],
+    }]}}
+
+    result = project_annual(reference, series, [2021], cfg)
+    assert result.checks["scope_id"] == annual["scope_id"]
+    cfg["regional_level"]["series"][0]["scope"] = "wrong"
+    with pytest.raises(ValueError, match="scope"):
+        project_annual(reference, series, [2021], cfg)
+
+
 def test_dashboard_root_uses_a_relative_link_to_each_preserved_run(fixture_config):
     from hagrid_demand.baseline.workflow import run_baseline
 
