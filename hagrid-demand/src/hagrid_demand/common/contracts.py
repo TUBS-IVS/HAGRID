@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -70,9 +70,10 @@ class SpatialPlan:
     """
 
     mode: str
-    target_fingerprints: dict[str, str]
-    parameter_fingerprint: str
-    status: str
+    calibration: dict = field(default_factory=dict)
+    target_fingerprints: dict[str, str] = field(default_factory=dict)
+    parameter_fingerprint: str = ""
+    status: str = "complete"
 
 
 def assert_balance(actual, expected) -> None:

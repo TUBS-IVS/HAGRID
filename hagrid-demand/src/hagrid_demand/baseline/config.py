@@ -16,7 +16,7 @@ _ALLOWED_KEYS = {
     "schema_version", "rng_version", "seed", "input_dir", "output_dir", "cache_root", "dashboard_root",
     "source_mode", "sources", "foundation_run", "weekly_source", "reference_year", "reference_operating_days",
     "output_scope", "dates", "years", "legacy_export", "persons_crs", "plz_crs", "target_crs",
-    "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions",
+    "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial",
 }
 _PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run"}
 _SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
@@ -60,6 +60,23 @@ def _validate_regional_level(value: Any) -> dict:
         raise ValueError("regional_level.mode must be national_series or external_annual_series")
     if mode == "external_annual_series" and not isinstance(value.get("series"), list):
         raise ValueError("external_annual_series requires a series list")
+    return value
+
+
+def _validate_spatial(value: Any) -> dict:
+    if value is None:
+        return {"mode": "dirichlet"}
+    if not isinstance(value, dict):
+        raise ValueError("spatial must be an object")
+    mode = value.get("mode", "dirichlet")
+    if mode not in {"dirichlet", "correlated"}:
+        raise ValueError("spatial.mode must be dirichlet or correlated")
+    if mode == "correlated":
+        for name in ("length_scale_m", "log_sigma", "rho"):
+            if name not in value or isinstance(value[name], bool) or not isinstance(value[name], (int, float)):
+                raise ValueError(f"correlated spatial requires numeric {name}")
+        if not value["length_scale_m"] > 0 or not value["log_sigma"] >= 0 or not 0 <= value["rho"] < 1:
+            raise ValueError("correlated spatial parameters are out of range")
     return value
 
 
@@ -115,6 +132,7 @@ def load_baseline_config(path: Path) -> dict:
             raise ValueError("dates must be a list")
         _validate_dates(config["dates"])
     config["regional_level"] = _validate_regional_level(config.get("regional_level"))
+    config["spatial"] = _validate_spatial(config.get("spatial"))
     for key in _PATH_KEYS & set(config):
         if config[key] is not None:
             if not isinstance(config[key], str):

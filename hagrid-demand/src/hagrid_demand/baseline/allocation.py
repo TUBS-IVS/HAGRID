@@ -13,6 +13,7 @@ from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage
 from hagrid_demand.common.contracts import SpatialPlan
 from hagrid_demand.common.provenance import canonical_digest
 from hagrid_demand.common.rng import RNG_VERSION, named_rng
+from hagrid_demand.baseline.spatial import spatial_field
 
 
 _SEGMENTS = ("private", "business")
@@ -344,12 +345,60 @@ def _complete_counts(annual: pd.DataFrame, calendar: dict[str, pd.DataFrame], sh
 
 
 def _validate_plan(plan: SpatialPlan, annual: pd.DataFrame, cfg: dict) -> None:
-    if not isinstance(plan, SpatialPlan) or plan.mode != "dirichlet" or plan.status != "complete":
-        raise ValueError("generate_days requires a complete dirichlet SpatialPlan")
+    if not isinstance(plan, SpatialPlan) or plan.mode not in {"dirichlet", "correlated"}:
+        raise ValueError("generate_days requires a SpatialPlan")
+    if plan.status == "mean_preservation_unresolved":
+        raise ValueError("generate_days blocks mean_preservation_unresolved correlated SpatialPlan")
+    if plan.status != "complete":
+        raise ValueError("generate_days requires a complete SpatialPlan")
     if plan.target_fingerprints != _target_fingerprints(annual):
         raise ValueError("SpatialPlan target fingerprints do not match annual inputs")
     if plan.parameter_fingerprint != canonical_digest({"spatial": _spatial_parameters(cfg)}):
         raise ValueError("SpatialPlan parameter fingerprint does not match configuration")
+    if plan.mode == "correlated":
+        expected = set(_target_fingerprints(annual))
+        if set(plan.calibration) != expected:
+            raise ValueError("correlated SpatialPlan lacks a calibration for annual targets")
+        if any(entry.get("status") == "mean_preservation_unresolved" for entry in plan.calibration.values()):
+            raise ValueError("generate_days blocks mean_preservation_unresolved calibration")
+
+
+def _correlated_shares(sites: pd.DataFrame, item: dict, plan: SpatialPlan, cfg: dict, *, year: int,
+                       segment: str, outer_id: int, inner_id: int, date: pd.Timestamp,
+                       coupling_id: str | None, checkpoint_dir: Path) -> np.ndarray:
+    """Apply a verified field only to located support; keep rest mass unspatialized."""
+    entry = plan.calibration[f"{year}:{segment}"]
+    weights = item["site_weights"]
+    result = np.zeros(len(sites), dtype=float)
+    localized_ids = [str(value) for value in entry.get("site_ids", [])]
+    localized_set = set(localized_ids)
+    located_mask = sites.site_id.astype(str).isin(localized_set).to_numpy()
+    if localized_ids:
+        position = {str(site): index for index, site in enumerate(sites.site_id)}
+        if any(site not in position for site in localized_ids):
+            raise ValueError("correlated calibration site IDs do not match annual inputs")
+        field = spatial_field(date.date().isoformat(), np.asarray(localized_ids, dtype=object),
+                              np.asarray(entry["xy"], dtype=float), entry["parameters"],
+                              {"seed": int(cfg["seed"]), "year": year, "outer_id": outer_id,
+                               "inner_id": coupling_id if coupling_id is not None else inner_id,
+                               "segment": segment, "date": date.date().isoformat(), "channel": "correlated-spatial",
+                               "checkpoint_dir": str(checkpoint_dir)})
+        logits = np.asarray(entry["log_base"], dtype=float) + float(entry["parameters"]["log_sigma"]) * field
+        local = np.exp(logits - logits.max())
+        local /= local.sum()
+        local_mass = float(entry.get("localized_share", 1. - entry.get("unlocated_share", 0.)))
+        for site, share in zip(localized_ids, local, strict=True):
+            result[position[site]] = local_mass * share
+    rest = ~located_mask
+    rest_mass = float(entry.get("unlocated_share", 0.))
+    if rest_mass > 0:
+        support = weights[rest]
+        if support.sum() <= 0:
+            raise ValueError("correlated plan declares unlocated mass without annual support")
+        result[rest] = rest_mass * support / support.sum()
+    if not np.isclose(result.sum(), 1., atol=1e-12, rtol=1e-12):
+        raise ValueError("correlated spatial shares do not conserve segment support")
+    return result
 
 
 def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.DataFrame, cfg: dict,
@@ -430,11 +479,17 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
                 carriers = item["carriers"]
                 carrier_share = item["carrier_share"]
                 daily_count = int(item["counts"].at[timestamp, "count"])
-                share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
-                                      inner_id=coupling_id if coupling_id is not None else inner_id,
-                                      segment=segment, date=timestamp.date().isoformat(), channel="spatial-dirichlet")
-                shares = spatial_dirichlet(item["site_weights"], sites.plz.to_numpy(), sites.site_id.to_numpy(),
-                                           _concentration(spatial, "between", segment), _concentration(spatial, "within", segment), share_rng)
+                if spatial_plan.mode == "dirichlet":
+                    share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
+                                          inner_id=coupling_id if coupling_id is not None else inner_id,
+                                          segment=segment, date=timestamp.date().isoformat(), channel="spatial-dirichlet")
+                    shares = spatial_dirichlet(item["site_weights"], sites.plz.to_numpy(), sites.site_id.to_numpy(),
+                                               _concentration(spatial, "between", segment), _concentration(spatial, "within", segment), share_rng)
+                else:
+                    shares = _correlated_shares(sites, item, spatial_plan, cfg, year=year, segment=segment,
+                                                outer_id=outer_id, inner_id=inner_id, date=timestamp,
+                                                coupling_id=coupling_id,
+                                                checkpoint_dir=Path(cache_dir) / "spatial_field_checkpoints")
                 allocation_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
                                            inner_id=coupling_id if coupling_id is not None else inner_id,
                                            segment=segment, date=timestamp.date().isoformat(), channel="site-counts")
