@@ -19,34 +19,93 @@ def _array(value, name):
 
 def _bounded_quadratic_projection(m, prior, b, lower, upper, scale):
     """Solve the clipped monotone Lagrange equation for the exact bounded optimum."""
-    relative_scale = scale / scale.max()
-    coefficient = m * relative_scale ** 2
-    movable = coefficient > 0
     fixed = np.clip(prior, lower, upper)
+    fixed_balance = float(m @ fixed)
+    if fixed_balance == b:
+        return fixed
+
+    positive = m > 0
+    feasible_low, feasible_high = float(m @ lower), float(m @ upper)
+    if b == feasible_low:
+        result = fixed.copy(); result[positive] = lower[positive]
+        return result
+    if b == feasible_high:
+        result = fixed.copy(); result[positive] = upper[positive]
+        return result
+
+    # The KKT multiplier can itself be outside float range when scale**2
+    # underflows.  Store log(m * scale**2) and evaluate lambda*coefficient
+    # from its signed log magnitude instead of materialising either factor.
+    log_coefficient = np.full(len(m), -np.inf)
+    log_coefficient[positive] = np.log(m[positive]) + 2. * np.log(scale[positive])
+    direction = 1. if fixed_balance > b else -1.
+    distance_to_bound = prior - lower if direction > 0 else upper - prior
+    movable = positive & (distance_to_bound > 0)
     if not movable.any():
-        if np.isclose(float(m @ fixed), b, atol=_ATOL, rtol=_RTOL):
-            return fixed
-        raise ValueError("carrier scales underflowed; bounded reconciliation is numerically unsolvable")
-    breakpoints = np.concatenate(((prior[movable] - upper[movable]) / coefficient[movable],
-                                  (prior[movable] - lower[movable]) / coefficient[movable]))
-    if not np.isfinite(breakpoints).all():
-        raise ValueError("carrier scales underflowed; finite Lagrange bounds are unavailable")
-
-    def residual(multiplier):
-        candidate = np.clip(prior - multiplier * coefficient, lower, upper)
-        return float(m @ candidate - b)
-
-    low, high = float(breakpoints.min()), float(breakpoints.max())
-    low_residual, high_residual = residual(low), residual(high)
-    if low_residual < -_ATOL or high_residual > _ATOL:
         raise ValueError("carrier scales leave the requested balance on an unreachable plateau")
-    if abs(low_residual) <= _ATOL:
-        multiplier = low
-    elif abs(high_residual) <= _ATOL:
-        multiplier = high
+    breakpoints = np.log(distance_to_bound[movable]) - log_coefficient[movable]
+
+    log_max = np.log(np.finfo(float).max)
+    log_min = np.log(np.nextafter(0., 1.))
+
+    def candidate(log_magnitude):
+        log_product = log_magnitude + log_coefficient
+        magnitude = np.zeros(len(m), dtype=float)
+        overflowing = log_product >= log_max
+        representable = (log_product > log_min) & ~overflowing
+        magnitude[overflowing] = np.inf
+        magnitude[representable] = np.exp(log_product[representable])
+        with np.errstate(over="ignore", invalid="ignore"):
+            return np.clip(prior - direction * magnitude, lower, upper)
+
+    def residual(log_magnitude):
+        return float(m @ candidate(log_magnitude) - b)
+
+    def enforce_balance(result):
+        """Remove log-space rounding from one interior coordinate exactly."""
+        interior = positive & (result > lower) & (result < upper)
+        for position in sorted(np.flatnonzero(interior), key=lambda index: (-m[index], index)):
+            adjusted = result.copy()
+            adjusted[position] = (b - float(m @ adjusted) + m[position] * adjusted[position]) / m[position]
+            if lower[position] <= adjusted[position] <= upper[position]:
+                return adjusted
+        return result
+
+    # Keep exact signs as the root criterion.  In particular, an endpoint
+    # residual of 1e-9 must not be treated as an exact zero.
+    def crossed(value):
+        return value <= 0. if direction > 0 else value >= 0.
+
+    low = float(breakpoints.min() - 2.)
+    low_residual = residual(low)
+    for _ in range(64):
+        if not crossed(low_residual):
+            break
+        low -= 8.
+        low_residual = residual(low)
     else:
-        multiplier = brentq(residual, low, high, xtol=1e-14)
-    return np.clip(prior - multiplier * coefficient, lower, upper)
+        raise ValueError("carrier scales leave the requested balance on an unreachable plateau")
+
+    high = float(breakpoints.max() + 2.)
+    high_residual = residual(high)
+    for _ in range(64):
+        if crossed(high_residual):
+            break
+        high += 8.
+        high_residual = residual(high)
+    else:
+        raise ValueError("carrier scales leave the requested balance on an unreachable plateau")
+
+    for _ in range(160):
+        middle = (low + high) / 2.
+        middle_residual = residual(middle)
+        if middle_residual == 0.:
+            return enforce_balance(candidate(middle))
+        if crossed(middle_residual):
+            high = middle
+        else:
+            low = middle
+    return enforce_balance(candidate((low + high) / 2.))
 
 
 def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray,
@@ -61,22 +120,35 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
     if not np.isfinite(b) or not 0 <= b <= 1 or (lower > upper).any() or (lower < 0).any() or (upper > 1).any() or (scale <= 0).any():
         raise ValueError("invalid carrier bounds, scales, or B2B target")
     feasible_low, feasible_high = float(m @ lower), float(m @ upper)
-    if b < feasible_low - _ATOL or b > feasible_high + _ATOL:
+    if b < feasible_low or b > feasible_high:
         raise ValueError(f"infeasible carrier bounds: reachable [{feasible_low}, {feasible_high}], target {b}")
     requested_b = float(b)
-    if b < feasible_low:
-        b = feasible_low
-    elif b > feasible_high:
-        b = feasible_high
-    target_adjustment = float(b - requested_b)
+    target_adjustment = 0.
     positive = m > 0
-    normalized_scale = scale / scale.max()
+    log_scale = np.log(scale)
+    conditioning_log_scale = log_scale - float(log_scale.max())
 
-    def scaled_objective(candidate, *, cap=False):
-        ratios = np.abs(candidate - prior) / normalized_scale
-        if not np.isfinite(ratios).all() or (not cap and np.any(ratios > 1e140)):
-            return None
-        return float(np.square(np.minimum(ratios, 1e140)).sum())
+    def objective_value(candidate, log_divisor):
+        distance = np.abs(candidate - prior)
+        nonzero = distance > 0
+        if not nonzero.any():
+            return 0., "finite", None
+        logs = 2. * (np.log(distance[nonzero]) - log_divisor[nonzero])
+        maximum = float(logs.max())
+        log_total = maximum + float(np.log(np.exp(logs - maximum).sum()))
+        if log_total > np.log(np.finfo(float).max):
+            return None, "overflow_log_retained", log_total
+        return float(np.exp(log_total)), "finite", log_total
+
+    def conditioning_objective(candidate):
+        distance = np.abs(candidate - prior)
+        nonzero = distance > 0
+        if not nonzero.any():
+            return 0.
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+            log_ratios = np.log(distance[nonzero]) - conditioning_log_scale[nonzero]
+            capped_ratios = np.exp(np.minimum(log_ratios, np.log(1e140)))
+            return float(np.square(capped_ratios).sum())
 
     solver = {"success": True, "message": "closed-form boundary case"}
     if b == 0:
@@ -88,7 +160,7 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
             raise ValueError("infeasible carrier bounds for b=1")
         fitted = np.clip(prior, lower, upper); fitted[positive] = 1.
     else:
-        objective = lambda candidate: scaled_objective(candidate, cap=True)
+        objective = conditioning_objective
         result = minimize(objective, np.clip(prior, lower, upper), method="SLSQP", bounds=list(zip(lower, upper)),
                           constraints=LinearConstraint(m.reshape(1, -1), b, b),
                           options={"ftol": 1e-13, "maxiter": 1000})
@@ -109,8 +181,14 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
     for row, is_active in enumerate(active):
         if is_active and not np.isclose(conditional[row].sum(), 1., atol=_ATOL, rtol=_RTOL):
             raise ValueError("conditional carrier profile is not balanced")
+    objective, objective_status, log_objective = objective_value(fitted, log_scale)
+    conditioning, conditioning_status, log_conditioning = objective_value(fitted, conditioning_log_scale)
     return {"q": fitted, "conditional": conditional,
-            "diagnostics": {"objective": scaled_objective(fitted),
+            "diagnostics": {"objective": objective, "objective_status": objective_status,
+                            "log_objective": log_objective,
+                            "conditioning_objective": conditioning,
+                            "conditioning_objective_status": conditioning_status,
+                            "log_conditioning_objective": log_conditioning,
                             "market_b2b": balance, "feasible_range": [feasible_low, feasible_high],
                             "target_requested": requested_b, "target_adjustment": target_adjustment,
                             "solver": solver}}
@@ -265,6 +343,8 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
         log_k = float(eta)
         if eta > np.log(np.finfo(float).max):
             k, k_status = None, "overflow_log_k_retained"
+        elif eta < np.log(np.nextafter(0., 1.)):
+            k, k_status = None, "underflow_log_k_retained"
         else:
             k, k_status = float(np.exp(eta)), "finite"
         local_b, _, _ = totals(eta)

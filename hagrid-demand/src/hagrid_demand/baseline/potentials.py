@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+import json
 import unicodedata
 import numpy as np
 import pandas as pd
@@ -11,6 +12,9 @@ from scipy.optimize import nnls
 _HISTORICAL_Q75 = (8.1078087809025286e-07, .15205915924489793, .89862556511587188)
 _SEGMENTS = {"private": "private", "household": "private", "person": "private",
              "business": "business", "company": "business", "firm": "business"}
+_GROUP_EXACT_COMPONENT_LIMIT = 16
+_GROUP_EXACT_STATE_BUDGET = 50_000
+_GROUP_EXACT_SUBSET_BUDGET = 100_000
 
 
 def _segment(value: object) -> str:
@@ -271,6 +275,8 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
     if left is None:
         raise ValueError("edges require left/right or source/target columns")
     index = units.set_index("unit_id")
+    persons_by_unit = index.persons.to_dict()
+    companies_by_unit = index.companies.to_dict()
     adjacency = {unit: set() for unit in index.index}
     for a, b in edges[[left, right]].itertuples(index=False):
         if a not in adjacency or b not in adjacency:
@@ -288,30 +294,104 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
                 if neighbour not in seen:
                     seen.add(neighbour); queue.append(neighbour)
         def group_support(group):
-            persons_total = float(index.loc[list(group), "persons"].sum())
-            companies_total = float(index.loc[list(group), "companies"].sum())
+            ordered = sorted(group, key=str)
+            persons_total = float(sum(persons_by_unit[unit] for unit in ordered))
+            companies_total = float(sum(companies_by_unit[unit] for unit in ordered))
             if not np.isfinite([persons_total, companies_total]).all():
                 raise ValueError("aggregated grouping support must be finite")
             return persons_total, companies_total
 
-        remaining = set(component)
-        while remaining:
-            group_seed = min(remaining, key=str)
-            group, queue = [], deque([group_seed]); queued = {group_seed}
-            while queue and len(group) < max_units:
-                unit = queue.popleft()
-                if unit not in remaining:
-                    continue
-                remaining.remove(unit); group.append(unit)
-                for neighbour in sorted(adjacency[unit], key=str):
-                    if neighbour in remaining and neighbour not in queued:
-                        queued.add(neighbour); queue.append(neighbour)
-                persons_total, companies_total = group_support(group)
-                if persons_total >= min_persons and companies_total >= min_companies:
-                    queue.clear()
-            total_persons, total_companies = group_support(group)
-            status = "resolved" if total_persons >= min_persons and total_companies >= min_companies else "unresolved_residual_support"
-            group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
+        def supported(group):
+            persons_total, companies_total = group_support(group)
+            return persons_total >= min_persons and companies_total >= min_companies
+
+        def fast_partition():
+            remaining, groups = set(component), []
+            while remaining:
+                group_seed = min(remaining, key=str)
+                group, queue = [], deque([group_seed]); queued = {group_seed}
+                while queue and len(group) < max_units:
+                    unit = queue.popleft()
+                    if unit not in remaining:
+                        continue
+                    remaining.remove(unit); group.append(unit)
+                    for neighbour in sorted(adjacency[unit], key=str):
+                        if neighbour in remaining and neighbour not in queued:
+                            queued.add(neighbour); queue.append(neighbour)
+                    if supported(group):
+                        queue.clear()
+                groups.append(frozenset(group))
+            return groups
+
+        class SearchBudgetExceeded(Exception):
+            pass
+
+        def exact_partition():
+            """Find a supported connected partition, with explicit bounded search."""
+            states, subsets, memo = 0, 0, {}
+
+            def connected_supported_groups(remaining, group_seed):
+                nonlocal subsets
+                initial = frozenset((group_seed,))
+                found, pending, candidates = {initial}, [initial], []
+                while pending:
+                    group = pending.pop()
+                    if supported(group):
+                        candidates.append(group)
+                    if len(group) == max_units:
+                        continue
+                    neighbours = set().union(*(adjacency[unit] for unit in group))
+                    for neighbour in sorted(neighbours.intersection(remaining).difference(group), key=str):
+                        expanded = group | {neighbour}
+                        if expanded not in found:
+                            subsets += 1
+                            if subsets > _GROUP_EXACT_SUBSET_BUDGET:
+                                raise SearchBudgetExceeded
+                            found.add(expanded); pending.append(expanded)
+                return sorted(candidates, key=lambda group: (len(group), tuple(sorted(group, key=str))))
+
+            def search(remaining):
+                nonlocal states
+                if not remaining:
+                    return ()
+                if remaining in memo:
+                    return memo[remaining]
+                states += 1
+                if states > _GROUP_EXACT_STATE_BUDGET:
+                    raise SearchBudgetExceeded
+                group_seed = min(remaining, key=str)
+                for group in connected_supported_groups(remaining, group_seed):
+                    rest = search(remaining.difference(group))
+                    if rest is not None:
+                        memo[remaining] = (group,) + rest
+                        return memo[remaining]
+                memo[remaining] = None
+                return None
+
+            return search(frozenset(component))
+
+        groups = fast_partition()
+        statuses = ["resolved" if supported(group) else "unresolved_residual_support" for group in groups]
+        if any(status != "resolved" for status in statuses):
+            component_persons, component_companies = group_support(component)
+            if component_persons < min_persons or component_companies < min_companies:
+                statuses = ["resolved" if supported(group) else "unresolved_structural_support" for group in groups]
+            elif len(component) > _GROUP_EXACT_COMPONENT_LIMIT:
+                statuses = ["resolved" if supported(group) else "unresolved_search_budget" for group in groups]
+            else:
+                try:
+                    repaired = exact_partition()
+                except SearchBudgetExceeded:
+                    statuses = ["resolved" if supported(group) else "unresolved_search_budget" for group in groups]
+                else:
+                    if repaired is not None:
+                        groups, statuses = list(repaired), ["resolved"] * len(repaired)
+
+        for group, status in zip(groups, statuses, strict=True):
+            group_seed = min(group, key=str)
+            plz = index.at[group_seed, "plz"]
+            group_id = json.dumps(("hagrid_group_v1", type(plz).__module__, type(plz).__qualname__,
+                                   str(plz), group_seed), ensure_ascii=False, separators=(",", ":"))
             records.extend({"unit_id": unit, "group_id": group_id, "group_status": status}
-                           for unit in group)
+                           for unit in sorted(group, key=str))
     return units.merge(pd.DataFrame(records), on="unit_id", how="left", validate="one_to_one")
