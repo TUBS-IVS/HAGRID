@@ -66,7 +66,7 @@ def _market(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
         total = sum(values.values())
         for provider, value in values.items():
             provenance = amazon["points"][-1] if provider == "Amazon" else anchor["shares"][provider]
-            rows.append({"year": year, "provider": provider, "share": value / total,
+            rows.append({"year": year, "carrier": provider, "market_share": value / total,
                          "status": "derived_projection", "unit": "share",
                          "source_status": provenance["status"], "source_unit": provenance["unit"],
                          "source_reference": provenance["source"],
@@ -171,21 +171,61 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
-def _priors(inputs: dict[str, Any]) -> pd.DataFrame:
+def _priors(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
+    """Materialize the public, year-keyed provider-prior contract.
+
+    The packaged priors are currently constant assumptions, but publishing a row
+    per requested year prevents consumers from accidentally applying an
+    undated value to a different market series year.
+    """
     rows = []
-    for provider, value in inputs["provider_priors"]["providers"].items():
-        rows.append({"provider": provider, "lower": 0.0, "upper": 1.0, "initial": value["initial"],
-                     "scale": value["scale"], "b2b_preference": value["b2b_preference"],
-                     "status": "assumption", "unit": "share", "source": value["source"],
-                     "notebook_cell": value["notebook_cell"], "legacy_bounds": value["legacy_bounds"]})
+    for year in years:
+        for carrier, value in inputs["provider_priors"]["providers"].items():
+            rows.append({"year": year, "carrier": carrier, "lower": 0.0, "upper": 1.0,
+                         "q_prior": value["initial"], "q_scale": value["scale"],
+                         "b2b_preference": value["b2b_preference"], "status": "assumption", "unit": "share",
+                         "source": value["source"], "notebook_cell": value["notebook_cell"],
+                         "legacy_bounds": value["legacy_bounds"]})
     return pd.DataFrame(rows)
 
 
-def build_series(inputs: dict, years: list[int], *, volume_fit_policy: str) -> dict:
+def _weekly(weekly_profile: pd.DataFrame | None) -> pd.DataFrame:
+    """Return a normalised 52-week consumer table.
+
+    A standalone series build has no raw workbook dependency.  It deliberately
+    exposes a neutral, clearly labelled profile in that case; the workflow
+    always supplies the source-derived profile from the sources stage.
+    """
+    if weekly_profile is None:
+        return pd.DataFrame({"week": list(range(1, 53)), "weight": np.ones(52),
+                             "status": "neutral_unsupplied", "unit": "relative_weekly_factor"})
+    if not isinstance(weekly_profile, pd.DataFrame) or "week" not in weekly_profile:
+        raise ValueError("weekly_profile requires week and weight or relative_volume")
+    column = "weight" if "weight" in weekly_profile else "relative_volume" if "relative_volume" in weekly_profile else None
+    if column is None:
+        raise ValueError("weekly_profile requires week and weight or relative_volume")
+    result = weekly_profile[["week", column]].copy().rename(columns={column: "weight"})
+    result["week"] = pd.to_numeric(result.week, errors="coerce")
+    result["weight"] = pd.to_numeric(result.weight, errors="coerce")
+    if (result.week.isna().any() or result.weight.isna().any() or not np.isfinite(result.weight).all()
+            or (result.weight <= 0).any()):
+        raise ValueError("weekly_profile must contain finite positive weights")
+    result["week"] = result.week.astype(int)
+    if result.week.duplicated().any() or result.week.tolist() != list(range(1, 53)):
+        raise ValueError("weekly_profile must contain weeks 1 through 52 once")
+    result["weight"] = result.weight / result.weight.mean()
+    result["status"] = "derived_from_raw_source"
+    result["unit"] = "relative_weekly_factor"
+    return result
+
+
+def build_series(inputs: dict, years: list[int], *, volume_fit_policy: str,
+                 weekly_profile: pd.DataFrame | None = None) -> dict:
     """Build national baseline inputs without consuming historical notebook exports."""
     inputs = validate_series_inputs(inputs)
     years = sorted({int(year) for year in years})
     if not years:
         raise ValueError("years must contain at least one year")
     return {"market": _market(inputs, years), "b2b": _b2b(inputs, years),
-            "volume": _volume(inputs, years, volume_fit_policy), "provider_priors": _priors(inputs)}
+            "volume": _volume(inputs, years, volume_fit_policy), "providers": _priors(inputs, years),
+            "weekly": _weekly(weekly_profile)}

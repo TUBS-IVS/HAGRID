@@ -37,13 +37,45 @@ def _semantic(value: Any, *, resource_tree: bool = False) -> Any:
     return value
 
 
-def stage_key(name: str, dependencies: dict, config: dict, code_hashes: dict) -> str:
+def _snapshot_dependencies(dependencies: dict) -> dict:
+    """Freeze the semantic content hashes consumed by one stage invocation.
+
+    A caller may pass this one object to both :func:`stage_key` and
+    :func:`resolve_stage`; that makes the cache key and the published manifest
+    describe the exact same dependency bytes.
+    """
+    if not isinstance(dependencies, dict):
+        raise ValueError("Stage dependencies must be a mapping")
+    snapshot = _semantic(dependencies)
+    if not isinstance(snapshot, dict):  # defensive: _semantic preserves mappings
+        raise ValueError("Stage dependency snapshot must be a mapping")
+    canonical_digest({"dependencies": snapshot})
+    return snapshot
+
+
+def dependency_snapshot(dependencies: dict) -> dict:
+    """Public name for the immutable semantic dependency snapshot."""
+    return _snapshot_dependencies(dependencies)
+
+
+def _use_dependency_snapshot(dependencies: dict, snapshot: dict | None) -> dict:
+    if snapshot is None:
+        return _snapshot_dependencies(dependencies)
+    if not isinstance(snapshot, dict):
+        raise ValueError("dependency_snapshot must be a mapping")
+    canonical_digest({"dependencies": snapshot})
+    return snapshot
+
+
+def stage_key(name: str, dependencies: dict, config: dict, code_hashes: dict, *,
+              dependency_snapshot: dict | None = None) -> str:
     """Fingerprint every supplied input, resource tree, config value, and runtime version."""
     if not isinstance(name, str) or not name:
         raise ValueError("stage name must be a non-empty string")
+    snapshot = _use_dependency_snapshot(dependencies, dependency_snapshot)
     return canonical_digest({
         "stage": name,
-        "dependencies": _semantic(dependencies),
+        "dependencies": snapshot,
         "config": _semantic(config),
         "code": _semantic(code_hashes, resource_tree=True),
         "schema_version": config.get("schema_version", SCHEMA_VERSION),
@@ -70,12 +102,12 @@ def _atomic_json(path: Path, value: dict) -> None:
     os.replace(temporary, path)
 
 
-def _complete_manifest(path: Path, *, stage_name: str, fingerprint: str, dependencies: dict) -> dict:
+def _complete_manifest(path: Path, *, stage_name: str, fingerprint: str, dependency_snapshot: dict) -> dict:
     return {
         "status": "complete",
         "stage_name": stage_name,
         "fingerprint": fingerprint,
-        "dependencies": _semantic(dependencies),
+        "dependencies": dependency_snapshot,
         "schema_version": SCHEMA_VERSION,
         "rng_version": RNG_VERSION,
         "runtime": {"numpy": importlib.metadata.version("numpy"), "scipy": importlib.metadata.version("scipy")},
@@ -113,7 +145,7 @@ def _valid_manifest_shape(manifest: Any) -> bool:
     return _valid_artifact_map(manifest.get("artifacts"))
 
 
-def _is_valid_stage(path: Path, *, stage_name: str, fingerprint: str, dependencies: dict) -> bool:
+def _is_valid_stage(path: Path, *, stage_name: str, fingerprint: str, dependency_snapshot: dict) -> bool:
     manifest_path = path / _MANIFEST
     if not (path.is_dir() and manifest_path.is_file()):
         return False
@@ -128,7 +160,7 @@ def _is_valid_stage(path: Path, *, stage_name: str, fingerprint: str, dependenci
             manifest.get("status") == "complete"
             and manifest.get("stage_name") == stage_name
             and manifest.get("fingerprint") == fingerprint
-            and manifest.get("dependencies") == _semantic(dependencies)
+            and manifest.get("dependencies") == dependency_snapshot
             and type(manifest.get("schema_version")) is int
             and manifest.get("schema_version") == SCHEMA_VERSION
             and type(manifest.get("rng_version")) is int
@@ -161,7 +193,7 @@ def publish_stage(path: Path, write: Callable[[Path], None], validate: Callable[
 
 
 def _record_run_stage(run_dir: Path, *, stage_name: str, fingerprint: str, cache_path: Path,
-                      dependencies: dict, artifacts: dict[str, str], run_artifacts: dict[str, str]) -> None:
+                      dependency_snapshot: dict, artifacts: dict[str, str], run_artifacts: dict[str, str]) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = run_dir / _MANIFEST
     try:
@@ -173,7 +205,7 @@ def _record_run_stage(run_dir: Path, *, stage_name: str, fingerprint: str, cache
     manifest.setdefault("stages", {})[stage_name] = {
         "fingerprint": fingerprint,
         "cache_path": str(cache_path),
-        "dependencies": _semantic(dependencies),
+        "dependencies": dependency_snapshot,
         "artifacts": artifacts,
         "run_artifacts": run_artifacts,
     }
@@ -220,13 +252,13 @@ def _unlock_os_lock(stream) -> None:
 
 
 @contextmanager
-def _fingerprint_lock(cache_path: Path):
-    """Claim a fingerprint with an OS lock that is released if its owner exits."""
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
+def file_lock(lock_path: Path):
+    """Take an OS-backed file lock suitable for shared cache or dashboard writes."""
+    lock_path = Path(lock_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     # Keep the file after release: deleting a locked pathname could let another
     # process create and lock a different inode while the first owner is live.
-    lock_path = cache_path.with_name(f".{cache_path.name}.lockfile")
-    with _local_lock(cache_path):
+    with _local_lock(lock_path):
         with lock_path.open("a+b") as stream:
             if lock_path.stat().st_size == 0:
                 stream.write(b"\0")
@@ -237,6 +269,13 @@ def _fingerprint_lock(cache_path: Path):
                 yield
             finally:
                 _unlock_os_lock(stream)
+
+
+@contextmanager
+def _fingerprint_lock(cache_path: Path):
+    """Claim a stage fingerprint with an OS lock that is released if its owner exits."""
+    with file_lock(Path(cache_path).with_name(f".{Path(cache_path).name}.lockfile")):
+        yield
 
 
 def _discard_invalid_stage(cache_path: Path) -> None:
@@ -282,28 +321,34 @@ def _publish_run_artifacts(run_dir: Path, *, stage_name: str, cache_path: Path,
 
 
 def resolve_stage(run_dir: Path, stage_name: str, fingerprint: str, *, cache_root: Path,
-                  dependencies: dict, build: Callable[[Path], None], validate: Callable[[Path], None]) -> Path:
+                  dependencies: dict, build: Callable[[Path], None], validate: Callable[[Path], None],
+                  dependency_snapshot: dict | None = None) -> Path:
     """Reuse only a complete verified cache entry; otherwise build and publish one."""
+    snapshot = _use_dependency_snapshot(dependencies, dependency_snapshot)
     cache_path = Path(cache_root) / stage_name / fingerprint
     with _fingerprint_lock(cache_path):
-        if not _is_valid_stage(cache_path, stage_name=stage_name, fingerprint=fingerprint, dependencies=dependencies):
+        if not _is_valid_stage(cache_path, stage_name=stage_name, fingerprint=fingerprint,
+                               dependency_snapshot=snapshot):
             _discard_invalid_stage(cache_path)
 
             def write(work: Path) -> None:
                 build(work)
                 validate(work)
+                if _snapshot_dependencies(dependencies) != snapshot:
+                    raise ValueError("dependencies changed during stage build; refusing publication")
                 _atomic_json(work / _MANIFEST, _complete_manifest(
-                    work, stage_name=stage_name, fingerprint=fingerprint, dependencies=dependencies
+                    work, stage_name=stage_name, fingerprint=fingerprint, dependency_snapshot=snapshot
                 ))
 
             publish_stage(cache_path, write, lambda work: _is_valid_stage(
-                work, stage_name=stage_name, fingerprint=fingerprint, dependencies=dependencies
+                work, stage_name=stage_name, fingerprint=fingerprint, dependency_snapshot=snapshot
             ))
-    if not _is_valid_stage(cache_path, stage_name=stage_name, fingerprint=fingerprint, dependencies=dependencies):
+    if not _is_valid_stage(cache_path, stage_name=stage_name, fingerprint=fingerprint,
+                           dependency_snapshot=snapshot):
         raise ValueError(f"Stage cache was not validly published: {stage_name}")
     manifest = json.loads((cache_path / _MANIFEST).read_text(encoding="utf-8"))
     run_artifacts = _publish_run_artifacts(Path(run_dir), stage_name=stage_name, cache_path=cache_path,
                                            artifacts=manifest["artifacts"])
     _record_run_stage(Path(run_dir), stage_name=stage_name, fingerprint=fingerprint, cache_path=cache_path,
-                      dependencies=dependencies, artifacts=manifest["artifacts"], run_artifacts=run_artifacts)
+                      dependency_snapshot=snapshot, artifacts=manifest["artifacts"], run_artifacts=run_artifacts)
     return cache_path

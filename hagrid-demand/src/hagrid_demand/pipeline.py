@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import re
 import subprocess
+import uuid
 
 import geopandas as gpd
 import pandas as pd
@@ -80,6 +82,44 @@ def source_manifest(cfg):
 
 def _counts(series):
     return {str(k): int(v) for k, v in series.value_counts(dropna=False).items()}
+
+
+def _atomic_json(path, value):
+    """Publish the foundation's consumer manifest only as one complete JSON file."""
+    path = Path(path)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _write_artifact_manifest(run, state):
+    """Certify the neutral tables which a baseline is allowed to consume."""
+    run = Path(run)
+    names = ("sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet",
+             "postal_support.parquet", "site_postal_candidates.parquet")
+    artifacts = {}
+    for name in names:
+        artifact = run / name
+        if not artifact.is_file():
+            raise ValueError(f"Foundation artifact is missing: {name}")
+        table = gpd.read_parquet(artifact) if name in {
+            "sites.parquet", "dhl_observations.parquet", "postal_support.parquet"
+        } else pd.read_parquet(artifact)
+        geometry = "geometry" in table.columns
+        artifacts[name] = {
+            "relative_path": name,
+            "sha256": digest(artifact),
+            "schema": table.columns.tolist(),
+            "crs": f"EPSG:{table.crs.to_epsg()}" if geometry and table.crs.to_epsg() is not None
+            else table.crs.to_wkt() if geometry else None,
+        }
+    _atomic_json(run / "artifact_manifest.json", {
+        "schema_version": 1,
+        "status": "complete",
+        "run_id": state["run_id"],
+        "run_status": state["status"],
+        "artifacts": artifacts,
+    })
 
 
 def run_foundation(config_path, run_id):
@@ -157,6 +197,10 @@ def run_foundation(config_path, run_id):
         completed("audit_observations")
         links, membership, status = candidate_links(sites, dhl, postal, cfg["max_street_distance_m"])
         links.to_parquet(run / "dhl_candidate_links.parquet", index=False)
+        # This is a spatial candidate, never independent PLZ evidence for an
+        # unresolved geometry.  The baseline consumer uses the label rather
+        # than silently upgrading it to a verified postal assignment.
+        membership["plz_evidence"] = "spatial_candidate_unverified"
         membership.to_parquet(run / "site_postal_candidates.parquet", index=False)
         status.to_parquet(run / "site_link_status.parquet", index=False)
         # Hermes links represent polygon membership candidates, not verified measurement coverage.
@@ -223,6 +267,7 @@ Standorte und Quellkennungen; das Run-Verzeichnis ist vom Git-Tracking ausgeschl
         state["status"] = "complete_with_calibration_blockers"
         state["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_json(run / "run.json", state)
+        _write_artifact_manifest(run, state)
         return run
     except Exception as exc:
         state["status"] = "failed"

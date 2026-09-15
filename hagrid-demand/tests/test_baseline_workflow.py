@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 
 import pytest
 
@@ -105,14 +106,12 @@ def test_resume_compares_persisted_source_fingerprint_even_after_early_failure(f
 @pytest.mark.parametrize("replacement", [None, "tampered markdown"])
 def test_renderer_restores_markdown_independently_when_its_public_copy_is_missing_or_tampered(
         fixture_config, replacement):
-    """A valid JSON report must not prevent repair of the sibling Markdown report."""
+    """The renderer rebuilds each public presentation artifact from frozen reference data."""
     from hagrid_demand.baseline.dashboard import render_baseline
     from hagrid_demand.baseline.workflow import run_baseline
-    from hagrid_demand.common.provenance import resource_hash
 
     run = run_baseline(fixture_config, f"markdown-{replacement is None}")
     public = run / "report.md"
-    stage_copy = run / "report" / "report.md"
     if replacement is None:
         public.unlink()
     else:
@@ -120,22 +119,21 @@ def test_renderer_restores_markdown_independently_when_its_public_copy_is_missin
 
     render_baseline(run)
 
-    manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
-    assert public.read_bytes() == stage_copy.read_bytes()
-    assert resource_hash(public) == manifest["stages"]["report"]["run_artifacts"]["report/report.md"]
-    assert (run / "report_data.json").read_bytes() == (run / "report" / "report_data.json").read_bytes()
+    state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert "in-scope Beobachtungen" in public.read_text(encoding="utf-8")
+    assert json.loads((run / "report_data.json").read_text(encoding="utf-8"))["baseline_fingerprint"] == state["baseline_fingerprint"]
 
 
-def test_renderer_rejects_a_tampered_markdown_stage_copy_even_when_the_public_copy_is_valid(fixture_config):
-    """A public artifact is only trustworthy when its preserved source still matches the manifest."""
+def test_renderer_ignores_a_tampered_nonsemantic_report_stage_copy_when_rebuilding_from_reference(fixture_config):
+    """A stale cached view cannot prevent deterministic regeneration from the frozen reference."""
     from hagrid_demand.baseline.dashboard import render_baseline
     from hagrid_demand.baseline.workflow import run_baseline
 
     run = run_baseline(fixture_config, "tampered-stage-markdown")
     (run / "report" / "report.md").write_text("tampered stage markdown", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="hash mismatch"):
-        render_baseline(run)
+    assert render_baseline(run).is_file()
+    assert "tampered stage markdown" not in (run / "report.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("malformed_manifest", [[], "not-a-manifest"])
@@ -209,3 +207,159 @@ def test_cli_baseline_run_prints_the_path_returned_by_the_custom_dashboard_rende
 
     assert main() == 0
     assert capsys.readouterr().out.strip().endswith(f"Baseline dashboard: {expected}")
+
+
+def test_reference_run_publishes_the_frozen_consumer_contract_and_dhl_identity(fixture_config):
+    """A reference run has all semantic artifacts, with DHL stored only at postal grain."""
+    import geopandas as gpd
+    import pandas as pd
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    run = run_baseline(fixture_config, "frozen-contract")
+    required = {
+        "reference_sites.parquet", "reference_geometry.parquet", "reference_postal.parquet",
+        "reference_carrier_profiles.parquet", "reference_reconciliation.json",
+        "reference_regional_annual.json", "reference_checks.json", "checks.json",
+    }
+    assert required.issubset({path.name for path in run.iterdir()})
+    sites = pd.read_parquet(run / "reference_sites.parquet")
+    geometry = gpd.read_parquet(run / "reference_geometry.parquet")
+    postal = pd.read_parquet(run / "reference_postal.parquet")
+    profiles = pd.read_parquet(run / "reference_carrier_profiles.parquet")
+    reconciliation = json.loads((run / "reference_reconciliation.json").read_text(encoding="utf-8"))
+    state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+
+    assert {"site_id", "plz", "segment", "population", "employees", "branch", "weight",
+            "historical_share", "structural_share", "reference_annual", "allocation_status"}.issubset(sites.columns)
+    assert geometry.columns.tolist() == ["site_id", "geometry"]
+    assert geometry.crs.to_epsg() == 25832
+    assert not postal.duplicated("plz").any()
+    assert postal.columns.tolist()[:7] == ["plz", "dhl_retained_mean", "reference_annual", "private_annual",
+                                            "business_annual", "b2b_share", "dhl_share"]
+    assert "dhl_retained_mean" not in sites.columns
+    assert {"year", "segment", "carrier", "market_share", "q_prior", "q_scale", "lower", "upper", "q_adjusted", "share"}.issubset(profiles.columns)
+    assert {"market", "providers", "adjusted_q", "conditional", "diagnostics", "reference_balance"}.issubset(reconciliation)
+    assert {"initial_endpoints", "expanded_endpoints", "reachable_range", "log_k", "status"}.issubset(
+        reconciliation["reference_balance"]
+    )
+    assert isinstance(state["baseline_fingerprint"], str) and len(state["baseline_fingerprint"]) == 64
+    assert {"structure", "geometry", "series", "scope"}.issubset(state["baseline_fingerprint_artifacts"])
+
+    dhl_market_share = profiles.loc[profiles.carrier.eq("DHL"), "market_share"].iloc[0]
+    expected = postal.dhl_retained_mean.sum() * state["config"]["reference_operating_days"] / dhl_market_share
+    assert state["regional_annual"] == pytest.approx(expected, rel=1e-10)
+
+
+def test_renderer_rejects_tampered_semantic_reference_artifact(fixture_config):
+    """A display refresh may not hide a changed frozen reference geometry."""
+    from hagrid_demand.baseline.dashboard import render_baseline
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    run = run_baseline(fixture_config, "tampered-reference")
+    (run / "reference_geometry.parquet").write_bytes(b"not parquet")
+    with pytest.raises(ValueError, match="baseline fingerprint|semantic reference"):
+        render_baseline(run)
+
+
+def test_workflow_excludes_out_of_scope_dhl_before_anchor_support_and_ledgers_it(fixture_config):
+    """DHL rows outside verified postal support cannot create an anchor or a missing-potential error."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import LineString
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    dhl_path = fixture_config.parent / "inputs" / "dhl.shp"
+    current = gpd.read_file(dhl_path)
+    outside = gpd.GeoDataFrame(
+        {"plz": ["99991", "99992", "99993"], "name": ["outside-positive", "outside-zero", "outside-large"],
+         "tagesschni": [7., 0., 1001.]},
+        geometry=[LineString([(200, 0), (200, 30)])] * 3, crs=current.crs,
+    )
+    gpd.GeoDataFrame(pd.concat([current, outside], ignore_index=True), geometry="geometry", crs=current.crs).to_file(dhl_path)
+
+    run = run_baseline(fixture_config, "scoped-dhl")
+    postal = pd.read_parquet(run / "reference_postal.parquet")
+    checks = json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))
+    assert set(postal.plz) == {"01000", "02000"}
+    ledger = checks["scope_ledger"]
+    assert ledger["out_of_scope_positive_rows"] == 2
+    assert ledger["out_of_scope_zero_rows"] == 1
+    assert ledger["out_of_scope_above_threshold_rows"] == 1
+
+
+def test_workflow_rejects_invalid_employees_for_business_inside_verified_postal_scope(fixture_config):
+    """The default company-location potential cannot silently erase a bad in-scope employee value."""
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    companies = fixture_config.parent / "inputs" / "companies.shp"
+    data = gpd.read_file(companies)
+    data.loc[0, "employees"] = -1
+    data.to_file(companies)
+    with pytest.raises(ValueError, match="invalid employees.*business"):
+        run_baseline(fixture_config, "invalid-business")
+
+
+def test_conflicted_geometry_is_not_presented_as_an_independently_known_postal_site(fixture_config):
+    """A polygon join may locate valid points, but it cannot certify a conflicted building's PLZ."""
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    persons = fixture_config.parent / "inputs" / "persons.csv"
+    persons.write_text(
+        "id,Building,Household,geometry\n"
+        "p1,A,h1,POINT (10 10)\n"
+        "p2,A,h1,POINT (40 40)\n"
+        "p3,B,h2,POINT (110 10)\n"
+        "p4,B,h2,POINT (110 10)\n"
+        "p5,C,h3,POINT (20 10)\n",
+        encoding="utf-8",
+    )
+    run = run_baseline(fixture_config, "conflicted-postal")
+    sites = gpd.read_parquet(run / "sources" / "sites.parquet")
+    conflicted = sites.loc[sites.location_status.eq("conflicting_building_coordinates")].iloc[0]
+    assert conflicted["allocation_status"] == "unlocated"
+    assert str(conflicted["plz"]) in {"<NA>", "nan", "None"}
+
+
+def test_dashboard_catalog_is_atomic_idempotent_and_exposes_stage_navigation_without_mutating_reference(fixture_config):
+    """Two report refreshes share one catalog and leave semantic demand artifacts byte-identical."""
+    from hagrid_demand.baseline.dashboard import render_baseline
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    first = run_baseline(fixture_config, "catalog-one")
+    second = run_baseline(fixture_config, "catalog-two")
+    before = {path.name: path.read_bytes() for path in first.glob("reference_*")}
+    errors = []
+
+    def refresh(run):
+        try:
+            render_baseline(run)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=refresh, args=(run,)) for run in (first, second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not errors and all(not thread.is_alive() for thread in threads)
+    assert before == {path.name: path.read_bytes() for path in first.glob("reference_*")}
+
+    root = first.parent / "dashboard"
+    catalog = json.loads((root / "report_catalog.json").read_text(encoding="utf-8"))
+    assert catalog["schema_version"] == 1
+    assert len(catalog["runs"]) == 2
+    entry = next(item for item in catalog["runs"].values() if item["run_id"] == "catalog-one")
+    assert entry["stages"]["regional_reference"] == "complete"
+    assert entry["stages"]["daily"] == "not_run"
+    assert set(entry["views"]) == {"reference", "market_b2b", "quality"}
+    assert entry["views"]["reference"]["regional_annual"] > 0
+    html = (root / "index.html").read_text(encoding="utf-8")
+    assert "report_catalog.json" in html
+    assert "data-quality" in html and "market-b2b" in html and "regional-reference" in html
+    assert "localStorage" in html and "stage=" in html

@@ -207,7 +207,7 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
                             "solver": solver}}
 
 
-def _profiles(profiles: dict, b: float) -> tuple[np.ndarray, list[str]]:
+def _profiles(profiles: dict, b: float) -> tuple[np.ndarray, list[str], int]:
     conditional = np.asarray(profiles.get("conditional"), dtype=float)
     if conditional.ndim != 2 or conditional.shape[0] != 2 or conditional.shape[1] < 1:
         raise ValueError("profiles requires a 2 by C conditional array")
@@ -216,13 +216,44 @@ def _profiles(profiles: dict, b: float) -> tuple[np.ndarray, list[str]]:
     for row, active in enumerate((b < 1, b > 0)):
         if active and not np.isclose(conditional[row].sum(), 1., atol=_ATOL, rtol=_RTOL):
             raise ValueError("active conditional profile must sum to one")
-    carriers = profiles.get("carriers") or ["DHL"] + [f"carrier_{index}" for index in range(1, conditional.shape[1])]
-    if len(carriers) != conditional.shape[1]:
+    carriers = profiles.get("carriers")
+    explicit_dhl_index = profiles.get("dhl_index")
+    if carriers is None:
+        # A one-carrier array is inherently unambiguous.  With multiple
+        # columns, inventing ``DHL`` at position zero would silently make a
+        # data-layout detail a business identity; require a declared index.
+        if conditional.shape[1] == 1 and explicit_dhl_index is None:
+            carriers = ["DHL"]
+        else:
+            if (isinstance(explicit_dhl_index, bool) or not isinstance(explicit_dhl_index, int)
+                    or not 0 <= explicit_dhl_index < conditional.shape[1]):
+                raise ValueError("multi-carrier profiles require carrier labels or dhl_index")
+            carriers = [f"carrier_{index}" for index in range(conditional.shape[1])]
+            carriers[explicit_dhl_index] = "DHL"
+    if not isinstance(carriers, (list, tuple)) or len(carriers) != conditional.shape[1]:
         raise ValueError("carrier labels do not match conditional profiles")
-    return conditional, list(carriers)
+    labels = []
+    normalized = []
+    for label in carriers:
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("carrier labels must be non-empty strings")
+        labels.append(label.strip())
+        normalized.append(label.strip().casefold())
+    if len(set(normalized)) != len(normalized):
+        if normalized.count("dhl") > 1:
+            raise ValueError("DHL carrier label is ambiguous after normalization")
+        raise ValueError("carrier labels must be unique after normalization")
+    dhl_indices = [index for index, label in enumerate(normalized) if label == "dhl"]
+    if len(dhl_indices) != 1:
+        raise ValueError("profiles must contain exactly one DHL carrier label")
+    if explicit_dhl_index is not None:
+        if (isinstance(explicit_dhl_index, bool) or not isinstance(explicit_dhl_index, int)
+                or explicit_dhl_index != dhl_indices[0]):
+            raise ValueError("dhl_index must identify the validated DHL carrier label")
+    return conditional, labels, dhl_indices[0]
 
 
-def _scope(dhl: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def _scope(dhl: pd.DataFrame, scope_plz: object = None) -> tuple[pd.DataFrame, dict]:
     required = {"observation_id", "plz", "value", "value_status"}
     if missing := required.difference(dhl.columns):
         raise ValueError(f"dhl missing required columns: {sorted(missing)}")
@@ -239,30 +270,67 @@ def _scope(dhl: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         raise ValueError("DHL value_status is required")
     if dhl.plz.isna().any() or dhl.plz.astype(str).str.strip().eq("").any():
         raise ValueError("DHL observations require a known PLZ")
-    source = dhl.copy(); source["value"] = values.astype(float); source["plz"] = source.plz.astype(str)
-    excluded = source.value.gt(1000.)
-    retained = source.loc[~excluded].copy()
-    return retained, {"rule": "exclude complete observation when value > 1000", "threshold": 1000.,
-                      "excluded_rows": int(excluded.sum()), "excluded_volume": float(source.loc[excluded, "value"].sum()),
-                      "retained_rows": int((~excluded).sum()), "retained_volume": float(retained.value.sum())}
+    source = dhl.copy(); source["value"] = values.astype(float); source["plz"] = source.plz.astype(str).str.strip()
+    if scope_plz is None:
+        in_scope = pd.Series(True, index=source.index)
+        scope_labels = None
+    else:
+        if isinstance(scope_plz, (str, bytes)):
+            raise ValueError("scope_plz must be an iterable of verified postal codes")
+        try:
+            scope_labels = [str(value).strip() for value in scope_plz]
+        except TypeError as exc:
+            raise ValueError("scope_plz must be an iterable of verified postal codes") from exc
+        if not scope_labels or any(not value for value in scope_labels) or len(scope_labels) != len(set(scope_labels)):
+            raise ValueError("scope_plz must contain unique non-empty verified postal codes")
+        in_scope = source.plz.isin(set(scope_labels))
+    outside = source.loc[~in_scope]
+    scoped = source.loc[in_scope].copy()
+    excluded = scoped.value.gt(1000.)
+    retained = scoped.loc[~excluded].copy()
+    return retained, {
+        "rule": "exclude complete in-scope observation when value > 1000",
+        "threshold": 1000.,
+        "scope_mode": "verified_postal_support" if scope_labels is not None else "standalone_all_observations",
+        "scope_plz_count": None if scope_labels is None else len(scope_labels),
+        "out_of_scope_rows": int(len(outside)),
+        "out_of_scope_volume": float(outside.value.sum()),
+        "out_of_scope_positive_rows": int(outside.value.gt(0).sum()),
+        "out_of_scope_positive_volume": float(outside.loc[outside.value.gt(0), "value"].sum()),
+        "out_of_scope_zero_rows": int(outside.value.eq(0).sum()),
+        "out_of_scope_above_threshold_rows": int(outside.value.gt(1000.).sum()),
+        "out_of_scope_above_threshold_volume": float(outside.loc[outside.value.gt(1000.), "value"].sum()),
+        "excluded_rows": int(excluded.sum()),
+        "excluded_volume": float(scoped.loc[excluded, "value"].sum()),
+        "retained_rows": int((~excluded).sum()),
+        "retained_volume": float(retained.value.sum()),
+    }
 
 
 def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict, b: float,
-                    operating_days: int) -> dict:
+                    operating_days: int, *, scope_plz: object = None) -> dict:
     """Reconcile providers then derive a single balanced, grid-free 2021 reference."""
     if not np.isfinite(b) or not 0 <= b <= 1 or isinstance(operating_days, bool) or int(operating_days) != operating_days or operating_days <= 0:
         raise ValueError("B2B target and operating_days must be valid")
     reconciliation = None
+    reconciliation_inputs = None
     if "conditional" not in profiles:
         try:
-            reconciliation = reconcile_carriers(profiles.get("m", profiles.get("market")),
-                                                profiles.get("q", profiles.get("q_prior")), b,
-                                                profiles["lower"], profiles["upper"], profiles["scale"])
+            reconciliation_inputs = {
+                "m": _array(profiles.get("m", profiles.get("market")), "m"),
+                "q_prior": _array(profiles.get("q", profiles.get("q_prior")), "q_prior"),
+                "lower": _array(profiles["lower"], "lower"),
+                "upper": _array(profiles["upper"], "upper"),
+                "scale": _array(profiles["scale"], "scale"),
+            }
+            reconciliation = reconcile_carriers(reconciliation_inputs["m"], reconciliation_inputs["q_prior"], b,
+                                                reconciliation_inputs["lower"], reconciliation_inputs["upper"],
+                                                reconciliation_inputs["scale"])
         except KeyError as exc:
             raise ValueError("profiles requires conditional profiles or carrier reconciliation inputs") from exc
         profiles = {**profiles, "conditional": reconciliation["conditional"]}
-    conditional, carriers = _profiles(profiles, b)
-    retained, scope_ledger = _scope(dhl)
+    conditional, carriers, dhl_index = _profiles(profiles, b)
+    retained, scope_ledger = _scope(dhl, scope_plz)
     if retained.empty or retained.value.sum() <= 0:
         raise ValueError("empty DHL reference region has no positive retained observation")
     required = {"site_id", "plz", "segment", "weight", "allocation_status"}
@@ -299,15 +367,27 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     private, business, dhl_values = (support[name].to_numpy(float) for name in ("private", "business", "dhl_retained_mean"))
     if np.any(positive & ((private + business) <= 0)):
         raise ValueError("positive DHL has no potential support in at least one PLZ")
-    private_dhl, business_dhl = conditional[0, 0], conditional[1, 0]
+    private_dhl, business_dhl = conditional[0, dhl_index], conditional[1, dhl_index]
+    eta_diagnostics = {
+        "initial_endpoints": [-30.0, 30.0],
+        "initial_residuals": None,
+        "expanded_endpoints": None,
+        "expanded_residuals": None,
+        "reachable_range": None,
+        "status": None,
+    }
     if b == 0:
         if np.any(positive & (private <= 0)):
             raise ValueError("positive DHL has no private support for b=0")
         local_b = np.zeros(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
+        eta_diagnostics.update(expanded_endpoints=[0.0, 0.0], expanded_residuals=[0.0, 0.0],
+                               reachable_range=[0.0, 0.0], status="boundary_b2b_zero")
     elif b == 1:
         if np.any(positive & (business <= 0)):
             raise ValueError("positive DHL has no business support for b=1")
         local_b = np.ones(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
+        eta_diagnostics.update(expanded_endpoints=[0.0, 0.0], expanded_residuals=[0.0, 0.0],
+                               reachable_range=[1.0, 1.0], status="boundary_b2b_one")
     else:
         def totals(candidate_eta):
             local = np.zeros_like(private)
@@ -324,15 +404,20 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
             return float(total @ local / total.sum() - b)
         mixed_support = positive & (private > 0) & (business > 0)
         if not mixed_support.any():
-            if abs(residual(0.)) > 1e-10:
-                raise ValueError(f"constant reachable B2B share does not match target; reachable={residual(0.) + b}")
+            constant_residual = residual(0.)
+            eta_diagnostics.update(initial_residuals=[constant_residual, constant_residual],
+                                   expanded_endpoints=[0.0, 0.0],
+                                   expanded_residuals=[constant_residual, constant_residual],
+                                   reachable_range=[constant_residual + b, constant_residual + b],
+                                   status="constant_support")
+            if abs(constant_residual) > 1e-10:
+                raise ValueError(f"constant reachable B2B share does not match target; reachable={constant_residual + b}")
             eta, iterations = 0., 0
         else:
-            log_ratio = np.log(private[mixed_support]) - np.log(business[mixed_support])
-            eta_low = min(-30., float(log_ratio.min() - 30.))
-            eta_high = max(30., float(log_ratio.max() + 30.))
+            eta_low, eta_high = -30., 30.
             low, high = residual(eta_low), residual(eta_high)
-            expansion = max(60., eta_high - eta_low)
+            eta_diagnostics["initial_residuals"] = [low, high]
+            expansion = 60.
             finite_limit = np.finfo(float).max / 4.
             while low * high > 0 and max(abs(eta_low), abs(eta_high)) < finite_limit:
                 if low < 0 and high < 0:
@@ -344,15 +429,22 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
                 else:
                     break
                 expansion *= 2.
-            if abs(low) <= 1e-10:
+            eta_diagnostics.update(expanded_endpoints=[float(eta_low), float(eta_high)],
+                                   expanded_residuals=[float(low), float(high)],
+                                   reachable_range=[float(min(b + low, b + high)), float(max(b + low, b + high))])
+            if low == 0.:
                 eta, iterations = eta_low, 0
-            elif abs(high) <= 1e-10:
+                eta_diagnostics["status"] = "endpoint_root"
+            elif high == 0.:
                 eta, iterations = eta_high, 0
+                eta_diagnostics["status"] = "endpoint_root"
             elif low * high > 0:
+                eta_diagnostics["status"] = "no_sign_change"
                 raise ValueError(f"B2B target has no sign change; reachable residuals [{low}, {high}]")
             else:
                 root, details = brentq(residual, eta_low, eta_high, xtol=1e-12, full_output=True)
                 eta, iterations = float(root), int(details.iterations)
+                eta_diagnostics["status"] = "root_found"
         log_k = float(eta)
         if eta > np.log(np.finfo(float).max):
             k, k_status = None, "overflow_log_k_retained"
@@ -396,7 +488,24 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     reconstructed = float((postal_total_mean * dhl_share).sum())
     regional_annual = float(annual.sum())
     carrier_market = (1 - b) * conditional[0] + b * conditional[1]
-    carriers_frame = pd.DataFrame({"year": 2021, "carrier": carriers, "share": carrier_market})
+    if reconciliation is not None:
+        adjusted_q = reconciliation["q"]
+        market = reconciliation_inputs["m"] / float(reconciliation_inputs["m"].sum())
+        q_prior = reconciliation_inputs["q_prior"]
+        q_scale = reconciliation_inputs["scale"]
+        lower = reconciliation_inputs["lower"]
+        upper = reconciliation_inputs["upper"]
+    else:
+        market = carrier_market.copy()
+        adjusted_q = np.divide(b * conditional[1], market, out=np.zeros_like(market), where=market > 0)
+        q_prior = np.full(len(carriers), np.nan)
+        q_scale = np.full(len(carriers), np.nan)
+        lower = np.full(len(carriers), np.nan)
+        upper = np.full(len(carriers), np.nan)
+    carriers_frame = pd.DataFrame({"year": 2021, "carrier": carriers, "market_share": market,
+                                   "q_prior": q_prior, "q_scale": q_scale, "lower": lower, "upper": upper,
+                                   "q_adjusted": adjusted_q, "private_share": conditional[0],
+                                   "business_share": conditional[1], "share": carrier_market})
     persons = float(site_support.loc[site_support.segment.eq("private"), "weight"].sum())
     companies = int(site_support.segment.eq("business").sum())
     private_annual, business_annual = float(postal.private_annual.sum()), float(postal.business_annual.sum())
@@ -426,8 +535,39 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     regional_matches = np.isclose(float(site_support.reference_annual.sum()), regional_annual, atol=_ATOL, rtol=_RTOL)
     if not allocation_matches.all() or not regional_matches:
         raise ValueError("site allocation balance failed")
+    reconciliation_payload = {
+        "market": [{"carrier": carrier, "market_share": float(value)} for carrier, value in zip(carriers, market, strict=True)],
+        "providers": [{"carrier": carrier, "q_prior": None if not np.isfinite(prior) else float(prior),
+                       "q_scale": None if not np.isfinite(scale) else float(scale),
+                       "lower": None if not np.isfinite(bound_low) else float(bound_low),
+                       "upper": None if not np.isfinite(bound_high) else float(bound_high)}
+                      for carrier, prior, scale, bound_low, bound_high in zip(carriers, q_prior, q_scale, lower, upper, strict=True)],
+        "adjusted_q": [{"carrier": carrier, "q_adjusted": float(value)} for carrier, value in zip(carriers, adjusted_q, strict=True)],
+        "conditional": [{"segment": segment, "carrier": carrier, "share": float(conditional[row, index])}
+                        for row, segment in enumerate(("private", "business")) for index, carrier in enumerate(carriers)],
+        "diagnostics": None if reconciliation is None else reconciliation["diagnostics"],
+        # Keep the complete reference-level eta solve alongside the carrier
+        # projection.  A consumer therefore does not have to infer a numeric
+        # bracket from a display-only checks artifact.
+        "reference_balance": {
+            "k": k,
+            "k_status": k_status,
+            "log_k": log_k,
+            "eta": eta,
+            "iterations": iterations,
+            "status": eta_diagnostics["status"],
+            "initial_endpoints": eta_diagnostics["initial_endpoints"],
+            "initial_residuals": eta_diagnostics["initial_residuals"],
+            "expanded_endpoints": eta_diagnostics["expanded_endpoints"],
+            "expanded_residuals": eta_diagnostics["expanded_residuals"],
+            "reachable_range": eta_diagnostics["reachable_range"],
+        },
+    }
     checks = {"scope_ledger": scope_ledger, "k": k, "k_status": k_status, "log_k": log_k,
               "eta": eta, "eta_iterations": iterations,
+              "eta_diagnostics": eta_diagnostics,
+              "dhl_carrier": carriers[dhl_index], "dhl_carrier_index": dhl_index,
+              "dhl_market_share": float(carrier_market[dhl_index]),
               "b2b_target": float(b), "b2b_achieved": achieved_b, "b2b_residual": achieved_b - b,
               "dhl_reconstructed_mean": reconstructed, "dhl_retained_mean": float(dhl_values.sum()),
               "regional_annual_balance": regional_error,
@@ -439,6 +579,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
         raise ValueError("reconstructed DHL balance failed")
     return {"sites": site_support, "postal": postal.drop(columns=["private_potential", "business_potential"]),
             "carriers": carriers_frame, "regional_annual": regional_annual, "checks": checks,
+            "reconciliation": reconciliation_payload,
             "source_quality": {"unknown_plz_sites": unknown.site_id.astype(str).tolist(),
                                "unknown_plz_weight": float(unknown.weight.sum()),
                                "known_plz_outside_anchor_sites": known_outside_anchor.site_id.astype(str).tolist(),

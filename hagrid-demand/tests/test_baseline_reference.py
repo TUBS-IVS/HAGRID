@@ -16,7 +16,7 @@ def _sites():
 
 
 def _profiles():
-    # DHL is carrier zero.  Its segment shares differ, making eta identifiable.
+    # The validated DHL label, rather than carrier position, makes eta identifiable.
     return {"conditional": np.array([[.6, .4], [.2, .8]]), "carriers": ["DHL", "Other"]}
 
 
@@ -330,6 +330,89 @@ def test_reference_can_reconcile_raw_provider_priors_before_solving_eta():
     assert result["checks"]["reconciliation"]["market_b2b"] == pytest.approx(.2)
 
 
+def test_reference_resolves_dhl_by_validated_label_instead_of_carrier_column_order():
+    """Reordering carrier columns cannot turn Amazon's share into the DHL divisor."""
+    from hagrid_demand.baseline.potentials import build_potentials
+    from hagrid_demand.baseline.reference import solve_reference
+
+    dhl = pd.DataFrame({"observation_id": ["a", "b"], "plz": ["10000", "20000"],
+                        "value": [10., 20.], "value_status": ["observed", "observed"]})
+    # DHL is deliberately column one.  Its market share is .32, while Amazon's is .68.
+    profiles = {"conditional": np.array([[.8, .2], [.2, .8]]), "carriers": ["Amazon", "DHL"]}
+    result = solve_reference(build_potentials(_sites()), dhl, profiles, b=.2, operating_days=313)
+
+    assert result["checks"]["dhl_carrier"] == "DHL"
+    assert result["checks"]["dhl_carrier_index"] == 1
+    assert result["regional_annual"] == pytest.approx(30. * 313. / .32, rel=1e-10)
+
+
+@pytest.mark.parametrize("labels", [["Other", "Amazon"], ["DHL", "dhl"]])
+def test_reference_rejects_missing_or_ambiguous_dhl_carrier_labels(labels):
+    """A reference observation has one explicit carrier identity."""
+    from hagrid_demand.baseline.potentials import build_potentials
+    from hagrid_demand.baseline.reference import solve_reference
+
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["10000"], "value": [10.],
+                        "value_status": ["observed"]})
+    with pytest.raises(ValueError, match="DHL carrier"):
+        solve_reference(build_potentials(_sites()), dhl,
+                        {"conditional": np.array([[.6, .4], [.2, .8]]), "carriers": labels},
+                        b=.2, operating_days=313)
+
+
+def test_reference_rejects_unlabeled_multicarrier_profiles_without_explicit_dhl_index():
+    """A two-column conditional array alone has no carrier identity."""
+    from hagrid_demand.baseline.potentials import build_potentials
+    from hagrid_demand.baseline.reference import solve_reference
+
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["10000"], "value": [10.],
+                        "value_status": ["observed"]})
+    with pytest.raises(ValueError, match="carrier labels or dhl_index"):
+        solve_reference(build_potentials(_sites()), dhl,
+                        {"conditional": np.array([[.6, .4], [.2, .8]])}, b=.2, operating_days=313)
+
+
+def test_reference_applies_verified_postal_scope_before_threshold_and_anchor_aggregation():
+    """Out-of-scope positive, zero, and oversized records stay ledger-only and need no support."""
+    from hagrid_demand.baseline.potentials import build_potentials
+    from hagrid_demand.baseline.reference import solve_reference
+
+    dhl = pd.DataFrame({
+        "observation_id": ["inside", "outside-positive", "outside-zero", "outside-large"],
+        "plz": ["10000", "99991", "99992", "99993"],
+        "value": [10., 7., 0., 1001.],
+        "value_status": ["observed"] * 4,
+    })
+    result = solve_reference(build_potentials(_sites()), dhl, _profiles(), b=.2, operating_days=313,
+                             scope_plz=["10000"])
+
+    assert result["postal"].plz.tolist() == ["10000"]
+    ledger = result["checks"]["scope_ledger"]
+    assert ledger["retained_volume"] == pytest.approx(10.)
+    assert ledger["out_of_scope_positive_rows"] == 2
+    assert ledger["out_of_scope_zero_rows"] == 1
+    assert ledger["out_of_scope_above_threshold_rows"] == 1
+    assert ledger["excluded_rows"] == 0
+
+
+def test_reference_persists_adaptive_eta_endpoints_reachable_range_and_status():
+    """The reconciliation ledger distinguishes initial numeric endpoints from adaptive expansion."""
+    from hagrid_demand.baseline.reference import solve_reference
+
+    potential = pd.DataFrame({"site_id": ["p", "b"], "plz": ["1", "1"],
+                              "segment": ["private", "business"], "weight": [1e100, 1.],
+                              "allocation_status": ["located", "located"]})
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [1.],
+                        "value_status": ["observed"]})
+    result = solve_reference(potential, dhl, {"conditional": np.array([[.5, .5], [.5, .5]]), "dhl_index": 0},
+                             b=.5, operating_days=313)
+    eta = result["checks"]["eta_diagnostics"]
+    assert eta["initial_endpoints"] == [-30.0, 30.0]
+    assert eta["expanded_endpoints"][1] > 30.0
+    assert eta["reachable_range"][0] <= .5 <= eta["reachable_range"][1]
+    assert eta["status"] == "root_found"
+
+
 def test_reference_rejects_invalid_and_unidentified_inputs():
     from hagrid_demand.baseline.potentials import build_potentials
     from hagrid_demand.baseline.reference import solve_reference
@@ -339,7 +422,7 @@ def test_reference_rejects_invalid_and_unidentified_inputs():
     with pytest.raises(ValueError, match="missing|negative"):
         solve_reference(potentials, good.assign(value=-1.), _profiles(), b=.2, operating_days=313)
     with pytest.raises(ValueError, match="positive DHL.*share"):
-        solve_reference(potentials, good, {"conditional": np.array([[0., 1.], [0., 1.]])}, b=.2, operating_days=313)
+        solve_reference(potentials, good, {"conditional": np.array([[0., 1.], [0., 1.]]), "dhl_index": 0}, b=.2, operating_days=313)
     with pytest.raises(ValueError, match="empty|support"):
         solve_reference(potentials.iloc[0:0], good, _profiles(), b=.2, operating_days=313)
     with pytest.raises(ValueError, match="finite"):
@@ -354,7 +437,7 @@ def test_reference_handles_constant_b2b_and_diagnoses_missing_root():
     private_only = pd.DataFrame({"site_id": ["h"], "plz": ["1"], "segment": ["private"], "weight": [2.],
                                  "allocation_status": ["located"], "population": [2.], "employees": [np.nan], "branch": [None]})
     dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [4.], "value_status": ["observed"]})
-    profiles = {"conditional": np.array([[1., 0.], [1., 0.]])}
+    profiles = {"conditional": np.array([[1., 0.], [1., 0.]]), "dhl_index": 0}
     solved = solve_reference(private_only, dhl, profiles, b=0., operating_days=313)
     assert solved["checks"]["k"] == 1.
     with pytest.raises(ValueError, match="constant|reachable|sign change"):
@@ -366,7 +449,7 @@ def test_reference_handles_constant_b2b_and_diagnoses_missing_root():
 def test_reference_expands_eta_bracket_and_keeps_true_nonroot_diagnostic():
     from hagrid_demand.baseline.reference import solve_reference
 
-    profiles = {"conditional": np.array([[.8, .2], [.2, .8]])}
+    profiles = {"conditional": np.array([[.8, .2], [.2, .8]]), "dhl_index": 0}
     extreme = pd.DataFrame({"site_id": ["p1", "b1", "p2", "b2"], "plz": ["1", "1", "2", "2"],
                             "segment": ["private", "business", "private", "business"],
                             "weight": [1e20, 1., 1., 1e20], "allocation_status": ["located"] * 4})
@@ -385,7 +468,7 @@ def test_reference_expands_before_declaring_extreme_mixed_support_constant():
                               "segment": ["private", "business"], "weight": [1e100, 1.],
                               "allocation_status": ["located", "located"]})
     dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [1.], "value_status": ["observed"]})
-    result = solve_reference(potential, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, b=.5, operating_days=313)
+    result = solve_reference(potential, dhl, {"conditional": np.array([[.5, .5], [.5, .5]]), "dhl_index": 0}, b=.5, operating_days=313)
     assert result["checks"]["eta"] == pytest.approx(100 * np.log(10), abs=1e-8)
 
 
@@ -397,7 +480,7 @@ def test_reference_recognizes_true_structurally_constant_pure_support():
                               "allocation_status": ["located", "located"]})
     dhl = pd.DataFrame({"observation_id": ["a", "b"], "plz": ["1", "2"],
                         "value": [1., 1.], "value_status": ["observed", "observed"]})
-    result = solve_reference(potential, dhl, {"conditional": np.array([[.6, .4], [.2, .8]])}, b=.75,
+    result = solve_reference(potential, dhl, {"conditional": np.array([[.6, .4], [.2, .8]]), "dhl_index": 0}, b=.75,
                              operating_days=313)
     assert result["checks"]["eta"] == 0.
 
@@ -409,12 +492,12 @@ def test_reference_all_pure_segments_and_direct_allocation_balances():
                             "segment": ["private"] * 3, "weight": [1., 2., 4.],
                             "allocation_status": ["located"] * 3})
     dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [999.], "value_status": ["observed"]})
-    profile = {"conditional": np.array([[.001, .999], [0., 0.]])}
+    profile = {"conditional": np.array([[.001, .999], [0., 0.]]), "dhl_index": 0}
     solved_private = solve_reference(private, dhl, profile, b=0., operating_days=313)
     assert solved_private["regional_annual"] == pytest.approx(999 / .001 * 313)
     assert solved_private["checks"]["allocation_balance"]["regional_error"] == pytest.approx(0.)
     business = private.assign(segment="business", site_id=["b1", "b2", "b3"])
-    business_profile = {"conditional": np.array([[0., 0.], [.001, .999]])}
+    business_profile = {"conditional": np.array([[0., 0.], [.001, .999]]), "dhl_index": 0}
     solved_business = solve_reference(business, dhl, business_profile, b=1., operating_days=313)
     assert solved_business["regional_annual"] == pytest.approx(999 / .001 * 313)
 
@@ -426,17 +509,17 @@ def test_reference_keeps_extreme_eta_as_log_k_and_avoids_site_allocation_overflo
                             "segment": ["private", "business"], "weight": [1e300, 1e-300],
                             "allocation_status": ["located", "located"]})
     dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [1.], "value_status": ["observed"]})
-    solved = solve_reference(extreme, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, .5, 313)
+    solved = solve_reference(extreme, dhl, {"conditional": np.array([[.5, .5], [.5, .5]]), "dhl_index": 0}, .5, 313)
     assert solved["checks"]["eta"] == pytest.approx(600 * np.log(10), abs=1e-8)
     assert solved["checks"]["k"] is None
     assert solved["checks"]["k_status"] == "overflow_log_k_retained"
     underflow = extreme.assign(weight=[1e-300, 1e300])
-    negative = solve_reference(underflow, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, .5, 313)
+    negative = solve_reference(underflow, dhl, {"conditional": np.array([[.5, .5], [.5, .5]]), "dhl_index": 0}, .5, 313)
     assert negative["checks"]["eta"] == pytest.approx(-600 * np.log(10), abs=1e-8)
     assert negative["checks"]["k"] is None
     assert negative["checks"]["k_status"] == "underflow_log_k_retained"
     assert np.isfinite(negative["checks"]["log_k"])
     huge_site = pd.DataFrame({"site_id": ["p"], "plz": ["1"], "segment": ["private"], "weight": [1e308],
                               "allocation_status": ["located"]})
-    allocated = solve_reference(huge_site, dhl, {"conditional": np.array([[1., 0.], [0., 0.]])}, 0., 313)
+    allocated = solve_reference(huge_site, dhl, {"conditional": np.array([[1., 0.], [0., 0.]]), "dhl_index": 0}, 0., 313)
     assert np.isfinite(allocated["sites"].reference_annual).all()
