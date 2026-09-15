@@ -43,6 +43,8 @@ def _source_specs(config: dict) -> dict[str, Path]:
         if not isinstance(spec, dict) or not isinstance(spec.get("adapter"), str) or not isinstance(spec.get("file"), str):
             raise ValueError("each raw source requires adapter and file")
         result[spec["adapter"]] = Path(config["input_dir"]) / spec["file"]
+        if spec["adapter"] == "dhl" and spec.get("year") is not None and spec["year"] != 2021:
+            raise ValueError("DHL source metadata must declare year 2021")
     required = {"persons", "companies", "dhl", "hermes", "plz"}
     if missing := required.difference(result):
         raise ValueError(f"raw source mode is missing adapters: {sorted(missing)}")
@@ -62,7 +64,28 @@ def _raw_source_paths(config: dict) -> list[Path]:
 def _write_sources(config: dict, output: Path) -> None:
     prepared = prepare_sources(config, output)
     if config["source_mode"] != "raw":
-        raise NotImplementedError("foundation_run orchestration requires the Plan 02 foundation adapter")
+        tables = prepared["foundation"]
+        required = {"sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet", "postal_support.parquet"}
+        if missing := required.difference(tables):
+            raise ValueError(f"foundation run missing required tables: {sorted(missing)}")
+        sites = tables["sites.parquet"].copy()
+        dhl_table = tables["dhl_observations.parquet"]
+        if "year" in dhl_table and not dhl_table.year.eq(2021).all():
+            raise ValueError("foundation DHL data must contain only year 2021")
+        membership = tables.get("site_postal_candidates.parquet")
+        if membership is None:
+            raise ValueError("foundation run requires site_postal_candidates.parquet")
+        counts = membership.groupby("site_id").plz.count()
+        unique = membership.loc[membership.site_id.map(counts).eq(1), ["site_id", "plz"]].drop_duplicates("site_id")
+        sites = sites.merge(unique, on="site_id", how="left", validate="one_to_one")
+        sites["segment"] = sites.recipient_type
+        sites["allocation_status"] = "located"
+        sites["invalid_employees"] = pd.to_numeric(sites.get("employees"), errors="coerce").isna() | pd.to_numeric(sites.get("employees"), errors="coerce").lt(0)
+        for name in required:
+            tables[name].to_parquet(output / name, index=False)
+        sites.to_parquet(output / "sites.parquet", index=False)
+        _json(output / "sources.json", {"mode": "foundation_run", "foundation_run": config["foundation_run"], "invalid_employees": int(sites.invalid_employees.sum())})
+        return
     paths = _source_specs(config)
     persons = read_persons(paths["persons"], config["persons_crs"], config["target_crs"])
     residential = build_residential(persons, tolerance=5.0)
@@ -81,6 +104,8 @@ def _write_sources(config: dict, output: Path) -> None:
         lambda value: "located" if value == "source_point_unverified" else "unlocated"
     )
     dhl = read_dhl(paths["dhl"], config["target_crs"])
+    if not dhl.year.eq(2021).all():
+        raise ValueError("raw DHL data must contain only year 2021")
     hermes = read_hermes(paths["hermes"])
     sites.to_parquet(output / "sites.parquet", index=False)
     dhl.to_parquet(output / "dhl_observations.parquet", index=False)
@@ -131,6 +156,18 @@ def _write_reference(config: dict, source: Path, series_dir: Path, potentials_di
                                                 "implied_rates": solved["implied_rates"], "regional_annual": solved["regional_annual"]})
 
 
+def _write_report(config: dict, reference_dir: Path, output: Path, run_id: str) -> None:
+    postal = pd.read_parquet(reference_dir / "reference_postal.parquet")
+    checks = json.loads((reference_dir / "reference_checks.json").read_text(encoding="utf-8"))
+    report = {"run_id": run_id, "reference_year": config["reference_year"], "operating_days": config["reference_operating_days"],
+              "regional_annual": float(postal.reference_annual.sum()), "postal": json.loads(postal.to_json(orient="records")),
+              "excluded_quantities": checks["scope_ledger"],
+              "b2b_adjustment": {key: checks[key] for key in ("b2b_target", "b2b_achieved", "b2b_residual", "k", "k_status", "log_k")},
+              "remaining_potentials": checks["source_quality"], "status": "complete_reference"}
+    _json(output / "report_data.json", report)
+    (output / "report.md").write_text(f"# HAGRID Referenzlauf: {run_id}\n\n2021 · {report['operating_days']} Betriebstage\n\nB2B-Ziel: {report['b2b_adjustment']['b2b_target']:.6f}\n", encoding="utf-8")
+
+
 def _validate(output: Path, names: list[str]) -> None:
     missing = [name for name in names if not (output / name).is_file()]
     if missing:
@@ -154,6 +191,10 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
     if not _RUN_ID.fullmatch(run_id):
         raise ValueError("Invalid run_id")
     config = load_baseline_config(Path(config_path))
+    if config["reference_year"] != 2021:
+        raise ValueError("The reference milestone requires reference_year=2021")
+    if config.get("dhl_exclude_above") != 1000:
+        raise ValueError("The reference milestone requires dhl_exclude_above=1000")
     if config["output_scope"] != "reference":
         raise NotImplementedError("daily output_scope is available after Plan 02; no daily run was produced")
     output_root, run = Path(config["output_dir"]), Path(config["output_dir"]) / run_id
@@ -169,14 +210,21 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         run.mkdir(parents=True, exist_ok=False)
         _json(run / "config.resolved.json", config)
         _json(run / "run.json", _run_state(run, config))
-    source_dependencies = {"source_files": _raw_source_paths(config)}
-    source_fingerprint = stage_key("sources", source_dependencies, config, {"workflow": Path(__file__), "data": Path(__file__).parents[1] / "data.py"})
+    try:
+        source_dependencies = {"source_files": _raw_source_paths(config)}
+        source_fingerprint = stage_key("sources", source_dependencies, config, {"workflow": Path(__file__), "sources": Path(__file__).with_name("sources.py"), "data": Path(__file__).parents[1] / "data.py", "linking": Path(__file__).parents[1] / "linking.py"})
+    except Exception as exc:
+        state = _run_state(run, config); state.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        _json(run / "run.json", state)
+        raise
     if resume and (run / "stage_manifest.json").is_file():
         prior_manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
         previous = prior_manifest.get("stages", {}).get("sources", {}).get("fingerprint")
         if previous is not None and previous != source_fingerprint:
             raise ValueError("cannot resume: consumed source files changed")
     state = _run_state(run, config)
+    state["consumed_source_fingerprint"] = source_fingerprint
+    _json(run / "run.json", state)
     try:
         cache_root = Path(config["cache_root"])
         resolve_stage(run, "sources", source_fingerprint, cache_root=cache_root, dependencies=source_dependencies,
@@ -184,7 +232,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                       validate=lambda output: _validate(output, ["weekly_profile.csv", "sources.json", "sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet", "postal_support.parquet"]))
         state["completed_stages"].append("sources")
         series_dependencies = {"inputs": Path(__file__).parent / "data", "year": config["reference_year"]}
-        series_fingerprint = stage_key("series", series_dependencies, config, {"workflow": Path(__file__), "series": Path(__file__).with_name("series.py")})
+        series_fingerprint = stage_key("series", series_dependencies, config, {"workflow": Path(__file__), "series": Path(__file__).with_name("series.py"), "sources": Path(__file__).with_name("sources.py")})
         resolve_stage(run, "series", series_fingerprint, cache_root=cache_root, dependencies=series_dependencies,
                       build=lambda output: _write_series(config, output),
                       validate=lambda output: _validate(output, ["market.parquet", "b2b.parquet", "volume.parquet", "provider_priors.parquet"]))
@@ -203,10 +251,18 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         for name in ("reference_postal.parquet", "reference_sites.parquet", "reference_carriers.parquet", "reference_checks.json"):
             _copy_public(run, "reference", name)
         state["completed_stages"].append("reference")
-        dashboard = render_baseline(run)
-        state["completed_stages"].extend(["report", "dashboard"])
+        report_dependencies = {"reference": run / "reference"}
+        report_fingerprint = stage_key("report", report_dependencies, config, {"workflow": Path(__file__), "dashboard": Path(__file__).with_name("dashboard.py")})
+        resolve_stage(run, "report", report_fingerprint, cache_root=cache_root, dependencies=report_dependencies,
+                      build=lambda output: _write_report(config, run / "reference", output, run_id),
+                      validate=lambda output: _validate(output, ["report_data.json", "report.md"]))
+        for name in ("report_data.json", "report.md"):
+            _copy_public(run, "report", name)
+        state["completed_stages"].append("report")
+        state["completed_stages"].append("dashboard")
         state["status"] = "complete_reference"
         _json(run / "run.json", state)
+        dashboard = render_baseline(run)
         return run
     except Exception as exc:
         state["status"] = "failed"

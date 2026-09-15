@@ -122,7 +122,7 @@ def run_model(path,run_id,frozen_run=None):
 
         provenance={'inputs':{str(p):digest(p) for p in consumed},'config_sha256':digest(path),
 
-                    'code':{p.name:digest(p) for p in Path(__file__).parent.iterdir() if p.suffix in {'.py','.html'}},
+                    'code':{str(p.relative_to(Path(__file__).parents[1])):digest(p) for p in [*Path(__file__).parent.iterdir(), *Path(__file__).parents[1].iterdir()] if p.suffix in {'.py','.html'}},
 
                     'mode':'frozen_apply' if frozen_run else 'fit_select_apply'}
 
