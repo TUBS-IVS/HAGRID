@@ -286,6 +286,16 @@ def _runtime_payload() -> dict:
     return {"python": platform.python_version(), "packages": packages}
 
 
+def _verify_runtime(run: Path) -> None:
+    path = run / "runtime.json"
+    try:
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("cannot resume: runtime.json is required") from exc
+    if recorded != _runtime_payload():
+        raise ValueError("cannot resume: runtime contract changed")
+
+
 def _frozen_reference_artifacts(run: Path) -> dict:
     """Hash the public reference contract that downstream stages are allowed to consume."""
     groups = {
@@ -334,6 +344,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         prior = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
         if canonical_json(prior) != canonical_json(config):
             raise ValueError("cannot resume: resolved configuration changed")
+        _verify_runtime(run)
     else:
         run.mkdir(parents=True, exist_ok=False)
         _json(run / "config.resolved.json", config)

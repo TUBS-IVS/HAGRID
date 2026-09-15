@@ -68,6 +68,36 @@ def test_resume_rejects_changed_resolved_config(fixture_config):
         run_baseline(fixture_config, "reference-fixture", resume=True)
 
 
+def test_resume_rejects_a_runtime_contract_that_no_longer_matches(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    run = run_baseline(fixture_config, "runtime-fixture")
+    runtime = json.loads((run / "runtime.json").read_text(encoding="utf-8"))
+    runtime["python"] = "tampered"
+    (run / "runtime.json").write_text(json.dumps(runtime), encoding="utf-8")
+    with pytest.raises(ValueError, match="runtime contract"):
+        run_baseline(fixture_config, "runtime-fixture", resume=True)
+
+
+def test_projection_consumes_the_canonical_reference_artifacts(fixture_config):
+    import pandas as pd
+
+    from hagrid_demand.baseline.projection import project_annual
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    run = run_baseline(fixture_config, "projection-consumer")
+    reference = {
+        "regional_annual": json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"],
+        "sites": pd.read_parquet(run / "reference_sites.parquet"),
+    }
+    series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
+    result = project_annual(reference, series, [2021], {"memory": {"fixed": 1}, "regional_level": {"mode": "national_series"}})
+
+    assert result.sites.columns.tolist() == ["year", "site_id", "plz", "segment", "annual_expected", "share"]
+    assert result.postal.columns.tolist() == ["year", "plz", "annual_expected", "memory_weight", "regional_level_mode", "growth_factor", "b2b_share"]
+    assert all(len(value) == 64 for value in result.checks["hashes"].values())
+
+
 def test_dashboard_root_uses_a_relative_link_to_each_preserved_run(fixture_config):
     from hagrid_demand.baseline.workflow import run_baseline
 

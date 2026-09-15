@@ -66,8 +66,8 @@ def calendar_weights(year: int, segment: str, weekly: pd.DataFrame | None, cfg: 
     A complete ISO-week profile and a non-neutral monthly profile would express
     seasonality twice, so the two are deliberately mutually exclusive.
     """
-    if isinstance(year, bool) or not isinstance(year, int) or not 1 <= year <= 9999:
-        raise ValueError("year must be a valid integer")
+    if type(year) is not int or year < 2021:
+        raise ValueError("year must be a valid integer from 2021")
     if not isinstance(cfg, dict):
         raise ValueError("cfg must be a mapping")
     weekdays = _weekday_weights(segment, cfg)
@@ -83,6 +83,15 @@ def calendar_weights(year: int, segment: str, weekly: pd.DataFrame | None, cfg: 
         raise ValueError("holiday_factor must be finite and nonnegative") from exc
     if not np.isfinite(holiday_factor) or holiday_factor < 0:
         raise ValueError("holiday_factor must be finite and nonnegative")
+    strength_values = cfg.get("seasonality_strength", {})
+    if not isinstance(strength_values, dict):
+        raise ValueError("seasonality_strength must map segments to a number")
+    try:
+        strength = float(strength_values.get(segment, strength_values.get(str(segment).lower(), 1.)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("seasonality_strength must be finite in [0, 2]") from exc
+    if not np.isfinite(strength) or not 0 <= strength <= 2:
+        raise ValueError("seasonality_strength must be finite in [0, 2]")
 
     dates = pd.date_range(dt.date(year, 1, 1), dt.date(year, 12, 31), freq="D")
     iso = dates.isocalendar()
@@ -94,6 +103,7 @@ def calendar_weights(year: int, segment: str, weekly: pd.DataFrame | None, cfg: 
         standard = iso_week <= 52
         season[standard] = weekly_factors[iso_week[standard] - 1]
         season[~standard] = (weekly_factors[51] + weekly_factors[0]) / 2.
+    season = np.power(season, strength)
     weekday = weekdays[dates.dayofweek.to_numpy(dtype=int)]
     holiday = np.asarray([holiday_factor if date.date() in holidays else 1. for date in dates], dtype=float)
     raw = season * weekday * holiday

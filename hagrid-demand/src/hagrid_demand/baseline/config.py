@@ -50,6 +50,19 @@ def _validate_dates(dates: list[Any]) -> None:
         raise ValueError("Configuration contains duplicate dates")
 
 
+def _validate_regional_level(value: Any) -> dict:
+    if value is None:
+        return {"mode": "national_series"}
+    if not isinstance(value, dict):
+        raise ValueError("regional_level must be an object")
+    mode = value.get("mode")
+    if mode not in {"national_series", "external_annual_series"}:
+        raise ValueError("regional_level.mode must be national_series or external_annual_series")
+    if mode == "external_annual_series" and not isinstance(value.get("series"), list):
+        raise ValueError("external_annual_series requires a series list")
+    return value
+
+
 def _declared_source_paths(value: Any, *, config_path: Path, input_dir: Path) -> list[Path]:
     paths = []
     if isinstance(value, dict):
@@ -101,6 +114,7 @@ def load_baseline_config(path: Path) -> dict:
         if not isinstance(config["dates"], list):
             raise ValueError("dates must be a list")
         _validate_dates(config["dates"])
+    config["regional_level"] = _validate_regional_level(config.get("regional_level"))
     for key in _PATH_KEYS & set(config):
         if config[key] is not None:
             if not isinstance(config[key], str):
