@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import geopandas as gpd
 
 
 _INPUT_FILES = ("market_inputs.json", "b2b_inputs.json", "volume_inputs.json", "provider_priors.json")
@@ -168,7 +169,7 @@ def read_foundation(path: Path) -> dict[str, pd.DataFrame]:
         if not isinstance(expected_hash, str) or not artifact.is_file() or _digest(artifact) != expected_hash:
             raise ValueError(f"Foundation artifact hash mismatch: {name}")
         if artifact.suffix == ".parquet":
-            table = pd.read_parquet(artifact)
+            table = gpd.read_parquet(artifact) if "geometry" in (schemas.get(name) or []) else pd.read_parquet(artifact)
         elif artifact.suffix == ".csv":
             table = pd.read_csv(artifact)
         else:

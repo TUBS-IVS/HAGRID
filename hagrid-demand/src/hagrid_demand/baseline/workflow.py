@@ -43,7 +43,7 @@ def _source_specs(config: dict) -> dict[str, Path]:
         if not isinstance(spec, dict) or not isinstance(spec.get("adapter"), str) or not isinstance(spec.get("file"), str):
             raise ValueError("each raw source requires adapter and file")
         result[spec["adapter"]] = Path(config["input_dir"]) / spec["file"]
-        if spec["adapter"] == "dhl" and spec.get("year") is not None and spec["year"] != 2021:
+        if spec["adapter"] == "dhl" and spec.get("year") != 2021:
             raise ValueError("DHL source metadata must declare year 2021")
     required = {"persons", "companies", "dhl", "hermes", "plz"}
     if missing := required.difference(result):
@@ -70,7 +70,7 @@ def _write_sources(config: dict, output: Path) -> None:
             raise ValueError(f"foundation run missing required tables: {sorted(missing)}")
         sites = tables["sites.parquet"].copy()
         dhl_table = tables["dhl_observations.parquet"]
-        if "year" in dhl_table and not dhl_table.year.eq(2021).all():
+        if "year" not in dhl_table or not dhl_table.year.eq(2021).all():
             raise ValueError("foundation DHL data must contain only year 2021")
         membership = tables.get("site_postal_candidates.parquet")
         if membership is None:
@@ -80,7 +80,8 @@ def _write_sources(config: dict, output: Path) -> None:
         sites = sites.merge(unique, on="site_id", how="left", validate="one_to_one")
         sites["segment"] = sites.recipient_type
         sites["allocation_status"] = "located"
-        sites["invalid_employees"] = pd.to_numeric(sites.get("employees"), errors="coerce").isna() | pd.to_numeric(sites.get("employees"), errors="coerce").lt(0)
+        employees = pd.to_numeric(sites.get("employees"), errors="coerce")
+        sites["invalid_employees"] = sites.recipient_type.eq("business") & (employees.isna() | employees.lt(0))
         for name in required:
             table = tables[name]
             if "geometry" in table.columns:
