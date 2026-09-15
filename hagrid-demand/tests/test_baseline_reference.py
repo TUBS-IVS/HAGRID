@@ -31,6 +31,18 @@ def test_reconciliation_and_infeasible_bounds():
         reconcile_carriers(m, prior, .1, np.full(2, .5), np.ones(2), np.ones(2))
 
 
+def test_reconciliation_normalizes_an_accepted_near_simplex_before_boundary_checks():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+
+    result = reconcile_carriers(np.array([.999999995]), np.array([.5]), 1.,
+                                np.array([0.]), np.array([1.]), np.array([1.]))
+    assert result["q"] == pytest.approx([1.])
+    assert np.allclose(result["conditional"], [[0.], [1.]])
+    assert result["diagnostics"]["market_weight_input_sum"] == pytest.approx(.999999995)
+    assert result["diagnostics"]["market_weight_normalization_factor"] == pytest.approx(1 / .999999995)
+    assert result["diagnostics"]["market_weight_normalized_sum"] == 1.
+
+
 def test_reconciliation_has_quadratic_optimum_and_boundary_conditionals():
     from hagrid_demand.baseline.reference import reconcile_carriers
 
