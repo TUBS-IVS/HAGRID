@@ -22,6 +22,11 @@ from hagrid_demand.data import (build_business, build_residential, read_dhl, rea
 
 from .config import load_baseline_config
 from .dashboard import _report_markdown, build_report_data, render_baseline
+from .calendar import calendar_weights
+from .projection import project_annual
+from .spatial import resolve_spatial_plan
+from .allocation import generate_days
+from .outputs import write_daily_aggregates
 from .potentials import build_potentials
 from .reference import solve_reference
 from .series import build_series
@@ -191,7 +196,7 @@ def _write_sources(config: dict, output: Path) -> None:
 
 def _write_series(config: dict, source: Path, output: Path) -> None:
     weekly = pd.read_csv(source / "weekly_profile.csv")
-    series = build_series(packaged_series_inputs(), [config["reference_year"]], volume_fit_policy="observed_only",
+    series = build_series(packaged_series_inputs(), config["years"], volume_fit_policy="observed_only",
                           weekly_profile=weekly)
     for name, table in series.items():
         table.to_parquet(output / f"{name}.parquet", index=False)
@@ -265,6 +270,44 @@ def _write_report(config: dict, reference_dir: Path, output: Path, run_id: str, 
     (output / "report.md").write_text(_report_markdown(report), encoding="utf-8")
 
 
+def _daily_calendar(config: dict) -> pd.DataFrame:
+    calendar = config.get("calendar", {})
+    if not isinstance(calendar, dict):
+        raise ValueError("calendar must be a mapping")
+    cfg = {"weekday_weights": calendar.get("weekday_weights", {"private": [1.] * 7, "business": [1.] * 7}),
+           "monthly_weights": calendar.get("monthly_weights", [1.] * 12), "holiday_dates": calendar.get("holiday_dates", []),
+           "holiday_factor": calendar.get("holiday_factor", 1.), "seasonality_strength": calendar.get("seasonality_strength", {})}
+    return pd.concat([calendar_weights(year, segment, None, cfg) for year in config["years"] for segment in ("private", "business")], ignore_index=True)
+
+
+def _write_daily(config: dict, run: Path, output: Path) -> None:
+    """Project full calendar-year counts and stream only selected daily detail."""
+    reference_sites = pd.read_parquet(run / "reference_sites.parquet")
+    reference = {"sites": reference_sites, "regional_annual": json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"],
+                 "scope_id": json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))["scope_id"],
+                 "geometry": gpd.read_parquet(run / "reference_geometry.parquet")}
+    series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
+    projection = project_annual(reference, series, config["years"], {"memory": {"fixed": 1}, "regional_level": config["regional_level"]})
+    calendar = _daily_calendar(config)
+    plan = resolve_spatial_plan(reference, projection, {"seed": config["seed"], "spatial": config["spatial"]}, 0, Path(config["cache_root"]))
+    generation = {"seed": config["seed"], "spatial": config["spatial"], "dates": config.get("dates"),
+                  "regime": config.get("regime", "fixed_annual"), "process": config.get("process", {})}
+    detail_draws = {tuple(item) for item in config.get("detail_draws", [[0, 0]])}
+    if any(len(item) != 2 for item in detail_draws):
+        raise ValueError("detail_draws must contain [outer_id, inner_id] pairs")
+    summary = write_daily_aggregates(generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
+                                                   spatial_plan=plan, cache_dir=Path(config["cache_root"])), output, detail_draws)
+    projection.sites.to_parquet(output / "annual_projection.parquet", index=False)
+    projection.profiles.to_parquet(output / "carrier_profiles.parquet", index=False)
+    projection.postal.to_parquet(output / "postal_projection.parquet", index=False)
+    calendar.to_parquet(output / "calendar_weights.parquet", index=False)
+    _json(output / "daily_status.json", {"output_scope": "daily", "years": config["years"], "selected_dates_are_filter_only": True,
+                                          "spatial_status": plan.status, "writer": summary})
+    if config.get("legacy_export"):
+        from hagrid_demand.compatibility.legacy_exports import export_legacy
+        export_legacy(series, reference, projection, Path(config["legacy_contract"]), config["years"], output / "legacy", config["schema_version"])
+
+
 def _validate(output: Path, names: list[str]) -> None:
     missing = [name for name in names if not (output / name).is_file()]
     if missing:
@@ -336,8 +379,6 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         raise ValueError("The reference milestone requires reference_year=2021")
     if config.get("dhl_exclude_above") != 1000:
         raise ValueError("The reference milestone requires dhl_exclude_above=1000")
-    if config["output_scope"] != "reference":
-        raise NotImplementedError("daily output_scope is available after Plan 02; no daily run was produced")
     run = Path(config["output_dir"]) / run_id
     if run.exists() and not resume:
         raise FileExistsError(f"Baseline run already exists: {run}")
@@ -426,6 +467,20 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["config_sha256"] = resource_hash(run / "config.resolved.json")
         state["regional_annual"] = json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"]
         _json(run / "run.json", state)
+        if config["output_scope"] == "daily":
+            daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
+            daily_snapshot = dependency_snapshot(daily_dependencies)
+            daily_fingerprint = stage_key("daily", daily_dependencies, config,
+                                          {"workflow": Path(__file__), "projection": Path(__file__).with_name("projection.py"),
+                                           "calendar": Path(__file__).with_name("calendar.py"), "allocation": Path(__file__).with_name("allocation.py"),
+                                           "outputs": Path(__file__).with_name("outputs.py")}, dependency_snapshot=daily_snapshot)
+            resolve_stage(run, "daily", daily_fingerprint, cache_root=cache_root, dependencies=daily_dependencies,
+                          build=lambda output: _write_daily(config, run, output),
+                          validate=lambda output: _validate(output, ["daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"] + (["legacy/05_ga_corrected_b2b_with_marked_adjust_gdf.csv"] if config.get("legacy_export") else [])),
+                          dependency_snapshot=daily_snapshot)
+            for name in ("daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"):
+                _copy_public(run, "daily", name)
+            state["completed_stages"].extend(["calendar", "daily"])
         report_dependencies = {"reference": run / "reference", "run_id": run_id, "baseline_fingerprint": baseline_fingerprint}
         report_snapshot = dependency_snapshot(report_dependencies)
         report_fingerprint = stage_key("report", report_dependencies, config,
@@ -439,7 +494,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
             _copy_public(run, "report", name)
         state["completed_stages"].append("report")
         state["completed_stages"].append("dashboard")
-        state["status"] = "complete_reference"
+        state["status"] = "complete_daily" if config["output_scope"] == "daily" else "complete_reference"
         _json(run / "run.json", state)
         render_baseline(run)
         return run
@@ -447,4 +502,11 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["status"] = "failed"
         state["error"] = f"{type(exc).__name__}: {exc}"
         _json(run / "run.json", state)
+        try:
+            from .dashboard import register_report, render_catalog
+            root = Path(config.get("dashboard_root") or Path(config["output_dir"]) / "dashboard")
+            register_report(run, root)
+            render_catalog(root)
+        except Exception:
+            pass
         raise

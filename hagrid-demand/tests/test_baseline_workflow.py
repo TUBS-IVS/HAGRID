@@ -25,14 +25,17 @@ def test_reference_run_and_resume(fixture_config):
     assert run_baseline(fixture_config, "reference-fixture", resume=True) == run
 
 
-def test_daily_scope_stops_before_reporting_success(fixture_config):
+def test_daily_scope_publishes_aggregate_and_daily_run_status(fixture_config):
     from hagrid_demand.baseline.workflow import run_baseline
 
     config = json.loads(fixture_config.read_text())
     config["output_scope"] = "daily"
     fixture_config.write_text(json.dumps(config), encoding="utf-8")
-    with pytest.raises(NotImplementedError, match="Plan 02"):
-        run_baseline(fixture_config, "daily-fixture")
+    config["dates"] = ["2021-01-01"]
+    fixture_config.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(fixture_config, "daily-fixture")
+    assert json.loads((run / "run.json").read_text())["status"] == "complete_daily"
+    assert (run / "daily_aggregates.parquet").is_file()
 
 
 @pytest.mark.parametrize(("key", "value"), [("reference_year", 2022), ("dhl_exclude_above", 999)])
@@ -413,12 +416,26 @@ def test_dashboard_catalog_is_atomic_idempotent_and_exposes_stage_navigation_wit
     catalog = json.loads((root / "report_catalog.json").read_text(encoding="utf-8"))
     assert catalog["schema_version"] == 1
     assert len(catalog["runs"]) == 2
-    entry = next(item for item in catalog["runs"].values() if item["run_id"] == "catalog-one")
-    assert entry["stages"]["regional_reference"] == "complete"
-    assert entry["stages"]["daily"] == "not_run"
+    entry = next(item for item in catalog["runs"] if item["run_id"] == "catalog-one")
+    assert entry["stage_status"]["regional_reference"] == "complete"
+    assert entry["stage_status"]["daily"] == "not_run"
     assert set(entry["views"]) == {"reference", "market_b2b", "quality"}
     assert entry["views"]["reference"]["regional_annual"] > 0
     html = (root / "index.html").read_text(encoding="utf-8")
     assert "report_catalog.json" in html
     assert "data-quality" in html and "market-b2b" in html and "regional-reference" in html
     assert "localStorage" in html and "stage=" in html
+
+
+def test_daily_scope_streams_selected_date_and_resumes_with_the_same_artifact(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config = json.loads(fixture_config.read_text(encoding="utf-8"))
+    config.update({"output_scope": "daily", "years": [2021], "dates": ["2021-01-01"],
+                   "spatial": {"mode": "dirichlet", "between": 20., "within": 20.}})
+    fixture_config.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(fixture_config, "daily-scope")
+    first = (run / "daily_aggregates.parquet").read_bytes()
+    resumed = run_baseline(fixture_config, "daily-scope", resume=True)
+    assert resumed == run
+    assert (run / "daily_aggregates.parquet").read_bytes() == first

@@ -17,8 +17,9 @@ _ALLOWED_KEYS = {
     "source_mode", "sources", "foundation_run", "weekly_source", "reference_year", "reference_operating_days",
     "output_scope", "dates", "years", "legacy_export", "persons_crs", "plz_crs", "target_crs",
     "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial",
+    "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples",
 }
-_PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run"}
+_PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
 _SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
 
 
@@ -131,6 +132,12 @@ def load_baseline_config(path: Path) -> dict:
         if not isinstance(config["dates"], list):
             raise ValueError("dates must be a list")
         _validate_dates(config["dates"])
+    if "years" in config and (not isinstance(config["years"], list) or not config["years"]
+                               or any(type(year) is not int or year < 2021 for year in config["years"])):
+        raise ValueError("years must contain integer years from 2021")
+    config.setdefault("years", [config["reference_year"]])
+    if config.get("legacy_export") and not isinstance(config.get("legacy_contract"), str):
+        raise ValueError("legacy_export requires legacy_contract")
     config["regional_level"] = _validate_regional_level(config.get("regional_level"))
     config["spatial"] = _validate_spatial(config.get("spatial"))
     for key in _PATH_KEYS & set(config):
