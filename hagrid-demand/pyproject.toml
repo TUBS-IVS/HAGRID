@@ -18,6 +18,7 @@ hagrid-demand = "hagrid_demand.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["hagrid_demand", "hagrid_demand.*"]
 
 [tool.setuptools.package-data]
 hagrid_demand = ["dashboard.html", "spatial.html", "model.html"]
