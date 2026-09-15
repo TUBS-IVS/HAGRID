@@ -101,7 +101,7 @@ def test_generate_days_uses_complete_year_before_date_filter_and_conserves_carri
     whole = pd.concat(list(generate_days(annual, profiles, calendar, all_cfg, 2, 3, spatial_plan=plan, cache_dir=tmp_path)))
 
     assert first.equals(whole.loc[whole.date.eq(pd.Timestamp("2024-01-01"))].reset_index(drop=True))
-    assert whole.groupby("segment")["count"].sum().to_dict() == {"private": 12, "business": 0}
+    assert whole.groupby("segment")["count"].sum().to_dict() == {"private": 12}
     assert (whole.groupby(["date", "segment"])["count"].sum() == whole.groupby(["date", "segment"]).daily_count.first()).all()
     assert whole.loc[whole.site_id.eq("zero"), "count"].eq(0).all()
 
@@ -138,3 +138,88 @@ def test_generate_days_is_invariant_to_annual_profile_and_calendar_input_order(t
                                           spatial_plan=make_dirichlet_plan(reversed_annual, cfg), cache_dir=tmp_path / "two")))
 
     assert first.equals(second)
+
+
+def test_generate_days_streams_the_first_selected_date_without_later_spatial_draws(tmp_path, monkeypatch):
+    import hagrid_demand.baseline.allocation as allocation
+
+    annual, profiles, calendar = _inputs()
+    annual.loc[annual.segment.eq("business"), "annual_expected"] = 4.
+    cfg = {"seed": 23, "regime": "fixed_annual", "dates": ["2024-01-01"],
+           "spatial": {"between": 5., "within": 5.}, "process": {}}
+    calls = []
+    original = allocation.spatial_dirichlet
+
+    def recorded(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(allocation, "spatial_dirichlet", recorded)
+    chunks = allocation.generate_days(annual, profiles, calendar, cfg, 0, 0,
+                                      spatial_plan=allocation.make_dirichlet_plan(annual, cfg), cache_dir=tmp_path)
+    first = next(chunks)
+
+    assert set(first.date.dt.strftime("%Y-%m-%d")) == {"2024-01-01"}
+    assert len(calls) == 2
+
+
+def test_generate_days_skips_empty_zero_target_segments(tmp_path):
+    from hagrid_demand.baseline.allocation import generate_days, make_dirichlet_plan
+
+    annual, profiles, calendar = _inputs()
+    annual = annual.loc[annual.segment.eq("private")].reset_index(drop=True)
+    cfg = {"seed": 21, "regime": "fixed_annual", "dates": ["2024-01-01"],
+           "spatial": {"between": 5., "within": 5.}, "process": {}}
+    result = next(generate_days(annual, profiles, calendar, cfg, 0, 0,
+                                spatial_plan=make_dirichlet_plan(annual, cfg), cache_dir=tmp_path))
+
+    assert result.segment.eq("private").all()
+
+
+def test_spatial_plan_fingerprints_normalized_annual_inputs(tmp_path):
+    from hagrid_demand.baseline.allocation import generate_days, make_dirichlet_plan
+
+    annual, profiles, calendar = _inputs()
+    annual["year"] = annual.year.astype(str)
+    cfg = {"seed": 3, "regime": "fixed_annual", "dates": ["2024-01-01"],
+           "spatial": {"between": 5., "within": 5.}, "process": {}}
+    plan = make_dirichlet_plan(annual, cfg)
+
+    assert next(generate_days(annual, profiles, calendar, cfg, 0, 0, spatial_plan=plan, cache_dir=tmp_path)).shape[0] > 0
+
+
+def test_dirichlet_rejects_null_blank_and_duplicate_canonical_site_keys():
+    from hagrid_demand.baseline.allocation import spatial_dirichlet
+
+    for plz, sites in ((np.array([None]), np.array(["a"])),
+                       (np.array(["01"]), np.array([" "])),
+                       (np.array(["01", "01"]), np.array(["a", "a"]))):
+        with np.testing.assert_raises(ValueError):
+            spatial_dirichlet(np.ones(len(plz)), plz, sites, 2., 2., np.random.default_rng(1))
+
+
+def test_coupling_id_reuses_the_fixed_annual_cache_artifact(tmp_path):
+    from hagrid_demand.baseline.allocation import generate_days, make_dirichlet_plan
+
+    annual, profiles, calendar = _inputs()
+    cfg = {"seed": 8, "regime": "fixed_annual", "dates": ["2024-01-01"],
+           "spatial": {"between": 5., "within": 5.}, "process": {}}
+    plan = make_dirichlet_plan(annual, cfg)
+    list(generate_days(annual, profiles, calendar, cfg, 0, 1, spatial_plan=plan, cache_dir=tmp_path, coupling_id="same"))
+    list(generate_days(annual, profiles, calendar, cfg, 0, 2, spatial_plan=plan, cache_dir=tmp_path, coupling_id="same"))
+
+    assert len([path for path in (tmp_path / "annual_day_counts").iterdir() if path.is_dir()]) == 1
+
+
+def test_generate_days_rejects_null_or_blank_carrier_labels(tmp_path):
+    from hagrid_demand.baseline.allocation import generate_days, make_dirichlet_plan
+
+    annual, profiles, calendar = _inputs()
+    cfg = {"seed": 5, "regime": "fixed_annual", "dates": ["2024-01-01"],
+           "spatial": {"between": 5., "within": 5.}, "process": {}}
+    for invalid in (None, " "):
+        broken = profiles.copy()
+        broken.loc[0, "carrier"] = invalid
+        with np.testing.assert_raises(ValueError):
+            next(generate_days(annual, broken, calendar, cfg, 0, 0,
+                               spatial_plan=make_dirichlet_plan(annual, cfg), cache_dir=tmp_path / str(invalid)))

@@ -40,6 +40,23 @@ def _normalised(values: np.ndarray, label: str) -> np.ndarray:
     return values / values.sum()
 
 
+def _identifier(value: object, label: str) -> str:
+    """Return a canonical non-empty identifier without stringifying nulls."""
+    if value is None:
+        raise ValueError(f"{label} must be non-null and non-blank")
+    if isinstance(value, (int, float, np.number)) and not np.isfinite(float(value)):
+        raise ValueError(f"{label} must be finite")
+    try:
+        if bool(pd.isna(value)):
+            raise ValueError(f"{label} must be non-null and non-blank")
+    except TypeError:
+        pass
+    result = str(value).strip()
+    if not result:
+        raise ValueError(f"{label} must be non-null and non-blank")
+    return result
+
+
 def _calendar_frame(value: object, segment: str) -> pd.DataFrame:
     if not isinstance(value, pd.DataFrame) or not {"date", "calendar_weight"}.issubset(value.columns):
         raise ValueError(f"calendar for {segment} requires date and calendar_weight columns")
@@ -140,17 +157,21 @@ def spatial_dirichlet(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray
     within_value = _number(within, "within", nonnegative=False)
     if between_value <= 0 or within_value <= 0:
         raise ValueError("between and within must be positive Dirichlet concentrations")
-    if not np.isfinite(values).all() or (values < 0).any() or any(not str(value).strip() for value in postal) or any(not str(value).strip() for value in sites):
-        raise ValueError("spatial inputs require finite nonnegative weights and non-empty identifiers")
+    if not np.isfinite(values).all() or (values < 0).any():
+        raise ValueError("spatial inputs require finite nonnegative weights")
+    canonical_postal = np.asarray([_identifier(value, "plz") for value in postal], dtype=object)
+    canonical_sites = np.asarray([_identifier(value, "site_id") for value in sites], dtype=object)
+    if len(set(zip(canonical_postal.tolist(), canonical_sites.tolist(), strict=True))) != len(values):
+        raise ValueError("spatial inputs require unique canonical (plz, site_id) keys")
     result = np.zeros(len(values), dtype=float)
     active = values > 0
     if not active.any():
         raise ValueError("spatial weights require positive support")
     active_indices = np.flatnonzero(active)
-    order = sorted(active_indices.tolist(), key=lambda index: (str(postal[index]), str(sites[index])))
+    order = sorted(active_indices.tolist(), key=lambda index: (canonical_postal[index], canonical_sites[index]))
     sorted_indices = np.asarray(order, dtype=int)
     sorted_values = values[sorted_indices]
-    sorted_postal = np.asarray([str(postal[index]) for index in sorted_indices], dtype=object)
+    sorted_postal = canonical_postal[sorted_indices]
     groups = sorted(set(sorted_postal.tolist()))
     postal_weights = np.asarray([sorted_values[sorted_postal == group].sum() for group in groups], dtype=float)
     postal_shares = rng.dirichlet(between_value * _normalised(postal_weights, "postal weights"))
@@ -190,9 +211,9 @@ def _spatial_parameters(cfg: dict) -> dict:
 
 def make_dirichlet_plan(annual: pd.DataFrame, cfg: dict) -> SpatialPlan:
     """Create a non-calibrated plan bound to its annual target distribution."""
-    _annual_frame(annual)
+    annual_frame = _annual_frame(annual)
     spatial = _spatial_parameters(cfg)
-    return SpatialPlan(mode="dirichlet", target_fingerprints=_target_fingerprints(annual),
+    return SpatialPlan(mode="dirichlet", target_fingerprints=_target_fingerprints(annual_frame),
                        parameter_fingerprint=canonical_digest({"spatial": spatial}), status="complete")
 
 
@@ -209,12 +230,13 @@ def _annual_frame(value: object) -> pd.DataFrame:
     if (result.year.isna().any() or (result.year % 1 != 0).any() or result.year.lt(2021).any()
             or result.annual_expected.isna().any() or not np.isfinite(result.annual_expected).all()
             or result.annual_expected.lt(0).any() or ~result.segment.isin(_SEGMENTS).all()
-            or result.site_id.isna().any() or result.plz.isna().any()
-            or result.duplicated(["year", "segment", "site_id"]).any()):
+            or result.site_id.isna().any() or result.plz.isna().any()):
         raise ValueError("annual requires valid unique nonnegative site targets")
     result["year"] = result.year.astype(int)
-    result["site_id"] = result.site_id.astype(str)
-    result["plz"] = result.plz.astype(str)
+    result["site_id"] = result.site_id.map(lambda item: _identifier(item, "site_id"))
+    result["plz"] = result.plz.map(lambda item: _identifier(item, "plz"))
+    if result.duplicated(["year", "segment", "site_id"]).any() or result.duplicated(["year", "segment", "plz", "site_id"]).any():
+        raise ValueError("annual requires valid unique nonnegative site targets")
     return result.sort_values(["year", "segment", "plz", "site_id"], key=lambda series: series.map(_segment_order) if series.name == "segment" else series,
                               kind="stable").reset_index(drop=True)
 
@@ -284,9 +306,10 @@ def _complete_counts(annual: pd.DataFrame, calendar: dict[str, pd.DataFrame], sh
         raise ValueError("regime must be fixed_annual or expected_annual")
     calendar_payload = {segment: calendar[segment].assign(date=calendar[segment].date.dt.strftime("%Y-%m-%d")).to_dict(orient="records")
                         for segment in _SEGMENTS}
+    effective_inner = coupling_id if coupling_id is not None else inner_id
     dependencies = {"annual_targets": expected.to_dict(), "calendar": calendar_payload,
                     "shocks": {segment: shocks[segment].tolist() for segment in _SEGMENTS},
-                    "year": year, "outer_id": outer_id, "inner_id": inner_id, "coupling_id": coupling_id}
+                    "year": year, "outer_id": outer_id, "inner_id": effective_inner}
     snapshot = dependency_snapshot(dependencies)
     cache_config = {"schema_version": 1, "rng_version": RNG_VERSION, "seed": int(cfg["seed"]), "regime": regime}
     fingerprint = stage_key("annual_day_counts", dependencies, cache_config, {"allocation": Path(__file__)},
@@ -297,8 +320,7 @@ def _complete_counts(annual: pd.DataFrame, calendar: dict[str, pd.DataFrame], sh
     totals = _largest_remainder(total, b2b)
 
     def build(output: Path) -> None:
-        counts = annual_day_counts(total, b2b, calendar, shocks, int(cfg["seed"]), outer_id,
-                                   coupling_id if coupling_id is not None else inner_id, year, regime)
+        counts = annual_day_counts(total, b2b, calendar, shocks, int(cfg["seed"]), outer_id, effective_inner, year, regime)
         counts.to_parquet(output / "annual_day_counts.parquet", index=False)
         (output / "status.json").write_text(json.dumps({
             "quantity_regime": regime, "regime": regime,
@@ -344,6 +366,16 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
     if not isinstance(cfg, dict):
         raise ValueError("cfg must be a mapping")
     _validate_plan(spatial_plan, annual_frame, cfg)
+    profiles_frame = profiles.copy()
+    profiles_frame["year"] = pd.to_numeric(profiles_frame.year, errors="coerce")
+    profiles_frame["segment"] = profiles_frame.segment.astype(str).str.lower()
+    profiles_frame["carrier"] = profiles_frame.carrier.map(lambda item: _identifier(item, "carrier"))
+    profiles_frame["share"] = pd.to_numeric(profiles_frame.share, errors="coerce")
+    if (profiles_frame.year.isna().any() or profiles_frame.share.isna().any()
+            or not np.isfinite(profiles_frame.share).all() or profiles_frame.share.lt(0).any()):
+        raise ValueError("profiles require finite nonnegative shares")
+    if profiles_frame.duplicated(["year", "segment", "carrier"]).any():
+        raise ValueError("profiles have duplicate canonical carrier labels")
     selected = cfg.get("dates")
     if selected is None:
         selected_dates = None
@@ -361,62 +393,67 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
                                  coupling_id=coupling_id)
         counts, _ = _complete_counts(annual_year, calendars, shocks, cfg, outer_id, inner_id, year,
                                      Path(cache_dir), coupling_id)
-        profiles_year = profiles.copy()
-        profiles_year["year"] = pd.to_numeric(profiles_year.year, errors="coerce")
-        profiles_year["segment"] = profiles_year.segment.astype(str).str.lower()
-        profiles_year["carrier"] = profiles_year.carrier.astype(str)
-        profiles_year["share"] = pd.to_numeric(profiles_year.share, errors="coerce")
-        if profiles_year.year.isna().any() or profiles_year.share.isna().any() or not np.isfinite(profiles_year.share).all() or profiles_year.share.lt(0).any():
-            raise ValueError("profiles require finite nonnegative shares")
-        profiles_year = profiles_year.loc[profiles_year.year.eq(year)]
-        rows_by_date: dict[pd.Timestamp, list[pd.DataFrame]] = {}
+        profiles_year = profiles_frame.loc[profiles_frame.year.eq(year)]
+        segment_inputs = {}
         for segment in _SEGMENTS:
             sites = annual_year.loc[annual_year.segment.eq(segment)].sort_values(["plz", "site_id"], kind="stable").reset_index(drop=True)
+            counts_segment = counts.loc[counts.segment.eq(segment)].set_index("date")
+            if sites.empty:
+                if counts_segment["count"].gt(0).any():
+                    raise ValueError(f"positive daily {segment} count has no site support")
+                continue
             carriers = profiles_year.loc[profiles_year.segment.eq(segment), ["carrier", "share"]].sort_values("carrier", kind="stable")
             if carriers.empty:
                 raise ValueError(f"profiles have no carriers for {year}/{segment}")
-            if carriers.carrier.duplicated().any():
-                raise ValueError(f"profiles have duplicate carriers for {year}/{segment}")
             carrier_share = _normalised(carriers.share.to_numpy(float), f"carrier shares for {year}/{segment}")
             site_weights = sites.annual_expected.to_numpy(float)
-            positive_support = site_weights.sum() > 0
-            counts_segment = counts.loc[counts.segment.eq(segment)].set_index("date")
-            calendar_segment = calendars[segment].set_index("date")
-            for date, row in counts_segment.iterrows():
-                daily_count = int(row["count"])
-                if positive_support:
-                    share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
-                                          inner_id=coupling_id if coupling_id is not None else inner_id,
-                                          segment=segment, date=date.date().isoformat(), channel="spatial-dirichlet")
-                    shares = spatial_dirichlet(site_weights, sites.plz.to_numpy(), sites.site_id.to_numpy(),
-                                               _concentration(spatial, "between", segment), _concentration(spatial, "within", segment), share_rng)
-                    allocation_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
-                                               inner_id=coupling_id if coupling_id is not None else inner_id,
-                                               segment=segment, date=date.date().isoformat(), channel="site-counts")
-                    site_counts = allocation_rng.multinomial(daily_count, shares)
-                else:
-                    if daily_count:
-                        raise ValueError(f"positive daily {segment} count has no site support")
-                    shares = np.zeros(len(sites), dtype=float)
-                    site_counts = np.zeros(len(sites), dtype=int)
-                detail_rows = []
+            if site_weights.sum() <= 0:
+                if counts_segment["count"].gt(0).any():
+                    raise ValueError(f"positive daily {segment} count has no site support")
+                continue
+            segment_inputs[segment] = {
+                "sites": sites, "carriers": carriers, "carrier_share": carrier_share,
+                "site_weights": site_weights, "counts": counts_segment,
+                "calendar": calendars[segment].set_index("date"),
+            }
+        dates = sorted(counts.date.unique().tolist())
+        for date in dates:
+            timestamp = pd.Timestamp(date)
+            if selected_dates is not None and timestamp.normalize() not in selected_dates:
+                continue
+            date_rows = []
+            for segment in _SEGMENTS:
+                if segment not in segment_inputs:
+                    continue
+                item = segment_inputs[segment]
+                sites = item["sites"]
+                carriers = item["carriers"]
+                carrier_share = item["carrier_share"]
+                daily_count = int(item["counts"].at[timestamp, "count"])
+                share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
+                                      inner_id=coupling_id if coupling_id is not None else inner_id,
+                                      segment=segment, date=timestamp.date().isoformat(), channel="spatial-dirichlet")
+                shares = spatial_dirichlet(item["site_weights"], sites.plz.to_numpy(), sites.site_id.to_numpy(),
+                                           _concentration(spatial, "between", segment), _concentration(spatial, "within", segment), share_rng)
+                allocation_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
+                                           inner_id=coupling_id if coupling_id is not None else inner_id,
+                                           segment=segment, date=timestamp.date().isoformat(), channel="site-counts")
+                site_counts = allocation_rng.multinomial(daily_count, shares)
                 for index, site in sites.iterrows():
                     carrier_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
                                             inner_id=coupling_id if coupling_id is not None else inner_id,
-                                            segment=segment, site_id=site.site_id, date=date.date().isoformat(),
+                                            segment=segment, site_id=site.site_id, date=timestamp.date().isoformat(),
                                             channel="carrier-counts")
                     assigned = carrier_rng.multinomial(int(site_counts[index]), carrier_share)
-                    detail_rows.append(pd.DataFrame({
-                        "date": date, "year": year, "outer_id": outer_id, "inner_id": inner_id,
+                    date_rows.append(pd.DataFrame({
+                        "date": timestamp, "year": year, "outer_id": outer_id, "inner_id": inner_id,
                         "site_id": site.site_id, "plz": site.plz, "segment": segment,
                         "carrier": carriers.carrier.to_numpy(), "allocation_status": site.allocation_status,
-                        "baseline_expected": float(site.annual_expected) * float(calendar_segment.at[date, "calendar_weight"]) * carrier_share,
+                        "baseline_expected": float(site.annual_expected) * float(item["calendar"].at[timestamp, "calendar_weight"]) * carrier_share,
                         "conditional_expected": float(daily_count) * float(shares[index]) * carrier_share,
                         "daily_count": daily_count, "count": assigned,
                     }))
-                rows_by_date.setdefault(date, []).append(pd.concat(detail_rows, ignore_index=True))
-        for date in sorted(rows_by_date):
-            if selected_dates is None or date.normalize() in selected_dates:
-                frame = pd.concat(rows_by_date[date], ignore_index=True)
+            if date_rows:
+                frame = pd.concat(date_rows, ignore_index=True)
                 frame["_segment_order"] = frame.segment.map(_segment_order)
                 yield frame.sort_values(["date", "_segment_order", "plz", "site_id", "carrier"], kind="stable").drop(columns="_segment_order").reset_index(drop=True)
