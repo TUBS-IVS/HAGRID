@@ -27,12 +27,14 @@ def build_potentials(sites: pd.DataFrame, power: float = 1.0,
     location for business locations.  Passing branch multipliers explicitly selects
     the employee/branch candidate; it is never silently used as the default.
     """
-    required = {"site_id", "plz", "segment", "population", "employees", "branch"}
+    required = {"site_id", "plz", "segment"}
     missing = required.difference(sites.columns)
     if missing:
         raise ValueError(f"sites missing required columns: {sorted(missing)}")
     if not np.isfinite(power) or power <= 0:
         raise ValueError("power must be finite and positive")
+    if branch_multipliers is None and power != 1.0:
+        raise ValueError("nondefault power requires an explicit employee/branch candidate")
     result = sites.copy()
     result["segment"] = result["segment"].map(_segment)
     if result.duplicated(["site_id", "segment"]).any():
@@ -44,9 +46,13 @@ def build_potentials(sites: pd.DataFrame, power: float = 1.0,
     else:
         result["allocation_status"] = result["allocation_status"].fillna("located")
     private = result.segment.eq("private")
-    population = pd.to_numeric(result.population, errors="coerce")
-    if population[private].isna().any() or (population[private] < 0).any():
-        raise ValueError("private locations require finite nonnegative population")
+    if private.any() and "population" not in result:
+        raise ValueError("private locations require population")
+    population = pd.Series(0., index=result.index)
+    if private.any():
+        population = pd.to_numeric(result["population"], errors="coerce")
+        if population[private].isna().any() or not np.isfinite(population[private]).all() or (population[private] < 0).any():
+            raise ValueError("private locations require finite nonnegative population")
     result["weight"] = 0.0
     result.loc[private, "weight"] = population.loc[private].astype(float)
     business = ~private
@@ -56,11 +62,14 @@ def build_potentials(sites: pd.DataFrame, power: float = 1.0,
     else:
         if not isinstance(branch_multipliers, dict):
             raise ValueError("branch_multipliers must be a mapping")
-        multipliers = pd.Series(result.branch.map(branch_multipliers).fillna(1.0), index=result.index, dtype=float)
+        if "employees" not in result:
+            raise ValueError("employee candidate requires employees")
+        branches = result["branch"] if "branch" in result else pd.Series("unclassified", index=result.index)
+        multipliers = pd.Series(branches.map(branch_multipliers).fillna(1.0), index=result.index, dtype=float)
         if not np.isfinite(multipliers).all() or (multipliers <= 0).any():
             raise ValueError("branch multipliers must be finite and positive")
         employees = pd.to_numeric(result.employees, errors="coerce")
-        if employees[business].isna().any() or (employees[business] < 0).any():
+        if employees[business].isna().any() or not np.isfinite(employees[business]).all() or (employees[business] < 0).any():
             bad = result.loc[business & (employees.isna() | employees.lt(0)), "site_id"].tolist()
             raise ValueError(f"employee candidate has invalid employees for sites: {bad}")
         result.loc[business, "weight"] = (
@@ -99,8 +108,10 @@ def fit_nonnegative_mean(support: pd.DataFrame) -> dict:
     persons, companies, target = _support_columns(support)
     x = support[[persons, companies]].to_numpy(float)
     y = support[target].to_numpy(float)
-    if len(x) < 2 or not np.isfinite(x).all() or not np.isfinite(y).all() or (y < 0).any():
-        raise ValueError("support must contain finite nonnegative target values")
+    if len(x) < 2 or not np.isfinite(x).all() or (x < 0).any() or not np.isfinite(y).all() or (y < 0).any():
+        raise ValueError("support must contain finite nonnegative structural features and target values")
+    if not np.any(y > 0):
+        raise ValueError("support has an all-zero response")
     if np.linalg.matrix_rank(x) < 2 or not np.any(x):
         raise ValueError("support has zero or rank-deficient structural features")
     coefficients, residual_norm = nnls(x, y)
@@ -133,7 +144,18 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
     if group_col not in support:
         raise ValueError(f"support missing grouping column: {group_col}")
     frame = support.reset_index(drop=True).copy()
+    if frame[group_col].isna().any():
+        raise ValueError("support grouping values must be known")
     groups = pd.Index(frame[group_col].dropna().unique()).sort_values()
+    if groups.empty:
+        raise ValueError("support requires at least one nonempty group")
+    feature_values = frame[[persons, companies]].to_numpy(float)
+    target_values = frame[target].to_numpy(float)
+    if (not np.isfinite(feature_values).all() or (feature_values < 0).any() or
+            not np.isfinite(target_values).all() or (target_values < 0).any()):
+        raise ValueError("support requires finite nonnegative structural features and target")
+    if not np.any(target_values > 0):
+        raise ValueError("support has an all-zero response")
     if isinstance(folds, int):
         if folds < 2:
             raise ValueError("folds must be at least two")
@@ -141,7 +163,21 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
         fold_pairs = [(set(groups).difference(test), test) for test in chunks if set(groups).difference(test)]
     else:
         fold_pairs = [(set(train), set(test)) for train, test in folds]
-    outcomes: dict[str, list[dict]] = defaultdict(list)
+        if not fold_pairs:
+            raise ValueError("explicit folds must contain at least one nonempty holdout")
+        seen_test = set()
+        known_groups = set(groups)
+        for train, test in fold_pairs:
+            if not train or not test:
+                raise ValueError("explicit folds require nonempty train and test groups")
+            if not train.issubset(known_groups) or not test.issubset(known_groups):
+                raise ValueError("explicit folds contain unknown groups")
+            if train.intersection(test):
+                raise ValueError("explicit fold train/test groups must be disjoint")
+            if seen_test.intersection(test):
+                raise ValueError("explicit folds repeat a held-out group")
+            seen_test.update(test)
+    outcomes: dict[str, list[tuple[np.ndarray, np.ndarray]]] = defaultdict(list)
     stability: list[dict] = []
     employee_stability: list[dict] = []
 
@@ -161,12 +197,12 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
             continue
         actual = test[target].to_numpy(float)
         q75 = historical_quantreg_predict(test[persons], test[companies])
-        outcomes["historical_q75"].append(_metrics(actual, q75))
+        outcomes["historical_q75"].append((actual, q75))
         fit = fit_nonnegative_mean(train.rename(columns={persons: "persons", companies: "companies", target: "target"}))
         mean_prediction = test[[persons, companies]].to_numpy(float) @ np.array(
             [fit["rates"]["persons"], fit["rates"]["companies"]]
         )
-        outcomes["nonnegative_mean"].append(_metrics(actual, mean_prediction))
+        outcomes["nonnegative_mean"].append((actual, mean_prediction))
         stability.append(fit["rates"])
         if "employees" in frame:
             branches = sorted(train.get("branch", pd.Series("unclassified", index=train.index)).fillna("unclassified").astype(str).unique())
@@ -174,15 +210,16 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
             y_train = train[target].to_numpy(float)
             if np.linalg.matrix_rank(x_train) == x_train.shape[1]:
                 coefficients, _ = nnls(x_train, y_train)
-                outcomes["employee_branch_candidate"].append(_metrics(actual, x_test @ coefficients))
+                outcomes["employee_branch_candidate"].append((actual, x_test @ coefficients))
                 employee_stability.append(dict(zip(["persons"] + [f"employees:{branch}" for branch in branches], coefficients)))
     models = {}
     for name, rows in outcomes.items():
+        actual = np.concatenate([row[0] for row in rows])
+        predicted = np.concatenate([row[1] for row in rows])
         models[name] = {
             "holdouts": len(rows),
-            "metrics": {key: (None if not rows else float(np.mean([row[key] for row in rows if row[key] is not None]))
-                        if any(row[key] is not None for row in rows) else None)
-                        for key in ("mae", "wmape", "bias")},
+            "holdout_rows": int(len(actual)),
+            "metrics": _metrics(actual, predicted),
         }
     if stability:
         values = pd.DataFrame(stability)
@@ -203,6 +240,11 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
         raise ValueError(f"units missing required columns: {sorted(missing)}")
     if not units.unit_id.is_unique or max_units < 1 or min_persons < 0 or min_companies < 0:
         raise ValueError("units must be unique and grouping limits valid")
+    structural = units[["persons", "companies"]].apply(pd.to_numeric, errors="coerce")
+    if not np.isfinite(structural.to_numpy(float)).all() or (structural.to_numpy(float) < 0).any():
+        raise ValueError("grouping structural features must be finite and nonnegative")
+    units = units.copy()
+    units[["persons", "companies"]] = structural
     left, right = (("left", "right") if {"left", "right"}.issubset(edges.columns)
                    else ("source", "target") if {"source", "target"}.issubset(edges.columns) else (None, None))
     if left is None:
@@ -224,13 +266,22 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
             for neighbour in sorted(adjacency[unit], key=str):
                 if neighbour not in seen:
                     seen.add(neighbour); queue.append(neighbour)
-        component = sorted(component, key=str)
-        total_persons = float(index.loc[component, "persons"].sum())
-        total_companies = float(index.loc[component, "companies"].sum())
-        status = "resolved" if (len(component) <= max_units and total_persons >= min_persons
-                                  and total_companies >= min_companies) else (
-                                      "unresolved_max_units" if len(component) > max_units else "unresolved_structural_support")
-        group_id = f"{index.at[component[0], 'plz']}:{component[0]}"
-        records.extend({"unit_id": unit, "group_id": group_id, "group_status": status}
-                       for unit in component)
+        remaining = set(component)
+        while remaining:
+            group_seed = min(remaining, key=str)
+            group, queue = [], deque([group_seed]); queued = {group_seed}
+            while queue and len(group) < max_units:
+                unit = queue.popleft()
+                if unit not in remaining:
+                    continue
+                remaining.remove(unit); group.append(unit)
+                for neighbour in sorted(adjacency[unit], key=str):
+                    if neighbour in remaining and neighbour not in queued:
+                        queued.add(neighbour); queue.append(neighbour)
+            total_persons = float(index.loc[group, "persons"].sum())
+            total_companies = float(index.loc[group, "companies"].sum())
+            status = "resolved" if total_persons >= min_persons and total_companies >= min_companies else "unresolved_structural_support"
+            group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
+            records.extend({"unit_id": unit, "group_id": group_id, "group_status": status}
+                           for unit in group)
     return units.merge(pd.DataFrame(records), on="unit_id", how="left", validate="one_to_one")
