@@ -76,6 +76,7 @@ def _parameters(parameters: dict) -> dict:
             "rho": _number(parameters.get("rho", 0.), "rho", lower=0., upper=np.nextafter(1., 0.)),
             "fourier_features": int(features), "seed": int(seed), "field_anchor_date": anchor,
             "field_version": _FIELD_VERSION,
+            "segment": str(parameters.get("segment", "all")),
             "checkpoint_interval": int(parameters.get("checkpoint_interval", 31))}
 
 
@@ -104,7 +105,7 @@ def spatial_basis(xy: np.ndarray, parameters: dict, seed_keys: dict | None = Non
     keys = seed_keys or {}
     base_seed = int(keys.get("basis_seed", params["seed"]))
     rng = named_rng(base_seed, channel="spatial-basis", field_version=_FIELD_VERSION,
-                    segment=keys.get("segment", "all"), features=params["fourier_features"],
+                    segment=keys.get("segment", params["segment"]), features=params["fourier_features"],
                     length_scale_m=params["length_scale_m"])
     frequencies = rng.normal(size=(2, params["fourier_features"])) / params["length_scale_m"]
     phases = rng.uniform(0., 2 * np.pi, params["fourier_features"])
@@ -115,7 +116,7 @@ def _state(day: int, params: dict, keys: dict) -> np.ndarray:
     """Advance a stationary AR(1) state from a reusable block checkpoint."""
     if day < 0:
         raise ValueError("spatial field date must not precede field_anchor_date")
-    state_keys = {key: value for key, value in keys.items() if key not in {"date", "channel", "checkpoint_dir"}}
+    state_keys = {key: value for key, value in keys.items() if key not in {"date", "year", "channel", "checkpoint_dir"}}
     payload = {"params": params, "seed_keys": state_keys, "rng_version": RNG_VERSION}
     identity = canonical_digest(payload)
     interval = max(1, params["checkpoint_interval"])
@@ -174,7 +175,7 @@ def _softmax(log_values: np.ndarray) -> np.ndarray:
 
 
 def _draw_fields(xy: np.ndarray, site_ids: np.ndarray, params: dict, seed: int, draws: int, channel: str) -> np.ndarray:
-    basis = spatial_basis(xy, params, {"basis_seed": params["seed"], "segment": "all"})
+    basis = spatial_basis(xy, params, {"basis_seed": params["seed"], "segment": params["segment"]})
     # Each stationary draw uses an independent coefficient stream.  These are
     # intentionally not adjacent AR days, which would understate holdout error.
     states = np.vstack([named_rng(seed, channel=channel, field_version=_FIELD_VERSION, draw=index).normal(size=params["fourier_features"])
@@ -220,6 +221,8 @@ def calibrate_spatial(target: np.ndarray, xy: np.ndarray, site_ids: np.ndarray, 
     """Fit log base weights on calibration fields and verify them on holdout fields."""
     weights = _finite_vector(target, "target")
     weights = weights / weights.sum()
+    if (weights <= 0).any():
+        raise ValueError("calibrate_spatial requires strictly positive localized target support")
     identifiers = _site_ids(site_ids, len(weights))
     points = _xy(xy, len(weights))
     params, plan = _parameters(parameters), _design(design)
@@ -229,8 +232,10 @@ def calibrate_spatial(target: np.ndarray, xy: np.ndarray, site_ids: np.ndarray, 
         diagnostics = {"draws": plan["validation_draws"], "mean": weights.tolist(), "target": weights.tolist(),
                        "site_error": np.zeros(len(weights)).tolist(), "site_mcse": np.zeros(len(weights)).tolist(),
                        "tvd": 0., "postal": [], "status": "complete"}
+        basis_fingerprint = canonical_digest({"basis": spatial_basis(points, params, {"basis_seed": params["seed"], "segment": params["segment"]}).tolist()})
         return {"log_base": log_base.tolist(), "diagnostics": diagnostics, "fingerprint": fingerprint, "status": "complete",
-                "parameters": params, "design": plan, "iterations": 0}
+                "parameters": params, "design": plan, "iterations": 0,
+                "holdout_basis_fingerprint": basis_fingerprint}
     fields = _draw_fields(points, identifiers, params, plan["calibration_seed"], plan["calibration_draws"], "spatial-calibration")
     converged = False
     for iteration in range(plan["max_iterations"]):
@@ -247,8 +252,10 @@ def calibrate_spatial(target: np.ndarray, xy: np.ndarray, site_ids: np.ndarray, 
     # Reaching the update budget is not acceptance.  Only independent holdout
     # criteria certify the plan.
     status = "complete" if converged and diagnostics["status"] == "complete" else "mean_preservation_unresolved"
+    basis_fingerprint = canonical_digest({"basis": spatial_basis(points, params, {"basis_seed": params["seed"], "segment": params["segment"]}).tolist()})
     return {"log_base": log_base.tolist(), "diagnostics": diagnostics, "fingerprint": fingerprint, "status": status,
-            "parameters": params, "design": plan, "iterations": iteration + 1, "calibration_converged": converged}
+            "parameters": params, "design": plan, "iterations": iteration + 1, "calibration_converged": converged,
+            "holdout_basis_fingerprint": basis_fingerprint}
 
 
 def _holdout_diagnostics(result: dict, target: np.ndarray, plz: np.ndarray, xy: np.ndarray, site_ids: np.ndarray) -> dict:
@@ -262,7 +269,7 @@ def _holdout_diagnostics(result: dict, target: np.ndarray, plz: np.ndarray, xy: 
 def _annual_target_fingerprints(annual: pd.DataFrame) -> dict[str, str]:
     values = {}
     for (year, segment), rows in annual.groupby(["year", "segment"], sort=True):
-        ordered = rows.loc[:, ["site_id", "plz", "annual_expected"]].copy()
+        ordered = rows.loc[:, ["site_id", "plz", "allocation_status", "annual_expected"]].copy()
         ordered["site_id"] = ordered.site_id.astype(str)
         ordered["plz"] = ordered.plz.astype(str)
         ordered = ordered.sort_values(["plz", "site_id"], kind="stable").reset_index(drop=True)
@@ -285,8 +292,8 @@ def _geometry(reference: dict) -> pd.DataFrame:
     else:
         raise ValueError("reference geometry requires x/y or point geometry")
     result["site_id"] = result.site_id.astype(str)
-    if result.site_id.duplicated().any() or not np.isfinite(result[["x", "y"]].to_numpy(float)).all():
-        raise ValueError("reference geometry requires unique finite point coordinates")
+    if result.site_id.duplicated().any():
+        raise ValueError("reference geometry requires unique site IDs")
     return result.set_index("site_id")
 
 
@@ -333,16 +340,19 @@ def resolve_spatial_plan(reference: dict, projection: AnnualProjection, cfg: dic
         if missing:
             raise ValueError(f"located sites have no coordinates: {missing}")
         xy = geometry.loc[local.site_id.astype(str), ["x", "y"]].to_numpy(float)
+        if not np.isfinite(xy).all():
+            raise ValueError("positive localized support requires finite point coordinates")
         target = expected[located] / expected[located].sum()
+        segment_params = _parameters({**params, "segment": str(segment)})
         payload = {"target": target.tolist(), "xy": xy.tolist(), "site_ids": local.site_id.astype(str).tolist(),
-                   "parameters": params, "design": design, "outer_id": int(outer_id), "target_fingerprint": targets[key]}
+                   "parameters": segment_params, "design": design, "outer_id": int(outer_id), "target_fingerprint": targets[key]}
         path = root / canonical_digest(payload) / "calibration.json"
         if path.is_file():
             result = json.loads(path.read_text(encoding="utf-8"))
-            if result.get("fingerprint") != _calibration_fingerprint(target, xy, local.site_id.astype(str).to_numpy(), params, design):
+            if result.get("fingerprint") != _calibration_fingerprint(target, xy, local.site_id.astype(str).to_numpy(), segment_params, design):
                 raise ValueError("spatial calibration cache fingerprint mismatch")
         else:
-            result = calibrate_spatial(target, xy, local.site_id.to_numpy(), params, design)
+            result = calibrate_spatial(target, xy, local.site_id.to_numpy(), segment_params, design)
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_suffix(".tmp")
             temporary.write_text(json.dumps(result, sort_keys=True, allow_nan=False), encoding="utf-8")
@@ -353,6 +363,8 @@ def resolve_spatial_plan(reference: dict, projection: AnnualProjection, cfg: dic
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, sort_keys=True, allow_nan=False), encoding="utf-8")
         temporary.replace(path)
+        result["runtime_basis_fingerprint"] = canonical_digest({"basis": spatial_basis(
+            xy, result["parameters"], {"basis_seed": result["parameters"]["seed"], "segment": str(segment)}).tolist()})
         result = {**result, "site_ids": local.site_id.astype(str).tolist(), "xy": xy.tolist(),
                   "unlocated_share": float(expected[unlocated].sum() / total),
                   "unlocated_site_ids": rows.loc[unlocated, "site_id"].astype(str).tolist(),
