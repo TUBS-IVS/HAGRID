@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.resources
 import json
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,58 @@ import pandas as pd
 
 
 _INPUT_FILES = ("market_inputs.json", "b2b_inputs.json", "volume_inputs.json", "provider_priors.json")
+_METADATA_FIELDS = ("source", "notebook_cell", "status", "unit")
+
+
+def _require_metadata(value: dict[str, Any], label: str) -> None:
+    for field in _METADATA_FIELDS:
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"{label}.{field} must be a non-empty string")
+
+
+def _inherit_metadata(parent: dict[str, Any], value: dict[str, Any], label: str) -> dict[str, Any]:
+    """Validate an explicitly stated field or copy the validated parent value."""
+    inherited = dict(value)
+    for field in _METADATA_FIELDS:
+        inherited[field] = inherited.get(field, parent[field])
+    _require_metadata(inherited, label)
+    return inherited
+
+
+def validate_series_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Strictly validate and materialize inherited provenance for each constant row."""
+    result = copy.deepcopy(inputs)
+    for name in ("market_inputs", "b2b_inputs", "volume_inputs", "provider_priors"):
+        if not isinstance(result.get(name), dict):
+            raise ValueError(f"{name} must be an object")
+        _require_metadata(result[name], name)
+    market = result["market_inputs"]
+    if not isinstance(market.get("carrier_anchor"), dict) or not isinstance(market.get("amazon"), dict):
+        raise ValueError("market_inputs requires carrier_anchor and amazon objects")
+    market["carrier_anchor"] = _inherit_metadata(market, market["carrier_anchor"], "market_inputs.carrier_anchor")
+    market["amazon"] = _inherit_metadata(market, market["amazon"], "market_inputs.amazon")
+    for name, key in (("b2b_inputs", "anchors"), ("volume_inputs", "anchors")):
+        spec = result[name]
+        if not isinstance(spec.get(key), list):
+            raise ValueError(f"{name}.{key} must be a list")
+        normalized = []
+        for index, item in enumerate(spec[key]):
+            if not isinstance(item, dict):
+                raise ValueError(f"{name}.{key}[{index}] must be an object")
+            normalized.append(_inherit_metadata(spec, item, f"{name}.{key}[{index}]"))
+        spec[key] = normalized
+    providers = result["provider_priors"].get("providers")
+    if not isinstance(providers, dict):
+        raise ValueError("provider_priors.providers must be an object")
+    normalized_providers = {}
+    for provider, value in providers.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"provider_priors.providers.{provider} must be an object")
+        normalized_providers[provider] = _inherit_metadata(
+            result["provider_priors"], value, f"provider_priors.providers.{provider}"
+        )
+    result["provider_priors"]["providers"] = normalized_providers
+    return result
 
 
 def _digest(path: Path) -> str:
@@ -25,10 +78,11 @@ def _digest(path: Path) -> str:
 def packaged_series_inputs() -> dict[str, Any]:
     """Read only the four versioned constant files installed with this package."""
     data = importlib.resources.files("hagrid_demand").joinpath("baseline/data")
-    return {
+    inputs = {
         filename.removesuffix(".json"): json.loads(data.joinpath(filename).read_text(encoding="utf-8"))
         for filename in _INPUT_FILES
     }
+    return validate_series_inputs(inputs)
 
 
 def _weekly_profile(path: Path) -> pd.DataFrame:

@@ -10,6 +10,8 @@ import pandas as pd
 from scipy.optimize import curve_fit
 from scipy.optimize import OptimizeWarning
 
+from .sources import validate_series_inputs
+
 
 def _sigmoid(x, maximum, midpoint, steepness):
     return maximum / (1 + np.exp(-steepness * (np.asarray(x) - midpoint)))
@@ -21,6 +23,11 @@ def _bounded_sigmoid(x, maximum, midpoint, steepness, lower=0.20):
 
 def _exp(x, scale, rate):
     return scale * np.exp(rate * (np.asarray(x) - 2028))
+
+
+def _volume_logistic(x, maximum, growth_rate, midpoint):
+    """Notebook 02 logistic curve: (maximum, growth rate, midpoint)."""
+    return maximum / (1 + np.exp(-growth_rate * (np.asarray(x) - midpoint)))
 
 
 def _curve_fit(function, x, y, **kwargs):
@@ -57,9 +64,10 @@ def _market(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
         values["Amazon"] = 0.0 if year == 2014 else max(0.0, float(_sigmoid(year, *fit)))
         total = sum(values.values())
         for provider, value in values.items():
+            provenance = amazon if provider == "Amazon" else anchor
             rows.append({"year": year, "provider": provider, "share": value / total,
-                         "status": "derived_projection", "unit": "share", "source": spec["source"],
-                         "notebook_cell": spec["notebook_cell"]})
+                         "status": provenance["status"], "unit": provenance["unit"],
+                         "source": provenance["source"], "notebook_cell": provenance["notebook_cell"]})
     return pd.DataFrame(rows)
 
 
@@ -83,15 +91,15 @@ def _b2b(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
     for year in years:
         if year in observed.index:
             row = observed.loc[year]
-            share, status = float(row.share), row.status
+            share, status, provenance = float(row.share), row.status, row
         elif year < 2024:
-            share, status = float(np.interp(year, x, y)), "interpolated"
+            share, status, provenance = float(np.interp(year - reference_year, x, y)), "interpolated", spec
         elif failure is None:
-            share, status = float(_bounded_sigmoid(year - reference_year, *params, spec["lower_bound"])), "forecast"
+            share, status, provenance = float(_bounded_sigmoid(year - reference_year, *params, spec["lower_bound"])), "forecast", spec
         else:
-            share, status = np.nan, failure
-        rows.append({"year": year, "share": share, "status": status, "unit": "share",
-                     "source": spec["source"], "notebook_cell": spec["notebook_cell"]})
+            share, status, provenance = np.nan, failure, spec
+        rows.append({"year": year, "share": share, "status": status, "unit": provenance["unit"],
+                     "source": provenance["source"], "notebook_cell": provenance["notebook_cell"]})
     return pd.DataFrame(rows)
 
 
@@ -116,7 +124,8 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
         errors["logistic"] = "insufficient_support"
     else:
         try:
-            fits["logistic"] = _curve_fit(_sigmoid, logistic_x, logistic_y, p0=[10e9, .1, 2015], maxfev=20_000)
+            fits["logistic"] = _curve_fit(_volume_logistic, logistic_x, logistic_y,
+                                            p0=[10e9, .1, 2015], maxfev=20_000)
         except (RuntimeError, TypeError, ValueError, FloatingPointError) as exc:
             errors["logistic"] = type(exc).__name__
     if len(x) < 2:
@@ -131,19 +140,31 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
     for year in years:
         candidate = {
             "linear": float(np.polyval(fits["linear"], year)) if "linear" in fits else np.nan,
-            "logistic": float(_sigmoid(year, *fits["logistic"])) if "logistic" in fits else np.nan,
+            "logistic": float(_volume_logistic(year, *fits["logistic"])) if "logistic" in fits else np.nan,
             "exponential": float(_exp(year, *fits["exponential"])) if "exponential" in fits else np.nan,
         }
-        if year in indexed.index:
+        legacy = indexed.loc[year] if year in indexed.index and indexed.loc[year].status == "legacy_estimate" else None
+        if year in indexed.index and indexed.loc[year].status == "observed":
             anchor = indexed.loc[year]
-            value, status = float(anchor.value), anchor.status
+            value, status, provenance = float(anchor.value), anchor.status, anchor
+        elif policy == "legacy_assumptions" and legacy is not None:
+            value, status, provenance = float(legacy.value), legacy.status, legacy
         elif "linear" in fits:
-            value, status = candidate["linear"], "forecast"
+            value, status, provenance = candidate["linear"], "forecast", spec
         else:
-            value, status = np.nan, "fit_failed"
-        rows.append({"year": year, "value": value, "status": status, "unit": "parcels/year",
+            value, status, provenance = np.nan, "fit_failed", spec
+        candidate_metadata = {}
+        for model in ("linear", "logistic", "exponential"):
+            candidate_metadata[f"{model}_fit_status"] = "ok" if model in fits else "failed"
+            candidate_metadata[f"{model}_fit_error"] = errors.get(model)
+        rows.append({"year": year, "value": value, "status": status, "unit": provenance["unit"],
                      "fit_policy": policy, "fit_status": "ok" if not errors else "partial_failure",
-                     "source": spec["source"], "notebook_cell": spec["notebook_cell"], **candidate})
+                     "source": provenance["source"], "notebook_cell": provenance["notebook_cell"],
+                     "legacy_value": float(legacy.value) if legacy is not None else np.nan,
+                     "legacy_status": legacy.status if legacy is not None else None,
+                     "legacy_source": legacy.source if legacy is not None else None,
+                     "legacy_notebook_cell": legacy.notebook_cell if legacy is not None else None,
+                     **candidate, **candidate_metadata})
     return pd.DataFrame(rows)
 
 
@@ -159,6 +180,7 @@ def _priors(inputs: dict[str, Any]) -> pd.DataFrame:
 
 def build_series(inputs: dict, years: list[int], *, volume_fit_policy: str) -> dict:
     """Build national baseline inputs without consuming historical notebook exports."""
+    inputs = validate_series_inputs(inputs)
     years = sorted({int(year) for year in years})
     if not years:
         raise ValueError("years must contain at least one year")

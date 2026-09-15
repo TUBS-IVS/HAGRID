@@ -67,3 +67,21 @@ The reconstructed B2B 2024 bounded-sigmoid value is `0.2209639502`, independentl
 - Reviewed the data dependency path: package JSON is loaded through package resources; source preparation reads only the declared workbook or a manifest-verified foundation path; no repository-relative output is consumed.
 - `read_foundation` intentionally rejects legacy foundation runs that lack `artifact_manifest.json` with artifact SHA-256 values and declared schemas. A later foundation-producing task must write that manifest before foundation-mode baseline runs can use those artifacts.
 - Historical export CSVs were unavailable, so the comparison records formula-level and classification-level differences rather than a numeric export diff.
+
+## Review round 1 fixes
+
+The review identified five implementation defects. Each received a regression assertion before its correction.
+
+| Finding | RED evidence | GREEN behavior |
+|---|---|---|
+| `observed_only` primary 2024–2028 values used legacy estimates | All five output statuses were `legacy_estimate`. | `observed_only` now publishes its linear observed-only forecast (`4.244663e9` in 2024 through `4.724795e9` in 2028) with `status=forecast`; source legacy numbers are comparison-only `legacy_value`/`legacy_*` fields. `legacy_assumptions` deliberately keeps `value=legacy_value`. |
+| Volume logistic parameters were ordered incorrectly | 2024/2030 candidates were both about `3.059056e9`, disagreeing with the notebook curve (`4.667473e9`, `6.214122e9`). | A dedicated `volume_logistic(x, maximum, growth_rate, midpoint)` now implements notebook 02's parameter order and is tested against an independent `curve_fit` calculation. |
+| B2B interpolation mixed absolute and 2009-relative years | 2010 and 2011 both returned `0.23`. | Interpolation now transforms its query year by 2009, producing `0.4566666667` and `0.4433333333`. |
+| Provenance was flattened and metadata was not validated | A 2021 B2B row reported the generic BIEK source, and malformed top-level provenance was accepted until a later key lookup. | `validate_series_inputs` checks each metadata value or materializes a validated inherited value for anchors, market constants, and provider priors. Output rows retain anchor-specific source/cell/unit metadata. |
+| Fit state collapsed into `partial_failure` | Per-candidate status/error columns did not exist. | Each volume row now has `linear_fit_status`/`linear_fit_error`, `logistic_fit_status`/`logistic_fit_error`, and `exponential_fit_status`/`exponential_fit_error`, retaining the model and reason such as `insufficient_support`. |
+
+Review validation:
+
+- `python -B -m pytest tests/test_baseline_series.py -q` — 11 passed.
+- `python -B -m pytest -q` — 92 passed. The same two unrelated `pyproj`/NumPy deprecation warnings remain in `tests/test_logistics_osm.py`.
+- Package resource files were unchanged in this review round, so the prior external wheel-resource smoke remains applicable; no new resource migration was introduced.
