@@ -47,7 +47,7 @@ def main():
     print(summary.to_string())
     (output/'dashboard.html').write_text('<!doctype html><meta charset="utf-8"><h1>Betriebsgroesse: Modellvergleich</h1><p>Explorative wiederholte PLZ-CV. Conditional core setzt bekannte DHL-Grosskundenmengen voraus. Kein unberuehrter Test und keine automatische Modellfreigabe.</p>'+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
     paths=[Path(args.config),Path(args.special_customers),*source.glob('*.parquet'),*Path(cfg['legacy_output']).glob('0[0125]_*.csv')]
-    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{str(p.relative_to(Path(__file__).parents[1])):digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
+    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
 
 
 if __name__=='__main__': main()

@@ -7,6 +7,12 @@ import pandas as pd
 from .model import PROVIDERS
 from ..pipeline import digest
 from ..data import write_json
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/reconstruct.py", "experimental/model.py", "data.py", "pipeline.py", "scope.py")
 
 
 def constrain(frame,targets):
@@ -62,7 +68,7 @@ def main():
           'Sites outside observed postal areas retain unconstrained estimates and are excluded from the exact-fit claim.']}
     write_json(output/'result.json',note)
     paths=[source/'baseline_sites.parquet',source/'carrier_site_profiles.parquet',source/'config.resolved.json',dhl_path]
-    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code_sha256':digest(Path(__file__))})
+    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':_code_hashes()})
     page='<!doctype html><meta charset="utf-8"><title>Rekonstruktion 2021</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:8px}</style><h1>DHL 2021: beobachtungsgebundene Rekonstruktion</h1><p>Alle beobachteten PLZ-Mengen werden exakt getroffen. Dies ist eine auferlegte Datenbindung, keine unabhaengige Vorhersageguete.</p><ul>'+''.join('<li>'+s+'</li>' for s in note['limitations'])+'</ul>'
     (output/'dashboard.html').write_text(page+check.to_html(float_format=lambda x:f'{x:,.3f}'),encoding='utf-8')
     print(json.dumps(note,indent=2))

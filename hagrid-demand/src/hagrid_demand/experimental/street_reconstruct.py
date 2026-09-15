@@ -11,6 +11,12 @@ from ..data import write_json
 from .model import PROVIDERS
 from ..pipeline import digest
 from ..scope import filter_dhl
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/street_reconstruct.py", "experimental/model.py", "data.py", "pipeline.py", "scope.py")
 
 
 def constrain_streets(frame, observations, links):
@@ -125,7 +131,7 @@ def main(argv=None):
     paths = [source/n for n in ['baseline_sites.parquet', 'carrier_site_profiles.parquet', 'config.resolved.json']]
     paths += [foundation/n for n in ['dhl_candidate_links.parquet', 'dhl_observations.parquet', 'config.resolved.json']]
     write_json(output/'provenance.json', {'inputs': {str(p.resolve()): digest(p) for p in paths},
-        'code': {p.name: digest(p) for p in [Path(__file__), Path(__file__).parents[1] / 'scope.py']}})
+        'code': _code_hashes()})
     page = '<!doctype html><meta charset="utf-8"><title>DHL Straßenrekonstruktion 2021</title><style>body{font:16px system-ui;max-width:1150px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}</style><h1>DHL 2021: Straßen als Mengenanker</h1>'
     def number(v): return f'{v:,.1f}'.replace(',', '_').replace('.', ',').replace('_', '.')
     page += f'<p><b>{number(note["observed_DHL"])}</b> beobachtete Mengeneinheiten; <b>{number(note["assigned_to_sites"])}</b> an Standorten modelliert; <b>{number(note["unallocated_at_streets"])}</b> verbleiben an den beobachteten Straßen.</p>'

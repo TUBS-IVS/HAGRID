@@ -104,7 +104,7 @@ def main():
     print(summary.to_string());print(decision)
     (output/'dashboard.html').write_text('<!doctype html><meta charset="utf-8"><title>Kleiner Logit-Test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:10px}</style><h1>Ein zusaetzlicher Logit-Effekt</h1><p>'+protocol['status']+'</p><p>'+decision['next_step']+'</p>'+summary.to_html(float_format=lambda x:f'{x:.2%}')+'<p>Erweiterungsschwelle vor Berechnung festgelegt: mindestens 0.5 Prozentpunkte weniger Rohmengen-wMAPE, Verbesserung in allen drei Aufteilungen und hoechstens 2 Prozentpunkte Verschlechterung der Hermes-Form.</p>',encoding='utf-8')
     paths=[Path(args.config),Path(args.special_customers),*[source/n for n in ['sites.parquet','site_postal_candidates.parquet','dhl_observations.parquet','hermes_observations.parquet']],*Path(cfg['legacy_output']).glob('0[0125]_*.csv')]
-    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{str(p.relative_to(Path(__file__).parents[1])):digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
+    write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
 
 
 if __name__=='__main__': main()

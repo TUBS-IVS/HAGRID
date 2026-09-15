@@ -57,9 +57,10 @@ def main():
                 return 0
             if args.baseline_command in {"simulate", "sensitivity"}:
                 parser.error(f"baseline {args.baseline_command} follows Plan 02; use baseline run for the reference")
+            from .baseline.dashboard import render_baseline
             from .baseline.workflow import run_baseline
             run = run_baseline(args.config, args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), args.resume)
-            print(f"Baseline dashboard: {run.parent / 'dashboard' / 'index.html'}")
+            print(f"Baseline dashboard: {render_baseline(run)}")
             return 0
         except (ValueError, FileExistsError, FileNotFoundError, NotImplementedError) as exc:
             parser.exit(2, f"Baseline failed: {exc}\n")

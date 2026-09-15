@@ -4,6 +4,12 @@ from pathlib import Path
 import pandas as pd
 from ..data import write_json
 from ..pipeline import digest
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/households.py", "data.py", "pipeline.py")
 
 
 def audit(frame):
@@ -38,7 +44,7 @@ def main():
     candidates,result=audit(frame)
     candidates.to_parquet(output/'household_candidates.parquet',index=False)
     write_json(output/'summary.json',result)
-    write_json(output/'provenance.json',{'persons_sha256':digest(args.persons),'code_sha256':digest(Path(__file__))})
+    write_json(output/'provenance.json',{'persons_sha256':digest(args.persons),'code':_code_hashes()})
     (output/'report.md').write_text('# Haushaltszuordnung\n\n'+str(result)+'\n',encoding='utf-8')
     print(result)
 

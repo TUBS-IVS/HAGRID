@@ -17,6 +17,12 @@ from shapely.geometry import Point, Polygon
 from ..data import write_json
 from ..pipeline import digest
 from ..scope import filter_dhl
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/logistics_osm.py", "data.py", "pipeline.py", "scope.py")
 
 LOCAL_BBOX = (52.425, 9.625, 52.51, 9.78)  # south, west, north, east
 PARTS = {
@@ -288,7 +294,7 @@ def main(argv=None):
     if failures:
         page += '<h2>Unvollständige Downloads</h2><pre>' + escape(json.dumps(failures, ensure_ascii=False)) + '</pre>'
     (output / 'dashboard.html').write_text(page, encoding='utf-8')
-    write_json(output / 'provenance.json', {'code_sha256': digest(Path(__file__)),
+    write_json(output / 'provenance.json', {'code': _code_hashes(),
         'inputs': {n: digest(source/n) for n in ['postal_support.parquet', 'dhl_observations.parquet', 'sites.parquet']},
         'regional': args.regional, 'bbox': bbox, 'snapshots': list(dict.fromkeys(args.snapshots)),
         'status': 'partial' if failures else 'complete',

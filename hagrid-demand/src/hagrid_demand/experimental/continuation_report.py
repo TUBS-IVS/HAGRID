@@ -13,6 +13,12 @@ import pandas as pd
 from ..data import write_json
 from .logistics_osm import audit_map, parse, street_distances
 from ..pipeline import digest
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/continuation_report.py", "experimental/logistics_osm.py", "data.py", "pipeline.py")
 
 
 def number(value, digits=1):
@@ -121,7 +127,7 @@ def main():
         street/'result.json',street/'postal_checks.csv',osm/'facilities_current.parquet',
         source/'postal_support.parquet',source/'dhl_observations.parquet']
     if args.historical_probe: files.append(Path(args.historical_probe))
-    write_json(output/'provenance.json',{'inputs':{str(f.resolve()):digest(f) for f in files},'code_sha256':digest(Path(__file__))})
+    write_json(output/'provenance.json',{'inputs':{str(f.resolve()):digest(f) for f in files},'code':_code_hashes()})
     print(output/'dashboard.html')
 
 
