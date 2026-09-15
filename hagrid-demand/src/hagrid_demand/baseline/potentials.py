@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+import unicodedata
 import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
@@ -246,6 +247,9 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
     required = {"unit_id", "plz", "persons", "companies"}
     if missing := required.difference(units.columns):
         raise ValueError(f"units missing required columns: {sorted(missing)}")
+    if (not units.unit_id.map(lambda value: isinstance(value, str) and bool(value) and
+                              unicodedata.normalize("NFC", value) == value).all() or not units.unit_id.is_unique):
+        raise ValueError("unit_id values must be normalized unique strings")
     try:
         valid_max_units = (not isinstance(max_units, bool) and np.isfinite(float(max_units)) and
                            int(max_units) == float(max_units) and int(max_units) >= 1)
@@ -254,7 +258,7 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
     if not valid_max_units:
         raise ValueError("max_units must be a finite positive integer")
     max_units = int(max_units)
-    if (not units.unit_id.is_unique or not np.isfinite(min_persons) or not np.isfinite(min_companies) or
+    if (not np.isfinite(min_persons) or not np.isfinite(min_companies) or
             min_persons < 0 or min_companies < 0):
         raise ValueError("units must be unique and grouping limits valid")
     structural = units[["persons", "companies"]].apply(pd.to_numeric, errors="coerce")
@@ -283,20 +287,6 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
             for neighbour in sorted(adjacency[unit], key=str):
                 if neighbour not in seen:
                     seen.add(neighbour); queue.append(neighbour)
-        def connected_subsets(remaining, group_seed):
-            initial = frozenset([group_seed])
-            found, pending = {initial}, [initial]
-            while pending:
-                subset = pending.pop()
-                if len(subset) >= max_units:
-                    continue
-                neighbours = set().union(*(adjacency[unit] for unit in subset)).intersection(remaining).difference(subset)
-                for neighbour in sorted(neighbours, key=str):
-                    expanded = subset | {neighbour}
-                    if expanded not in found:
-                        found.add(expanded); pending.append(expanded)
-            return sorted(found, key=lambda group: (len(group), tuple(sorted(map(str, group)))))
-
         def group_support(group):
             persons_total = float(index.loc[list(group), "persons"].sum())
             companies_total = float(index.loc[list(group), "companies"].sum())
@@ -304,30 +294,7 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
                 raise ValueError("aggregated grouping support must be finite")
             return persons_total, companies_total
 
-        def supported(group):
-            persons_total, companies_total = group_support(group)
-            return persons_total >= min_persons and companies_total >= min_companies
-
-        def partition(remaining):
-            if not remaining:
-                return []
-            group_seed = min(remaining, key=str)
-            for group in connected_subsets(remaining, group_seed):
-                if supported(group):
-                    rest = partition(remaining.difference(group))
-                    if rest is not None:
-                        return [group] + rest
-            return None
-
         remaining = set(component)
-        complete_partition = partition(remaining)
-        if complete_partition is not None:
-            for group in complete_partition:
-                group_seed = min(group, key=str)
-                group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
-                records.extend({"unit_id": unit, "group_id": group_id, "group_status": "resolved"}
-                               for unit in sorted(group, key=str))
-            continue
         while remaining:
             group_seed = min(remaining, key=str)
             group, queue = [], deque([group_seed]); queued = {group_seed}
@@ -343,7 +310,7 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
                 if persons_total >= min_persons and companies_total >= min_companies:
                     queue.clear()
             total_persons, total_companies = group_support(group)
-            status = "resolved" if total_persons >= min_persons and total_companies >= min_companies else "unresolved_structural_support"
+            status = "resolved" if total_persons >= min_persons and total_companies >= min_companies else "unresolved_residual_support"
             group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
             records.extend({"unit_id": unit, "group_id": group_id, "group_status": status}
                            for unit in group)

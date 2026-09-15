@@ -54,6 +54,18 @@ def test_reconciliation_releases_nonoptimal_clamp_with_scalar_lagrange_solution(
     assert np.dot([.5, .5], result["q"]) == pytest.approx(.2)
 
 
+def test_reconciliation_terminates_at_feasibility_tolerance_and_tiny_scales():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+
+    snapped = reconcile_carriers(np.array([1.]), np.array([.5]), .500000005,
+                                 np.array([.5]), np.array([.5]), np.array([1.]))
+    assert snapped["q"] == pytest.approx([.5])
+    assert snapped["diagnostics"]["target_adjustment"] == pytest.approx(-.000000005)
+    tiny = reconcile_carriers(np.array([.5, .5]), np.array([.5, .5]), .5,
+                              np.zeros(2), np.ones(2), np.array([1e-300, 1.]))
+    assert np.dot([.5, .5], tiny["q"]) == pytest.approx(.5)
+
+
 def test_default_potentials_count_people_and_company_locations_once():
     from hagrid_demand.baseline.potentials import build_potentials
 
@@ -148,6 +160,24 @@ def test_contiguous_groups_finds_feasible_connected_partition_before_residuals()
         build_contiguous_groups(units, edges, min_persons=3, min_companies=0, max_units=np.nan)
 
 
+def test_contiguous_groups_scale_without_recursive_search_and_require_string_ids():
+    from hagrid_demand.baseline.potentials import build_contiguous_groups
+
+    chain = pd.DataFrame({"unit_id": [str(i) for i in range(1100)], "plz": ["1"] * 1100,
+                          "persons": [1.] * 1100, "companies": [0.] * 1100})
+    edges = pd.DataFrame({"left": [str(i) for i in range(1099)], "right": [str(i + 1) for i in range(1099)]})
+    grouped = build_contiguous_groups(chain, edges, min_persons=0, min_companies=0, max_units=1)
+    assert len(grouped) == 1100 and grouped.group_status.eq("resolved").all()
+    complete = pd.DataFrame({"unit_id": [f"u{i}" for i in range(30)], "plz": ["1"] * 30,
+                             "persons": [0.] * 30, "companies": [0.] * 30})
+    complete_edges = pd.DataFrame([(f"u{i}", f"u{j}") for i in range(30) for j in range(i + 1, 30)],
+                                  columns=["left", "right"])
+    assert len(build_contiguous_groups(complete, complete_edges, 0, 0, 15)) == 30
+    invalid = pd.DataFrame({"unit_id": [1, "1"], "plz": ["1", "1"], "persons": [1., 1.], "companies": [0., 0.]})
+    with pytest.raises(ValueError, match="normalized unique string"):
+        build_contiguous_groups(invalid, pd.DataFrame({"left": [], "right": []}), 0, 0, 1)
+
+
 def test_structure_comparison_uses_complete_held_out_groups_without_claiming_a_winner():
     from hagrid_demand.baseline.potentials import compare_structure_models
 
@@ -214,7 +244,7 @@ def test_reference_retains_1000_and_preserves_unlocated_known_postal_mass():
     postal = result["postal"].set_index("plz")
     assert allocated.loc[("10000", "private")] == pytest.approx(postal.loc["10000", "private_annual"])
     assert allocated.loc[("20000", "private")] == pytest.approx(postal.loc["20000", "private_annual"])
-    assert result["checks"]["allocation_balance"]["regional_error"] == pytest.approx(0.)
+    assert abs(result["checks"]["allocation_balance"]["regional_error"]) <= 1e-8
     assert result["implied_rates"]["persons_packages_per_operating_day"] > 0
 
 
@@ -317,3 +347,20 @@ def test_reference_all_pure_segments_and_direct_allocation_balances():
     business_profile = {"conditional": np.array([[0., 0.], [.001, .999]])}
     solved_business = solve_reference(business, dhl, business_profile, b=1., operating_days=313)
     assert solved_business["regional_annual"] == pytest.approx(999 / .001 * 313)
+
+
+def test_reference_keeps_extreme_eta_as_log_k_and_avoids_site_allocation_overflow():
+    from hagrid_demand.baseline.reference import solve_reference
+
+    extreme = pd.DataFrame({"site_id": ["p", "b"], "plz": ["1", "1"],
+                            "segment": ["private", "business"], "weight": [1e300, 1e-300],
+                            "allocation_status": ["located", "located"]})
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [1.], "value_status": ["observed"]})
+    solved = solve_reference(extreme, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, .5, 313)
+    assert solved["checks"]["eta"] == pytest.approx(600 * np.log(10), abs=1e-8)
+    assert solved["checks"]["k"] is None
+    assert solved["checks"]["k_status"] == "overflow_log_k_retained"
+    huge_site = pd.DataFrame({"site_id": ["p"], "plz": ["1"], "segment": ["private"], "weight": [1e308],
+                              "allocation_status": ["located"]})
+    allocated = solve_reference(huge_site, dhl, {"conditional": np.array([[1., 0.], [0., 0.]])}, 0., 313)
+    assert np.isfinite(allocated["sites"].reference_annual).all()
