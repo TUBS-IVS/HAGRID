@@ -60,6 +60,21 @@ class AnnualProjection:
         return self.hashes["postal"]
 
 
+@dataclass(frozen=True)
+class SpatialPlan:
+    """Verified spatial allocation contract consumed by daily generation.
+
+    Dirichlet plans deliberately contain no calibration output.  The target and
+    parameter fingerprints still prevent a plan made for another annual
+    distribution from being reused accidentally.
+    """
+
+    mode: str
+    target_fingerprints: dict[str, str]
+    parameter_fingerprint: str
+    status: str
+
+
 def assert_balance(actual, expected) -> None:
     """Raise when an expected quantity violates the documented balance tolerance."""
     actual = float(actual)
