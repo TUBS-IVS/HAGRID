@@ -19,6 +19,7 @@ _ALLOWED_KEYS = {
     "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions",
 }
 _PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run"}
+_SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
 
 
 def _reject_nonfinite(value: Any) -> None:
@@ -49,6 +50,21 @@ def _validate_dates(dates: list[Any]) -> None:
         raise ValueError("Configuration contains duplicate dates")
 
 
+def _declared_source_paths(value: Any, *, config_path: Path, input_dir: Path) -> list[Path]:
+    paths = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in _SOURCE_PATH_KEYS and isinstance(item, str):
+                base = input_dir if key == "file" else config_path.parent
+                paths.append((base / item).resolve())
+            else:
+                paths.extend(_declared_source_paths(item, config_path=config_path, input_dir=input_dir))
+    elif isinstance(value, list):
+        for item in value:
+            paths.extend(_declared_source_paths(item, config_path=config_path, input_dir=input_dir))
+    return paths
+
+
 def load_baseline_config(path: Path) -> dict:
     """Load a strict baseline config and resolve all declared paths at its location."""
     path = Path(path).resolve()
@@ -77,7 +93,9 @@ def load_baseline_config(path: Path) -> dict:
         raise ValueError("output_scope must be reference or daily")
     if not isinstance(config["reference_year"], int) or config["reference_year"] < 2021:
         raise ValueError("reference_year must be an integer from 2021")
-    if not isinstance(config["reference_operating_days"], int) or config["reference_operating_days"] <= 0:
+    if (isinstance(config["reference_operating_days"], bool)
+            or not isinstance(config["reference_operating_days"], int)
+            or config["reference_operating_days"] <= 0):
         raise ValueError("reference_operating_days must be a positive integer")
     if "dates" in config:
         if not isinstance(config["dates"], list):
@@ -91,9 +109,11 @@ def load_baseline_config(path: Path) -> dict:
     if config.get("cache_root") is None:
         config["cache_root"] = str(Path(config["output_dir"]) / ".stage-cache")
     input_paths = [Path(config["input_dir"])]
-    for key in ("foundation_run", "weekly_source", "stock_updates"):
+    for key in ("foundation_run", "weekly_source", "stock_updates", "baseline_run"):
         if config.get(key):
             input_paths.append(Path(config[key]))
+    input_paths.extend(_declared_source_paths(config.get("sources", []), config_path=path,
+                                              input_dir=Path(config["input_dir"])))
     output_paths = [Path(config["output_dir"])]
     if config.get("cache_root"):
         output_paths.append(Path(config["cache_root"]))

@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -102,6 +104,16 @@ def test_stage_key_includes_dependencies_code_schema_and_rng_versions(tmp_path):
     assert stage_key("reference", {"source": source}, {"schema_version": 1, "rng_version": 1, "seed": 43}, {"code": code}) != base
 
 
+def test_stage_key_rejects_non_string_mapping_keys_before_they_can_collide(tmp_path):
+    """Integer and string keys must not be silently stringified into one semantic key."""
+    from hagrid_demand.common.cache import stage_key
+
+    source = tmp_path / "input.json"
+    source.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="keys"):
+        stage_key("reference", {1: source, "1": source}, {"seed": 42}, {})
+
+
 def test_publish_stage_never_exposes_failed_writer(tmp_path):
     """A failed builder must leave neither a final stage nor a valid cache marker."""
     from hagrid_demand.common.cache import publish_stage
@@ -150,6 +162,127 @@ def test_resolve_stage_rebuilds_incomplete_cache_and_records_verified_manifest(t
     resolve_stage(run, "reference", "fingerprint", cache_root=cache,
                   dependencies={"source": "abc"}, build=build, validate=validate)
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("malformed", [[], {"status": "complete", "runtime": "wrong", "dependencies": [], "artifacts": []}])
+def test_resolve_stage_rebuilds_parseable_but_malformed_manifests(tmp_path, malformed):
+    """A parseable manifest with invalid shapes cannot trigger attribute errors or cache reuse."""
+    from hagrid_demand.common.cache import resolve_stage
+
+    cache = tmp_path / "cache"
+    stage = cache / "reference" / "fingerprint"
+    stage.mkdir(parents=True)
+    (stage / "result.json").write_text('{"old": true}', encoding="utf-8")
+    (stage / "stage_manifest.json").write_text(json.dumps(malformed), encoding="utf-8")
+    calls = []
+
+    def build(work):
+        calls.append(1)
+        (work / "result.json").write_text('{"fresh": true}', encoding="utf-8")
+
+    resolve_stage(tmp_path / "run", "reference", "fingerprint", cache_root=cache,
+                  dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+    assert calls == [1]
+    assert json.loads((stage / "result.json").read_text(encoding="utf-8")) == {"fresh": True}
+
+
+def test_resolve_stage_concurrent_writers_keep_the_first_valid_publication(tmp_path):
+    """Two contenders for one fingerprint must build once and retain that valid winner."""
+    from hagrid_demand.common.cache import resolve_stage
+
+    barrier = threading.Barrier(2)
+    cache = tmp_path / "cache"
+    built = []
+    failures = []
+
+    def contender(label):
+        try:
+            barrier.wait(timeout=5)
+
+            def build(work):
+                built.append(label)
+                (work / "winner.txt").write_text(label, encoding="utf-8")
+                time.sleep(0.15)
+
+            resolve_stage(tmp_path / f"run-{label}", "reference", "fingerprint", cache_root=cache,
+                          dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+        except BaseException as exc:  # report failures after both threads join
+            failures.append(exc)
+
+    threads = [threading.Thread(target=contender, args=(label,)) for label in ("first", "second")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not failures
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(built) == 1
+    assert (cache / "reference" / "fingerprint" / "winner.txt").read_text(encoding="utf-8") == built[0]
+
+
+def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_failure(tmp_path, monkeypatch):
+    """Run artifacts are hash-checked copies, and failed copies never become visible."""
+    from hagrid_demand.common import cache as stage_cache
+
+    cache_root = tmp_path / "cache"
+    run = tmp_path / "run"
+
+    def build(work):
+        (work / "result.json").write_text('{"ok": true}', encoding="utf-8")
+
+    original_copy2 = stage_cache.shutil.copy2
+
+    def broken_copy(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(stage_cache.shutil, "copy2", broken_copy)
+    with pytest.raises(OSError, match="disk full"):
+        stage_cache.resolve_stage(run, "reference", "fingerprint", cache_root=cache_root,
+                                  dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+    assert not (run / "reference").exists()
+    assert not list(run.glob(".reference.run.tmp-*"))
+
+    monkeypatch.setattr(stage_cache.shutil, "copy2", original_copy2)
+    stage = stage_cache.resolve_stage(run, "reference", "fingerprint", cache_root=cache_root,
+                                      dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+    copied = run / "reference" / "result.json"
+    assert copied.read_text(encoding="utf-8") == (stage / "result.json").read_text(encoding="utf-8")
+    copied.write_text('{"tampered": true}', encoding="utf-8")
+    stage_cache.resolve_stage(run, "reference", "fingerprint", cache_root=cache_root,
+                              dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+    assert copied.read_text(encoding="utf-8") == '{"ok": true}'
+    run_manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
+    assert run_manifest["stages"]["reference"]["run_artifacts"] == {"reference/result.json": run_manifest["stages"]["reference"]["artifacts"]["result.json"]}
+
+
+def test_baseline_config_rejects_outputs_inside_all_declared_input_paths(tmp_path):
+    """Every declared source and baseline input protects its subtree from outputs."""
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    (tmp_path / "inputs").mkdir()
+    (tmp_path / "baseline-input").mkdir()
+    (tmp_path / "source-input").mkdir()
+    config = tmp_path / "baseline.json"
+    base = {
+        "schema_version": 1, "rng_version": 1, "seed": 42, "input_dir": "inputs", "output_dir": "runs",
+        "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313,
+        "output_scope": "reference", "baseline_run": "baseline-input",
+        "sources": [{"id": "raw", "path": "source-input"}],
+    }
+    for output_key, output_value in [
+        ("output_dir", "baseline-input/runs"),
+        ("cache_root", "source-input/cache"),
+        ("dashboard_root", "source-input/dashboard"),
+    ]:
+        payload = {**base, output_key: output_value}
+        config.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match="output"):
+            load_baseline_config(config)
+
+    payload = {**base, "reference_operating_days": True}
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="operating_days"):
+        load_baseline_config(config)
 
 
 def test_baseline_help_has_no_experimental_model_imports():
