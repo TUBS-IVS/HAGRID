@@ -50,7 +50,19 @@ def main():
             command.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if args.command == "baseline":
-        parser.error("baseline commands are prepared; implementation follows the reference stages")
+        try:
+            if args.baseline_command == "report":
+                from .baseline.dashboard import render_baseline
+                print(f"Baseline dashboard: {render_baseline(args.run_dir)}")
+                return 0
+            if args.baseline_command in {"simulate", "sensitivity"}:
+                parser.error(f"baseline {args.baseline_command} follows Plan 02; use baseline run for the reference")
+            from .baseline.workflow import run_baseline
+            run = run_baseline(args.config, args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), args.resume)
+            print(f"Baseline dashboard: {run.parent / 'dashboard' / 'index.html'}")
+            return 0
+        except (ValueError, FileExistsError, FileNotFoundError, NotImplementedError) as exc:
+            parser.exit(2, f"Baseline failed: {exc}\n")
     if args.command == "logistics-audit":
         from .logistics_osm import main as audit
         audit(["--foundation", args.foundation, "--output", args.output] + (["--regional"] if args.regional else []) + ["--snapshots",*args.snapshots])

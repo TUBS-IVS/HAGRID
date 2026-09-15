@@ -72,6 +72,26 @@ Alternativ nach Installation: `python -m hagrid_demand foundation --config confi
 Die relativen Input-/Outputpfade werden relativ zur Konfigurationsdatei aufgelöst, nicht zum aktuellen Arbeitsverzeichnis.
 Ein optionales `--run-id mein-lauf` benennt den Run. Existierende Runs werden nicht überschrieben.
 
+## Deterministische Referenz
+
+Der Baseline-Befehl erzeugt ausschließlich die dokumentierte Referenz für 2021. Er liest lokale Rohquellen,
+schreibt geprüfte Zwischenartefakte in einen inhaltsadressierten Cache und kopiert die verwendeten Artefakte in
+den Run. Die Konfiguration benötigt `source_mode: "raw"`, die Foundation-kompatiblen Quellen H01/H02/H03/H04/H06,
+`weekly_source`, CRS-Angaben, `reference_year`, `reference_operating_days` und `output_scope: "reference"`.
+
+```powershell
+python -m hagrid_demand baseline run --config configs/baseline-reference.json --run-id reference-2021
+python -m hagrid_demand baseline report --run-dir runs/reference-2021
+```
+
+Alle Referenzläufe aktualisieren denselben Offline-Einstieg unter `<output_dir>/dashboard/index.html`; die
+run-spezifischen Mengen, Scope-Bilanzen und B2B-Anpassungen bleiben in `<run>/report_data.json`. Ein Lauf mit
+demselben Namen benötigt `--resume`; geänderte Konfigurationen oder Eingabequellen werden dabei abgelehnt.
+`output_scope: "daily"` beendet sich bewusst mit einem Fehler, bis Plan 02 den Tageslauf bereitstellt.
+
+Die früheren Modell-, OSM- und räumlichen Versuche liegen unter `hagrid_demand.experimental`. Die bisherigen
+Importpfade bleiben als Weiterleitungen erhalten, damit vorhandene Befehle und Skripte weiterhin funktionieren.
+
 ## Stages und Outputs
 
 1. `ingest`: SHA-256 der konsumierten Dateien einschließlich SHP-Komponenten; Inventar weiterer lokaler Dateien.

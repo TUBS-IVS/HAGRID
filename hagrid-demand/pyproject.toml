@@ -21,7 +21,7 @@ where = ["src"]
 include = ["hagrid_demand", "hagrid_demand.*"]
 
 [tool.setuptools.package-data]
-hagrid_demand = ["dashboard.html", "spatial.html", "model.html", "baseline/data/*.json", "experimental/*.html", "baseline/templates/*.html"]
+hagrid_demand = ["dashboard.html", "spatial.html", "model.html", "baseline/data/*.json", "experimental/*.html", "experimental/*.json", "baseline/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

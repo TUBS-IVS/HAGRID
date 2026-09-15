@@ -1,0 +1,215 @@
+"""Atomic orchestration of the deterministic reference baseline."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import uuid
+
+import geopandas as gpd
+import pandas as pd
+
+from hagrid_demand.common.cache import resolve_stage, stage_key
+from hagrid_demand.common.provenance import canonical_json, resource_hash
+from hagrid_demand.data import (build_business, build_residential, read_dhl, read_hermes,
+                                read_persons, read_plz)
+
+from .config import load_baseline_config
+from .dashboard import render_baseline
+from .potentials import build_potentials
+from .reference import solve_reference
+from .series import build_series
+from .sources import packaged_series_inputs, prepare_sources
+
+
+_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}")
+
+
+def _json(path: Path, value: dict) -> None:
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _source_specs(config: dict) -> dict[str, Path]:
+    specs = config.get("sources")
+    if not isinstance(specs, list):
+        raise ValueError("raw source mode requires a sources list")
+    result = {}
+    for spec in specs:
+        if not isinstance(spec, dict) or not isinstance(spec.get("adapter"), str) or not isinstance(spec.get("file"), str):
+            raise ValueError("each raw source requires adapter and file")
+        result[spec["adapter"]] = Path(config["input_dir"]) / spec["file"]
+    required = {"persons", "companies", "dhl", "hermes", "plz"}
+    if missing := required.difference(result):
+        raise ValueError(f"raw source mode is missing adapters: {sorted(missing)}")
+    return result
+
+
+def _raw_source_paths(config: dict) -> list[Path]:
+    paths = [Path(config["config_path"])]
+    if config["source_mode"] == "raw":
+        paths.extend(_source_specs(config).values())
+        paths.append(Path(config["weekly_source"]))
+    elif config.get("foundation_run"):
+        paths.append(Path(config["foundation_run"]))
+    return paths
+
+
+def _write_sources(config: dict, output: Path) -> None:
+    prepared = prepare_sources(config, output)
+    if config["source_mode"] != "raw":
+        raise NotImplementedError("foundation_run orchestration requires the Plan 02 foundation adapter")
+    paths = _source_specs(config)
+    persons = read_persons(paths["persons"], config["persons_crs"], config["target_crs"])
+    residential = build_residential(persons, tolerance=5.0)
+    businesses = build_business(paths["companies"], config["target_crs"])
+    columns = ["site_id", "recipient_type", "population", "employees", "branch", "location_status", "invalid_employees", "geometry"]
+    residential["invalid_employees"] = False
+    sites = gpd.GeoDataFrame(pd.concat([residential[columns], businesses[columns]], ignore_index=True),
+                             geometry="geometry", crs=config["target_crs"])
+    postal = read_plz(paths["plz"], config["plz_crs"], config["target_crs"])
+    membership = gpd.sjoin(sites[["site_id", "geometry"]], postal, how="left", predicate="intersects")
+    counts = membership.groupby("site_id").plz.count()
+    unique = membership.loc[membership.site_id.map(counts).eq(1), ["site_id", "plz"]].drop_duplicates("site_id")
+    sites = sites.merge(unique, on="site_id", how="left", validate="one_to_one")
+    sites["segment"] = sites.recipient_type
+    sites["allocation_status"] = sites.location_status.map(
+        lambda value: "located" if value == "source_point_unverified" else "unlocated"
+    )
+    dhl = read_dhl(paths["dhl"], config["target_crs"])
+    hermes = read_hermes(paths["hermes"])
+    sites.to_parquet(output / "sites.parquet", index=False)
+    dhl.to_parquet(output / "dhl_observations.parquet", index=False)
+    hermes.to_parquet(output / "hermes_observations.parquet", index=False)
+    postal.to_parquet(output / "postal_support.parquet", index=False)
+    source_manifest = json.loads((output / "sources.json").read_text(encoding="utf-8"))
+    source_manifest["raw_sources"] = {name: resource_hash(path) for name, path in _source_specs(config).items()}
+    source_manifest["invalid_employees"] = int(sites.invalid_employees.sum())
+    _json(output / "sources.json", source_manifest)
+    assert prepared["mode"] == "raw"
+
+
+def _write_series(config: dict, output: Path) -> None:
+    series = build_series(packaged_series_inputs(), [config["reference_year"]], volume_fit_policy="observed_only")
+    for name, table in series.items():
+        table.to_parquet(output / f"{name}.parquet", index=False)
+
+
+def _write_potentials(source: Path, output: Path) -> None:
+    sites = gpd.read_parquet(source / "sites.parquet")
+    potentials = build_potentials(sites.drop(columns="geometry"))
+    potentials.to_parquet(output / "potentials.parquet", index=False)
+
+
+def _profiles(series_dir: Path, reference_year: int) -> tuple[dict, float]:
+    market = pd.read_parquet(series_dir / "market.parquet")
+    priors = pd.read_parquet(series_dir / "provider_priors.parquet")
+    b2b = pd.read_parquet(series_dir / "b2b.parquet")
+    market = market.loc[market.year.eq(reference_year)].set_index("provider").sort_index()
+    priors = priors.set_index("provider").reindex(market.index)
+    if priors.isna().any().any():
+        raise ValueError("provider priors do not cover reference market")
+    return ({"m": market["share"].to_numpy(float), "q_prior": priors["initial"].to_numpy(float),
+             "lower": priors["lower"].to_numpy(float), "upper": priors["upper"].to_numpy(float),
+             "scale": priors["scale"].to_numpy(float), "carriers": market.index.tolist()},
+            float(b2b.loc[b2b.year.eq(reference_year), "share"].item()))
+
+
+def _write_reference(config: dict, source: Path, series_dir: Path, potentials_dir: Path, output: Path) -> None:
+    profiles, b2b = _profiles(series_dir, config["reference_year"])
+    solved = solve_reference(pd.read_parquet(potentials_dir / "potentials.parquet"),
+                             gpd.read_parquet(source / "dhl_observations.parquet"), profiles, b2b,
+                             config["reference_operating_days"])
+    solved["postal"].to_parquet(output / "reference_postal.parquet", index=False)
+    solved["sites"].drop(columns="geometry", errors="ignore").to_parquet(output / "reference_sites.parquet", index=False)
+    solved["carriers"].to_parquet(output / "reference_carriers.parquet", index=False)
+    _json(output / "reference_checks.json", {**solved["checks"], "source_quality": solved["source_quality"],
+                                                "implied_rates": solved["implied_rates"], "regional_annual": solved["regional_annual"]})
+
+
+def _validate(output: Path, names: list[str]) -> None:
+    missing = [name for name in names if not (output / name).is_file()]
+    if missing:
+        raise ValueError(f"stage did not write required artifacts: {missing}")
+
+
+def _copy_public(run: Path, stage: str, name: str) -> None:
+    source = run / stage / name
+    target = run / name
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    shutil.copy2(source, temporary)
+    os.replace(temporary, target)
+
+
+def _run_state(run: Path, config: dict) -> dict:
+    return {"run_id": run.name, "status": "running", "config": config, "completed_stages": []}
+
+
+def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
+    """Build or safely resume the one-year deterministic reference baseline."""
+    if not _RUN_ID.fullmatch(run_id):
+        raise ValueError("Invalid run_id")
+    config = load_baseline_config(Path(config_path))
+    if config["output_scope"] != "reference":
+        raise NotImplementedError("daily output_scope is available after Plan 02; no daily run was produced")
+    output_root, run = Path(config["output_dir"]), Path(config["output_dir"]) / run_id
+    if run.exists() and not resume:
+        raise FileExistsError(f"Baseline run already exists: {run}")
+    if resume:
+        if not run.is_dir() or not (run / "config.resolved.json").is_file():
+            raise FileNotFoundError(f"No resumable baseline run: {run}")
+        prior = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
+        if canonical_json(prior) != canonical_json(config):
+            raise ValueError("cannot resume: resolved configuration changed")
+    else:
+        run.mkdir(parents=True, exist_ok=False)
+        _json(run / "config.resolved.json", config)
+        _json(run / "run.json", _run_state(run, config))
+    source_dependencies = {"source_files": _raw_source_paths(config)}
+    source_fingerprint = stage_key("sources", source_dependencies, config, {"workflow": Path(__file__), "data": Path(__file__).parents[1] / "data.py"})
+    if resume and (run / "stage_manifest.json").is_file():
+        prior_manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
+        previous = prior_manifest.get("stages", {}).get("sources", {}).get("fingerprint")
+        if previous is not None and previous != source_fingerprint:
+            raise ValueError("cannot resume: consumed source files changed")
+    state = _run_state(run, config)
+    try:
+        cache_root = Path(config["cache_root"])
+        resolve_stage(run, "sources", source_fingerprint, cache_root=cache_root, dependencies=source_dependencies,
+                      build=lambda output: _write_sources(config, output),
+                      validate=lambda output: _validate(output, ["weekly_profile.csv", "sources.json", "sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet", "postal_support.parquet"]))
+        state["completed_stages"].append("sources")
+        series_dependencies = {"inputs": Path(__file__).parent / "data", "year": config["reference_year"]}
+        series_fingerprint = stage_key("series", series_dependencies, config, {"workflow": Path(__file__), "series": Path(__file__).with_name("series.py")})
+        resolve_stage(run, "series", series_fingerprint, cache_root=cache_root, dependencies=series_dependencies,
+                      build=lambda output: _write_series(config, output),
+                      validate=lambda output: _validate(output, ["market.parquet", "b2b.parquet", "volume.parquet", "provider_priors.parquet"]))
+        state["completed_stages"].append("series")
+        potential_dependencies = {"sources": run / "sources"}
+        potential_fingerprint = stage_key("potentials", potential_dependencies, config, {"workflow": Path(__file__), "potentials": Path(__file__).with_name("potentials.py")})
+        resolve_stage(run, "potentials", potential_fingerprint, cache_root=cache_root, dependencies=potential_dependencies,
+                      build=lambda output: _write_potentials(run / "sources", output),
+                      validate=lambda output: _validate(output, ["potentials.parquet"]))
+        state["completed_stages"].append("potentials")
+        reference_dependencies = {"sources": run / "sources", "series": run / "series", "potentials": run / "potentials"}
+        reference_fingerprint = stage_key("reference", reference_dependencies, config, {"workflow": Path(__file__), "reference": Path(__file__).with_name("reference.py")})
+        resolve_stage(run, "reference", reference_fingerprint, cache_root=cache_root, dependencies=reference_dependencies,
+                      build=lambda output: _write_reference(config, run / "sources", run / "series", run / "potentials", output),
+                      validate=lambda output: _validate(output, ["reference_postal.parquet", "reference_sites.parquet", "reference_carriers.parquet", "reference_checks.json"]))
+        for name in ("reference_postal.parquet", "reference_sites.parquet", "reference_carriers.parquet", "reference_checks.json"):
+            _copy_public(run, "reference", name)
+        state["completed_stages"].append("reference")
+        dashboard = render_baseline(run)
+        state["completed_stages"].extend(["report", "dashboard"])
+        state["status"] = "complete_reference"
+        _json(run / "run.json", state)
+        return run
+    except Exception as exc:
+        state["status"] = "failed"
+        state["error"] = f"{type(exc).__name__}: {exc}"
+        _json(run / "run.json", state)
+        raise
