@@ -127,3 +127,100 @@ def test_baseline_config_accepts_declared_correlated_spatial_parameters(tmp_path
     path.write_text(json.dumps(config), encoding="utf-8")
 
     assert load_baseline_config(path)["spatial"]["mode"] == "correlated"
+
+
+def test_resolved_holdout_and_runtime_use_the_same_segment_basis(tmp_path):
+    """Changing calibration's segment identity away from the runtime basis breaks this probe."""
+    from hagrid_demand.baseline.spatial import resolve_spatial_plan
+    from hagrid_demand.common.contracts import AnnualProjection
+
+    sites = pd.DataFrame({"year": [2024, 2024], "segment": ["private", "private"],
+                          "site_id": ["a", "b"], "plz": ["01", "02"], "annual_expected": [6., 4.],
+                          "allocation_status": ["located", "located"]})
+    cfg = {"seed": 7, "spatial": {"mode": "correlated", "length_scale_m": 100., "log_sigma": .2, "rho": .4,
+                                      "fourier_features": 16, "calibration_draws": 64, "validation_draws": 128}}
+    plan = resolve_spatial_plan({"geometry": pd.DataFrame({"site_id": ["a", "b"], "x": [0., 90.], "y": [0., 0.]})},
+                                AnnualProjection(sites, pd.DataFrame(), pd.DataFrame(), {"hashes": {}}), cfg, 0, tmp_path)
+
+    assert plan.calibration["2024:private"]["holdout_basis_fingerprint"] == plan.calibration["2024:private"]["runtime_basis_fingerprint"]
+
+
+def test_ar_field_does_not_reset_at_year_boundary_and_reuses_checkpoint(tmp_path):
+    import hagrid_demand.baseline.spatial as spatial
+
+    _, xy, site_ids, parameters, _ = _inputs()
+    keys = {"seed": 14, "segment": "private", "checkpoint_dir": str(tmp_path)}
+    dec31 = spatial.spatial_field("2024-12-31", site_ids, xy, parameters, {**keys, "year": 2024})
+    first_jan = spatial.spatial_field("2025-01-01", site_ids, xy, parameters, {**keys, "year": 2025})
+    spatial._CHECKPOINTS.clear()
+    checkpoint_jan = spatial.spatial_field("2025-01-01", site_ids, xy, parameters, {**keys, "year": 2025})
+
+    assert not np.array_equal(dec31, first_jan)
+    np.testing.assert_array_equal(first_jan, checkpoint_jan)
+    assert len([path for path in tmp_path.iterdir() if path.is_dir()]) == 1
+
+
+def test_allocation_status_is_part_of_spatial_plan_identity(tmp_path):
+    from hagrid_demand.baseline.spatial import resolve_spatial_plan
+    from hagrid_demand.common.contracts import AnnualProjection
+
+    sites = pd.DataFrame({"year": [2024, 2024], "segment": ["private", "private"], "site_id": ["a", "b"],
+                          "plz": ["01", "02"], "annual_expected": [6., 4.], "allocation_status": ["located", "unlocated"]})
+    cfg = {"seed": 7, "spatial": {"mode": "correlated", "length_scale_m": 100., "log_sigma": 0., "rho": .4,
+                                      "fourier_features": 16, "calibration_draws": 32, "validation_draws": 64}}
+    reference = {"geometry": pd.DataFrame({"site_id": ["a", "b"], "x": [0., 90.], "y": [0., 0.]})}
+    first = resolve_spatial_plan(reference, AnnualProjection(sites, pd.DataFrame(), pd.DataFrame(), {"hashes": {}}), cfg, 0, tmp_path)
+    swapped = sites.assign(allocation_status=["unlocated", "located"])
+    second = resolve_spatial_plan(reference, AnnualProjection(swapped, pd.DataFrame(), pd.DataFrame(), {"hashes": {}}), cfg, 0, tmp_path)
+
+    assert first.target_fingerprints != second.target_fingerprints
+
+
+def test_unlocated_geometry_can_be_present_but_missing_coordinates(tmp_path):
+    from hagrid_demand.baseline.spatial import resolve_spatial_plan
+    from hagrid_demand.common.contracts import AnnualProjection
+
+    sites = pd.DataFrame({"year": [2024, 2024], "segment": ["private", "private"], "site_id": ["a", "rest"],
+                          "plz": ["01", "99"], "annual_expected": [8., 2.], "allocation_status": ["located", "unlocated"]})
+    cfg = {"seed": 8, "spatial": {"mode": "correlated", "length_scale_m": 100., "log_sigma": 0., "rho": .4,
+                                      "fourier_features": 16, "calibration_draws": 32, "validation_draws": 64}}
+    reference = {"geometry": pd.DataFrame({"site_id": ["a", "rest"], "x": [0., np.nan], "y": [0., np.nan]})}
+
+    plan = resolve_spatial_plan(reference, AnnualProjection(sites, pd.DataFrame(), pd.DataFrame(), {"hashes": {}}), cfg, 0, tmp_path)
+
+    assert plan.status == "complete"
+
+
+def test_generate_days_blocks_unresolved_correlated_plan(tmp_path):
+    from dataclasses import replace
+    from hagrid_demand.baseline.allocation import generate_days
+    from hagrid_demand.baseline.spatial import resolve_spatial_plan
+    from hagrid_demand.common.contracts import AnnualProjection
+
+    days = pd.date_range("2024-01-01", "2024-12-31")
+    annual = pd.DataFrame({"year": [2024], "segment": ["private"], "site_id": ["a"], "plz": ["01"],
+                           "annual_expected": [1000.], "allocation_status": ["located"]})
+    cfg = {"seed": 3, "regime": "fixed_annual", "dates": ["2024-01-01"], "process": {},
+           "spatial": {"mode": "correlated", "length_scale_m": 100., "log_sigma": 0., "rho": .4,
+                       "fourier_features": 16, "calibration_draws": 32, "validation_draws": 64}}
+    plan = resolve_spatial_plan({"geometry": pd.DataFrame({"site_id": ["a"], "x": [0.], "y": [0.]})},
+                                AnnualProjection(annual, pd.DataFrame(), pd.DataFrame(), {"hashes": {}}), cfg, 0, tmp_path)
+    calendar = pd.concat([pd.DataFrame({"date": days, "year": 2024, "segment": segment,
+                                        "calendar_weight": np.repeat(1 / len(days), len(days))})
+                          for segment in ("private", "business")], ignore_index=True)
+    profiles = pd.DataFrame({"year": [2024], "segment": ["private"], "carrier": ["DHL"], "share": [1.]})
+
+    with np.testing.assert_raises_regex(ValueError, "mean_preservation_unresolved"):
+        next(generate_days(annual, profiles, calendar, cfg, 0, 0,
+                           spatial_plan=replace(plan, status="mean_preservation_unresolved"), cache_dir=tmp_path))
+    with np.testing.assert_raises_regex(ValueError, "target fingerprints"):
+        next(generate_days(annual.assign(allocation_status="unlocated"), profiles, calendar, cfg, 0, 0,
+                           spatial_plan=plan, cache_dir=tmp_path))
+
+
+def test_calibration_rejects_zero_localized_support_before_log_base():
+    from hagrid_demand.baseline.spatial import calibrate_spatial
+
+    target, xy, site_ids, parameters, design = _inputs()
+    with np.testing.assert_raises_regex(ValueError, "strictly positive"):
+        calibrate_spatial(np.array([.5, .5, 0., 0., 0.]), xy, site_ids, parameters, design)

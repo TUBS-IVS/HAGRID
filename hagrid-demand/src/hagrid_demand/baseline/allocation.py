@@ -195,7 +195,7 @@ def _frame_digest(frame: pd.DataFrame) -> str:
 def _target_fingerprints(annual: pd.DataFrame) -> dict[str, str]:
     values = {}
     for (year, segment), rows in annual.groupby(["year", "segment"], sort=True):
-        ordered = rows.loc[:, ["site_id", "plz", "annual_expected"]].copy()
+        ordered = rows.loc[:, ["site_id", "plz", "allocation_status", "annual_expected"]].copy()
         ordered["site_id"] = ordered.site_id.astype(str)
         ordered["plz"] = ordered.plz.astype(str)
         ordered = ordered.sort_values(["plz", "site_id"], kind="stable").reset_index(drop=True)
