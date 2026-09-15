@@ -1,0 +1,22 @@
+{
+  "source": "Pitney Bowes Parcel Shipping Index, cited in notebook 00",
+  "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 2 and CELL 5",
+  "status": "mixed_observation_and_projection_assumption",
+  "unit": "share",
+  "carrier_anchor": {
+    "year_start": 2016,
+    "year_end": 2022,
+    "shares": {"DHL": 49, "Hermes": 13, "UPS": 12, "DPD": 11, "GLS": 8, "FedEx/TNT": 6},
+    "change_2016_2022": {"DHL": 6, "Hermes": -1.5, "UPS": 0.2, "DPD": -0.5, "GLS": 1, "FedEx/TNT": -0.2},
+    "post_2022_multiplier": 2.25
+  },
+  "amazon": {
+    "years": [2017, 2020, 2022],
+    "shares": [0.5432098765, 10, 20],
+    "initial_guess": [22, 2020, 1.1],
+    "source": "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5",
+    "notebook_cell": "00_EstimateGlobalGermanParcelMarketShares.py CELL 5",
+    "status": "estimated_midpoint_assumption",
+    "unit": "percent"
+  }
+}
