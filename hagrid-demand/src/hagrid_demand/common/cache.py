@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from typing import Any, Callable
@@ -20,6 +21,8 @@ from hagrid_demand.common.rng import RNG_VERSION
 
 
 _MANIFEST = "stage_manifest.json"
+_LOCAL_LOCKS: dict[str, threading.Lock] = {}
+_LOCAL_LOCKS_GUARD = threading.Lock()
 
 
 def _semantic(value: Any, *, resource_tree: bool = False) -> Any:
@@ -177,29 +180,63 @@ def _record_run_stage(run_dir: Path, *, stage_name: str, fingerprint: str, cache
     _atomic_json(manifest_path, manifest)
 
 
+def _local_lock(cache_path: Path) -> threading.Lock:
+    key = str(cache_path.resolve())
+    with _LOCAL_LOCKS_GUARD:
+        return _LOCAL_LOCKS.setdefault(key, threading.Lock())
+
+
+def _try_os_lock(stream) -> bool:
+    if os.name == "nt":
+        import msvcrt
+
+        stream.seek(0)
+        try:
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EAGAIN} or getattr(exc, "winerror", None) in {32, 33}:
+                return False
+            raise
+    import fcntl
+
+    try:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+
+
+def _unlock_os_lock(stream) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        stream.seek(0)
+        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 @contextmanager
 def _fingerprint_lock(cache_path: Path):
-    """Claim one cache fingerprint with an atomic lock directory."""
+    """Claim a fingerprint with an OS lock that is released if its owner exits."""
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = cache_path.with_name(f".{cache_path.name}.lock")
-    deadline = time.monotonic() + 30
-    while True:
-        try:
-            lock_path.mkdir()
-            break
-        except OSError as exc:
-            if exc.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
-                raise
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"Timed out waiting for stage cache lock: {cache_path}")
-            time.sleep(0.01)
-    try:
-        yield
-    finally:
-        try:
-            lock_path.rmdir()
-        except FileNotFoundError:
-            pass
+    # Keep the file after release: deleting a locked pathname could let another
+    # process create and lock a different inode while the first owner is live.
+    lock_path = cache_path.with_name(f".{cache_path.name}.lockfile")
+    with _local_lock(cache_path):
+        with lock_path.open("a+b") as stream:
+            if lock_path.stat().st_size == 0:
+                stream.write(b"\0")
+                stream.flush()
+            while not _try_os_lock(stream):
+                time.sleep(0.01)
+            try:
+                yield
+            finally:
+                _unlock_os_lock(stream)
 
 
 def _discard_invalid_stage(cache_path: Path) -> None:
