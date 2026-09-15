@@ -19,22 +19,34 @@ def _array(value, name):
 
 def _bounded_quadratic_projection(m, prior, b, lower, upper, scale):
     """Solve the clipped monotone Lagrange equation for the exact bounded optimum."""
+    relative_scale = scale / scale.max()
+    coefficient = m * relative_scale ** 2
+    movable = coefficient > 0
+    fixed = np.clip(prior, lower, upper)
+    if not movable.any():
+        if np.isclose(float(m @ fixed), b, atol=_ATOL, rtol=_RTOL):
+            return fixed
+        raise ValueError("carrier scales underflowed; bounded reconciliation is numerically unsolvable")
+    breakpoints = np.concatenate(((prior[movable] - upper[movable]) / coefficient[movable],
+                                  (prior[movable] - lower[movable]) / coefficient[movable]))
+    if not np.isfinite(breakpoints).all():
+        raise ValueError("carrier scales underflowed; finite Lagrange bounds are unavailable")
+
     def residual(multiplier):
-        candidate = np.clip(prior - multiplier * m * scale ** 2, lower, upper)
+        candidate = np.clip(prior - multiplier * coefficient, lower, upper)
         return float(m @ candidate - b)
 
-    low, high = -1., 1.
-    while residual(low) < 0:
-        low *= 2.
-    while residual(high) > 0:
-        high *= 2.
-    if residual(low) == 0:
+    low, high = float(breakpoints.min()), float(breakpoints.max())
+    low_residual, high_residual = residual(low), residual(high)
+    if low_residual < -_ATOL or high_residual > _ATOL:
+        raise ValueError("carrier scales leave the requested balance on an unreachable plateau")
+    if abs(low_residual) <= _ATOL:
         multiplier = low
-    elif residual(high) == 0:
+    elif abs(high_residual) <= _ATOL:
         multiplier = high
     else:
         multiplier = brentq(residual, low, high, xtol=1e-14)
-    return np.clip(prior - multiplier * m * scale ** 2, lower, upper)
+    return np.clip(prior - multiplier * coefficient, lower, upper)
 
 
 def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray,
@@ -51,7 +63,21 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
     feasible_low, feasible_high = float(m @ lower), float(m @ upper)
     if b < feasible_low - _ATOL or b > feasible_high + _ATOL:
         raise ValueError(f"infeasible carrier bounds: reachable [{feasible_low}, {feasible_high}], target {b}")
+    requested_b = float(b)
+    if b < feasible_low:
+        b = feasible_low
+    elif b > feasible_high:
+        b = feasible_high
+    target_adjustment = float(b - requested_b)
     positive = m > 0
+    normalized_scale = scale / scale.max()
+
+    def scaled_objective(candidate, *, cap=False):
+        ratios = np.abs(candidate - prior) / normalized_scale
+        if not np.isfinite(ratios).all() or (not cap and np.any(ratios > 1e140)):
+            return None
+        return float(np.square(np.minimum(ratios, 1e140)).sum())
+
     solver = {"success": True, "message": "closed-form boundary case"}
     if b == 0:
         if np.any(lower[positive] > _ATOL):
@@ -62,12 +88,12 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
             raise ValueError("infeasible carrier bounds for b=1")
         fitted = np.clip(prior, lower, upper); fitted[positive] = 1.
     else:
-        objective = lambda candidate: float(np.sum(((candidate - prior) / scale) ** 2))
+        objective = lambda candidate: scaled_objective(candidate, cap=True)
         result = minimize(objective, np.clip(prior, lower, upper), method="SLSQP", bounds=list(zip(lower, upper)),
                           constraints=LinearConstraint(m.reshape(1, -1), b, b),
                           options={"ftol": 1e-13, "maxiter": 1000})
         fitted = np.asarray(result.x, dtype=float)
-        solver = {"success": bool(result.success), "message": str(result.message), "iterations": int(result.nit)}
+        solver = {"success": bool(result.success), "message": str(result.message), "iterations": int(getattr(result, "nit", 0))}
         if not np.isfinite(fitted).all():
             raise ValueError("carrier reconciliation produced no finite candidate")
         fitted = _bounded_quadratic_projection(m, prior, b, lower, upper, scale)
@@ -84,8 +110,9 @@ def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray
         if is_active and not np.isclose(conditional[row].sum(), 1., atol=_ATOL, rtol=_RTOL):
             raise ValueError("conditional carrier profile is not balanced")
     return {"q": fitted, "conditional": conditional,
-            "diagnostics": {"objective": float(np.sum(((fitted - prior) / scale) ** 2)),
+            "diagnostics": {"objective": scaled_objective(fitted),
                             "market_b2b": balance, "feasible_range": [feasible_low, feasible_high],
+                            "target_requested": requested_b, "target_adjustment": target_adjustment,
                             "solver": solver}}
 
 
@@ -185,11 +212,11 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     if b == 0:
         if np.any(positive & (private <= 0)):
             raise ValueError("positive DHL has no private support for b=0")
-        local_b = np.zeros(len(support)); k, eta, iterations = 1., 0., 0
+        local_b = np.zeros(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
     elif b == 1:
         if np.any(positive & (business <= 0)):
             raise ValueError("positive DHL has no business support for b=1")
-        local_b = np.ones(len(support)); k, eta, iterations = 1., 0., 0
+        local_b = np.ones(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
     else:
         def totals(candidate_eta):
             local = np.zeros_like(private)
@@ -210,17 +237,22 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
                 raise ValueError(f"constant reachable B2B share does not match target; reachable={residual(0.) + b}")
             eta, iterations = 0., 0
         else:
-            eta_low, eta_high = -30., 30.
+            log_ratio = np.log(private[mixed_support]) - np.log(business[mixed_support])
+            eta_low = min(-30., float(log_ratio.min() - 30.))
+            eta_high = max(30., float(log_ratio.max() + 30.))
             low, high = residual(eta_low), residual(eta_high)
-            while low * high > 0 and max(abs(eta_low), abs(eta_high)) < 700.:
+            expansion = max(60., eta_high - eta_low)
+            finite_limit = np.finfo(float).max / 4.
+            while low * high > 0 and max(abs(eta_low), abs(eta_high)) < finite_limit:
                 if low < 0 and high < 0:
-                    eta_high = min(700., eta_high * 2.)
+                    eta_high = min(finite_limit, eta_high + expansion)
                     high = residual(eta_high)
                 elif low > 0 and high > 0:
-                    eta_low = max(-700., eta_low * 2.)
+                    eta_low = max(-finite_limit, eta_low - expansion)
                     low = residual(eta_low)
                 else:
                     break
+                expansion *= 2.
             if abs(low) <= 1e-10:
                 eta, iterations = eta_low, 0
             elif abs(high) <= 1e-10:
@@ -230,7 +262,12 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
             else:
                 root, details = brentq(residual, eta_low, eta_high, xtol=1e-12, full_output=True)
                 eta, iterations = float(root), int(details.iterations)
-        k = float(np.exp(eta)); local_b, _, _ = totals(eta)
+        log_k = float(eta)
+        if eta > np.log(np.finfo(float).max):
+            k, k_status = None, "overflow_log_k_retained"
+        else:
+            k, k_status = float(np.exp(eta)), "finite"
+        local_b, _, _ = totals(eta)
     dhl_share = (1 - local_b) * private_dhl + local_b * business_dhl
     if np.any(positive & (dhl_share <= 0)):
         raise ValueError("positive DHL requires a positive local DHL share")
@@ -251,8 +288,10 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     site_support = modeled.merge(postal[["plz", "private_potential", "business_potential", "private_annual", "business_annual"]], on="plz", how="left")
     denominator = np.where(site_support.segment.eq("private"), site_support.private_potential, site_support.business_potential)
     segment_annual = np.where(site_support.segment.eq("private"), site_support.private_annual, site_support.business_annual)
-    site_support["reference_annual"] = np.divide(site_support.weight * segment_annual, denominator,
-                                                    out=np.zeros(len(site_support)), where=denominator > 0)
+    allocation_fraction = np.divide(site_support.weight, denominator, out=np.zeros(len(site_support)), where=denominator > 0)
+    site_support["reference_annual"] = allocation_fraction * segment_annual
+    if not np.isfinite(site_support.reference_annual).all() or (site_support.reference_annual < 0).any():
+        raise ValueError("site allocations must be finite and nonnegative")
     site_support["historical_share"] = 0.; site_support["structural_share"] = 0.
     for segment in ("private", "business"):
         mask = site_support.segment.eq(segment)
@@ -294,7 +333,8 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     regional_matches = np.isclose(float(site_support.reference_annual.sum()), regional_annual, atol=_ATOL, rtol=_RTOL)
     if not allocation_matches.all() or not regional_matches:
         raise ValueError("site allocation balance failed")
-    checks = {"scope_ledger": scope_ledger, "k": k, "eta": eta, "eta_iterations": iterations,
+    checks = {"scope_ledger": scope_ledger, "k": k, "k_status": k_status, "log_k": log_k,
+              "eta": eta, "eta_iterations": iterations,
               "b2b_target": float(b), "b2b_achieved": achieved_b, "b2b_residual": achieved_b - b,
               "dhl_reconstructed_mean": reconstructed, "dhl_retained_mean": float(dhl_values.sum()),
               "regional_annual_balance": regional_error,
