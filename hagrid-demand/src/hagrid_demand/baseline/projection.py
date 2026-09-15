@@ -28,7 +28,13 @@ def _year_row(table: pd.DataFrame, year: int, required: set[str], label: str) ->
     return rows
 
 
-def _regional_level(cfg: dict, years: list[int]) -> tuple[str, pd.DataFrame | None]:
+def _same_scope(actual: object, expected: object) -> bool:
+    if isinstance(expected, (list, tuple, set)):
+        return isinstance(actual, (list, tuple, set)) and sorted(map(str, actual)) == sorted(map(str, expected))
+    return actual == expected
+
+
+def _regional_level(cfg: dict, years: list[int], verified_scope: object) -> tuple[str, pd.DataFrame | None]:
     if "external_annual_series" in cfg:
         raise ValueError("external_annual_series must be declared in regional_level")
     level = cfg.get("regional_level", {"mode": "national_series"})
@@ -53,9 +59,12 @@ def _regional_level(cfg: dict, years: list[int]) -> tuple[str, pd.DataFrame | No
     values = pd.to_numeric(external.value, errors="coerce")
     if values.isna().any() or not np.isfinite(values).all() or (values < 0).any():
         raise ValueError("external_annual_series values must be finite and nonnegative")
-    if (not external.unit.eq("packages/year").all() or external.provenance.astype(str).str.strip().eq("").any()
-            or external.scope.astype(str).str.strip().eq("").any()):
+    text_fields = ("unit", "provenance", "scope")
+    if (not external.unit.eq("packages/year").all() or any(
+            not isinstance(value, str) or not value.strip() for field in text_fields for value in external[field])):
         raise ValueError("external_annual_series requires unit=packages/year, provenance, and scope")
+    if not external.scope.map(lambda scope: _same_scope(scope, verified_scope)).all():
+        raise ValueError("external_annual_series scope must match verified reference scope")
     external["value"] = values.astype(float)
     return mode, external.set_index("year", drop=False)
 
@@ -117,21 +126,22 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
     if cfg.get("memory", {}).get("fixed") != 1:
         raise ValueError("Plan 02 requires memory.fixed=1")
     requested = _years(years)
-    mode, external = _regional_level(cfg, requested)
     sites = _table(reference.get("sites", reference.get("reference_sites")), "reference.sites")
-    required = {"site_id", "plz", "segment", "historical_share"}
+    required = {"site_id", "plz", "segment", "historical_share", "allocation_status"}
     if missing := required.difference(sites.columns):
         raise ValueError(f"reference.sites missing columns: {sorted(missing)}")
     sites["segment"] = sites.segment.astype(str).str.lower()
     sites["historical_share"] = pd.to_numeric(sites.historical_share, errors="coerce")
     if (not sites.segment.isin(["private", "business"]).all() or sites.duplicated(["site_id", "segment"]).any()
             or sites.plz.isna().any() or sites.plz.astype(str).str.strip().eq("").any()
+            or sites.allocation_status.isna().any() or ~sites.allocation_status.isin(["located", "unlocated"]).all()
             or sites.historical_share.isna().any() or not np.isfinite(sites.historical_share).all() or (sites.historical_share < 0).any()):
         raise ValueError("reference sites require unique supported private/business site keys")
     support = sites.groupby("segment").historical_share.sum()
-    shares = sites.historical_share / sites.segment.map(support)
+    verified_scope = reference.get("scope", sorted(sites.plz.astype(str).unique().tolist()))
+    mode, external = _regional_level(cfg, requested, verified_scope)
     volume = _table(series.get("volume"), "series.volume") if mode == "national_series" else pd.DataFrame()
-    site_frames, profile_frames, postal_frames, balance_rows = [], [], [], []
+    site_frames, profile_frames, postal_frames, balance_rows, external_metadata = [], [], [], [], []
     regional_reference = float(reference.get("regional_annual", np.nan))
     if not np.isfinite(regional_reference) or regional_reference <= 0:
         raise ValueError("reference.regional_annual must be finite and positive")
@@ -140,32 +150,66 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
                          else (float(external.at[year, "value"]), float(external.at[year, "value"]) / regional_reference))
         profile, b2b = _profile(series, year)
         targets = {"private": total * (1 - b2b), "business": total * b2b}
+        share = pd.Series(0., index=sites.index, dtype=float)
+        support_status = pd.Series("zero_target_no_support", index=sites.index, dtype=object)
         for segment, target in targets.items():
-            if target > ATOL and (segment not in support or support[segment] <= 0):
+            segment_mask = sites.segment.eq(segment)
+            segment_support = float(support.get(segment, 0.))
+            if target > ATOL and segment_support <= 0:
                 raise ValueError(f"positive {segment} annual target requires positive site support")
+            if segment_support > 0:
+                share.loc[segment_mask] = sites.loc[segment_mask, "historical_share"] / segment_support
+                support_status.loc[segment_mask] = "supported"
         annual = pd.DataFrame({"year": year, "site_id": sites.site_id, "plz": sites.plz.astype(str), "segment": sites.segment,
-                               "annual_expected": shares * sites.segment.map(targets), "share": shares})
-        postal = annual.groupby("plz", as_index=False)["annual_expected"].sum()
+                               "allocation_status": sites.allocation_status, "support_status": support_status,
+                               "annual_expected": share * sites.segment.map(targets), "share": share})
+        postal = annual.groupby(["plz", "segment", "support_status"], as_index=False)["annual_expected"].sum()
+        for segment in ("private", "business"):
+            if float(support.get(segment, 0.)) <= 0:
+                zeros = pd.DataFrame({"plz": sorted(annual.plz.unique()), "segment": segment,
+                                      "support_status": "zero_target_no_support", "annual_expected": 0.})
+                postal = pd.concat([postal, zeros], ignore_index=True)
         postal.insert(0, "year", year)
         postal["memory_weight"] = 1.
         postal["regional_level_mode"] = mode
         postal["growth_factor"] = growth
         postal["b2b_share"] = b2b
+        postal = postal[["year", "plz", "segment", "annual_expected", "support_status", "memory_weight",
+                         "regional_level_mode", "growth_factor", "b2b_share"]]
         assert_balance(annual.annual_expected.sum(), total)
         assert_balance(postal.annual_expected.sum(), total)
-        segment_errors = {}
+        segment_errors, share_sums, postal_site_errors = {}, {}, []
         for segment, target in targets.items():
             actual = annual.loc[annual.segment.eq(segment), "annual_expected"].sum()
             assert_balance(actual, target)
             segment_errors[segment] = float(actual - target)
+            segment_support = float(support.get(segment, 0.))
+            share_sum = float(annual.loc[annual.segment.eq(segment), "share"].sum())
+            assert_balance(share_sum, 1. if segment_support > 0 else 0.)
+            share_sums[segment] = share_sum
+        grouped_sites = annual.groupby(["plz", "segment"], as_index=False)["annual_expected"].sum()
+        observed_postal = postal.merge(grouped_sites, on=["plz", "segment"], how="left", suffixes=("_postal", "_sites"))
+        observed_postal["annual_expected_sites"] = observed_postal.annual_expected_sites.fillna(0.)
+        for row in observed_postal.itertuples(index=False):
+            assert_balance(row.annual_expected_postal, row.annual_expected_sites)
+            postal_site_errors.append({"plz": row.plz, "segment": row.segment,
+                                       "error": float(row.annual_expected_postal - row.annual_expected_sites)})
         balance_rows.append({"year": year, "regional_error": float(annual.annual_expected.sum() - total),
-                             "postal_error": float(postal.annual_expected.sum() - total), "segment_errors": segment_errors})
+                             "postal_error": float(postal.annual_expected.sum() - total), "segment_errors": segment_errors,
+                             "share_sums": share_sums, "postal_site_errors": postal_site_errors})
+        if external is not None:
+            external_metadata.append(external.loc[year, ["year", "value", "unit", "provenance", "scope"]].to_dict())
         site_frames.append(annual); profile_frames.append(profile); postal_frames.append(postal)
-    result_sites = pd.concat(site_frames, ignore_index=True)
-    result_profiles = pd.concat(profile_frames, ignore_index=True)
-    result_postal = pd.concat(postal_frames, ignore_index=True)
+    result_sites = pd.concat(site_frames, ignore_index=True).sort_values(["year", "segment", "plz", "site_id"], kind="stable").reset_index(drop=True)
+    result_profiles = pd.concat(profile_frames, ignore_index=True).sort_values(["year", "segment", "carrier"], kind="stable").reset_index(drop=True)
+    result_postal = pd.concat(postal_frames, ignore_index=True).sort_values(["year", "segment", "plz"], kind="stable").reset_index(drop=True)
     hashes = {"sites": _frame_hash(result_sites), "profiles": _frame_hash(result_profiles), "postal": _frame_hash(result_postal)}
     checks = {"hashes": hashes, "balances": {"by_year": balance_rows,
               "regional_error": max(abs(row["regional_error"]) for row in balance_rows),
-              "postal_error": max(abs(row["postal_error"]) for row in balance_rows), "atol": ATOL, "rtol": RTOL}}
+              "postal_error": max(abs(row["postal_error"]) for row in balance_rows),
+              "share_sums": [row["share_sums"] for row in balance_rows],
+              "postal_site_errors": [row["postal_site_errors"] for row in balance_rows], "atol": ATOL, "rtol": RTOL},
+              "verified_scope": verified_scope,
+              "external_annual_series": {"scope": verified_scope, "records": external_metadata} if external is not None else None,
+              "identity_hash": canonical_digest({"mode": mode, "verified_scope": verified_scope, "external": external_metadata})}
     return AnnualProjection(result_sites, result_profiles, result_postal, checks)

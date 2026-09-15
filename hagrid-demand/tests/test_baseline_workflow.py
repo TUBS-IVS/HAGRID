@@ -93,8 +93,8 @@ def test_projection_consumes_the_canonical_reference_artifacts(fixture_config):
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
     result = project_annual(reference, series, [2021], {"memory": {"fixed": 1}, "regional_level": {"mode": "national_series"}})
 
-    assert result.sites.columns.tolist() == ["year", "site_id", "plz", "segment", "annual_expected", "share"]
-    assert result.postal.columns.tolist() == ["year", "plz", "annual_expected", "memory_weight", "regional_level_mode", "growth_factor", "b2b_share"]
+    assert result.sites.columns.tolist() == ["year", "site_id", "plz", "segment", "allocation_status", "support_status", "annual_expected", "share"]
+    assert result.postal.columns.tolist() == ["year", "plz", "segment", "annual_expected", "support_status", "memory_weight", "regional_level_mode", "growth_factor", "b2b_share"]
     assert all(len(value) == 64 for value in result.checks["hashes"].values())
 
 
