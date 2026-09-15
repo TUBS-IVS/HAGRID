@@ -220,6 +220,77 @@ def test_resolve_stage_concurrent_writers_keep_the_first_valid_publication(tmp_p
     assert (cache / "reference" / "fingerprint" / "winner.txt").read_text(encoding="utf-8") == built[0]
 
 
+def test_resolve_stage_reclaims_a_crashed_legacy_lock_directory_without_waiting(tmp_path, monkeypatch):
+    """A lock directory left by a dead older process must not block the new OS lock."""
+    from hagrid_demand.common import cache as stage_cache
+
+    cache_root = tmp_path / "cache"
+    legacy_lock = cache_root / "reference" / ".fingerprint.lock"
+    legacy_lock.mkdir(parents=True)
+    clock = iter([0, 31])
+    monkeypatch.setattr(stage_cache.time, "monotonic", lambda: next(clock))
+    calls = []
+
+    def build(work):
+        calls.append(1)
+        (work / "result.json").write_text('{"ok": true}', encoding="utf-8")
+
+    stage_cache.resolve_stage(tmp_path / "run", "reference", "fingerprint", cache_root=cache_root,
+                              dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+    assert calls == [1]
+
+
+def test_resolve_stage_waiter_reuses_winner_after_a_build_outlasts_old_deadline(tmp_path, monkeypatch):
+    """A legitimate long build makes a waiter wait and reuse, never time out or steal it."""
+    from hagrid_demand.common import cache as stage_cache
+
+    cache_root = tmp_path / "cache"
+    build_started = threading.Event()
+    release_build = threading.Event()
+    waiter_started = threading.Event()
+    failures = []
+    calls = []
+    clock = iter([0, 31, 62, 93])
+    monkeypatch.setattr(stage_cache.time, "monotonic", lambda: next(clock))
+
+    def build(work):
+        calls.append("winner")
+        (work / "result.json").write_text('{"winner": true}', encoding="utf-8")
+        build_started.set()
+        assert release_build.wait(timeout=5)
+
+    def winner():
+        try:
+            stage_cache.resolve_stage(tmp_path / "run-winner", "reference", "fingerprint", cache_root=cache_root,
+                                      dependencies={"source": "abc"}, build=build, validate=lambda work: None)
+        except BaseException as exc:
+            failures.append(exc)
+
+    def waiter():
+        try:
+            assert build_started.wait(timeout=5)
+            waiter_started.set()
+            stage_cache.resolve_stage(tmp_path / "run-waiter", "reference", "fingerprint", cache_root=cache_root,
+                                      dependencies={"source": "abc"}, build=lambda work: calls.append("waiter"),
+                                      validate=lambda work: None)
+        except BaseException as exc:
+            failures.append(exc)
+
+    winner_thread = threading.Thread(target=winner)
+    waiter_thread = threading.Thread(target=waiter)
+    winner_thread.start()
+    assert build_started.wait(timeout=5)
+    waiter_thread.start()
+    assert waiter_started.wait(timeout=5)
+    time.sleep(0.05)
+    release_build.set()
+    winner_thread.join(timeout=10)
+    waiter_thread.join(timeout=10)
+    assert not failures
+    assert all(not thread.is_alive() for thread in (winner_thread, waiter_thread))
+    assert calls == ["winner"]
+
+
 def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_failure(tmp_path, monkeypatch):
     """Run artifacts are hash-checked copies, and failed copies never become visible."""
     from hagrid_demand.common import cache as stage_cache
