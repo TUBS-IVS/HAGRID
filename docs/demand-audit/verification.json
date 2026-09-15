@@ -1,0 +1,393 @@
+{
+  "scope": "isolated function probes and existing artifact profiles; no full notebook run",
+  "probes": {
+    "empty_spatial_join_counts": {
+      "expected": [
+        0,
+        0
+      ],
+      "actual": [
+        1,
+        1
+      ],
+      "defect_reproduced": true
+    },
+    "one_person_overlapping_buffers": {
+      "expected": 1,
+      "actual": 2,
+      "defect_reproduced": true
+    },
+    "ignored_min_tag_300": {
+      "expected": 4.0,
+      "actual": 24.0,
+      "defect_reproduced": true
+    },
+    "stage04_input_schema": {
+      "expected": [],
+      "actual": [
+        "Ist_B2B",
+        "Jahr",
+        "Typ"
+      ],
+      "defect_reproduced": true
+    },
+    "stage04_source_copy_has_normalized_ratio": {
+      "expected": true,
+      "actual": false,
+      "defect_reproduced": true
+    },
+    "iso_week1_2025": {
+      "expected": "2024-12-30",
+      "actual": "2025-01-06",
+      "defect_reproduced": true
+    },
+    "weekday_share_sum": {
+      "expected": 1.0,
+      "actual": 0.965,
+      "defect_reproduced": true
+    },
+    "carrier_rounding_one_parcel": {
+      "expected": 1,
+      "actual": 0,
+      "defect_reproduced": true
+    },
+    "b2b_transfer_conservation": {
+      "expected": 2,
+      "actual": 3,
+      "defect_reproduced": true
+    },
+    "b2b_scaled_share_nonnegative": {
+      "expected": true,
+      "actual": false,
+      "defect_reproduced": true
+    },
+    "final_fill_conserves_total": {
+      "expected": 0,
+      "actual": 5,
+      "defect_reproduced": true
+    },
+    "perfect_linear_fit_ci_halfwidth": {
+      "expected": 0.0,
+      "actual": 4.753949,
+      "defect_reproduced": true
+    }
+  },
+  "profiles": {
+    "grid": {
+      "rows": 15917,
+      "unique_cells": 15917,
+      "zero_volume": 8531,
+      "zero_volume_with_people_or_companies": 2625,
+      "b2b_unique_count": 916,
+      "b2b_min_max": [
+        -1.0,
+        100.0
+      ],
+      "negative_b2b_positive_volume": 0,
+      "legacy_people_in_zero_volume_cells": 35256.0,
+      "legacy_companies_in_zero_volume_cells": 7339.0,
+      "fit_counts": {
+        "correct": 15301,
+        "too_low": 390,
+        "too_high": 226
+      }
+    },
+    "companies": {
+      "rows": 52931,
+      "unique_ids": 52931,
+      "crs": "EPSG:25832",
+      "branch_categories": 19,
+      "branch_missing": 0,
+      "employees_missing": 0,
+      "employees_negative": 0,
+      "employees_zero": 0,
+      "employees_sum": 650267.0
+    },
+    "persons_csv": {
+      "rows": 1150862,
+      "unique_person_ids": 1150862,
+      "unique_households": 280733,
+      "unique_buildings": 227641,
+      "missing_households": 536496,
+      "missing_buildings": 0
+    },
+    "parcel-demand-estimation": {
+      "samples": 112478,
+      "cells": 7386,
+      "unassigned_samples": 13277,
+      "extra_join_rows": 0,
+      "cells_without_sample": 226,
+      "legacy_weight_in_cells_without_sample": 1537.0,
+      "all_legacy_cell_weight": 196885.0,
+      "weekly_to_annual_mean_ratio_min": 0.9596162945512089,
+      "weekly_to_annual_mean_ratio_max": 1.0243259091392527,
+      "years_without_iso_week1": [],
+      "estimated_years_marked_observed": [
+        {
+          "year": 2024,
+          "type": "Observed"
+        },
+        {
+          "year": 2025,
+          "type": "Observed"
+        },
+        {
+          "year": 2026,
+          "type": "Observed"
+        },
+        {
+          "year": 2027,
+          "type": "Observed"
+        },
+        {
+          "year": 2028,
+          "type": "Observed"
+        }
+      ],
+      "rows_with_wrong_iso_year": 44,
+      "years_without_own_iso_week1": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009,
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2017,
+        2018,
+        2019,
+        2020,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+        2028,
+        2029,
+        2030,
+        2031,
+        2032,
+        2033,
+        2034,
+        2035,
+        2036,
+        2037,
+        2039,
+        2040,
+        2041,
+        2042,
+        2043,
+        2045,
+        2046,
+        2047,
+        2048,
+        2050
+      ]
+    },
+    "parcel-demand-estimation-batch": {
+      "samples": 112478,
+      "cells": 7386,
+      "unassigned_samples": 13277,
+      "extra_join_rows": 0,
+      "cells_without_sample": 226,
+      "legacy_weight_in_cells_without_sample": 1537.0,
+      "all_legacy_cell_weight": 196885.0,
+      "weekly_to_annual_mean_ratio_min": 0.9596162945512089,
+      "weekly_to_annual_mean_ratio_max": 1.0243259091392527,
+      "years_without_iso_week1": [],
+      "estimated_years_marked_observed": [
+        {
+          "year": 2024,
+          "type": "Observed"
+        },
+        {
+          "year": 2025,
+          "type": "Observed"
+        },
+        {
+          "year": 2026,
+          "type": "Observed"
+        },
+        {
+          "year": 2027,
+          "type": "Observed"
+        },
+        {
+          "year": 2028,
+          "type": "Observed"
+        }
+      ],
+      "rows_with_wrong_iso_year": 44,
+      "years_without_own_iso_week1": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009,
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2017,
+        2018,
+        2019,
+        2020,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+        2028,
+        2029,
+        2030,
+        2031,
+        2032,
+        2033,
+        2034,
+        2035,
+        2036,
+        2037,
+        2039,
+        2040,
+        2041,
+        2042,
+        2043,
+        2045,
+        2046,
+        2047,
+        2048,
+        2050
+      ]
+    }
+  },
+  "notebooks": [
+    {
+      "notebook": "parcel-demand-estimation/00_EstimateGlobalGermanParcelMarketShares.ipynb",
+      "sha256_file": "5e3a43ecaefaf3a224315a1460f9e9b85c7e7d0c8f038e86025696d363bd664d",
+      "sha256_code": "3d350d1b5ff94eebdb6976757b82292c740f8899c7dfca4af4d5bad86cf37efe",
+      "code_cells": 9
+    },
+    {
+      "notebook": "parcel-demand-estimation/01_EstimateGlobalGermanB2BShares.ipynb",
+      "sha256_file": "a9ab9accb23073bb462a0e62b94ff5f8ff77c8df5976fa4ee6532034af6494c1",
+      "sha256_code": "ab2c5f804820e8ed5fc87d2c40fc369f0bd76e02eb41044b34fe0dd9f49223ac",
+      "code_cells": 7
+    },
+    {
+      "notebook": "parcel-demand-estimation/02_EstimateGlobalGermanParcelVolumens.ipynb",
+      "sha256_file": "e5a290d744fe5b901df16311f1037168357b965eac96eff65b4ff88c621d7661",
+      "sha256_code": "d1d4c73ad3a6e47a8a57e4e62fb14db8dbcf87f5428f7d4a545a7c066cd6b2bd",
+      "code_cells": 8
+    },
+    {
+      "notebook": "parcel-demand-estimation/03_EstimateWeekyParcelDistribution.ipynb",
+      "sha256_file": "1863eda9595f35544b0b13521f8a2a7a695df0ffc2c2a6f9eb2da75965e6bfb7",
+      "sha256_code": "8e7823bafcf8a278651cd179cb3673136976e220b2632e8366b68ff0ccc56ea4",
+      "code_cells": 15
+    },
+    {
+      "notebook": "parcel-demand-estimation/04_EstimateLocalB2BDistribution.ipynb",
+      "sha256_file": "c3ce7fac6150132e2a84f7031a8d5a40014ed3ec18a1769a8e5dbcd1dff42037",
+      "sha256_code": "d491ad18964c6c15b631cedd73a7c24a5ce58e4abe26aeed1fd1ee5ab043c873",
+      "code_cells": 7
+    },
+    {
+      "notebook": "parcel-demand-estimation/05_EstimateLocalMarketShares.ipynb",
+      "sha256_file": "81ab7da975afaf9ad1d426e7d63ee76e439069abbff0663b68bf6b22f036c3dd",
+      "sha256_code": "65b85af2356a5735af8e64a8bed7b07c07cbdeb0b82c0218de86ee7967690e78",
+      "code_cells": 8
+    },
+    {
+      "notebook": "parcel-demand-estimation/06_DistributeEstimationWeightsPerSegment.ipynb",
+      "sha256_file": "4fa29c72f9b5275af94006788dd8276e34463b423c07e172c9e3c27080f5205c",
+      "sha256_code": "25d88e0f54e81ac47eb11e74db7a13690569302d6cc521c9186b13bd196bc6d3",
+      "code_cells": 13
+    },
+    {
+      "notebook": "parcel-demand-estimation/BatchDeliveryStrategiesGenerator.ipynb",
+      "sha256_file": "837e40aa7fbad4c5a4a54a8149da1da41cfe5db131f7cb49078c5677072041f5",
+      "sha256_code": "c58a9c9b9f3b6000413d93ae4d20a284ebc0cec25543c459b1f4ca23f37a3a60",
+      "code_cells": 28
+    },
+    {
+      "notebook": "parcel-demand-estimation/ParcelDemandScenarioGenerator.ipynb",
+      "sha256_file": "fe3858db5e12f44d312d67231c259dc6a3c2b1ecf60a5ad8ecc9aa12f087aa81",
+      "sha256_code": "95f11102b68ab43a3e252961bc453c87b6de2af679ea9c48449dd0240989f9b1",
+      "code_cells": 10
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/00_EstimateGlobalGermanParcelMarketShares.ipynb",
+      "sha256_file": "5e3a43ecaefaf3a224315a1460f9e9b85c7e7d0c8f038e86025696d363bd664d",
+      "sha256_code": "3d350d1b5ff94eebdb6976757b82292c740f8899c7dfca4af4d5bad86cf37efe",
+      "code_cells": 9
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/01_EstimateGlobalGermanB2BShares.ipynb",
+      "sha256_file": "a9ab9accb23073bb462a0e62b94ff5f8ff77c8df5976fa4ee6532034af6494c1",
+      "sha256_code": "ab2c5f804820e8ed5fc87d2c40fc369f0bd76e02eb41044b34fe0dd9f49223ac",
+      "code_cells": 7
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/02_EstimateGlobalGermanParcelVolumens.ipynb",
+      "sha256_file": "e5a290d744fe5b901df16311f1037168357b965eac96eff65b4ff88c621d7661",
+      "sha256_code": "d1d4c73ad3a6e47a8a57e4e62fb14db8dbcf87f5428f7d4a545a7c066cd6b2bd",
+      "code_cells": 8
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/03_EstimateWeekyParcelDistribution.ipynb",
+      "sha256_file": "1863eda9595f35544b0b13521f8a2a7a695df0ffc2c2a6f9eb2da75965e6bfb7",
+      "sha256_code": "8e7823bafcf8a278651cd179cb3673136976e220b2632e8366b68ff0ccc56ea4",
+      "code_cells": 15
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/04_EstimateLocalB2BDistribution.ipynb",
+      "sha256_file": "c3ce7fac6150132e2a84f7031a8d5a40014ed3ec18a1769a8e5dbcd1dff42037",
+      "sha256_code": "d491ad18964c6c15b631cedd73a7c24a5ce58e4abe26aeed1fd1ee5ab043c873",
+      "code_cells": 7
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/05_EstimateLocalMarketShares.ipynb",
+      "sha256_file": "81ab7da975afaf9ad1d426e7d63ee76e439069abbff0663b68bf6b22f036c3dd",
+      "sha256_code": "65b85af2356a5735af8e64a8bed7b07c07cbdeb0b82c0218de86ee7967690e78",
+      "code_cells": 8
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/06_DistributeEstimationWeightsPerSegment.ipynb",
+      "sha256_file": "4fa29c72f9b5275af94006788dd8276e34463b423c07e172c9e3c27080f5205c",
+      "sha256_code": "25d88e0f54e81ac47eb11e74db7a13690569302d6cc521c9186b13bd196bc6d3",
+      "code_cells": 13
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/BatchDeliveryStrategiesGenerator.ipynb",
+      "sha256_file": "b621b686ee18f6bf0927675f466ca7182417aaa3c390de8e607f9c77e77c0cad",
+      "sha256_code": "b9c10740303d143e01aeaba0e73df17d0f9a2d992037b067d3467f27afe238c3",
+      "code_cells": 24
+    },
+    {
+      "notebook": "parcel-demand-estimation-batch/ParcelDemandScenarioGenerator.ipynb",
+      "sha256_file": "fe3858db5e12f44d312d67231c259dc6a3c2b1ecf60a5ad8ecc9aa12f087aa81",
+      "sha256_code": "95f11102b68ab43a3e252961bc453c87b6de2af679ea9c48449dd0240989f9b1",
+      "code_cells": 10
+    }
+  ],
+  "runtime": {
+    "python": "3.13.5",
+    "pandas": "2.3.3",
+    "numpy": "2.3.3",
+    "geopandas": "1.1.1"
+  }
+}

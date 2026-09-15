@@ -1,0 +1,158 @@
+{
+  "status": "SYNTHETIC, UNCALIBRATED, NOT HANNOVER ESTIMATES",
+  "panda_commit": "1e683d026cec3483214523280877ef44e012d6d5",
+  "dhl_20pct_business_implied_market_business_fraction": 0.32543554006968645,
+  "area_channel_totals": {
+    "Wohngebiet_EFH": [
+      800.0,
+      40.0
+    ],
+    "Wohngebiet_MFH": [
+      900.0,
+      60.0
+    ],
+    "Buero_Handel": [
+      250.0,
+      450.0
+    ],
+    "Industrie_Gewerbe": [
+      100.0,
+      600.0
+    ]
+  },
+  "synthetic_dhl_area_observations": {
+    "Wohngebiet_EFH": 430.5513735320057,
+    "Wohngebiet_MFH": 385.8571594794907,
+    "Buero_Handel": 239.04036810100732,
+    "Industrie_Gewerbe": 180.2010988874963
+  },
+  "synthetic_carrier_channel_margins": {
+    "B2C": {
+      "DHL": 957.35,
+      "Amazon": 461.25,
+      "Hermes": 250.1,
+      "DPD": 166.05,
+      "GLS": 151.7,
+      "UPS": 43.050000000000004,
+      "FedEx": 20.5
+    },
+    "B2B": {
+      "DHL": 278.3,
+      "Amazon": 6.9,
+      "Hermes": 19.55,
+      "DPD": 87.39999999999999,
+      "GLS": 33.35,
+      "UPS": 405.95,
+      "FedEx": 318.55
+    }
+  },
+  "models": {
+    "neutral_profile": {
+      "iterations": 60,
+      "max_margin_errors": [
+        8.432152753812261e-10,
+        9.718519322632346e-10,
+        5.684341886080802e-14
+      ],
+      "area_carrier_expected_counts": {
+        "Wohngebiet_EFH": {
+          "DHL": 430.5513735320057,
+          "Amazon": 161.11619431735573,
+          "Hermes": 87.87425277648579,
+          "DPD": 60.759935820566334,
+          "GLS": 53.9988386971352,
+          "UPS": 28.202013521694866,
+          "FedEx": 17.49739133563523
+        },
+        "Wohngebiet_MFH": {
+          "DHL": 385.85715947949075,
+          "Amazon": 222.73863514060952,
+          "Hermes": 121.63324642661078,
+          "DPD": 84.8022087606205,
+          "GLS": 74.94590475254778,
+          "UPS": 42.82264473440524,
+          "FedEx": 27.200200706454915
+        },
+        "Buero_Handel": {
+          "DHL": 239.04036810100735,
+          "Amazon": 56.94364591659335,
+          "Hermes": 36.90247123185841,
+          "DPD": 52.87021420452342,
+          "GLS": 30.57627380248888,
+          "UPS": 159.81988126846232,
+          "FedEx": 123.84714547433839
+        },
+        "Industrie_Gewerbe": {
+          "DHL": 180.2010988874963,
+          "Amazon": 27.351524625441392,
+          "Hermes": 23.240029565045017,
+          "DPD": 55.01764121428974,
+          "GLS": 25.528982747828124,
+          "UPS": 218.1554604754375,
+          "FedEx": 170.5052624835715
+        }
+      },
+      "fedex_share_within_area_b2b": {
+        "Wohngebiet_EFH": 0.2586658061247853,
+        "Wohngebiet_MFH": 0.2886229528869387,
+        "Buero_Handel": 0.26985159997141883,
+        "Industrie_Gewerbe": 0.28242128432442304
+      },
+      "fedex_business_fraction": 0.9395369414540629
+    },
+    "differentiated_profile": {
+      "iterations": 59,
+      "max_margin_errors": [
+        7.157723302952945e-10,
+        7.577227734145708e-10,
+        5.684341886080802e-14
+      ],
+      "area_carrier_expected_counts": {
+        "Wohngebiet_EFH": {
+          "DHL": 430.5513735320057,
+          "Amazon": 145.5682244002452,
+          "Hermes": 99.32363229828704,
+          "DPD": 66.03166752915118,
+          "GLS": 58.07062669140098,
+          "UPS": 28.497169876307773,
+          "FedEx": 11.957305673375416
+        },
+        "Wohngebiet_MFH": {
+          "DHL": 385.85715947949075,
+          "Amazon": 244.00220386092573,
+          "Hermes": 120.28738633773115,
+          "DPD": 81.5329114863229,
+          "GLS": 70.78815854941782,
+          "UPS": 39.80365844997192,
+          "FedEx": 17.72852183677718
+        },
+        "Buero_Handel": {
+          "DHL": 239.04036810100735,
+          "Amazon": 55.31040292395473,
+          "Hermes": 30.454402552970937,
+          "DPD": 51.667566027834084,
+          "GLS": 30.47743284545689,
+          "UPS": 213.49014790046556,
+          "FedEx": 79.55967964769337
+        },
+        "Industrie_Gewerbe": {
+          "DHL": 180.2010988874963,
+          "Amazon": 23.269168814874405,
+          "Hermes": 19.584578811010857,
+          "DPD": 54.21785495669184,
+          "GLS": 25.713781913724297,
+          "UPS": 167.20902377325476,
+          "FedEx": 229.80449284215405
+        }
+      },
+      "fedex_share_within_area_b2b": {
+        "Wohngebiet_EFH": 0.10821132349842429,
+        "Wohngebiet_MFH": 0.14201757175023583,
+        "Buero_Handel": 0.17124932724798672,
+        "Industrie_Gewerbe": 0.3810638258224248
+      },
+      "fedex_business_fraction": 0.9395369414540629
+    }
+  },
+  "interpretation": "Both allocations match identical observations and margins. Unobserved carrier geography remains prior-dependent."
+}
