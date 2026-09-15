@@ -103,3 +103,6 @@ parcel-analysis/*
 # Temporary helper / analysis scripts
 analysis_cp.txt
 analyze_tw*.ps1
+
+# Isolated implementation worktrees
+/.worktrees/
