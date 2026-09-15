@@ -16,6 +16,8 @@ from pyproj import CRS
 
 _INPUT_FILES = ("market_inputs.json", "b2b_inputs.json", "volume_inputs.json", "provider_priors.json")
 _METADATA_FIELDS = ("source", "notebook_cell", "status", "unit")
+_FOUNDATION_STAGES = {"ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard"}
+_FOUNDATION_GEOMETRY = {"sites.parquet", "dhl_observations.parquet", "postal_support.parquet"}
 
 
 def _require_metadata(value: dict[str, Any], label: str) -> None:
@@ -193,8 +195,13 @@ def read_foundation(path: Path) -> dict[str, pd.DataFrame]:
         run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("Foundation run state is required for a complete artifact manifest") from exc
-    if not isinstance(run_state, dict) or run_state.get("status") != manifest.get("run_status"):
+    if (not isinstance(run_state, dict) or run_state.get("status") != "complete_with_calibration_blockers"
+            or run_state.get("status") != manifest.get("run_status")
+            or run_state.get("run_id") != manifest.get("run_id")):
         raise ValueError("Foundation artifact manifest status does not match run state")
+    completed = run_state.get("completed_stages")
+    if not isinstance(completed, list) or not _FOUNDATION_STAGES.issubset(set(completed)):
+        raise ValueError("Foundation run must have completed all expected producer stages")
     tables: dict[str, pd.DataFrame] = {}
     for name, expected in artifacts.items():
         if not isinstance(name, str) or not isinstance(expected, dict):
@@ -222,6 +229,8 @@ def read_foundation(path: Path) -> dict[str, pd.DataFrame]:
         actual_crs = _crs_identifier(getattr(table, "crs", None)) if "geometry" in columns else None
         if actual_crs != crs:
             raise ValueError(f"Foundation artifact CRS mismatch: {name}")
+        if name in _FOUNDATION_GEOMETRY and actual_crs != "EPSG:25832":
+            raise ValueError(f"Foundation geometry must use EPSG:25832: {name}")
         tables[name] = table
     return tables
 
