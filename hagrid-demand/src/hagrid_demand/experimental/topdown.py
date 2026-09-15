@@ -6,6 +6,12 @@ import numpy as np
 from .model import metrics
 from ..data import write_json
 from ..pipeline import digest
+from .provenance import code_hashes as package_code_hashes
+
+
+def _code_hashes(package_root=None):
+    root = Path(package_root).resolve() if package_root is not None else Path(__file__).resolve().parents[1]
+    return package_code_hashes(root, "experimental/topdown.py", "experimental/model.py", "data.py", "pipeline.py")
 
 
 def normalize_to_total(values,total):
@@ -34,7 +40,7 @@ def main():
     summary=table.assign(protocol=np.where(table.layout.eq('spatial'),'spatial','random_mean')).groupby(['protocol','model','condition'])[['wMAPE','bias']].mean()
     page='<!doctype html><meta charset="utf-8"><title>Top-down-Test</title><style>body{font:16px system-ui;margin:40px}td,th{padding:8px}</style><h1>Vorhersage und Top-down-Verteilung</h1><p>Bekannte Summen stammen hier aus den Beobachtungen: Die entsprechenden Zeilen bewerten ausschliesslich die bedingte Verteilung, keine unabhaengige Mengenvorhersage. Bei bekannten Testblock-Summen steht zusaetzliche Information zur Verfuegung. Die Quellmodelle sind ausserhalb der jeweiligen Testgebiete angepasst.</p>'
     (output/'dashboard.html').write_text(page+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
-    write_json(output/'provenance.json',{'source_sha256':digest(source/'predictions.csv'),'code_sha256':digest(Path(__file__))})
+    write_json(output/'provenance.json',{'source_sha256':digest(source/'predictions.csv'),'code':_code_hashes()})
     print(summary.to_string())
 
 

@@ -92,7 +92,7 @@ def run_diagnostics(config_path, run_id, special_path):
     paths=[Path(config_path),Path(special_path),*[source/n for n in ['sites.parquet','site_postal_candidates.parquet','dhl_observations.parquet','hermes_observations.parquet']]]
     paths += list(Path(cfg['legacy_output']).glob('0[0125]_*.csv'))
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},
-        'code':{str(p.relative_to(Path(__file__).parents[1])):digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
+        'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
     summary=table.groupby(['mode','model'])[['wMAPE','bias']].agg(['mean','min','max'])
     content='<h1>DHL 2021: Reproduktion und Fehlerdiagnose</h1><p>Keine Hochrechnung, keine simulierten Tagesschwankungen. Fehler auf jeweils zurückgehaltenen PLZ.</p>'
     content+=summary.to_html(float_format=lambda x:f'{x:.1%}')

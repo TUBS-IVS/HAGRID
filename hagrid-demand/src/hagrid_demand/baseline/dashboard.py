@@ -5,13 +5,19 @@ from __future__ import annotations
 import html
 import json
 import math
+from numbers import Real
 import os
 from pathlib import Path
 import uuid
 
-import pandas as pd
-
 from hagrid_demand.common.provenance import resource_hash
+
+
+_REPORT_ARTIFACTS = ("report_data.json", "report.md")
+_REPORT_SCHEMA = {
+    "run_id", "reference_year", "operating_days", "regional_annual", "postal",
+    "excluded_quantities", "b2b_adjustment", "remaining_potentials", "status",
+}
 
 
 def _valid_report(value: object, run_id: str) -> bool:
@@ -21,47 +27,21 @@ def _valid_report(value: object, run_id: str) -> bool:
         return False
     if type(value.get("operating_days")) is not int or value["operating_days"] <= 0:
         return False
-    if not isinstance(value.get("regional_annual"), (int, float)) or not math.isfinite(value["regional_annual"]):
+    annual = value.get("regional_annual")
+    if isinstance(annual, bool) or not isinstance(annual, Real):
+        return False
+    try:
+        if not math.isfinite(float(annual)):
+            return False
+    except (OverflowError, TypeError, ValueError):
         return False
     return isinstance(value.get("postal"), list) and isinstance(value.get("excluded_quantities"), dict) and isinstance(value.get("b2b_adjustment"), dict) and isinstance(value.get("remaining_potentials"), dict)
-
-
-def _write_json(path: Path, value: dict) -> None:
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
-
-
-def _write_text(path: Path, value: str) -> None:
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(value, encoding="utf-8")
-    os.replace(temporary, path)
 
 
 def _restore(source: Path, target: Path) -> None:
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     temporary.write_bytes(source.read_bytes())
     os.replace(temporary, target)
-
-
-def _report_data(run: Path) -> dict:
-    postal = pd.read_parquet(run / "reference_postal.parquet")
-    checks = json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))
-    config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
-    return {
-        "run_id": run.name,
-        "reference_year": config["reference_year"],
-        "operating_days": config["reference_operating_days"],
-        "regional_annual": float(postal.reference_annual.sum()),
-        "postal": json.loads(postal.to_json(orient="records")),
-        "excluded_quantities": checks["scope_ledger"],
-        "b2b_adjustment": {key: checks[key] for key in ("b2b_target", "b2b_achieved", "b2b_residual", "k", "k_status", "log_k")},
-        "remaining_potentials": {
-            "unknown_plz_sites": checks.get("source_quality", {}).get("unknown_plz_sites", []),
-            "known_plz_outside_anchor_sites": checks.get("source_quality", {}).get("known_plz_outside_anchor_sites", []),
-        },
-        "status": "complete_reference",
-    }
 
 
 def _index(reports: list[tuple[dict, Path]], dashboard_root: Path) -> str:
@@ -84,53 +64,92 @@ def _index(reports: list[tuple[dict, Path]], dashboard_root: Path) -> str:
 <table><thead><tr><th>Run</th><th>Jahr</th><th>Betriebstage</th><th>Jahresmenge</th><th>Bericht</th></tr></thead><tbody>""" + rows + "</tbody></table></main></body></html>"
 
 
+def _report_stage(manifest: object) -> dict:
+    if not isinstance(manifest, dict):
+        raise ValueError("baseline run has incomplete stage manifest")
+    stages = manifest.get("stages")
+    if not isinstance(stages, dict) or not {"reference", "report"}.issubset(stages):
+        raise ValueError("baseline run has incomplete stage manifest")
+    report = stages["report"]
+    if not isinstance(report, dict) or not isinstance(report.get("run_artifacts"), dict):
+        raise ValueError("baseline run has incomplete stage manifest")
+    return report
+
+
+def _verify_and_restore_report_artifacts(run: Path, report_stage: dict) -> None:
+    """Validate each immutable report copy before atomically repairing its public mirror."""
+    artifacts = report_stage["run_artifacts"]
+    for name in _REPORT_ARTIFACTS:
+        expected = artifacts.get(f"report/{name}")
+        source = run / "report" / name
+        public = run / name
+        if not isinstance(expected, str) or not source.is_file() or resource_hash(source) != expected:
+            raise ValueError("baseline report artifact hash mismatch")
+        if not public.is_file() or resource_hash(public) != expected:
+            _restore(source, public)
+
+
+def _candidate_report(candidate: Path) -> tuple[dict, Path] | None:
+    """Return one complete candidate report while containing all sibling corruption."""
+    try:
+        data = candidate / "report_data.json"
+        if not data.is_file() or not (candidate / "run.json").is_file():
+            return None
+        state = json.loads((candidate / "run.json").read_text(encoding="utf-8"))
+        manifest = json.loads((candidate / "stage_manifest.json").read_text(encoding="utf-8"))
+        report = json.loads(data.read_text(encoding="utf-8"))
+        if not isinstance(state, dict) or not isinstance(manifest, dict) or not isinstance(report, dict):
+            return None
+        stages = manifest.get("stages")
+        if not isinstance(stages, dict) or not {"reference", "report"}.issubset(stages):
+            return None
+        report_stage = stages.get("report")
+        if not isinstance(report_stage, dict):
+            return None
+        artifacts = report_stage.get("run_artifacts")
+        if not isinstance(artifacts, dict):
+            return None
+        expected = artifacts.get("report/report_data.json")
+        if (
+            state.get("status") == "complete_reference"
+            and isinstance(expected, str)
+            and expected == resource_hash(data)
+            and _REPORT_SCHEMA.issubset(report)
+            and _valid_report(report, candidate.name)
+        ):
+            return report, data
+    except (OSError, TypeError, KeyError, ValueError, AttributeError, json.JSONDecodeError):
+        return None
+    return None
+
+
 def render_baseline(run: Path) -> Path:
     """Refresh the shared index from a completed run's verified report artifacts."""
     run = Path(run)
     try:
         state = json.loads((run / "run.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        if not isinstance(state, dict) or state.get("status") != "complete_reference":
+            raise ValueError("baseline run is not complete_reference")
+    except (OSError, TypeError, ValueError, AttributeError, json.JSONDecodeError) as exc:
         raise ValueError("baseline run is incomplete") from exc
-    if state.get("status") != "complete_reference":
-        raise ValueError("baseline run is not complete_reference")
     try:
         manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
-        stages = manifest["stages"]
-        if not all(name in stages for name in ("reference", "report")):
-            raise ValueError("baseline run has incomplete stage manifest")
-        expected = stages["report"].get("run_artifacts", {}).get("report/report_data.json")
-        public = run / "report_data.json"
-        if expected != resource_hash(public) if public.is_file() else True:
-            cached = run / "report" / "report_data.json"
-            if not cached.is_file() or expected != resource_hash(cached):
-                raise ValueError("baseline report artifact hash mismatch")
-            _restore(cached, public)
-            markdown = run / "report" / "report.md"
-            if markdown.is_file():
-                _restore(markdown, run / "report.md")
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        _verify_and_restore_report_artifacts(run, _report_stage(manifest))
+    except ValueError:
+        raise
+    except (OSError, TypeError, KeyError, AttributeError, json.JSONDecodeError) as exc:
         raise ValueError("baseline run has incomplete stage manifest") from exc
-    config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
-    report_path = run / "report_data.json"
-    if not report_path.is_file():
-        raise ValueError("baseline run has no complete report artifacts")
-    dashboard_root = Path(config.get("dashboard_root") or Path(config["output_dir"]) / "dashboard")
+    try:
+        config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            raise ValueError("baseline config is incomplete")
+        dashboard_root = Path(config.get("dashboard_root") or Path(config["output_dir"]) / "dashboard")
+    except (OSError, TypeError, KeyError, ValueError, AttributeError, json.JSONDecodeError) as exc:
+        raise ValueError("baseline run has incomplete configuration") from exc
     dashboard_root.mkdir(parents=True, exist_ok=True)
-    reports = []
-    for candidate in sorted(Path(config["output_dir"]).iterdir(), key=lambda item: item.name):
-        data = candidate / "report_data.json"
-        if data.is_file() and (candidate / "run.json").is_file():
-            try:
-                candidate_state = json.loads((candidate / "run.json").read_text(encoding="utf-8"))
-                candidate_data = json.loads(data.read_text(encoding="utf-8"))
-                candidate_manifest = json.loads((candidate / "stage_manifest.json").read_text(encoding="utf-8"))
-                schema = {"run_id", "reference_year", "operating_days", "regional_annual", "postal", "excluded_quantities", "b2b_adjustment", "remaining_potentials", "status"}
-                expected = candidate_manifest.get("stages", {}).get("report", {}).get("run_artifacts", {}).get("report/report_data.json")
-                if candidate_state.get("status") == "complete_reference" and expected == resource_hash(data) and {"reference", "report"}.issubset(candidate_manifest.get("stages", {})) and schema.issubset(candidate_data) and _valid_report(candidate_data, candidate.name):
-                    reports.append((candidate_data, data))
-            except (OSError, TypeError, json.JSONDecodeError):
-                continue
-    reports = sorted(reports, key=lambda item: str(item[0]["run_id"]))
+    reports = [report for candidate in sorted(Path(config["output_dir"]).iterdir(), key=lambda item: item.name)
+               if (report := _candidate_report(candidate)) is not None]
+    reports.sort(key=lambda item: str(item[0]["run_id"]))
     temporary = dashboard_root / f".index.{uuid.uuid4().hex}.tmp"
     temporary.write_text(_index(reports, dashboard_root), encoding="utf-8")
     os.replace(temporary, dashboard_root / "index.html")

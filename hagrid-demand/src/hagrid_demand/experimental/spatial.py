@@ -102,7 +102,7 @@ def run_spatial(config_path, run_id):
         from ..pipeline import digest
         write_json(output / "provenance.json", {"created_at": datetime.now(timezone.utc).isoformat(),
             "inputs": {name: digest(source / name) for name in ["sites.parquet", "site_postal_candidates.parquet", "summary.json"]},
-            "code": {str(p.relative_to(Path(__file__).parents[1])): digest(p) for p in [*Path(__file__).parent.iterdir(), *Path(__file__).parents[1].iterdir()] if p.suffix in {".py", ".html"}},
+            "code": {p.relative_to(Path(__file__).parents[1]).as_posix(): digest(p) for p in [*Path(__file__).parent.iterdir(), *Path(__file__).parents[1].iterdir()] if p.suffix in {".py", ".html"}},
             "numpy_version": np.__version__, "config_sha256": digest(config_path)})
         aggregates, diagnostics = [], []
         for segment_id, segment in enumerate(["private", "business"]):

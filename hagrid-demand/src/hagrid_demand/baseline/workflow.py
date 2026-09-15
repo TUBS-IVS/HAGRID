@@ -61,6 +61,11 @@ def _raw_source_paths(config: dict) -> list[Path]:
     return paths
 
 
+def _require_foundation_columns(table: pd.DataFrame, name: str, columns: set[str]) -> None:
+    if missing := columns.difference(table.columns):
+        raise ValueError(f"foundation {name} missing required columns: {sorted(missing)}")
+
+
 def _write_sources(config: dict, output: Path) -> None:
     prepared = prepare_sources(config, output)
     if config["source_mode"] != "raw":
@@ -69,18 +74,25 @@ def _write_sources(config: dict, output: Path) -> None:
         if missing := required.difference(tables):
             raise ValueError(f"foundation run missing required tables: {sorted(missing)}")
         sites = tables["sites.parquet"].copy()
+        _require_foundation_columns(
+            sites, "sites", {"site_id", "recipient_type", "population", "employees", "location_status", "geometry"}
+        )
         dhl_table = tables["dhl_observations.parquet"]
-        if "year" not in dhl_table or not dhl_table.year.eq(2021).all():
+        _require_foundation_columns(dhl_table, "DHL observations", {"year"})
+        if not dhl_table.year.eq(2021).all():
             raise ValueError("foundation DHL data must contain only year 2021")
         membership = tables.get("site_postal_candidates.parquet")
         if membership is None:
             raise ValueError("foundation run requires site_postal_candidates.parquet")
+        _require_foundation_columns(membership, "site postal candidates", {"site_id", "plz"})
         counts = membership.groupby("site_id").plz.count()
         unique = membership.loc[membership.site_id.map(counts).eq(1), ["site_id", "plz"]].drop_duplicates("site_id")
         sites = sites.merge(unique, on="site_id", how="left", validate="one_to_one")
         sites["segment"] = sites.recipient_type
-        sites["allocation_status"] = "located"
-        employees = pd.to_numeric(sites.get("employees"), errors="coerce")
+        sites["allocation_status"] = sites.location_status.map(
+            lambda value: "located" if value == "source_point_unverified" else "unlocated"
+        )
+        employees = pd.to_numeric(sites["employees"], errors="coerce")
         sites["invalid_employees"] = sites.recipient_type.eq("business") & (employees.isna() | employees.lt(0))
         for name in required:
             table = tables[name]
@@ -209,7 +221,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         raise ValueError("The reference milestone requires dhl_exclude_above=1000")
     if config["output_scope"] != "reference":
         raise NotImplementedError("daily output_scope is available after Plan 02; no daily run was produced")
-    output_root, run = Path(config["output_dir"]), Path(config["output_dir"]) / run_id
+    run = Path(config["output_dir"]) / run_id
     if run.exists() and not resume:
         raise FileExistsError(f"Baseline run already exists: {run}")
     if resume:
@@ -281,7 +293,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["completed_stages"].append("dashboard")
         state["status"] = "complete_reference"
         _json(run / "run.json", state)
-        dashboard = render_baseline(run)
+        render_baseline(run)
         return run
     except Exception as exc:
         state["status"] = "failed"
