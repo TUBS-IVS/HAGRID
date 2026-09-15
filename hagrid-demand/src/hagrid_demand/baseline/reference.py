@@ -18,25 +18,23 @@ def _array(value, name):
 
 
 def _bounded_quadratic_projection(m, prior, b, lower, upper, scale):
-    """Exact active-set polish for the one-equality diagonal quadratic program."""
-    fitted = np.empty_like(prior)
-    free = np.ones(len(prior), dtype=bool)
-    while True:
-        fixed_mass = float(m[~free] @ fitted[~free]) if (~free).any() else 0.
-        denominator = float(np.sum((m[free] * scale[free]) ** 2))
-        if denominator == 0:
-            if not np.isclose(fixed_mass, b, atol=_ATOL, rtol=_RTOL):
-                raise ValueError("infeasible carrier bounds after active-set projection")
-            return fitted
-        multiplier = (float(m[free] @ prior[free]) + fixed_mass - b) / denominator
-        fitted[free] = prior[free] - multiplier * m[free] * scale[free] ** 2
-        below = free & (fitted < lower)
-        above = free & (fitted > upper)
-        if not below.any() and not above.any():
-            return fitted
-        fitted[below] = lower[below]
-        fitted[above] = upper[above]
-        free[below | above] = False
+    """Solve the clipped monotone Lagrange equation for the exact bounded optimum."""
+    def residual(multiplier):
+        candidate = np.clip(prior - multiplier * m * scale ** 2, lower, upper)
+        return float(m @ candidate - b)
+
+    low, high = -1., 1.
+    while residual(low) < 0:
+        low *= 2.
+    while residual(high) > 0:
+        high *= 2.
+    if residual(low) == 0:
+        multiplier = low
+    elif residual(high) == 0:
+        multiplier = high
+    else:
+        multiplier = brentq(residual, low, high, xtol=1e-14)
+    return np.clip(prior - multiplier * m * scale ** 2, lower, upper)
 
 
 def reconcile_carriers(m: np.ndarray, q: np.ndarray, b: float, lower: np.ndarray,
@@ -177,6 +175,8 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
         if segment not in support:
             support[segment] = 0.
     support = support[["dhl_retained_mean", "private", "business"]]
+    if not np.isfinite(support.to_numpy(float)).all() or (support.to_numpy(float) < 0).any():
+        raise ValueError("aggregated postal support must be finite and nonnegative")
     positive = support.dhl_retained_mean.to_numpy(float) > 0
     private, business, dhl_values = (support[name].to_numpy(float) for name in ("private", "business", "dhl_retained_mean"))
     if np.any(positive & ((private + business) <= 0)):
@@ -204,13 +204,14 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
         def residual(candidate_eta):
             local, _, total = totals(candidate_eta)
             return float(total @ local / total.sum() - b)
-        eta_low, eta_high = -30., 30.
-        low, high = residual(eta_low), residual(eta_high)
-        if np.isclose(low, high, atol=1e-12, rtol=0):
+        mixed_support = positive & (private > 0) & (business > 0)
+        if not mixed_support.any():
             if abs(residual(0.)) > 1e-10:
                 raise ValueError(f"constant reachable B2B share does not match target; reachable={residual(0.) + b}")
             eta, iterations = 0., 0
         else:
+            eta_low, eta_high = -30., 30.
+            low, high = residual(eta_low), residual(eta_high)
             while low * high > 0 and max(abs(eta_low), abs(eta_high)) < 700.:
                 if low < 0 and high < 0:
                     eta_high = min(700., eta_high * 2.)
@@ -234,10 +235,14 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     if np.any(positive & (dhl_share <= 0)):
         raise ValueError("positive DHL requires a positive local DHL share")
     postal_total_mean = np.divide(dhl_values, dhl_share, out=np.zeros_like(dhl_values), where=dhl_share > 0)
+    if not np.isfinite(postal_total_mean).all() or (postal_total_mean < 0).any():
+        raise ValueError("inferred postal totals must be finite and nonnegative")
     achieved_b = float(postal_total_mean @ local_b / postal_total_mean.sum())
     if not np.isclose(achieved_b, b, atol=1e-10, rtol=0):
         raise ValueError(f"B2B reference balance failed: target={b}, actual={achieved_b}")
     annual = postal_total_mean * float(operating_days)
+    if not np.isfinite(annual).all() or (annual < 0).any():
+        raise ValueError("annual postal totals must be finite and nonnegative")
     postal = support.reset_index().rename(columns={"private": "private_potential", "business": "business_potential"})
     postal["b2b_share"] = local_b; postal["dhl_share"] = dhl_share; postal["reference_annual"] = annual
     postal["private_annual"] = annual * (1 - local_b); postal["business_annual"] = annual * local_b
@@ -284,7 +289,10 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
             raise ValueError(f"structural shares are not normalized for {segment}")
         share_errors[segment] = {"historical_sum": historical_sum, "structural_sum": structural_sum}
     regional_error = float(site_support.reference_annual.sum() - regional_annual)
-    if not np.isclose(allocation_check.error.to_numpy(float), 0., atol=_ATOL, rtol=_RTOL).all() or not np.isclose(regional_error, 0., atol=_ATOL, rtol=_RTOL):
+    allocation_matches = np.isclose(allocation_check.reference_annual.to_numpy(float),
+                                    allocation_check.expected_annual.to_numpy(float), atol=_ATOL, rtol=_RTOL)
+    regional_matches = np.isclose(float(site_support.reference_annual.sum()), regional_annual, atol=_ATOL, rtol=_RTOL)
+    if not allocation_matches.all() or not regional_matches:
         raise ValueError("site allocation balance failed")
     checks = {"scope_ledger": scope_ledger, "k": k, "eta": eta, "eta_iterations": iterations,
               "b2b_target": float(b), "b2b_achieved": achieved_b, "b2b_residual": achieved_b - b,
