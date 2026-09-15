@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from hagrid_demand.common.contracts import ATOL, RTOL, AnnualProjection, assert_balance
+from hagrid_demand.common.contracts import ATOL, RTOL, AnnualProjection, assert_balance, verified_scope_id
 from hagrid_demand.common.provenance import canonical_digest
 
 from .reference import reconcile_carriers
@@ -26,12 +26,6 @@ def _year_row(table: pd.DataFrame, year: int, required: set[str], label: str) ->
     if rows.empty:
         raise ValueError(f"{label} has no row for year {year}")
     return rows
-
-
-def _same_scope(actual: object, expected: object) -> bool:
-    if isinstance(expected, (list, tuple, set)):
-        return isinstance(actual, (list, tuple, set)) and sorted(map(str, actual)) == sorted(map(str, expected))
-    return actual == expected
 
 
 def _regional_level(cfg: dict, years: list[int], verified_scope: object) -> tuple[str, pd.DataFrame | None]:
@@ -63,7 +57,7 @@ def _regional_level(cfg: dict, years: list[int], verified_scope: object) -> tupl
     if (not external.unit.eq("packages/year").all() or any(
             not isinstance(value, str) or not value.strip() for field in text_fields for value in external[field])):
         raise ValueError("external_annual_series requires unit=packages/year, provenance, and scope")
-    if not external.scope.map(lambda scope: _same_scope(scope, verified_scope)).all():
+    if not external.scope.eq(verified_scope).all():
         raise ValueError("external_annual_series scope must match verified reference scope")
     external["value"] = values.astype(float)
     return mode, external.set_index("year", drop=False)
@@ -138,7 +132,9 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
             or sites.historical_share.isna().any() or not np.isfinite(sites.historical_share).all() or (sites.historical_share < 0).any()):
         raise ValueError("reference sites require unique supported private/business site keys")
     support = sites.groupby("segment").historical_share.sum()
-    verified_scope = reference.get("scope", sorted(sites.plz.astype(str).unique().tolist()))
+    verified_scope = reference.get("scope_id", verified_scope_id(sites.plz.astype(str).tolist()))
+    if not isinstance(verified_scope, str) or len(verified_scope) != 64:
+        raise ValueError("reference scope_id must be a canonical scope digest")
     mode, external = _regional_level(cfg, requested, verified_scope)
     volume = _table(series.get("volume"), "series.volume") if mode == "national_series" else pd.DataFrame()
     site_frames, profile_frames, postal_frames, balance_rows, external_metadata = [], [], [], [], []
@@ -163,12 +159,14 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
         annual = pd.DataFrame({"year": year, "site_id": sites.site_id, "plz": sites.plz.astype(str), "segment": sites.segment,
                                "allocation_status": sites.allocation_status, "support_status": support_status,
                                "annual_expected": share * sites.segment.map(targets), "share": share})
-        postal = annual.groupby(["plz", "segment", "support_status"], as_index=False)["annual_expected"].sum()
-        for segment in ("private", "business"):
-            if float(support.get(segment, 0.)) <= 0:
-                zeros = pd.DataFrame({"plz": sorted(annual.plz.unique()), "segment": segment,
-                                      "support_status": "zero_target_no_support", "annual_expected": 0.})
-                postal = pd.concat([postal, zeros], ignore_index=True)
+        grouped = annual.groupby(["plz", "segment"], as_index=False)["annual_expected"].sum()
+        grid = pd.MultiIndex.from_product([sorted(annual.plz.unique()), ["private", "business"]],
+                                          names=["plz", "segment"]).to_frame(index=False)
+        postal = grid.merge(grouped, on=["plz", "segment"], how="left")
+        postal["annual_expected"] = postal.annual_expected.fillna(0.)
+        postal["support_status"] = postal.segment.map(
+            lambda segment: "supported" if float(support.get(segment, 0.)) > 0 else "zero_target_no_support"
+        )
         postal.insert(0, "year", year)
         postal["memory_weight"] = 1.
         postal["regional_level_mode"] = mode
@@ -203,13 +201,15 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
     result_sites = pd.concat(site_frames, ignore_index=True).sort_values(["year", "segment", "plz", "site_id"], kind="stable").reset_index(drop=True)
     result_profiles = pd.concat(profile_frames, ignore_index=True).sort_values(["year", "segment", "carrier"], kind="stable").reset_index(drop=True)
     result_postal = pd.concat(postal_frames, ignore_index=True).sort_values(["year", "segment", "plz"], kind="stable").reset_index(drop=True)
+    if result_postal.duplicated(["year", "plz", "segment"]).any():
+        raise ValueError("projection postal keys must be unique")
     hashes = {"sites": _frame_hash(result_sites), "profiles": _frame_hash(result_profiles), "postal": _frame_hash(result_postal)}
     checks = {"hashes": hashes, "balances": {"by_year": balance_rows,
               "regional_error": max(abs(row["regional_error"]) for row in balance_rows),
               "postal_error": max(abs(row["postal_error"]) for row in balance_rows),
               "share_sums": [row["share_sums"] for row in balance_rows],
               "postal_site_errors": [row["postal_site_errors"] for row in balance_rows], "atol": ATOL, "rtol": RTOL},
-              "verified_scope": verified_scope,
-              "external_annual_series": {"scope": verified_scope, "records": external_metadata} if external is not None else None,
+              "scope_id": verified_scope,
+              "external_annual_series": {"scope_id": verified_scope, "records": external_metadata} if external is not None else None,
               "identity_hash": canonical_digest({"mode": mode, "verified_scope": verified_scope, "external": external_metadata})}
     return AnnualProjection(result_sites, result_profiles, result_postal, checks)

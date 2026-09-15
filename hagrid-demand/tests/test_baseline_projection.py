@@ -10,8 +10,13 @@ def _reference():
             "segment": ["private", "private", "business"],
             "historical_share": [.25, .75, 1.0], "allocation_status": ["located", "located", "located"],
         }),
-        "scope": "region",
     }
+
+
+def _scope_id():
+    from hagrid_demand.common.contracts import verified_scope_id
+
+    return verified_scope_id(["1", "2"])
 
 
 def _series(dhl_share=0.4):
@@ -65,15 +70,15 @@ def test_external_annual_series_is_a_direct_total_and_rejects_a_second_growth_ch
 
     result = project_annual(_reference(), _series(), [2022], {
         "memory": {"fixed": 1}, "regional_level": {"mode": "external_annual_series", "series": [
-            {"year": 2022, "value": 777., "unit": "packages/year", "provenance": "fixture", "scope": "region"},
+            {"year": 2022, "value": 777., "unit": "packages/year", "provenance": "fixture", "scope": _scope_id()},
         ]},
     })
     assert result.sites.annual_expected.sum() == pytest.approx(777.)
-    assert result.checks["external_annual_series"]["scope"] == "region"
+    assert result.checks["external_annual_series"]["scope_id"] == _scope_id()
     with pytest.raises(ValueError, match="external_annual_series.*growth"):
         project_annual(_reference(), _series(), [2022], {
             "memory": {"fixed": 1}, "regional_level": {"mode": "external_annual_series", "annual_growth": 1.1,
-                "series": [{"year": 2022, "value": 777., "unit": "packages/year", "provenance": "fixture", "scope": "region"}]},
+                "series": [{"year": 2022, "value": 777., "unit": "packages/year", "provenance": "fixture", "scope": _scope_id()}]},
         })
 
 
@@ -110,11 +115,24 @@ def test_projection_keeps_zero_target_segments_explicit_without_site_support(b2b
     assert missing.support_status.eq("zero_target_no_support").all()
 
 
+def test_zero_target_segment_with_an_existing_zero_share_site_has_unique_postal_keys():
+    from hagrid_demand.baseline.projection import project_annual
+
+    reference = _reference()
+    reference["sites"].loc[reference["sites"].segment.eq("business"), "historical_share"] = 0.
+    series = _series()
+    series["b2b"] = series["b2b"].assign(share=0.)
+    result = project_annual(reference, series, [2022], {"memory": {"fixed": 1}})
+
+    assert not result.postal.duplicated(["year", "plz", "segment"]).any()
+    assert result.postal.query("segment == 'business'").annual_expected.eq(0).all()
+
+
 def test_external_provenance_and_scope_are_verified_and_change_projection_identity():
     from hagrid_demand.baseline.projection import project_annual
 
     cfg = {"memory": {"fixed": 1}, "regional_level": {"mode": "external_annual_series", "series": [
-        {"year": 2022, "value": 777., "unit": "packages/year", "provenance": "first", "scope": "region"},
+        {"year": 2022, "value": 777., "unit": "packages/year", "provenance": "first", "scope": _scope_id()},
     ]}}
     first = project_annual(_reference(), _series(), [2022], cfg)
     cfg["regional_level"]["series"][0]["provenance"] = "second"
