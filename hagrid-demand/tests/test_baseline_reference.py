@@ -37,6 +37,8 @@ def test_reconciliation_has_quadratic_optimum_and_boundary_conditionals():
     m = np.array([.5, .5]); prior = np.array([.1, .9]); scale = np.array([1., 2.])
     optimum = reconcile_carriers(m, prior, .45, np.zeros(2), np.ones(2), scale)
     assert optimum["q"] == pytest.approx([.08, .82], abs=1e-10)
+    assert optimum["diagnostics"]["objective"] == pytest.approx(.002)
+    assert optimum["diagnostics"]["conditioning_objective"] == pytest.approx(.008)
     private = reconcile_carriers(m, prior, 0., np.zeros(2), np.ones(2), scale)
     business = reconcile_carriers(m, prior, 1., np.zeros(2), np.ones(2), scale)
     assert private["q"] == pytest.approx([0., 0.])
@@ -54,16 +56,36 @@ def test_reconciliation_releases_nonoptimal_clamp_with_scalar_lagrange_solution(
     assert np.dot([.5, .5], result["q"]) == pytest.approx(.2)
 
 
-def test_reconciliation_terminates_at_feasibility_tolerance_and_tiny_scales():
+def test_reconciliation_preserves_near_endpoint_targets_and_rejects_nearby_infeasible_bounds():
     from hagrid_demand.baseline.reference import reconcile_carriers
 
-    snapped = reconcile_carriers(np.array([1.]), np.array([.5]), .500000005,
-                                 np.array([.5]), np.array([.5]), np.array([1.]))
-    assert snapped["q"] == pytest.approx([.5])
-    assert snapped["diagnostics"]["target_adjustment"] == pytest.approx(-.000000005)
-    tiny = reconcile_carriers(np.array([.5, .5]), np.array([.5, .5]), .5,
-                              np.zeros(2), np.ones(2), np.array([1e-300, 1.]))
-    assert np.dot([.5, .5], tiny["q"]) == pytest.approx(.5)
+    for target in (1e-9, 1 - 1e-9):
+        solved = reconcile_carriers(np.array([1.]), np.array([.5]), target,
+                                    np.array([0.]), np.array([1.]), np.array([1.]))
+        assert solved["q"] == pytest.approx([target], abs=1e-14)
+        assert np.dot([1.], solved["q"]) == pytest.approx(target, abs=1e-14)
+        assert solved["diagnostics"]["target_requested"] == target
+        assert solved["diagnostics"]["target_adjustment"] == 0.
+    for target in (.500000005, .499999995):
+        with pytest.raises(ValueError, match="infeasible"):
+            reconcile_carriers(np.array([1.]), np.array([.5]), target,
+                               np.array([.5]), np.array([.5]), np.array([1.]))
+
+
+def test_reconciliation_solves_a_forced_change_when_scale_squared_underflows():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+
+    solved = reconcile_carriers(np.array([.5, .5]), np.array([.5, .5]), .4,
+                                np.array([0., .5]), np.array([1., .5]), np.array([1e-300, 1.]))
+    assert solved["q"] == pytest.approx([.3, .5], abs=1e-12)
+    assert np.dot([.5, .5], solved["q"]) == pytest.approx(.4, abs=1e-12)
+    wide = reconcile_carriers(np.array([.5, .5]), np.array([.5, .5]), .4,
+                              np.array([0., .5]), np.array([1., .5]), np.array([1e-300, 1e300]))
+    assert wide["q"] == pytest.approx([.3, .5], abs=1e-12)
+    assert wide["diagnostics"]["objective"] is None
+    assert wide["diagnostics"]["objective_status"] == "overflow_log_retained"
+    assert wide["diagnostics"]["conditioning_objective"] is None
+    assert wide["diagnostics"]["conditioning_objective_status"] == "overflow_log_retained"
 
 
 def test_default_potentials_count_people_and_company_locations_once():
@@ -158,6 +180,42 @@ def test_contiguous_groups_finds_feasible_connected_partition_before_residuals()
     assert grouped.set_index("unit_id").loc["c", "group_id"] == grouped.set_index("unit_id").loc["e", "group_id"]
     with pytest.raises(ValueError, match="finite positive integer"):
         build_contiguous_groups(units, edges, min_persons=3, min_companies=0, max_units=np.nan)
+
+
+def test_contiguous_groups_repairs_small_star_and_path_partitions():
+    from hagrid_demand.baseline.potentials import build_contiguous_groups
+
+    star = pd.DataFrame({"unit_id": ["a", "b", "c"], "plz": ["1"] * 3,
+                         "persons": [2., 3., 1.], "companies": [0.] * 3})
+    star_result = build_contiguous_groups(star, pd.DataFrame({"left": ["a", "a"], "right": ["b", "c"]}),
+                                         min_persons=3, min_companies=0, max_units=2).set_index("unit_id")
+    assert star_result.group_status.eq("resolved").all()
+    assert star_result.loc["a", "group_id"] == star_result.loc["c", "group_id"]
+    assert star_result.loc["a", "group_id"] != star_result.loc["b", "group_id"]
+
+    path = pd.DataFrame({"unit_id": ["a", "b", "c", "d"], "plz": ["1"] * 4,
+                         "persons": [3., 0., 2., 1.], "companies": [0.] * 4})
+    path_result = build_contiguous_groups(path, pd.DataFrame({"left": ["a", "b", "c"], "right": ["b", "c", "d"]}),
+                                         min_persons=3, min_companies=0, max_units=2).set_index("unit_id")
+    assert path_result.group_status.eq("resolved").all()
+    assert path_result.loc["a", "group_id"] == path_result.loc["b", "group_id"]
+    assert path_result.loc["c", "group_id"] == path_result.loc["d", "group_id"]
+
+
+def test_contiguous_groups_encodes_group_ids_without_colon_collisions_and_marks_search_budget():
+    from hagrid_demand.baseline.potentials import build_contiguous_groups
+
+    colliding = pd.DataFrame({"unit_id": ["c", "b:c"], "plz": ["a:b", "a"],
+                              "persons": [1., 1.], "companies": [0., 0.]})
+    distinct = build_contiguous_groups(colliding, pd.DataFrame({"left": [], "right": []}), 0, 0, 1)
+    assert distinct.group_id.nunique() == 2
+
+    units = pd.DataFrame({"unit_id": [str(index) for index in range(17)], "plz": ["1"] * 17,
+                          "persons": [1.] * 17, "companies": [0.] * 17})
+    edges = pd.DataFrame({"left": [str(index) for index in range(16)],
+                          "right": [str(index + 1) for index in range(16)]})
+    budgeted = build_contiguous_groups(units, edges, min_persons=2, min_companies=0, max_units=2)
+    assert "unresolved_search_budget" in set(budgeted.group_status)
 
 
 def test_contiguous_groups_scale_without_recursive_search_and_require_string_ids():
@@ -360,6 +418,12 @@ def test_reference_keeps_extreme_eta_as_log_k_and_avoids_site_allocation_overflo
     assert solved["checks"]["eta"] == pytest.approx(600 * np.log(10), abs=1e-8)
     assert solved["checks"]["k"] is None
     assert solved["checks"]["k_status"] == "overflow_log_k_retained"
+    underflow = extreme.assign(weight=[1e-300, 1e300])
+    negative = solve_reference(underflow, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, .5, 313)
+    assert negative["checks"]["eta"] == pytest.approx(-600 * np.log(10), abs=1e-8)
+    assert negative["checks"]["k"] is None
+    assert negative["checks"]["k_status"] == "underflow_log_k_retained"
+    assert np.isfinite(negative["checks"]["log_k"])
     huge_site = pd.DataFrame({"site_id": ["p"], "plz": ["1"], "segment": ["private"], "weight": [1e308],
                               "allocation_status": ["located"]})
     allocated = solve_reference(huge_site, dhl, {"conditional": np.array([[1., 0.], [0., 0.]])}, 0., 313)
