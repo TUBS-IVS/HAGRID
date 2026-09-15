@@ -43,6 +43,40 @@ def validate_series_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("market_inputs requires carrier_anchor and amazon objects")
     market["carrier_anchor"] = _inherit_metadata(market, market["carrier_anchor"], "market_inputs.carrier_anchor")
     market["amazon"] = _inherit_metadata(market, market["amazon"], "market_inputs.amazon")
+    carrier_anchor = market["carrier_anchor"]
+    for field in ("shares", "change_2016_2022"):
+        values = carrier_anchor.get(field)
+        if not isinstance(values, dict):
+            raise ValueError(f"market_inputs.carrier_anchor.{field} must be an object")
+        normalized = {}
+        for provider, value in values.items():
+            if not isinstance(value, dict) or not isinstance(value.get("value"), (int, float)):
+                raise ValueError(f"market_inputs.carrier_anchor.{field}.{provider} requires numeric value")
+            normalized[provider] = _inherit_metadata(
+                carrier_anchor, value, f"market_inputs.carrier_anchor.{field}.{provider}"
+            )
+        carrier_anchor[field] = normalized
+    multiplier = carrier_anchor.get("post_2022_multiplier")
+    if not isinstance(multiplier, dict) or not isinstance(multiplier.get("value"), (int, float)):
+        raise ValueError("market_inputs.carrier_anchor.post_2022_multiplier requires numeric value")
+    carrier_anchor["post_2022_multiplier"] = _inherit_metadata(
+        carrier_anchor, multiplier, "market_inputs.carrier_anchor.post_2022_multiplier"
+    )
+    points = market["amazon"].get("points")
+    if not isinstance(points, list):
+        raise ValueError("market_inputs.amazon.points must be a list")
+    normalized_points = []
+    for index, point in enumerate(points):
+        if not isinstance(point, dict) or not isinstance(point.get("year"), int) or not isinstance(point.get("value"), (int, float)):
+            raise ValueError(f"market_inputs.amazon.points[{index}] requires year and numeric value")
+        normalized_points.append(_inherit_metadata(market["amazon"], point, f"market_inputs.amazon.points[{index}]"))
+    market["amazon"]["points"] = normalized_points
+    initial_guess = market["amazon"].get("initial_guess")
+    if not isinstance(initial_guess, dict) or not isinstance(initial_guess.get("values"), list):
+        raise ValueError("market_inputs.amazon.initial_guess requires values")
+    market["amazon"]["initial_guess"] = _inherit_metadata(
+        market["amazon"], initial_guess, "market_inputs.amazon.initial_guess"
+    )
     for name, key in (("b2b_inputs", "anchors"), ("volume_inputs", "anchors")):
         spec = result[name]
         if not isinstance(spec.get(key), list):

@@ -89,6 +89,27 @@ def test_market_series_is_a_nonnegative_simplex_each_year():
     assert np.allclose(market.groupby("year")["share"].sum().to_numpy(), 1.0)
 
 
+def test_market_projection_uses_normalized_semantics_and_carrier_specific_source_metadata():
+    """Market probabilities must not inherit raw percent/assumption labels as output facts."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    market = build_series(packaged_series_inputs(), [2024], volume_fit_policy="observed_only")["market"]
+    amazon = market.loc[market.provider.eq("Amazon")].iloc[0]
+    carriers = market.loc[~market.provider.eq("Amazon")]
+
+    assert amazon["unit"] == "share"
+    assert amazon["status"] == "derived_projection"
+    assert amazon["source_unit"] == "percent"
+    assert amazon["source_status"] == "estimated_midpoint_assumption"
+    assert amazon["source_reference"] == "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5"
+    assert carriers["unit"].eq("share").all()
+    assert carriers["status"].eq("derived_projection").all()
+    assert carriers["source_reference"].notna().all()
+    assert carriers["source_notebook_cell"].notna().all()
+    assert carriers["source_reference"].nunique() == 1
+
+
 def test_raw_sources_normalize_all_52_iso_weeks_and_record_hash(tmp_path):
     """Fresh source preparation derives the notebook profile without a historical output."""
     from hagrid_demand.baseline.sources import prepare_sources

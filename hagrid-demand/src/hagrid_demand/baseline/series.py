@@ -42,32 +42,35 @@ def _market(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
     anchor = spec["carrier_anchor"]
     categories = list(anchor["shares"])
     start, end = anchor["year_start"], anchor["year_end"]
-    share_2016 = {carrier: anchor["shares"][carrier] - anchor["change_2016_2022"][carrier]
+    share_2016 = {carrier: anchor["shares"][carrier]["value"] - anchor["change_2016_2022"][carrier]["value"]
                   for carrier in categories}
-    annual = {carrier: anchor["change_2016_2022"][carrier] / (end - start) for carrier in categories}
+    annual = {carrier: anchor["change_2016_2022"][carrier]["value"] / (end - start) for carrier in categories}
     rows = []
     amazon = spec["amazon"]
-    fit = _curve_fit(_sigmoid, np.array(amazon["years"], dtype=float), np.array(amazon["shares"], dtype=float),
-                     p0=amazon["initial_guess"], maxfev=20_000)
+    fit = _curve_fit(_sigmoid, np.array([point["year"] for point in amazon["points"]], dtype=float),
+                     np.array([point["value"] for point in amazon["points"]], dtype=float),
+                     p0=amazon["initial_guess"]["values"], maxfev=20_000)
     for year in years:
         values = {}
         for carrier in categories:
             if year < start:
                 value = share_2016[carrier] - annual[carrier] * (start - year)
             elif year <= end:
-                value = share_2016[carrier] + (anchor["shares"][carrier] - share_2016[carrier]) * (year - start) / (end - start)
+                value = share_2016[carrier] + (anchor["shares"][carrier]["value"] - share_2016[carrier]) * (year - start) / (end - start)
             else:
-                value = anchor["shares"][carrier]
+                value = anchor["shares"][carrier]["value"]
                 for delta in range(1, year - end + 1):
-                    value += annual[carrier] * (1 / np.sqrt(delta + 1)) * anchor["post_2022_multiplier"]
+                    value += annual[carrier] * (1 / np.sqrt(delta + 1)) * anchor["post_2022_multiplier"]["value"]
             values[carrier] = max(0.0, value)
         values["Amazon"] = 0.0 if year == 2014 else max(0.0, float(_sigmoid(year, *fit)))
         total = sum(values.values())
         for provider, value in values.items():
-            provenance = amazon if provider == "Amazon" else anchor
+            provenance = amazon["points"][-1] if provider == "Amazon" else anchor["shares"][provider]
             rows.append({"year": year, "provider": provider, "share": value / total,
-                         "status": provenance["status"], "unit": provenance["unit"],
-                         "source": provenance["source"], "notebook_cell": provenance["notebook_cell"]})
+                         "status": "derived_projection", "unit": "share",
+                         "source_status": provenance["status"], "source_unit": provenance["unit"],
+                         "source_reference": provenance["source"],
+                         "source_notebook_cell": provenance["notebook_cell"]})
     return pd.DataFrame(rows)
 
 
