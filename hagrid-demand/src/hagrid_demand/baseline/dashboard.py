@@ -6,6 +6,7 @@ import html
 import json
 import os
 from pathlib import Path
+import shutil
 import uuid
 
 import pandas as pd
@@ -80,8 +81,15 @@ def render_baseline(run: Path) -> Path:
         if not all(name in stages for name in ("reference", "report")):
             raise ValueError("baseline run has incomplete stage manifest")
         expected = stages["report"].get("run_artifacts", {}).get("report/report_data.json")
-        if expected != resource_hash(run / "report_data.json"):
-            raise ValueError("baseline report artifact hash mismatch")
+        public = run / "report_data.json"
+        if expected != resource_hash(public) if public.is_file() else True:
+            cached = run / "report" / "report_data.json"
+            if not cached.is_file() or expected != resource_hash(cached):
+                raise ValueError("baseline report artifact hash mismatch")
+            shutil.copy2(cached, public)
+            markdown = run / "report" / "report.md"
+            if markdown.is_file():
+                shutil.copy2(markdown, run / "report.md")
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("baseline run has incomplete stage manifest") from exc
     config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))

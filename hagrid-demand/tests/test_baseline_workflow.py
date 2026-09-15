@@ -76,3 +76,26 @@ def test_dashboard_root_uses_a_relative_link_to_each_preserved_run(fixture_confi
     index = (fixture_config.parent / "shared" / "reports" / "index.html").read_text(encoding="utf-8")
     assert "../../outputs/custom-dashboard/report_data.json" in index
     assert (run / "report_data.json").is_file()
+
+
+def test_report_cache_is_distinct_per_run_id_and_dashboard_lists_both(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    first = run_baseline(fixture_config, "reference-one")
+    second = run_baseline(fixture_config, "reference-two")
+    assert json.loads((first / "report_data.json").read_text())["run_id"] == "reference-one"
+    assert json.loads((second / "report_data.json").read_text())["run_id"] == "reference-two"
+    index = (first.parent / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert "reference-one" in index and "reference-two" in index
+
+
+def test_resume_compares_persisted_source_fingerprint_even_after_early_failure(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    weekly = fixture_config.parent / "inputs" / "weekly.xlsx"
+    weekly.write_bytes(b"not an xlsx")
+    with pytest.raises(Exception):
+        run_baseline(fixture_config, "failed-source")
+    weekly.write_bytes(b"changed bytes")
+    with pytest.raises(ValueError, match="source files changed"):
+        run_baseline(fixture_config, "failed-source", resume=True)

@@ -82,8 +82,12 @@ def _write_sources(config: dict, output: Path) -> None:
         sites["allocation_status"] = "located"
         sites["invalid_employees"] = pd.to_numeric(sites.get("employees"), errors="coerce").isna() | pd.to_numeric(sites.get("employees"), errors="coerce").lt(0)
         for name in required:
-            tables[name].to_parquet(output / name, index=False)
-        sites.to_parquet(output / "sites.parquet", index=False)
+            table = tables[name]
+            if "geometry" in table.columns:
+                gpd.GeoDataFrame(table, geometry="geometry", crs=getattr(table, "crs", None)).to_parquet(output / name, index=False)
+            else:
+                table.to_parquet(output / name, index=False)
+        gpd.GeoDataFrame(sites, geometry="geometry", crs=getattr(sites, "crs", None)).to_parquet(output / "sites.parquet", index=False)
         _json(output / "sources.json", {"mode": "foundation_run", "foundation_run": config["foundation_run"], "invalid_employees": int(sites.invalid_employees.sum())})
         return
     paths = _source_specs(config)
@@ -165,7 +169,14 @@ def _write_report(config: dict, reference_dir: Path, output: Path, run_id: str) 
               "b2b_adjustment": {key: checks[key] for key in ("b2b_target", "b2b_achieved", "b2b_residual", "k", "k_status", "log_k")},
               "remaining_potentials": checks["source_quality"], "status": "complete_reference"}
     _json(output / "report_data.json", report)
-    (output / "report.md").write_text(f"# HAGRID Referenzlauf: {run_id}\n\n2021 · {report['operating_days']} Betriebstage\n\nB2B-Ziel: {report['b2b_adjustment']['b2b_target']:.6f}\n", encoding="utf-8")
+    scope, b2b, quality = report["excluded_quantities"], report["b2b_adjustment"], report["remaining_potentials"]
+    (output / "report.md").write_text(
+        f"# HAGRID Referenzlauf: {run_id}\n\n"
+        f"Referenzjahr 2021. Die Tagesmittel-Annahme verwendet {report['operating_days']} Betriebstage.\n\n"
+        f"## Ausgeschlossene Beobachtungen\n\n{scope['excluded_rows']} Beobachtungen / {scope['excluded_volume']:.1f} Mengeneinheiten ausgeschlossen.\n\n"
+        f"## B2B-Anpassung\n\nZiel {b2b['b2b_target']:.6f}; erreicht {b2b['b2b_achieved']:.6f}; Residuum {b2b['b2b_residual']:.3g}.\n\n"
+        f"## Restpotenziale\n\nUnbekannte PLZ: {len(quality.get('unknown_plz_sites', []))}; bekannte PLZ außerhalb Anker: {len(quality.get('known_plz_outside_anchor_sites', []))}.\n",
+        encoding="utf-8")
 
 
 def _validate(output: Path, names: list[str]) -> None:
@@ -222,14 +233,21 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         previous = prior_manifest.get("stages", {}).get("sources", {}).get("fingerprint")
         if previous is not None and previous != source_fingerprint:
             raise ValueError("cannot resume: consumed source files changed")
+    if resume:
+        prior_state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+        if prior_state.get("consumed_source_fingerprint") != source_fingerprint:
+            raise ValueError("cannot resume: consumed source files changed")
     state = _run_state(run, config)
     state["consumed_source_fingerprint"] = source_fingerprint
     _json(run / "run.json", state)
     try:
         cache_root = Path(config["cache_root"])
+        source_artifacts = ["sources.json", "sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet", "postal_support.parquet"]
+        if config["source_mode"] == "raw":
+            source_artifacts.append("weekly_profile.csv")
         resolve_stage(run, "sources", source_fingerprint, cache_root=cache_root, dependencies=source_dependencies,
                       build=lambda output: _write_sources(config, output),
-                      validate=lambda output: _validate(output, ["weekly_profile.csv", "sources.json", "sites.parquet", "dhl_observations.parquet", "hermes_observations.parquet", "postal_support.parquet"]))
+                      validate=lambda output: _validate(output, source_artifacts))
         state["completed_stages"].append("sources")
         series_dependencies = {"inputs": Path(__file__).parent / "data", "year": config["reference_year"]}
         series_fingerprint = stage_key("series", series_dependencies, config, {"workflow": Path(__file__), "series": Path(__file__).with_name("series.py"), "sources": Path(__file__).with_name("sources.py")})
@@ -251,7 +269,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         for name in ("reference_postal.parquet", "reference_sites.parquet", "reference_carriers.parquet", "reference_checks.json"):
             _copy_public(run, "reference", name)
         state["completed_stages"].append("reference")
-        report_dependencies = {"reference": run / "reference"}
+        report_dependencies = {"reference": run / "reference", "run_id": run_id}
         report_fingerprint = stage_key("report", report_dependencies, config, {"workflow": Path(__file__), "dashboard": Path(__file__).with_name("dashboard.py")})
         resolve_stage(run, "report", report_fingerprint, cache_root=cache_root, dependencies=report_dependencies,
                       build=lambda output: _write_report(config, run / "reference", output, run_id),
