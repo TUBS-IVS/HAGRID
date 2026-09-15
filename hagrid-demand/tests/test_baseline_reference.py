@@ -45,6 +45,15 @@ def test_reconciliation_has_quadratic_optimum_and_boundary_conditionals():
     assert np.allclose(business["conditional"], [[0., 0.], [.5, .5]])
 
 
+def test_reconciliation_releases_nonoptimal_clamp_with_scalar_lagrange_solution():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+
+    result = reconcile_carriers(np.array([.5, .5]), np.array([1., 0.]), .2,
+                                np.zeros(2), np.array([.6, 1.]), np.ones(2))
+    assert result["q"] == pytest.approx([.4, 0.], abs=1e-10)
+    assert np.dot([.5, .5], result["q"]) == pytest.approx(.2)
+
+
 def test_default_potentials_count_people_and_company_locations_once():
     from hagrid_demand.baseline.potentials import build_potentials
 
@@ -124,6 +133,21 @@ def test_contiguous_groups_partition_chain_deterministically_without_dhl_target_
     assert first.set_index("unit_id").loc["e", "group_status"].startswith("unresolved")
 
 
+def test_contiguous_groups_finds_feasible_connected_partition_before_residuals():
+    from hagrid_demand.baseline.potentials import build_contiguous_groups
+
+    units = pd.DataFrame({"unit_id": list("abcde"), "plz": ["1"] * 5,
+                          "persons": [2., 1., 2., 0., 1.], "companies": [0.] * 5})
+    edges = pd.DataFrame({"left": list("abcd"), "right": list("bcde")})
+    grouped = build_contiguous_groups(units, edges, min_persons=3, min_companies=0, max_units=3)
+    assert grouped.group_status.eq("resolved").all()
+    assert grouped.groupby("group_id").size().max() <= 3
+    assert grouped.set_index("unit_id").loc["a", "group_id"] == grouped.set_index("unit_id").loc["b", "group_id"]
+    assert grouped.set_index("unit_id").loc["c", "group_id"] == grouped.set_index("unit_id").loc["e", "group_id"]
+    with pytest.raises(ValueError, match="finite positive integer"):
+        build_contiguous_groups(units, edges, min_persons=3, min_companies=0, max_units=np.nan)
+
+
 def test_structure_comparison_uses_complete_held_out_groups_without_claiming_a_winner():
     from hagrid_demand.baseline.potentials import compare_structure_models
 
@@ -157,6 +181,18 @@ def test_structure_comparison_validates_folds_and_pools_heldout_rows():
     ):
         with pytest.raises(ValueError, match=message):
             compare_structure_models(support, folds=folds)
+
+
+def test_structure_comparison_marks_rank_deficient_employee_candidate_noncomparable():
+    from hagrid_demand.baseline.potentials import compare_structure_models
+
+    support = pd.DataFrame({"plz": ["a", "a", "b", "b"], "persons": [1., 0., 1., 0.],
+                            "companies": [0., 1., 0., 1.], "employees": [0., 0., 0., 0.],
+                            "branch": ["x", "x", "x", "x"], "target": [2., 4., 3., 6.]})
+    result = compare_structure_models(support, folds=[(["a"], ["b"])])
+    candidate = result["models"]["employee_branch_candidate"]
+    assert candidate["comparison_status"] == "non_comparable"
+    assert candidate["metrics"] is None
 
 
 def test_reference_retains_1000_and_preserves_unlocated_known_postal_mass():
@@ -240,3 +276,44 @@ def test_reference_expands_eta_bracket_and_keeps_true_nonroot_diagnostic():
     nonroot = extreme.assign(weight=[1., 0., 1., 1.])
     with pytest.raises(ValueError, match="sign change|reachable"):
         solve_reference(nonroot, dhl, profiles, b=.9, operating_days=313)
+
+
+def test_reference_expands_before_declaring_extreme_mixed_support_constant():
+    from hagrid_demand.baseline.reference import solve_reference
+
+    potential = pd.DataFrame({"site_id": ["p", "b"], "plz": ["1", "1"],
+                              "segment": ["private", "business"], "weight": [1e100, 1.],
+                              "allocation_status": ["located", "located"]})
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [1.], "value_status": ["observed"]})
+    result = solve_reference(potential, dhl, {"conditional": np.array([[.5, .5], [.5, .5]])}, b=.5, operating_days=313)
+    assert result["checks"]["eta"] == pytest.approx(100 * np.log(10), abs=1e-8)
+
+
+def test_reference_recognizes_true_structurally_constant_pure_support():
+    from hagrid_demand.baseline.reference import solve_reference
+
+    potential = pd.DataFrame({"site_id": ["p", "b"], "plz": ["1", "2"],
+                              "segment": ["private", "business"], "weight": [1., 1.],
+                              "allocation_status": ["located", "located"]})
+    dhl = pd.DataFrame({"observation_id": ["a", "b"], "plz": ["1", "2"],
+                        "value": [1., 1.], "value_status": ["observed", "observed"]})
+    result = solve_reference(potential, dhl, {"conditional": np.array([[.6, .4], [.2, .8]])}, b=.75,
+                             operating_days=313)
+    assert result["checks"]["eta"] == 0.
+
+
+def test_reference_all_pure_segments_and_direct_allocation_balances():
+    from hagrid_demand.baseline.reference import solve_reference
+
+    private = pd.DataFrame({"site_id": ["p1", "p2", "p3"], "plz": ["1"] * 3,
+                            "segment": ["private"] * 3, "weight": [1., 2., 4.],
+                            "allocation_status": ["located"] * 3})
+    dhl = pd.DataFrame({"observation_id": ["a"], "plz": ["1"], "value": [999.], "value_status": ["observed"]})
+    profile = {"conditional": np.array([[.001, .999], [0., 0.]])}
+    solved_private = solve_reference(private, dhl, profile, b=0., operating_days=313)
+    assert solved_private["regional_annual"] == pytest.approx(999 / .001 * 313)
+    assert solved_private["checks"]["allocation_balance"]["regional_error"] == pytest.approx(0.)
+    business = private.assign(segment="business", site_id=["b1", "b2", "b3"])
+    business_profile = {"conditional": np.array([[0., 0.], [.001, .999]])}
+    solved_business = solve_reference(business, dhl, business_profile, b=1., operating_days=313)
+    assert solved_business["regional_annual"] == pytest.approx(999 / .001 * 313)

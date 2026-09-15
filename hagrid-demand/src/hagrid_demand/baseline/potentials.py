@@ -190,7 +190,8 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
         values.extend(np.where(labels.eq(branch), employees, 0.) for branch in branches)
         return np.column_stack(values)
 
-    for train_groups, test_groups in fold_pairs:
+    employee_failures: list[str] = []
+    for fold_index, (train_groups, test_groups) in enumerate(fold_pairs):
         train = frame.loc[frame[group_col].isin(train_groups)]
         test = frame.loc[frame[group_col].isin(test_groups)]
         if train.empty or test.empty:
@@ -212,6 +213,8 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
                 coefficients, _ = nnls(x_train, y_train)
                 outcomes["employee_branch_candidate"].append((actual, x_test @ coefficients))
                 employee_stability.append(dict(zip(["persons"] + [f"employees:{branch}" for branch in branches], coefficients)))
+            else:
+                employee_failures.append(f"fold_{fold_index}: rank_deficient_training_features")
     models = {}
     for name, rows in outcomes.items():
         actual = np.concatenate([row[0] for row in rows])
@@ -228,6 +231,11 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
         values = pd.DataFrame(employee_stability).fillna(0.)
         models["employee_branch_candidate"]["coefficient_semantics"] = "DHL-response rates"
         models["employee_branch_candidate"]["coefficient_stability"] = values.std(ddof=0).to_dict()
+    if "employees" in frame and employee_failures:
+        models["employee_branch_candidate"] = {
+            "comparison_status": "non_comparable", "metrics": None,
+            "diagnostic": employee_failures, "holdouts": 0, "holdout_rows": 0,
+        }
     return {"group_col": group_col, "models": models, "wmape_zero_actual": None,
             "selection": "not_demonstrated" if not outcomes else "comparison_only"}
 
@@ -238,7 +246,16 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
     required = {"unit_id", "plz", "persons", "companies"}
     if missing := required.difference(units.columns):
         raise ValueError(f"units missing required columns: {sorted(missing)}")
-    if not units.unit_id.is_unique or max_units < 1 or min_persons < 0 or min_companies < 0:
+    try:
+        valid_max_units = (not isinstance(max_units, bool) and np.isfinite(float(max_units)) and
+                           int(max_units) == float(max_units) and int(max_units) >= 1)
+    except (TypeError, ValueError, OverflowError):
+        valid_max_units = False
+    if not valid_max_units:
+        raise ValueError("max_units must be a finite positive integer")
+    max_units = int(max_units)
+    if (not units.unit_id.is_unique or not np.isfinite(min_persons) or not np.isfinite(min_companies) or
+            min_persons < 0 or min_companies < 0):
         raise ValueError("units must be unique and grouping limits valid")
     structural = units[["persons", "companies"]].apply(pd.to_numeric, errors="coerce")
     if not np.isfinite(structural.to_numpy(float)).all() or (structural.to_numpy(float) < 0).any():
@@ -266,7 +283,51 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
             for neighbour in sorted(adjacency[unit], key=str):
                 if neighbour not in seen:
                     seen.add(neighbour); queue.append(neighbour)
+        def connected_subsets(remaining, group_seed):
+            initial = frozenset([group_seed])
+            found, pending = {initial}, [initial]
+            while pending:
+                subset = pending.pop()
+                if len(subset) >= max_units:
+                    continue
+                neighbours = set().union(*(adjacency[unit] for unit in subset)).intersection(remaining).difference(subset)
+                for neighbour in sorted(neighbours, key=str):
+                    expanded = subset | {neighbour}
+                    if expanded not in found:
+                        found.add(expanded); pending.append(expanded)
+            return sorted(found, key=lambda group: (len(group), tuple(sorted(map(str, group)))))
+
+        def group_support(group):
+            persons_total = float(index.loc[list(group), "persons"].sum())
+            companies_total = float(index.loc[list(group), "companies"].sum())
+            if not np.isfinite([persons_total, companies_total]).all():
+                raise ValueError("aggregated grouping support must be finite")
+            return persons_total, companies_total
+
+        def supported(group):
+            persons_total, companies_total = group_support(group)
+            return persons_total >= min_persons and companies_total >= min_companies
+
+        def partition(remaining):
+            if not remaining:
+                return []
+            group_seed = min(remaining, key=str)
+            for group in connected_subsets(remaining, group_seed):
+                if supported(group):
+                    rest = partition(remaining.difference(group))
+                    if rest is not None:
+                        return [group] + rest
+            return None
+
         remaining = set(component)
+        complete_partition = partition(remaining)
+        if complete_partition is not None:
+            for group in complete_partition:
+                group_seed = min(group, key=str)
+                group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
+                records.extend({"unit_id": unit, "group_id": group_id, "group_status": "resolved"}
+                               for unit in sorted(group, key=str))
+            continue
         while remaining:
             group_seed = min(remaining, key=str)
             group, queue = [], deque([group_seed]); queued = {group_seed}
@@ -278,8 +339,10 @@ def build_contiguous_groups(units: pd.DataFrame, edges: pd.DataFrame, min_person
                 for neighbour in sorted(adjacency[unit], key=str):
                     if neighbour in remaining and neighbour not in queued:
                         queued.add(neighbour); queue.append(neighbour)
-            total_persons = float(index.loc[group, "persons"].sum())
-            total_companies = float(index.loc[group, "companies"].sum())
+                persons_total, companies_total = group_support(group)
+                if persons_total >= min_persons and companies_total >= min_companies:
+                    queue.clear()
+            total_persons, total_companies = group_support(group)
             status = "resolved" if total_persons >= min_persons and total_companies >= min_companies else "unresolved_structural_support"
             group_id = f"{index.at[group_seed, 'plz']}:{group_seed}"
             records.extend({"unit_id": unit, "group_id": group_id, "group_status": status}
