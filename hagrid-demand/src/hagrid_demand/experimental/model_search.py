@@ -289,7 +289,7 @@ def main():
     import sklearn
     paths=[Path(args.config),*([Path(args.landuse)] if args.landuse else []),*([Path(args.persons)] if args.persons else []),*([Path(args.special_customers)] if args.special_customers else []),*[source/n for n in ['sites.parquet','site_postal_candidates.parquet','postal_support.parquet','dhl_observations.parquet','hermes_observations.parquet']],*Path(cfg['legacy_output']).glob('0[0125]_*.csv')]
     if args.logistics_run: paths.extend([Path(args.logistics_run)/n for n in [f'postal_features_{args.logistics_snapshot}.csv','provenance.json',f'osm_{args.logistics_snapshot}.json']])
-    write_json(output/'provenance.json',{'sklearn':sklearn.__version__,'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{p.name:digest(p) for p in Path(__file__).parent.glob('*.py')}})
+    write_json(output/'provenance.json',{'sklearn':sklearn.__version__,'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{str(p.relative_to(Path(__file__).parents[1])):digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
 
 
 if __name__=='__main__':

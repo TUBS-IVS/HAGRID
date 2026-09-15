@@ -33,6 +33,28 @@ def test_daily_scope_stops_before_reporting_success(fixture_config):
         run_baseline(fixture_config, "daily-fixture")
 
 
+@pytest.mark.parametrize(("key", "value"), [("reference_year", 2022), ("dhl_exclude_above", 999)])
+def test_reference_milestone_rejects_noncanonical_scope_before_creating_run(fixture_config, key, value):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config = json.loads(fixture_config.read_text())
+    config[key] = value
+    fixture_config.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="2021|1000"):
+        run_baseline(fixture_config, "invalid-milestone")
+    assert not (fixture_config.parent / "outputs" / "invalid-milestone").exists()
+
+
+def test_renderer_rejects_incomplete_run(fixture_config):
+    from hagrid_demand.baseline.dashboard import render_baseline
+
+    run = fixture_config.parent / "incomplete"
+    run.mkdir()
+    (run / "config.resolved.json").write_text(fixture_config.read_text(), encoding="utf-8")
+    with pytest.raises(ValueError, match="complete"):
+        render_baseline(run)
+
+
 def test_resume_rejects_changed_resolved_config(fixture_config):
     from hagrid_demand.baseline.workflow import run_baseline
 

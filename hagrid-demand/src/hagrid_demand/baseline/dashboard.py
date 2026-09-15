@@ -10,6 +10,8 @@ import uuid
 
 import pandas as pd
 
+from hagrid_demand.common.provenance import resource_hash
+
 
 def _write_json(path: Path, value: dict) -> None:
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -44,11 +46,16 @@ def _report_data(run: Path) -> dict:
 
 
 def _index(reports: list[tuple[dict, Path]], dashboard_root: Path) -> str:
+    def href(path: Path) -> str:
+        try:
+            return Path(os.path.relpath(path, dashboard_root)).as_posix()
+        except ValueError:
+            return path.resolve().as_uri()
     rows = "".join(
         "<tr><td>{run}</td><td>{year}</td><td>{days}</td><td>{annual:,.1f}</td><td><a href=\"{href}\">Daten</a></td></tr>".format(
             run=html.escape(str(data["run_id"])), year=data["reference_year"], days=data["operating_days"],
             annual=float(data["regional_annual"]),
-            href=html.escape(Path(os.path.relpath(path, dashboard_root)).as_posix(), quote=True),
+            href=html.escape(href(path), quote=True),
         ) for data, path in reports
     ) or "<tr><td colspan=\"5\">Noch kein Referenzlauf vorhanden.</td></tr>"
     return """<!doctype html><html lang=\"de\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
@@ -59,54 +66,43 @@ def _index(reports: list[tuple[dict, Path]], dashboard_root: Path) -> str:
 
 
 def render_baseline(run: Path) -> Path:
-    """Write a run's report data and refresh the single dashboard entry point."""
+    """Refresh the shared index from a completed run's verified report artifacts."""
     run = Path(run)
+    try:
+        state = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("baseline run is incomplete") from exc
+    if state.get("status") != "complete_reference":
+        raise ValueError("baseline run is not complete_reference")
+    try:
+        manifest = json.loads((run / "stage_manifest.json").read_text(encoding="utf-8"))
+        stages = manifest["stages"]
+        if not all(name in stages for name in ("reference", "report")):
+            raise ValueError("baseline run has incomplete stage manifest")
+        expected = stages["report"].get("run_artifacts", {}).get("report/report_data.json")
+        if expected != resource_hash(run / "report_data.json"):
+            raise ValueError("baseline report artifact hash mismatch")
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("baseline run has incomplete stage manifest") from exc
     config = json.loads((run / "config.resolved.json").read_text(encoding="utf-8"))
-    report = _report_data(run)
-    _write_json(run / "report_data.json", report)
-    scope = report["excluded_quantities"]
-    adjustment = report["b2b_adjustment"]
-    remaining = report["remaining_potentials"]
-    _write_text(run / "report.md", f"""# HAGRID Referenzlauf: {report['run_id']}
-
-Status: deterministische Referenz für {report['reference_year']}.
-
-## Referenzannahmen
-
-Die Jahresmenge beträgt {report['regional_annual']:,.1f} Pakete. Die Umrechnung verwendet
-{report['operating_days']} Betriebstage pro Jahr. Diese Tagesmittel-Annahme ist eine dokumentierte
-Rechenbasis und keine Aussage über einzelne Zustelltage.
-
-## Ausgeschlossene Mengen
-
-Der DHL-Scope schließt {scope['excluded_rows']} Beobachtungen mit {scope['excluded_volume']:,.1f}
-Mengeneinheiten aus; {scope['retained_rows']} Beobachtungen mit {scope['retained_volume']:,.1f}
-bleiben als Referenzanker erhalten.
-
-## B2B-Anpassung
-
-Zielanteil: {adjustment['b2b_target']:.6f}; erreicht: {adjustment['b2b_achieved']:.6f};
-Residuum: {adjustment['b2b_residual']:.3g}. Der Log-Faktor der B2B-Anpassung beträgt
-{adjustment['log_k']:.6g} ({adjustment['k_status']}).
-
-## Restpotenziale
-
-Standorte ohne PLZ: {len(remaining['unknown_plz_sites'])}. Standorte mit bekannter PLZ außerhalb
-des DHL-Ankers: {len(remaining['known_plz_outside_anchor_sites'])}. Sie bleiben als Restpotenziale
-dokumentiert und werden nicht stillschweigend verteilt.
-
-Die maschinenlesbaren Werte stehen in `report_data.json`; der gemeinsame Offline-Einstieg ist
-`../dashboard/index.html`.
-""")
+    report_path = run / "report_data.json"
+    if not report_path.is_file():
+        raise ValueError("baseline run has no complete report artifacts")
     dashboard_root = Path(config.get("dashboard_root") or Path(config["output_dir"]) / "dashboard")
     dashboard_root.mkdir(parents=True, exist_ok=True)
     reports = []
     for candidate in sorted(Path(config["output_dir"]).iterdir(), key=lambda item: item.name):
         data = candidate / "report_data.json"
-        if data.is_file():
+        if data.is_file() and (candidate / "run.json").is_file():
             try:
-                reports.append((json.loads(data.read_text(encoding="utf-8")), data))
-            except json.JSONDecodeError:
+                candidate_state = json.loads((candidate / "run.json").read_text(encoding="utf-8"))
+                candidate_data = json.loads(data.read_text(encoding="utf-8"))
+                candidate_manifest = json.loads((candidate / "stage_manifest.json").read_text(encoding="utf-8"))
+                schema = {"run_id", "reference_year", "operating_days", "regional_annual", "postal", "excluded_quantities", "b2b_adjustment", "remaining_potentials", "status"}
+                expected = candidate_manifest.get("stages", {}).get("report", {}).get("run_artifacts", {}).get("report/report_data.json")
+                if candidate_state.get("status") == "complete_reference" and expected == resource_hash(data) and {"reference", "report"}.issubset(candidate_manifest.get("stages", {})) and schema.issubset(candidate_data) and candidate_data.get("status") == "complete_reference" and candidate_data.get("run_id") == candidate.name:
+                    reports.append((candidate_data, data))
+            except (OSError, TypeError, json.JSONDecodeError):
                 continue
     reports = sorted(reports, key=lambda item: str(item[0]["run_id"]))
     temporary = dashboard_root / f".index.{uuid.uuid4().hex}.tmp"
