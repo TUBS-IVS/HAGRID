@@ -85,8 +85,8 @@ def test_market_series_is_a_nonnegative_simplex_each_year():
 
     market = build_series(packaged_series_inputs(), list(range(2014, 2031)),
                           volume_fit_policy="observed_only")["market"]
-    assert (market["share"] >= 0).all()
-    assert np.allclose(market.groupby("year")["share"].sum().to_numpy(), 1.0)
+    assert (market["market_share"] >= 0).all()
+    assert np.allclose(market.groupby("year")["market_share"].sum().to_numpy(), 1.0)
 
 
 def test_market_projection_uses_normalized_semantics_and_carrier_specific_source_metadata():
@@ -95,8 +95,8 @@ def test_market_projection_uses_normalized_semantics_and_carrier_specific_source
     from hagrid_demand.baseline.sources import packaged_series_inputs
 
     market = build_series(packaged_series_inputs(), [2024], volume_fit_policy="observed_only")["market"]
-    amazon = market.loc[market.provider.eq("Amazon")].iloc[0]
-    carriers = market.loc[~market.provider.eq("Amazon")]
+    amazon = market.loc[market.carrier.eq("Amazon")].iloc[0]
+    carriers = market.loc[~market.carrier.eq("Amazon")]
 
     assert amazon["unit"] == "share"
     assert amazon["status"] == "derived_projection"
@@ -108,6 +108,25 @@ def test_market_projection_uses_normalized_semantics_and_carrier_specific_source
     assert carriers["source_reference"].notna().all()
     assert carriers["source_notebook_cell"].notna().all()
     assert carriers["source_reference"].nunique() == 1
+
+
+def test_series_publishes_the_canonical_carrier_provider_and_weekly_contracts():
+    """Consumers receive named carrier fields and a complete weekly table, not positional aliases."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    series = build_series(packaged_series_inputs(), [2021, 2022], volume_fit_policy="observed_only")
+
+    assert {"year", "carrier", "market_share"}.issubset(series["market"].columns)
+    assert not {"provider", "share"}.intersection(series["market"].columns)
+    assert {"year", "carrier", "q_prior", "q_scale", "lower", "upper"}.issubset(
+        series["providers"].columns
+    )
+    assert series["providers"].duplicated(["year", "carrier"]).sum() == 0
+    assert series["weekly"].columns.tolist()[:2] == ["week", "weight"]
+    assert series["weekly"].week.tolist() == list(range(1, 53))
+    assert (series["weekly"].weight > 0).all()
+    assert series["weekly"].weight.mean() == pytest.approx(1.0)
 
 
 def test_raw_sources_normalize_all_52_iso_weeks_and_record_hash(tmp_path):
@@ -146,10 +165,12 @@ def test_foundation_reader_verifies_artifact_hashes_and_required_columns(tmp_pat
     sites = tmp_path / "sites.csv"
     sites.write_text("site_id,recipient_type\na,private\n", encoding="utf-8")
     manifest = {
-        "artifacts": {"sites.csv": hashlib.sha256(sites.read_bytes()).hexdigest()},
-        "schemas": {"sites.csv": ["site_id", "recipient_type"]},
+        "schema_version": 1, "status": "complete", "run_status": "complete",
+        "artifacts": {"sites.csv": {"relative_path": "sites.csv", "sha256": hashlib.sha256(sites.read_bytes()).hexdigest(),
+                                        "schema": ["site_id", "recipient_type"], "crs": None}},
     }
     (tmp_path / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (tmp_path / "run.json").write_text(json.dumps({"status": "complete"}), encoding="utf-8")
 
     tables = read_foundation(tmp_path)
     assert tables["sites.csv"].columns.tolist() == ["site_id", "recipient_type"]

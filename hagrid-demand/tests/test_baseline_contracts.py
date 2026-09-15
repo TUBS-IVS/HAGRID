@@ -445,6 +445,44 @@ def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_f
     assert run_manifest["stages"]["reference"]["run_artifacts"] == {"reference/result.json": run_manifest["stages"]["reference"]["artifacts"]["result.json"]}
 
 
+def test_resolve_stage_uses_one_dependency_snapshot_and_aborts_if_a_live_input_changes_during_build(tmp_path):
+    """A cache key and its manifest cannot certify different bytes after a build-time mutation."""
+    from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage_key
+
+    source = tmp_path / "input.json"
+    source.write_text('{"revision": 1}', encoding="utf-8")
+    dependencies = {"source": source}
+    snapshot = dependency_snapshot(dependencies)
+    fingerprint = stage_key("reference", dependencies, {"schema_version": 1, "rng_version": 1}, {},
+                            dependency_snapshot=snapshot)
+    build_started, release = threading.Event(), threading.Event()
+    errors = []
+
+    def build(work):
+        (work / "result.json").write_text('{"built": true}', encoding="utf-8")
+        build_started.set()
+        assert release.wait(timeout=5)
+
+    def worker():
+        try:
+            resolve_stage(tmp_path / "run", "reference", fingerprint, cache_root=tmp_path / "cache",
+                          dependencies=dependencies, dependency_snapshot=snapshot,
+                          build=build, validate=lambda work: None)
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    assert build_started.wait(timeout=5)
+    source.write_text('{"revision": 2}', encoding="utf-8")
+    release.set()
+    thread.join(timeout=10)
+    assert errors and isinstance(errors[0], ValueError)
+    assert "changed during stage build" in str(errors[0])
+    assert not (tmp_path / "cache" / "reference" / fingerprint).exists()
+    assert not (tmp_path / "run" / "reference").exists()
+
+
 def test_baseline_config_rejects_outputs_inside_all_declared_input_paths(tmp_path):
     """Every declared source and baseline input protects its subtree from outputs."""
     from hagrid_demand.baseline.config import load_baseline_config

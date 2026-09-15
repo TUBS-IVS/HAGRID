@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 import geopandas as gpd
+from pyproj import CRS
 
 
 _INPUT_FILES = ("market_inputs.json", "b2b_inputs.json", "volume_inputs.json", "provider_priors.json")
@@ -149,34 +150,78 @@ def _weekly_profile(path: Path) -> pd.DataFrame:
     return result
 
 
+def _contained_artifact(root: Path, relative: object) -> Path:
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Foundation artifact manifest requires a relative_path")
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts or candidate.as_posix() != relative.replace("\\", "/"):
+        raise ValueError("Foundation artifact path must be a contained relative path")
+    resolved_root = root.resolve()
+    resolved = (resolved_root / candidate).resolve()
+    if not resolved.is_relative_to(resolved_root):
+        raise ValueError("Foundation artifact path escapes its run directory")
+    return resolved
+
+
+def _crs_identifier(crs: object) -> str | None:
+    if crs is None:
+        return None
+    parsed = CRS.from_user_input(crs)
+    epsg = parsed.to_epsg()
+    return f"EPSG:{epsg}" if epsg is not None else parsed.to_wkt()
+
+
 def read_foundation(path: Path) -> dict[str, pd.DataFrame]:
-    """Load only manifest-hashed foundation tables and check their declared schemas."""
-    path = Path(path)
+    """Load only complete, contained, hashed foundation artifacts.
+
+    The neutral producer is the authority for this mapping.  A file next to a
+    foundation run is never implicitly trusted merely because its name looks
+    familiar.
+    """
+    path = Path(path).resolve()
     manifest_path = path / "artifact_manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Foundation artifact manifest is required: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1 or manifest.get("status") != "complete":
+        raise ValueError("Foundation artifact manifest must declare schema_version=1 and complete status")
     artifacts = manifest.get("artifacts")
-    schemas = manifest.get("schemas")
-    if not isinstance(artifacts, dict) or not isinstance(schemas, dict):
-        raise ValueError("Foundation artifact manifest requires artifacts and schemas mappings")
+    if not isinstance(artifacts, dict) or not artifacts:
+        raise ValueError("Foundation artifact manifest requires an artifacts mapping")
+    run_state_path = path / "run.json"
+    try:
+        run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Foundation run state is required for a complete artifact manifest") from exc
+    if not isinstance(run_state, dict) or run_state.get("status") != manifest.get("run_status"):
+        raise ValueError("Foundation artifact manifest status does not match run state")
     tables: dict[str, pd.DataFrame] = {}
     for name, expected in artifacts.items():
-        if not isinstance(name, str) or not isinstance(expected, (str, dict)):
+        if not isinstance(name, str) or not isinstance(expected, dict):
             raise ValueError("Foundation artifact manifest has an invalid artifact entry")
-        expected_hash = expected if isinstance(expected, str) else expected.get("sha256")
-        artifact = path / name
-        if not isinstance(expected_hash, str) or not artifact.is_file() or _digest(artifact) != expected_hash:
+        relative = expected.get("relative_path")
+        expected_hash = expected.get("sha256")
+        columns = expected.get("schema")
+        crs = expected.get("crs")
+        if relative != name or not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise ValueError("Foundation artifact manifest has an invalid path or SHA-256 entry")
+        if (not isinstance(columns, list) or not columns or any(not isinstance(column, str) for column in columns)
+                or len(columns) != len(set(columns)) or not (isinstance(crs, str) or crs is None)):
+            raise ValueError("Foundation artifact manifest has an invalid schema or CRS entry")
+        artifact = _contained_artifact(path, relative)
+        if not artifact.is_file() or _digest(artifact) != expected_hash:
             raise ValueError(f"Foundation artifact hash mismatch: {name}")
         if artifact.suffix == ".parquet":
-            table = gpd.read_parquet(artifact) if "geometry" in (schemas.get(name) or []) else pd.read_parquet(artifact)
+            table = gpd.read_parquet(artifact) if "geometry" in columns else pd.read_parquet(artifact)
         elif artifact.suffix == ".csv":
             table = pd.read_csv(artifact)
         else:
             raise ValueError(f"Unsupported foundation artifact table: {name}")
-        columns = schemas.get(name)
-        if not isinstance(columns, list) or any(column not in table.columns for column in columns):
+        if table.columns.tolist() != columns:
             raise ValueError(f"Foundation artifact schema mismatch: {name}")
+        actual_crs = _crs_identifier(getattr(table, "crs", None)) if "geometry" in columns else None
+        if actual_crs != crs:
+            raise ValueError(f"Foundation artifact CRS mismatch: {name}")
         tables[name] = table
     return tables
 
@@ -189,14 +234,6 @@ def prepare_sources(config: dict, output: Path) -> dict[str, Any]:
     """
     mode = config.get("source_mode")
     output = Path(output)
-    if mode == "foundation_run":
-        run = config.get("foundation_run")
-        if not run:
-            raise ValueError("foundation_run is required in foundation_run mode")
-        tables = read_foundation(Path(run))
-        return {"mode": mode, "foundation": tables}
-    if mode != "raw":
-        raise ValueError("source_mode must be raw or foundation_run")
     root = Path(config["input_dir"])
     source = Path(config.get("weekly_source") or root / "Parcels19_20_21_inter.xlsx")
     if not source.is_file():
@@ -213,4 +250,12 @@ def prepare_sources(config: dict, output: Path) -> dict[str, Any]:
         "status": "derived_from_raw_source",
     }
     (output / "sources.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    if mode == "foundation_run":
+        run = config.get("foundation_run")
+        if not run:
+            raise ValueError("foundation_run is required in foundation_run mode")
+        tables = read_foundation(Path(run))
+        return {"mode": mode, "foundation": tables, "weekly_profile": profile, "sources": provenance}
+    if mode != "raw":
+        raise ValueError("source_mode must be raw or foundation_run")
     return {"mode": mode, "weekly_profile": profile, "sources": provenance}
