@@ -33,7 +33,14 @@ if mode == 'holder':
     resolve_stage(root / 'run-holder', 'reference', 'fingerprint', cache_root=cache_root,
                   dependencies={'source': 'abc'}, build=build, validate=lambda work: None)
 elif mode == 'waiter':
-    (root / 'waiter-started').write_text('ready', encoding='utf-8')
+    from hagrid_demand.common import cache as stage_cache
+    original_try_os_lock = stage_cache._try_os_lock
+    def observing_try_os_lock(stream):
+        acquired = original_try_os_lock(stream)
+        if not acquired:
+            (root / 'waiter-contended').write_text('ready', encoding='utf-8')
+        return acquired
+    stage_cache._try_os_lock = observing_try_os_lock
     def build(work):
         (root / 'waiter-built').write_text('unexpected', encoding='utf-8')
         (work / 'result.json').write_text('{\"waiter\": true}', encoding='utf-8')
@@ -372,7 +379,7 @@ def test_resolve_stage_subprocess_waiter_reuses_os_lock_winner(tmp_path):
     try:
         _wait_for_marker(tmp_path / "holder-started", holder)
         waiter = _stage_process(tmp_path, "waiter")
-        _wait_for_marker(tmp_path / "waiter-started", holder, waiter)
+        _wait_for_marker(tmp_path / "waiter-contended", holder, waiter)
         assert holder.poll() is None
         assert waiter.poll() is None
         assert not (tmp_path / "waiter-built").exists()
