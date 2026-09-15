@@ -2,11 +2,6 @@ import argparse
 from datetime import datetime, timezone
 import re
 
-from .pipeline import run_foundation
-from .dashboard import build_dashboard
-from .spatial import run_spatial
-from .workflow import run_model
-
 
 def main():
     parser = argparse.ArgumentParser(description="Reproducible HAGRID demand estimation and evaluation")
@@ -38,7 +33,24 @@ def main():
     street = sub.add_parser("street-reference", help="Reconstruct DHL 2021 at streets with an explicit unallocated ledger")
     street.add_argument("--model-run", required=True)
     street.add_argument("--output", required=True)
+    baseline = sub.add_parser("baseline", help="Deterministic demand baseline commands")
+    baseline_sub = baseline.add_subparsers(dest="baseline_command")
+    for name, help_text in [
+        ("run", "Build the deterministic reference baseline"),
+        ("simulate", "Run a configured baseline simulation"),
+        ("sensitivity", "Run a configured baseline sensitivity analysis"),
+        ("report", "Render an existing baseline run"),
+    ]:
+        command = baseline_sub.add_parser(name, help=help_text)
+        if name == "report":
+            command.add_argument("--run-dir", required=True)
+        else:
+            command.add_argument("--config", required=True)
+            command.add_argument("--run-id", default=None)
+            command.add_argument("--resume", action="store_true")
     args = parser.parse_args()
+    if args.command == "baseline":
+        parser.error("baseline commands are prepared; implementation follows the reference stages")
     if args.command == "logistics-audit":
         from .logistics_osm import main as audit
         audit(["--foundation", args.foundation, "--output", args.output] + (["--regional"] if args.regional else []) + ["--snapshots",*args.snapshots])
@@ -48,6 +60,7 @@ def main():
         reconstruct(["--model-run", args.model_run, "--output", args.output])
         return 0
     if args.command == "dashboard":
+        from .dashboard import build_dashboard
         print(f"Dashboard: {build_dashboard(args.run_dir)}")
         return 0
     run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -60,13 +73,16 @@ def main():
             print(f"Diagnosis: {run / 'dashboard.html'}")
             return 0
         if args.command in {"run", "predict"}:
+            from .workflow import run_model
             run = run_model(args.config, run_id, getattr(args, "model_run", None))
             print(f"Model dashboard: {run / 'dashboard.html'}")
             return 0
         if args.command == "spatial-demo":
+            from .spatial import run_spatial
             run = run_spatial(args.config, run_id)
             print(f"Spatial comparison: {run / 'dashboard.html'}")
             return 0
+        from .pipeline import run_foundation
         run = run_foundation(args.config, run_id)
     except (ValueError, FileExistsError, FileNotFoundError) as exc:
         parser.exit(2, f"Data foundation failed: {exc}\n")
