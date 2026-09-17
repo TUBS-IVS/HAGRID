@@ -1,0 +1,96 @@
+package hagrid.lausitz.drt;
+
+import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
+import org.matsim.core.network.NetworkUtils;
+import org.matsim.contrib.dvrp.fleet.DvrpVehicle;
+import org.matsim.contrib.dvrp.fleet.DvrpVehicleSpecification;
+import org.matsim.contrib.dvrp.fleet.FleetWriter;
+import org.matsim.contrib.dvrp.fleet.ImmutableDvrpVehicleSpecification;
+import org.matsim.contrib.dvrp.load.IntegerLoadType;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Stream;
+
+/**
+ * Generates a DVRP fleet vehicles file for the DRT fleet. Vehicles are anchored
+ * on network links round-robin over sorted link ids (reproducible, no RNG).
+ */
+public final class DrtFleetGenerator {
+
+    private DrtFleetGenerator() {}
+
+    // matsim 2025.0 FleetWriter serializes vehicle capacity via a DvrpLoadType. We write a
+    // single-dimension integer load under the default DVRP dimension "passengers" (see
+    // DvrpLoadParams defaults), so the file reads back with the default IntegerLoadType the
+    // DRT run binds when no custom DvrpLoadParams is configured.
+    private static final String LOAD_DIMENSION = "passengers";
+
+    public static void write(Network net, int fleetSize, int capacity,
+                             double serviceBegin, double serviceEnd, Path out) {
+        if (fleetSize < 1) {
+            throw new IllegalArgumentException("fleetSize must be >= 1, got " + fleetSize);
+        }
+        List<Id<Link>> linkIds = new ArrayList<>(net.getLinks().keySet());
+        if (linkIds.isEmpty()) {
+            throw new IllegalArgumentException("cannot place a DRT fleet: network has no links");
+        }
+        linkIds.sort(Comparator.comparing(Id::toString));
+
+        List<DvrpVehicleSpecification> specs = new ArrayList<>(fleetSize);
+        for (int i = 0; i < fleetSize; i++) {
+            Id<Link> startLink = linkIds.get(i % linkIds.size());
+            specs.add(ImmutableDvrpVehicleSpecification.newBuilder()
+                    .id(Id.create("drt_" + i, DvrpVehicle.class))
+                    .startLinkId(startLink)
+                    .capacity(capacity)
+                    .serviceBeginTime(serviceBegin)
+                    .serviceEndTime(serviceEnd)
+                    .build());
+        }
+        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0])),
+                new IntegerLoadType(LOAD_DIMENSION)).write(out.toString());
+    }
+
+    /**
+     * Generates a fleet whose vehicles are dispatched from depots. Each depot
+     * coordinate is snapped to the nearest link in {@code net} (the DRT
+     * sub-network), so depots lying just outside the service area snap to the
+     * nearest in-area link. Vehicles are split evenly across depots:
+     * vehicle {@code i} starts at {@code depotLink[i % nDepots]}.
+     */
+    public static void writeFromDepots(Network net, List<Coord> depotCoords, int fleetSize,
+                                       int capacity, double serviceBegin, double serviceEnd, Path out) {
+        if (fleetSize < 1) {
+            throw new IllegalArgumentException("fleetSize must be >= 1, got " + fleetSize);
+        }
+        if (depotCoords == null || depotCoords.isEmpty()) {
+            throw new IllegalArgumentException("need at least one depot coordinate");
+        }
+        if (net.getLinks().isEmpty()) {
+            throw new IllegalArgumentException("cannot place a DRT fleet: network has no links");
+        }
+        List<Id<Link>> depotLinks = new ArrayList<>(depotCoords.size());
+        for (Coord c : depotCoords) {
+            depotLinks.add(NetworkUtils.getNearestLinkExactly(net, c).getId());
+        }
+        List<DvrpVehicleSpecification> specs = new ArrayList<>(fleetSize);
+        for (int i = 0; i < fleetSize; i++) {
+            Id<Link> startLink = depotLinks.get(i % depotLinks.size());
+            specs.add(ImmutableDvrpVehicleSpecification.newBuilder()
+                    .id(Id.create("drt_" + i, DvrpVehicle.class))
+                    .startLinkId(startLink)
+                    .capacity(capacity)
+                    .serviceBeginTime(serviceBegin)
+                    .serviceEndTime(serviceEnd)
+                    .build());
+        }
+        new FleetWriter(Stream.of(specs.toArray(new DvrpVehicleSpecification[0])),
+                new IntegerLoadType(LOAD_DIMENSION)).write(out.toString());
+    }
+}
