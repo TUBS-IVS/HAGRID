@@ -33,7 +33,6 @@ import org.matsim.freight.carriers.CarrierService;
 
 import hagrid.core.util.Delivery;
 import hagrid.core.util.Hub;
-import hagrid.hannover.util.Region;
 
 /**
  * Utility class for coordinate transformations.

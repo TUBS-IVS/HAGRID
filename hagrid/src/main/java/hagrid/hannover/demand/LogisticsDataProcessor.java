@@ -21,7 +21,7 @@ import hagrid.core.HagridConfig;
 import hagrid.core.util.GeoUtils;
 import hagrid.core.util.Hub;
 import hagrid.core.util.HAGRIDUtils;
-import hagrid.hannover.util.Region;
+import hagrid.core.util.Region;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
