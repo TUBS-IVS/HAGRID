@@ -8,28 +8,7 @@ HAGRID bündelt zwei Studien auf einem gemeinsamen Kern:
 
 Die Trennung ist als Import-Regel festgeschrieben: `hagrid/src/test/java/hagrid/core/ArchitectureRulesTest.java`.
 
-This repository provides a scientific tool to project and allocate daily parcel demand across the Hannover region from **2014 to 2050**.  
-By integrating multiple data sources (national and local) and applying different modeling approaches, we derive **realistic carrier-level and B2B/B2C parcel shares** at **street-segment granularity (~50 m intervals)**.
-
-The tool generates synthetic, yet empirically grounded, **daily parcel delivery datasets** for every single day between 2014 and 2050.  
-While projections are technically available for the full time range, the results are considered **most reliable up to approximately 2030**, assuming a moderately stable market evolution without major disruptive events.
-
-In addition to demand estimation, the repository also supports the **integration of parcel flows into the agent-based simulation framework MATSim**.  
-A dedicated workflow is under development to:
-- convert demand datasets into MATSim-compatible formats
-- generate routed delivery plans for simulation
-- evaluate delivery traffic patterns under varying network and policy conditions
-
-> 🛠️ This MATSim integration is currently a work in progress and will be documented in the corresponding subfolders (`phd/`, `phd-sim/phd/`) as it evolves.
-
-These scenario datasets enable users to:
-
-- Analyze **future parcel traffic patterns** on a fine spatial and temporal scale  
-- Evaluate and test **innovative delivery concepts and urban logistics infrastructure**  
-- Feed parcel flows into **agent-based or GIS-based simulation models**  
-- Support **strategic planning, policy evaluation, and scenario design** for last-mile delivery
-
-In essence, this tool offers a flexible, data-driven foundation to study the future of parcel logistics in an urban context under various assumptions and development paths.
+For Hannover, this means projecting and allocating daily parcel demand across the region from **2014 to 2050** at **street-segment granularity (~50 m intervals)**, deriving **realistic carrier-level and B2B/B2C parcel shares**, generating synthetic yet empirically grounded **daily parcel delivery datasets**, and simulating last-mile delivery with jsprit and MATSim — enabling analysis of future parcel traffic patterns, evaluation of delivery concepts and urban logistics infrastructure, and policy-relevant scenario design. While projections are technically available for the full 2014–2050 range, results are considered **most reliable up to approximately 2030**, assuming a moderately stable market evolution without major disruptive events. For Lausitz, this means the integrated person- and parcel-service DRT simulation described above.
 
 ## Table of Contents
 

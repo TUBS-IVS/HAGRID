@@ -1,5 +1,10 @@
 # HAGRID2MATSim Pipeline - Setup Tutorial
 
+> **Stand vor dem Umbau vom 2026-09-17.** Ordner- und Paketnamen in diesem Dokument beschreiben
+> das alte Layout (Modul `parcel-demand-2-matsim-pipeline`, Inputs `hagrid-input/`). Die aktuelle
+> Struktur steht in der README, Abschnitt „Repository Structure"; eine Überarbeitung dieses
+> Dokuments ist im BACKLOG vermerkt.
+
 This tutorial explains how to set up the HAGRID2MATSim Pipeline on a new machine and which data files need to be placed where.
 
 ---

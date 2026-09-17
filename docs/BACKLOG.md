@@ -484,6 +484,10 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Download-on-first-run mit URL-Liste + Checksums; HAGRID-only-Dateien via
   Uni-Share/Release-Assets. _(added 2026-07-14)_
 
+- **`[S]` `hagrid/PIPELINE_DOCUMENTATION.md` und `hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
+  beschreiben noch das Layout vor dem Restructure vom 2026-09-17 und sogar vor dem
+  `hagrid-input`-Common/Hannover/Lausitz-Split; tragen bis dahin nur einen Stale-Hinweis. _(added 2026-09-18)_
+
 - **`[M]` Autonomie-Switch-Plan** — Labour aus / Roboter-Dwell / Speed-Cap / Autobahn-Ausschluss,
   orthogonal über beide integrierten Szenarien. **User-Entscheidung 2026-07-30: nicht von
   unmittelbarer Relevanz — bleibt liegen** (Plan erst nach 1c+1d). Die vier Effekte landen an vier
