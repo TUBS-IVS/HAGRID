@@ -12,7 +12,7 @@
 
   <modules>
     <module>external/freight</module>
-    <module>parcel-demand-2-matsim-pipeline</module>
+    <module>hagrid</module>
   </modules>
 
   <properties>

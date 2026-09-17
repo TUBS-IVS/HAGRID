@@ -1,0 +1,532 @@
+package hagrid;
+
+import hagrid.utils.general.StudyArea;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+
+/**
+ * Centralized path management for the HAGRID pipeline.
+ * 
+ * <p>Provides consistent, well-structured paths for all pipeline inputs,
+ * outputs, and MATSim simulation results. All outputs are organized
+ * per-run under a unique run ID for full traceability.</p>
+ * 
+ * <h2>Directory Structure:</h2>
+ * <pre>
+ * {pipelineRoot}/
+ * ├── input/                               All pipeline inputs
+ * │   ├── README.md                        Tracked root marker (see detectPipelineRoot)
+ * │   ├── common/emissions/                Shared EMEP/EEA emission factors
+ * │   └── &lt;hannover|lausitz&gt;/               Per-study-area inputs (StudyArea.folder())
+ * │       ├── demand/{runId}/              Demand shapefiles per scenario+date
+ * │       ├── geodata/                     Region shapefiles
+ * │       ├── hubs/                        Hub/depot data (KEP-hubs, shipping points)
+ * │       ├── network/                     Road networks, zone files
+ * │       └── vehicles/                    Vehicle type definitions
+ * │
+ * ├── hagrid-output/                       Pipeline results
+ * │   ├── shared/                          Shared simulation inputs (same for ALL runs)
+ * │   │   ├── sim-config.xml               MATSim base configuration
+ * │   │   ├── cargobike_network.xml.gz     Cargobike network
+ * │   │   ├── network_change_events.xml.gz Time-dependent network change events
+ * │   │   └── zones/                       Freight zone shapefile (all parts)
+ * │   │
+ * │   └── {RUN_ID}/                        Run-specific results
+ * │       ├── carriers/                    {RUN_ID}_delivery/supply_carriers_*.xml
+ * │       ├── vehicles/                    {RUN_ID}_vehicle_types.xml
+ * │       ├── network/                     {RUN_ID}_network_filtered.xml.gz
+ * │       ├── routing/                     {RUN_ID}_routing_metrics/status.csv
+ * │       ├── demand/clustering/           Demand analysis and clustering plots
+ * │       ├── summary/                     {RUN_ID}_scenario_summary.txt
+ * │       ├── cache/                       Routing cache
+ * │       └── logs/                        Run-specific logs
+ * │
+ * └── hagrid-matsim-output/{RUN_ID}/       MATSim simulation results
+ * </pre>
+ * 
+ * @author HAGRID Team
+ */
+public class HagridPaths {
+
+    private static final Logger LOGGER = LogManager.getLogger(HagridPaths.class);
+    private static final String PIPELINE_ROOT = "hagrid";
+
+    /** Tracked file that marks the module root; every input subfolder is git-ignored. */
+    private static final Path ROOT_MARKER = Paths.get("input", "README.md");
+
+    // =========================================================================
+    // BASE DIRECTORIES
+    // =========================================================================
+
+    private final Path pipelineRoot;
+    private final Path inputBase;       // input/<area>/
+    private final Path outputBase;      // hagrid-output/
+    private final Path matsimOutputBase; // hagrid-matsim-output/
+    private final StudyArea studyArea;
+
+    // =========================================================================
+    // RUN-SPECIFIC STATE
+    // =========================================================================
+
+    private String runId;
+    private Path runDir;  // hagrid-output/{RUN_ID}/
+
+    // =========================================================================
+    // CONSTRUCTORS
+    // =========================================================================
+
+    /** Auto-detecting root, default study area (HANNOVER). */
+    public HagridPaths() {
+        this(detectPipelineRoot(), StudyArea.HANNOVER);
+    }
+
+    /** Auto-detecting root, explicit study area. */
+    public HagridPaths(StudyArea studyArea) {
+        this(detectPipelineRoot(), studyArea);
+    }
+
+    /** Explicit root, default study area (HANNOVER). */
+    public HagridPaths(Path pipelineRoot) {
+        this(pipelineRoot, StudyArea.HANNOVER);
+    }
+
+    /** Explicit root and study area. */
+    public HagridPaths(Path pipelineRoot, StudyArea studyArea) {
+        this.pipelineRoot = pipelineRoot;
+        this.studyArea = studyArea;
+        Path input = pipelineRoot.resolve("input");
+        this.inputBase = input.resolve(studyArea.folder());
+        this.outputBase = pipelineRoot.resolve("hagrid-output");
+        this.matsimOutputBase = pipelineRoot.resolve("hagrid-matsim-output");
+    }
+
+    /** System property that, if set, overrides automatic root detection. */
+    private static final String PIPELINE_ROOT_PROPERTY = "hagrid.pipeline.root";
+
+    /**
+     * Detects the pipeline root directory.
+     *
+     * <p>Resolution order:</p>
+     * <ol>
+     *   <li>System property {@code hagrid.pipeline.root} — set by the bat via
+     *       {@code -Dhagrid.pipeline.root=.} so the simulation server always
+     *       uses CWD directly (the bat already {@code cd}s into the pipeline
+     *       directory).</li>
+     *   <li>CWD contains the canonical marker file
+     *       {@code input/README.md} → we are already inside the
+     *       pipeline dir → use {@code "."}.</li>
+     *   <li>CWD/{@code PIPELINE_ROOT}/input/README.md exists
+     *       → IDE case, workspace root is one level above
+     *       → use {@code PIPELINE_ROOT}.</li>
+     *   <li>Fallback → {@code PIPELINE_ROOT}.</li>
+     * </ol>
+     *
+     * <p><b>Note:</b> We deliberately check for a tracked <em>file</em> rather
+     * than just the {@code input/} or {@code hagrid-output/} directories,
+     * because a failed previous run may have created empty {@code hagrid-output/}
+     * directories at the wrong level, which would trick a directory-only check.
+     * {@code input/README.md} is the only tracked file under {@code input/}, so it
+     * is present in every checkout even before the local inputs are filled in.</p>
+     */
+    private static Path detectPipelineRoot() {
+        // 1) Explicit system property (set by run_hagrid_sim.bat)
+        String prop = System.getProperty(PIPELINE_ROOT_PROPERTY);
+        if (prop != null && !prop.isBlank()) {
+            LOGGER.debug("Pipeline root from system property: {}", prop);
+            return Paths.get(prop);
+        }
+
+        // Canonical marker file — always present in the real pipeline dir
+        Path marker = ROOT_MARKER;
+        Path cwd = Paths.get("").toAbsolutePath();
+
+        // 2) CWD IS the pipeline dir (marker file exists here)
+        if (Files.exists(cwd.resolve(marker))) {
+            LOGGER.debug("CWD is pipeline root (found {}): {}", marker, cwd);
+            return Paths.get(".");
+        }
+
+        // 3) IDE / workspace-root case — pipeline dir is a subfolder
+        Path sub = Paths.get(PIPELINE_ROOT);
+        if (Files.exists(cwd.resolve(sub).resolve(marker))) {
+            LOGGER.debug("Pipeline root detected at: {}", sub);
+            return sub;
+        }
+
+        // 4) Fallback
+        LOGGER.warn("Could not auto-detect pipeline root (CWD={}), falling back to '{}'", cwd, PIPELINE_ROOT);
+        return sub;
+    }
+
+    /**
+     * Initialize run-specific output paths. Called when the run ID becomes known.
+     */
+    public void initializeRun(String runId) {
+        this.runId = runId;
+        this.runDir = outputBase.resolve(runId);
+        LOGGER.info("Initialized paths for run: {} -> {}", runId, runDir);
+    }
+
+    // =========================================================================
+    // INPUT PATHS  (input/<area>/)
+    // =========================================================================
+
+    public Path inputBase() { return inputBase; }
+
+    // --- Demand ---
+    public Path demandDir() { return inputBase.resolve("demand"); }
+    public Path demandDir(String runId) { return demandDir().resolve(runId); }
+    
+    /** Build the full demand shapefile path for a given run ID, date, and day name. */
+    public String demandShapefile(String runId, String isoDate, String dayOfWeek) {
+        String fileName = "hagrid_parcel_demand_" + isoDate + "_(" + dayOfWeek + ").shp";
+        return demandDir(runId).resolve(fileName).toString();
+    }
+
+    // --- Geodata ---
+    public Path geodataDir() { return inputBase.resolve("geodata"); }
+
+    // --- Hubs ---
+    public Path hubsDir() { return inputBase.resolve("hubs"); }
+    public String hubDataFile() { return hubsDir().resolve("KEP-hubs_v3.csv").toString(); }
+    public String shippingPointsDir() { return hubsDir().resolve("standorte_von_paket.net").toString() + "/"; }
+    public String parcelLockersFile() { return hubsDir().resolve("standorte_von_dhl.de.csv").toString(); }
+
+    // --- Network (pipeline reads from input, simulation reads from shared output) ---
+    public Path networkInputDir() { return inputBase.resolve("network"); }
+    public String networkFile() { return networkInputDir().resolve("car_network_filtered_V2.xml.gz").toString(); }
+    public String cargobikeNetworkFile() { return sharedDir().resolve("cargobike_network.xml.gz").toString(); }
+    public String zoneShapefile() { return sharedZonesDir().resolve("RH_useful__zone.shp").toString(); }
+
+    // --- Vehicles ---
+    public Path vehicleInputDir() { return inputBase.resolve("vehicles"); }
+    public String vehicleTypesFile() { return vehicleInputDir().resolve("HAGRID_vehicleTypes2.0.xml").toString(); }
+
+    // --- Config ---
+    public Path configDir() { return inputBase.resolve("config"); }
+    public String matsimConfigFile() { return sharedDir().resolve("sim-config.xml").toString(); }
+    public String jspritAlgorithmFile() { return configDir().resolve("jsprit-algorithm.xml").toString(); }
+
+    // =========================================================================
+    // SHARED SIMULATION INPUTS  (hagrid-output/shared/)
+    // =========================================================================
+
+    /** Shared directory for files needed by ALL simulation runs (config, networks, zones). */
+    public Path sharedDir() { return outputBase.resolve("shared"); }
+
+    /** Zone shapefile directory under shared. */
+    public Path sharedZonesDir() { return sharedDir().resolve("zones"); }
+
+    /** Shared network change events (same for all runs). */
+    public String sharedNetworkChangeEvents() { return sharedDir().resolve("network_change_events.xml.gz").toString(); }
+
+    // =========================================================================
+    // OUTPUT PATHS  (hagrid-output/{RUN_ID}/)
+    // =========================================================================
+
+    /** Root output directory for the current run. */
+    public Path runDir() {
+        checkRunInitialized();
+        return runDir;
+    }
+
+    /** Run-ID prefix for unique filenames, e.g. "BASECASE_13052025_" */
+    private String p() {
+        checkRunInitialized();
+        return runId + "_";
+    }
+
+    // --- Carriers ---
+    public Path carrierDir() { return runDir().resolve("carriers"); }
+
+    public String deliveryCarriersUnrouted() { return carrierDir().resolve(p() + "delivery_carriers_unrouted.xml").toString(); }
+    public String deliveryCarriersMerged()   { return carrierDir().resolve(p() + "delivery_carriers_merged.xml").toString(); }
+    public String deliveryCarriersRouted()   { return carrierDir().resolve(p() + "delivery_carriers_routed.xml").toString(); }
+
+    public String supplyCarriersUnrouted()   { return carrierDir().resolve(p() + "supply_carriers_unrouted.xml").toString(); }
+    public String supplyCarriersSplitUnrouted() { return carrierDir().resolve(p() + "supply_carriers_split_unrouted.xml").toString(); }
+    public String supplyCarriersRouted()     { return carrierDir().resolve(p() + "supply_carriers_routed.xml").toString(); }
+
+    public String carrierPlansCombined()     { return carrierDir().resolve(p() + "carrier_plans_combined.xml").toString(); }
+
+    /** Routed LMD carrier plans for this run (jsprit output). */
+    public String lmdCarriersRouted() {
+        return carrierDir().resolve(p() + "lmd_carriers_routed.xml").toString();
+    }
+
+    // --- Vehicles ---
+    public Path vehicleOutputDir() { return runDir().resolve("vehicles"); }
+    public String vehicleTypesOutput() { return vehicleOutputDir().resolve(p() + "vehicle_types.xml").toString(); }
+
+    // --- Network ---
+    public Path networkOutputDir() { return runDir().resolve("network"); }
+    public String networkFiltered()     { return networkOutputDir().resolve(p() + "network_filtered.xml.gz").toString(); }
+    /** Network change events — shared across all runs, stored in shared/ directory. */
+    public String networkChangeEvents() { return sharedNetworkChangeEvents(); }
+
+    // --- Routing ---
+    public Path routingDir() { return runDir().resolve("routing"); }
+    public String routingMetrics() { return routingDir().resolve(p() + "routing_metrics.csv").toString(); }
+    public String routingStatus()  { return routingDir().resolve(p() + "routing_status.csv").toString(); }
+
+    // --- Demand / Clustering ---
+    public Path demandOutputDir() { return runDir().resolve("demand"); }
+    public Path clusteringDir()   { return demandOutputDir().resolve("clustering"); }
+
+    // --- Summary ---
+    public Path summaryDir() { return runDir().resolve("summary"); }
+    public String scenarioSummary() { return summaryDir().resolve(p() + "scenario_summary.txt").toString(); }
+    public String carrierRoutingCsv() { return summaryDir().resolve(p() + "carrier_routing_detail.csv").toString(); }
+
+    // --- Cache ---
+    public Path cacheDir() { return runDir().resolve("cache"); }
+
+    // --- Logs ---
+    public Path logDir() { return runDir().resolve("logs"); }
+    public String runnerLog() { return logDir().resolve("runner.log").toString(); }
+
+    // --- Lausitz DRT inputs (study-area-scoped under inputBase) ---
+
+    /** DRT service-area shapefile (parameterised; defines the Hoyerswerda DRT zone). */
+    public String drtServiceAreaShapefile() {
+        return inputBase.resolve("drt").resolve("drt-service-area.shp").toString();
+    }
+
+    /** Raw Lausitz car network (before clipping to the DRT service area). */
+    public String lausitzNetworkRaw() {
+        return inputBase.resolve("network").resolve("lausitz-network.xml.gz").toString();
+    }
+
+    /** Raw 100 % matsim-lausitz passenger plans (before clipping to the service area). */
+    public String passengerPlansRaw() {
+        return inputBase.resolve("population").resolve("lausitz-100pct.plans.xml.gz").toString();
+    }
+
+    /** Native matsim-lausitz base config (scoring/activity-param source for DRT runs). */
+    public String lausitzBaseConfig() {
+        return inputBase.resolve("config").resolve("lausitz-v2024.2-100pct.config.xml").toString();
+    }
+
+    /** Staged native transit schedule (full: rail+bus+tram) before rail-filtering. */
+    public String lausitzTransitScheduleRaw() {
+        return inputBase.resolve("transit").resolve("lausitz-transitSchedule.xml.gz").toString();
+    }
+
+    /** Staged native transit vehicles (full) before rail-filtering. */
+    public String lausitzTransitVehiclesRaw() {
+        return inputBase.resolve("transit").resolve("lausitz-transitVehicles.xml.gz").toString();
+    }
+
+    /** Staged native passenger vehicle-types (car etc.) — enables modeVehicleTypesFromVehiclesData. */
+    public String lausitzVehicleTypes() {
+        return inputBase.resolve("vehicles").resolve("lausitz-vehicle-types.xml").toString();
+    }
+
+    /** Provider-tagged synthetic LMD depot CSV (one row per LSP). */
+    public String lmdDepotCsv() {
+        return inputBase.resolve("hubs").resolve("lmd-depots.csv").toString();
+    }
+
+    /** PANDA parcel-demand shapefile staged for the LMD baseline (date-named as exported). */
+    public String lmdDemandShapefile() {
+        return inputBase.resolve("demand")
+                .resolve("hagrid_parcel_demand_2025-05-13_(Tuesday).shp").toString();
+    }
+
+    /** Lausitz freight van vehicle-types (ct_cep_size_m / _l only). */
+    public String lmdVehicleTypes() {
+        return inputBase.resolve("vehicles").resolve("lmd-vehicle-types.xml").toString();
+    }
+
+    // --- Lausitz DRT run-scoped outputs (require initializeRun) ---
+
+    /** Network clipped to the DRT service area with drt added as an allowed mode. */
+    public String drtNetworkClipped() {
+        return runDir().resolve(p() + "drt_network.xml.gz").toString();
+    }
+
+    /** Passenger plans clipped to the DRT service area. */
+    public String passengerPlansClipped() {
+        return runDir().resolve(p() + "drt_population.xml.gz").toString();
+    }
+
+    /** Generated DVRP fleet vehicles file for the DRT fleet. */
+    public String drtFleetFile() {
+        return runDir().resolve(p() + "drt_fleet.xml.gz").toString();
+    }
+
+    /**
+     * Fingerprint of the prepared DRT inputs above (parameters + raw-input identities),
+     * written by the preprocessor and re-checked by {@code validateInputFiles()} so a run
+     * cannot silently reuse artifacts prepared for a different fleet size / seat count /
+     * noParcels setting — none of which appear in the run id.
+     */
+    public String drtInputsFingerprint() {
+        return runDir().resolve(p() + hagrid.integrated.drt.DrtInputsFingerprint.FILE_SUFFIX)
+                .toString();
+    }
+
+    /** Rail-only transit schedule for this run (bus + tram filtered out). */
+    public String railScheduleFiltered() {
+        return runDir().resolve(p() + "rail-transitSchedule.xml.gz").toString();
+    }
+
+    /** Transit vehicles referenced by the rail-only schedule. */
+    public String railTransitVehiclesFiltered() {
+        return runDir().resolve(p() + "rail-transitVehicles.xml.gz").toString();
+    }
+
+    // =========================================================================
+    // MATSIM OUTPUT  (hagrid-matsim-output/{RUN_ID}/)
+    // =========================================================================
+
+    public Path matsimOutputBase() { return matsimOutputBase; }
+    
+    public Path matsimRunDir() {
+        checkRunInitialized();
+        return matsimOutputBase.resolve(runId);
+    }
+
+    /** MATSim output directory with iteration/jsprit suffix for detailed tracking. */
+    public Path matsimRunDir(int matsimIterations, int jspritIterations) {
+        checkRunInitialized();
+        String dirName = runId + "_iter" + matsimIterations + "_jsprit" + jspritIterations;
+        return matsimOutputBase.resolve(dirName);
+    }
+
+    // =========================================================================
+    // DIRECTORY CREATION
+    // =========================================================================
+
+    /**
+     * Create all output directories for the current run.
+     * Also ensures the shared simulation directory exists and copies
+     * static simulation input files (config, networks, zones) there.
+     * Call this once after {@link #initializeRun(String)}.
+     */
+    public void createOutputDirectories() throws IOException {
+        checkRunInitialized();
+        // Run-specific directories
+        Files.createDirectories(carrierDir());
+        Files.createDirectories(vehicleOutputDir());
+        Files.createDirectories(networkOutputDir());
+        Files.createDirectories(routingDir());
+        Files.createDirectories(clusteringDir());
+        Files.createDirectories(summaryDir());
+        Files.createDirectories(cacheDir());
+        Files.createDirectories(logDir());
+        LOGGER.info("Created output directories under: {}", runDir);
+
+        // Shared simulation inputs (only copied once, idempotent)
+        copySharedSimulationInputs();
+    }
+
+    /**
+     * Ensures that the shared simulation input directory ({@code hagrid-output/shared/})
+     * is populated with all static files needed for MATSim runs.
+     * <p>
+     * Safe to call multiple times — only copies files that are not yet present.
+     * Can be called from both the pipeline ({@link #createOutputDirectories()})
+     * and the simulation runner ({@link hagrid.simulation.HAGRIDSimulationConfig}).
+     *
+     * @throws IOException if any file-system operation fails
+     */
+    public void ensureSharedSimulationInputs() throws IOException {
+        copySharedSimulationInputs();
+    }
+
+    /**
+     * Copies static simulation input files into {@code hagrid-output/shared/}.
+     * <p>These files are the same for ALL simulation runs and don't change
+     * between scenarios or dates:</p>
+     * <ul>
+     *   <li>{@code sim-config.xml} — MATSim base configuration (from input/hannover/config/)</li>
+     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network (from input/hannover/network/)</li>
+     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes (from input/hannover/network/)</li>
+     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (from input/hannover/network/)</li>
+     * </ul>
+     * <p>Files are only copied if missing. Existing files are not overwritten.</p>
+     */
+    private void copySharedSimulationInputs() throws IOException {
+        Files.createDirectories(sharedDir());
+        Files.createDirectories(sharedZonesDir());
+
+        // Source locations (all files now live in input/<area>/)
+        Path configInputDir = inputBase.resolve("config");
+        Path networkInputDir = inputBase.resolve("network");
+
+        // 1) sim-config.xml
+        copyIfMissing(configInputDir.resolve("sim-config.xml"),
+                      sharedDir().resolve("sim-config.xml"), "sim-config.xml");
+
+        // 2) Cargobike network
+        copyIfMissing(networkInputDir.resolve("cargobike_network_zones_MH_V3_clean.xml.gz"),
+                      sharedDir().resolve("cargobike_network.xml.gz"), "cargobike network");
+
+        // 3) Network change events
+        copyIfMissing(networkInputDir.resolve("car_network_filtered_V2_change_events.xml.gz"),
+                      sharedDir().resolve("network_change_events.xml.gz"), "network change events");
+
+        // 4) Zone shapefile (all parts: .shp, .dbf, .shx, .prj, .cpg, .ctf)
+        //    Sources on disk may be upper-case; destinations use lower-case.
+        String[][] zonePairs = {
+            { ".SHP", ".shp" }, { ".DBF", ".dbf" }, { ".SHX", ".shx" },
+            { ".PRJ", ".prj" }, { ".CPG", ".cpg" }, { ".CTF", ".ctf" }
+        };
+        String zoneBase = "RH_useful__zone";
+        for (String[] pair : zonePairs) {
+            Path src = networkInputDir.resolve(zoneBase + pair[0]);
+            Path dst = sharedZonesDir().resolve(zoneBase + pair[1]);
+            if (Files.exists(src)) {
+                copyIfMissing(src, dst, "zone " + pair[1]);
+            }
+        }
+
+        LOGGER.info("Shared simulation inputs ready at: {}", sharedDir().toAbsolutePath());
+    }
+
+    /** Copy a file only if the destination does not yet exist. */
+    private void copyIfMissing(Path source, Path destination, String label) throws IOException {
+        if (Files.exists(destination)) {
+            LOGGER.debug("[shared] {} already exists, skipping", label);
+            return;
+        }
+        if (!Files.exists(source)) {
+            LOGGER.warn("[shared] Source for {} not found: {} — skipping", label, source);
+            return;
+        }
+        Files.copy(source, destination, StandardCopyOption.COPY_ATTRIBUTES);
+        LOGGER.info("[shared] Copied {} → {}", label, destination.toAbsolutePath());
+    }
+
+    // =========================================================================
+    // ACCESSORS
+    // =========================================================================
+
+    public String getRunId() { return runId; }
+    public Path getPipelineRoot() { return pipelineRoot; }
+    public StudyArea getStudyArea() { return studyArea; }
+
+    // =========================================================================
+    // INTERNAL
+    // =========================================================================
+
+    private void checkRunInitialized() {
+        if (runId == null || runDir == null) {
+            throw new IllegalStateException(
+                "HagridPaths not initialized for run - call initializeRun(runId) first");
+        }
+    }
+
+    @Override
+    public String toString() {
+        return String.format("HagridPaths[run=%s, input=%s, output=%s, matsim=%s]",
+            runId, inputBase, outputBase, matsimOutputBase);
+    }
+}
