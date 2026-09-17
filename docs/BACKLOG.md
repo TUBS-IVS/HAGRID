@@ -88,7 +88,7 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
 - **`[H]` Paarvergleiche mit vollem Config-Diff absichern, nicht nur mit dem POPHASH** — der
   POPHASH-Check prüft die Eingangspopulation; bei basew21 waren die Populationen byteidentisch
   und der Defekt saß trotzdem in der Config (§3.14). Ein Diff über alle 310 Config-Pfade hätte
-  ihn sofort gezeigt. Werkzeug liegt jetzt unter `analysis/kpi/config_diff.py` (selbstgetestet
+  ihn sofort gezeigt. Werkzeug liegt jetzt unter `analysis/lausitz/kpi/config_diff.py` (selbstgetestet
   am basew21-Paar: 1 substanzielle Abweichung; Negativkontrolle gegen sich selbst: 0). Offen
   ist nur noch, es in die Auswertung fest einzuhängen. _(added 2026-09-06)_
 - **`[H]` Walk-Fallback abstellen oder ausweisen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
@@ -207,7 +207,7 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   die Fahrzeugstunden skalieren nicht mit der Flottengröße (150→140: +0,7 %, 140→130: −13,1 %),
   das ist zu messen. Kandidaten 140/135/130 bei `maxTourDuration=25200`. _(added 2026-08-18)_
 
-- **`[H]` Demand-Input-Sync Dev-PC↔Sim-PC entscheiden** — `hagrid-input/**` ist git-ignoriert
+- **`[H]` Demand-Input-Sync Dev-PC↔Sim-PC entscheiden** — `hagrid/input/**` ist git-ignoriert
   und synchronisiert nicht über Maschinen; die beiden PCs fahren 0,53 % verschiedene Nachfrage
   (6052 vs. 6020 Pakete, anderes Muster). Baseline↔1c intern konsistent (beide Dev-PC), die
   1d-Kurve intern konsistent (alle Sim-PC), Baseline↔1d nicht exakt. Entweder Sync + Rerun am
@@ -233,7 +233,7 @@ Kaltstart-Zuschlag + STAY-Ladefenster-Analyse AUSGEFÜHRT, 2026-08-26.**
 Non-Exhaust segmentdifferenziert, EV-Reichweiten-Sweep, `kpi_emissions_vehicles.csv`), plus
 Kaltstart-Zuschlag und `drive_block_max_km_*`. Methodenwahl, Klassenmapping, Systemgrenze und
 Caveats: [METHODS-LOG](METHODS-LOG.md) §1.4/§2.7/§2.26–§2.29; Faktor-Provenance und
-Limitations-Rohtext: `analysis/kpi/data/README.md`. Nachweis: [BACKLOG-DONE](BACKLOG-DONE.md).
+Limitations-Rohtext: `analysis/lausitz/kpi/data/README.md`. Nachweis: [BACKLOG-DONE](BACKLOG-DONE.md).
 _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
 
 - **`[H]` Energetisches Lademodell für die DRT-Flotte (Ladeleistung, Batteriekapazität,
@@ -257,11 +257,11 @@ _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
   DRT-Flotte · Multi-Seed-Aggregation (→ `[H]` Multi-Run-Aggregation).
 - **⚠️ Constraint:** `hagrid_output_analysis/emissions.py` **nicht anfassen** (Kollegen-Paper) —
   eingehalten, der Emissionskanal liegt vollständig in
-  `analysis/kpi/{emissions_emep,extract_emissions}.py` → [METHODS-LOG](METHODS-LOG.md) §1.4.
+  `analysis/lausitz/kpi/{emissions_emep,extract_emissions}.py` → [METHODS-LOG](METHODS-LOG.md) §1.4.
 
 ### `[H]` Kostenfunktion reviewen
 
-**✅ Für LAUSITZ umgesetzt (2026-08-28).** `analysis/kpi/cost_model.py` leitet die `DERIVED`-Sätze
+**✅ Für LAUSITZ umgesetzt (2026-08-28).** `analysis/lausitz/kpi/cost_model.py` leitet die `DERIVED`-Sätze
 aus `cost_parameters.csv` ab (Selbsttest gegen die im CSV dokumentierten 28,99 / 33,45 / 14,80 /
 16,60 / 18,80 / 22,74 €), `economics.py` wertet C auf Flotten-Aggregaten aus und ist ins Dashboard
 verdrahtet (`render_drt`/`render_lmd`/`render`). **Hannover bleibt bewusst auf dem Platzhalter**
@@ -320,7 +320,7 @@ Python-Nachrechnung über vorhandene Artefakte (der `SUMMARY`-Blob trägt je Tou
 sollen auf derselben Kostenversion stehen.
 
 **Zu tun:**
-- `V4_CAPS` in `analysis/hannover-sweep/extract_sweep.py:31-43` anlegen (`EXPECTED_RUNS` in
+- `V4_CAPS` in `analysis/hannover/sweep/extract_sweep.py:31-43` anlegen (`EXPECTED_RUNS` in
   derselben Edit mitwachsen lassen, by design) — heute nur `V1`/`V2`/`V3`.
 - Korrekturfunktion nach §2.33 implementieren, `sweep_kpis.csv` (`cost_eur`) und das React-Board
   (`board/`, neue Serie oder Toggle) mitziehen, Nachweis in [BACKLOG-DONE](BACKLOG-DONE.md).
@@ -348,7 +348,7 @@ Input `pt`) → [METHODS-LOG](METHODS-LOG.md) §2.54. Offen bleiben zwei Punkte:
 
 - **`[H]` DRT-ASC-Sensitivität rechnen und als Limitation ausweisen** — der DRT-ASC wird vom ÖV
   kopiert: `setConstant(ptParams.getConstant())` (−1,2987) und `marginalUtilityOfTraveling = 0`
-  ([DrtConfigComposer.java:126-128](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/drt/DrtConfigComposer.java#L126)).
+  ([DrtConfigComposer.java:126-128](../hagrid/src/main/java/hagrid/lausitz/drt/DrtConfigComposer.java#L126)).
   Ein Tür-zu-Tür-Dienst wird damit bewertet wie ein Taktbus, obwohl der ÖV-ASC gerade das
   Unbeobachtete am Bus aufsammelt (Haltestellenweg, Fahrplanbindung, Umsteigen). Zu tun: ASC-Fächer
   auf dem Baseline-Arm, Modal-Split und DRT-Fahrleistung als Bandbreite statt als Punktwert, dann
@@ -445,7 +445,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 
 - **`[M]` Carrier-Parallelisierung in `routeWithDurationCap`** — die 7 Lausitz-Carrier lösen
   sequenziell auf dem Main-Thread
-  ([LausitzFreightPreprocessor.java:314](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/integrated/freight/LausitzFreightPreprocessor.java#L314));
+  ([LausitzFreightPreprocessor.java:314](../hagrid/src/main/java/hagrid/lausitz/freight/LausitzFreightPreprocessor.java#L314));
   parallel fällt die Wall-Clock auf den größten Carrier, **10,7 h → ~3,7 h** @`jspritIter=1000`
   (§2.2). Obergrenze ~2,9× (Amdahl) → 3–4 Threads genügen. Beide Voraussetzungen 2026-07-30
   geprüft und grün: Determinismus bleibt (frische `Random` je Carrier,
@@ -479,7 +479,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   gelöscht, Stand im Parent von `b639ff3`); dabei die stille-`None`-Ursache mit-fixen und den Layer
   nur bei vorhandenen Daten zeigen. _(added 2026-07-14, aktualisiert 2026-08-17)_
 
-- **`[M]` hagrid-input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
+- **`[M]` hagrid/input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
   letzter manueller Transfer-Schritt für "läuft auf jedem neuen PC". Geplant:
   Download-on-first-run mit URL-Liste + Checksums; HAGRID-only-Dateien via
   Uni-Share/Release-Assets. _(added 2026-07-14)_
@@ -527,9 +527,9 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
 
 - **`[M]` Windows: Läufe sterben am eigenen offenen Logfile — Fix ist eine Zeile.**
   `initLogging()` legt `hagrid.log.dir` korrekt außerhalb des Output-Baums ab
-  ([SimulationRunnerUtils.java:64-72](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/simulation/SimulationRunnerUtils.java#L64)),
+  ([SimulationRunnerUtils.java:64-72](../hagrid/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L64)),
   `runSimulation` biegt es 220 Zeilen später wieder **hinein**
-  ([:286-288](../parcel-demand-2-matsim-pipeline/src/main/java/hagrid/simulation/SimulationRunnerUtils.java#L286)),
+  ([:286-288](../hagrid/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L286)),
   wo `deleteDirectoryIfExists` die offene Datei nicht löschen kann. **Fix = die zweite Zuweisung
   entfernen oder gaten.** Nicht LMD-spezifisch (riss einen `DRT_MODULAR`-Lauf nach 19 min);
   Hannover-`BASECASE` empirisch nicht betroffen. Workaround erprobt und im Repo
@@ -559,8 +559,8 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
 - **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
   nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
   die dort ein-/ausgestiegen sind (wie im Legacy-Dashboard per Passagier-ID). Aktuell tragen die
-  Stop-Records nur `lat/lon/t/n/kind` (`maps._attach_stops`, [maps.py:132](../parcel-demand-2-matsim-pipeline/analysis/kpi/maps.py#L132))
-  und der Badge-Marker hat gar kein Popup ([render_maps.py:128](../parcel-demand-2-matsim-pipeline/analysis/kpi/render_maps.py#L128)).
+  Stop-Records nur `lat/lon/t/n/kind` (`maps._attach_stops`, [maps.py:132](../analysis/lausitz/kpi/maps.py#L132))
+  und der Badge-Marker hat gar kein Popup ([render_maps.py:128](../analysis/lausitz/kpi/render_maps.py#L128)).
   Machbar: die Personen-ID steht in der Quelle (`*.output_drt_legs_drt.csv` hat `personId`,
   `geometry.py` parst `person=` bereits) — nur bis in den Stop-Record + `bindPopup`/`bindTooltip`
   durchreichen. User-Wunsch 2026-07-20. _(added 2026-07-20)_

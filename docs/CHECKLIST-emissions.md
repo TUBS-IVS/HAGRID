@@ -68,7 +68,7 @@ Dreipunkt-Sweep (§2.55). Die beiden BEV-Aufschläge wirken **gegen** das BEV, d
 
 ⚠️ Auslassungen und Annahmen gehören **zusammen** in einen Absatz, nicht über den Text
 verteilt — einzeln gelesen wirkt jede harmloser als sie ist.
-- **Fertig wenn:** Absatz in `analysis/kpi/data/README.md` („Limitations (Paper-Rohtext)")
+- **Fertig wenn:** Absatz in `analysis/lausitz/kpi/data/README.md` („Limitations (Paper-Rohtext)")
   ergänzt, Verweis auf METHODS-LOG §2.55.
 - **Aufwand:** ~1 h.
 
@@ -80,7 +80,7 @@ verteilt — einzeln gelesen wirkt jede harmloser als sie ist.
 
 - **Daten fehlen:** Ladepunkttypen (Vorschlag Depot-AC 11 / 22 kW, DC 50 / 150 kW als Sweep)
   und die **Ladeort-Politik** — nur die 7 Depots aus
-  `hagrid-input/lausitz/hubs/lmd-depots.csv`, oder zusätzlich häufige STAY-Links?
+  `hagrid/input/lausitz/hubs/lmd-depots.csv`, oder zusätzlich häufige STAY-Links?
 - **Warum:** das ist die Szenarioentscheidung, die „Infrastrukturproblem" von
   „Dispositionsproblem" trennt. Keine Datenfrage.
 - **Fertig wenn:** Entscheidung im Spec, Werte in `emep_supplement.csv` mit
