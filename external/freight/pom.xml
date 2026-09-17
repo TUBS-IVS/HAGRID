@@ -130,14 +130,14 @@
   </dependencies>
 
   <build>
-    <sourceDirectory>${project.basedir}/../external/matsim-libs/contribs/freight/src/main/java</sourceDirectory>
-    <testSourceDirectory>${project.basedir}/../external/matsim-libs/contribs/freight/src/test/java</testSourceDirectory>
+    <sourceDirectory>${project.basedir}/../matsim-libs/contribs/freight/src/main/java</sourceDirectory>
+    <testSourceDirectory>${project.basedir}/../matsim-libs/contribs/freight/src/test/java</testSourceDirectory>
     <testResources>
       <!-- The logistics tests resolve this scenario via ExamplesUtils from the classpath
            (test/scenarios/<name>/). The matsim-examples 2025.0-PR3552 artifact predates the
            scenario, so we serve it from the pinned submodule tree instead. -->
       <testResource>
-        <directory>${project.basedir}/../external/matsim-libs/examples/scenarios/logistics-2regions</directory>
+        <directory>${project.basedir}/../matsim-libs/examples/scenarios/logistics-2regions</directory>
         <targetPath>test/scenarios/logistics-2regions</targetPath>
       </testResource>
     </testResources>
@@ -148,7 +148,7 @@
         <version>${maven.surefire.plugin.version}</version>
         <configuration>
           <!-- MatsimTestUtils resolves test/input relative to the working directory -->
-          <workingDirectory>${project.basedir}/../external/matsim-libs/contribs/freight</workingDirectory>
+          <workingDirectory>${project.basedir}/../matsim-libs/contribs/freight</workingDirectory>
         </configuration>
       </plugin>
       <plugin>

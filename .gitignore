@@ -104,8 +104,8 @@ analysis_cp.txt
 analyze_tw*.ps1
 
 # Freight module generated output (sim + MATSim test output)
-freight/output/
-freight/test/output/
+external/freight/output/
+external/freight/test/output/
 
 # MATSim integration-test output (MatsimTestUtils writes to <module>/test/output)
 parcel-demand-2-matsim-pipeline/test/output/

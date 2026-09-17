@@ -127,7 +127,7 @@ fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-subm
     git submodule update --init external/matsim-libs
     git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions
 
-**Bumping the MATSim/freight version:** see `resync-freight.ps1` (header comment).
+**Bumping the MATSim/freight version:** see `tools/resync-freight.ps1` (header comment).
 
 **IDE stale-build gotcha:** if Eclipse or VS Code's Java tooling has compiled a broken
 workspace (e.g. mid-refactor), stale `.class` stubs left behind in `target/classes` can

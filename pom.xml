@@ -11,7 +11,7 @@
   <name>HAGRID Parent</name>
 
   <modules>
-    <module>freight</module>
+    <module>external/freight</module>
     <module>parcel-demand-2-matsim-pipeline</module>
   </modules>
 
@@ -40,7 +40,7 @@
          mvn install. The .mvn/ marker dir anchors maven.multiModuleProjectDirectory to the repo root. -->
     <repository>
       <id>hagrid-local-libs</id>
-      <url>file:///${maven.multiModuleProjectDirectory}/libs</url>
+      <url>file:///${maven.multiModuleProjectDirectory}/external/libs</url>
       <snapshots><enabled>false</enabled></snapshots>
     </repository>
     <repository>
