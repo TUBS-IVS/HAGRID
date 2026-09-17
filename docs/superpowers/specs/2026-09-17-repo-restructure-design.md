@@ -204,7 +204,8 @@ Hashes und Kommandos kommen in den METHODS-LOG-Eintrag (§6, Schritt 7).
 
 - Nur zwischen Läufen (MATSim hat keinen Wiederaufsetzpunkt).
 - Für den Sim gilt die Pull-Sperre, solange Hannover-v4 nicht durch ist; vor dem Pull prüfen, nicht annehmen.
-- Ablauf je Maschine: `git pull` → `git submodule update` (Gitlink unverändert, also ohne Netzlast) → `tools/migrate-input-layout.ps1` (schiebt `parcel-demand-2-matsim-pipeline/hagrid-input/*` idempotent nach `hagrid/input/{common,hannover,lausitz}`; bricht ab, wenn Ziel und Quelle beide belegt sind) → Outputs bleiben liegen (`git mv` des Ordners nimmt ignorierte Inhalte nicht mit; das Skript verschiebt auch `hagrid-output/` und `hagrid-matsim-output/` ins Modul) → `mvn -q install` → ein Fingerprint-Lauf wie §7.1 gegen den lokal notierten Wert.
+- Ablauf je Maschine: `git pull` → `git submodule update` (Gitlink unverändert, also ohne Netzlast) → `tools/migrate-input-layout.ps1` (schiebt `parcel-demand-2-matsim-pipeline/hagrid-input/*` idempotent nach `hagrid/input/{common,hannover,lausitz}` und `hagrid-output/`, `hagrid-matsim-output/`, `routerCache/`, `logs/`, `target/` ins Modul) → `mvn -q install` → ein Fingerprint-Lauf wie §7.1 gegen den lokal notierten Wert.
+- Zwei Eigenschaften des Migrationsskripts, die aus dem Plan-Review (2026-09-17) stammen: (a) **Preflight vor dem ersten Move** — alle Quelle-Ziel-Paare werden zuerst auf Kollision geprüft, erst dann wird irgendetwas bewegt; eine späte Kollision lässt die Outputs am alten Ort. (b) **Getrackte `.gitkeep`-Skelette zählen nicht als Inhalt** — nach dem Pull hat jeder Zielordner eines; das Skript mischt in bestehende Ordner hinein und lässt die `.gitkeep`-Dateien liegen, sonst hätte jede Maschine danach fehlende getrackte Dateien.
 - Auf IVS100 ohne Admin und mit `cmd.exe` als Standard-Shell: das Skript explizit über `powershell -File` starten.
 
 ## 9. Risiken

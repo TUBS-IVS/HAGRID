@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - Arbeitsort ist der Haupt-Checkout `C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID`, **kein** Worktree: die ignorierten Inputs (≈315 MB) liegen nur dort. Branch `restructure` ab `hendrik`; Push nur auf Zuruf; kein Master-Merge.
-- Alle Verschiebungen per `git mv`. Verschieben und inhaltliches Ändern gehören in getrennte Commits, damit `git log --follow` die Historie behält.
+- Alle Verschiebungen per `git mv`. Verschiebungen und inhaltliche Änderungen werden getrennt committet, soweit praktisch möglich. Wo ein Zwischenstand sonst nicht baubar wäre (Task 3b, 4a), bleiben die Anpassungen im selben Commit auf unmittelbar erforderliche Paket-, Pfad- und Buildreferenzen beschränkt; die Rename-Ähnlichkeit muss > 90 % bleiben (Gate: `--stat` zeigt `rename … (9x%)`).
+- **JDK:** Build und Proben laufen auf JDK 21 (`JAVA_HOME = C:\Program Files\Java\jdk-21.0.10`, POM `maven.compiler.release` 21). `java` im PATH ist 25.0.1 — das Probenskript nutzt deshalb ausdrücklich `$env:JAVA_HOME\bin\java.exe`; Vorher- und Nachher-Probe mit verschiedenen JDKs wären kein Vergleich.
 - `.bat`-Dateien nie mit Edit/Write anfassen; nur per PowerShell mit `[IO.File]::WriteAllText($p, $s, [Text.UTF8Encoding]::new($false))` schreiben (CRLF bleibt erhalten, kein BOM). Java-/XML-/PS1-Dateien ebenfalls ohne BOM.
 - Der Sparse-Checkout-Befehl `git -C external/matsim-libs sparse-checkout set contribs/freight examples/scenarios/logistics-2regions` bleibt in README, Enforcer-Meldung und `tools/resync-freight.ps1` wörtlich identisch.
 - Output-Wurzeln `hagrid-output/`, `hagrid-matsim-output/`, Konzeptname `drt_shareduse`, Package `shareduse`: **unverändert**.
@@ -329,23 +330,38 @@ $script = Join-Path $PSScriptRoot 'migrate-input-layout.ps1'
 $fails = 0
 function Assert($cond, $msg) { if ($cond) { Write-Host "  ok   $msg" } else { Write-Host "  FAIL $msg"; $script:fails++ } }
 
-$tmp = Join-Path $env:TEMP ("mil-" + [guid]::NewGuid().ToString('N'))
-$old = Join-Path $tmp 'parcel-demand-2-matsim-pipeline'
-$new = Join-Path $tmp 'hagrid'
-New-Item -ItemType Directory -Force $new | Out-Null            # der frische Pull hat hagrid/ schon angelegt
-foreach ($d in 'config','demand','geodata','hubs','network','vehicles','emissions','lausitz\config','lausitz\drt') {
-    New-Item -ItemType Directory -Force (Join-Path $old "hagrid-input\$d") | Out-Null
-    Set-Content (Join-Path $old "hagrid-input\$d\probe.txt") $d
+function New-Fixture {
+    # Zustand einer Maschine direkt nach `git pull`: hagrid/ existiert mit getracktem Skelett
+    # (.gitkeep in jedem Input-/Output-Ordner, input/README.md); die echten, ignorierten Daten
+    # liegen noch im alten Modulordner.
+    $tmp = Join-Path $env:TEMP ("mil-" + [guid]::NewGuid().ToString('N'))
+    $old = Join-Path $tmp 'parcel-demand-2-matsim-pipeline'
+    $new = Join-Path $tmp 'hagrid'
+    foreach ($d in 'input\common\emissions','input\hannover\config','input\hannover\demand','input\hannover\geodata','input\hannover\hubs','input\hannover\network','input\hannover\vehicles','input\lausitz\config','input\lausitz\drt','input\lausitz\network','hagrid-output','hagrid-matsim-output') {
+        New-Item -ItemType Directory -Force (Join-Path $new $d) | Out-Null
+        Set-Content (Join-Path $new "$d\.gitkeep") ''
+    }
+    Set-Content (Join-Path $new 'input\README.md') 'marker'
+    foreach ($d in 'config','demand','geodata','hubs','network','vehicles','emissions','lausitz\config','lausitz\drt') {
+        New-Item -ItemType Directory -Force (Join-Path $old "hagrid-input\$d") | Out-Null
+        Set-Content (Join-Path $old "hagrid-input\$d\probe.txt") $d
+    }
+    Set-Content (Join-Path $old 'hagrid-input\lausitz\SOURCES.md') 'src'
+    New-Item -ItemType Directory -Force (Join-Path $old 'hagrid-output\RUN1'), (Join-Path $old 'hagrid-matsim-output\RUN1'), (Join-Path $old 'routerCache') | Out-Null
+    Set-Content (Join-Path $old 'hagrid-output\RUN1\x.csv') 'x'
+    return @{ Tmp = $tmp; Old = $old; New = $new }
 }
-New-Item -ItemType Directory -Force (Join-Path $old 'hagrid-output\RUN1'), (Join-Path $old 'hagrid-matsim-output\RUN1'), (Join-Path $old 'routerCache') | Out-Null
-Set-Content (Join-Path $old 'hagrid-output\RUN1\x.csv') 'x'
 
-Write-Host "Fall 1: Migration aus altem Modulordner"
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+Write-Host "Fall 1: Migration in ein Skelett aus getrackten .gitkeep-Dateien"
 & $script -RepoRoot $tmp
 Assert (Test-Path "$new\input\common\emissions\probe.txt")       'emissions -> input/common'
 Assert (Test-Path "$new\input\hannover\config\probe.txt")        'config -> input/hannover'
 Assert (Test-Path "$new\input\hannover\vehicles\probe.txt")      'vehicles -> input/hannover'
 Assert (Test-Path "$new\input\lausitz\drt\probe.txt")            'lausitz/drt -> input/lausitz'
+Assert (Test-Path "$new\input\lausitz\SOURCES.md")               'Dateien direkt unter lausitz/ kommen mit'
+Assert (Test-Path "$new\input\hannover\config\.gitkeep")         'getracktes .gitkeep bleibt liegen (sonst dirty tree auf jeder Maschine)'
+Assert (Test-Path "$new\hagrid-output\.gitkeep")                 'Output-Skelett bleibt'
 Assert (Test-Path "$new\hagrid-output\RUN1\x.csv")               'hagrid-output zieht mit'
 Assert (Test-Path "$new\hagrid-matsim-output\RUN1")              'hagrid-matsim-output zieht mit'
 Assert (Test-Path "$new\routerCache")                            'routerCache zieht mit'
@@ -353,19 +369,30 @@ Assert (-not (Test-Path "$new\hagrid-input"))                    'kein hagrid-in
 Assert (-not (Test-Path $old))                                   'alter Modulordner ist weg (war leer)'
 
 Write-Host "Fall 2: zweiter Lauf ist ein No-op"
-$before = (Get-ChildItem $new -Recurse -File | ForEach-Object { $_.FullName + '|' + $_.LastWriteTimeUtc.Ticks }) -join "`n"
+$before = (Get-ChildItem $new -Recurse -File -Force | ForEach-Object { $_.FullName + '|' + $_.LastWriteTimeUtc.Ticks }) -join "`n"
 & $script -RepoRoot $tmp
-$after = (Get-ChildItem $new -Recurse -File | ForEach-Object { $_.FullName + '|' + $_.LastWriteTimeUtc.Ticks }) -join "`n"
+$after = (Get-ChildItem $new -Recurse -File -Force | ForEach-Object { $_.FullName + '|' + $_.LastWriteTimeUtc.Ticks }) -join "`n"
 Assert ($before -eq $after) 'zweiter Lauf ändert keine Datei'
+Remove-Item -Recurse -Force $tmp
 
-Write-Host "Fall 3: Kollision bricht ab"
-New-Item -ItemType Directory -Force (Join-Path $old 'hagrid-input\config') | Out-Null
-Set-Content (Join-Path $old 'hagrid-input\config\other.txt') 'y'
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+Write-Host "Fall 3: frühe Kollision (Hannover-config) bricht ab, bevor irgendetwas verschoben wurde"
+Set-Content (Join-Path $new 'input\hannover\config\other.txt') 'y'
 $threw = $false
 try { & $script -RepoRoot $tmp } catch { $threw = $true }
 Assert $threw 'Quelle und Ziel beide belegt -> Fehler'
-Assert (-not (Test-Path "$new\input\hannover\config\other.txt")) 'bei Kollision wird nichts verschoben'
+Assert (Test-Path "$old\hagrid-output\RUN1\x.csv")               'Preflight: hagrid-output liegt noch am alten Ort'
+Assert (Test-Path "$old\hagrid-input\config\probe.txt")          'Preflight: Inputs liegen noch am alten Ort'
+Remove-Item -Recurse -Force $tmp
 
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+Write-Host "Fall 4: späte Kollision (letztes Lausitz-Paar) bricht ebenfalls VOR dem ersten Move ab"
+Set-Content (Join-Path $new 'input\lausitz\drt\other.shp') 'z'
+$threw = $false
+try { & $script -RepoRoot $tmp } catch { $threw = $true }
+Assert $threw 'späte Kollision -> Fehler'
+Assert (Test-Path "$old\hagrid-output\RUN1\x.csv")               'Preflight: auch hier nichts verschoben (Outputs)'
+Assert (Test-Path "$old\hagrid-input\emissions\probe.txt")       'Preflight: auch hier nichts verschoben (Inputs)'
 Remove-Item -Recurse -Force $tmp
 if ($fails -gt 0) { Write-Host "$fails Prüfungen fehlgeschlagen"; exit 1 } else { Write-Host 'alle Prüfungen bestanden'; exit 0 }
 ```
@@ -396,53 +423,69 @@ $ErrorActionPreference = 'Stop'
 
 $old = Join-Path $RepoRoot 'parcel-demand-2-matsim-pipeline'
 $new = Join-Path $RepoRoot 'hagrid'
+$in  = Join-Path $new 'input'
 if (-not (Test-Path $new)) { throw "Zielmodul fehlt: $new (erst git pull / checkout)" }
 
-function Move-Tree([string] $src, [string] $dst) {
-    if (-not (Test-Path $src)) { return }
-    if (Test-Path $dst) {
-        $srcHas = @(Get-ChildItem $src -Force -Recurse -File).Count -gt 0
-        $dstHas = @(Get-ChildItem $dst -Force -Recurse -File).Count -gt 0
-        if ($srcHas -and $dstHas) { throw "Kollision: '$src' und '$dst' sind beide belegt. Von Hand zusammenführen." }
-        if (-not $srcHas) { Remove-Item -Recurse -Force $src; return }
-        Remove-Item -Recurse -Force $dst
-    }
-    New-Item -ItemType Directory -Force (Split-Path $dst -Parent) | Out-Null
-    Move-Item -LiteralPath $src -Destination $dst
-    Write-Host ("  {0} -> {1}" -f $src.Substring($RepoRoot.Length + 1), $dst.Substring($RepoRoot.Length + 1))
+# Getrackte .gitkeep-Skelette zählen nicht als Inhalt: nach `git pull` hat jeder Zielordner eines,
+# und sie müssen liegen bleiben (sonst fehlen auf der Maschine getrackte Dateien).
+function Has-RealFiles([string] $path) {
+    if (-not (Test-Path $path)) { return $false }
+    return @(Get-ChildItem $path -Force -Recurse -File | Where-Object { $_.Name -ne '.gitkeep' }).Count -gt 0
 }
+function Rel([string] $p) { return $p.Substring($RepoRoot.Length + 1) }
 
-# 1) Ignorierte Reste aus dem alten Modulordner ins neue Modul
+# ---------- Phase 0: Plan aufstellen (nichts wird bewegt) ----------
+# Paare, in Ausführungsreihenfolge. Die Input-Paare zeigen auf den Ort NACH Phase A
+# (hagrid/hagrid-input/...), geprüft werden sie an ihrem jetzigen Ort.
+$hiNow = if (Test-Path (Join-Path $new 'hagrid-input')) { Join-Path $new 'hagrid-input' } else { Join-Path $old 'hagrid-input' }
+$hiAfter = Join-Path $new 'hagrid-input'
+
+$phaseA = @()
 foreach ($d in 'hagrid-input', 'hagrid-output', 'hagrid-matsim-output', 'routerCache', 'logs', 'target') {
-    Move-Tree (Join-Path $old $d) (Join-Path $new $d)
+    $phaseA += [pscustomobject]@{ Src = (Join-Path $old $d); Dst = (Join-Path $new $d) }
+}
+$inputMap = [ordered]@{ 'emissions' = 'common\emissions'; 'lausitz' = 'lausitz' }
+foreach ($d in 'config', 'demand', 'geodata', 'hubs', 'network', 'vehicles') { $inputMap[$d] = "hannover\$d" }
+$phaseB = @()
+foreach ($k in $inputMap.Keys) {
+    $phaseB += [pscustomobject]@{ Src = (Join-Path $hiAfter $k); Now = (Join-Path $hiNow $k); Dst = (Join-Path $in $inputMap[$k]) }
 }
 
-# 2) hagrid-input -> input/{common,hannover,lausitz}
-$hi = Join-Path $new 'hagrid-input'
-$in = Join-Path $new 'input'
-Move-Tree (Join-Path $hi 'emissions') (Join-Path $in 'common\emissions')
-foreach ($d in 'config', 'demand', 'geodata', 'hubs', 'network', 'vehicles') {
-    Move-Tree (Join-Path $hi $d) (Join-Path $in "hannover\$d")
+# ---------- Phase 1: Preflight — alle Kollisionen sammeln, bei einer einzigen abbrechen ----------
+$collisions = @()
+foreach ($p in $phaseA) { if ((Has-RealFiles $p.Src) -and (Has-RealFiles $p.Dst)) { $collisions += "{0}  <->  {1}" -f (Rel $p.Src), (Rel $p.Dst) } }
+foreach ($p in $phaseB) { if ((Has-RealFiles $p.Now) -and (Has-RealFiles $p.Dst)) { $collisions += "{0}  <->  {1}" -f (Rel $p.Now), (Rel $p.Dst) } }
+if (Test-Path $hiNow) {
+    $known = @($inputMap.Keys)
+    $stray = Get-ChildItem $hiNow -Force | Where-Object { $_.Name -notin $known -and $_.Name -ne '.gitkeep' }
+    if ($stray) { $collisions += "unbekannte Einträge unter $(Rel $hiNow): $($stray.Name -join ', ')" }
 }
-if (Test-Path (Join-Path $hi 'lausitz')) {
-    foreach ($sub in Get-ChildItem (Join-Path $hi 'lausitz') -Directory) {
-        Move-Tree $sub.FullName (Join-Path $in "lausitz\$($sub.Name)")
-    }
-    foreach ($f in Get-ChildItem (Join-Path $hi 'lausitz') -File -Force) {   # z.B. SOURCES.md, .gitkeep
-        Move-Item -LiteralPath $f.FullName -Destination (Join-Path $in 'lausitz') -Force
-    }
-}
-# Übrig gebliebene Dateien direkt unter hagrid-input (README, .gitkeep) sind Skelett: entfernen
-if (Test-Path $hi) {
-    $left = Get-ChildItem $hi -Recurse -File -Force | Where-Object { $_.Name -ne '.gitkeep' }
-    if ($left) { throw "Unerwartete Dateien unter $hi : $($left.FullName -join ', ')" }
-    Remove-Item -Recurse -Force $hi
+if ($collisions.Count -gt 0) {
+    throw ("Migration NICHT gestartet. Zuerst von Hand klären:`n  " + ($collisions -join "`n  "))
 }
 
-# 3) Leeren alten Modulordner entfernen
-if ((Test-Path $old) -and -not @(Get-ChildItem $old -Force -Recurse -File).Count) {
-    Remove-Item -Recurse -Force $old
+# ---------- Phase 2: Verschieben, in bestehende Skelettordner hineinmischen ----------
+function Merge-Into([string] $src, [string] $dst) {
+    if (-not (Test-Path $src)) { return }
+    if (-not (Test-Path $dst)) {
+        New-Item -ItemType Directory -Force (Split-Path $dst -Parent) | Out-Null
+        Move-Item -LiteralPath $src -Destination $dst
+        Write-Host ("  {0} -> {1}" -f (Rel $src), (Rel $dst)); return
+    }
+    foreach ($child in Get-ChildItem $src -Force) {
+        $target = Join-Path $dst $child.Name
+        if ($child.PSIsContainer) { Merge-Into $child.FullName $target }
+        elseif ($child.Name -eq '.gitkeep' -and (Test-Path $target)) { Remove-Item -LiteralPath $child.FullName }
+        else { Move-Item -LiteralPath $child.FullName -Destination $target }   # Preflight garantiert: kein echtes Ziel
+    }
+    Remove-Item -LiteralPath $src -Force
+    Write-Host ("  {0} => {1} (gemischt)" -f (Rel $src), (Rel $dst))
 }
+foreach ($p in $phaseA) { Merge-Into $p.Src $p.Dst }
+foreach ($p in $phaseB) { Merge-Into $p.Src $p.Dst }
+if ((Test-Path $hiAfter) -and -not (Has-RealFiles $hiAfter)) { Remove-Item -Recurse -Force $hiAfter }
+if ((Test-Path $old) -and -not (Has-RealFiles $old)) { Remove-Item -Recurse -Force $old }
+elseif (Test-Path $old) { Write-Warning "Im alten Modulordner liegen noch Dateien: $(Rel $old) — von Hand sichten." }
 
 if (-not (Test-Path (Join-Path $in 'README.md'))) {
     Write-Warning "Root-Marker $in\README.md fehlt: ist der Checkout auf dem Umbau-Stand?"
@@ -455,7 +498,7 @@ Write-Host 'migrate-input-layout: fertig'
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-MigrateInputLayout.ps1
 ```
-Erwartet: 12× `ok`, `alle Prüfungen bestanden`, Exit 0.
+Erwartet: 19× `ok` (Fall 1: 12, Fall 2: 1, Fall 3: 3, Fall 4: 3), `alle Prüfungen bestanden`, Exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -618,7 +661,7 @@ Erwartet: `exit=0`, ein Ordner `DRT_BASELINE_13052025_rootprobe…` mit fünf `*
 - [ ] **Step 8: Commit (Verschiebung und Anpassung getrennt)**
 
 ```powershell
-git add -A hagrid pom.xml
+git add -A hagrid pom.xml .gitignore
 git commit -m "chore(restructure): rename the pipeline module to hagrid/ and split input/ into common, hannover, lausitz"
 git log --oneline -1 --stat | Select-String 'rename' | Measure-Object -Line
 ```
@@ -954,7 +997,7 @@ In `hagrid/src/main/java/hagrid/core/HagridConfig.java` vorübergehend eine Zeil
 ```powershell
 mvn -q test -pl hagrid -am -Dsurefire.failIfNoSpecifiedTests=false -Dtest=ArchitectureRulesTest
 ```
-Erwartet: `coreReachesStudiesOnlyViaSwitchboard` **rot** mit `HagridConfig.java` in der Liste. Danach die Zeile entfernen, Test wieder grün.
+Erwartet: `coreReachesStudiesOnlyViaSwitchboard` **rot** mit `HagridConfig.java` in der Liste. Danach die Zeile entfernen, Test wieder grün. (Die Referenz kompiliert: `DrtInputsFingerprint` ist `public final class`, `FILE_SUFFIX` ist `public static final`, und `HagridPaths` nutzt genau diese Referenz heute schon. Sollte `test-compile` wider Erwarten scheitern, stattdessen `private static final String MUTATION_PROBE = "hagrid.lausitz.drt.DrtInputsFingerprint";` verwenden — der Test scannt auch Strings.)
 
 - [ ] **Step 4: Ergänzender grep über Ressourcen und Tests (Spec §4.1, letzter Satz)**
 
@@ -990,9 +1033,15 @@ In `KpiDashboardTriggerTest.java` ergänzen:
 ```java
     @Test
     @DisplayName("scriptFor resolves build_kpis.py next to the module, under analysis/lausitz/kpi")
-    void scriptForResolvesRepoLevelAnalysis() {
-        Path script = KpiDashboardTrigger.scriptFor(Path.of("C:", "repo", "hagrid"));
-        assertThat(script.normalize()).isEqualTo(Path.of("C:", "repo", "analysis", "lausitz", "kpi", "build_kpis.py"));
+    void scriptForResolvesRepoLevelAnalysis(@org.junit.jupiter.api.io.TempDir Path repo) {
+        // Kein "C:"-Literal: Path.of("C:", "x") ist unter Windows laufwerksrelativ und würde von
+        // toAbsolutePath() gegen das CWD aufgelöst. TempDir liefert einen echten absoluten Pfad.
+        Path module = repo.resolve("hagrid");
+        Path expected = repo.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        assertThat(KpiDashboardTrigger.scriptFor(module)).isEqualTo(expected);
+        // und relativ, wie der Default-Konstruktor von HagridPaths ihn liefert ("hagrid" vom Repo-Root aus):
+        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid")))
+                .isEqualTo(Path.of("").toAbsolutePath().normalize().resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py"));
     }
 ```
 ```powershell
@@ -1267,8 +1316,14 @@ foreach ($f in Get-ChildItem "$repo\runs" -Recurse -File -Include *.bat,*.ps1) {
 # tools/setup_hagrid_io.bat: Modulname + Zielordner
 $p = "$repo\tools\setup_hagrid_io.bat"; $s = [IO.File]::ReadAllText($p)
 $s = $s -replace 'set PIPELINE=parcel-demand-2-matsim-pipeline', 'set PIPELINE=hagrid'
+# Reihenfolge: erst die Sonderfälle, dann die sechs Hannover-Ordner, dann nur noch die Wurzel selbst.
+# (Das Skript erwähnt heute weder emissions noch lausitz; die Regeln stehen trotzdem hier, damit ein
+# späterer Zusatz nicht still nach input\emissions statt input\common\emissions läuft.)
+$s = $s -replace '\\hagrid-input\\emissions', '\input\common\emissions'
+$s = $s -replace '\\hagrid-input\\lausitz', '\input\lausitz'
 $s = $s -replace '\\hagrid-input\\(config|demand|geodata|hubs|network|vehicles)', '\input\hannover\$1'
-$s = $s -replace '\\hagrid-input\\', '\input\'
+$s = $s -replace '\\hagrid-input(?=[\\"\s]|$)', '\input'
+if ($s -match 'hagrid-input') { throw "setup_hagrid_io.bat: unbehandelte hagrid-input-Stelle" }
 [IO.File]::WriteAllText($p, $s, [Text.UTF8Encoding]::new($false))
 # vmargs-Dateien im Modul tragen den Modulnamen (z. B. Log-Pfade); bleiben liegen, nur der String ändert sich
 foreach ($v in Get-ChildItem "$repo\hagrid\*vmargs*.txt") {
@@ -1279,9 +1334,9 @@ foreach ($v in Get-ChildItem "$repo\hagrid\*vmargs*.txt") {
 ```
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\restructure-scripts.ps1
-git grep -n -E 'parcel-demand-2-matsim-pipeline|hagrid-input|hagrid\.integrated\.|hagrid\.HAGRID[A-Za-z]*(?!\.)' -- 'runs/**' 'tools/setup_hagrid_io.bat'
+git grep -n -P 'parcel-demand-2-matsim-pipeline|hagrid-input|hagrid\.integrated\.|hagrid\.HAGRID[A-Za-z]*(?!\.)' -- 'runs/**' 'tools/setup_hagrid_io.bat'
 ```
-Erwartet: leer. Stichprobe von Hand: `runs\lausitz\campaigns\run_depot1d_chain.bat` beginnt mit `cd /d "%~dp0..\..\..\hagrid"`, `runs\hannover\run_analysis.bat` mit `cd /d "%~dp0..\.."`, `runs\lausitz\run_lmd_band.ps1` hat `Join-Path $root 'hagrid\input\lausitz\demand'`.
+Erwartet: leer. (`-P`, nicht `-E`: der negative Lookahead ist PCRE; `git grep -E` bricht damit ab: „Invalid preceding regular expression“. Alle anderen `git grep -E`-Aufrufe in diesem Plan kommen ohne Lookahead aus.) Stichprobe von Hand: `runs\lausitz\campaigns\run_depot1d_chain.bat` beginnt mit `cd /d "%~dp0..\..\..\hagrid"`, `runs\hannover\run_analysis.bat` mit `cd /d "%~dp0..\.."`, `runs\lausitz\run_lmd_band.ps1` hat `Join-Path $root 'hagrid\input\lausitz\demand'`.
 
 - [ ] **Step 5: `tools/resync-freight.ps1` arbeitsfähig aus `tools/`**
 
@@ -1480,7 +1535,18 @@ git log --oneline -12
 git stash pop          # die in Task 0 geparkten fremden Docs-Änderungen zurück in den Arbeitsbaum, unversioniert
 git status --short
 ```
-Erwartet nach dem Pop: `BACKLOG.md`, `METHODS-LOG.md`, `PAPER-RUNS.md` modifiziert, keine Konfliktmarker. Bei Konflikt (die andere Session und Task 8 haben denselben Abschnitt berührt): beide Seiten behalten, Marker entfernen, **nicht** committen; das gehört der anderen Session.
+Erwartet nach dem Pop: `BACKLOG.md`, `METHODS-LOG.md`, `PAPER-RUNS.md` modifiziert, keine Konfliktmarker, `git stash list` leer.
+
+Bei Konflikt (die andere Session und Task 8 haben denselben Abschnitt berührt) bleiben die Dateien als *unmerged* im Index und der Stash-Eintrag bleibt stehen. Dann:
+```powershell
+# 1) Marker in den betroffenen Dateien auflösen: beide Seiten behalten (fremde Änderungen sind Ergänzungen)
+# 2) Auflösung dem Index melden, dann sofort wieder aus dem Index nehmen — die fremden Hunks sollen
+#    NUR im Arbeitsbaum liegen, nicht committet werden
+git add docs/BACKLOG.md docs/METHODS-LOG.md docs/PAPER-RUNS.md
+git restore --staged docs/BACKLOG.md docs/METHODS-LOG.md docs/PAPER-RUNS.md
+git stash drop
+git status --short          # erwartet: die drei Dateien als " M", nichts staged, kein "UU"
+```
 
 Falls `hendrik` inzwischen weitergewandert ist (Parallel-Session): `git checkout restructure; git rebase hendrik`, Suite erneut (`mvn -q install`), dann Fast-Forward. **Kein Push** ohne Zuruf.
 
