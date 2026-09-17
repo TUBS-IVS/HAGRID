@@ -42,7 +42,7 @@ rem DER BESTEHENDE LAUF IST MITGLIED DES FAECHERS. d1d_f130_d30_th02 hat matsim_
 rem (aus seiner run_metadata.json). Deshalb nur zwei neue Seeds, nicht drei - das spart
 rem 14 h und ist derselbe Faecher.
 rem
-rem GLEICHER JAR, ZWINGEND. Diese Laeufe benutzen target\parcel-demand-...-SNAPSHOT.jar vom
+rem GLEICHER JAR, ZWINGEND. Diese Laeufe benutzen target\hagrid-1.0-SNAPSHOT.jar vom
 rem 06.09. 13:55 - exakt den, der th02 erzeugt hat. Geprueft: keine Datei unter src/main/java
 rem ist neuer als der JAR, und der JAR traegt CHAIN_BOOTSTRAP_FACTOR=1.15 sowie
 rem DEFAULT_BUDGET_URGENCY_LEAD_S=3600.0. Wird vorher neu gebaut, ist es kein Seed-Faecher

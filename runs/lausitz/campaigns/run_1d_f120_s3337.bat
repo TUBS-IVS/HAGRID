@@ -28,7 +28,7 @@ rem liegt danach n=1 vor. Sein Partner bei f130 ist d1d_f130_d30_s3337 (derselbe
 rem ist die Differenz f130->f120 gepaart lesbar. Gegen die f130-Werte der anderen beiden
 rem Seeds ist er NICHT gepaart.
 rem
-rem GLEICHER JAR, ZWINGEND. Nutzt target\parcel-demand-...-SNAPSHOT.jar vom 06.09. 13:55 -
+rem GLEICHER JAR, ZWINGEND. Nutzt target\hagrid-1.0-SNAPSHOT.jar vom 06.09. 13:55 -
 rem derselbe, der th02, s2337 und s3337 erzeugt hat. Wird vorher neu gebaut, mischt sich ein
 rem Codeunterschied in die Flottendifferenz. NICHT "mvn package" laufen lassen.
 rem

@@ -17,7 +17,7 @@ ping -n 301 127.0.0.1 >nul
 goto WAIT
 :GO
 echo [%DATE% %TIME%] predecessor complete after %TRY% polls, starting conv chain >> "%WLOG%"
-call run_conv1d_chain.bat
+call "%~dp0run_conv1d_chain.bat"
 echo [%DATE% %TIME%] CONV1D WRAP DONE >> "%WLOG%"
 endlocal
 exit /b 0
