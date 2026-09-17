@@ -14,10 +14,10 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Invokes the Python KPI-dashboard builder ({@code analysis/kpi/build_kpis.py}) for a finished
- * run. Blocking by design (spec 3.4: the run is not "done" until the dashboard exists or the
- * build timed out) and failure-tolerant by design: a dashboard problem must never kill or fail
- * a multi-hour MATSim run.
+ * Invokes the Python KPI-dashboard builder ({@code <repo>/analysis/lausitz/kpi/build_kpis.py})
+ * for a finished run. Blocking by design (spec 3.4: the run is not "done" until the dashboard
+ * exists or the build timed out) and failure-tolerant by design: a dashboard problem must never
+ * kill or fail a multi-hour MATSim run.
  */
 public final class KpiDashboardTrigger {
 
@@ -29,6 +29,12 @@ public final class KpiDashboardTrigger {
 
     static List<String> buildCommand(Path script, Path runDir) {
         return List.of("python", "-u", script.toString(), "--run-dir", runDir.toString());
+    }
+
+    /** The KPI builder lives at repo level since 2026-09-17: {@code <repo>/analysis/lausitz/kpi/build_kpis.py}. */
+    static Path scriptFor(Path pipelineRoot) {
+        Path repoRoot = pipelineRoot.toAbsolutePath().normalize().getParent();
+        return repoRoot.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
     }
 
     public static boolean runProcess(List<String> command, Path workDir, long timeoutMinutes) {
@@ -74,7 +80,7 @@ public final class KpiDashboardTrigger {
                 return;
             }
             Path pipelineRoot = new HagridPaths().getPipelineRoot().toAbsolutePath().normalize();
-            Path script = pipelineRoot.resolve("analysis").resolve("kpi").resolve("build_kpis.py");
+            Path script = scriptFor(pipelineRoot);
             Path runDir = cfg.getOutputDirectory().toAbsolutePath().normalize();
             List<String> cmd = buildCommand(script, runDir);
             LOG.info("kpiDashboard=true -> building KPI dashboard: {}", String.join(" ", cmd));
@@ -95,7 +101,7 @@ public final class KpiDashboardTrigger {
                 dir = "<unknown>";
             }
             LOG.warn("KPI dashboard trigger failed - run manually: python -u "
-                    + "<pipeline>/analysis/kpi/build_kpis.py --run-dir {} ({})",
+                    + "<repo>/analysis/lausitz/kpi/build_kpis.py --run-dir {} ({})",
                     dir, e.toString());
         }
     }

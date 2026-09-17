@@ -17,7 +17,7 @@ import hagrid.lausitz.modular.Modular;
 
 /**
  * Writes a machine-readable {@code run_metadata.json} into the MATSim output
- * directory so downstream analysis (analysis/kpi) can bind
+ * directory so downstream analysis (analysis/lausitz/kpi) can bind
  * run_id / study_area / scenario / operation_mode without parsing directory names.
  *
  * <p><b>Scope rule for this file: everything that defines the run but is NOT in the runId.</b>
@@ -28,7 +28,7 @@ import hagrid.lausitz.modular.Modular;
  * recoverable only by grepping a console log, which is how a comparison in this campaign came to
  * rest on a {@code .bat} that set {@code fleetSize} twice. A run directory must describe itself.
  *
- * <p><b>Field names and types are a published contract</b> read by {@code analysis/kpi/run_meta.py}
+ * <p><b>Field names and types are a published contract</b> read by {@code analysis/lausitz/kpi/run_meta.py}
  * (and through it {@code build_kpis.py}). That reader takes optional fields with {@code .get()},
  * so ADDING keys is safe and old metadata files keep loading; renaming or retyping one is not.
  */

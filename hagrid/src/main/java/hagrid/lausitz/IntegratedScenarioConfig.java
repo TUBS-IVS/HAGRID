@@ -25,7 +25,7 @@ import java.util.OptionalDouble;
  *   <li>{@code retoolingTimeSeconds}, {@code freightLookAheadSeconds}, {@code idleThreshold}
  *       → {@code Modular.RETOOLING_S} / {@code FREIGHT_LOOKAHEAD_S} / {@code DEFAULT_IDLE_THRESHOLD}</li>
  *   <li>{@code idleThreshold}, {@code fleetSize} → {@code HAGRIDSimulationConfig} (+ CLI)</li>
- *   <li>{@code vehicleTimeCostPerHour} → {@code analysis/kpi/economics.py}</li>
+ *   <li>{@code vehicleTimeCostPerHour} → {@code analysis/lausitz/kpi/economics.py}</li>
  *   <li>{@code depotCount} → not a count at all; {@code DepotNetwork} takes the depot list itself</li>
  *   <li>{@code b2cLockerShare} → structurally 0: {@code ParcelAgentGenerator} passes an empty locker
  *       list, lockers are Phase 2 (METHODS-LOG section 2.10)</li>
