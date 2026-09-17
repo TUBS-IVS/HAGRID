@@ -45,9 +45,32 @@ def load_factors(data_dir=None):
     return fac
 
 
+#: Speed-clamp diagnostics. ef() clamps v into the curve's [vmin, vmax]
+#: silently by design (the curve is undefined outside); this counter makes the
+#: clamping VISIBLE, so a vehicle with an implausible mean speed (e.g. a tiny
+#: DRIVE time against a long path) is reported instead of priced at vmax.
+#: Read and reset via clamp_report().
+CLAMPS = {"evaluations": 0, "below_vmin": 0, "above_vmax": 0}
+
+
+def clamp_report(reset=True):
+    """-> dict copy of CLAMPS; resets the counters unless reset=False."""
+    out = dict(CLAMPS)
+    if reset:
+        for k in CLAMPS:
+            CLAMPS[k] = 0
+    return out
+
+
 def ef(v_kmh, coef):
     """Tier-3 hot emission factor at mean travelling speed v [km/h]."""
-    v = min(max(float(v_kmh), coef["vmin"]), coef["vmax"])
+    v0 = float(v_kmh)
+    CLAMPS["evaluations"] += 1
+    if v0 < coef["vmin"]:
+        CLAMPS["below_vmin"] += 1
+    elif v0 > coef["vmax"]:
+        CLAMPS["above_vmax"] += 1
+    v = min(max(v0, coef["vmin"]), coef["vmax"])
     num = coef["alpha"] * v * v + coef["beta"] * v + coef["gamma"] + coef["delta"] / v
     den = coef["epsilon"] * v * v + coef["zita"] * v + coef["hta"]
     return (num / den) * (1.0 - coef["rf"])
@@ -186,6 +209,12 @@ def vehicle_emissions(km, v_kmh, powertrain, segment, fac):
     tyre, brake, road = non_exhaust_pm10(km, v_kmh, powertrain, segment, sup)
     out["PM10_TYRE"], out["PM10_BRAKE"], out["PM10_ROAD"] = tyre, brake, road
     out["PM10_NONEXHAUST"] = tyre + brake + road
+    # PM10 as a reader expects it: exhaust AND wear. Exhaust PM from a Euro 7
+    # DPF is ~0.2 % of the wear mass, so the number barely moves -- but a row
+    # called "pm10" that silently meant "wear only" was a label defect
+    # (review 2026-09-16, I3). EMEP's "PM Exhaust" is total exhaust particle
+    # mass, which for diesel exhaust is effectively all below 10 um.
+    out["PM10_TOTAL"] = out["PM_EXHAUST"] + out["PM10_NONEXHAUST"]
     return out
 
 
@@ -310,7 +339,11 @@ def cold_start_extra(n_starts, km, v_kmh, powertrain, segment, fac):
     sup = fac["sup"]
     out = {k: 0.0 for k in EXHAUST_KEYS}
     out.update({"ENERGY_MJ": 0.0, "CO2E_WTW": 0.0, "PM10_TYRE": 0.0,
-                "PM10_BRAKE": 0.0, "PM10_ROAD": 0.0, "PM10_NONEXHAUST": 0.0})
+                "PM10_BRAKE": 0.0, "PM10_ROAD": 0.0, "PM10_NONEXHAUST": 0.0,
+                "PM10_TOTAL": 0.0})
+    # Wear carries no cold surcharge, so the cold PM10_TOTAL is the cold
+    # exhaust PM alone -- which is a documented GAP (COLD_UNPARAMETERISED) and
+    # therefore stays 0 below. Kept explicit rather than implied.
     if n_starts <= 0 or km <= 0:
         return out
 
