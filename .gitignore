@@ -28,6 +28,7 @@ buildNumber.properties
 # Logs
 log/
 *.log
+*.log.[0-9]*
 
 # Exclude specific large files
 parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
@@ -41,8 +42,6 @@ parcel-demand-estimation-batch/**
 !parcel-demand-estimation-batch/**/
 !parcel-demand-estimation-batch/**/*.ipynb
 !parcel-demand-estimation-batch/**/.gitkeep
-
-parcel-analysis-batch
 
 parcel-analysis/input
 
@@ -126,12 +125,9 @@ parcel-demand-2-matsim-pipeline/analysis/**/*.html
 # Headless visual-check screenshots (regenerate with `node shot.cjs`)
 parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/board/shot_*.png
 
-# Root-level generated analysis artifacts
-/Analyse_*.png
-/HAGRID_Dashboard_*.html
-/kneedle_breakpoint_analysis.png
-/plots/
-/Pictures/
+# Legacy Hannover figures (moved from the repo root 2026-09-17; regenerated, not versioned)
+analysis/hannover/legacy-figures/*
+!analysis/hannover/legacy-figures/.gitkeep
 
 # Root-level run output (DRT_BASELINE etc.) — reproducible, not versioned
 /hagrid-output/
