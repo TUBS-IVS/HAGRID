@@ -1,5 +1,10 @@
 # HAGRID Pipeline — Complete Documentation
 
+> **Stand vor dem Umbau vom 2026-09-17.** Ordner- und Paketnamen in diesem Dokument beschreiben
+> das alte Layout (Modul `parcel-demand-2-matsim-pipeline`, Inputs `hagrid-input/`). Die aktuelle
+> Struktur steht in der README, Abschnitt „Repository Structure"; eine Überarbeitung dieses
+> Dokuments ist im BACKLOG vermerkt.
+
 > **HAGRID** — **H**annover **A**gent-based **G**oods and f**R**eight **I**ntegrated **D**emand  
 > A MATSim-based last-mile delivery simulation framework for the Hannover metropolitan region.
 
