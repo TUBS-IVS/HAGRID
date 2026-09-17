@@ -1,13 +1,13 @@
 # Lausitz Input Data — Staging Guide
 
 This document records the source paths and staging commands for the raw Lausitz/Hoyerswerda input
-files consumed by the `parcel-demand-2-matsim-pipeline` HAGRID scenarios. All staged files are
-**git-ignored** (covered by the `parcel-demand-2-matsim-pipeline/hagrid-input/**` rule in
+files consumed by the `hagrid` HAGRID scenarios. All staged files are
+**git-ignored** (covered by the `hagrid/input/**` rule in
 `.gitignore`) and must be reproduced locally by running the copy commands below.
 
 ## Staged Files
 
-| Destination (under `parcel-demand-2-matsim-pipeline/hagrid-input/lausitz/`) | Source |
+| Destination (under `hagrid/input/lausitz/`) | Source |
 |---|---|
 | `demand/hagrid_parcel_demand_2025-05-13_(Tuesday).shp` (+ `.dbf/.shx/.prj/.cpg`) | `~/Documents/GitHub/PANDA/output/lausitz/` (PANDA export) |
 | `hubs/lmd-depots.csv` | Authored: 7 provisional per-LSP depot coords (EPSG:25832, derived from PANDA demand point spread); replace with finalized peripheral Gewerbegebiet/Autobahn locations before any headline LMD run |
@@ -23,7 +23,7 @@ files consumed by the `parcel-demand-2-matsim-pipeline` HAGRID scenarios. All st
 ## Copy Commands (Git Bash)
 
 ```bash
-HI="parcel-demand-2-matsim-pipeline/hagrid-input/lausitz"
+HI="hagrid/input/lausitz"
 mkdir -p "$HI"/{network,population,drt,config,demand,hubs,vehicles}
 # PANDA parcel demand (LMD baseline)
 cp ~/Documents/GitHub/PANDA/output/lausitz/hagrid_parcel_demand_2025-05-13_\(Tuesday\).{shp,dbf,shx,prj,cpg} "$HI/demand/"
@@ -43,8 +43,8 @@ cp ~/Documents/GitHub/matsim-lausitz/input/v2024.2/lausitz-v2024.2-vehicle-types
 ## Notes
 
 - The `lausitzBaseConfig()` getter in `HagridPaths.java` resolves
-  `hagrid-input/lausitz/config/lausitz-v2024.2-100pct.config.xml` under the study-area-scoped
+  `hagrid/input/lausitz/config/lausitz-v2024.2-100pct.config.xml` under the study-area-scoped
   `inputBase`.
 - All staged files are large binaries and must never be committed to the repository.
-- The `.gitignore` rule `parcel-demand-2-matsim-pipeline/hagrid-input/**` covers all contents of
+- The `.gitignore` rule `hagrid/input/**` covers all contents of
   this directory (with exceptions only for subdirectory structure and `.gitkeep` files).

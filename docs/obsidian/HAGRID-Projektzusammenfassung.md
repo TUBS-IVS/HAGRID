@@ -29,7 +29,7 @@ Orthogonal dazu: ein **[[Autonomie-Schalter]]** (Fahrerkosten aus, Roboter-Dwell
 
 ## Architektur
 
-- [[HAGRID]] ist das **Frontend** (Parameter → Preprocessing → [[MATSim]]-Trigger → Dashboard); [[matsim-lausitz]] ist Maven-Dependency, native DRT-Konfiguration wird **komponiert, nicht reimplementiert** (Paket `hagrid.integrated`).
+- [[HAGRID]] ist das **Frontend** (Parameter → Preprocessing → [[MATSim]]-Trigger → Dashboard); [[matsim-lausitz]] ist Maven-Dependency, native DRT-Konfiguration wird **komponiert, nicht reimplementiert** (Paket `hagrid.lausitz`).
 - **100-%-Stichprobe ist nicht verhandelbar** — Subsampling verzerrt die [[jsprit]]-Tourgeometrie (Paketstopp-Dichte). Rechenlast wird über die Gebietsgröße gesteuert; Full-[[DVRP]] ist der große Laufzeithebel.
 - **Regionalbahn bleibt, Bus entfällt** in allen drei Szenarien → [[DRT]] als sauberer [[Zubringer-zum-Schienenverkehr]] und Bus-Ersatz; intermodales Routing via [[SwissRailRaptor]].
 - 7 reale, OSM-geocodierte **Depots** (gemeinsam für DRT-Spawn und LMD): [[Depot-Dispatching]] = Spawn an Depots, nachfragebasiertes MinCostFlow-[[Rebalancing]], kapazitätsbegrenzte Rückkehr.
@@ -49,7 +49,7 @@ Orthogonal dazu: ein **[[Autonomie-Schalter]]** (Fahrerkosten aus, Roboter-Dwell
 
 ## KPI- & Dashboard-Infrastruktur
 
-- Kanonische **Langformat-KPI-CSV** (`kpis_long.csv`, 9 Spalten, Schema eingefroren) aus dem Python-Paket `analysis/kpi/` — MATSims eigene Analyse-CSVs sind autoritativ (Event-Rekonstruktion läuft ~3 % zu niedrig). Neue Daten = neue Dateien (`kpis_provider`, `kpi_iterations`, `kpi_distributions`, `kpi_timeseries`).
+- Kanonische **Langformat-KPI-CSV** (`kpis_long.csv`, 9 Spalten, Schema eingefroren) aus dem Python-Paket `analysis/lausitz/kpi/` — MATSims eigene Analyse-CSVs sind autoritativ (Event-Rekonstruktion läuft ~3 % zu niedrig). Neue Daten = neue Dateien (`kpis_provider`, `kpi_iterations`, `kpi_distributions`, `kpi_timeseries`).
 - Schlanke [[Chart.js]]-Dashboards (per Run + Szenario-Vergleich mit Tabs), Performance-Budgets als Akzeptanzkriterium (Einzel-Run < 1 MB vs. 26 MB Legacy-Plotly).
 - **Run-Dashboard v2** (in Arbeit) holt den vollen Legacy-Analyseumfang zurück: Plan A (Daten-Extraktoren) ✅, Plan B (Java-Auto-Trigger nach Simulationsende), Plan C (Rendering: 22 DRT- + 20 LMD-Kacheln, Tabs, Tabellen), Plan D ([[Leaflet]]-Karten, vendored/offline, Usability-Gate statt Byte-Budget) — Pläne geschrieben, Ausführung steht aus.
 

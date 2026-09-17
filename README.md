@@ -1,4 +1,12 @@
-# Parcel Demand Scenario Generator for Hannover (2014–2050)
+# HAGRID — Parcel demand and integrated freight/DRT simulation with MATSim
+
+HAGRID bündelt zwei Studien auf einem gemeinsamen Kern:
+
+- **Hannover** — Paketnachfrage (2014–2050) auf Straßenabschnittsebene und Last-Mile-Delivery-Simulation mit jsprit + MATSim, inkl. Kapazitäts-Sweep (`analysis/hannover/sweep`).
+- **Lausitz (Hoyerswerda)** — integrierte Personen- und Paketbedienung mit DRT: Baseline, Cargo Hitching (1c, `drt_shareduse`) und Kapseltausch (1d, `drt_modular`), KPI-Dashboard v2 (`analysis/lausitz/kpi`). Studiendokumentation in `docs/` (`DATA-LAUSITZ.md`, `PAPER-RUNS.md`, `METHODS-LOG.md`).
+- **Kern** — Geo-, Nachfrage- und Routing-Werkzeuge, Root-Erkennung, Simulationsverdrahtung (`hagrid.core`).
+
+Die Trennung ist als Import-Regel festgeschrieben: `hagrid/src/test/java/hagrid/core/ArchitectureRulesTest.java`.
 
 This repository provides a scientific tool to project and allocate daily parcel demand across the Hannover region from **2014 to 2050**.  
 By integrating multiple data sources (national and local) and applying different modeling approaches, we derive **realistic carrier-level and B2B/B2C parcel shares** at **street-segment granularity (~50 m intervals)**.
@@ -52,36 +60,44 @@ In essence, this tool offers a flexible, data-driven foundation to study the fut
 ## 2. Repository Structure
 
 ```
-├── parcel-analysis/
-│   └── Jupyter notebooks and scripts for analyzing simulation outputs and performance indicators.
-
-├── parcel-demand-2-matsim-pipeline/
-│   ├── HAGRIDSimulationRunner.java
-│   ├── HAGRID2MATSimPipelineRunner.java
-│   └── Java-based MATSim integration for running parcel delivery simulations and converting external demand data.
-
-├── parcel-demand-estimation/
-│   ├── 00_EstimateGlobalGermanParcelMarketShares.ipynb
-│   ├── 01_EstimateGlobalGermanB2BShares.ipynb
-│   ├── 02_EstimateGlobalGermanParcelVolumes.ipynb
-│   ├── 03_EstimateWeeklyParcelDistribution.ipynb
-│   ├── 04_EstimateLocalB2BDistribution.ipynb
-│   ├── 05_EstimateLocalMarketShares.ipynb
-│   ├── 06_DistributeEstimationWeightsPerSegment.ipynb
-│   ├── ParcelDemandScenarioGenerator.ipynb
-│   └── output/
-│       └── parcel_demand_2050-04-09_(Samstag).csv
-
-├── requirements.txt  
-└── README.md
+HAGRID/
+├── README.md
+├── pom.xml                    Parent-POM; Module: external/freight + hagrid
+├── hagrid/                    ein Maven-Modul (Pakete hagrid.core / hannover / lausitz)
+│   ├── src/main/java/hagrid/{core,hannover,lausitz}/…
+│   ├── src/test/java/hagrid/{core,hannover,lausitz}/…
+│   ├── input/{common,hannover,lausitz}/   git-ignoriert, siehe hagrid/input/README.md
+│   ├── hagrid-output/
+│   └── hagrid-matsim-output/
+├── analysis/
+│   ├── common/run-monitoring/
+│   ├── hannover/{sweep,legacy-figures}/
+│   └── lausitz/{kpi,drt-headline,paper-figures,lmd}/
+├── notebooks/
+│   ├── demand-estimation/
+│   ├── demand-estimation-batch/
+│   └── hannover-analysis/
+├── runs/
+│   ├── hannover/           run_analysis.bat, run_hagrid_sim*.bat, run_step*.bat, run_chain_v2dev.bat
+│   └── lausitz/            track_sweep.ps1, alle übrigen .bat/.ps1; Einmalskripte unter campaigns/
+├── external/
+│   ├── matsim-libs/        Submodul (Fork), Pfad unverändert
+│   ├── freight/            POM-Shim
+│   └── libs/                matsim-lausitz-Jar
+├── tools/                  resync-freight.ps1, setup_hagrid_io.bat, migrate-input-layout.ps1, check-run-scripts.ps1
+├── requirements.txt
+└── docs/
 ```
 
-- The folder `parcel-demand-estimation/` contains all notebooks used to estimate and allocate parcel demand from national trends down to street segment level.
-- The folder `parcel-demand-2-matsim-pipeline/` is used to prepare the demand in MATSim-compatible formats, generate routing input, and run full simulation scenarios.
-- Documentation of the MATSim integration and postprocessing pipeline will be added step-by-step in the corresponding subfolders.
+- `hagrid/` ist das einzige Maven-Modul; Java-Quellen sind entlang der drei Wurzelpakete `hagrid.core`, `hagrid.hannover`, `hagrid.lausitz` sortiert, Inputs liegen unter `hagrid/input/` (git-ignoriert).
+- `analysis/` enthält die Python-Auswertungen, getrennt nach `common` (studienübergreifend, z. B. Run-Monitoring), `hannover` und `lausitz`.
+- `runs/` enthält die Windows-Startskripte, getrennt nach Studie; jedes Skript wechselt selbst in den richtigen Ordner.
+- `notebooks/` enthält die Jupyter-Notebooks zur Nachfrageschätzung (Hannover).
+- `external/` bündelt Fremdcode: den `matsim-libs`-Fork als Submodul, den `freight`-POM-Shim und die `libs`-Jars.
+- `tools/` enthält Hilfsskripte für Setup, Migration und statische Prüfungen, die kein Studien-spezifischer Run sind.
+- `docs/` enthält die lebende Projektdokumentation (Backlog, Methods-Log, Studiendaten, Obsidian-Export) sowie die Superpowers-Specs/Pläne.
 
-
-- **Notebooks 00–06**: Each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
+- **Notebooks 00–06** (unter `notebooks/demand-estimation/`): Each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: The final assembly that produces daily, segment-level demand.  
 - **input/**: Stores input data (e.g., shapefiles, CSVs, geospatial layers).  
 - **output/**: Default directory for exported results (CSV, SHP, GeoPackage, or GeoJSON).
@@ -129,6 +145,14 @@ fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-subm
 
 **Bumping the MATSim/freight version:** see `tools/resync-freight.ps1` (header comment).
 
+**Inputs:** `hagrid/input/` ist git-ignoriert; Aufbau und Herkunft in `hagrid/input/README.md`.
+Checkouts von vor dem 2026-09-17 einmal `tools/migrate-input-layout.ps1` ausführen.
+
+**Runs:** alle Startskripte liegen unter `runs/hannover/` und `runs/lausitz/`; sie wechseln selbst
+in den richtigen Ordner. `tools/check-run-scripts.ps1` prüft sie statisch gegen das gebaute Jar.
+`runs/hannover/run_hagrid_sim.bat` ist die Campaign-Referenzkopie; zur Laufzeit erzeugt
+`SimulationBatGenerator` die tatsächlich ausgeführte Kopie unter `hagrid/`.
+
 **IDE stale-build gotcha:** if Eclipse or VS Code's Java tooling has compiled a broken
 workspace (e.g. mid-refactor), stale `.class` stubs left behind in `target/classes` can
 shadow the fresh build output and produce confusing failures. `mvn clean` clears them out.
@@ -146,7 +170,7 @@ See the `## Setup` section above for the full bootstrap (submodule sparse-checko
 Navigate into the project folder:
 
 ```
-cd ParcelDemandScenarioGenerator
+cd HAGRID/notebooks/demand-estimation
 ```
 
 Install the required Python dependencies:
