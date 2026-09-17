@@ -226,3 +226,16 @@ Hashes und Kommandos kommen in den METHODS-LOG-Eintrag (§6, Schritt 7).
 4. Konzeptname `drt_shareduse` → `drt_cargohitching` nur mit Alias in beide Richtungen (Python-Mapper, Laufordner, KPI-Dateinamen, METHODS-LOG-Zitate).
 5. Offener Race-Fix `NetworkBasedTransportCosts:514` (`HashMap` → `ConcurrentHashMap`) im Fork: Verhaltensänderung, eigener Punkt.
 6. Input-Bootstrap (Download-on-first-run mit Checksummen) aus dem Plan von 2026-07-13, Schritt 3.
+
+## 11. Planungsbefunde (2026-09-17, beim Schreiben des Plans gemessen)
+
+Diese sechs Punkte korrigieren §4 und §5 und gelten vor dem Text dort:
+
+1. `HAGRID`, `HagridModule` → `hagrid.hannover` (sie importieren `demand.*` bzw. `pipeline.*`), nicht `core`.
+2. Kein `hagrid.core.pipeline`: `CacheConfig`, `PipelineTiming`, `PipelineLogger`, `RoutingStatistics` haben außerhalb von `pipeline`/`demand` keine Verwender. Das ganze Paket `hagrid.pipeline` wird `hagrid.hannover.pipeline`.
+3. Allowlist §4.1, gemessen: `{HagridPaths, HAGRIDScenarioBuilder, HAGRIDSimulationConfig, SimulationRunnerUtils}`. `HagridConfig` und `HAGRIDSimulationRunner` referenzieren keine Studienpakete; `HAGRIDScenarioBuilder` hat eine voll qualifizierte Referenz auf `integrated.drt.DrtConfigComposer`. Der Test prüft zusätzlich, dass jede gelistete Klasse die Referenz wirklich hat (keine aufgeblähte Liste).
+4. `analysis/paper-figures/` ist ungetrackt (`.gitignore`); der Umzug ist lokal, die dortigen Pfadkonstanten werden lokal korrigiert.
+5. Die KPI-Python-Analyse rechnet relativ zum Laufordner (`run_dir.parent.parent / "hagrid-output"`), und die Outputs bleiben im Modul: nur `maps.py` (zwei `hagrid-input`-Zeilen) und `KpiDashboardTrigger` ändern sich; die `sys.path`-Einträge nach `drt-headline` bleiben gültig.
+6. Artefakt-ID wird `hagrid` ⇒ Jar `hagrid-1.0-SNAPSHOT.jar`, `-pl hagrid`; `SimulationBatGenerator` erzeugt den Jar-Namen und zieht nach.
+
+Nebenbefunde: zwei versehentlich getrackte GC-Logs (`logs/jvm_gc.log.0/.1`, `*.log` deckt `.log.0` nicht) und eine getrackte `.bak_before_abort`-Kopie eines Skripts werden in Schritt 1 entfernt; der Provenance-Patch des Hannover-Sweeps enthält den alten Modulnamen und steht auf der Allowlist von Gate 6.
