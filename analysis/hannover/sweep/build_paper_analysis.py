@@ -263,7 +263,7 @@ def write_readme(caps, counts, rows):
     path.write_text(f"""# Hannover capacity sweep -- v2 / v3 / v4 analysis
 
 Generated {date.today().isoformat()} by `build_paper_analysis.py`
-(HAGRID repo, `parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/`).
+(HAGRID repo, `analysis/hannover/sweep/`).
 Source: the per-run Java LMD dashboards, via `extract_sweep.py` -> `sweep_data.json`.
 
 ## What the three series are

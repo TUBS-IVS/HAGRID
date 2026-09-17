@@ -31,19 +31,19 @@ log/
 *.log.[0-9]*
 
 # Exclude specific large files
-parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
-parcel-demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
-parcel-demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
-parcel-demand-estimation/input/
-parcel-demand-estimation/output/
+notebooks/demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
+notebooks/demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
+notebooks/demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
+notebooks/demand-estimation/input/
+notebooks/demand-estimation/output/
 
-# parcel-demand-estimation-batch: only track notebooks (.ipynb) and folder structure of input/output (via .gitkeep)
-parcel-demand-estimation-batch/**
-!parcel-demand-estimation-batch/**/
-!parcel-demand-estimation-batch/**/*.ipynb
-!parcel-demand-estimation-batch/**/.gitkeep
+# notebooks/demand-estimation-batch: only track notebooks (.ipynb) and folder structure of input/output (via .gitkeep)
+notebooks/demand-estimation-batch/**
+!notebooks/demand-estimation-batch/**/
+!notebooks/demand-estimation-batch/**/*.ipynb
+!notebooks/demand-estimation-batch/**/.gitkeep
 
-parcel-analysis/input
+notebooks/hannover-analysis/input
 
 hagrid/sim-input
 hagrid/routerCache
@@ -69,14 +69,14 @@ hagrid/hagrid-matsim-output/**
 !hagrid/hagrid-matsim-output/**/
 !hagrid/hagrid-matsim-output/**/.gitkeep
 
-parcel-analysis/cache
-parcel-analysis/emission_maps
-parcel-analysis/emission_maps_cum
+notebooks/hannover-analysis/cache
+notebooks/hannover-analysis/emission_maps
+notebooks/hannover-analysis/emission_maps_cum
 
 output/*
-parcel-analysis/*
-!parcel-analysis/*.py
-!parcel-analysis/*.ipynb
+notebooks/hannover-analysis/*
+!notebooks/hannover-analysis/*.py
+!notebooks/hannover-analysis/*.ipynb
 !.gitignore
 
 # Exclude vs code settings
@@ -115,15 +115,15 @@ __pycache__/
 *.pyc
 
 # Generated analysis pages (regenerated from the run output; not versioned)
-hagrid/analysis/**/*.html
+analysis/**/*.html
 # ...but the sweep board's Parcel entry point is SOURCE, not a generated page.
 # Without this negation a clone cannot rebuild the board at all, while the rule
 # above still keeps every 26-38 MB run dashboard out. bundle.html stays ignored
 # via board/.gitignore - it is the build artifact, rebuilt via the README recipe.
-!hagrid/analysis/hannover-sweep/board/index.html
+!analysis/hannover/sweep/board/index.html
 
 # Headless visual-check screenshots (regenerate with `node shot.cjs`)
-hagrid/analysis/hannover-sweep/board/shot_*.png
+analysis/hannover/sweep/board/shot_*.png
 
 # Legacy Hannover figures (moved from the repo root 2026-09-17; regenerated, not versioned)
 analysis/hannover/legacy-figures/*
@@ -134,4 +134,4 @@ analysis/hannover/legacy-figures/*
 
 # local-only working files (untracked on purpose)
 SESSION_LOG.md
-hagrid/analysis/paper-figures/
+analysis/lausitz/paper-figures/

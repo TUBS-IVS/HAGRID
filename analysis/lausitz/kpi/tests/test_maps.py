@@ -136,7 +136,7 @@ def test_per_vehicle_stops_numbered_in_departure_order(tmp_path):
 
 
 def test_missing_optional_layers_are_absent_without_raising(tmp_path):
-    # tmp_path has no hagrid-input/hagrid-output siblings -> shp/depots are
+    # tmp_path has no input/hagrid-output siblings -> shp/depots are
     # absent. Must not raise, and the keys must be omitted.
     run = _make_run(tmp_path)
     veh_path, link_geo = _aligned_inputs()
@@ -148,12 +148,12 @@ def test_missing_optional_layers_are_absent_without_raising(tmp_path):
 
 
 def test_depots_happy_path_parses_real_csv_and_transforms_coords(tmp_path):
-    # run_dir sits two levels below the hagrid-input tree (matches the real
+    # run_dir sits two levels below the input tree (matches the real
     # <lausitz-run>/hagrid-output/<prefix> layout), so build the fixture
     # relative to run_dir.parent.parent, not tmp_path directly.
     run = tmp_path / "runs" / "hagrid-output" / "MINI_run"
     run.mkdir(parents=True)
-    hubs_dir = run.parent.parent / "hagrid-input" / "lausitz" / "hubs"
+    hubs_dir = run.parent.parent / "input" / "lausitz" / "hubs"
     hubs_dir.mkdir(parents=True)
     (hubs_dir / "lmd-depots.csv").write_text(
         "provider;x;y\ndhl;864000;5705000\nhermes;865000;5705050\n", encoding="utf-8"
@@ -397,7 +397,7 @@ def test_lmd_heat_counts_link_enters_with_weight_one(tmp_path):
 def test_lmd_depots_shared_with_drt_depots(tmp_path):
     run = tmp_path / "runs" / "hagrid-output" / "MINI_run"
     run.mkdir(parents=True)
-    hubs_dir = run.parent.parent / "hagrid-input" / "lausitz" / "hubs"
+    hubs_dir = run.parent.parent / "input" / "lausitz" / "hubs"
     hubs_dir.mkdir(parents=True)
     (hubs_dir / "lmd-depots.csv").write_text(
         "provider;x;y\ndhl;864000;5705000\n", encoding="utf-8"

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Cross-scenario comparison dashboard from N runs' canonical KPI CSVs.
 
-Usage (from analysis/kpi/):
+Usage (from analysis/lausitz/kpi/):
     python -u build_comparison.py --runs <runDirA> <runDirB> [--out <file>] [--build-missing] [--no-events]
 """
 import argparse

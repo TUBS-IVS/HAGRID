@@ -22,7 +22,7 @@ To reproduce the v4 series:
 
 ```bash
 git checkout 019fd5f
-git apply parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/provenance/v4-sim-working-tree.patch
+git apply analysis/hannover/sweep/provenance/v4-sim-working-tree.patch
 ```
 
 Demand input at the time of the v4 runs: sim-PC state `BC86ECC5…` (see METHODS-LOG §2.30 — this is

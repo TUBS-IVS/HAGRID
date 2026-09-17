@@ -48,4 +48,17 @@ class KpiDashboardTriggerTest {
         assertThat(KpiDashboardTrigger.runProcess(
                 List.of(javaBin(), "-cp", ".", "NoSuchMainClass_xyz"), null, 5)).isFalse();
     }
+
+    @Test
+    @DisplayName("scriptFor resolves build_kpis.py next to the module, under analysis/lausitz/kpi")
+    void scriptForResolvesRepoLevelAnalysis(@org.junit.jupiter.api.io.TempDir Path repo) {
+        // Kein "C:"-Literal: Path.of("C:", "x") ist unter Windows laufwerksrelativ und würde von
+        // toAbsolutePath() gegen das CWD aufgelöst. TempDir liefert einen echten absoluten Pfad.
+        Path module = repo.resolve("hagrid");
+        Path expected = repo.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        assertThat(KpiDashboardTrigger.scriptFor(module)).isEqualTo(expected);
+        // und relativ, wie der Default-Konstruktor von HagridPaths ihn liefert ("hagrid" vom Repo-Root aus):
+        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid")))
+                .isEqualTo(Path.of("").toAbsolutePath().normalize().resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py"));
+    }
 }

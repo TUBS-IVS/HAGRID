@@ -4,7 +4,7 @@ Zitierfaehige Quellendoku fuer die committeten Faktor-CSVs in diesem
 Verzeichnis. Plan:
 `docs/superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md`.
 Die Rohdateien (xlsx/pdf) liegen unter
-`parcel-demand-2-matsim-pipeline/hagrid-input/emissions/` (gitignored,
+`hagrid/input/common/emissions/` (gitignored,
 Provenance-Tabelle dort in `SOURCES.md`).
 
 ## emep_hot_factors.csv
@@ -106,7 +106,7 @@ erhoehen.
 
 ## Non-Exhaust (Kap. 1.A.3.b.vi-vii, verifiziert 2026-07-31)
 Quelle: `1.A.3.b.vi-vii Road tyre and brake wear 2025.pdf` (38 S., von der
-EEA-Kapitelseite geladen 2026-07-31, s. hagrid-input/emissions/SOURCES.md).
+EEA-Kapitelseite geladen 2026-07-31, s. hagrid/input/common/emissions/SOURCES.md).
 
 TSP-Basen [g/km] je N1-Segment - die Quelle loest LCV nach Segment auf:
 
