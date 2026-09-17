@@ -29,7 +29,10 @@ class ArchitectureRulesTest {
     private static final Path MAIN = Path.of("src", "main", "java", "hagrid");
     private static final Set<String> CORE_SWITCHBOARD = Set.of(
             "HagridPaths", "HAGRIDScenarioBuilder", "HAGRIDSimulationConfig", "SimulationRunnerUtils");
-    private static final Pattern COMMENTS = Pattern.compile("//.*?$|/\\*.*?\\*/", Pattern.MULTILINE | Pattern.DOTALL);
+    // Heuristic, not a parser: string literals are not understood, so a "//" inside a
+    // non-URL string would still be stripped as a comment. Acceptable here because this
+    // scan is a guard — Step 4 additionally runs git grep over resources.
+    private static final Pattern COMMENTS = Pattern.compile("(?<!:)//.*?$|/\\*.*?\\*/", Pattern.MULTILINE | Pattern.DOTALL);
     private static final Map<String, Pattern> STUDY_TOKENS = Map.of(
             "hannover", Pattern.compile("hagrid\\.hannover\\."),
             "lausitz", Pattern.compile("hagrid\\.lausitz\\."));
