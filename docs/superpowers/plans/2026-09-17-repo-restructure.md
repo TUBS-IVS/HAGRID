@@ -1462,19 +1462,7 @@ Einschränkung: Läufe von vor dem Umbau tragen Pfade des alten Layouts in `run_
 ```
 Platzhalter `<N>`/`<…>` mit den gemessenen Werten aus Task 7 füllen, bevor committet wird.
 
-- [ ] **Step 4: Spec §11 anhängen**
-
-An `docs/superpowers/specs/2026-09-17-repo-restructure-design.md` anfügen:
-```markdown
-## 11. Planungsbefunde (2026-09-17, beim Schreiben des Plans gemessen)
-
-1. `HAGRID`, `HagridModule` → `hagrid.hannover` (importieren `demand.*`/`pipeline.*`), nicht `core`.
-2. Kein `hagrid.core.pipeline`: die Mechanik-Klassen haben nur Hannover-Verwender; ganz `hagrid.pipeline` → `hagrid.hannover.pipeline`.
-3. Allowlist §4.1 gemessen: `{HagridPaths, HAGRIDScenarioBuilder, HAGRIDSimulationConfig, SimulationRunnerUtils}`. `HagridConfig` und `HAGRIDSimulationRunner` referenzieren keine Studienpakete; `HAGRIDScenarioBuilder` hat eine voll qualifizierte Referenz auf `DrtConfigComposer`.
-4. `analysis/paper-figures/` ist ungetrackt (`.gitignore`), Umzug lokal.
-5. KPI-Python rechnet relativ zum Laufordner; nur `maps.py` (2 Zeilen) und `KpiDashboardTrigger` ändern sich.
-6. Artefakt-ID `hagrid` ⇒ Jar `hagrid-1.0-SNAPSHOT.jar`; `SimulationBatGenerator` zieht nach.
-```
+- [x] **Step 4: Spec §11 anhängen** — bereits erledigt beim Schreiben des Plans (Spec §11 „Planungsbefunde“, Commit zusammen mit diesem Plan). Falls die Ausführung weitere Abweichungen aufdeckt (z. B. eine zusätzliche Allowlist-Klasse in Task 4b), hier als Punkt 7 ff. nachtragen.
 
 - [ ] **Step 5: Commit und Rückführung**
 
