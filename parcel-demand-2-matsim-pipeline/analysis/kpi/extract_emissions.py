@@ -38,7 +38,7 @@ POWERTRAINS = ("diesel", "bev")
 # output keys of emissions_emep.vehicle_emissions
 EMIS_KEYS = ("CO", "NOx", "VOC", "PM_EXHAUST", "CH4", "SPN23", "N2O", "CO2",
              "CO2E_TTW", "CO2E_WTW", "ENERGY_MJ", "PM10_TYRE", "PM10_BRAKE",
-             "PM10_ROAD", "PM10_NONEXHAUST")
+             "PM10_ROAD", "PM10_NONEXHAUST", "PM10_TOTAL")
 
 #: Fahr-Tasknamen aus drt_service_time._classify -> KPI-Flottenname. Ein
 #: Kaltstart wird dem Regime des FOLGENDEN Fahrblocks zugerechnet (Spec E6):
@@ -396,61 +396,115 @@ def slot_split(n_pax, n_parcels, sup):
     return s_pax / tot, s_par / tot
 
 
-def allocate_vehicle_by_mass(path, link_len, veh_co2e, sup):
+def allocate_vehicle_by_weights(path, link_len, veh_co2e, w_pax, w_parcel):
     """Split one vehicle's emission into {"pax": ..., "parcels": ...} on a
-    kg*km basis (EN 16258 / GLEC), i.e. mass aboard x link length -- so a
+    weight x km basis: (units aboard x weight per unit) x link length, so a
     long loaded link weighs more than a short one.
 
+    The WEIGHTS define the allocation rule and are the only thing the three
+    shipped rules differ in:
+        mass   w_pax = kg_per_passenger, w_parcel = kg_per_parcel  (EN 16258 / GLEC)
+        slots  w_pax = slots_per_seat_equiv, w_parcel = 1          (capacity)
+        units  w_pax = 1, w_parcel = 1                             (user decision 2026-09-09)
+
     `path` are the 4-tuples of geometry.reconstruct_drt_paths_detailed
-    ((link_id, occ_pax, occ_parcels, t)). Empty links carry no kg*km basis
-    and are spread proportionally over the vehicle's loaded kg*km, which is
-    the GLEC convention for empty running; the returned parts therefore sum
-    to `veh_co2e` exactly. A vehicle that was never loaded returns zeros:
-    there is no basis, and distributing anyway would be arbitrary.
+    ((link_id, occ_pax, occ_parcels, t)). Empty links carry no basis and are
+    spread proportionally over the vehicle's loaded basis, which is the GLEC
+    convention for empty running; the returned parts therefore sum to
+    `veh_co2e` exactly. A vehicle that was never loaded returns zeros: there
+    is no basis, and distributing anyway would be arbitrary.
 
     Unit-agnostic: the parts carry whatever unit `veh_co2e` came in.
     """
-    kg_parcel, kg_pax = _check_mass_constants(sup)
-    kgkm_pax = 0.0
-    kgkm_par = 0.0
+    b_pax = 0.0
+    b_par = 0.0
     for entry in path:
         length = link_len.get(entry[0])
         if length is None:
             continue
         km = length / 1000.0
-        kgkm_pax += entry[1] * kg_pax * km
-        kgkm_par += entry[2] * kg_parcel * km
-    tot = kgkm_pax + kgkm_par
+        b_pax += entry[1] * w_pax * km
+        b_par += entry[2] * w_parcel * km
+    tot = b_pax + b_par
     if tot <= 0:
         return {"pax": 0.0, "parcels": 0.0}
-    return {"pax": veh_co2e * kgkm_pax / tot,
-            "parcels": veh_co2e * kgkm_par / tot}
+    return {"pax": veh_co2e * b_pax / tot,
+            "parcels": veh_co2e * b_par / tot}
 
 
-def intensity_rows(alloc, n_pax, n_parcels, sup=None):
+def allocate_vehicle_by_mass(path, link_len, veh_co2e, sup):
+    """kg*km allocation (EN 16258 / GLEC) -- the mass instance of
+    allocate_vehicle_by_weights(); kept as the named entry point the tests
+    and the paper scripts call."""
+    kg_parcel, kg_pax = _check_mass_constants(sup)
+    return allocate_vehicle_by_weights(path, link_len, veh_co2e, kg_pax, kg_parcel)
+
+
+#: The three allocation rules, as (name, weights-from-sup). All three are
+#: emitted side by side (review 2026-09-16, I2): the published KPI used to be
+#: mass-only while the analysis boards used units-aboard, i.e. the same run
+#: reported two per-parcel figures a factor ~40 apart under one name.
+def allocation_rules(sup):
+    kg_parcel, kg_pax = _check_mass_constants(sup)
+    return {"mass": (kg_pax, kg_parcel),
+            "slots": (sup["slots_per_seat_equiv"], 1.0),
+            "units": (1.0, 1.0)}
+
+
+_RULE_SRC = {
+    "mass": ALLOC_SRC,
+    "slots": ("capacity-slot allocation on slots*km: 1 seat = slots_per_seat_equiv parcel "
+              "slots (scenario-defined 20 slots / 8 seats = 2.5), no external mass assumption "
+              "(METHODS-LOG 2.26 companion basis)"),
+    "units": ("units-aboard allocation on units*km: 1 passenger = 1 parcel = 1 unit -- the "
+              "vehicle-km rule carried down to the link (user decision 2026-09-09). The most "
+              "parcel-heavy of the three rules; report the spread, not one number"),
+}
+
+
+def intensity_rows(alloc, n_pax, n_parcels, sup=None, by_rule=None):
     """Specific intensities plus the allocation shares they came from.
 
     `alloc` values are kg CO2e (the caller converts from the gram-based
-    totals). Emits co2e_wtw_per_pax / co2e_wtw_per_parcel in kg, and -- per
-    the reporting rule in METHODS-LOG 2.26 -- always the mass share next to
-    them, with the mass-free slot share as its companion. An intensity whose
-    denominator is zero is OMITTED rather than reported as 0 or inf.
+    totals) under the MASS rule. Emits co2e_wtw_per_pax / co2e_wtw_per_parcel
+    in kg -- these unsuffixed names ARE the mass rule and now say so in their
+    source -- plus the mass share and, per METHODS-LOG 2.26, the mass-free
+    slot share as companion. An intensity whose denominator is zero is
+    OMITTED rather than reported as 0 or inf.
+
+    `by_rule` = {rule: alloc_dict} adds one explicit row family per rule
+    (co2e_wtw_per_{pax,parcel}_<rule>, alloc_share_parcels_<rule>_km), with
+    the rule in the NAME. `mass` is repeated there as an explicit alias so a
+    reader never has to know that the unsuffixed row is the mass one.
     """
     rows = []
     tot = alloc["pax"] + alloc["parcels"]
+    src_mass = ALLOC_SRC + " [rule: mass -- same value as co2e_wtw_per_*_mass]"
     if n_pax:
         rows.append(row("environment", "co2e_wtw_per_pax",
-                        alloc["pax"] / float(n_pax), "kg", ALLOC_SRC))
+                        alloc["pax"] / float(n_pax), "kg", src_mass))
     if n_parcels:
         rows.append(row("environment", "co2e_wtw_per_parcel",
-                        alloc["parcels"] / float(n_parcels), "kg", ALLOC_SRC))
+                        alloc["parcels"] / float(n_parcels), "kg", src_mass))
     if tot > 0:
         rows.append(row("environment", "alloc_share_parcels_mass",
                         alloc["parcels"] / tot, "share", ALLOC_SRC))
     if sup is not None:
         rows.append(row("environment", "alloc_share_parcels_slots",
                         slot_split(n_pax, n_parcels, sup)[1], "share",
-                        ALLOC_SRC))
+                        ALLOC_SRC + " [count-based capacity share, not km-weighted]"))
+    for rule, a in (by_rule or {}).items():
+        src = _RULE_SRC[rule]
+        t = a["pax"] + a["parcels"]
+        if n_pax:
+            rows.append(row("environment", "co2e_wtw_per_pax_" + rule,
+                            a["pax"] / float(n_pax), "kg", src))
+        if n_parcels:
+            rows.append(row("environment", "co2e_wtw_per_parcel_" + rule,
+                            a["parcels"] / float(n_parcels), "kg", src))
+        if t > 0:
+            rows.append(row("environment", "alloc_share_parcels_" + rule + "_km",
+                            a["parcels"] / t, "share", src))
     return rows
 
 
@@ -470,8 +524,38 @@ _KPI_METRICS = [("co2e_wtw", "CO2E_WTW", "kg", 1e-3),
                 ("nox", "NOx", "g", 1.0),
                 ("pm_exhaust", "PM_EXHAUST", "g", 1.0),
                 ("pm10_nonexhaust", "PM10_NONEXHAUST", "g", 1.0),
+                ("pm10_total", "PM10_TOTAL", "g", 1.0),
                 ("energy_final", "ENERGY_MJ", "MJ", 1.0)]
 _BEV_SKIP = {"co2e_ttw", "co2"}          # im BEV-Arm konstruktionsbedingt 0
+
+#: System boundary per metric, appended to every absolute row's source string.
+#: The three indicators do NOT share a boundary (METHODS-LOG 2.71): CO2e is
+#: well-to-wheel (TTW + JEC fuel chain; grid incl. upstream), NOx and PM are
+#: vehicle operation only -- EMEP carries no refinery or power-plant NOx/PM. A
+#: table headed "environmental impacts" invites the reader to assume one
+#: boundary; the row itself now says which one it is on.
+_BOUNDARY = {"co2e_wtw": " [boundary: well-to-wheel]",
+             "co2e_ttw": " [boundary: tank-to-wheel, combustion only]",
+             "co2": " [boundary: tank-to-wheel, combustion CO2 only]",
+             "nox": " [boundary: vehicle operation, exhaust only -- no fuel-chain or power-plant NOx]",
+             "pm_exhaust": " [boundary: vehicle operation, exhaust]",
+             "pm10_nonexhaust": " [boundary: vehicle operation, tyre+brake+road wear]",
+             "pm10_total": " [boundary: vehicle operation, exhaust + wear -- no upstream PM]",
+             "energy_final": " [boundary: final energy at the vehicle (diesel LHV / battery-side kWh)]"}
+
+#: Cradle-to-grave add-on (review 2026-09-16, I4): a per-km VEHICLE-CYCLE rate
+#: (production + battery + maintenance incl. end-of-life, Temporelli et al.
+#: 2022, Energies 15:7817, Fig. 6a, rescaled -- see emep_supplement.csv) on top
+#: of the WTW value. Keyed by vehicle CLASS, because the DRT minibus and the
+#: LMD van are different vehicles with different lifetime mileages. Emitted
+#: only when the supplement carries the rate; never folded into *_co2e_wtw.
+_CTG_CLASS = {"drt": "drt", "freight_modular": "drt", "freight": "lmd"}
+_CTG_SRC = ("cradle-to-grave CO2e = co2e_wtw + ctg_g_per_km_<class>_<powertrain> x diesel-arm km "
+            "of the fleet (emep_supplement.csv; vehicle cycle = production + battery + "
+            "maintenance incl. EoL, Temporelli et al. 2022 Fig. 6a read off the chart and "
+            "rescaled by curb mass, battery kWh and lifetime km). NOT an LCA of the "
+            "service: the 1d transport capsule and all infrastructure stay unpriced. "
+            "[boundary: cradle-to-grave, CO2e only]")
 
 #: Netzintensitaets-Sweep -> sup["grid_co2e_g_per_mj_<key>"]. Ein EINZELWERT
 #: waere hier derselbe Fehler wie das verworfene 250-km-Einzelgate: der
@@ -693,17 +777,21 @@ def _intensity_rows_for_drt(veh_path, link_len, drt_detail, n_pax, n_parcels,
     if not any(len(entry) > 2 and entry[2]
                for path in veh_path.values() for entry in path):
         return []
-    alloc = {"pax": 0.0, "parcels": 0.0}
+    rules = allocation_rules(sup)
+    by_rule = {r: {"pax": 0.0, "parcels": 0.0} for r in rules}
     by_veh = {d["entity"]: d["CO2E_WTW"] for d in drt_detail
               if d["powertrain"] == "diesel"}
     for veh, g in by_veh.items():
-        part = allocate_vehicle_by_mass(veh_path.get(veh, []), link_len,
-                                        g * 1e-3, sup)      # g -> kg
-        alloc["pax"] += part["pax"]
-        alloc["parcels"] += part["parcels"]
+        path = veh_path.get(veh, [])
+        for r, (w_pax, w_par) in rules.items():
+            part = allocate_vehicle_by_weights(path, link_len, g * 1e-3,   # g -> kg
+                                               w_pax, w_par)
+            by_rule[r]["pax"] += part["pax"]
+            by_rule[r]["parcels"] += part["parcels"]
+    alloc = by_rule["mass"]
     if alloc["pax"] + alloc["parcels"] <= 0:
         return []
-    return intensity_rows(alloc, n_pax, n_parcels, sup)
+    return intensity_rows(alloc, n_pax, n_parcels, sup, by_rule=by_rule)
 
 
 def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
@@ -784,7 +872,7 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
                 if pt == "bev" and metric in _BEV_SKIP:
                     continue
                 rows.append(row("environment", fleet + "_" + metric + sfx,
-                                totals[pt][key] * f, unit, SRC))
+                                totals[pt][key] * f, unit, SRC + _BOUNDARY[metric]))
     # total_* immer emittieren (= Summe der ABGEDECKTEN Flotten; bei
     # Freight-only-Runs also == freight_*) -- Vergleichbarkeit ueber Runs.
     if arms:
@@ -794,11 +882,19 @@ def extract(run_dir, prefix, recon=None, veh_path=None, network_gz=None,
                 if pt == "bev" and metric in _BEV_SKIP:
                     continue
                 rows.append(row("environment", "total_" + metric + sfx,
-                                grand[pt][key] * f, unit, SRC))
+                                grand[pt][key] * f, unit, SRC + _BOUNDARY[metric]))
+        rows.append(factor_set_row())
+        rows += ctg_rows(arms, detail, fac["sup"])
     for fleet, (totals, _d) in arms.items():
         rows += _grid_sweep_rows(fleet, totals["bev"], fac["sup"])
     if arms:
         rows += _grid_sweep_rows("total", grand["bev"], fac["sup"])
+    cl = em.clamp_report()
+    if cl["below_vmin"] or cl["above_vmax"]:
+        print("[emissions] speed clamped in %d of %d EF evaluations (%d below vmin, "
+              "%d above vmax) -- a clamped vehicle is priced at the curve edge, not at "
+              "its own speed" % (cl["below_vmin"] + cl["above_vmax"], cl["evaluations"],
+                                 cl["below_vmin"], cl["above_vmax"]))
     rows += _range_rows(detail, fac["sup"])
     if "drt" in arms and link_len is not None:
         rows += drive_block_rows(veh_path,
@@ -904,6 +1000,70 @@ def drive_block_rows(veh_path, per_veh, link_len, sup):
         print("drive_block_rows: skipped %d link entries with no geometry "
               "(0 km would have been counted, biasing electrification "
               "optimistic)" % missing_geometry)
+    return rows
+
+
+def factor_set_hash():
+    """sha256 over the three factor files -- the identity of the emission
+    channel's parameterisation. Two runs whose rows carry different hashes
+    were priced on different factor sets and must not be aggregated; on
+    2026-09-16 that was found true for 9 of 29 local KPI files, detectable
+    only by recomputing g/MJ by hand (review I1)."""
+    import hashlib
+    h = hashlib.sha256()
+    for n in ("emep_supplement.csv", "emep_hot_factors.csv", "emep_cold_factors.csv"):
+        with open(em.DATA_DIR / n, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def factor_set_row():
+    """One numeric row per run identifying the factor set. The value is the
+    first 24 bits of the hash as an integer -- numeric so every consumer that
+    float()s the value column keeps working -- and the source carries the
+    12-hex prefix for humans."""
+    hx = factor_set_hash()
+    return row("environment", "emission_factor_set", int(hx[:6], 16), "id",
+               "sha256[:12]=" + hx[:12] + " over data/emep_supplement.csv + "
+               "emep_hot_factors.csv + emep_cold_factors.csv. Rows from runs with "
+               "different values were priced on different factor sets -- do not "
+               "aggregate or compare them (METHODS-LOG 2.67 vintage rule)")
+
+
+def ctg_rows(arms, detail, sup):
+    """Cradle-to-grave CO2e rows: WTW plus a per-km vehicle-cycle rate, per
+    fleet and powertrain, only where the supplement carries the rate.
+
+    The rate is looked up by vehicle CLASS (_CTG_CLASS): DRT minibus for the
+    drt and freight_modular fleets (same vehicle), LMD van for the
+    conventional freight fleet. Missing a rate for a class that is present
+    means the CtG total cannot be formed -- then NO ctg rows are emitted for
+    that powertrain rather than a partial total that looks complete.
+    """
+    rows = []
+    km = {}
+    for d in detail:
+        if d["powertrain"] == "diesel":
+            km[d["fleet"]] = km.get(d["fleet"], 0.0) + d["km"]
+    for pt in POWERTRAINS:
+        sfx = "_bev" if pt == "bev" else ""
+        rates = {}
+        for fleet in arms:
+            key = "ctg_g_per_km_" + _CTG_CLASS[fleet] + "_" + pt
+            if key not in sup:
+                rates = None
+                break
+            rates[fleet] = sup[key]
+        if not rates:
+            continue
+        total = 0.0
+        for fleet, (totals, _d) in arms.items():
+            v = totals[pt]["CO2E_WTW"] + rates[fleet] * km.get(fleet, 0.0)
+            total += v
+            rows.append(row("environment", fleet + "_co2e_ctg" + sfx, v * 1e-3, "kg",
+                            _CTG_SRC + " [rate=%.1f g/km, class=%s]"
+                            % (rates[fleet], _CTG_CLASS[fleet])))
+        rows.append(row("environment", "total_co2e_ctg" + sfx, total * 1e-3, "kg", _CTG_SRC))
     return rows
 
 
