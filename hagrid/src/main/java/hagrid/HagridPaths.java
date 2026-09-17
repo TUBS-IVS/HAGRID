@@ -131,8 +131,9 @@ public class HagridPaths {
      * than just the {@code input/} or {@code hagrid-output/} directories,
      * because a failed previous run may have created empty {@code hagrid-output/}
      * directories at the wrong level, which would trick a directory-only check.
-     * {@code input/README.md} is the only tracked file under {@code input/}, so it
-     * is present in every checkout even before the local inputs are filled in.</p>
+     * {@code input/README.md} is the only tracked file guaranteed present in every
+     * checkout (the folders hold {@code .gitkeep} and force-added data files
+     * besides), so it is there even before the local inputs are filled in.</p>
      */
     private static Path detectPipelineRoot() {
         // 1) Explicit system property (set by run_hagrid_sim.bat)
@@ -142,9 +143,19 @@ public class HagridPaths {
             return Paths.get(prop);
         }
 
+        return detectPipelineRoot(Paths.get("").toAbsolutePath());
+    }
+
+    /**
+     * Marker-based root detection (cases 2–4 of {@link #detectPipelineRoot()}), with the
+     * working directory injected so it can be tested without changing the JVM's CWD.
+     *
+     * @param cwd absolute directory to resolve the marker against
+     * @return {@code "."} if {@code cwd} is the module root, else {@code PIPELINE_ROOT}
+     */
+    static Path detectPipelineRoot(Path cwd) {
         // Canonical marker file — always present in the real pipeline dir
         Path marker = ROOT_MARKER;
-        Path cwd = Paths.get("").toAbsolutePath();
 
         // 2) CWD IS the pipeline dir (marker file exists here)
         if (Files.exists(cwd.resolve(marker))) {
@@ -446,10 +457,10 @@ public class HagridPaths {
      * <p>These files are the same for ALL simulation runs and don't change
      * between scenarios or dates:</p>
      * <ul>
-     *   <li>{@code sim-config.xml} — MATSim base configuration (from input/hannover/config/)</li>
-     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network (from input/hannover/network/)</li>
-     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes (from input/hannover/network/)</li>
-     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (from input/hannover/network/)</li>
+     *   <li>{@code sim-config.xml} — MATSim base configuration (from input/&lt;area&gt;/config/)</li>
+     *   <li>{@code cargobike_network.xml.gz} — Cargobike routing network (from input/&lt;area&gt;/network/)</li>
+     *   <li>{@code network_change_events.xml.gz} — Time-dependent link speed changes (from input/&lt;area&gt;/network/)</li>
+     *   <li>{@code zones/RH_useful__zone.*} — Freight zone shapefile (from input/&lt;area&gt;/network/)</li>
      * </ul>
      * <p>Files are only copied if missing. Existing files are not overwritten.</p>
      */
