@@ -6,7 +6,7 @@
 
 Das Repo soll beim Öffnen zeigen, was gemeinsam ist, was zur Hannover-Studie (Paketnachfrage + LMD-Freight-Simulation, Kapazitäts-Sweep) und was zur Lausitz-Studie (Hoyerswerda, integrierte DRT + Fracht, 1c/1d) gehört. Zielgruppe sind Externe, die den Code lesen, und wir selbst beim Navigieren.
 
-Der Umbau ist ein **reiner Verschiebe-Refactor**: ein Maven-Modul bleibt ein Maven-Modul, kein heute bestehender Import wird verboten (die Regel in §4.1 friert nur den Ist-Zustand ein), keine Klasse wird zerlegt, kein Lauf-Ergebnis ändert sich. Alles, was Design wäre, steht in §10 als Folgepunkt.
+Der Umbau ist ein **struktureller, verhaltensneutraler Refactor**. Neben Datei- und Paketverschiebungen werden ausschließlich die dadurch erforderlichen Pfad-, Paket- und Build-Referenzen angepasst (`HagridPaths`, `StudyArea.folder()`, Root-Marker, POMs, Skript- und Python-Pfade). Ein Maven-Modul bleibt ein Maven-Modul, kein heute bestehender Import wird verboten (die Regel in §4.1 friert nur den Ist-Zustand ein), keine Klasse wird zerlegt, kein Lauf-Ergebnis ändert sich. Alles, was Design wäre, steht in §10 als Folgepunkt.
 
 ### Nicht-Ziele
 
@@ -84,7 +84,7 @@ Entscheidungen des Users dazu (2026-09-17): Modulordner **wird** umbenannt (`hag
 
 ## 4. Java-Paketkarte
 
-Ein Modul, drei Wurzelpakete. Jede Datei per `git mv`; im Verschiebe-Commit ändern sich nur `package`- und `import`-Zeilen.
+Ein Modul, drei Wurzelpakete. Jede Datei per `git mv`; der Verschiebe-Commit enthält ausschließlich Pfadverschiebungen sowie zwingend daraus folgende Änderungen an `package`, `import` und voll qualifizierten Klassenreferenzen (im Java-Code, in `log4j2.xml`-Logger-Namen, in Skripten und Python-Strings). Bekannt: `HagridPaths.drtInputsFingerprint()` referenziert `DrtInputsFingerprint` voll qualifiziert ohne Import.
 
 | Neu | Kommt aus |
 |---|---|
@@ -111,7 +111,7 @@ Bekannte Abhängigkeit, die stehen bleibt: `core.simulation` importiert `hannove
 1. `hagrid.hannover.**` importiert nie aus `hagrid.lausitz.**`, und umgekehrt.
 2. Aus `hagrid.core.**` dürfen **nur** diese Klassen in `hannover`/`lausitz` hineinzeigen: `HagridPaths`, `HagridConfig`, `HAGRIDSimulationRunner`, `HAGRIDSimulationConfig`, `SimulationRunnerUtils`.
 
-Festgeschrieben als JUnit-Test `hagrid.core.ArchitectureRulesTest` (Quelltext-Scan der `import`-Zeilen unter `src/main/java`, keine neue Abhängigkeit). Die Allowlist steht im Test; jede Erweiterung ist eine bewusste Entscheidung im Diff. Der Test ist zugleich die Zehn-Zeilen-Architekturbeschreibung für Externe.
+Festgeschrieben als JUnit-Test `hagrid.core.ArchitectureRulesTest` (keine neue Abhängigkeit). Der Test scannt **den gesamten Quelltext** unter `src/main/java` ohne Kommentarzeilen auf die Tokens `hagrid.hannover.` und `hagrid.lausitz.`, nicht nur `import`-Zeilen; damit erfasst er auch voll qualifizierte Referenzen wie die in `HagridPaths` und Klassennamen in Strings. Die Allowlist steht im Test; jede Erweiterung ist eine bewusste Entscheidung im Diff. Der Test ist zugleich die Zehn-Zeilen-Architekturbeschreibung für Externe. Was er nicht sieht: Kopplung über Ressourcen, Konfigurationsdateien oder Reflection per zusammengesetztem String; dafür läuft im Gate von Schritt 4b ergänzend `git grep` über `src/main/resources` und `src/test`.
 
 ## 5. Daten, Analysen, Skripte, Fremdcode
 
@@ -166,7 +166,7 @@ Reiner Umzug: `parcel-demand-estimation/` → `notebooks/demand-estimation/`, `p
 - `external/freight/pom.xml`: `sourceDirectory`/`testSourceDirectory`/`testResources`/`workingDirectory` von `${project.basedir}/../external/matsim-libs/…` auf `${project.basedir}/../matsim-libs/…`; Enforcer-Dateien bleiben auf `${project.parent.basedir}/external/matsim-libs/…` (kein `..`, Enforcer 3.5.0 vergleicht kanonisch).
 - Der Sparse-Checkout-Befehl bleibt **wörtlich identisch** in README, Enforcer-Meldung und `tools/resync-freight.ps1` (Invariante aus der Fork-Spec 2026-07-13).
 - `.gitmodules`: unverändert.
-- `tools/`: `resync-freight.ps1`, `setup_hagrid_io.bat`, neu `migrate-input-layout.ps1` (§8).
+- `tools/`: `resync-freight.ps1`, `setup_hagrid_io.bat`, neu `migrate-input-layout.ps1` (entsteht schon in Schritt 3, weil die ignorierten Inputs sonst am alten Ort liegen bleiben; Verwendung auf den anderen Maschinen in §8) und neu `check-run-scripts.ps1` (statischer Skripttest, Schritt 5).
 
 ### 5.7 README und Docs
 
@@ -181,11 +181,11 @@ Jeder Schritt ist ein oder zwei Commits auf `restructure` und für sich baubar.
 |---|---|---|
 | 1 | Wurzel aufräumen (ungetrackte PNGs/HTMLs → `analysis/hannover/legacy-figures/`, Logs löschen, `org/…/CarriersUtils.class` löschen), `.gitignore` erweitern | `git status` zeigt nur beabsichtigte Änderungen |
 | 2 | `external/`: freight-Shim + `libs/` umziehen, drei POMs anpassen | `mvn -q install -pl external/freight -am` grün (272 Tests) |
-| 3 | Modul → `hagrid/`, Inputs → `input/{common,hannover,lausitz}`, Root-Marker, `StudyArea.folder()`, `.gitignore` | Pipeline-Tests grün; `HagridPathsTest` auf neue Pfade angepasst |
-| 4a | Java-Pakete verschieben (nur `git mv` + `package`/`import`) | alle Tests grün; `git log --follow` auf `HAGRIDRouterUtils.java`, `SharedUseModule.java`, `DashboardGenerator.java` zeigt die alte Historie |
-| 4b | `ArchitectureRulesTest` | grün mit exakt der Allowlist aus §4.1; Mutationsprobe: ein verbotener Import lässt ihn rot werden |
-| 5 | `analysis/`, `notebooks/`, `runs/`, `tools/` umziehen; Pfade in Skripten, Python, `KpiDashboardTrigger` ersetzen | KPI-Pytests grün; jedes `.bat`/`.ps1` einmal bis zum Java-Start ausgeführt (Klasse gefunden, Root erkannt) |
-| 6 | README, `docs/**`-Pfade | `git grep parcel-demand-2-matsim-pipeline` liefert nur noch Historie in METHODS-LOG/BACKLOG-DONE |
+| 3 | Modul → `hagrid/`, Inputs → `input/{common,hannover,lausitz}`, Root-Marker, `StudyArea.folder()`, `.gitignore`; **`tools/migrate-input-layout.ps1` wird hier geschrieben und lokal ausgeführt**, weil `git mv` die ignorierten Inputs und Outputs nicht mitnimmt | Migrationsskript läuft idempotent (zweiter Aufruf: keine Änderung, kein Fehler); Pipeline-Tests grün; `HagridPathsTest` auf neue Pfade angepasst |
+| 4a | Java-Pakete verschieben: ausschließlich Pfadverschiebungen plus zwingend daraus folgende Änderungen an `package`, `import` und voll qualifizierten Klassenreferenzen | alle Tests grün; `git grep -E 'hagrid\.(integrated|utils|demand|pipeline|analysis|simulation)\.|hagrid\.HAGRID'` außerhalb `docs/` ist leer; `git log --follow` auf `HAGRIDRouterUtils.java`, `SharedUseModule.java`, `DashboardGenerator.java` zeigt die alte Historie |
+| 4b | `ArchitectureRulesTest` | grün mit exakt der Allowlist aus §4.1; Mutationsprobe: eine voll qualifizierte Referenz in einer Nicht-Allowlist-Klasse lässt ihn rot werden; ergänzend `git grep` auf `hagrid.hannover.`/`hagrid.lausitz.` in `src/main/resources` und `src/test` gesichtet |
+| 5 | `analysis/`, `notebooks/`, `runs/`, `tools/` umziehen; Pfade in Skripten, Python, `KpiDashboardTrigger` ersetzen; `tools/check-run-scripts.ps1` schreiben | KPI-Pytests grün; **statischer Skripttest** statt Ausführung (Chain- und Campaign-Skripte würden `mvn install` und echte Läufe starten): das Skript zieht aus jedem `.bat`/`.ps1` Modulpfad (`-pl`), Jar-Pfad, Main-Klasse und `-Dhagrid.pipeline.root` und prüft, dass Modul und Jar existieren, die Klasse im gebauten Jar liegt und der Root-Pfad den Marker enthält; null Befunde. Echte Ausführung nur für die drei Ketten aus §7 |
+| 6 | README, `docs/**`-Pfade | `git grep parcel-demand-2-matsim-pipeline` liefert ausschließlich explizit erlaubte Fundstellen: `tools/migrate-input-layout.ps1`, Specs und Pläne mit Datum vor 2026-09-17, `METHODS-LOG.md`, `BACKLOG-DONE.md`; die Liste steht im Commit-Text |
 | 7 | BACKLOG-Folgepunkte (§10), METHODS-LOG-Eintrag „Umbau verhaltensneutral“ mit den Belegen aus §7 | – |
 
 Danach: Nachweis §7, dann Fast-Forward `hendrik` ← `restructure`. Push nur auf Zuruf.
@@ -212,7 +212,7 @@ Hashes und Kommandos kommen in den METHODS-LOG-Eintrag (§6, Schritt 7).
 | Risiko | Einschätzung | Umgang |
 |---|---|---|
 | Rename-Erkennung von Git kippt bei kleinen Dateien, Historie reißt | mittel | Verschieben und Umbenennen strikt trennen (4a nur Pfad + zwei Zeilen); Stichproben mit `--follow` im Gate |
-| Skript-Ersetzung trifft eine Stelle nicht (33 bat) | hoch, aber billig | Gate 5 startet jedes Skript bis zum Java-Start; `git grep` auf die alten Strings |
+| Skript-Ersetzung trifft eine Stelle nicht (33 bat) | hoch, aber billig | statischer Skripttest `tools/check-run-scripts.ps1` in Gate 5; `git grep` auf die alten Strings (Gate 4a und 6) |
 | Root-Erkennung auf einer Maschine schlägt fehl, weil `input/README.md` dort fehlt (ignorierter Ordner, Force-Add) | mittel | Datei ist getrackt, kommt per Pull; Migrationsskript prüft ihre Existenz |
 | Parallele Session committet auf `hendrik`, während `restructure` läuft | bekannt | eigener Branch; vor dem Fast-Forward `git merge-tree` prüfen, bei Konflikt rebase statt merge |
 | `docs/`-Ersetzung verfälscht Zitate von Laufordnern | niedrig | nur Ordnernamen des Repos ersetzen, keine Output-Pfade (`hagrid-matsim-output` bleibt ohnehin) |
