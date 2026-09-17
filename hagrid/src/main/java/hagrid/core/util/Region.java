@@ -1,4 +1,4 @@
-package hagrid.hannover.util;
+package hagrid.core.util;
 
     // Region enumeration
     public enum Region {

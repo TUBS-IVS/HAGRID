@@ -1,7 +1,7 @@
 package hagrid.core;
 
 import hagrid.core.HagridConfig.*;
-import hagrid.hannover.util.Region;
+import hagrid.core.util.Region;
 import hagrid.core.util.StudyArea;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

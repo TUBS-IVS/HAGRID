@@ -13,7 +13,7 @@ import org.matsim.core.network.algorithms.NetworkCleaner;
 import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import hagrid.core.HagridConfig;
-import hagrid.hannover.util.Region;
+import hagrid.core.util.Region;
 
 import java.util.HashSet;
 import java.util.Set;

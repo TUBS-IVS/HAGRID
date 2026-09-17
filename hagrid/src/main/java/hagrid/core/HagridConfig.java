@@ -1,6 +1,6 @@
 package hagrid.core;
 
-import hagrid.hannover.util.Region;
+import hagrid.core.util.Region;
 import hagrid.core.util.StudyArea;
 import org.matsim.freight.carriers.TimeWindow;
 
