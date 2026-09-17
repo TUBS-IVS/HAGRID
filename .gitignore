@@ -45,29 +45,29 @@ parcel-demand-estimation-batch/**
 
 parcel-analysis/input
 
-parcel-demand-2-matsim-pipeline/sim-input
-parcel-demand-2-matsim-pipeline/input
-parcel-demand-2-matsim-pipeline/routerCache
-parcel-demand-2-matsim-pipeline/logs*
-parcel-demand-2-matsim-pipeline/logs
+hagrid/sim-input
+hagrid/routerCache
+hagrid/logs*
+hagrid/logs
 
-parcel-demand-2-matsim-pipeline/sim-output
-parcel-demand-2-matsim-pipeline/output
+hagrid/sim-output
+hagrid/output
 
-# hagrid-input: ignore contents but keep folder structure via .gitkeep
-parcel-demand-2-matsim-pipeline/hagrid-input/**
-!parcel-demand-2-matsim-pipeline/hagrid-input/**/
-!parcel-demand-2-matsim-pipeline/hagrid-input/**/.gitkeep
+# input: ignore contents but keep folder structure via .gitkeep; README.md is the root marker
+hagrid/input/**
+!hagrid/input/**/
+!hagrid/input/**/.gitkeep
+!hagrid/input/README.md
 
 # hagrid-output: ignore contents but keep folder structure via .gitkeep
-parcel-demand-2-matsim-pipeline/hagrid-output/**
-!parcel-demand-2-matsim-pipeline/hagrid-output/**/
-!parcel-demand-2-matsim-pipeline/hagrid-output/**/.gitkeep
+hagrid/hagrid-output/**
+!hagrid/hagrid-output/**/
+!hagrid/hagrid-output/**/.gitkeep
 
 # hagrid-matsim-output: ignore contents but keep folder structure via .gitkeep
-parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**
-!parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**/
-!parcel-demand-2-matsim-pipeline/hagrid-matsim-output/**/.gitkeep
+hagrid/hagrid-matsim-output/**
+!hagrid/hagrid-matsim-output/**/
+!hagrid/hagrid-matsim-output/**/.gitkeep
 
 parcel-analysis/cache
 parcel-analysis/emission_maps
@@ -108,22 +108,22 @@ external/freight/output/
 external/freight/test/output/
 
 # MATSim integration-test output (MatsimTestUtils writes to <module>/test/output)
-parcel-demand-2-matsim-pipeline/test/output/
+hagrid/test/output/
 
 # Python bytecode caches (were tracked by accident until 2026-07-27)
 __pycache__/
 *.pyc
 
 # Generated analysis pages (regenerated from the run output; not versioned)
-parcel-demand-2-matsim-pipeline/analysis/**/*.html
+hagrid/analysis/**/*.html
 # ...but the sweep board's Parcel entry point is SOURCE, not a generated page.
 # Without this negation a clone cannot rebuild the board at all, while the rule
 # above still keeps every 26-38 MB run dashboard out. bundle.html stays ignored
 # via board/.gitignore - it is the build artifact, rebuilt via the README recipe.
-!parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/board/index.html
+!hagrid/analysis/hannover-sweep/board/index.html
 
 # Headless visual-check screenshots (regenerate with `node shot.cjs`)
-parcel-demand-2-matsim-pipeline/analysis/hannover-sweep/board/shot_*.png
+hagrid/analysis/hannover-sweep/board/shot_*.png
 
 # Legacy Hannover figures (moved from the repo root 2026-09-17; regenerated, not versioned)
 analysis/hannover/legacy-figures/*
@@ -134,4 +134,4 @@ analysis/hannover/legacy-figures/*
 
 # local-only working files (untracked on purpose)
 SESSION_LOG.md
-parcel-demand-2-matsim-pipeline/analysis/paper-figures/
+hagrid/analysis/paper-figures/
