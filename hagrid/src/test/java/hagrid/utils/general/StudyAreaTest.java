@@ -10,7 +10,7 @@ class StudyAreaTest {
 
     @Test
     @DisplayName("HANNOVER maps to the 'hannover' input subfolder")
-    void hannoverFolderIsEmpty() {
+    void hannoverFolderIsHannover() {
         assertThat(StudyArea.HANNOVER.folder()).isEqualTo("hannover");
     }
 

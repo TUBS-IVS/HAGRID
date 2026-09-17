@@ -293,7 +293,7 @@ class HagridPathsTest {
         paths.initializeRun(RUN_ID);
         assertThat(paths.toString())
             .contains(RUN_ID)
-            .contains("input")
+            .contains(Path.of("input", "hannover").toString())
             .contains("hagrid-output")
             .contains("hagrid-matsim-output");
     }
@@ -336,7 +336,7 @@ class HagridPathsTest {
 
         @Test
         @DisplayName("default constructor uses HANNOVER and input/hannover layout")
-        void defaultIsHannoverLegacyLayout() {
+        void defaultIsHannoverInputLayout() {
             HagridPaths p = new HagridPaths();
             assertThat(p.getStudyArea()).isEqualTo(StudyArea.HANNOVER);
             assertThat(p.inputBase().toString()).endsWith(Path.of("input", "hannover").toString());
@@ -344,7 +344,7 @@ class HagridPathsTest {
 
         @Test
         @DisplayName("HANNOVER input base is input/hannover")
-        void hannoverNoSubfolder(@TempDir Path tempDir) {
+        void hannoverInputBaseIsInputHannover(@TempDir Path tempDir) {
             HagridPaths p = new HagridPaths(tempDir, StudyArea.HANNOVER);
             assertThat(p.inputBase()).isEqualTo(tempDir.resolve("input").resolve("hannover"));
         }
@@ -364,6 +364,46 @@ class HagridPathsTest {
         void outputsNotScoped(@TempDir Path tempDir) {
             HagridPaths p = new HagridPaths(tempDir, StudyArea.LAUSITZ_HOYERSWERDA);
             assertThat(p.matsimOutputBase()).isEqualTo(tempDir.resolve("hagrid-matsim-output"));
+        }
+    }
+
+    // =========================================================================
+    // ROOT-MARKER DETECTION
+    // =========================================================================
+
+    /**
+     * Covers cases 2–4 of {@code detectPipelineRoot} against a real directory tree.
+     * These deliberately do NOT go through {@code -Dhagrid.pipeline.root} (case 1),
+     * which every other test injects and which would short-circuit the marker lookup:
+     * a wrong marker path degrades silently to the case-4 fallback, so without these
+     * the marker constant has no automated coverage at all.
+     */
+    @Nested
+    @DisplayName("Root-marker detection")
+    class RootMarkerDetection {
+
+        @Test
+        @DisplayName("marker in CWD -> module root is '.'")
+        void markerInCwdMeansHere(@TempDir Path tempDir) throws IOException {
+            Files.createDirectories(tempDir.resolve("input"));
+            Files.createFile(tempDir.resolve("input").resolve("README.md"));
+
+            assertThat(HagridPaths.detectPipelineRoot(tempDir)).isEqualTo(Path.of("."));
+        }
+
+        @Test
+        @DisplayName("marker one level down -> module root is 'hagrid'")
+        void markerInSubfolderMeansHagrid(@TempDir Path tempDir) throws IOException {
+            Files.createDirectories(tempDir.resolve("hagrid").resolve("input"));
+            Files.createFile(tempDir.resolve("hagrid").resolve("input").resolve("README.md"));
+
+            assertThat(HagridPaths.detectPipelineRoot(tempDir)).isEqualTo(Path.of("hagrid"));
+        }
+
+        @Test
+        @DisplayName("no marker anywhere -> falls back to 'hagrid'")
+        void noMarkerFallsBack(@TempDir Path tempDir) {
+            assertThat(HagridPaths.detectPipelineRoot(tempDir)).isEqualTo(Path.of("hagrid"));
         }
     }
 }
