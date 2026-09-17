@@ -22,7 +22,7 @@ ping -n 301 127.0.0.1 >nul
 goto WAIT
 :GO
 echo [%DATE% %TIME%] WRAP - 1d chain complete after !TRIES! polls, starting 1c chain >> "%LOG%"
-call run_depot1c_chain.bat
+call "%~dp0run_depot1c_chain.bat"
 echo [%DATE% %TIME%] WRAP DONE - 1c chain returned %ERRORLEVEL% >> "%LOG%"
 endlocal
 exit /b 0

@@ -22,7 +22,7 @@ ping -n 301 127.0.0.1 >nul
 goto WAIT
 :GO
 echo [%DATE% %TIME%] WRAP - 1c chain complete after !TRIES! polls, starting fleet sweep >> "%LOG%"
-call run_fleet1d_chain.bat
+call "%~dp0run_fleet1d_chain.bat"
 echo [%DATE% %TIME%] WRAP DONE - fleet chain returned %ERRORLEVEL% >> "%LOG%"
 endlocal
 exit /b 0
