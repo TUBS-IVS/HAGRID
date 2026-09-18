@@ -1496,7 +1496,7 @@ Erwartet: keine Änderungen an `docs/`; der Stash aus Task 0 existiert noch. Er 
 - **`[S]` `HagridPaths` aufteilen** in Root-Erkennung (`core`) + `HannoverPaths` + `LausitzPaths`; danach fällt `HagridPaths` von der Allowlist in `ArchitectureRulesTest`.
 - **`[L]` `HAGRIDSimulationConfig` / `SimulationRunnerUtils` / `HAGRIDScenarioBuilder` zerlegen** in Kern-Basis + Studienteile; Allowlist schrumpft auf leer.
 - **`[S]` Konzeptname `drt_shareduse` → `drt_cargohitching`** nur mit Alias in beide Richtungen (`run_meta.py`, Laufordner, KPI-Dateinamen, METHODS-LOG-Zitate). User-Entscheidung 2026-09-17: vorerst nicht.
-- **`[S]` Ausrollen des Umbaus auf Sim, IVS100, Lausitz-VM** zwischen Läufen: `git pull` → `tools/migrate-input-layout.ps1` → `mvn -q install` → P1-Probe gegen `before\hashes.txt`. Sim: Pull-Sperre (Hannover-v4) vorher prüfen.
+- **`[S]` Ausrollen des Umbaus auf Sim, IVS100, Lausitz-VM** zwischen Läufen: `git pull` → `tools/migrate-input-layout.ps1` → `mvn -q install` → P1-Probe gegen `before\hashes.txt`.
 ```
 Der bestehende Punkt „Race in unserem matsim-Fork“ (Zeile 476) und der Input-Bootstrap-Punkt (Zeile 504) bleiben, wie sie sind.
 
