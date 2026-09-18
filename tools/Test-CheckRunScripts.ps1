@@ -53,9 +53,31 @@ Write-Host 'Fall 5: -jar mit Manifest'
 Write-Script "$tmp\runs\lausitz\jarok.bat" "@echo off`r`ncd /d `"%~dp0..\..\hagrid`"`r`nset `"JAR=target\ok.jar`"`r`njava -Dhagrid.pipeline.root=. -jar `"%JAR%`" concept=x`r`n"
 & $check -RepoRoot $tmp -Scripts "$tmp\runs"; Assert ($LASTEXITCODE -eq 0) 'Exit 0, wenn die Manifest-Main-Class im Jar liegt'
 Remove-Item "$tmp\runs\lausitz\jarok.bat"
+
+Write-Host 'Fall 6: -jar, aber die Manifest-Main-Class liegt nicht im Jar'
 Write-Script "$tmp\runs\lausitz\jarbad.bat" "@echo off`r`ncd /d `"%~dp0..\..\hagrid`"`r`nset `"JAR=target\badmanifest.jar`"`r`njava -Dhagrid.pipeline.root=. -jar `"%JAR%`" concept=x`r`n"
 $out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
 Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match 'NichtImJar')) 'Exit 1, wenn die Manifest-Main-Class fehlt'
+Remove-Item "$tmp\runs\lausitz\jarbad.bat"
+
+# Der Chainer bekommt das Step-B-Batch nur als Argumentwert: kein "call", kein "-File".
+# Genau diese Stelle war in run_chain_v2dev.bat monatelang blind.
+Write-Host 'Fall 7: fehlendes Batch in Argumentposition (-StepBBat <name>.bat)'
+Write-Script "$tmp\runs\lausitz\argref.ps1" "cmd.exe /c chain -StepBBat `"run_missing.bat`"`r`n"
+$out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
+Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match 'run_missing\.bat')) 'Exit 1 bei Skriptreferenz in Argumentposition'
+Remove-Item "$tmp\runs\lausitz\argref.ps1"
+
+# Diskriminierend: gleicher Inhalt, zwei Dateinamen - nur der allowlistete ist kein Befund.
+Write-Host 'Fall 8: alter String als DATEN in einem tools-Skript (Allowlist)'
+New-Item -ItemType Directory -Force "$tmp\tools" | Out-Null
+$asData = "`$old = 'parcel-demand-2-matsim-pipeline\hagrid-input'`r`n"
+Write-Script "$tmp\tools\migrate-input-layout.ps1" $asData
+Write-Script "$tmp\tools\other-tool.ps1" $asData
+$out = & $check -RepoRoot $tmp -Scripts "$tmp\runs", "$tmp\tools"
+$txt = $out -join "`n"
+Assert (($LASTEXITCODE -ne 0) -and ($txt -match 'other-tool\.ps1') -and ($txt -notmatch 'migrate-input-layout')) `
+       'Allowlist deckt nur den genannten Dateinamen: other-tool.ps1 ist ein Befund, migrate-input-layout.ps1 nicht'
 
 Remove-Item -Recurse -Force $tmp
 if ($fails -gt 0) { exit 1 } else { Write-Host 'alle Pruefungen bestanden'; exit 0 }
