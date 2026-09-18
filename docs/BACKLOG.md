@@ -486,14 +486,9 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 
 ### Restructure-Folgepunkte (Spec §10, 2026-09-18)
 
-- **`[M]` Fork-Hygiene + DRT/DVRP-Fork** — neuer Fork-Branch `hagrid/2025.0` = Tag 2025.0 +
-  `76a1638` + `3b5a493` (die zwei Fuel-Compat-Commits `c44fe15`, `39ad2cc` sind seit Core 2025.0
-  obsolet, `VehicleUtils.getFuelConsumptionLitersPerMeter` existiert wieder); Sparse-Checkout um
-  `contribs/dvrp contribs/drt` erweitern; POM-Shims `external/dvrp`, `external/drt` nach
-  freight-Muster (dvrp braucht `common`, `ev`, `otfvis` als Release-Artefakte); Gitlink umhängen,
-  alter Branch bleibt (Shallow-Clones). Kontrolle: Proben aus
-  `%USERPROFILE%\hagrid-restructure-evidence` erneut laufen lassen. → Spec 2026-09-17 §10.1
-  _(added 2026-09-18)_
+- **`[M]` Fork-Hygiene + DRT/DVRP-Fork** — Fork-Branch `hagrid/2025.0` = Tag 2025.0 + `76a1638` +
+  `3b5a493`; Sparse-Checkout um `contribs/dvrp contribs/drt`, zwei POM-Shims nach freight-Muster,
+  alter Branch bleibt. → Spec 2026-09-17 §10.1 _(added 2026-09-18)_
 - **`[S]` `HagridPaths` aufteilen** in Root-Erkennung (`core`) + `HannoverPaths` + `LausitzPaths`;
   danach fällt `HagridPaths` von der Allowlist in `ArchitectureRulesTest`. _(added 2026-09-18)_
 - **`[L]` `HAGRIDSimulationConfig` / `SimulationRunnerUtils` / `HAGRIDScenarioBuilder` zerlegen**
@@ -505,9 +500,8 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   `tools/migrate-input-layout.ps1` → `mvn -q install` → P1-Probe gegen `before\hashes.txt`. Sim:
   Pull-Sperre (Hannover-v4) vorher prüfen. _(added 2026-09-18)_
 - **`[S]` Geparkte 476 MB `parcel-demand-2-matsim-pipeline/input/` klären** — sieben BASECASE-Tage
-  (09./10./12./14./15./16./17. Mai 2025) existieren nur dort; geparkt unter
-  `%USERPROFILE%\hagrid-parked-inputs\` mit README-parked.txt — einpflegen nach
-  `hagrid/input/hannover/demand/` oder löschen. _(added 2026-09-18)_
+  (9./10./12./14./15./16./17.5.2025) existieren nur dort, geparkt unter
+  `%USERPROFILE%\hagrid-parked-inputs\` (README-parked.txt) — einpflegen nach `hagrid/input/hannover/demand/` oder löschen. _(added 2026-09-18)_
 - **`[S]` `SimulationBatGenerator` umbiegen**, damit er `runs/hannover/run_hagrid_sim.bat` mit der
   `%~dp0..\..\hagrid`-cd-Form schreibt (heute schreibt er das git-ignorierte
   `hagrid/run_hagrid_sim.bat`). _(added 2026-09-18)_
@@ -515,8 +509,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   jetzt beide unter `hagrid/input/`. _(added 2026-09-18)_
 - **`[S]` `DashboardGenerator.java.bak` löschen und toten `@see`-Verweis fixen** —
   `hagrid/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
-  `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins
-  Leere. _(added 2026-09-18)_
+  `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins Leere. _(added 2026-09-18)_
 - **`[M]` `GeoUtils`/`HagridConfig` regionsneutral machen**, damit `Region` nach `hagrid.hannover`
   ziehen kann. _(added 2026-09-18)_
 - **`[S]` Import-Hygiene nach dem Paket-Umzug** — 11 redundante same-package Imports,

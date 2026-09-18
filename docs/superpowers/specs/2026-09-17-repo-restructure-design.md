@@ -246,4 +246,4 @@ Nebenbefunde: zwei versehentlich getrackte GC-Logs (`logs/jvm_gc.log.0/.1`, `*.l
 9. `ParseScenarioSharedUseTest` lebt in `hagrid.core.simulation` — ruft eine paketprivate Switchboard-Methode dort auf.
 10. `track_sweep.ps1` ist ein Lausitz-Tracker und gehört nach `runs/lausitz/`.
 11. Die Rewrite-Map muss den String-Literal `hagrid.pipeline.root` ausnehmen (Systemproperty-Name, bleibt erhalten) — das Gate für alte Paket-Token schließt ihn, das nicht kompilierte `DashboardGenerator.java.bak` und einen vorbestehenden hängenden `@see …_old`-Verweis aus.
-12. Verhaltensneutralitäts-Beleg: 91/94 byte-identisch, Properties-Timestamp erklärt, Events unter 12-Thread-QSim multiset-identisch → [METHODS-LOG](../../METHODS-LOG.md) §2.68.
+12. Verhaltensneutralitäts-Beleg: 94 Dateien, 90 byte-identisch + 1 Properties-Timestamp erklärt + 3 Events unter 12-Thread-QSim multiset-identisch = 94 → [METHODS-LOG](../../METHODS-LOG.md) §2.68.
