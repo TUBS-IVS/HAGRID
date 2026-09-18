@@ -4074,10 +4074,8 @@ Verwandt: §2.55 (die BEV-Korrekturkette), §2.63 (Nebenverbraucher), §2.66 (Pa
 
 ### 2.68 Repo-Umbau 2026-09-17 ist verhaltensneutral (Belege)
 
-_(Nummerierung: §2.67 war zum Planungszeitpunkt als ungetrackter Stash einer parallelen Session
-vorgesehen und für diesen Eintrag reserviert. Beim Schreiben ist er bereits committet
-(„Der Emissionskanal ist ein Kilometerzähler…", `e26a045`) — die Reservierung entfällt damit,
-dieser Eintrag läuft unter der nächsten freien Nummer.)_
+_(Nummerierung: die für diesen Eintrag reservierte Nummer §2.67 ist inzwischen durch eine parallele
+Session committet („Der Emissionskanal ist ein Kilometerzähler…", `e26a045`), daher §2.68.)_
 
 Umbau nach Spec `docs/superpowers/specs/2026-09-17-repo-restructure-design.md`: Modul
 `parcel-demand-2-matsim-pipeline` → `hagrid/`, Pakete `hagrid.core/hannover/lausitz`, Inputs
@@ -4090,16 +4088,15 @@ Belege (Dev-PC, Jar jeweils frisch gebaut, Hashes in
   `*_drt_inputs.properties` nach Pfadnormalisierung gleich.
 - P2 `drt_baseline`, 2 Iterationen, jsprit 10: `drt_vehicle_stats*.csv`, Carrier-Pläne (u. a.
   `*_lmd_carriers_routed.xml`), `output_events.xml.gz` (entpackt). Über P1+P2 zusammen **94**
-  Dateien verglichen, **91** byte-identisch. Die restlichen 3 sind bei genauerem Hinsehen ebenfalls
-  verhaltensgleich: `*_drt_inputs.properties` unterscheidet sich nur im Timestamp-Kommentar, den
-  Java `Properties.store()` schreibt (nach Herausfiltern der `#`-Zeilen identisch); die drei
-  Event-Dateien (`ITERS/it.0`, `ITERS/it.2`, `output_events`) unterscheiden sich nur in der
-  Zeilenreihenfolge — als Multiset identisch (it.0: 7.995.132 Zeilen beidseitig; it.2: 7.988.542
-  beidseitig; sortierter Diff leer). Ursache ist `qsim.numberOfThreads = 12`
-  (mit `global.numberOfThreads = 12`, `eventsManager.synchronizeOnSimSteps = true`) in der
-  Run-Config: Events verschiedener QSim-Threads innerhalb eines Zeitschritts interleaven
-  nichtdeterministisch — ein Bestandsbefund der Simulation, keine Folge des Umbaus. Wall-Clock P2:
-  vorher 14:05–17:33 (speichergebunden), nachher 02:44–04:13.
+  Dateien verglichen: **90** byte-identisch, **1** (`*_drt_inputs.properties`) nur im
+  Timestamp-Kommentar verschieden, den Java `Properties.store()` schreibt (nach Herausfiltern der
+  `#`-Zeilen identisch), **3** Event-Dateien (`ITERS/it.0`, `ITERS/it.2`, `output_events`) nur in
+  der Zeilenreihenfolge verschieden — als Multiset identisch (it.0: 7.995.132 Zeilen beidseitig;
+  it.2: 7.988.542 beidseitig; sortierter Diff leer). 90 + 1 + 3 = 94. Ursache der Event-Reihenfolge
+  ist `qsim.numberOfThreads = 12` (mit `global.numberOfThreads = 12`,
+  `eventsManager.synchronizeOnSimSteps = true`) in der Run-Config: Events verschiedener
+  QSim-Threads innerhalb eines Zeitschritts interleaven nichtdeterministisch — ein Bestandsbefund
+  der Simulation, keine Folge des Umbaus. Wall-Clock P2: vorher 14:05–17:33, nachher 02:44–04:13.
 - P3 Hannover `basecase`, 1 Iteration: **nicht durchgeführt** — geteilte Hannover-Inputs liegen
   nicht auf dem Dev-PC; Nachholen auf dem Sim nach dem Ausrollen (BACKLOG). Die freight/jsprit-Kette
   ist stattdessen durch P2s LMD-Carrier belegt (byte-identische `*_lmd_carriers_routed.xml`) sowie
