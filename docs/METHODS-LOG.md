@@ -4101,18 +4101,37 @@ Belege (Dev-PC, Jar jeweils frisch gebaut, Hashes in
   nicht auf dem Dev-PC; Nachholen auf dem Sim nach dem Ausrollen (BACKLOG). Die freight/jsprit-Kette
   ist stattdessen durch P2s LMD-Carrier belegt (byte-identische `*_lmd_carriers_routed.xml`) sowie
   durch den Golden-Hash in `LausitzFreightPreprocessorTest` in der Suite.
-- Statisch: Pipeline **657** Tests / 0 Fehler / 0 Errors (652 vor dem Umbau + 4
-  `ArchitectureRulesTest` + 1 `KpiDashboardTriggerTest.scriptFor`), freight **272** / 0 / 0
+- Statisch: Pipeline **657** Tests / 0 Fehler / 0 Errors — aufgeschlüsselt **649** vor dem Umbau
+  (`1bf707b`) **+ 3** `HagridPathsTest$RootMarkerDetection` **+ 4** `ArchitectureRulesTest`
+  **+ 1** `KpiDashboardTriggerTest.scriptFor` = **657**; freight **272** / 0 / 0
   (9 skipped). KPI-Pytests **489** grün (Zahl vor und nach dem Umzug identisch).
   `ArchitectureRulesTest` mit Mutationsprobe (eine verbotene Referenz eingefügt ⇒ Test wird rot).
-  `tools/check-run-scripts.ps1`: 0 Befunde über **42** Skripte. Selbsttests der beiden
-  PowerShell-Werkzeuge grün (19 ok bzw. 6 ok).
+  `tools/check-run-scripts.ps1`: 0 Befunde über **57** Skripte (`runs/**`,
+  `analysis/common/run-monitoring/**`, `tools/**`). Selbsttests der beiden
+  PowerShell-Werkzeuge grün (19 ok bzw. 8 ok).
 
-Zwei Nebenbefunde aus dem Diff, keine Verhaltensänderung: `Delivery$ParcelType` wird in MATSim-XML,
-die **vor** dem Umbau geschrieben wurde, als Klassenname `hagrid.utils.demand.Delivery$ParcelType`
-persistiert — `XMLParcelTypeFixer` schreibt das beim nächsten Durchlauf um, unabhängig vom neuen
-Paketpfad. Die Systemproperty `hagrid.pipeline.root` behält ihren Namen; sie ist im Rewrite-Mapping
-explizit ausgenommen (Spec §11.11).
+⚠️ **Präzisierung zu „bitidentisch".** Der Begriff gilt in diesem Eintrag und in Befund 4 von
+§2.67 (Dev↔Sim) für **CSV-, Plan- und Carrier-Ausgaben**. **Event-Dateien sind es nicht**: unter
+mehrthreadiger QSim (`qsim.numberOfThreads = 12`) interleaven Events verschiedener Threads
+innerhalb eines Zeitschritts nichtdeterministisch, sie sind nur als **Multimengen** identisch (P2
+oben: drei Event-Dateien, sortierter Diff leer, Zeilenzahl beidseitig gleich). Wer einen
+Determinismus-Beleg aus §1.5 oder §2.67 zitiert, muss diese Grenze mitzitieren — ein
+zeilenweiser Event-Vergleich ist kein gültiger Reproduktionstest.
+
+Eine **bewusste** Verhaltensänderung gibt es: `run_stepA_v2dev.bat` und
+`run_stepB_v2dev_batch.bat` referenzierten ein nie gebautes `-shaded.jar` und brachen mit „JAR not
+found" ab; sie starten jetzt das echte Jar, laufen also erstmals durch (Spec §11 Pkt 8).
+
+Nebenbefund aus dem Diff: Alte MATSim-XML mit dem Klassennamen
+`hagrid.utils.demand.Delivery$ParcelType` verliert das `type`-Attribut beim Einlesen **still** —
+MATSims `ObjectAttributesConverter` scheitert an `Class.forName` und verwirft das Attribut, ohne zu
+scheitern. `XMLParcelTypeFixer` greift dabei **nicht**: sein Muster sucht den Wert `Mixed`
+(`<attribute name="type"[^>]*>Mixed</attribute>`), nicht den veralteten Klassennamen, und sein
+Replacement enthält `$ParcelType` — `String.replaceAll` liest `$P` als Gruppenreferenz und wirft
+`Illegal group reference`, bevor irgendetwas geschrieben wird (vorbestehender Fehler, BACKLOG). Step-A-
+Ausgaben von **vor** dem Umbau wiederzuverwenden — was `resume_sweep.ps1` konstruktionsbedingt tut —
+ist deshalb zu vermeiden oder ausdrücklich zu messen. Die Systemproperty `hagrid.pipeline.root`
+behält ihren Namen; sie ist im Rewrite-Mapping explizit ausgenommen (Spec §11.11).
 
 Einschränkung: Läufe von vor dem Umbau tragen Pfade des alten Layouts in `run_meta.json`/Logs; die
 KPI-Analyse liest sie weiter, weil sie relativ zum Laufordner rechnet (`run_dir.parent.parent`).

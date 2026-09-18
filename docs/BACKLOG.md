@@ -497,7 +497,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   (`run_meta.py`, Laufordner, KPI-Dateinamen, METHODS-LOG-Zitate). User-Entscheidung 2026-09-17:
   vorerst nicht. _(added 2026-09-18)_
 - **`[S]` Ausrollen des Umbaus auf Sim, IVS100, Lausitz-VM** zwischen Läufen: `git pull` →
-  `tools/migrate-input-layout.ps1` → `mvn -q install` → P1-Probe gegen `before\hashes.txt`. Sim:
+  `tools/migrate-input-layout.ps1` → `mvn -q clean install` → P1-Probe gegen `before\hashes.txt`. Sim:
   Pull-Sperre (Hannover-v4) vorher prüfen. _(added 2026-09-18)_
 - **`[S]` Geparkte 476 MB `parcel-demand-2-matsim-pipeline/input/` klären** — sieben BASECASE-Tage
   (9./10./12./14./15./16./17.5.2025) existieren nur dort, geparkt unter
@@ -505,8 +505,14 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 - **`[S]` `SimulationBatGenerator` umbiegen**, damit er `runs/hannover/run_hagrid_sim.bat` mit der
   `%~dp0..\..\hagrid`-cd-Form schreibt (heute schreibt er das git-ignorierte
   `hagrid/run_hagrid_sim.bat`). _(added 2026-09-18)_
-- **`[S]` `tools/setup_hagrid_io.bat` einstampfen oder neu schreiben** — Quelle und Ziel liegen
-  jetzt beide unter `hagrid/input/`. _(added 2026-09-18)_
+- **`[S]` `tools/setup_hagrid_io.bat` löschen oder neu schreiben** — seit 2026-09-18 stillgelegt
+  (`exit /b 1` in Zeile 2), weil Quelle und Ziel beide unter `hagrid/input/` liegen; offen ist nur
+  noch, ob die Datei ganz verschwindet. _(added 2026-09-18)_
+- **`[S]` `XMLParcelTypeFixer` hat nie funktioniert** — `String.replaceAll` liest das `$P` in
+  `hagrid.core.util.Delivery$ParcelType` als Gruppenreferenz (`Illegal group reference`), und das
+  Muster sucht ohnehin nur den Wert `Mixed`, nicht den veralteten Klassennamen. _(added 2026-09-18)_
+- **`[S]` README-Sprache vereinheitlichen** — der Text mischt Deutsch und Englisch; bleibt vorerst
+  so (Entscheidung des Users 2026-09-18). _(added 2026-09-18)_
 - **`[S]` `DashboardGenerator.java.bak` löschen und toten `@see`-Verweis fixen** —
   `hagrid/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
   `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins Leere. _(added 2026-09-18)_
@@ -514,9 +520,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   ziehen kann. _(added 2026-09-18)_
 - **`[S]` Import-Hygiene nach dem Paket-Umzug** — 11 redundante same-package Imports,
   nicht-alphabetische Import-Blöcke. _(added 2026-09-18)_
-- **`[S]` `HagridPathsTest.markerInSubfolderMeansHagrid` unterscheidet Fall 3 nicht vom
-  Case-4-Fallback** — ein Erkennungsgrund-Signal ergänzen. _(added 2026-09-18)_
-
 - **`[S]` `hagrid/PIPELINE_DOCUMENTATION.md` und `hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
   beschreiben noch das Layout vor dem Restructure vom 2026-09-17 und sogar vor dem
   `hagrid-input`-Common/Hannover/Lausitz-Split; tragen bis dahin nur einen Stale-Hinweis. _(added 2026-09-18)_
