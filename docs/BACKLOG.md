@@ -510,8 +510,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 - **`[S]` `XMLParcelTypeFixer` hat nie funktioniert** — `String.replaceAll` liest das `$P` in
   `hagrid.core.util.Delivery$ParcelType` als Gruppenreferenz (`Illegal group reference`), und das
   Muster sucht ohnehin nur den Wert `Mixed`, nicht den veralteten Klassennamen. _(added 2026-09-18)_
-- **`[S]` README-Sprache vereinheitlichen** — der Text mischt Deutsch und Englisch; bleibt vorerst
-  so (Entscheidung des Users 2026-09-18). _(added 2026-09-18)_
 - **`[S]` `DashboardGenerator.java.bak` löschen und toten `@see`-Verweis fixen** —
   `hagrid/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
   `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins Leere. _(added 2026-09-18)_
