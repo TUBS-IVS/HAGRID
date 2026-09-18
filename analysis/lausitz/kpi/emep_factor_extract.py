@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# analysis/kpi/emep_factor_extract.py
+# analysis/lausitz/kpi/emep_factor_extract.py
 """One-time extraction of the Tier-3 hot emission factor coefficients from
 the EMEP/EEA guidebook 2023 (Update 2025) Appendix 4 xlsx (Oct 2025,
 COPERT 5.9.1) into the committed data/emep_hot_factors.csv.

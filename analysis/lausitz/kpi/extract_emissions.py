@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# analysis/kpi/extract_emissions.py
+# analysis/lausitz/kpi/extract_emissions.py
 """Emission KPI rows (kpi_group="environment") for the Lausitz runs.
 
 Tier-3 method: per freight TOUR / per DRT VEHICLE, evaluate the EMEP/EEA

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# analysis/kpi/cost_model.py
+# analysis/lausitz/kpi/cost_model.py
 """Unified direct-operating-cost model, parameterised from cost_parameters.csv.
 
 This module owns ONLY the parameter side: it reads the CSV, derives the

@@ -59,13 +59,13 @@ RE_TTYPE = re.compile(r'taskType="([^"]+)"')
 RE_PHASE = re.compile(r'phase="([^"]+)"')
 
 #: dvrpTaskStarted `taskType` names of the 1d Modular freight tasks — mirrors the Java
-#: hagrid.integrated.modular.Modular.FREIGHT_DRIVE_TASK_TYPE / FREIGHT_STOP_TASK_TYPE.
+#: hagrid.lausitz.modular.Modular.FREIGHT_DRIVE_TASK_TYPE / FREIGHT_STOP_TASK_TYPE.
 #: The capsule swap is deliberately absent: it has no distinguishable name (see module
 #: docstring), and is identified by the freight-window bracket instead.
 FREIGHT_DRIVE_TASK = "MODULAR_FREIGHT_DRIVE"
 FREIGHT_STOP_TASK = "MODULAR_FREIGHT_STOP"
 
-#: hagrid.integrated.modular.ModularTourEvent.EVENT_TYPE and the two phases that bracket one
+#: hagrid.lausitz.modular.ModularTourEvent.EVENT_TYPE and the two phases that bracket one
 #: freight excursion on one vehicle. PLANNED/EXPIRED carry no vehicle and are ignored here.
 MODULAR_EVENT_TYPE = "modularTour"
 PHASE_OPEN, PHASE_CLOSE = "DISPATCHED", "COMPLETED"

@@ -39,7 +39,7 @@ RE_VEHICLE = re.compile(r'\bvehicle="([^"]+)"')
 RE_PERSON = re.compile(r'person="([^"]+)"')
 RE_TIME = re.compile(r'\btime="([^"]+)"')
 
-# Java: hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON_PREFIX
+# Java: hagrid.lausitz.shareduse.SharedUse.PARCEL_PERSON_PREFIX
 PARCEL_PERSON_PREFIX = "parcel_"
 
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)

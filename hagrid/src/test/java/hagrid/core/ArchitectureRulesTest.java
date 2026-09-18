@@ -27,8 +27,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ArchitectureRulesTest {
 
     private static final Path MAIN = Path.of("src", "main", "java", "hagrid");
+    // Keyed on the path relative to src/main/java/hagrid, NOT on the simple file name:
+    // two classes in different packages may share a name, and a name-keyed allowlist
+    // would wave both of them through.
     private static final Set<String> CORE_SWITCHBOARD = Set.of(
-            "HagridPaths", "HAGRIDScenarioBuilder", "HAGRIDSimulationConfig", "SimulationRunnerUtils");
+            "core/HagridPaths.java",
+            "core/simulation/HAGRIDScenarioBuilder.java",
+            "core/simulation/HAGRIDSimulationConfig.java",
+            "core/simulation/SimulationRunnerUtils.java");
     // Heuristic, not a parser: string literals are not understood, so a "//" inside a
     // non-URL string would still be stripped as a comment. Acceptable here because this
     // scan is a guard — Step 4 additionally runs git grep over resources.
@@ -45,6 +51,11 @@ class ArchitectureRulesTest {
 
     private static String rootOf(Path file) {
         return MAIN.relativize(file).getName(0).toString();
+    }
+
+    /** Allowlist key: path relative to {@code src/main/java/hagrid}, always with '/'. */
+    private static String keyOf(Path file) {
+        return MAIN.relativize(file).toString().replace('\\', '/');
     }
 
     private static String codeWithoutComments(Path file) throws IOException {
@@ -77,7 +88,7 @@ class ArchitectureRulesTest {
     void coreReachesStudiesOnlyViaSwitchboard() throws IOException {
         List<String> violations = mainSources()
                 .filter(p -> rootOf(p).equals("core"))
-                .filter(p -> !CORE_SWITCHBOARD.contains(p.getFileName().toString().replace(".java", "")))
+                .filter(p -> !CORE_SWITCHBOARD.contains(keyOf(p)))
                 .filter(p -> {
                     try {
                         String code = codeWithoutComments(p);
@@ -91,11 +102,14 @@ class ArchitectureRulesTest {
     @Test
     @DisplayName("the switchboard allowlist is not padded: every listed class really reaches a study package")
     void switchboardListIsTight() throws IOException {
-        for (String name : CORE_SWITCHBOARD) {
-            Path p = mainSources().filter(f -> f.getFileName().toString().equals(name + ".java")).findFirst().orElseThrow();
+        for (String key : CORE_SWITCHBOARD) {
+            Path p = MAIN.resolve(key);
+            assertThat(Files.isRegularFile(p))
+                    .as(key + " is on the allowlist but does not exist — the class moved, fix the key")
+                    .isTrue();
             String code = codeWithoutComments(p);
             assertThat(STUDY_TOKENS.values().stream().anyMatch(t -> t.matcher(code).find()))
-                    .as(name + " is on the allowlist but references no study package — remove it from the list")
+                    .as(key + " is on the allowlist but references no study package — remove it from the list")
                     .isTrue();
         }
     }

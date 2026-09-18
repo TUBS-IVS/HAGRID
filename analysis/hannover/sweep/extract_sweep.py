@@ -204,8 +204,10 @@ def validate(runs):
 
 
 def main():
-    # 300v2 exists on Desktop AND in repo root -- verify identical, use Desktop
-    dup_a, dup_b = DESKTOP / board("300v2"), REPO_ROOT / board("300v2")
+    # 300v2 exists on Desktop AND in the repo (analysis/hannover/legacy-figures)
+    # -- verify identical, use Desktop
+    dup_a = DESKTOP / board("300v2")
+    dup_b = REPO_ROOT / "analysis" / "hannover" / "legacy-figures" / board("300v2")
     if dup_a.exists() and dup_b.exists():
         ha = hashlib.sha256(dup_a.read_bytes()).hexdigest()
         hb = hashlib.sha256(dup_b.read_bytes()).hexdigest()

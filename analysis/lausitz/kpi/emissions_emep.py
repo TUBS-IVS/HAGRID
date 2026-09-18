@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# analysis/kpi/emissions_emep.py
+# analysis/lausitz/kpi/emissions_emep.py
 """EMEP/EEA Tier-3 emission factor evaluation for the Lausitz KPI stack.
 
 Deliberately independent of src/hagrid_output_analysis/emissions.py (that
