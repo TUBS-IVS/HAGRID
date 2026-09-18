@@ -4072,6 +4072,56 @@ Verwandt: §2.55 (die BEV-Korrekturkette), §2.63 (Nebenverbraucher), §2.66 (Pa
 
 ---
 
+### 2.68 Repo-Umbau 2026-09-17 ist verhaltensneutral (Belege)
+
+_(Nummerierung: §2.67 war zum Planungszeitpunkt als ungetrackter Stash einer parallelen Session
+vorgesehen und für diesen Eintrag reserviert. Beim Schreiben ist er bereits committet
+(„Der Emissionskanal ist ein Kilometerzähler…", `e26a045`) — die Reservierung entfällt damit,
+dieser Eintrag läuft unter der nächsten freien Nummer.)_
+
+Umbau nach Spec `docs/superpowers/specs/2026-09-17-repo-restructure-design.md`: Modul
+`parcel-demand-2-matsim-pipeline` → `hagrid/`, Pakete `hagrid.core/hannover/lausitz`, Inputs
+`input/{common,hannover,lausitz}`, Analysen/Runs/Notebooks/Fremdcode in eigene Wurzelordner. Keine
+Zerlegung von Klassen, Output-Wurzeln und Konzeptnamen unverändert.
+
+Belege (Dev-PC, Jar jeweils frisch gebaut, Hashes in
+`%USERPROFILE%\hagrid-restructure-evidence\{before,after}\hashes.txt`):
+- P1 `PrepareLausitzDrtInputs` (`drt_baseline`, f120): fünf `*_drt_*.xml.gz` entpackt sha256-gleich;
+  `*_drt_inputs.properties` nach Pfadnormalisierung gleich.
+- P2 `drt_baseline`, 2 Iterationen, jsprit 10: `drt_vehicle_stats*.csv`, Carrier-Pläne (u. a.
+  `*_lmd_carriers_routed.xml`), `output_events.xml.gz` (entpackt). Über P1+P2 zusammen **94**
+  Dateien verglichen, **91** byte-identisch. Die restlichen 3 sind bei genauerem Hinsehen ebenfalls
+  verhaltensgleich: `*_drt_inputs.properties` unterscheidet sich nur im Timestamp-Kommentar, den
+  Java `Properties.store()` schreibt (nach Herausfiltern der `#`-Zeilen identisch); die drei
+  Event-Dateien (`ITERS/it.0`, `ITERS/it.2`, `output_events`) unterscheiden sich nur in der
+  Zeilenreihenfolge — als Multiset identisch (it.0: 7.995.132 Zeilen beidseitig; it.2: 7.988.542
+  beidseitig; sortierter Diff leer). Ursache ist `qsim.numberOfThreads = 12`
+  (mit `global.numberOfThreads = 12`, `eventsManager.synchronizeOnSimSteps = true`) in der
+  Run-Config: Events verschiedener QSim-Threads innerhalb eines Zeitschritts interleaven
+  nichtdeterministisch — ein Bestandsbefund der Simulation, keine Folge des Umbaus. Wall-Clock P2:
+  vorher 14:05–17:33 (speichergebunden), nachher 02:44–04:13.
+- P3 Hannover `basecase`, 1 Iteration: **nicht durchgeführt** — geteilte Hannover-Inputs liegen
+  nicht auf dem Dev-PC; Nachholen auf dem Sim nach dem Ausrollen (BACKLOG). Die freight/jsprit-Kette
+  ist stattdessen durch P2s LMD-Carrier belegt (byte-identische `*_lmd_carriers_routed.xml`) sowie
+  durch den Golden-Hash in `LausitzFreightPreprocessorTest` in der Suite.
+- Statisch: Pipeline **657** Tests / 0 Fehler / 0 Errors (652 vor dem Umbau + 4
+  `ArchitectureRulesTest` + 1 `KpiDashboardTriggerTest.scriptFor`), freight **272** / 0 / 0
+  (9 skipped). KPI-Pytests **489** grün (Zahl vor und nach dem Umzug identisch).
+  `ArchitectureRulesTest` mit Mutationsprobe (eine verbotene Referenz eingefügt ⇒ Test wird rot).
+  `tools/check-run-scripts.ps1`: 0 Befunde über **42** Skripte. Selbsttests der beiden
+  PowerShell-Werkzeuge grün (19 ok bzw. 6 ok).
+
+Zwei Nebenbefunde aus dem Diff, keine Verhaltensänderung: `Delivery$ParcelType` wird in MATSim-XML,
+die **vor** dem Umbau geschrieben wurde, als Klassenname `hagrid.utils.demand.Delivery$ParcelType`
+persistiert — `XMLParcelTypeFixer` schreibt das beim nächsten Durchlauf um, unabhängig vom neuen
+Paketpfad. Die Systemproperty `hagrid.pipeline.root` behält ihren Namen; sie ist im Rewrite-Mapping
+explizit ausgenommen (Spec §11.11).
+
+Einschränkung: Läufe von vor dem Umbau tragen Pfade des alten Layouts in `run_meta.json`/Logs; die
+KPI-Analyse liest sie weiter, weil sie relativ zum Laufordner rechnet (`run_dir.parent.parent`).
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**
