@@ -4072,10 +4072,10 @@ Verwandt: §2.55 (die BEV-Korrekturkette), §2.63 (Nebenverbraucher), §2.66 (Pa
 
 ---
 
-### 2.68 Repo-Umbau 2026-09-17 ist verhaltensneutral (Belege)
+### 2.73 Repo-Umbau 2026-09-17 ist verhaltensneutral (Belege)
 
-_(Nummerierung: die für diesen Eintrag reservierte Nummer §2.67 ist inzwischen durch eine parallele
-Session committet („Der Emissionskanal ist ein Kilometerzähler…", `e26a045`), daher §2.68.)_
+_(Nummerierung: §2.67 bis §2.72 hat die parallele Emissions-Session vergeben (§2.67 committet als
+`e26a045`, §2.68–§2.72 beim Umbau noch uncommittet im Arbeitsbaum), daher §2.73.)_
 
 Umbau nach Spec `docs/superpowers/specs/2026-09-17-repo-restructure-design.md`: Modul
 `parcel-demand-2-matsim-pipeline` → `hagrid/`, Pakete `hagrid.core/hannover/lausitz`, Inputs
