@@ -497,8 +497,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   (`run_meta.py`, Laufordner, KPI-Dateinamen, METHODS-LOG-Zitate). User-Entscheidung 2026-09-17:
   vorerst nicht. _(added 2026-09-18)_
 - **`[S]` Ausrollen des Umbaus auf Sim, IVS100, Lausitz-VM** zwischen Läufen: `git pull` →
-  `tools/migrate-input-layout.ps1` → `mvn -q clean install` → P1-Probe gegen `before\hashes.txt`. Sim:
-  Pull-Sperre (Hannover-v4) vorher prüfen. _(added 2026-09-18)_
+  `tools/migrate-input-layout.ps1` → `mvn -q clean install` → P1-Probe gegen `before\hashes.txt`. _(added 2026-09-18)_
 - **`[S]` Geparkte 476 MB `parcel-demand-2-matsim-pipeline/input/` klären** — sieben BASECASE-Tage
   (9./10./12./14./15./16./17.5.2025) existieren nur dort, geparkt unter
   `%USERPROFILE%\hagrid-parked-inputs\` (README-parked.txt) — einpflegen nach `hagrid/input/hannover/demand/` oder löschen. _(added 2026-09-18)_
