@@ -109,7 +109,7 @@ function New-StepBBatch {
         # invisible outside this function) would leave the next reader wondering.
         $batchArgs = $ArgTemplate.Replace('{TAG}', $tag)
         $lines.Add("echo ===== RESUME $index/$($Tags.Count) tag=$tag %time% =====")
-        $lines.Add("`"$JavaExe`" $JvmArgs -cp `"$Jar`" hagrid.HAGRIDSimulationRunner $batchArgs")
+        $lines.Add("`"$JavaExe`" $JvmArgs -cp `"$Jar`" hagrid.core.simulation.HAGRIDSimulationRunner $batchArgs")
         $lines.Add("set RESUME${index}_EXITCODE=%ERRORLEVEL%")
         $lines.Add("echo RESUME${index}_EXIT=%RESUME${index}_EXITCODE%")
         $lines.Add("if not `"%RESUME${index}_EXITCODE%`"==`"0`" set RESUME_ANY_FAILED=1")
