@@ -240,3 +240,10 @@ Diese sechs Punkte korrigieren §4 und §5 und gelten vor dem Text dort:
 6. Artefakt-ID wird `hagrid` ⇒ Jar `hagrid-1.0-SNAPSHOT.jar`, `-pl hagrid`; `SimulationBatGenerator` erzeugt den Jar-Namen und zieht nach.
 
 Nebenbefunde: zwei versehentlich getrackte GC-Logs (`logs/jvm_gc.log.0/.1`, `*.log` deckt `.log.0` nicht) und eine getrackte `.bak_before_abort`-Kopie eines Skripts werden in Schritt 1 entfernt; der Provenance-Patch des Hannover-Sweeps enthält den alten Modulnamen und steht auf der Allowlist von Gate 6.
+
+7. `Region` bleibt in `hagrid.core.util` — wird strukturell von `HagridConfig` und `GeoUtils` gebraucht, ein Umzug nach `hagrid.hannover` bricht beide.
+8. Zwei Hannover-Step-Skripte (`run_stepA_v2dev.bat`, `run_stepB_v2dev_batch.bat`) referenzierten ein `-shaded.jar`, das die POM nie baut; sie nennen jetzt den echten Jar-Namen (Verhalten: sie starten statt abzubrechen).
+9. `ParseScenarioSharedUseTest` lebt in `hagrid.core.simulation` — ruft eine paketprivate Switchboard-Methode dort auf.
+10. `track_sweep.ps1` ist ein Lausitz-Tracker und gehört nach `runs/lausitz/`.
+11. Die Rewrite-Map muss den String-Literal `hagrid.pipeline.root` ausnehmen (Systemproperty-Name, bleibt erhalten) — das Gate für alte Paket-Token schließt ihn, das nicht kompilierte `DashboardGenerator.java.bak` und einen vorbestehenden hängenden `@see …_old`-Verweis aus.
+12. Verhaltensneutralitäts-Beleg: 91/94 byte-identisch, Properties-Timestamp erklärt, Events unter 12-Thread-QSim multiset-identisch → [METHODS-LOG](../../METHODS-LOG.md) §2.68.
