@@ -7,7 +7,7 @@ passengers too -- this module re-derives the pax-only numbers straight from
 the per-leg CSV instead (D10 of the 1c plan).
 
 Classifier (D10(b)): PARCEL_PREFIX mirrors the Java single source of truth
-hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON_PREFIX exactly. MATSim's
+hagrid.lausitz.shareduse.SharedUse.PARCEL_PERSON_PREFIX exactly. MATSim's
 own DRT-legs analysis writer does not serialize a per-leg Goods-load column,
 so the personId-prefix predicate is the only classifier signal available
 here (the Java side additionally carries the dvrp:load attribute on the
@@ -49,7 +49,7 @@ import pax_only
 from common import row
 from pax_only import PARCEL_PREFIX  # noqa: F401  (re-exported; canonical def lives there)
 
-# Task 10: mirrors the Java single source of truth hagrid.integrated.shareduse.SharedUse
+# Task 10: mirrors the Java single source of truth hagrid.lausitz.shareduse.SharedUse
 # .LOAD_ATTRIBUTE exactly (same precedent as PARCEL_PREFIX above mirroring PARCEL_PERSON_PREFIX).
 _LOAD_ATTRIBUTE = "dvrp:load:parcels"
 

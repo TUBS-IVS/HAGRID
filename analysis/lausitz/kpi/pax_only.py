@@ -32,7 +32,7 @@ SUFFIX = "_pax_only"
 INCL_SUFFIX = "_incl_parcels"
 
 #: Single source of truth for the classifier, mirroring the Java
-#: hagrid.integrated.shareduse.SharedUse.PARCEL_PERSON_PREFIX. Every module that
+#: hagrid.lausitz.shareduse.SharedUse.PARCEL_PERSON_PREFIX. Every module that
 #: separates parcel from passenger rows imports it from here -- four copies of the
 #: same predicate is how they drift apart.
 PARCEL_PREFIX = "parcel_"

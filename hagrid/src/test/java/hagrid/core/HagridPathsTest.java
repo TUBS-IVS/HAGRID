@@ -392,18 +392,28 @@ class HagridPathsTest {
         }
 
         @Test
-        @DisplayName("marker one level down -> module root is 'hagrid'")
+        @DisplayName("marker one level down -> module root is 'hagrid', and the marker is really there")
         void markerInSubfolderMeansHagrid(@TempDir Path tempDir) throws IOException {
             Files.createDirectories(tempDir.resolve("hagrid").resolve("input"));
             Files.createFile(tempDir.resolve("hagrid").resolve("input").resolve("README.md"));
 
-            assertThat(HagridPaths.detectPipelineRoot(tempDir)).isEqualTo(Path.of("hagrid"));
+            Path detected = HagridPaths.detectPipelineRoot(tempDir);
+            assertThat(detected).isEqualTo(Path.of("hagrid"));
+            // Cases 3 and 4 return the SAME path, so isEqualTo alone cannot tell a hit
+            // from the fallback. This says what case 3 claims: the returned root carries
+            // the marker. The negative of it is asserted in noMarkerFallsBack below.
+            // NOTE (measured, not assumed): a broken ROOT_MARKER does NOT turn this test
+            // red — the fixture writes README.md itself, so the file is there either way.
+            // The test that discriminates ROOT_MARKER is markerInCwdMeansHere (case 2).
+            assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isTrue();
         }
 
         @Test
-        @DisplayName("no marker anywhere -> falls back to 'hagrid'")
+        @DisplayName("no marker anywhere -> falls back to 'hagrid' (same path, nothing found)")
         void noMarkerFallsBack(@TempDir Path tempDir) {
-            assertThat(HagridPaths.detectPipelineRoot(tempDir)).isEqualTo(Path.of("hagrid"));
+            Path detected = HagridPaths.detectPipelineRoot(tempDir);
+            assertThat(detected).isEqualTo(Path.of("hagrid"));
+            assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isFalse();
         }
     }
 }

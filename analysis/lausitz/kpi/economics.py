@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# analysis/kpi/economics.py
+# analysis/lausitz/kpi/economics.py
 """Economic KPIs.
 
 TWO models live here, and which one runs is decided by study area:

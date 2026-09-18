@@ -37,6 +37,7 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 
 import hagrid.core.HagridConfig;
+import hagrid.core.util.StudyArea;
 import hagrid.hannover.HagridModule;
 import hagrid.core.HagridPaths;
 import hagrid.hannover.pipeline.ScenarioConfig.DispatchWindow;
@@ -87,7 +88,8 @@ public final class ScenarioRunner {
 	public ScenarioRunner(ScenarioConfig scenarioConfig, Path pipelineRoot) {
 		this.scenarioConfig = scenarioConfig;
 		this.pipelineRoot = pipelineRoot;
-		this.configXmlPath = pipelineRoot.resolve("input").resolve("hannover").resolve("config").resolve("config.xml");
+		this.configXmlPath = pipelineRoot.resolve("input").resolve(StudyArea.HANNOVER.folder())
+				.resolve("config").resolve("config.xml");
 	}
 
 	/**

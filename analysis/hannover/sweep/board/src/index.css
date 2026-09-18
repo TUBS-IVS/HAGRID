@@ -59,7 +59,7 @@
   }
 }
 
-/* HAGRID dataviz tokens (validated palette, see analysis/kpi/render.py).
+/* HAGRID dataviz tokens (validated palette, see analysis/lausitz/kpi/render.py).
    Chart colors are read via var() from SVG props so light/dark needs no JS. */
 :root {
   --background: 60 14% 97%;   /* #f9f9f7 page */
