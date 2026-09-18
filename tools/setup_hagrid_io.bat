@@ -1,4 +1,6 @@
 @echo off
+echo RETIRED 2026-09-18: paths collapsed after the input re-layout; see BACKLOG
+exit /b 1
 REM =========================================================================
 REM HAGRID Input Structure Setup Script
 REM =========================================================================

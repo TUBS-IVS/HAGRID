@@ -51,7 +51,7 @@ HAGRID/
 ├── analysis/
 │   ├── common/run-monitoring/
 │   ├── hannover/{sweep,legacy-figures}/
-│   └── lausitz/{kpi,drt-headline,paper-figures,lmd}/
+│   └── lausitz/{drt-headline,kpi}/
 ├── notebooks/
 │   ├── demand-estimation/
 │   ├── demand-estimation-batch/
@@ -60,25 +60,28 @@ HAGRID/
 │   ├── hannover/           run_analysis.bat, run_hagrid_sim*.bat, run_step*.bat, run_chain_v2dev.bat
 │   └── lausitz/            track_sweep.ps1, alle übrigen .bat/.ps1; Einmalskripte unter campaigns/
 ├── external/
-│   ├── matsim-libs/        Submodul (Fork), Pfad unverändert
+│   ├── matsim-libs/        Submodul (gepatchter matsim-libs-Fork)
 │   ├── freight/            POM-Shim
 │   └── libs/                matsim-lausitz-Jar
-├── tools/                  resync-freight.ps1, setup_hagrid_io.bat, migrate-input-layout.ps1, check-run-scripts.ps1
+├── tools/                  resync-freight.ps1, migrate-input-layout.ps1, check-run-scripts.ps1
 ├── requirements.txt
 └── docs/
 ```
 
+Der Baum zeigt nur getrackte Inhalte. Unter `analysis/lausitz/` liegen lokal zusätzlich `paper-figures/` (per `.gitignore` ausgeschlossen) und `lmd/`; beide entstehen aus Läufen und werden nicht versioniert.
+
 - `hagrid/` ist das einzige Maven-Modul; Java-Quellen sind entlang der drei Wurzelpakete `hagrid.core`, `hagrid.hannover`, `hagrid.lausitz` sortiert, Inputs liegen unter `hagrid/input/` (git-ignoriert).
 - `analysis/` enthält die Python-Auswertungen, getrennt nach `common` (studienübergreifend, z. B. Run-Monitoring), `hannover` und `lausitz`.
 - `runs/` enthält die Windows-Startskripte, getrennt nach Studie; jedes Skript wechselt selbst in den richtigen Ordner.
-- `notebooks/` enthält die Jupyter-Notebooks zur Nachfrageschätzung (Hannover).
 - `external/` bündelt Fremdcode: den `matsim-libs`-Fork als Submodul, den `freight`-POM-Shim und die `libs`-Jars.
 - `tools/` enthält Hilfsskripte für Setup, Migration und statische Prüfungen, die kein Studien-spezifischer Run sind.
 - `docs/` enthält die lebende Projektdokumentation (Backlog, Methods-Log, Studiendaten, Obsidian-Export) sowie die Superpowers-Specs/Pläne.
 
+`notebooks/` enthält die Jupyter-Notebooks zur Nachfrageschätzung (Hannover). Die Pfade in diesem Absatz sind relativ zum jeweiligen Notebook-Ordner, nicht zur Repo-Wurzel:
+
 - **Notebooks 00–06** (unter `notebooks/demand-estimation/`): Each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: The final assembly that produces daily, segment-level demand.  
-- **input/**: Stores input data (e.g., shapefiles, CSVs, geospatial layers).  
+- **input/**: Stores the notebooks' input data (e.g., shapefiles, CSVs, geospatial layers) — this is not `hagrid/input/`.  
 - **output/**: Default directory for exported results (CSV, SHP, GeoPackage, or GeoJSON).
 
 
@@ -125,7 +128,9 @@ fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-subm
 **Bumping the MATSim/freight version:** see `tools/resync-freight.ps1` (header comment).
 
 **Inputs:** `hagrid/input/` ist git-ignoriert; Aufbau und Herkunft in `hagrid/input/README.md`.
-Checkouts von vor dem 2026-09-17 einmal `tools/migrate-input-layout.ps1` ausführen.
+Checkouts von vor dem 2026-09-17 einmal `tools/migrate-input-layout.ps1` ausführen und danach
+`mvn -q clean install` bauen — `clean` ist hier Pflicht: das Skript zieht das alte `target/`
+mit ins Modul, und ohne `clean` packt `shade` altes und neues Paketlayout in dasselbe Jar.
 
 **Runs:** alle Startskripte liegen unter `runs/hannover/` und `runs/lausitz/`; sie wechseln selbst
 in den richtigen Ordner. `tools/check-run-scripts.ps1` prüft sie statisch gegen das gebaute Jar.
@@ -146,17 +151,14 @@ git clone --recurse-submodules https://github.com/TUBS-IVS/HAGRID.git
 
 See the `## Setup` section above for the full bootstrap (submodule sparse-checkout, Windows longpaths).
 
-Navigate into the project folder:
+Install the required Python dependencies from the repository root (`requirements.txt` lives there, not in the notebook folders):
 
 ```
-cd HAGRID/notebooks/demand-estimation
-```
-
-Install the required Python dependencies:
-
-```
+cd HAGRID
 pip install -r requirements.txt
 ```
+
+The notebooks themselves are then opened from `notebooks/demand-estimation/`.
 
 > 💡 It is recommended to execute the notebooks in sequential order:  
 > `00_` → `06_`, followed by `ParcelDemandScenarioGenerator.ipynb`.
