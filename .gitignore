@@ -31,19 +31,19 @@ log/
 *.log.[0-9]*
 
 # Exclude specific large files
-notebooks/demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
-notebooks/demand-estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
-notebooks/demand-estimation/Project USEfUL XT/hochrechnung_kommentiert.py
-notebooks/demand-estimation/input/
-notebooks/demand-estimation/output/
+hagrid/demand/estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2010.csv
+hagrid/demand/estimation/Project USEfUL XT/Verflechtungsprognose2030/ketten-2030.csv
+hagrid/demand/estimation/Project USEfUL XT/hochrechnung_kommentiert.py
+hagrid/demand/estimation/input/
+hagrid/demand/estimation/output/
 
-# notebooks/demand-estimation-batch: only track notebooks (.ipynb) and folder structure of input/output (via .gitkeep)
-notebooks/demand-estimation-batch/**
-!notebooks/demand-estimation-batch/**/
-!notebooks/demand-estimation-batch/**/*.ipynb
-!notebooks/demand-estimation-batch/**/.gitkeep
+# hagrid/demand/estimation-batch: only track notebooks (.ipynb) and folder structure of input/output (via .gitkeep)
+hagrid/demand/estimation-batch/**
+!hagrid/demand/estimation-batch/**/
+!hagrid/demand/estimation-batch/**/*.ipynb
+!hagrid/demand/estimation-batch/**/.gitkeep
 
-notebooks/hannover-analysis/input
+analysis/hannover/notebooks/input
 
 hagrid/sim-input
 hagrid/routerCache
@@ -69,14 +69,14 @@ hagrid/hagrid-matsim-output/**
 !hagrid/hagrid-matsim-output/**/
 !hagrid/hagrid-matsim-output/**/.gitkeep
 
-notebooks/hannover-analysis/cache
-notebooks/hannover-analysis/emission_maps
-notebooks/hannover-analysis/emission_maps_cum
+analysis/hannover/notebooks/cache
+analysis/hannover/notebooks/emission_maps
+analysis/hannover/notebooks/emission_maps_cum
 
 output/*
-notebooks/hannover-analysis/*
-!notebooks/hannover-analysis/*.py
-!notebooks/hannover-analysis/*.ipynb
+analysis/hannover/notebooks/*
+!analysis/hannover/notebooks/*.py
+!analysis/hannover/notebooks/*.ipynb
 !.gitignore
 
 # Exclude vs code settings

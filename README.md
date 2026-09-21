@@ -47,16 +47,13 @@ HAGRID/
 │   ├── src/main/java/hagrid/{core,hannover,lausitz}/…
 │   ├── src/test/java/hagrid/{core,hannover,lausitz}/…
 │   ├── input/{common,hannover,lausitz}/   git-ignored, see hagrid/input/README.md
+│   ├── demand/{estimation,estimation-batch}/   Jupyter notebooks: Hannover parcel-demand estimation
 │   ├── hagrid-output/
 │   └── hagrid-matsim-output/
 ├── analysis/
 │   ├── common/run-monitoring/
-│   ├── hannover/{sweep,legacy-figures}/
+│   ├── hannover/{notebooks,sweep,legacy-figures}/
 │   └── lausitz/{drt-headline,kpi}/
-├── notebooks/
-│   ├── demand-estimation/
-│   ├── demand-estimation-batch/
-│   └── hannover-analysis/
 ├── runs/
 │   ├── hannover/           run_analysis.bat, run_hagrid_sim*.bat, run_step*.bat, run_chain_v2dev.bat
 │   └── lausitz/            track_sweep.ps1 and all other .bat/.ps1; one-off scripts under campaigns/
@@ -78,9 +75,9 @@ The tree shows tracked content only. Locally, `analysis/lausitz/` additionally h
 - `tools/` holds helper scripts for setup, migration and static checks that are not study-specific runs.
 - `docs/` holds the living project documentation (backlog, methods log, study data, Obsidian export) and the Superpowers specs and plans.
 
-`notebooks/` holds the Jupyter notebooks for the Hannover demand estimation. The paths in this paragraph are relative to the respective notebook folder, not to the repository root:
+`hagrid/demand/` holds the Jupyter notebooks for the Hannover demand estimation (`estimation/`; `estimation-batch/` is an older batch variant of the same chain). `analysis/hannover/notebooks/` holds the older Hannover result-analysis notebooks used for the published papers; they carry absolute paths from the original author's machine and are kept as documentation of the analyses, not as a runnable pipeline. The paths in this paragraph are relative to the respective notebook folder, not to the repository root:
 
-- **Notebooks 00–06** (under `notebooks/demand-estimation/`): each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
+- **Notebooks 00–06** (under `hagrid/demand/estimation/`): each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: the final assembly that produces daily, segment-level demand.  
 - **input/**: stores the notebooks' input data (e.g. shapefiles, CSVs, geospatial layers) — this is not `hagrid/input/`.  
 - **output/**: default directory for exported results (CSV, SHP, GeoPackage, or GeoJSON).
@@ -163,7 +160,7 @@ cd HAGRID
 pip install -r requirements.txt
 ```
 
-The notebooks themselves are then opened from `notebooks/demand-estimation/`.
+The notebooks themselves are then opened from `hagrid/demand/estimation/`.
 
 > 💡 It is recommended to execute the notebooks in sequential order:  
 > `00_` → `06_`, followed by `ParcelDemandScenarioGenerator.ipynb`.
