@@ -158,3 +158,19 @@ def test_projection_rejects_non_integer_years_without_truncating_them():
     for year in (True, 2022.0, 2020):
         with pytest.raises(ValueError, match="years"):
             project_annual(_reference(), _series(), [year], {"memory": {"fixed": 1}})
+
+
+def test_projection_fixes_dhl_b2b_proportional_to_the_national_trend():
+    from hagrid_demand.baseline.projection import _profile
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    series = build_series(packaged_series_inputs(), [2021, 2030], volume_fit_policy="observed_only")
+    b = series["b2b"].set_index("year").share
+    profile, target = _profile(series, 2030, dhl_fixed={"q_2021": .24, "b_2021": float(b[2021])})
+    dhl = profile[(profile.carrier == "DHL")].q.iloc[0]
+    assert dhl == pytest.approx(.24 * b[2030] / b[2021])
+    shares = profile.pivot(index="carrier", columns="segment", values="share")
+    market = series["market"].query("year == 2030").set_index("carrier").market_share
+    mixed = ((1 - target) * shares.private + target * shares.business).reindex(market.index)
+    assert mixed.to_numpy() == pytest.approx(market.to_numpy())

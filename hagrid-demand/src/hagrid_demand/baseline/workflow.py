@@ -204,6 +204,10 @@ def _write_series(config: dict, source: Path, output: Path) -> None:
         table.to_parquet(output / f"{name}.parquet", index=False)
 
 
+_STREET_REFERENCE_FILES = ["reference_anchor.json", "reference_streets.parquet", "reference_units.parquet"]
+_STOP_REFERENCE_FILES: list[str] = []
+
+
 def _anchor_mode(config: dict) -> str:
     mode = (config.get("anchor") or {}).get("mode", "street" if config.get("osm_buildings") else "postal")
     if mode not in {"street", "postal"}:
@@ -262,7 +266,8 @@ def _profiles(series_dir: Path, reference_year: int) -> tuple[dict, float]:
             float(b2b.loc[b2b.year.eq(reference_year), "share"].item()))
 
 
-def _write_reference(config: dict, source: Path, series_dir: Path, potentials_dir: Path, output: Path) -> None:
+def _write_reference(config: dict, source: Path, series_dir: Path, potentials_dir: Path, output: Path,
+                     buildings_dir: Path | None = None) -> None:
     profiles, b2b = _profiles(series_dir, config["reference_year"])
     source_sites = gpd.read_parquet(source / "sites.parquet")
     postal_scope = gpd.read_parquet(source / "postal_support.parquet")
@@ -271,17 +276,32 @@ def _write_reference(config: dict, source: Path, series_dir: Path, potentials_di
                                & source_sites.plz.isin(postal_scope.plz), "site_id"].astype(str).tolist()
     if invalid:
         raise ValueError(f"invalid employees for in-scope business sites: {invalid}")
-    solved = solve_reference(pd.read_parquet(potentials_dir / "potentials.parquet"),
-                             gpd.read_parquet(source / "dhl_observations.parquet"), profiles, b2b,
-                             config["reference_operating_days"], scope_plz=postal_scope.plz.astype(str).tolist())
+    if _anchor_mode(config) == "street":
+        from .anchor import solve_street_reference
+
+        solved = solve_street_reference(gpd.read_parquet(buildings_dir / "buildings.parquet"), _dhl_streets(source), profiles, b2b,
+                                        config["reference_operating_days"], config.get("anchor"), seed=int(config["seed"]),
+                                        scope_plz=postal_scope.plz.astype(str).tolist())
+        b2b_series = pd.read_parquet(series_dir / "b2b.parquet").set_index("year").share
+        solved["anchor"]["b2b_by_year"] = {str(int(year)): float(value) for year, value in b2b_series.items()}
+        _json(output / "reference_anchor.json", solved["anchor"])
+        solved["streets"].to_parquet(output / "reference_streets.parquet", index=False)
+        solved["units"].to_parquet(output / "reference_units.parquet", index=False)
+    else:
+        solved = solve_reference(pd.read_parquet(potentials_dir / "potentials.parquet"),
+                                 gpd.read_parquet(source / "dhl_observations.parquet"), profiles, b2b,
+                                 config["reference_operating_days"], scope_plz=postal_scope.plz.astype(str).tolist())
     postal_columns = ["plz", "dhl_retained_mean", "reference_annual", "private_annual", "business_annual", "b2b_share", "dhl_share"]
     solved["postal"].loc[:, postal_columns].to_parquet(output / "reference_postal.parquet", index=False)
     site_columns = ["site_id", "plz", "segment", "population", "employees", "branch", "weight", "historical_share",
                     "structural_share", "reference_annual", "allocation_status"]
     sites = solved["sites"].loc[:, site_columns].copy()
     sites.to_parquet(output / "reference_sites.parquet", index=False)
-    geometry = source_sites.loc[source_sites.site_id.isin(sites.site_id), ["site_id", "geometry"]].copy()
-    geometry = gpd.GeoDataFrame(geometry, geometry="geometry", crs=source_sites.crs)
+    if "geometry" in solved:
+        geometry = solved["geometry"]
+    else:
+        geometry = source_sites.loc[source_sites.site_id.isin(sites.site_id), ["site_id", "geometry"]].copy()
+        geometry = gpd.GeoDataFrame(geometry, geometry="geometry", crs=source_sites.crs)
     geometry.to_parquet(output / "reference_geometry.parquet", index=False)
     carriers = solved["carriers"]
     carrier_profiles = pd.concat([
@@ -351,7 +371,11 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
                  "scope_id": json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))["scope_id"],
                  "geometry": gpd.read_parquet(run / "reference_geometry.parquet")}
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
-    projection = project_annual(reference, series, config["years"], {"memory": {"fixed": 1}, "regional_level": config["regional_level"]})
+    projection_cfg = {"memory": {"fixed": 1}, "regional_level": config["regional_level"]}
+    if (run / "reference_anchor.json").is_file():
+        anchor = json.loads((run / "reference_anchor.json").read_text(encoding="utf-8"))
+        projection_cfg["dhl_b2b"] = {"q_2021": anchor["q_dhl"], "b_2021": anchor["b2b_by_year"][str(config["reference_year"])]}
+    projection = project_annual(reference, series, config["years"], projection_cfg)
     calendar, calendar_metadata = _daily_calendar(config, run)
     plan = resolve_spatial_plan(reference, projection, {"seed": config["seed"], "spatial": config["spatial"]}, 0, Path(config["cache_root"]))
     generation = {"seed": config["seed"], "spatial": config["spatial"], "dates": config.get("dates"),
@@ -423,6 +447,8 @@ def _frozen_reference_artifacts(run: Path) -> dict:
         "reconciliation": ("reference_carrier_profiles.parquet", "reference_reconciliation.json"),
         "regional": ("reference_regional_annual.json", "checks.json"),
     }
+    if (run / "reference_anchor.json").is_file():
+        groups["anchor"] = tuple(name for name in (*_STREET_REFERENCE_FILES, *_STOP_REFERENCE_FILES) if (run / name).is_file())
     result = {}
     for group, names in groups.items():
         result[group] = {}
@@ -528,20 +554,23 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                           validate=lambda output: _validate(output, ["buildings.parquet", "site_buildings.parquet", "buildings_report.json"]),
                           dependency_snapshot=buildings_snapshot)
             state["completed_stages"].append("buildings")
+        street_mode = _anchor_mode(config) == "street"
         reference_dependencies = {"sources": run / "sources", "series": run / "series", "potentials": run / "potentials"}
+        reference_files = {"workflow": Path(__file__), "reference": Path(__file__).with_name("reference.py")}
+        if street_mode:
+            reference_dependencies["buildings"] = run / "buildings"
+            reference_files.update({"anchor": Path(__file__).with_name("anchor.py")})
         reference_snapshot = dependency_snapshot(reference_dependencies)
-        reference_fingerprint = stage_key("reference", reference_dependencies, config,
-                                          {"workflow": Path(__file__), "reference": Path(__file__).with_name("reference.py")},
+        reference_fingerprint = stage_key("reference", reference_dependencies, config, reference_files,
                                           dependency_snapshot=reference_snapshot)
+        reference_public = ["reference_postal.parquet", "reference_sites.parquet", "reference_geometry.parquet",
+                            "reference_carrier_profiles.parquet", "reference_reconciliation.json", "reference_regional_annual.json",
+                            "reference_checks.json", "checks.json"] + (_STREET_REFERENCE_FILES if street_mode else [])
         resolve_stage(run, "reference", reference_fingerprint, cache_root=cache_root, dependencies=reference_dependencies,
-                      build=lambda output: _write_reference(config, run / "sources", run / "series", run / "potentials", output),
-                      validate=lambda output: _validate(output, ["reference_postal.parquet", "reference_sites.parquet",
-                                                                    "reference_geometry.parquet", "reference_carrier_profiles.parquet",
-                                                                    "reference_reconciliation.json", "reference_regional_annual.json",
-                                                                    "reference_checks.json", "checks.json"]), dependency_snapshot=reference_snapshot)
-        for name in ("reference_postal.parquet", "reference_sites.parquet", "reference_geometry.parquet",
-                     "reference_carrier_profiles.parquet", "reference_reconciliation.json", "reference_regional_annual.json",
-                     "reference_checks.json", "checks.json"):
+                      build=lambda output: _write_reference(config, run / "sources", run / "series", run / "potentials", output,
+                                                            run / "buildings" if street_mode else None),
+                      validate=lambda output: _validate(output, reference_public), dependency_snapshot=reference_snapshot)
+        for name in reference_public:
             _copy_public(run, "reference", name)
         state["completed_stages"].append("reference")
         baseline_fingerprint, baseline_artifacts = _baseline_fingerprint(run)
