@@ -94,7 +94,13 @@ Zuordnung zur DHL-Straße in dieser Reihenfolge:
 
 1. normalisierter Straßenname und PLZ des Gebäudes gleich einer DHL-Straße (bei mehreren Teilstücken: nächstes Teilstück);
 2. nächste DHL-Straße bis 100 m;
-3. keine DHL-Straße → Rückfall (5.9).
+3. nächste DHL-Straße bis 250 m (`buildings.extended_match_distance_m`, `null` schaltet die Stufe ab) für Standorte hinter
+   internen Zufahrten (Gewerbegebiete, Kliniken); ergänzt nach dem Abnahmelauf, weil 6,3 % der Firmen sonst zusätzlich zur
+   DHL-Menge als Strukturnachfrage gezählt wurden;
+4. keine DHL-Straße → Rückfall (5.9).
+
+Einheiten außerhalb aller PLZ-Polygone erhalten die PLZ des nächsten Gebiets; der MATSim-Export lehnt PLZ ab, die nicht
+fünfstellig sind.
 
 Der Anteil je Stufe wird berichtet.
 

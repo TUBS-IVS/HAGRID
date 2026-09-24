@@ -111,3 +111,24 @@ def test_build_buildings_gives_every_unit_a_postal_code_from_the_nearest_area():
     assert table.plz.str.fullmatch(r"\d{5}").all()
     assert table.set_index("building_key").loc["pt:res:c", "plz"] == "01000"
     assert report["plz_from_nearest_postal"] == ["pt:res:c"]
+
+
+def test_match_streets_takes_the_nearest_of_two_same_name_rows_in_one_plz():
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point
+    from hagrid_demand.baseline.buildings import match_streets
+
+    streets = gpd.GeoDataFrame({"sid": [10, 11], "plz": ["01000", "01000"], "street_norm": ["aweg", "aweg"]},
+                               geometry=[LineString([(0, 0), (100, 0)]), LineString([(0, 300), (100, 300)])], crs=fx.CRS)
+    points = gpd.GeoDataFrame({"building_key": ["k"], "plz": ["01000"], "street_norm": ["aweg"]}, geometry=[Point(50, 280)], crs=fx.CRS)
+    assert match_streets(points, streets).set_index("building_key").loc["k", ["sid", "match_stage"]].tolist() == [11, "name"]
+
+
+def test_build_buildings_accepts_a_disabled_extended_radius():
+    import geopandas as gpd
+    from hagrid_demand.baseline.buildings import build_buildings
+
+    points = gpd.GeoDataFrame({"addr_street": [], "addr_housenumber": [], "shop": []}, geometry=[], crs=fx.CRS)
+    table, _, report = build_buildings(fx.sites(), fx.osm_buildings(), points, fx.streets(), fx.postal(),
+                                       {"extended_match_distance_m": None}, seed=1)
+    assert "nearest_far" not in report["street_match_stages"]

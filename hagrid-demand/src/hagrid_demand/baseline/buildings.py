@@ -280,9 +280,10 @@ def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, os
     table["plz"] = table.plz.astype(str)
     table["street_norm"] = table.addr_street.map(normalize_street)
     lines = streets.assign(street_norm=streets.street.map(normalize_street))
+    extended = cfg.get("extended_match_distance_m", 250.)
     matched = match_streets(table[["building_key", "plz", "street_norm", "geometry"]], lines,
                             float(cfg.get("match_distance_m", 100.)), float(cfg.get("name_max_distance_m", 500.)),
-                            float(cfg.get("extended_match_distance_m", 250.)))
+                            None if extended is None else float(extended))
     table = table.merge(matched, on="building_key", how="left")
     projected = project_on_streets(table.loc[table.sid >= 0, ["building_key", "sid", "geometry"]], street_parts(lines),
                                    float(cfg.get("section_length_m", 50.)))

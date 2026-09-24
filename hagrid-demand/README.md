@@ -131,7 +131,8 @@ Spezifikation `docs/superpowers/specs/2026-09-24-hagrid-street-anchor-buildings-
    bekommen synthetische Punkte, Gebäude ohne Straße und DHL-Lücken das Strukturmodell.
 3. **Stopps** (`reference_stops.parquet`): Gebäude derselben Straßenseite innerhalb von 2 × 40 m bilden einen Stopp,
    Großempfänger (≥ 15 Pakete/Tag) einen eigenen. Der MATSim-Export schreibt je Stopp eine Zeile (`id`, `stop_id`,
-   `str_idx`, `section_id`) und teilt Zeilen über 400 Paketen.
+   `str_idx`, `section_id`) und teilt Zeilen über 400 Paketen. Mit `notebook_output_dir` vergleicht der Lauf jeden
+   Tag mit der gleichnamigen Datei des Notebook-Generators (Menge, B2B, PLZ-Korrelation; `matsim_export.json` und `report.md`).
 
 Die OSM-Dateien entstehen einmalig aus dem Geofabrik-Auszug (© OpenStreetMap contributors, ODbL):
 

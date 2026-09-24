@@ -110,10 +110,29 @@ def test_street_reference_places_unstructured_dhl_on_synthetic_points():
     streets = streets.copy()
     extra = streets.iloc[[0]].assign(sid=2, value=4., street="Leer")
     streets = type(streets)(__import__("pandas").concat([streets, extra], ignore_index=True), crs=streets.crs)
-    solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
-                                    seed=1, scope_plz=["01000"])
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
+                                        seed=1, scope_plz=["01000"])
     synthetic = solved["sites"][solved["sites"].site_id.str.startswith("syn:2:")]
+    assert not [w for w in caught if issubclass(w.category, FutureWarning)]
     assert len(synthetic) > 0
     daily = synthetic.reference_annual.sum() / 300
     streets_out = solved["streets"].set_index("sid")
     assert daily == pytest.approx(streets_out.loc[2, "private_daily"] + streets_out.loc[2, "business_daily"])
+
+
+def test_street_reference_reports_persons_and_firms_on_zero_streets():
+    from hagrid_demand.baseline.anchor import solve_street_reference
+
+    buildings, streets, profiles = _street_world()
+    buildings = buildings.copy()
+    extra = buildings.iloc[[1]].assign(building_key="z1", sid=2, population=3., companies=0)
+    buildings = type(buildings)(__import__("pandas").concat([buildings, extra], ignore_index=True), crs=buildings.crs)
+    streets = streets.copy()
+    zero = streets.iloc[[0]].assign(sid=2, value=0., street="Null")
+    streets = type(streets)(__import__("pandas").concat([streets, zero], ignore_index=True), crs=streets.crs)
+    solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
+                                    seed=1, scope_plz=["01000"])
+    assert solved["anchor"]["zero_street_units"] == {"streets": 1, "persons": 3.0, "firms": 0.0}

@@ -35,7 +35,8 @@ def test_matsim_day_matches_the_java_demand_contract(tmp_path):
 
     assert matsim_file_name(pd.Timestamp("2025-05-13")) == "hagrid_parcel_demand_2025-05-13_(Tuesday).shp"
     assert ledger == {"date": "2025-05-13", "file": "hagrid_parcel_demand_2025-05-13_(Tuesday).shp", "features": 2,
-                      "parcels": 10, "b2b": 5, "b2c": 5, "unlocated_parcels": 0, "unlocated_sites": 0}
+                      "parcels": 10, "b2b": 5, "b2c": 5, "unlocated_parcels": 0, "unlocated_sites": 0,
+                      "active_share": {"business": 1.0, "private": 0.5}}
     frame = gpd.read_file(tmp_path / ledger["file"]).set_index("site_id")
     assert frame.crs.to_epsg() == 25832 and frame.geom_type.eq("Point").all()
     assert frame.loc["res:a", ["dhl_tag", "amazon_tag", "dhl_type"]].tolist() == [3, 2, 0]
@@ -121,3 +122,43 @@ def test_matsim_day_rejects_invalid_postal_codes_before_java_sees_them(tmp_path)
                                        geometry=[Point(1, 0)], crs="EPSG:25832")}
     with pytest.raises(ValueError, match="postal"):
         write_matsim_day(chunk.assign(plz="30159"), geometry, tmp_path, stops=stops)
+
+
+def test_matsim_site_mode_has_long_ids_and_mixed_buildings_share_one_row(tmp_path):
+    from hagrid_demand.compatibility.matsim_export import write_matsim_day
+
+    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["mix", "mix", "res"], "plz": ["30159"] * 3,
+                          "segment": ["private", "business", "private"], "carrier": ["DHL", "UPS", "Hermes"],
+                          "count": [3, 2, 0]})
+    geometry = gpd.GeoDataFrame({"site_id": ["mix", "res"]}, geometry=[Point(1, 1), Point(2, 2)], crs="EPSG:25832")
+    ledger = write_matsim_day(chunk, geometry, tmp_path)
+
+    frame = gpd.read_file(tmp_path / ledger["file"])
+    assert len(frame) == 1 and frame.loc[0, ["dhl_tag", "ups_type", "total"]].tolist() == [3, 2, 5]
+    assert frame.id.dtype.kind == "i" and frame.id.is_unique
+    assert ledger["active_share"] == {"private": 0.5, "business": 1.0}
+
+
+def test_matsim_manifest_describes_the_stop_fields(tmp_path):
+    import json
+    from hagrid_demand.compatibility.matsim_export import write_matsim_manifest
+
+    path = write_matsim_manifest([], tmp_path, "EPSG:25832", stop_mode=True)
+    fields = json.loads(path.read_text(encoding="utf-8"))["fields"]
+    assert {"id", "stop_id", "str_idx", "section_id"} <= set(fields) and "site_id" not in fields
+
+
+def test_compare_with_notebook_reports_totals_b2b_and_postal_correlation(tmp_path):
+    from hagrid_demand.compatibility.matsim_export import compare_with_notebook, write_matsim_day
+
+    geometry = gpd.GeoDataFrame({"site_id": ["a", "b"]}, geometry=[Point(1, 1), Point(2, 2)], crs="EPSG:25832")
+    new = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["a", "b"], "plz": ["30159", "30161"],
+                        "segment": ["private", "business"], "carrier": ["DHL", "UPS"], "count": [6, 4]})
+    old = new.assign(count=[3, 2])  # proportional to the new PLZ totals
+    ledger = write_matsim_day(new, geometry, tmp_path / "new")
+    write_matsim_day(old, geometry, tmp_path / "old")
+    result = compare_with_notebook([ledger], tmp_path / "new", tmp_path / "old")
+    assert result[0]["notebook_parcels"] == 5 and result[0]["parcels"] == 10
+    assert result[0]["diff_pct"] == pytest.approx(100.) and result[0]["notebook_b2b_share"] == pytest.approx(.4)
+    assert result[0]["b2b_share"] == pytest.approx(.4) and result[0]["postal_correlation"] == pytest.approx(1.)
+    assert compare_with_notebook([{"date": "2025-05-14", "file": "missing.shp"}], tmp_path / "new", tmp_path / "old") == []
