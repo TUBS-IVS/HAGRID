@@ -85,13 +85,22 @@ Write-Script "$tmp\runs\lausitz\plid.bat" "@echo off`r`ncd /d `"%~dp0..\..`"`r`n
 & $check -RepoRoot $tmp -Scripts "$tmp\runs"; Assert ($LASTEXITCODE -eq 0) 'Exit 0 bei -pl :hagrid'
 Remove-Item "$tmp\runs\lausitz\plid.bat"
 
-Write-Host 'Fall 10: alter Modulpfad (cd ..\..\hagrid ohne \simulation) ist ein Befund'
+# Diskriminierend zu Fall 9: der alte -pl-Regex matchte ':hagrid' gar nicht, Fall 9 waere
+# also auch ohne den artifactId-Zweig gruen gewesen. Erst ein Selektor, der aufgeloest
+# werden MUSS und dabei scheitert, prueft den Aufloeser.
+Write-Host 'Fall 10: -pl :nosuchartifact (artifactId ohne Modul) ist ein Befund'
+Write-Script "$tmp\runs\lausitz\plbad.bat" "@echo off`r`ncd /d `"%~dp0..\..`"`r`nmvn -pl :nosuchartifact exec:java -Dexec.mainClass=hagrid.core.simulation.HAGRIDSimulationRunner`r`n"
+$out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
+Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match "kein Modul mit artifactId 'nosuchartifact'")) 'Exit 1 bei -pl :nosuchartifact'
+Remove-Item "$tmp\runs\lausitz\plbad.bat"
+
+Write-Host 'Fall 11: alter Modulpfad (cd ..\..\hagrid ohne \simulation) ist ein Befund'
 Write-Script "$tmp\runs\lausitz\oldcd.bat" "@echo off`r`ncd /d `"%~dp0..\..\hagrid`"`r`nset `"JAR=target\hagrid-1.0-SNAPSHOT.jar`"`r`n"
 $out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
 Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match 'alter String')) 'Exit 1 mit alter-String-Befund'
 Remove-Item "$tmp\runs\lausitz\oldcd.bat"
 
-Write-Host 'Fall 11: alter Selektor -pl hagrid ist ein Befund'
+Write-Host 'Fall 12: alter Selektor -pl hagrid ist ein Befund'
 Write-Script "$tmp\runs\lausitz\plold.bat" "@echo off`r`ncd /d `"%~dp0..\..`"`r`nmvn -pl hagrid exec:java -Dexec.mainClass=hagrid.core.simulation.HAGRIDSimulationRunner`r`n"
 $out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
 Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match '-pl')) 'Exit 1 bei -pl hagrid'

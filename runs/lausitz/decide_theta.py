@@ -20,7 +20,8 @@ from pathlib import Path
 import pandas as pd
 
 OUT = Path(__file__).resolve().parent
-ROOT = OUT.parent / "hagrid-matsim-output"
+# Layout: dieses Skript liegt in <repo>/runs/lausitz/, die Laufordner in <repo>/hagrid/simulation/hagrid-matsim-output/ -- parents[1] ist also die Repo-Wurzel.
+ROOT = OUT.parents[1] / "hagrid" / "simulation" / "hagrid-matsim-output"
 PARCEL_TOL = 0.999          # 100 % means 100 %: overlay loss is cosmetic (user 2026-08-14)
 #: Rides need a TOLERANCE, parcels do not. Found 2026-08-15 before the decision fired: the
 #: rerun baseline serves 9076 rides and f150t015 serves 9070 -- 6 rides, 0.07 % -- and a hard

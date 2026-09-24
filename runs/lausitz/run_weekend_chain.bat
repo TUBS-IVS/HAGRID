@@ -24,6 +24,7 @@ call :STEP drt_modular f150t010 150 0.10
 if errorlevel 1 goto :FAILED
 
 echo [%DATE% %TIME%] deciding theta >> "%LOG%"
+del /q "%~dp0chosen_theta.txt" 2>nul
 "%PY%" -u "%~dp0decide_theta.py" b120rg >> hagrid-matsim-output\logs\decide_theta.log 2>&1
 set "TH="
 for /f "usebackq delims=" %%i in ("%~dp0chosen_theta.txt") do set "TH=%%i"
