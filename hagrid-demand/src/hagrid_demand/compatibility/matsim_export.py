@@ -146,6 +146,10 @@ def write_matsim_day(chunk: pd.DataFrame, geometry: gpd.GeoDataFrame, output_dir
         result = gpd.GeoDataFrame(frame, geometry=points.reindex(table.index).to_numpy(), crs=geometry.crs)
     if not result.geometry.geom_type.eq("Point").all():
         raise ValueError("MATSim demand sites must be Point geometries")
+    invalid = ~result.postal_cod.astype(str).str.fullmatch(r"\d{5}")
+    if invalid.any():
+        # The Java pipeline cuts carrier ids at the PLZ ("dhl_30159") and fails on anything else.
+        raise ValueError(f"invalid postal codes for MATSim export: {sorted(set(result.loc[invalid, 'postal_cod'].astype(str)))[:5]}")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     name = matsim_file_name(date)

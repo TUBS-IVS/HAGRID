@@ -271,9 +271,13 @@ def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, os
     table["geometry"] = table.geometry.representative_point()
     with_plz = gpd.sjoin(table[["building_key", "geometry"]], postal[["plz", "geometry"]], predicate="within", how="left")
     table["plz"] = table.building_key.map(with_plz.drop_duplicates("building_key").set_index("building_key").plz)
-    site_plz = (mapping.assign(plz=mapping.site_id.map(by_site.plz)).sort_values(["building_key", "site_id"])
-                .drop_duplicates("building_key").set_index("building_key").plz)
-    table["plz"] = table.plz.fillna(table.building_key.map(site_plz)).astype(str)
+    outside = table.plz.isna()
+    if outside.any():
+        # Units outside every postal polygon take the nearest postal area; a missing PLZ would reach MATSim as "<NA>".
+        nearest = gpd.sjoin_nearest(table.loc[outside, ["building_key", "geometry"]], postal[["plz", "geometry"]], how="left")
+        nearest = nearest.sort_values(["building_key", "plz"]).drop_duplicates("building_key").set_index("building_key").plz
+        table.loc[outside, "plz"] = table.loc[outside, "building_key"].map(nearest).to_numpy()
+    table["plz"] = table.plz.astype(str)
     table["street_norm"] = table.addr_street.map(normalize_street)
     lines = streets.assign(street_norm=streets.street.map(normalize_street))
     matched = match_streets(table[["building_key", "plz", "street_norm", "geometry"]], lines,
@@ -291,5 +295,6 @@ def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, os
         "private_stages": {str(k): int(v) for k, v in private.stage.value_counts().items()},
         "firm_stages": {str(k): int(v) for k, v in firms.stage.value_counts().items()},
         "street_match_stages": {str(k): int(v) for k, v in table.match_stage.value_counts().items()},
+        "plz_from_nearest_postal": sorted(table.loc[outside.to_numpy(), "building_key"].astype(str).tolist()),
     }
     return table[_COLUMNS], mapping[["site_id", "segment", "building_key", "stage"]], report

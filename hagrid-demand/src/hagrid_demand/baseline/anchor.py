@@ -285,6 +285,8 @@ def solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFram
         "daily_by_status": {str(k): float(v.sum()) for k, v in status_volume.iterrows()},
         "total_daily": total_daily, "observed_identity": identity, "allocation_max_error": allocation_error,
         "holdout": structure_holdout(table, seed=seed), "synthetic_units": int(len(synthetic)),
+        # Spec 5.9: the observed part hits b exactly; the structural fallback is reported on top.
+        "b2b_incl_fallback": float(units.business_daily.sum() / total_daily) if total_daily > 0 else None,
     }
     source_quality = {"unknown_plz_sites": [], "unknown_plz_weight": 0., "known_plz_outside_anchor_sites": [],
                       "known_plz_outside_anchor_weight": 0.,

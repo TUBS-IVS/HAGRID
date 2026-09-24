@@ -52,3 +52,4 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     assert "plausibility" in report["views"]["anchor"] and "buildings" in report["views"]["anchor"]
     markdown = (run / "report.md").read_text(encoding="utf-8")
     assert "Straßen-Anker" in markdown and "OpenStreetMap" in markdown
+    assert "inklusive Rückfall" in markdown
