@@ -42,7 +42,7 @@ For Hannover, this means projecting and allocating daily parcel demand across th
 ```
 HAGRID/
 ├── README.md
-├── pom.xml                    parent POM; modules: external/freight + hagrid
+├── pom.xml                    parent POM; modules: external/freight + hagrid/simulation
 ├── hagrid/
 │   ├── demand/{estimation,estimation-batch}/   Jupyter notebooks: Hannover parcel-demand estimation
 │   └── simulation/            the single Maven module (packages hagrid.core / hannover / lausitz)
