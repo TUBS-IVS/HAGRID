@@ -96,3 +96,18 @@ def test_match_streets_uses_an_extended_radius_before_giving_up():
     matched = match_streets(points, streets, max_distance_m=100., extended_distance_m=250.).set_index("building_key")
     assert matched.loc["mid", ["sid", "match_stage"]].tolist() == [0, "nearest_far"]
     assert matched.loc["far", ["sid", "match_stage"]].tolist() == [-1, "none"]
+
+
+def test_build_buildings_gives_every_unit_a_postal_code_from_the_nearest_area():
+    import geopandas as gpd
+    from shapely.geometry import Point, box
+    from hagrid_demand.baseline.buildings import build_buildings
+
+    sites = fx.sites()
+    sites.loc[sites.site_id.eq("res:c"), "plz"] = None                      # outside every postal polygon, no source PLZ
+    postal = gpd.GeoDataFrame({"plz": ["01000"]}, geometry=[box(fx.X0 - 100, fx.Y0 - 100, fx.X0 + 500, fx.Y0 + 500)], crs=fx.CRS)
+    points = gpd.GeoDataFrame({"addr_street": [], "addr_housenumber": [], "shop": []}, geometry=[], crs=fx.CRS)
+    table, _, report = build_buildings(sites, fx.osm_buildings(), points, fx.streets(), postal, {}, seed=1)
+    assert table.plz.str.fullmatch(r"\d{5}").all()
+    assert table.set_index("building_key").loc["pt:res:c", "plz"] == "01000"
+    assert report["plz_from_nearest_postal"] == ["pt:res:c"]

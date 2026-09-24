@@ -99,6 +99,8 @@ def test_street_reference_hits_b2b_target_and_dhl_identity_and_keeps_every_parce
     q = solved["carriers"].set_index("carrier").q_adjusted
     assert q["DHL"] == pytest.approx(solved["anchor"]["q_dhl"])
     assert set(solved["geometry"].site_id) == set(sites.site_id)
+    business = sites.loc[sites.segment.eq("business"), "reference_annual"].sum()
+    assert solved["anchor"]["b2b_incl_fallback"] == pytest.approx(business / sites.reference_annual.sum())
 
 
 def test_street_reference_places_unstructured_dhl_on_synthetic_points():

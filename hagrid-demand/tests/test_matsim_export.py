@@ -56,7 +56,7 @@ def test_matsim_day_rejects_unknown_carriers_and_ledgers_missing_geometry(tmp_pa
     from hagrid_demand.compatibility.matsim_export import write_matsim_day
 
     geometry = gpd.GeoDataFrame({"site_id": ["res:a"]}, geometry=[Point(1, 1)], crs="EPSG:25832")
-    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["res:a", "res:x"], "plz": ["1", "1"],
+    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["res:a", "res:x"], "plz": ["30159", "30159"],
                           "segment": ["private", "private"], "carrier": ["DHL", "DHL"], "count": [1, 2]})
     ledger = write_matsim_day(chunk, geometry, tmp_path)
     assert (ledger["features"], ledger["unlocated_sites"], ledger["unlocated_parcels"]) == (1, 1, 2)
@@ -89,13 +89,13 @@ def test_daily_run_writes_one_matsim_file_per_delivery_day(tmp_path):
 def test_matsim_day_by_stop_splits_rows_above_the_limit_and_keeps_totals(tmp_path):
     from hagrid_demand.compatibility.matsim_export import write_matsim_day
 
-    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["h1", "h2", "f1", "f1"], "plz": ["1"] * 4,
+    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["h1", "h2", "f1", "f1"], "plz": ["30159"] * 4,
                           "segment": ["private", "private", "business", "business"],
                           "carrier": ["DHL", "DHL", "UPS", "DHL"], "count": [3, 4, 900, 5]})
     geometry = gpd.GeoDataFrame({"site_id": ["h1", "h2", "f1"]}, geometry=[Point(1, 1), Point(2, 2), Point(9, 9)], crs="EPSG:25832")
     stops = {"site_stops": pd.DataFrame({"site_id": ["h1", "h2", "f1"], "stop_id": ["s1", "s1", "s2"]}),
              "stops": gpd.GeoDataFrame({"stop_id": ["s1", "s2"], "stop_index": [0, 1], "str_idx": [7, 8],
-                                        "section_id": ["7-0-0", "8-0-1"], "plz": ["1", "1"]},
+                                        "section_id": ["7-0-0", "8-0-1"], "plz": ["30159", "30159"]},
                                        geometry=[Point(1.5, 0), Point(9, 0)], crs="EPSG:25832")}
     ledger = write_matsim_day(chunk, geometry, tmp_path, stops=stops, max_parcels_per_row=400)
 
@@ -106,3 +106,18 @@ def test_matsim_day_by_stop_splits_rows_above_the_limit_and_keeps_totals(tmp_pat
     assert frame.loc[frame.stop_id.eq("s1"), "dhl_tag"].tolist() == [7]
     assert ledger["stops_active"] == 2 and ledger["rows"] == 4
     assert frame.loc[frame.stop_id.eq("s2"), "str_idx"].eq(8).all() and frame.crs.to_epsg() == 25832
+
+
+def test_matsim_day_rejects_invalid_postal_codes_before_java_sees_them(tmp_path):
+    from hagrid_demand.compatibility.matsim_export import write_matsim_day
+
+    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["h1"], "plz": ["<NA>"], "segment": ["private"],
+                          "carrier": ["DHL"], "count": [2]})
+    geometry = gpd.GeoDataFrame({"site_id": ["h1"]}, geometry=[Point(1, 1)], crs="EPSG:25832")
+    with pytest.raises(ValueError, match="postal"):
+        write_matsim_day(chunk, geometry, tmp_path)
+    stops = {"site_stops": pd.DataFrame({"site_id": ["h1"], "stop_id": ["s1"]}),
+             "stops": gpd.GeoDataFrame({"stop_id": ["s1"], "stop_index": [0], "str_idx": [1], "section_id": ["1-0-0"], "plz": ["<NA>"]},
+                                       geometry=[Point(1, 0)], crs="EPSG:25832")}
+    with pytest.raises(ValueError, match="postal"):
+        write_matsim_day(chunk.assign(plz="30159"), geometry, tmp_path, stops=stops)

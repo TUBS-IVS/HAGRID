@@ -66,6 +66,8 @@ def _report_markdown(report: dict) -> str:
             "\n## Straßen-Anker\n\n"
             f"DHL-B2B-Anteil aus den Straßendaten: {anchor['q_dhl']:.3f}. DHL-Raten je Tag: {rates['person']:.4f} je Einwohner, "
             f"{rates['company']:.3f} je Firma.\n\n"
+            f"B2B-Anteil: beobachteter Teil {report['b2b_adjustment']['b2b_achieved']:.4f} (Ziel "
+            f"{report['b2b_adjustment']['b2b_target']:.4f}); inklusive Rückfall {anchor.get('b2b_incl_fallback') or 0.:.4f}.\n\n"
             "Pegelkorrektur: " + (", ".join(f"{row['plz']} (Faktor {row['factor']:.2f})" for row in corrected) or "keine") + ".\n\n"
             "Tagesmenge nach Ankerstatus: " + ", ".join(f"{key} {value:,.0f}" for key, value in anchor["daily_by_status"].items()) + ".\n\n"
             "Holdout des Strukturmodells (PLZ-wMAPE): " + ", ".join(
