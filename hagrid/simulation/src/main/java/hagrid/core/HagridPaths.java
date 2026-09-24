@@ -55,7 +55,9 @@ import java.nio.file.StandardCopyOption;
 public class HagridPaths {
 
     private static final Logger LOGGER = LogManager.getLogger(HagridPaths.class);
-    private static final String PIPELINE_ROOT = "hagrid";
+
+    /** Modulordner relativ zur Repo-Wurzel (seit 2026-09-21: hagrid/simulation). */
+    private static final Path PIPELINE_ROOT = Paths.get("hagrid", "simulation");
 
     /** Tracked file that marks the module root; every input subfolder is git-ignored. */
     private static final Path ROOT_MARKER = Paths.get("input", "README.md");
@@ -121,8 +123,8 @@ public class HagridPaths {
      *   <li>CWD contains the canonical marker file
      *       {@code input/README.md} → we are already inside the
      *       pipeline dir → use {@code "."}.</li>
-     *   <li>CWD/{@code PIPELINE_ROOT}/input/README.md exists
-     *       → IDE case, workspace root is one level above
+     *   <li>CWD/{@code hagrid/simulation}/input/README.md exists
+     *       → IDE case, workspace root is two levels above
      *       → use {@code PIPELINE_ROOT}.</li>
      *   <li>Fallback → {@code PIPELINE_ROOT}.</li>
      * </ol>
@@ -164,7 +166,7 @@ public class HagridPaths {
         }
 
         // 3) IDE / workspace-root case — pipeline dir is a subfolder
-        Path sub = Paths.get(PIPELINE_ROOT);
+        Path sub = PIPELINE_ROOT;
         if (Files.exists(cwd.resolve(sub).resolve(marker))) {
             LOGGER.debug("Pipeline root detected at: {}", sub);
             return sub;

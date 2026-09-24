@@ -12,7 +12,7 @@
 
   <modules>
     <module>external/freight</module>
-    <module>hagrid</module>
+    <module>hagrid/simulation</module>
   </modules>
 
   <properties>

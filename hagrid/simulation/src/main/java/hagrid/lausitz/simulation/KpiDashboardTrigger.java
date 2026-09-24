@@ -31,9 +31,10 @@ public final class KpiDashboardTrigger {
         return List.of("python", "-u", script.toString(), "--run-dir", runDir.toString());
     }
 
-    /** The KPI builder lives at repo level since 2026-09-17: {@code <repo>/analysis/lausitz/kpi/build_kpis.py}. */
+    /** The KPI builder lives at repo level: {@code <repo>/analysis/lausitz/kpi/build_kpis.py}.
+     *  Since 2026-09-21 the module is {@code <repo>/hagrid/simulation}, i.e. TWO levels below the repo root. */
     static Path scriptFor(Path pipelineRoot) {
-        Path repoRoot = pipelineRoot.toAbsolutePath().normalize().getParent();
+        Path repoRoot = pipelineRoot.toAbsolutePath().normalize().getParent().getParent();
         return repoRoot.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
     }
 

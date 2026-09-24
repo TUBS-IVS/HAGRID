@@ -392,27 +392,32 @@ class HagridPathsTest {
         }
 
         @Test
-        @DisplayName("marker one level down -> module root is 'hagrid', and the marker is really there")
-        void markerInSubfolderMeansHagrid(@TempDir Path tempDir) throws IOException {
-            Files.createDirectories(tempDir.resolve("hagrid").resolve("input"));
-            Files.createFile(tempDir.resolve("hagrid").resolve("input").resolve("README.md"));
+        @DisplayName("marker under hagrid/simulation -> module root is 'hagrid/simulation', and the marker is really there")
+        void markerInSubfolderMeansHagridSimulation(@TempDir Path tempDir) throws IOException {
+            Files.createDirectories(tempDir.resolve("hagrid").resolve("simulation").resolve("input"));
+            Files.createFile(tempDir.resolve("hagrid").resolve("simulation").resolve("input").resolve("README.md"));
 
             Path detected = HagridPaths.detectPipelineRoot(tempDir);
-            assertThat(detected).isEqualTo(Path.of("hagrid"));
-            // Cases 3 and 4 return the SAME path, so isEqualTo alone cannot tell a hit
-            // from the fallback. This says what case 3 claims: the returned root carries
-            // the marker. The negative of it is asserted in noMarkerFallsBack below.
-            // NOTE (measured, not assumed): a broken ROOT_MARKER does NOT turn this test
-            // red — the fixture writes README.md itself, so the file is there either way.
-            // The test that discriminates ROOT_MARKER is markerInCwdMeansHere (case 2).
+            assertThat(detected).isEqualTo(Path.of("hagrid", "simulation"));
             assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isTrue();
         }
 
         @Test
-        @DisplayName("no marker anywhere -> falls back to 'hagrid' (same path, nothing found)")
+        @DisplayName("marker directly under hagrid/ (pre-2026-09-21 layout) is NOT the module root any more")
+        void oldLayoutIsNotDetected(@TempDir Path tempDir) throws IOException {
+            Files.createDirectories(tempDir.resolve("hagrid").resolve("input"));
+            Files.createFile(tempDir.resolve("hagrid").resolve("input").resolve("README.md"));
+
+            Path detected = HagridPaths.detectPipelineRoot(tempDir);
+            assertThat(detected).isEqualTo(Path.of("hagrid", "simulation"));
+            assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isFalse();
+        }
+
+        @Test
+        @DisplayName("no marker anywhere -> falls back to 'hagrid/simulation' (same path, nothing found)")
         void noMarkerFallsBack(@TempDir Path tempDir) {
             Path detected = HagridPaths.detectPipelineRoot(tempDir);
-            assertThat(detected).isEqualTo(Path.of("hagrid"));
+            assertThat(detected).isEqualTo(Path.of("hagrid", "simulation"));
             assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isFalse();
         }
     }

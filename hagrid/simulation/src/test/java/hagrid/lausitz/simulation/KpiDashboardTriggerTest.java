@@ -50,15 +50,28 @@ class KpiDashboardTriggerTest {
     }
 
     @Test
-    @DisplayName("scriptFor resolves build_kpis.py next to the module, under analysis/lausitz/kpi")
-    void scriptForResolvesRepoLevelAnalysis(@org.junit.jupiter.api.io.TempDir Path repo) {
-        // Kein "C:"-Literal: Path.of("C:", "x") ist unter Windows laufwerksrelativ und würde von
-        // toAbsolutePath() gegen das CWD aufgelöst. TempDir liefert einen echten absoluten Pfad.
-        Path module = repo.resolve("hagrid");
+    @DisplayName("scriptFor: absolute module root two levels below the repo -> <repo>/analysis/lausitz/kpi/build_kpis.py")
+    void scriptForAbsoluteRoot(@org.junit.jupiter.api.io.TempDir Path repo) {
+        Path module = repo.resolve("hagrid").resolve("simulation");
         Path expected = repo.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
         assertThat(KpiDashboardTrigger.scriptFor(module)).isEqualTo(expected);
-        // und relativ, wie der Default-Konstruktor von HagridPaths ihn liefert ("hagrid" vom Repo-Root aus):
-        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid")))
-                .isEqualTo(Path.of("").toAbsolutePath().normalize().resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py"));
+    }
+
+    @Test
+    @DisplayName("scriptFor: relative root 'hagrid/simulation' resolves against the CWD (IDE case)")
+    void scriptForRelativeRootFromRepo() {
+        Path cwd = Path.of("").toAbsolutePath().normalize();
+        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid", "simulation")))
+                .isEqualTo(cwd.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py"));
+    }
+
+    @Test
+    @DisplayName("scriptFor: relative root '.' (the bat case, CWD = module dir) climbs two levels")
+    void scriptForDotRootFromModule() {
+        // Unter Surefire ist das CWD der Modulordner hagrid/simulation; zwei Ebenen hoeher liegt die Repo-Wurzel.
+        Path cwd = Path.of("").toAbsolutePath().normalize();
+        Path expected = cwd.getParent().getParent().resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        assertThat(KpiDashboardTrigger.scriptFor(Path.of("."))).isEqualTo(expected);
+        assertThat(java.nio.file.Files.exists(expected)).as("the real build_kpis.py is where scriptFor points").isTrue();
     }
 }
