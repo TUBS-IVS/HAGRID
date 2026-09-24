@@ -9,7 +9,7 @@ REM Dedicated LMD baseline (Lausitz). tag=localdepots_stagger = staggered dispat
 REM maxIter=0: jsprit routes offline, one mobsim pass + dashboard. LMD is freight-only
 REM (no background car traffic -> no congestion), so MATSim replanning iterations add nothing.
 REM call so control returns and the exit-code reporting below runs (mvn is mvn.cmd).
-call mvn -pl hagrid exec:java ^
+call mvn -pl :hagrid exec:java ^
   -Dexec.mainClass=hagrid.core.simulation.HAGRIDSimulationRunner ^
   -Dexec.args="concept=LMD_BASELINE,date=2025-05-13,maxIter=0,jspritIter=100,tag=localdepots_stagger,writeDashboard=true"
 

@@ -20,16 +20,26 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+# Die letzten drei Muster fangen den alten Modulort ab: hagrid\<etwas, das kein neuer Unterordner ist>,
+# ein auf ...\hagrid endender Pfad in Anfuehrungszeichen, und der alte Maven-Selektor -pl hagrid.
+# (?-i) ist Pflicht: -match ist sonst case-insensitiv und der REPO-Ordner heisst HAGRID, womit
+# jeder absolute Pfad (...\GitHub\HAGRID\hagrid\simulation) ein falscher Befund waere.
 $oldStrings = 'parcel-demand-2-matsim-pipeline', 'hagrid-input', 'hagrid\.integrated\.', 'hagrid\.HAGRID',
-              'hagrid\.simulation\.', 'hagrid\.utils\.', 'hagrid\.Hagrid(Paths|Config)'
-# Diese vier Werkzeuge FUEHREN die alten Namen als Daten mit: die Migration liest den alten
-# Layoutpfad, und die beiden Selbsttests bauen ihre Fixtures daraus. Fuer sie ist ein alter
+              'hagrid\.simulation\.', 'hagrid\.utils\.', 'hagrid\.Hagrid(Paths|Config)',
+              '(?-i)hagrid[\\/](?!simulation|demand|core|hannover|lausitz|\{|2025)',
+              '(?-i)[\\/]hagrid["'']', '-pl\s+hagrid\b'
+# Diese Werkzeuge FUEHREN die alten Namen als Daten mit: die Migrationsskripte lesen den alten
+# Layoutpfad, und die Selbsttests bauen ihre Fixtures daraus. Fuer sie ist ein alter
 # String kein Befund; alle anderen Regeln gelten fuer sie unveraendert weiter.
-$oldStringAllowlist = 'migrate-input-layout.ps1', 'Test-MigrateInputLayout.ps1',
-                      'check-run-scripts.ps1', 'Test-CheckRunScripts.ps1'
+# resync-freight.ps1 traegt den Fork-Branchnamen hagrid/2025.0, Test-Installers.ps1 den
+# Fixture-String T:\hagrid\input - beides Daten, kein Modulpfad.
+$oldStringAllowlist = 'migrate-input-layout.ps1', 'migrate-module-layout.ps1', 'Migrate-Common.ps1',
+                      'Test-MigrateInputLayout.ps1', 'Test-MigrateModuleLayout.ps1',
+                      'check-run-scripts.ps1', 'Test-CheckRunScripts.ps1',
+                      'resync-freight.ps1', 'Test-Installers.ps1'
 # Von SimulationBatGenerator erzeugt und per .gitignore ignoriert: auf einem frischen
 # Checkout gibt es die Datei nicht, eine Referenz darauf ist also statisch nicht pruefbar.
-$generatedScripts = 'hagrid\run_hagrid_sim.bat'
+$generatedScripts = 'hagrid\simulation\run_hagrid_sim.bat'
 $findings = New-Object System.Collections.Generic.List[string]
 $jarCache = @{}
 $mainCache = @{}
@@ -132,10 +142,21 @@ foreach ($f in $files) {
     # -pl gegen das cd-Ziel (ohne cd: gegen die Repo-Wurzel)
     $plBase = if ($hasCd) { $cwd } else { $RepoRoot }
     $pls = @()
-    $pls += [regex]::Matches($s, '-pl\s+([A-Za-z0-9_./-]+)') | ForEach-Object { $_.Groups[1].Value }
+    $pls += [regex]::Matches($s, '-pl\s+(:?[A-Za-z0-9_./-]+)') | ForEach-Object { $_.Groups[1].Value }
     $pls += [regex]::Matches($s, "'-pl',\s*'([^']+)'") | ForEach-Object { $_.Groups[1].Value }
     foreach ($p in $pls | Where-Object { $_ } | Select-Object -Unique) {
-        if (-not (Test-Path (Join-Path $plBase ($p + '/pom.xml')))) { $findings.Add("$rel : -pl $p hat kein pom.xml unter $plBase") }
+        if ($p.StartsWith(':')) {
+            # artifactId-Selektor: in den Modulen der Repo-Wurzel-POM nach <artifactId> suchen
+            $want = $p.Substring(1); $found = $false
+            $rootPom = Join-Path $plBase 'pom.xml'
+            if (Test-Path $rootPom) {
+                foreach ($m in [regex]::Matches((Get-Content $rootPom -Raw), '<module>([^<]+)</module>')) {
+                    $mp = Join-Path $plBase ($m.Groups[1].Value + '/pom.xml')
+                    if ((Test-Path $mp) -and ((Get-Content $mp -Raw) -match "<artifactId>\s*$([regex]::Escape($want))\s*</artifactId>")) { $found = $true }
+                }
+            }
+            if (-not $found) { $findings.Add("$rel : -pl $p - kein Modul mit artifactId '$want' unter $plBase") }
+        } elseif (-not (Test-Path (Join-Path $plBase ($p + '/pom.xml')))) { $findings.Add("$rel : -pl $p hat kein pom.xml unter $plBase") }
     }
 
     $jar = $null
@@ -149,7 +170,7 @@ foreach ($f in $files) {
     $classes += [regex]::Matches($s, "\`$(prepareClass|runClass)\s*=\s*'([A-Za-z_][A-Za-z0-9_.]*)'") | ForEach-Object { $_.Groups[2].Value }
     foreach ($c in $classes | Where-Object { $_ } | Select-Object -Unique) {
         $entry = ($c -replace '\.', '/') + '.class'
-        $j = $jar; if (-not $j) { $j = Join-Path $RepoRoot 'hagrid\target\hagrid-1.0-SNAPSHOT.jar' }
+        $j = $jar; if (-not $j) { $j = Join-Path $RepoRoot 'hagrid\simulation\target\hagrid-1.0-SNAPSHOT.jar' }
         if (-not (Test-Path $j)) { $findings.Add("$rel : kein Jar zum Pruefen von $c"); continue }
         if (-not (JarHas $j $entry)) { $findings.Add("$rel : Klasse $c nicht im Jar") }
     }
