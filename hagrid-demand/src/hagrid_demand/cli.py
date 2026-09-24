@@ -1,4 +1,5 @@
 import argparse
+import json
 from datetime import datetime, timezone
 import re
 
@@ -40,9 +41,15 @@ def main():
         ("simulate", "Run a configured baseline simulation"),
         ("sensitivity", "Run a configured baseline sensitivity analysis"),
         ("report", "Render an existing baseline run"),
+        ("osm-clip", "Clip a Geofabrik OSM extract to the study region"),
     ]:
         command = baseline_sub.add_parser(name, help=help_text)
-        if name == "report":
+        if name == "osm-clip":
+            command.add_argument("--pbf", required=True)
+            command.add_argument("--plz", required=True)
+            command.add_argument("--out", required=True)
+            command.add_argument("--buffer-m", type=float, default=250.)
+        elif name == "report":
             command.add_argument("--run-dir", required=True)
         else:
             command.add_argument("--config", required=True)
@@ -51,6 +58,10 @@ def main():
     args = parser.parse_args()
     if args.command == "baseline":
         try:
+            if args.baseline_command == "osm-clip":
+                from .baseline.osm import clip_osm_region
+                print(json.dumps(clip_osm_region(args.pbf, args.plz, args.out, args.buffer_m), indent=2, ensure_ascii=False))
+                return 0
             if args.baseline_command == "report":
                 from .baseline.dashboard import render_baseline
                 print(f"Baseline dashboard: {render_baseline(args.run_dir)}")
