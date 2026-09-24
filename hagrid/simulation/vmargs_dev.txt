@@ -10,4 +10,4 @@
 -XX:+UseZGC
 --add-opens
 java.base/java.lang=ALL-UNNAMED
--Dlog4j2.configurationFile=devlog/log4j2_dev.xml
+-Dlog4j2.configurationFile=logging/log4j2_dev.xml
