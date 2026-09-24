@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -129,3 +131,77 @@ def assign_firms(sites: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame, residents
     result.loc[still, "building_key"] = "pt:" + result.loc[still, "site_id"]
     result.loc[still, "stage"] = "point"
     return result
+
+
+def normalize_street(value) -> str | None:
+    """Comparable street name: lower case, ss for sharp s, "str." -> "strasse", unified separators."""
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return None
+    text = str(value).strip().lower().replace("ß", "ss")
+    if not text:
+        return None
+    text = re.sub(r"str\.(?=\s|$)", "strasse", text)
+    text = re.sub(r"[\s\-]+", " ", text).strip()
+    return text or None
+
+
+def street_parts(streets: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """One row per LineString part of each DHL street (``part`` follows the explode order)."""
+    parts = streets[["sid", "geometry"]].explode(index_parts=True)
+    parts = parts.reset_index(level=1).rename(columns={"level_1": "part"}).reset_index(drop=True)
+    parts["part"] = parts.part.astype("int64")
+    parts["length_m"] = parts.geometry.length
+    return gpd.GeoDataFrame(parts, geometry="geometry", crs=streets.crs)
+
+
+def match_streets(points: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, max_distance_m: float = 100.,
+                  name_max_distance_m: float = 500.) -> pd.DataFrame:
+    """Building -> DHL street: same normalised name and PLZ first, else the nearest street."""
+    frame = pd.DataFrame({"building_key": points.building_key.to_numpy(), "plz": points.plz.astype(str).to_numpy(),
+                          "street_norm": points.street_norm.to_numpy(), "pgeom": points.geometry.to_numpy()})
+    lines = pd.DataFrame({"sid": streets.sid.to_numpy(), "plz": streets.plz.astype(str).to_numpy(),
+                          "street_norm": streets.street_norm.to_numpy(), "sgeom": streets.geometry.to_numpy()})
+    candidates = frame.dropna(subset=["street_norm"]).merge(lines, on=["plz", "street_norm"])
+    candidates["distance_m"] = shapely.distance(candidates.pgeom.to_numpy(), candidates.sgeom.to_numpy())
+    named = (candidates[candidates.distance_m <= name_max_distance_m]
+             .sort_values(["building_key", "distance_m", "sid"]).drop_duplicates("building_key").set_index("building_key"))
+    result = frame[["building_key"]].copy()
+    result["sid"] = result.building_key.map(named.sid)
+    result["distance_m"] = result.building_key.map(named.distance_m)
+    result["match_stage"] = np.where(result.sid.notna(), "name", None)
+    missing = result.sid.isna()
+    if missing.any():
+        near = gpd.sjoin_nearest(points[points.building_key.isin(result.loc[missing, "building_key"])][["building_key", "geometry"]],
+                                 streets[["sid", "geometry"]], max_distance=max_distance_m, how="left", distance_col="distance_m")
+        near = near.sort_values(["building_key", "distance_m", "sid"]).drop_duplicates("building_key").set_index("building_key")
+        result.loc[missing, "sid"] = result.loc[missing, "building_key"].map(near.sid).to_numpy()
+        result.loc[missing, "distance_m"] = result.loc[missing, "building_key"].map(near.distance_m).to_numpy()
+        result.loc[missing & result.sid.notna(), "match_stage"] = "nearest"
+    result.loc[result.sid.isna(), "match_stage"] = "none"
+    result["sid"] = result.sid.fillna(-1).astype("int64")
+    return result
+
+
+def project_on_streets(points: gpd.GeoDataFrame, parts: gpd.GeoDataFrame, section_length_m: float = 50.) -> pd.DataFrame:
+    """Project buildings onto the nearest part of their DHL street: position, section and street side."""
+    frame = pd.DataFrame({"building_key": points.building_key.to_numpy(), "sid": points.sid.to_numpy(),
+                          "pgeom": points.geometry.to_numpy()})
+    pairs = frame.merge(pd.DataFrame({"sid": parts.sid.to_numpy(), "part": parts.part.to_numpy(),
+                                      "length_m": parts.length_m.to_numpy(), "lgeom": parts.geometry.to_numpy()}), on="sid")
+    pairs["distance"] = shapely.distance(pairs.pgeom.to_numpy(), pairs.lgeom.to_numpy())
+    best = pairs.sort_values(["building_key", "distance", "part"]).drop_duplicates("building_key").reset_index(drop=True)
+    lines, pts = best.lgeom.to_numpy(), best.pgeom.to_numpy()
+    position = shapely.line_locate_point(lines, pts)
+    axis = shapely.line_interpolate_point(lines, position)
+    before = shapely.line_interpolate_point(lines, np.maximum(position - 1., 0.))
+    after = shapely.line_interpolate_point(lines, np.minimum(position + 1., best.length_m.to_numpy()))
+    tx, ty = shapely.get_x(after) - shapely.get_x(before), shapely.get_y(after) - shapely.get_y(before)
+    vx, vy = shapely.get_x(pts) - shapely.get_x(axis), shapely.get_y(pts) - shapely.get_y(axis)
+    cross = tx * vy - ty * vx
+    section = np.floor(position / section_length_m).astype("int64")
+    return pd.DataFrame({
+        "building_key": best.building_key, "part": best.part.astype("int64"), "position_m": position,
+        "side": np.where(cross > 0, "left", "right"),
+        "section_id": [f"{s}-{p}-{k}" for s, p, k in zip(best.sid, best.part, section)],
+        "axis_x": shapely.get_x(axis), "axis_y": shapely.get_y(axis),
+    })
