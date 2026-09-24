@@ -84,3 +84,25 @@ def test_daily_run_writes_one_matsim_file_per_delivery_day(tmp_path):
     assert int(frame.total.sum()) + tuesday["unlocated_parcels"] == expected == tuesday["parcels"]
     b2b_columns = [column for column in frame.columns if column.endswith(("_type", "_typ"))]
     assert int(frame[b2b_columns].to_numpy().sum()) == tuesday["b2b"]
+
+
+def test_matsim_day_by_stop_splits_rows_above_the_limit_and_keeps_totals(tmp_path):
+    from hagrid_demand.compatibility.matsim_export import write_matsim_day
+
+    chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["h1", "h2", "f1", "f1"], "plz": ["1"] * 4,
+                          "segment": ["private", "private", "business", "business"],
+                          "carrier": ["DHL", "DHL", "UPS", "DHL"], "count": [3, 4, 900, 5]})
+    geometry = gpd.GeoDataFrame({"site_id": ["h1", "h2", "f1"]}, geometry=[Point(1, 1), Point(2, 2), Point(9, 9)], crs="EPSG:25832")
+    stops = {"site_stops": pd.DataFrame({"site_id": ["h1", "h2", "f1"], "stop_id": ["s1", "s1", "s2"]}),
+             "stops": gpd.GeoDataFrame({"stop_id": ["s1", "s2"], "stop_index": [0, 1], "str_idx": [7, 8],
+                                        "section_id": ["7-0-0", "8-0-1"], "plz": ["1", "1"]},
+                                       geometry=[Point(1.5, 0), Point(9, 0)], crs="EPSG:25832")}
+    ledger = write_matsim_day(chunk, geometry, tmp_path, stops=stops, max_parcels_per_row=400)
+
+    frame = gpd.read_file(tmp_path / ledger["file"])
+    assert frame.total.sum() == 912 and frame.groupby("stop_id").total.sum().to_dict() == {"s1": 7, "s2": 905}
+    assert (frame[["ups_type", "dhl_type", "dhl_tag"]] <= 400).all().all()
+    assert frame.id.is_unique and set(frame.loc[frame.stop_id.eq("s2"), "id"]) == {100, 101, 102}
+    assert frame.loc[frame.stop_id.eq("s1"), "dhl_tag"].tolist() == [7]
+    assert ledger["stops_active"] == 2 and ledger["rows"] == 4
+    assert frame.loc[frame.stop_id.eq("s2"), "str_idx"].eq(8).all() and frame.crs.to_epsg() == 25832
