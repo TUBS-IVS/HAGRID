@@ -46,7 +46,7 @@ def _atomic_json(path: Path, value: dict) -> None:
 
 def _report_markdown(report: dict) -> str:
     scope, b2b, quality = report["excluded_quantities"], report["b2b_adjustment"], report["remaining_potentials"]
-    return (
+    text = (
         f"# HAGRID Referenzlauf: {report['run_id']}\n\n"
         f"Referenzjahr 2021. Die Tagesmittel-Annahme verwendet {report['operating_days']} Betriebstage.\n\n"
         "## Ausgeschlossene Beobachtungen\n\n"
@@ -58,6 +58,21 @@ def _report_markdown(report: dict) -> str:
         f"Unbekannte PLZ: {len(quality.get('unknown_plz_sites', []))}; bekannte PLZ außerhalb Anker: "
         f"{len(quality.get('known_plz_outside_anchor_sites', []))}.\n"
     )
+    anchor = report.get("views", {}).get("anchor")
+    if anchor:
+        corrected = [row for row in anchor["corrections"] if row["applied"]]
+        rates = anchor["rates_dhl_per_day"]
+        text += (
+            "\n## Straßen-Anker\n\n"
+            f"DHL-B2B-Anteil aus den Straßendaten: {anchor['q_dhl']:.3f}. DHL-Raten je Tag: {rates['person']:.4f} je Einwohner, "
+            f"{rates['company']:.3f} je Firma.\n\n"
+            "Pegelkorrektur: " + (", ".join(f"{row['plz']} (Faktor {row['factor']:.2f})" for row in corrected) or "keine") + ".\n\n"
+            "Tagesmenge nach Ankerstatus: " + ", ".join(f"{key} {value:,.0f}" for key, value in anchor["daily_by_status"].items()) + ".\n\n"
+            "Holdout des Strukturmodells (PLZ-wMAPE): " + ", ".join(
+                f"{name} {values['postal_wmape']:.1%}" for name, values in anchor["holdout"].items()) + ".\n\n"
+            "Gebäude und Adressen: © OpenStreetMap contributors (ODbL), Stand 01.01.2021.\n"
+        )
+    return text
 
 
 def build_report_data(reference_dir: Path, config: dict | None = None, run_id: str | None = None,
@@ -101,6 +116,24 @@ def build_report_data(reference_dir: Path, config: dict | None = None, run_id: s
         },
         "status": "complete_reference",
     }
+    anchor_path = reference_dir / "reference_anchor.json"
+    if anchor_path.is_file():
+        anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
+        sites = pd.read_parquet(reference_dir / "reference_sites.parquet")
+        persons = sites[sites.segment.eq("private")].groupby("plz").population.sum()
+        annual = (sites.groupby(["plz", "segment"]).reference_annual.sum().unstack(fill_value=0.)
+                  .reindex(columns=["private", "business"], fill_value=0.))
+        total = annual.sum(axis=1)
+        plausibility = pd.DataFrame({
+            "plz": annual.index.astype(str),
+            "parcels_per_person_year": (total / persons.reindex(annual.index)).where(persons.reindex(annual.index) > 0).to_numpy(),
+            "b2b_share": (annual.business / total).where(total > 0).to_numpy()})
+        anchor["plausibility"] = json.loads(plausibility.to_json(orient="records"))
+        for candidate in (reference_dir / "buildings", reference_dir.parent / "buildings"):
+            if (candidate / "buildings_report.json").is_file():
+                anchor["buildings"] = json.loads((candidate / "buildings_report.json").read_text(encoding="utf-8"))
+                break
+        report["views"]["anchor"] = anchor
     daily_path = reference_dir / "daily_aggregates.parquet"
     if daily_path.is_file():
         daily = pd.read_parquet(daily_path)
