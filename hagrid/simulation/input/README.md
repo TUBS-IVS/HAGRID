@@ -1,4 +1,4 @@
-# hagrid/input — Eingabedaten (nicht versioniert)
+# hagrid/simulation/input — Eingabedaten (nicht versioniert)
 
 Diese Datei ist getrackt und dient dem Java-Code als Root-Marker (`HagridPaths`);
 alle Unterordner sind git-ignoriert und werden lokal befüllt.

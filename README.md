@@ -6,7 +6,7 @@ HAGRID bundles two studies on a shared core:
 - **Lausitz (Hoyerswerda)** — integrated passenger and parcel service with demand-responsive transport (DRT): baseline, cargo hitching (1c, `drt_shareduse`) and capsule swap (1d, `drt_modular`), KPI dashboard v2 (`analysis/lausitz/kpi`). Study documentation lives in `docs/` (`DATA-LAUSITZ.md`, `PAPER-RUNS.md`, `METHODS-LOG.md`).
 - **Core** — geo, demand and routing utilities, repository-root detection and simulation wiring (`hagrid.core`).
 
-The separation is enforced as an import rule: `hagrid/src/test/java/hagrid/core/ArchitectureRulesTest.java`.
+The separation is enforced as an import rule: `hagrid/simulation/src/test/java/hagrid/core/ArchitectureRulesTest.java`.
 
 For Hannover, this means projecting and allocating daily parcel demand across the region from **2014 to 2050** at **street-segment granularity (~50 m intervals)**, deriving **realistic carrier-level and B2B/B2C parcel shares**, generating synthetic yet empirically grounded **daily parcel delivery datasets**, and simulating last-mile delivery with jsprit and MATSim — enabling analysis of future parcel traffic patterns, evaluation of delivery concepts and urban logistics infrastructure, and policy-relevant scenario design. While projections are technically available for the full 2014–2050 range, results are considered **most reliable up to approximately 2030**, assuming a moderately stable market evolution without major disruptive events. For Lausitz, this means the integrated passenger- and parcel-service DRT simulation described above.
 
@@ -43,13 +43,14 @@ For Hannover, this means projecting and allocating daily parcel demand across th
 HAGRID/
 ├── README.md
 ├── pom.xml                    parent POM; modules: external/freight + hagrid
-├── hagrid/                    the single Maven module (packages hagrid.core / hannover / lausitz)
-│   ├── src/main/java/hagrid/{core,hannover,lausitz}/…
-│   ├── src/test/java/hagrid/{core,hannover,lausitz}/…
-│   ├── input/{common,hannover,lausitz}/   git-ignored, see hagrid/input/README.md
+├── hagrid/
 │   ├── demand/{estimation,estimation-batch}/   Jupyter notebooks: Hannover parcel-demand estimation
-│   ├── hagrid-output/
-│   └── hagrid-matsim-output/
+│   └── simulation/            the single Maven module (packages hagrid.core / hannover / lausitz)
+│       ├── src/main/java/hagrid/{core,hannover,lausitz}/…
+│       ├── src/test/java/hagrid/{core,hannover,lausitz}/…
+│       ├── input/{common,hannover,lausitz}/   git-ignored, see hagrid/simulation/input/README.md
+│       ├── hagrid-output/
+│       └── hagrid-matsim-output/
 ├── analysis/
 │   ├── common/run-monitoring/
 │   ├── hannover/{notebooks,sweep,legacy-figures}/
@@ -68,7 +69,9 @@ HAGRID/
 
 The tree shows tracked content only. Locally, `analysis/lausitz/` additionally holds `paper-figures/` (excluded via `.gitignore`) and `lmd/`; both are produced by simulation runs and are not versioned.
 
-- `hagrid/` is the only Maven module. Java sources are organised along the three root packages `hagrid.core`, `hagrid.hannover` and `hagrid.lausitz`; inputs live under `hagrid/input/` (git-ignored).
+`docs/legacy/hagrid/` keeps the pre-restructure module documentation unchanged, for reference only.
+
+- `hagrid/` is an umbrella folder: `hagrid/demand/` holds the demand-estimation notebooks, `hagrid/simulation/` is the only Maven module. Java sources are organised along the three root packages `hagrid.core`, `hagrid.hannover` and `hagrid.lausitz`; inputs live under `hagrid/simulation/input/` (git-ignored).
 - `analysis/` holds the Python analyses, split into `common` (cross-study, e.g. run monitoring), `hannover` and `lausitz`.
 - `runs/` holds the Windows launch scripts, split by study; every script changes into the right directory itself.
 - `external/` bundles third-party code: the `matsim-libs` fork as a submodule, the `freight` POM shim and the `libs` jars.
@@ -79,7 +82,7 @@ The tree shows tracked content only. Locally, `analysis/lausitz/` additionally h
 
 - **Notebooks 00–06** (under `hagrid/demand/estimation/`): each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: the final assembly that produces daily, segment-level demand.  
-- **input/**: stores the notebooks' input data (e.g. shapefiles, CSVs, geospatial layers) — this is not `hagrid/input/`.  
+- **input/**: stores the notebooks' input data (e.g. shapefiles, CSVs, geospatial layers) — this is not `hagrid/simulation/input/`.  
 - **output/**: default directory for exported results (CSV, SHP, GeoPackage, or GeoJSON).
 
 
@@ -128,16 +131,18 @@ fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-subm
 
 **Bumping the MATSim/freight version:** see `tools/resync-freight.ps1` (header comment).
 
-**Inputs:** `hagrid/input/` is git-ignored; its layout and provenance are described in `hagrid/input/README.md`.
-Checkouts created before 2026-09-17 must run `tools/migrate-input-layout.ps1` once and then build with
-`mvn -q clean install`. `clean` is mandatory here: the migration script carries the old `target/`
-directory into the module, and without `clean` the `shade` plugin packs both the old and the new
-package layout into the same jar.
+**Inputs:** `hagrid/simulation/input/` is git-ignored; its layout and provenance are described in `hagrid/simulation/input/README.md`.
+Checkouts created before 2026-09-21 must run `tools/migrate-input-layout.ps1` (layout before 2026-09-17, no-op
+otherwise) and `tools/migrate-module-layout.ps1` once, then build with `mvn -q clean install`. `clean` is
+mandatory: the module directory changed and a stale `target/` would let `shade` pack both layouts.
+Both scripts write a protocol with file counts and byte sums before and after. Rollback order:
+`git checkout <previous commit>` first (git moves the tracked skeleton back), then
+`tools/migrate-module-layout.ps1 -Reverse` (moves the ignored data back into it), then `mvn -q clean install`.
 
 **Runs:** all launch scripts live under `runs/hannover/` and `runs/lausitz/`; they change into the
 right directory themselves. `tools/check-run-scripts.ps1` checks them statically against the built jar.
 `runs/hannover/run_hagrid_sim.bat` is the campaign reference copy; at runtime
-`SimulationBatGenerator` writes the copy that is actually executed under `hagrid/`.
+`SimulationBatGenerator` writes the copy that is actually executed under `hagrid/simulation/`.
 
 **IDE stale-build gotcha:** if Eclipse or VS Code's Java tooling has compiled a broken
 workspace (e.g. mid-refactor), stale `.class` stubs left behind in `target/classes` can

@@ -80,7 +80,7 @@ verteilt — einzeln gelesen wirkt jede harmloser als sie ist.
 
 - **Daten fehlen:** Ladepunkttypen (Vorschlag Depot-AC 11 / 22 kW, DC 50 / 150 kW als Sweep)
   und die **Ladeort-Politik** — nur die 7 Depots aus
-  `hagrid/input/lausitz/hubs/lmd-depots.csv`, oder zusätzlich häufige STAY-Links?
+  `hagrid/simulation/input/lausitz/hubs/lmd-depots.csv`, oder zusätzlich häufige STAY-Links?
 - **Warum:** das ist die Szenarioentscheidung, die „Infrastrukturproblem" von
   „Dispositionsproblem" trennt. Keine Datenfrage.
 - **Fertig wenn:** Entscheidung im Spec, Werte in `emep_supplement.csv` mit
