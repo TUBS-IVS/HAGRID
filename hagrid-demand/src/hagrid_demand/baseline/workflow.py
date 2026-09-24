@@ -398,7 +398,12 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     matsim_ledgers: list[dict] = []
     if _matsim_export_enabled(config):
         from hagrid_demand.compatibility.matsim_export import with_matsim_export, write_matsim_manifest
-        chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers)
+        stops = None
+        if (run / "reference_stops.parquet").is_file():
+            stops = {"site_stops": pd.read_parquet(run / "reference_site_stops.parquet"),
+                     "stops": gpd.read_parquet(run / "reference_stops.parquet")}
+        chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers, stops,
+                                    int(config.get("stops", {}).get("max_parcels_per_row", 400)))
     summary = write_daily_aggregates(chunks, output, detail_draws)
     if _matsim_export_enabled(config):
         write_matsim_manifest(matsim_ledgers, output / "matsim", str(reference["geometry"].crs))

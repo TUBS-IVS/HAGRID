@@ -43,3 +43,7 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     assert set(sites.site_id) <= set(site_stops.site_id)
     stops = gpd.read_parquet(run / "reference_stops.parquet")
     assert set(site_stops.stop_id) == set(stops.stop_id) and stops.stop_index.is_unique
+    manifest = json.loads((run / "matsim" / "matsim_export.json").read_text(encoding="utf-8"))
+    day = manifest["days"][0]
+    frame = gpd.read_file(run / "matsim" / day["file"])
+    assert set(frame.stop_id) <= set(stops.stop_id) and int(frame.total.sum()) == day["parcels"]
