@@ -83,3 +83,16 @@ def test_projection_uses_the_nearest_part_of_a_multilinestring_street():
     point = gpd.GeoDataFrame({"building_key": ["k"], "sid": [5]}, geometry=[Point(40, 510)], crs=fx.CRS)
     projected = project_on_streets(point, street_parts(street)).iloc[0]
     assert projected.part == 1 and abs(projected.position_m - 40) < 1e-9 and projected.side == "left"
+
+
+def test_match_streets_uses_an_extended_radius_before_giving_up():
+    import geopandas as gpd
+    from shapely.geometry import Point
+    from hagrid_demand.baseline.buildings import match_streets, normalize_street
+
+    streets = fx.streets().assign(street_norm=lambda f: f.street.map(normalize_street))
+    points = gpd.GeoDataFrame({"building_key": ["mid", "far"], "plz": ["01000"] * 2, "street_norm": [None, None]},
+                              geometry=[Point(fx.X0 + 100, fx.Y0 + 180), Point(fx.X0 + 100, fx.Y0 + 400)], crs=fx.CRS)
+    matched = match_streets(points, streets, max_distance_m=100., extended_distance_m=250.).set_index("building_key")
+    assert matched.loc["mid", ["sid", "match_stage"]].tolist() == [0, "nearest_far"]
+    assert matched.loc["far", ["sid", "match_stage"]].tolist() == [-1, "none"]

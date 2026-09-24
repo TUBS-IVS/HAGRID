@@ -57,3 +57,61 @@ def test_structure_holdout_reports_street_and_postal_errors():
     result = structure_holdout(table, seed=1, folds=3)
     assert set(result) == {"M0_persons", "M1_persons_companies"}
     assert result["M1_persons_companies"]["street_wmape"] <= result["M0_persons"]["street_wmape"] + 1e-9
+
+
+def _street_world():
+    import geopandas as gpd
+    import street_fixtures as fx
+    from shapely.geometry import Point
+
+    buildings = gpd.GeoDataFrame({
+        "building_key": ["h1", "h2", "f1", "off"], "footprint": [True] * 4, "building_type": ["house"] * 3 + ["point"],
+        "area_m2": [100.] * 4, "plz": ["01000"] * 4, "population": [60, 40, 0, 5], "companies": [1, 0, 3, 0],
+        "employees": [0, 0, 30, 0], "street_norm": [None] * 4, "sid": [0, 0, 1, -1], "match_stage": ["nearest"] * 3 + ["none"],
+        "distance_m": [5.] * 3 + [None], "part": [0, 0, 0, None], "position_m": [10., 70., 30., None],
+        "side": ["left"] * 3 + [None], "section_id": ["0-0-0", "0-0-1", "1-0-0", None],
+        "axis_x": [0.] * 4, "axis_y": [0.] * 4},
+        geometry=[Point(fx.X0 + 10, fx.Y0 + 10), Point(fx.X0 + 70, fx.Y0 + 10), Point(fx.X0 + 410, fx.Y0 + 10),
+                  Point(fx.X0 + 900, fx.Y0 + 900)], crs=fx.CRS)
+    streets = fx.streets().assign(value=[6., 1.3])
+    profiles = {"m": [.42, .58], "q_prior": [.3, .2], "lower": [0., 0.], "upper": [1., 1.], "scale": [1., 1.],
+                "carriers": ["DHL", "Other"]}
+    return buildings, streets, profiles
+
+
+def test_street_reference_hits_b2b_target_and_dhl_identity_and_keeps_every_parcel():
+    from hagrid_demand.baseline.anchor import solve_street_reference
+
+    buildings, streets, profiles = _street_world()
+    solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
+                                    seed=1, scope_plz=["01000"])
+
+    checks = solved["checks"]
+    assert checks["observed_identity"]["b2b_residual"] == pytest.approx(0., abs=1e-9)
+    assert checks["observed_identity"]["total_residual"] == pytest.approx(0., abs=1e-9)
+    sites = solved["sites"]
+    assert sites.columns.tolist() == ["site_id", "plz", "segment", "population", "employees", "branch", "weight",
+                                      "historical_share", "structural_share", "reference_annual", "allocation_status"]
+    assert sites.groupby("segment").historical_share.sum().to_dict() == pytest.approx({"business": 1., "private": 1.})
+    assert sites.loc[sites.site_id.eq("off"), "reference_annual"].sum() > 0  # structural fallback, not lost
+    assert set(sites.loc[sites.site_id.eq("h1"), "segment"]) == {"private", "business"}  # mixed-use building
+    assert solved["regional_annual"] == pytest.approx(sites.reference_annual.sum())
+    q = solved["carriers"].set_index("carrier").q_adjusted
+    assert q["DHL"] == pytest.approx(solved["anchor"]["q_dhl"])
+    assert set(solved["geometry"].site_id) == set(sites.site_id)
+
+
+def test_street_reference_places_unstructured_dhl_on_synthetic_points():
+    from hagrid_demand.baseline.anchor import solve_street_reference
+
+    buildings, streets, profiles = _street_world()
+    streets = streets.copy()
+    extra = streets.iloc[[0]].assign(sid=2, value=4., street="Leer")
+    streets = type(streets)(__import__("pandas").concat([streets, extra], ignore_index=True), crs=streets.crs)
+    solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
+                                    seed=1, scope_plz=["01000"])
+    synthetic = solved["sites"][solved["sites"].site_id.str.startswith("syn:2:")]
+    assert len(synthetic) > 0
+    daily = synthetic.reference_annual.sum() / 300
+    streets_out = solved["streets"].set_index("sid")
+    assert daily == pytest.approx(streets_out.loc[2, "private_daily"] + streets_out.loc[2, "business_daily"])
