@@ -74,6 +74,23 @@ def _report_markdown(report: dict) -> str:
                 f"{name} {values['postal_wmape']:.1%}" for name, values in anchor["holdout"].items()) + ".\n\n"
             "Gebäude und Adressen: © OpenStreetMap contributors (ODbL), Stand 01.01.2021.\n"
         )
+        zero = anchor.get("zero_street_units")
+        if zero:
+            text += (f"\nDHL-Straßen mit Wert 0 ohne Datenlücke: {zero['streets']} Straßen mit {zero['persons']:,.0f} Einwohnern "
+                     f"und {zero['firms']:,.0f} Firmen erhalten keine Nachfrage.\n")
+    stops = report.get("views", {}).get("stops")
+    if stops and stops.get("days"):
+        comparison = {row["date"]: row for row in (stops.get("notebook_comparison") or [])}
+        text += ("\n## Tage und Stopps\n\n| Datum | Pakete | B2B | Stopps | Pakete/Stopp (Median) | belieferte Wohngebäude | "
+                 "belieferte Firmengebäude | Notebook |\n|---|---|---|---|---|---|---|---|\n")
+        for day in stops["days"]:
+            share = day.get("active_share", {})
+            other = comparison.get(day["date"])
+            notebook = f"{other['diff_pct']:+.1f} %, PLZ-r {other['postal_correlation']:.3f}" if other else "–"
+            per_stop = day.get("parcels_per_stop", {}).get("median")
+            text += (f"| {day['date']} | {day['parcels']:,} | {day['b2b'] / day['parcels']:.1%} | {day.get('stops_active', day.get('features', 0)):,} | "
+                     f"{per_stop if per_stop is not None else '–'} | {share.get('private', 0):.1%} | {share.get('business', 0):.1%} | {notebook} |\n"
+                     if day.get("parcels") else f"| {day['date']} | 0 | – | 0 | – | – | – | {notebook} |\n")
     return text
 
 
@@ -126,9 +143,11 @@ def build_report_data(reference_dir: Path, config: dict | None = None, run_id: s
         annual = (sites.groupby(["plz", "segment"]).reference_annual.sum().unstack(fill_value=0.)
                   .reindex(columns=["private", "business"], fill_value=0.))
         total = annual.sum(axis=1)
+        residents = persons.reindex(annual.index)
         plausibility = pd.DataFrame({
             "plz": annual.index.astype(str),
-            "parcels_per_person_year": (total / persons.reindex(annual.index)).where(persons.reindex(annual.index) > 0).to_numpy(),
+            "parcels_per_person_year": (total / residents).where(residents > 0).to_numpy(),
+            "b2c_parcels_per_person_year": (annual.private / residents).where(residents > 0).to_numpy(),
             "b2b_share": (annual.business / total).where(total > 0).to_numpy()})
         anchor["plausibility"] = json.loads(plausibility.to_json(orient="records"))
         for candidate in (reference_dir / "buildings", reference_dir.parent / "buildings"):
@@ -136,6 +155,13 @@ def build_report_data(reference_dir: Path, config: dict | None = None, run_id: s
                 anchor["buildings"] = json.loads((candidate / "buildings_report.json").read_text(encoding="utf-8"))
                 break
         report["views"]["anchor"] = anchor
+    for candidate in (reference_dir / "matsim", reference_dir.parent / "matsim"):
+        manifest_path = candidate / "matsim_export.json"
+        if manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            report["views"]["stops"] = {"days": manifest.get("days", []),
+                                        "notebook_comparison": manifest.get("notebook_comparison")}
+            break
     daily_path = reference_dir / "daily_aggregates.parquet"
     if daily_path.is_file():
         daily = pd.read_parquet(daily_path)

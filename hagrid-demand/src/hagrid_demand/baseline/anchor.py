@@ -215,8 +215,9 @@ def solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFram
         synthetic["private_daily"] = synthetic.share * synthetic.sid.map(street_values.private_daily)
         synthetic["business_daily"] = synthetic.share * synthetic.sid.map(street_values.business_daily)
         synthetic["anchor_status"] = "observed_unstructured"
-        units = gpd.GeoDataFrame(pd.concat([units, synthetic.drop(columns="share")], ignore_index=True),
-                                 geometry="geometry", crs=buildings.crs)
+        # All-empty columns (street name, part, axis) are left out so pandas keeps the building dtypes.
+        synthetic = synthetic.drop(columns="share").dropna(axis=1, how="all")
+        units = gpd.GeoDataFrame(pd.concat([units, synthetic], ignore_index=True), geometry="geometry", crs=buildings.crs)
 
     rows = []
     for segment, daily, weight in (("private", "private_daily", "population"), ("business", "business_daily", "companies")):
@@ -285,6 +286,9 @@ def solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFram
         "daily_by_status": {str(k): float(v.sum()) for k, v in status_volume.iterrows()},
         "total_daily": total_daily, "observed_identity": identity, "allocation_max_error": allocation_error,
         "holdout": structure_holdout(table, seed=seed), "synthetic_units": int(len(synthetic)),
+        "zero_street_units": {"streets": int(t.anchor_status.eq("zero").sum()),
+                              "persons": float(units.loc[units.anchor_status.eq("zero"), "population"].sum()),
+                              "firms": float(units.loc[units.anchor_status.eq("zero"), "companies"].sum())},
         # Spec 5.9: the observed part hits b exactly; the structural fallback is reported on top.
         "b2b_incl_fallback": float(units.business_daily.sum() / total_daily) if total_daily > 0 else None,
     }

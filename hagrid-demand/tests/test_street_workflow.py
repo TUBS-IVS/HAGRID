@@ -53,3 +53,6 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     markdown = (run / "report.md").read_text(encoding="utf-8")
     assert "Straßen-Anker" in markdown and "OpenStreetMap" in markdown
     assert "inklusive Rückfall" in markdown
+    assert "Tage und Stopps" in markdown
+    assert "b2c_parcels_per_person_year" in report["views"]["anchor"]["plausibility"][0]
+    assert report["views"]["stops"]["days"][0]["stops_active"] > 0

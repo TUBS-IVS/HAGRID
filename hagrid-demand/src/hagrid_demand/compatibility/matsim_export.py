@@ -47,14 +47,19 @@ def _count_columns() -> list[str]:
 
 def _split_rows(table: pd.DataFrame, counts: list[str], limit: int) -> pd.DataFrame:
     """Split stops whose largest carrier/segment count exceeds *limit* into equal rows at the same point."""
+    frame = table[counts].astype(np.int64)
+    pieces = np.maximum(1, np.ceil(frame.max(axis=1).to_numpy() / limit)).astype(np.int64)
+    result = frame[pieces == 1].assign(row_part=0, plz=table.plz[pieces == 1]).rename_axis("stop_id").reset_index()
     rows = []
-    for stop_id, row in table.iterrows():
+    for stop_id, row in table[pieces > 1].iterrows():
         values = {column: int(row[column]) for column in counts}
-        pieces = max(1, int(np.ceil(max(values.values()) / limit)))
-        for part in range(pieces):
-            split = {column: value // pieces + (1 if part < value % pieces else 0) for column, value in values.items()}
+        count = int(np.ceil(max(values.values()) / limit))
+        for part in range(count):
+            split = {column: value // count + (1 if part < value % count else 0) for column, value in values.items()}
             rows.append({"stop_id": stop_id, "row_part": part, "plz": row.plz, **split})
-    result = pd.DataFrame(rows)
+    if rows:
+        result = pd.concat([result, pd.DataFrame(rows)], ignore_index=True)
+    result = result.sort_values(["stop_id", "row_part"], kind="stable").reset_index(drop=True)
     tags = [f"{provider}_tag" for provider, _ in CARRIER_FIELDS.values()]
     types = [_safe10(f"{provider}_type") for provider, _ in CARRIER_FIELDS.values()]
     result["total"] = result[tags].sum(axis=1) + result[types].sum(axis=1)
@@ -109,6 +114,9 @@ def write_matsim_day(chunk: pd.DataFrame, geometry: gpd.GeoDataFrame, output_dir
               "b2b": int(active.loc[active.segment.eq("business"), "count"].sum()),
               "b2c": int(active.loc[active.segment.eq("private"), "count"].sum()),
               "unlocated_parcels": 0, "unlocated_sites": 0}
+    offered = chunk.groupby("segment").site_id.nunique()
+    delivered = active.groupby("segment").site_id.nunique()
+    ledger["active_share"] = {segment: float(delivered.get(segment, 0) / offered[segment]) for segment in offered.index}
     if active.empty:
         return ledger
     if not active.segment.isin(["private", "business"]).all():
@@ -139,8 +147,8 @@ def write_matsim_day(chunk: pd.DataFrame, geometry: gpd.GeoDataFrame, output_dir
         ledger["unlocated_sites"] = int(len(missing_geometry))
         ledger["unlocated_parcels"] = int(missing_geometry["total"].sum())
         table = table.loc[located]
-        frame = pd.DataFrame({"site_id": table.index.astype(str), "postal_cod": table.plz.astype(str).to_numpy(),
-                              "date": ledger["date"]})
+        frame = pd.DataFrame({"id": np.arange(len(table), dtype=np.int64), "site_id": table.index.astype(str),
+                              "postal_cod": table.plz.astype(str).to_numpy(), "date": ledger["date"]})
         for column in _count_columns():
             frame[column] = table[column].to_numpy(dtype=np.int64)
         result = gpd.GeoDataFrame(frame, geometry=points.reindex(table.index).to_numpy(), crs=geometry.crs)
@@ -167,14 +175,49 @@ def with_matsim_export(chunks: Iterator[pd.DataFrame], geometry: gpd.GeoDataFram
         yield chunk
 
 
-def write_matsim_manifest(ledgers: list[dict], output_dir: Path, crs: str | None) -> Path:
+def _day_totals(path: Path) -> tuple[pd.Series, float, float]:
+    frame = gpd.read_file(path, columns=None)
+    tags = [f"{provider}_tag" for provider, _ in CARRIER_FIELDS.values()]
+    types = [_safe10(f"{provider}_type") for provider, _ in CARRIER_FIELDS.values()]
+    b2c = frame[[column for column in tags if column in frame]].sum(axis=1)
+    b2b = frame[[column for column in types if column in frame]].sum(axis=1)
+    postal = (b2c + b2b).groupby(frame.postal_cod.astype(str)).sum()
+    return postal, float(b2c.sum()), float(b2b.sum())
+
+
+def compare_with_notebook(ledgers: list[dict], output_dir: Path, notebook_dir: Path) -> list[dict]:
+    """Compare exported days with ParcelDemandScenarioGenerator files of the same name (totals, B2B, PLZ pattern)."""
+    rows = []
+    for ledger in ledgers:
+        name = ledger.get("file")
+        if not name or not (Path(output_dir) / name).is_file() or not (Path(notebook_dir) / name).is_file():
+            continue
+        new, new_b2c, new_b2b = _day_totals(Path(output_dir) / name)
+        old, old_b2c, old_b2b = _day_totals(Path(notebook_dir) / name)
+        joined = pd.concat([old, new], axis=1, keys=["old", "new"]).fillna(0.)
+        parcels, notebook = new_b2c + new_b2b, old_b2c + old_b2b
+        rows.append({"date": ledger["date"], "file": name, "parcels": int(parcels), "notebook_parcels": int(notebook),
+                     "diff_pct": float(100. * (parcels / notebook - 1.)) if notebook else None,
+                     "b2b_share": float(new_b2b / parcels) if parcels else None,
+                     "notebook_b2b_share": float(old_b2b / notebook) if notebook else None,
+                     "postal_correlation": float(joined.old.corr(joined.new)) if len(joined) > 1 else None})
+    return rows
+
+
+def write_matsim_manifest(ledgers: list[dict], output_dir: Path, crs: str | None, stop_mode: bool = False,
+                          comparison: list[dict] | None = None) -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "matsim_export.json"
-    payload = {"schema": "hagrid_parcel_demand shapefile (DemandProcessor)", "crs": crs,
-               "fields": {"<provider>_tag": "B2C parcels", "<provider>_type (DBF 10 chars)": "B2B parcels",
-                          "<short>_b2c/<short>_b2b": "notebook aliases", "total = total_sim = wl_tag": "all parcels",
-                          "postal_cod": "PLZ", "site_id": "baseline demand site"},
-               "days": ledgers}
+    fields = {"<provider>_tag": "B2C parcels", "<provider>_type (DBF 10 chars)": "B2B parcels",
+              "<short>_b2c/<short>_b2b": "notebook aliases", "total = total_sim = wl_tag": "all parcels", "postal_cod": "PLZ"}
+    if stop_mode:
+        fields.update({"id": "stop_index * 100 + split row (Long)", "stop_id": "stable delivery stop",
+                       "str_idx": "DHL street index (-1 off street)", "section_id": "50 m DHL street section"})
+    else:
+        fields.update({"id": "running row index (Long)", "site_id": "baseline demand site"})
+    payload = {"schema": "hagrid_parcel_demand shapefile (DemandProcessor)", "crs": crs, "fields": fields, "days": ledgers}
+    if comparison is not None:
+        payload["notebook_comparison"] = comparison
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

@@ -396,9 +396,9 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
                            spatial_plan=plan, cache_dir=Path(config["cache_root"]))
     matsim_ledgers: list[dict] = []
+    stops = None
     if _matsim_export_enabled(config):
-        from hagrid_demand.compatibility.matsim_export import with_matsim_export, write_matsim_manifest
-        stops = None
+        from hagrid_demand.compatibility.matsim_export import compare_with_notebook, with_matsim_export, write_matsim_manifest
         if (run / "reference_stops.parquet").is_file():
             stops = {"site_stops": pd.read_parquet(run / "reference_site_stops.parquet"),
                      "stops": gpd.read_parquet(run / "reference_stops.parquet")}
@@ -406,7 +406,10 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
                                     int(config.get("stops", {}).get("max_parcels_per_row", 400)))
     summary = write_daily_aggregates(chunks, output, detail_draws)
     if _matsim_export_enabled(config):
-        write_matsim_manifest(matsim_ledgers, output / "matsim", str(reference["geometry"].crs))
+        notebook_dir = config.get("notebook_output_dir")
+        comparison = compare_with_notebook(matsim_ledgers, output / "matsim", Path(notebook_dir)) if notebook_dir else None
+        write_matsim_manifest(matsim_ledgers, output / "matsim", str(reference["geometry"].crs), stop_mode=stops is not None,
+                              comparison=comparison)
     projection.sites.to_parquet(output / "annual_projection.parquet", index=False)
     projection.profiles.to_parquet(output / "carrier_profiles.parquet", index=False)
     projection.postal.to_parquet(output / "postal_projection.parquet", index=False)
