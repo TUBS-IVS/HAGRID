@@ -205,7 +205,7 @@ def _write_series(config: dict, source: Path, output: Path) -> None:
 
 
 _STREET_REFERENCE_FILES = ["reference_anchor.json", "reference_streets.parquet", "reference_units.parquet"]
-_STOP_REFERENCE_FILES: list[str] = []
+_STOP_REFERENCE_FILES = ["reference_stops.parquet", "reference_site_stops.parquet"]
 
 
 def _anchor_mode(config: dict) -> str:
@@ -287,6 +287,16 @@ def _write_reference(config: dict, source: Path, series_dir: Path, potentials_di
         _json(output / "reference_anchor.json", solved["anchor"])
         solved["streets"].to_parquet(output / "reference_streets.parquet", index=False)
         solved["units"].to_parquet(output / "reference_units.parquet", index=False)
+        from .stops import build_stops
+
+        stop_cfg = config.get("stops", {})
+        expected = solved["sites"].groupby("site_id").reference_annual.sum() / config["reference_operating_days"]
+        stops, site_stops = build_stops(solved["units"], expected, _dhl_streets(source),
+                                        float(stop_cfg.get("walking_radius_m", 40.)),
+                                        float(stop_cfg.get("own_stop_parcels_per_day", 15.)),
+                                        float(stop_cfg.get("section_length_m", 50.)))
+        stops.to_parquet(output / "reference_stops.parquet", index=False)
+        site_stops.rename(columns={"building_key": "site_id"}).to_parquet(output / "reference_site_stops.parquet", index=False)
     else:
         solved = solve_reference(pd.read_parquet(potentials_dir / "potentials.parquet"),
                                  gpd.read_parquet(source / "dhl_observations.parquet"), profiles, b2b,
@@ -559,13 +569,14 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         reference_files = {"workflow": Path(__file__), "reference": Path(__file__).with_name("reference.py")}
         if street_mode:
             reference_dependencies["buildings"] = run / "buildings"
-            reference_files.update({"anchor": Path(__file__).with_name("anchor.py")})
+            reference_files.update({"anchor": Path(__file__).with_name("anchor.py"), "stops": Path(__file__).with_name("stops.py")})
         reference_snapshot = dependency_snapshot(reference_dependencies)
         reference_fingerprint = stage_key("reference", reference_dependencies, config, reference_files,
                                           dependency_snapshot=reference_snapshot)
         reference_public = ["reference_postal.parquet", "reference_sites.parquet", "reference_geometry.parquet",
                             "reference_carrier_profiles.parquet", "reference_reconciliation.json", "reference_regional_annual.json",
-                            "reference_checks.json", "checks.json"] + (_STREET_REFERENCE_FILES if street_mode else [])
+                            "reference_checks.json", "checks.json"] + (
+                                _STREET_REFERENCE_FILES + _STOP_REFERENCE_FILES if street_mode else [])
         resolve_stage(run, "reference", reference_fingerprint, cache_root=cache_root, dependencies=reference_dependencies,
                       build=lambda output: _write_reference(config, run / "sources", run / "series", run / "potentials", output,
                                                             run / "buildings" if street_mode else None),
