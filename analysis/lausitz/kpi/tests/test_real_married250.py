@@ -18,7 +18,7 @@ import extract_freight  # noqa: E402
 import extract_freight_provider as efp  # noqa: E402
 
 HEADS = Path(__file__).parent / "fixtures" / "real_heads"
-REAL = Path(__file__).parent.parent / ".." / ".." / ".." / "hagrid" / "hagrid-matsim-output" / \
+REAL = Path(__file__).parent.parent / ".." / ".." / ".." / "hagrid" / "simulation" / "hagrid-matsim-output" / \
     "DRT_BASELINE_13052025_married250_iter300_jsprit1000"
 REAL = REAL.resolve()
 

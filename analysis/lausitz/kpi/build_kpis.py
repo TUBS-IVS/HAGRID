@@ -2,7 +2,7 @@
 """Build the canonical KPI CSVs (+ dashboard, Task 9) for ONE run directory.
 
 Usage (from analysis/lausitz/kpi/):
-    python -u build_kpis.py --run-dir ../../../hagrid/hagrid-matsim-output/DRT_BASELINE_13052025_married120_iter150_jsprit100
+    python -u build_kpis.py --run-dir ../../../hagrid/simulation/hagrid-matsim-output/DRT_BASELINE_13052025_married120_iter150_jsprit100
 """
 import argparse
 import sys

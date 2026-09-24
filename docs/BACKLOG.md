@@ -207,7 +207,7 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   die Fahrzeugstunden skalieren nicht mit der Flottengröße (150→140: +0,7 %, 140→130: −13,1 %),
   das ist zu messen. Kandidaten 140/135/130 bei `maxTourDuration=25200`. _(added 2026-08-18)_
 
-- **`[H]` Demand-Input-Sync Dev-PC↔Sim-PC entscheiden** — `hagrid/input/**` ist git-ignoriert
+- **`[H]` Demand-Input-Sync Dev-PC↔Sim-PC entscheiden** — `hagrid/simulation/input/**` ist git-ignoriert
   und synchronisiert nicht über Maschinen; die beiden PCs fahren 0,53 % verschiedene Nachfrage
   (6052 vs. 6020 Pakete, anderes Muster). Baseline↔1c intern konsistent (beide Dev-PC), die
   1d-Kurve intern konsistent (alle Sim-PC), Baseline↔1d nicht exakt. Entweder Sync + Rerun am
@@ -348,7 +348,7 @@ Input `pt`) → [METHODS-LOG](METHODS-LOG.md) §2.54. Offen bleiben zwei Punkte:
 
 - **`[H]` DRT-ASC-Sensitivität rechnen und als Limitation ausweisen** — der DRT-ASC wird vom ÖV
   kopiert: `setConstant(ptParams.getConstant())` (−1,2987) und `marginalUtilityOfTraveling = 0`
-  ([DrtConfigComposer.java:126-128](../hagrid/src/main/java/hagrid/lausitz/drt/DrtConfigComposer.java#L126)).
+  ([DrtConfigComposer.java:126-128](../hagrid/simulation/src/main/java/hagrid/lausitz/drt/DrtConfigComposer.java#L126)).
   Ein Tür-zu-Tür-Dienst wird damit bewertet wie ein Taktbus, obwohl der ÖV-ASC gerade das
   Unbeobachtete am Bus aufsammelt (Haltestellenweg, Fahrplanbindung, Umsteigen). Zu tun: ASC-Fächer
   auf dem Baseline-Arm, Modal-Split und DRT-Fahrleistung als Bandbreite statt als Punktwert, dann
@@ -445,7 +445,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 
 - **`[M]` Carrier-Parallelisierung in `routeWithDurationCap`** — die 7 Lausitz-Carrier lösen
   sequenziell auf dem Main-Thread
-  ([LausitzFreightPreprocessor.java:314](../hagrid/src/main/java/hagrid/lausitz/freight/LausitzFreightPreprocessor.java#L314));
+  ([LausitzFreightPreprocessor.java:314](../hagrid/simulation/src/main/java/hagrid/lausitz/freight/LausitzFreightPreprocessor.java#L314));
   parallel fällt die Wall-Clock auf den größten Carrier, **10,7 h → ~3,7 h** @`jspritIter=1000`
   (§2.2). Obergrenze ~2,9× (Amdahl) → 3–4 Threads genügen. Beide Voraussetzungen 2026-07-30
   geprüft und grün: Determinismus bleibt (frische `Random` je Carrier,
@@ -479,7 +479,7 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   gelöscht, Stand im Parent von `b639ff3`); dabei die stille-`None`-Ursache mit-fixen und den Layer
   nur bei vorhandenen Daten zeigen. _(added 2026-07-14, aktualisiert 2026-08-17)_
 
-- **`[M]` hagrid/input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
+- **`[M]` hagrid/simulation/input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
   letzter manueller Transfer-Schritt für "läuft auf jedem neuen PC". Geplant:
   Download-on-first-run mit URL-Liste + Checksums; HAGRID-only-Dateien via
   Uni-Share/Release-Assets. _(added 2026-07-14)_
@@ -500,24 +500,24 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   `tools/migrate-input-layout.ps1` → `mvn -q clean install` → P1-Probe gegen `before\hashes.txt`. _(added 2026-09-18)_
 - **`[S]` Geparkte 476 MB `parcel-demand-2-matsim-pipeline/input/` klären** — sieben BASECASE-Tage
   (9./10./12./14./15./16./17.5.2025) existieren nur dort, geparkt unter
-  `%USERPROFILE%\hagrid-parked-inputs\` (README-parked.txt) — einpflegen nach `hagrid/input/hannover/demand/` oder löschen. _(added 2026-09-18)_
+  `%USERPROFILE%\hagrid-parked-inputs\` (README-parked.txt) — einpflegen nach `hagrid/simulation/input/hannover/demand/` oder löschen. _(added 2026-09-18)_
 - **`[S]` `SimulationBatGenerator` umbiegen**, damit er `runs/hannover/run_hagrid_sim.bat` mit der
-  `%~dp0..\..\hagrid`-cd-Form schreibt (heute schreibt er das git-ignorierte
-  `hagrid/run_hagrid_sim.bat`). _(added 2026-09-18)_
+  `%~dp0..\..\hagrid\simulation`-cd-Form schreibt (heute schreibt er das git-ignorierte
+  `hagrid/simulation/run_hagrid_sim.bat`). _(added 2026-09-18)_
 - **`[S]` `tools/setup_hagrid_io.bat` löschen oder neu schreiben** — seit 2026-09-18 stillgelegt
-  (`exit /b 1` in Zeile 2), weil Quelle und Ziel beide unter `hagrid/input/` liegen; offen ist nur
+  (`exit /b 1` in Zeile 2), weil Quelle und Ziel beide unter `hagrid/simulation/input/` liegen; offen ist nur
   noch, ob die Datei ganz verschwindet. _(added 2026-09-18)_
 - **`[S]` `XMLParcelTypeFixer` hat nie funktioniert** — `String.replaceAll` liest das `$P` in
   `hagrid.core.util.Delivery$ParcelType` als Gruppenreferenz (`Illegal group reference`), und das
   Muster sucht ohnehin nur den Wert `Mixed`, nicht den veralteten Klassennamen. _(added 2026-09-18)_
 - **`[S]` `DashboardGenerator.java.bak` löschen und toten `@see`-Verweis fixen** —
-  `hagrid/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
+  `hagrid/simulation/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
   `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins Leere. _(added 2026-09-18)_
 - **`[M]` `GeoUtils`/`HagridConfig` regionsneutral machen**, damit `Region` nach `hagrid.hannover`
   ziehen kann. _(added 2026-09-18)_
 - **`[S]` Import-Hygiene nach dem Paket-Umzug** — 11 redundante same-package Imports,
   nicht-alphabetische Import-Blöcke. _(added 2026-09-18)_
-- **`[S]` `hagrid/PIPELINE_DOCUMENTATION.md` und `hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
+- **`[S]` `docs/legacy/hagrid/PIPELINE_DOCUMENTATION.md` und `docs/legacy/hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
   beschreiben noch das Layout vor dem Restructure vom 2026-09-17 und sogar vor dem
   `hagrid-input`-Common/Hannover/Lausitz-Split; tragen bis dahin nur einen Stale-Hinweis. _(added 2026-09-18)_
 
@@ -564,9 +564,9 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
 
 - **`[M]` Windows: Läufe sterben am eigenen offenen Logfile — Fix ist eine Zeile.**
   `initLogging()` legt `hagrid.log.dir` korrekt außerhalb des Output-Baums ab
-  ([SimulationRunnerUtils.java:64-72](../hagrid/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L64)),
+  ([SimulationRunnerUtils.java:64-72](../hagrid/simulation/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L64)),
   `runSimulation` biegt es 220 Zeilen später wieder **hinein**
-  ([:286-288](../hagrid/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L286)),
+  ([:286-288](../hagrid/simulation/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L286)),
   wo `deleteDirectoryIfExists` die offene Datei nicht löschen kann. **Fix = die zweite Zuweisung
   entfernen oder gaten.** Nicht LMD-spezifisch (riss einen `DRT_MODULAR`-Lauf nach 19 min);
   Hannover-`BASECASE` empirisch nicht betroffen. Workaround erprobt und im Repo
