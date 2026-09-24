@@ -77,7 +77,8 @@ def _national_total(reference: dict, volume: pd.DataFrame, year: int) -> tuple[f
     return regional * numerator / denominator, numerator / denominator
 
 
-def _profile(series: dict, year: int) -> tuple[pd.DataFrame, float]:
+def _profile(series: dict, year: int, dhl_fixed: dict | None = None) -> tuple[pd.DataFrame, float]:
+    """Carrier profiles of *year*; ``dhl_fixed`` pins DHL's B2B share to q_2021 * b(y) / b_2021."""
     market = _year_row(_table(series.get("market"), "series.market"), year,
                        {"year", "carrier", "market_share"}, "market")
     providers = _year_row(_table(series.get("providers"), "series.providers"), year,
@@ -93,8 +94,16 @@ def _profile(series: dict, year: int) -> tuple[pd.DataFrame, float]:
     values, target = market.market_share.to_numpy(float), float(b2b.iloc[0].share)
     if not np.isfinite(values).all() or (values < 0).any() or not np.isclose(values.sum(), 1., atol=ATOL, rtol=RTOL):
         raise ValueError("market shares must be a nonnegative simplex")
-    result = reconcile_carriers(values, providers.q_prior.to_numpy(float), target,
-                                providers.lower.to_numpy(float), providers.upper.to_numpy(float), providers.q_scale.to_numpy(float))
+    lower, upper = providers.lower.to_numpy(float).copy(), providers.upper.to_numpy(float).copy()
+    prior = providers.q_prior.to_numpy(float).copy()
+    if dhl_fixed is not None:
+        dhl = [index for index, label in enumerate(market.index) if str(label).strip().casefold() == "dhl"]
+        if len(dhl) != 1:
+            raise ValueError("dhl_fixed requires exactly one DHL carrier")
+        q_dhl = float(dhl_fixed["q_2021"]) * target / float(dhl_fixed["b_2021"])
+        lower[dhl[0]] = upper[dhl[0]] = q_dhl
+        prior = np.clip(prior, lower, upper)
+    result = reconcile_carriers(values, prior, target, lower, upper, providers.q_scale.to_numpy(float))
     rows = []
     for index, carrier in enumerate(market.index):
         for row, segment in enumerate(("private", "business")):
@@ -144,7 +153,7 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
     for year in requested:
         total, growth = (_national_total(reference, volume, year) if mode == "national_series"
                          else (float(external.at[year, "value"]), float(external.at[year, "value"]) / regional_reference))
-        profile, b2b = _profile(series, year)
+        profile, b2b = _profile(series, year, cfg.get("dhl_b2b"))
         targets = {"private": total * (1 - b2b), "business": total * b2b}
         share = pd.Series(0., index=sites.index, dtype=float)
         support_status = pd.Series("zero_target_no_support", index=sites.index, dtype=object)
