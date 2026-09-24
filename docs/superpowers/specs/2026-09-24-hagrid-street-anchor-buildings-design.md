@@ -169,7 +169,7 @@ Endung `_b2b`/`_b2c`. Tage 09.–17.05.2025 (Mo–Sa) sind in `configs/baseline-
 
 ## 6. Artefakte
 
-`buildings.parquet` (Gebäude, Einwohner, Firmen, Adresse, Straße, Abschnitt, Seite, Status), `firm_buildings.parquet` (Firma → Gebäude, Stufe),
+`buildings.parquet` (Gebäude, Einwohner, Firmen, Adresse, Straße, Abschnitt, Seite, Status), `site_buildings.parquet` (Personen-Gebäudepunkt bzw. Firma → Gebäude, Stufe),
 `street_decomposition.parquet` (DHL, DHL′, Korrektur, B2C/B2B, Status), `stops.parquet` (Stopp, Punkt, Gebäude, Erwartung je Segment),
 `anchor_report.json` (Raten, q_DHL, Korrekturen, Zuordnungsquoten, Identitäten), dazu die bestehenden Referenz-, Tages- und MATSim-Artefakte.
 
@@ -177,7 +177,7 @@ Endung `_b2b`/`_b2c`. Tage 09.–17.05.2025 (Mo–Sa) sind in `configs/baseline-
 
 - **Unit-Tests** je Schritt mit kleinen Fixtures: Zuordnung Personen/Firmen, Namensnormalisierung, Pegelkorrektur, Zerlegung, Identitäten 5.8, Stoppbildung, Teilzeilen, Exportvertrag.
 - **Echter Lauf (Pflicht, Abnahme):** Referenz 2021 und die acht Tage 09.–17.05.2025. Kein Teilprojekt gilt ohne diesen Lauf als fertig.
-- **Kriterium A:** räumlicher 5-fach-Holdout nach PLZ für das Strukturmodell (M0 nur Einwohner, M1 Einwohner + Firmen, M5 Firmen je Branche) mit Straßen- und PLZ-wMAPE, jeweils auf Punkt- und auf Gebäudebasis.
+- **Kriterium A:** räumlicher 5-fach-Holdout nach PLZ für das Strukturmodell (M0 nur Einwohner, M1 Einwohner + Firmen) mit Straßen- und PLZ-wMAPE auf Gebäudebasis; Vergleich mit dem Punktergebnis vom 24.09. (M1: PLZ 12,9 %). M5 (Firmen je Branche) entfällt, weil es auf Punktbasis keinen Gewinn brachte.
 - **Kriterium C:** Tabelle im Bericht mit Pakete je Person und Jahr je PLZ, B2B-Anteil je PLZ, Pakete je Stopp, Stopps je Tag, Anteil belieferter Gebäude und Firmen, Vergleich der Tagesmengen und PLZ-Verteilung mit den Notebook-Dateien.
 - **Bilanzen:** Summe Gebäude = Summe Straßen + Rückfall; ganzzahlige Tagesmengen je Stopp = Tagesmengen je Gebäude.
 
