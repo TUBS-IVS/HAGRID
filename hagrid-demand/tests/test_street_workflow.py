@@ -39,3 +39,7 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     dhl = profiles[(profiles.carrier == "DHL") & (profiles.year == 2025)].q.iloc[0]
     assert dhl == pytest.approx(anchor["q_dhl"] * anchor["b2b_by_year"]["2025"] / anchor["b2b_by_year"]["2021"])
     assert (run / "reference_streets.parquet").is_file() and (run / "reference_units.parquet").is_file()
+    site_stops = pd.read_parquet(run / "reference_site_stops.parquet")
+    assert set(sites.site_id) <= set(site_stops.site_id)
+    stops = gpd.read_parquet(run / "reference_stops.parquet")
+    assert set(site_stops.stop_id) == set(stops.stop_id) and stops.stop_index.is_unique
