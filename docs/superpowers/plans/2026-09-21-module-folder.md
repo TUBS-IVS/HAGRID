@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Arbeitsort ist der Worktree `C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID-r3`** auf Branch `restructure-3` ab `hendrik` (Task 0 legt ihn an). Der Haupt-Checkout `…\GitHub\HAGRID` wird in Task 0 bis 5 **nur gelesen** (Inputs kopieren, Vergleichshashes); geschrieben wird dort erst in Task 6 nach dem Fast-Forward. Kein Push, kein Master-Merge. Subagenten arbeiten strikt nacheinander.
+- **Arbeitsort ist der Worktree `C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID-r3`** auf Branch `restructure-3` ab `hendrik` (Task 0 legt ihn an). Der Haupt-Checkout `…\GitHub\HAGRID` wird in Task 0 bis 5 **nur gelesen** (Inputs kopieren, Vergleichshashes); einzige Ausnahme ist der Pfadprobe-Ordner `hagrid\r3pathprobe` aus Task 0 Step 3, der im `finally` wieder verschwindet. Geschrieben wird dort erst in Task 6 nach dem Fast-Forward. Kein Push, kein Master-Merge. Subagenten arbeiten strikt nacheinander.
 - **JDK 21**: `JAVA_HOME = C:\Program Files\Java\jdk-21.0.10`; `java` im PATH ist 25 — jeder Java-Aufruf in diesem Plan nutzt `$env:JAVA_HOME\bin\java.exe` bzw. die Skripte lösen `JAVA_HOME` selbst auf.
 - **Maven** immer von der Repo-Wurzel des Worktrees: `mvn -q test -pl :hagrid -am -Dsurefire.failIfNoSpecifiedTests=false` (Selektor ist ab Task 1 die `artifactId`; ohne `-am` hängt Maven an der Remote-Auflösung des freight-SNAPSHOT). Vollbau: `mvn -q clean install`.
 - **Skript-Rewrites byte-transparent**: `.bat`/`.ps1`/`.txt`/`.json` werden mit Python als Latin-1 gelesen und geschrieben (`io.open(p, encoding='latin-1', newline='')`), CRLF bleibt erhalten. `.bat` nie mit Edit/Write anfassen. Neue `.bat` nur per PowerShell `[IO.File]::WriteAllText($p, $s, [Text.UTF8Encoding]::new($false))` mit `\r\n`. `tools/*.ps1` ASCII-only, ohne BOM (PowerShell 5.1 liest BOM-lose Dateien als cp1252; ein Gedankenstrich bricht den Parser).
@@ -131,15 +131,23 @@ $reg = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Er
 $lines += "LongPathsEnabled=$reg"
 # Testpfad mit exakt max(273, projected) Zeichen unter dem KUENFTIGEN Modulordner
 $target = [Math]::Max(273, $longest.Length + 11)
-$base = Join-Path $root 'hagrid\simulation\hagrid-matsim-output\r3pathprobe'
+# Eigener, eindeutig benannter Probeordner - NICHT hagrid\simulation: nach dem Fast-Forward waere das der
+# echte Modulordner. Nur die Laenge zaehlt; der Name ist gleich lang wie 'simulation\hagrid-matsim-output'.
+$probeRoot = Join-Path $root 'hagrid\r3pathprobe'
+if (Test-Path -LiteralPath $probeRoot) { throw "Probeordner existiert schon: $probeRoot - erst sichten, nicht ueberschreiben" }
+$base = Join-Path $probeRoot ('p' * ('simulation\hagrid-matsim-output'.Length - 'r3pathprobe'.Length))
 $name = 'x' * ($target - $base.Length - 1)
 $probe = Join-Path $base $name
 $lines += "probe_len=$($probe.Length)"
-try { New-Item -ItemType Directory -Force (Split-Path $probe) | Out-Null; Set-Content -LiteralPath $probe 'ps'; $r = Get-Content -LiteralPath $probe; Remove-Item -LiteralPath $probe; $lines += "POWERSHELL ok $r" } catch { $lines += "POWERSHELL FAIL $($_.Exception.Message)" }
-$py = "import sys,os; p=sys.argv[1]; os.makedirs(os.path.dirname(p), exist_ok=True); open(p,'w').write('py'); print('PYTHON ok', open(p).read()); os.remove(p)"
-$lines += (& python -c $py $probe 2>&1 | Out-String).Trim()
-$lines += (& "$env:JAVA_HOME\bin\java.exe" (Join-Path $env:USERPROFILE 'hagrid-restructure-evidence\r3\PathProbe.java') $probe 2>&1 | Out-String).Trim()
-Remove-Item -Recurse -Force (Join-Path $root 'hagrid\simulation') -ErrorAction SilentlyContinue
+try {
+    try { New-Item -ItemType Directory -Force (Split-Path $probe) | Out-Null; Set-Content -LiteralPath $probe 'ps'; $r = Get-Content -LiteralPath $probe; Remove-Item -LiteralPath $probe; $lines += "POWERSHELL ok $r" } catch { $lines += "POWERSHELL FAIL $($_.Exception.Message)" }
+    $py = "import sys,os; p=sys.argv[1]; os.makedirs(os.path.dirname(p), exist_ok=True); open(p,'w').write('py'); print('PYTHON ok', open(p).read()); os.remove(p)"
+    $lines += (& python -c $py $probe 2>&1 | Out-String).Trim()
+    $lines += (& "$env:JAVA_HOME\bin\java.exe" (Join-Path $env:USERPROFILE 'hagrid-restructure-evidence\r3\PathProbe.java') $probe 2>&1 | Out-String).Trim()
+} finally {
+    if (Test-Path -LiteralPath $probeRoot) { cmd /c "rmdir /s /q `"$probeRoot`"" | Out-Null }   # rmdir vertraegt lange Pfade
+    $lines += "probe_removed=$(-not (Test-Path -LiteralPath $probeRoot))"
+}
 $lines | Set-Content $out -Encoding ascii
 $lines
 ```
@@ -150,7 +158,7 @@ Ausführen gegen den **Haupt-Checkout** (dort liegen die 149 GB; der Worktree ha
 powershell -NoProfile -File "$env:USERPROFILE\hagrid-restructure-evidence\r3\pathlen.ps1" -RepoRoot 'C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID'
 ```
 
-Erwartet: vier Zeilen `POWERSHELL …`, `PYTHON …`, `JAVA …` mit `ok` oder `FAIL`. Alle drei Ergebnisse gehen wörtlich in den Ledger (Tabelle: Werkzeug, Pfadlänge, Ergebnis). Ein `FAIL` ist **kein** Abbruch dieses Plans (der Dev ist die einzige Maschine im Plan, und Java schreibt die Läufe), aber ein Blocker für das Ausrollen auf eine Maschine mit demselben Befund, bis `LongPathsEnabled` dort gesetzt ist (Spec §5.5). Der Ordner `hagrid\simulation` im Haupt-Checkout wird vom Skript wieder entfernt; `git -C ..\HAGRID status --short` muss danach unverändert sein.
+Erwartet: drei Zeilen `POWERSHELL …`, `PYTHON …`, `JAVA …` mit `ok` oder `FAIL`, dazu `probe_removed=True`. Alle drei Ergebnisse gehen wörtlich in den Ledger (Tabelle: Werkzeug, Pfadlänge, Ergebnis). **Ein `FAIL` ist ein Befund für den Dev als betroffene Maschine** (Spec §5.5): Task 1 bis 5 laufen weiter (sie fassen keine langen Pfade an), aber Task 6 beginnt mit einem Go/No-Go-Schritt, der den Befund auflöst. Der Probeordner `hagrid\r3pathprobe` ist die einzige Schreibaktion im Haupt-Checkout vor Task 6 und wird im `finally` entfernt; `git -C ..\HAGRID status --short` muss danach unverändert sein.
 
 - [ ] **Step 4: Baseline der Gate-Muster (Positivkontrolle für Task 3)**
 
@@ -493,7 +501,9 @@ $from = $old; $to = $new
 if ($Reverse) { $from = $new; $to = $old }
 function Rel([string] $p) { return $p.Substring($RepoRoot.Length + 1) }
 
-$logDir = Join-Path $new 'logs'
+# Protokoll immer auf der ZIEL-Seite: vorwaerts hagrid\simulation\logs, rueckwaerts hagrid\logs. Das logs-Paar
+# wird in dieses bereits existierende Verzeichnis gemischt, also liegt der Protokollpfad am Ende noch dort.
+$logDir = Join-Path $to 'logs'
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $logFile = Join-Path $logDir ("migrate-module-layout-{0:yyyyMMdd-HHmmss}{1}.log" -f (Get-Date), $(if ($Reverse) { '-reverse' } else { '' }))
 $log = New-Object System.Collections.Generic.List[string]
@@ -624,7 +634,8 @@ Assert (Test-Path "$old\input\hannover\config\probe.txt")   'input zurueck, ins 
 Assert (Test-Path "$old\input\hannover\config\.gitkeep")    'Skelett bleibt'
 Assert (Test-Path "$old\hagrid-matsim-output\RUN1\ITERS\it.0\e.xml") 'Laufordner zurueck'
 Assert (-not (Test-Path "$old\target"))                     'Reverse stellt keine Build-Artefakte her'
-Assert (((Get-ChildItem $new -Force -Recurse -File | Where-Object { $_.Name -notlike 'migrate-module-layout-*.log' }).Count) -eq 0) 'am neuen Ort bleiben nur Protokolle'
+Assert ((Get-ChildItem $new -Force -Recurse -File).Count -eq 0)   'am neuen Ort bleibt nichts zurueck'
+Assert ((Get-ChildItem "$old\logs" -Filter 'migrate-module-layout-*-reverse.log').Count -eq 1) 'Reverse-Protokoll liegt auf der Zielseite (hagrid\logs)'
 
 Write-Host 'Fall 6: langer Pfad (> 260) in einem Laufordner ueberlebt den Umzug (nur mit JAVA_HOME)'
 if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
@@ -645,7 +656,7 @@ if ($fails -gt 0) { Write-Host "$fails Pruefungen fehlgeschlagen"; exit 1 } else
 ```
 
 ```powershell
-powershell -NoProfile -File tools\Test-MigrateModuleLayout.ps1    # erwartet: alle Pruefungen bestanden (27 ok mit JAVA_HOME, 25 ohne)
+powershell -NoProfile -File tools\Test-MigrateModuleLayout.ps1    # erwartet: alle Pruefungen bestanden (28 ok mit JAVA_HOME, 26 ohne)
 ```
 
 - [ ] **Step 5: `migrate-input-layout.ps1` auf das gemeinsame Modul und das Endziel heben**
@@ -864,7 +875,16 @@ $b = Get-Content "$ev\r3\after-part3\hashes.txt" | Where-Object { $_ -like 'hagr
 Compare-Object $a $b | Tee-Object "$ev\r3\p1-diff.txt"
 ```
 
-Erwartet: 7 gegen 7 Zeilen; Differenz höchstens die Zeile `…drt_inputs.properties`. Deren Inhalt unterscheidet sich erwartbar in den `#`-Zeitstempelzeilen und im Wert der Pipeline-Wurzel (Worktree `HAGRID-r3\hagrid\simulation` statt `HAGRID\hagrid`); nach Entfernen der `#`-Zeilen und Ersetzen beider Wurzelpfade durch `<root>` muss `Compare-Object` leer sein. Alles andere identisch. Der Lauf schreibt nur in `hagrid-output/` des Worktrees.
+Erwartet: 7 gegen 7 Zeilen; Differenz höchstens die Hash-Zeile zu `…drt_inputs.properties`. Ein Hash lässt sich nicht normalisieren, deshalb werden für diese eine Datei die **Inhalte** verglichen — die Probe kopiert die Probenordner nach `$Out`, beide Fassungen liegen also vor:
+
+```powershell
+$fa = Get-ChildItem "$ev\after\DRT_BASELINE_13052025_rsprobe" -Recurse -Filter '*drt_inputs.properties' | Select-Object -First 1
+$fb = Get-ChildItem "$ev\r3\after-part3\DRT_BASELINE_13052025_rsprobe" -Recurse -Filter '*drt_inputs.properties' | Select-Object -First 1
+function Norm($f) { Get-Content $f.FullName | Where-Object { $_ -notmatch '^#' } | ForEach-Object { $_ -replace '\\', '/' -replace '(?i)C:/Users/Hendrik Bimmermann/Documents/GitHub/HAGRID(-r3)?/hagrid(/simulation)?', '<root>' } }
+Compare-Object (Norm $fa) (Norm $fb) | Tee-Object "$ev\r3\p1-properties-diff.txt"      # erwartet: leer
+```
+
+Erlaubt sind damit genau zwei Unterschiede in dieser Datei: die `#`-Zeitstempelzeilen und der Wurzelpfad. Bleibt nach der Normalisierung eine Zeile übrig, ist P1 nicht bestanden. Alle anderen sechs Hash-Zeilen identisch. Der Lauf schreibt nur in `hagrid-output/` des Worktrees.
 
 - [ ] **Step 3: Smoke-Skript anlegen (Spec §6.4)**
 
@@ -978,6 +998,12 @@ git commit -q -m "docs(restructure): METHODS-LOG entry for the module move (evid
 
 Kein Subagent. Läuft erst, wenn die Gesamt-Review über `hendrik..restructure-3` sauber ist und **kein Lauf** auf dem Dev aktiv ist (`Get-Process java` leer bzw. keine MATSim-JVM).
 
+- [ ] **Step 0: Go/No-Go Pfadlängen (Spec §5.5)** — `pathlen.txt` aus Task 0 lesen. Regel je Werkzeug mit `FAIL`:
+  - **PowerShell**: Blocker für die Migration, es sei denn, der Selbsttest Fall 6 (Task 2) ist grün — er belegt, dass `Move-Item` nur die erste Ebene umbenennt und die lange Datei danach lesbar ist. Fall 6 grün → Go mit Vermerk im Ledger.
+  - **Java**: Blocker ohne Ausnahme (Java schreibt und liest die Läufe). Abhilfe: `LongPathsEnabled` setzen (`reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1`, Admin, Neuanmeldung), `pathlen.ps1` erneut laufen lassen, Ergebnis in den Ledger.
+  - **Python**: kein Blocker für die Migration (sie ruft kein Python), aber ein Befund für die KPI-Schicht, der schon heute gilt (262 Zeichen existieren). Abhilfe wie bei Java; bis dahin Backlog-Punkt aus Task 5.
+  Erst wenn jede `FAIL`-Zeile eine dieser Auflösungen im Ledger hat, geht es zu Step 1.
+
 - [ ] **Step 1: Rückkehrpunkt festhalten (Spec §8)** — im Ledger: `git -C <main> rev-parse HEAD`, `git -C <main> status --short` (erwartet: die drei fremden Docs + ungetrackte Plandateien), `Get-Process java`, Pfadlängen-Zeilen aus Task 0.
 
 - [ ] **Step 2: Fast-Forward**
@@ -1000,7 +1026,17 @@ Get-ChildItem hagrid | Select-Object Name     # demand, simulation, und die Alto
 ```powershell
 $park = Join-Path $env:USERPROFILE 'hagrid-parked-inputs\legacy-phd'
 New-Item -ItemType Directory -Force $park | Out-Null
-foreach ($d in 'bin','test','output','sim-input','sim-output','.pytest_cache') { if (Test-Path "hagrid\$d") { robocopy "hagrid\$d" "$park\$d" /E /MOVE /NFL /NDL /NJH /NP | Out-Null; if (Test-Path "hagrid\$d") { Remove-Item "hagrid\$d" -Recurse -Force } } }
+foreach ($d in 'bin','test','output','sim-input','sim-output','.pytest_cache') {
+    if (-not (Test-Path "hagrid\$d")) { continue }
+    $nSrc = @(cmd /c "dir /s /b /a-d `"hagrid\$d`"" 2>$null | Where-Object { $_ }).Count
+    robocopy "hagrid\$d" "$park\$d" /E /MOVE /NFL /NDL /NJH /NP | Out-Null
+    $rc = $LASTEXITCODE                                                   # robocopy: < 8 = ohne Fehler, >= 8 = mindestens eine Datei nicht kopiert
+    $left = @(cmd /c "dir /s /b /a-d `"hagrid\$d`"" 2>$null | Where-Object { $_ }).Count
+    $nDst = @(cmd /c "dir /s /b /a-d `"$park\$d`"" 2>$null | Where-Object { $_ }).Count
+    "$d : quelle=$nSrc geparkt=$nDst rest=$left robocopy=$rc"
+    if ($rc -ge 8 -or $left -ne 0 -or $nDst -ne $nSrc) { throw "Parken von hagrid\$d unvollstaendig (rc=$rc, rest=$left, geparkt=$nDst von $nSrc) - NICHTS loeschen, von Hand sichten" }
+    if (Test-Path "hagrid\$d") { Remove-Item "hagrid\$d" -Recurse -Force }   # nur noch leere Verzeichnisse
+}
 "Geparkt am $(Get-Date -Format s) aus HAGRID\hagrid\ (Repo-Umbau Teil 3, Spec 2026-09-21 #4, Entscheidung C). Loeschung nach Karenz, siehe BACKLOG." | Set-Content "$park\README-parked.txt"
 Remove-Item hagrid\build.log, hagrid\build-package.log -ErrorAction SilentlyContinue
 if (Test-Path hagrid\devlog) { Remove-Item hagrid\devlog -Recurse -Force }
