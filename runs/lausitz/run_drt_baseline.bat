@@ -15,7 +15,7 @@ set "ARGS=concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fle
 rem 1) Preprocess: clipped DRT network, person-only plans, DVRP fleet + rail schedule.
 rem NOTE: call is REQUIRED -- mvn is mvn.cmd; without call, control transfers to it and
 rem never returns, so the second mvn step (the actual simulation) would silently never run.
-call mvn -pl hagrid exec:java ^
+call mvn -pl :hagrid exec:java ^
   -Dexec.mainClass="hagrid.lausitz.drt.PrepareLausitzDrtInputs" ^
   -Dexec.args="%ARGS%"
 
@@ -27,7 +27,7 @@ if not "%RC%"=="0" (
 )
 
 rem 2) Run integrated passenger-DRT + freight simulation.
-call mvn -pl hagrid exec:java ^
+call mvn -pl :hagrid exec:java ^
   -Dexec.mainClass="hagrid.core.simulation.HAGRIDSimulationRunner" ^
   -Dexec.args="%ARGS%"
 

@@ -46,7 +46,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = 'C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID'
-$module = Join-Path $repo 'hagrid'
+$module = Join-Path $repo 'hagrid\simulation'
 $logDir = Join-Path $module 'hagrid-output\logs'
 $log = Join-Path $logDir 'chi_detour_rerun.log'
 $outRoot = Join-Path $module 'hagrid-matsim-output'

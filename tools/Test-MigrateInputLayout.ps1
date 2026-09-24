@@ -11,7 +11,7 @@ function New-Fixture {
     # liegen noch im alten Modulordner.
     $tmp = Join-Path $env:TEMP ("mil-" + [guid]::NewGuid().ToString('N'))
     $old = Join-Path $tmp 'parcel-demand-2-matsim-pipeline'
-    $new = Join-Path $tmp 'hagrid'
+    $new = Join-Path $tmp 'hagrid\simulation'
     foreach ($d in 'input\common\emissions','input\hannover\config','input\hannover\demand','input\hannover\geodata','input\hannover\hubs','input\hannover\network','input\hannover\vehicles','input\lausitz\config','input\lausitz\drt','input\lausitz\network','hagrid-output','hagrid-matsim-output') {
         New-Item -ItemType Directory -Force (Join-Path $new $d) | Out-Null
         Set-Content (Join-Path $new "$d\.gitkeep") ''
@@ -52,7 +52,7 @@ Remove-Item -Recurse -Force $tmp
 
 $fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
 Write-Host "Fall 3: fruehe Kollision (Hannover-config) bricht ab, bevor irgendetwas verschoben wurde"
-Set-Content (Join-Path $new 'input\hannover\config\other.txt') 'y'
+Set-Content (Join-Path $new 'input\hannover\config\probe.txt') 'y'
 $threw = $false
 try { & $script -RepoRoot $tmp } catch { $threw = $true }
 Assert $threw 'Quelle und Ziel beide belegt -> Fehler'
@@ -62,11 +62,24 @@ Remove-Item -Recurse -Force $tmp
 
 $fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
 Write-Host "Fall 4: spaete Kollision (letztes Lausitz-Paar) bricht ebenfalls VOR dem ersten Move ab"
-Set-Content (Join-Path $new 'input\lausitz\drt\other.shp') 'z'
+Set-Content (Join-Path $new 'input\lausitz\drt\probe.txt') 'z'
 $threw = $false
 try { & $script -RepoRoot $tmp } catch { $threw = $true }
 Assert $threw 'spaete Kollision -> Fehler'
 Assert (Test-Path "$old\hagrid-output\RUN1\x.csv")               'Preflight: auch hier nichts verschoben (Outputs)'
 Assert (Test-Path "$old\hagrid-input\emissions\probe.txt")       'Preflight: auch hier nichts verschoben (Inputs)'
+Remove-Item -Recurse -Force $tmp
+
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+Write-Host "Fall 5: Wiederanlauf - eine nachtraeglich am alten Ort aufgetauchte Datei kommt nach"
+& $script -RepoRoot $tmp
+New-Item -ItemType Directory -Force (Join-Path $old 'hagrid-input\config') | Out-Null
+Set-Content (Join-Path $old 'hagrid-input\config\late.txt') 'late'
+$threw = $false
+try { & $script -RepoRoot $tmp } catch { $threw = $true }
+Assert (-not $threw)                                             'Wiederanlauf bricht nicht ab: ein Ordner auf beiden Seiten ist keine Kollision'
+Assert (Test-Path "$new\input\hannover\config\late.txt")         'nachgereichte Datei kommt am Ziel an'
+Assert (Test-Path "$new\input\hannover\config\probe.txt")        'die bereits migrierte Datei bleibt unangetastet liegen'
+Assert (-not (Test-Path $old))                                   'alter Modulordner ist wieder weg'
 Remove-Item -Recurse -Force $tmp
 if ($fails -gt 0) { Write-Host "$fails Pruefungen fehlgeschlagen"; exit 1 } else { Write-Host 'alle Pruefungen bestanden'; exit 0 }

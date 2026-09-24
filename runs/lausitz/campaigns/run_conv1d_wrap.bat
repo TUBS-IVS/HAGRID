@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0..\..\..\hagrid"
+cd /d "%~dp0..\..\..\hagrid\simulation"
 set "WLOG=hagrid-matsim-output\logs\conv1d_wrap.log"
 set "WATCH=hagrid-matsim-output\logs\fleet1d_b_chain.log"
 rem Waits for the f125/f120 chain to finish, then starts the maxIter=250 convergence arm.

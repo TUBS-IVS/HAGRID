@@ -2,25 +2,20 @@
 .SYNOPSIS
   Zieht die lokalen, git-ignorierten Inputs und Outputs vom alten Modulordner
   (parcel-demand-2-matsim-pipeline/hagrid-input/...) in die neue Gliederung
-  (hagrid/input/{common,hannover,lausitz}). Idempotent; bricht bei Kollision ab.
+  (hagrid/simulation/input/{common,hannover,lausitz}). Idempotent; bricht bei Kollision ab.
 .NOTES
   Laeuft nach `git pull` auf jeder Maschine einmal (Spec 2026-09-17-repo-restructure-design.md #8).
   git mv nimmt ignorierte Dateien nicht mit, deshalb dieses Skript.
 #>
 param([string] $RepoRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Migrate-Common.ps1')
 
 $old = Join-Path $RepoRoot 'parcel-demand-2-matsim-pipeline'
-$new = Join-Path $RepoRoot 'hagrid'
+$new = Join-Path $RepoRoot 'hagrid\simulation'
 $in  = Join-Path $new 'input'
 if (-not (Test-Path $new)) { throw "Zielmodul fehlt: $new (erst git pull / checkout)" }
 
-# Getrackte .gitkeep-Skelette zaehlen nicht als Inhalt: nach `git pull` hat jeder Zielordner eines,
-# und sie muessen liegen bleiben (sonst fehlen auf der Maschine getrackte Dateien).
-function Has-RealFiles([string] $path) {
-    if (-not (Test-Path $path)) { return $false }
-    return @(Get-ChildItem $path -Force -Recurse -File | Where-Object { $_.Name -ne '.gitkeep' }).Count -gt 0
-}
 function Rel([string] $p) { return $p.Substring($RepoRoot.Length + 1) }
 
 # ---------- Phase 0: Plan aufstellen (nichts wird bewegt) ----------
@@ -30,7 +25,7 @@ $hiNow = if (Test-Path (Join-Path $new 'hagrid-input')) { Join-Path $new 'hagrid
 $hiAfter = Join-Path $new 'hagrid-input'
 
 $phaseA = @()
-foreach ($d in 'hagrid-input', 'hagrid-output', 'hagrid-matsim-output', 'routerCache', 'logs', 'target') {
+foreach ($d in 'hagrid-input', 'hagrid-output', 'hagrid-matsim-output', 'routerCache', 'logs') {
     $phaseA += [pscustomobject]@{ Src = (Join-Path $old $d); Dst = (Join-Path $new $d) }
 }
 $inputMap = [ordered]@{ 'emissions' = 'common\emissions'; 'lausitz' = 'lausitz' }
@@ -42,8 +37,8 @@ foreach ($k in $inputMap.Keys) {
 
 # ---------- Phase 1: Preflight - alle Kollisionen sammeln, bei einer einzigen abbrechen ----------
 $collisions = @()
-foreach ($p in $phaseA) { if ((Has-RealFiles $p.Src) -and (Has-RealFiles $p.Dst)) { $collisions += "{0}  <->  {1}" -f (Rel $p.Src), (Rel $p.Dst) } }
-foreach ($p in $phaseB) { if ((Has-RealFiles $p.Now) -and (Has-RealFiles $p.Dst)) { $collisions += "{0}  <->  {1}" -f (Rel $p.Now), (Rel $p.Dst) } }
+foreach ($p in $phaseA) { foreach ($c in (Find-Collisions $p.Src $p.Dst)) { $collisions += "{0}\{1}" -f (Rel $p.Src), $c } }
+foreach ($p in $phaseB) { foreach ($c in (Find-Collisions $p.Now $p.Dst)) { $collisions += "{0}\{1}" -f (Rel $p.Now), $c } }
 if (Test-Path $hiNow) {
     $known = @($inputMap.Keys)
     $stray = Get-ChildItem $hiNow -Force | Where-Object { $_.Name -notin $known -and $_.Name -ne '.gitkeep' }
@@ -54,24 +49,9 @@ if ($collisions.Count -gt 0) {
 }
 
 # ---------- Phase 2: Verschieben, in bestehende Skelettordner hineinmischen ----------
-function Merge-Into([string] $src, [string] $dst) {
-    if (-not (Test-Path $src)) { return }
-    if (-not (Test-Path $dst)) {
-        New-Item -ItemType Directory -Force (Split-Path $dst -Parent) | Out-Null
-        Move-Item -LiteralPath $src -Destination $dst
-        Write-Host ("  {0} -> {1}" -f (Rel $src), (Rel $dst)); return
-    }
-    foreach ($child in Get-ChildItem $src -Force) {
-        $target = Join-Path $dst $child.Name
-        if ($child.PSIsContainer) { Merge-Into $child.FullName $target }
-        elseif ($child.Name -eq '.gitkeep' -and (Test-Path $target)) { Remove-Item -LiteralPath $child.FullName }
-        else { Move-Item -LiteralPath $child.FullName -Destination $target }   # Preflight garantiert: kein echtes Ziel
-    }
-    Remove-Item -LiteralPath $src -Force
-    Write-Host ("  {0} => {1} (gemischt)" -f (Rel $src), (Rel $dst))
-}
-foreach ($p in $phaseA) { Merge-Into $p.Src $p.Dst }
-foreach ($p in $phaseB) { Merge-Into $p.Src $p.Dst }
+$log = New-Object System.Collections.Generic.List[string]
+foreach ($p in $phaseA) { Merge-Into $p.Src $p.Dst $log }
+foreach ($p in $phaseB) { Merge-Into $p.Src $p.Dst $log }
 if ((Test-Path $hiAfter) -and -not (Has-RealFiles $hiAfter)) { Remove-Item -Recurse -Force $hiAfter }
 if ((Test-Path $old) -and -not (Has-RealFiles $old)) { Remove-Item -Recurse -Force $old }
 elseif (Test-Path $old) { Write-Warning "Im alten Modulordner liegen noch Dateien: $(Rel $old) - von Hand sichten." }
@@ -79,4 +59,5 @@ elseif (Test-Path $old) { Write-Warning "Im alten Modulordner liegen noch Dateie
 if (-not (Test-Path (Join-Path $in 'README.md'))) {
     Write-Warning "Root-Marker $in\README.md fehlt: ist der Checkout auf dem Umbau-Stand?"
 }
+$log | ForEach-Object { Write-Host "  $_" }
 Write-Host 'migrate-input-layout: fertig'

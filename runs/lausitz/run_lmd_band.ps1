@@ -11,7 +11,7 @@
 # band is therefore no longer a bias correction but a SYMMETRIC sensitivity around a
 # central level that is now anchored:
 #
-#   low     = x0.90   5,461 parcels  (hagrid/input/lausitz/demand/level_low)
+#   low     = x0.90   5,461 parcels  (hagrid/simulation/input/lausitz/demand/level_low)
 #   central = x1.00   6,058 parcels  (.../demand/level_central)
 #   high    = x1.10   6,642 parcels  (.../demand/level_high)
 #
@@ -42,7 +42,7 @@ $root = 'c:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID'
 Set-Location $root
 
 $env:MAVEN_OPTS = '-Xmx16g -Xms4g -Dhagrid.log.dir=hagrid-output/logs --add-opens java.base/java.lang=ALL-UNNAMED'
-$demand = Join-Path $root 'hagrid\input\lausitz\demand'
+$demand = Join-Path $root 'hagrid\simulation\input\lausitz\demand'
 
 foreach ($lvl in @('central', 'low', 'high')) {
     Write-Output "=== BAND LEVEL $lvl  START $(Get-Date -Format s) ==="
@@ -62,7 +62,7 @@ foreach ($lvl in @('central', 'low', 'high')) {
     }
     Write-Output "active demand verified: level_$lvl sha256=$($hStaged.Substring(0,16))"
 
-    & mvn -pl hagrid exec:java `
+    & mvn -pl :hagrid exec:java `
         "-Dexec.mainClass=hagrid.core.simulation.HAGRIDSimulationRunner" `
         "-Dexec.args=concept=LMD_BASELINE,date=2025-05-13,maxIter=0,jspritIter=100,tag=bandz_$lvl,writeDashboard=true"
 

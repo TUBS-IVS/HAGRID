@@ -6,7 +6,7 @@ cd /d "%~dp0..\.."
 set "MAVEN_OPTS=-Xmx16g -Xms4g -Dhagrid.log.dir=hagrid-output/logs --add-opens java.base/java.lang=ALL-UNNAMED"
 
 rem freight wird hier nicht benoetigt, ist aber nach run_hagrid_sim bereits im lokalen Maven-Repo
-mvn -pl hagrid exec:java ^
+mvn -pl :hagrid exec:java ^
   -Dexec.mainClass="hagrid.hannover.HAGRIDAnalysisRunner" ^
   -Dexec.args="concept=basecase,date=2025-05-13,maxIter=150,jspritIter=10000"
 

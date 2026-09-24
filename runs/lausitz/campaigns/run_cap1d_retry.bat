@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0..\..\..\hagrid"
+cd /d "%~dp0..\..\..\hagrid\simulation"
 set "JAVA_EXE="
 if defined HAGRID_JAVA_EXE if exist "%HAGRID_JAVA_EXE%" set "JAVA_EXE=%HAGRID_JAVA_EXE%"
 if not defined JAVA_EXE if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"

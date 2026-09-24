@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0..\..\hagrid"
+cd /d "%~dp0..\..\hagrid\simulation"
 set "JAVA_EXE="
 if defined HAGRID_JAVA_EXE if exist "%HAGRID_JAVA_EXE%" set "JAVA_EXE=%HAGRID_JAVA_EXE%"
 if not defined JAVA_EXE if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
@@ -24,9 +24,9 @@ call :STEP drt_modular f150t010 150 0.10
 if errorlevel 1 goto :FAILED
 
 echo [%DATE% %TIME%] deciding theta >> "%LOG%"
-"%PY%" -u devlog\decide_theta.py b120rg >> hagrid-matsim-output\logs\decide_theta.log 2>&1
+"%PY%" -u "%~dp0decide_theta.py" b120rg >> hagrid-matsim-output\logs\decide_theta.log 2>&1
 set "TH="
-for /f "usebackq delims=" %%i in ("devlog\chosen_theta.txt") do set "TH=%%i"
+for /f "usebackq delims=" %%i in ("%~dp0chosen_theta.txt") do set "TH=%%i"
 if not defined TH ( echo [%DATE% %TIME%] NO THETA CHOSEN - stopping >> "%LOG%" & goto :FAILED )
 set "TS=!TH:.=!"
 echo [%DATE% %TIME%] theta=!TH! >> "%LOG%"

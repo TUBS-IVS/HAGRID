@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0..\..\..\hagrid"
+cd /d "%~dp0..\..\..\hagrid\simulation"
 rem Waits for the 1c depot chain to finish, then starts the 1d fleet-size sweep.
 rem "ping" is the sleep primitive on purpose: "timeout" needs a console and fails when this
 rem script is launched detached via WMI Win32_Process.Create (no console attached).
