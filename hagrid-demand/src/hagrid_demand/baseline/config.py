@@ -16,7 +16,7 @@ _ALLOWED_KEYS = {
     "schema_version", "rng_version", "seed", "input_dir", "output_dir", "cache_root", "dashboard_root",
     "source_mode", "sources", "foundation_run", "weekly_source", "reference_year", "reference_operating_days",
     "output_scope", "dates", "years", "legacy_export", "persons_crs", "plz_crs", "target_crs",
-    "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial",
+    "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial", "business_potential", "matsim_export", "volume_fit_policy", "reference_operating_days_rule",
     "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples",
 }
 _PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
@@ -96,6 +96,24 @@ def _declared_source_paths(value: Any, *, config_path: Path, input_dir: Path) ->
     return paths
 
 
+def calendar_delivery_days(year: int, calendar: Any) -> int:
+    """Count the dates of *year* with positive delivery weight under the daily calendar settings."""
+    from .calendar import DEFAULT_WEEKDAY_WEIGHTS, public_holidays
+
+    if not isinstance(calendar, dict):
+        raise ValueError("calendar must be a mapping")
+    weekdays = calendar.get("weekday_weights", {}).get("private", DEFAULT_WEEKDAY_WEIGHTS)
+    holidays = set(public_holidays(year, calendar.get("holiday_region", "NI"))) | set(calendar.get("holiday_dates", []))
+    closed = float(calendar.get("holiday_factor", 0.)) == 0
+    count = 0
+    day = dt.date(year, 1, 1)
+    while day.year == year:
+        if float(weekdays[day.weekday()]) > 0 and not (closed and day.isoformat() in holidays):
+            count += 1
+        day += dt.timedelta(days=1)
+    return count
+
+
 def load_baseline_config(path: Path) -> dict:
     """Load a strict baseline config and resolve all declared paths at its location."""
     path = Path(path).resolve()
@@ -124,10 +142,13 @@ def load_baseline_config(path: Path) -> dict:
         raise ValueError("output_scope must be reference or daily")
     if not isinstance(config["reference_year"], int) or config["reference_year"] < 2021:
         raise ValueError("reference_year must be an integer from 2021")
+    if config["reference_operating_days"] == "calendar":
+        config["reference_operating_days"] = calendar_delivery_days(config["reference_year"], config.get("calendar", {}))
+        config["reference_operating_days_rule"] = "calendar"
     if (isinstance(config["reference_operating_days"], bool)
             or not isinstance(config["reference_operating_days"], int)
             or config["reference_operating_days"] <= 0):
-        raise ValueError("reference_operating_days must be a positive integer")
+        raise ValueError("reference_operating_days must be a positive integer or \"calendar\"")
     if "dates" in config:
         if not isinstance(config["dates"], list):
             raise ValueError("dates must be a list")

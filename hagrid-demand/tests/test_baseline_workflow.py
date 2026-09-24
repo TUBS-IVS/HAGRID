@@ -2,6 +2,7 @@ import json
 import sys
 import threading
 
+import pandas as pd
 import pytest
 
 from baseline_fixtures import write_fixture
@@ -439,3 +440,51 @@ def test_daily_scope_streams_selected_date_and_resumes_with_the_same_artifact(fi
     resumed = run_baseline(fixture_config, "daily-scope", resume=True)
     assert resumed == run
     assert (run / "daily_aggregates.parquet").read_bytes() == first
+
+
+def test_daily_scope_wires_weekly_profile_weekdays_and_public_holidays(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config = json.loads(fixture_config.read_text(encoding="utf-8"))
+    dates = [f"2021-05-{day:02d}" for day in range(10, 17)] + ["2021-12-06"]
+    config.update({"output_scope": "daily", "years": [2021], "dates": dates,
+                   "spatial": {"mode": "dirichlet", "between": 20., "within": 20.}})
+    fixture_config.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(fixture_config, "daily-calendar")
+
+    calendar = pd.read_parquet(run / "calendar_weights.parquet")
+    private = calendar.loc[calendar.segment.eq("private")].set_index("date")
+    assert private.loc["2021-05-16", "calendar_weight"] == 0  # Sunday
+    assert private.loc["2021-05-13", "calendar_weight"] == 0  # Christi Himmelfahrt (NI)
+    assert private.loc["2021-05-12", "weekday_factor"] == pytest.approx(0.19)
+    # The fixture's source weekly profile rises with the ISO week; it must reach the daily calendar.
+    assert private.loc["2021-12-06", "season_factor"] > private.loc["2021-05-10", "season_factor"]
+    assert calendar.groupby("segment").calendar_weight.sum().tolist() == pytest.approx([1., 1.])
+
+    daily = pd.read_parquet(run / "daily_aggregates.parquet")
+    per_day = daily.groupby(daily.date.astype(str).str[:10])["count"].sum()
+    assert per_day.get("2021-05-16", 0) == 0 and per_day.get("2021-05-13", 0) == 0
+    assert per_day["2021-12-06"] > per_day["2021-05-10"]
+    status = json.loads((run / "daily_status.json").read_text(encoding="utf-8"))
+    assert status["calendar"]["weekly_profile"] == "source"
+    assert status["calendar"]["delivery_days"]["2021"] == 313 - len([d for d in status["calendar"]["holiday_dates"] if pd.Timestamp(d).dayofweek < 6])
+
+
+def test_daily_scope_for_future_years_only_still_builds_the_reference_year(fixture_config):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config = json.loads(fixture_config.read_text(encoding="utf-8"))
+    config.update({"output_scope": "daily", "years": [2025], "dates": ["2025-05-13"]})
+    fixture_config.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(fixture_config, "future-only")
+
+    assert json.loads((run / "run.json").read_text(encoding="utf-8"))["status"] == "complete_daily"
+    projection = pd.read_parquet(run / "annual_projection.parquet")
+    assert projection.year.unique().tolist() == [2025]
+
+
+def test_default_business_potential_is_one_unit_per_company(fixture_config):
+    from hagrid_demand.baseline.workflow import _business_employee_weight
+
+    assert _business_employee_weight({}) is None
+    assert _business_employee_weight({"business_potential": {"model": "company_plus_employees"}}) == 0.1

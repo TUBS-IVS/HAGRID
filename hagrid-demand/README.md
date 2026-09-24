@@ -87,10 +87,35 @@ python -m hagrid_demand baseline report --run-dir runs/reference-2021
 Alle Referenzläufe aktualisieren denselben Offline-Einstieg unter `<output_dir>/dashboard/index.html`; die
 run-spezifischen Mengen, Scope-Bilanzen und B2B-Anpassungen bleiben in `<run>/report_data.json`. Ein Lauf mit
 demselben Namen benötigt `--resume`; geänderte Konfigurationen oder Eingabequellen werden dabei abgelehnt.
-`output_scope: "daily"` beendet sich bewusst mit einem Fehler, bis Plan 02 den Tageslauf bereitstellt.
+Mit `output_scope: "daily"` entsteht zusätzlich der Tageslauf (siehe nächster Abschnitt).
 
 Die früheren Modell-, OSM- und räumlichen Versuche liegen unter `hagrid_demand.experimental`. Die bisherigen
 Importpfade bleiben als Weiterleitungen erhalten, damit vorhandene Befehle und Skripte weiterhin funktionieren.
+
+## Tageslauf und MATSim-Export
+
+```powershell
+python -m hagrid_demand baseline run --config configs/baseline-daily.json --run-id daily-2025-05
+```
+
+Die Beispielkonfiguration rechnet dieselben acht Tage wie `ParcelDemandScenarioGenerator` (09./10.05. und 12.–17.05.2025).
+Die Jahresmenge wird einmal über das ganze Jahr verteilt; `dates` wählt nur aus, welche Tage ausgegeben werden.
+
+- **Jahr:** Gesamtmenge × nationale Volumenreihe V(y)/V(2021), B2B-Ziel und Marktanteile je Jahr (Notebooks 00–02).
+- **Woche:** Wochenprofil aus `Parcels19_20_21_inter.xlsx` (Notebook 03), `calendar.weekly_profile: "source"`.
+- **Wochentag:** Notebook-Verteilung Mo .16, Di .17, Mi .19, Do .18, Fr .15, Sa .115, So 0 (`calendar.weekday_weights`).
+- **Feiertage:** gesetzliche Feiertage Niedersachsen mit Faktor 0 (`calendar.holiday_region`, `holiday_dates`, `holiday_factor`).
+- **Betriebstage:** `reference_operating_days: "calendar"` zählt die Liefertage des Referenzjahres mit demselben Kalender (2021: 306).
+- **B2B je Anbieter:** Grenzen, Startwerte und Skalierung wie Notebook 05 (`data/provider_priors.json`); das nationale B2B-Ziel wird jedes Jahr exakt getroffen, ohne die Grenzen zu verlassen.
+- **Gewerbegewicht:** 1 je Firma; im DHL-Straßencheck erklärt die Beschäftigtenzahl nichts. `business_potential.model: company_plus_employees` (1 + 0,1 × Beschäftigte wie Notebook 06) bleibt optional.
+- **Räumliche Tagesstreuung:** Dirichlet zwischen PLZ (`between`, Notebook 50.000) und innerhalb der PLZ (`within_per_site` × Standortzahl).
+
+Mit `matsim_export: true` (Standard im Tageslauf) liegt unter `<run>/matsim/` je Liefertag
+`hagrid_parcel_demand_<Datum>_(<Wochentag>).shp` im Format, das `DemandProcessor` der MATSim-Pipeline liest:
+Punkte je Nachfragestandort (EPSG:25832), `postal_cod`, `<anbieter>_tag` = B2C, `<anbieter>_type` = B2B
+(DBF-Name max. 10 Zeichen, z. B. `amazon_typ`), `total`/`wl_tag` = Summe, dazu die Notebook-Aliase `dhl_b2c`, `ups_b2b` usw.
+Tage ohne Lieferung (Sonntag, Feiertag) erzeugen keine Datei. `matsim_export.json` enthält die Tagesbilanz.
+Für MATSim den Ordner nach `hagrid-input/demand/<runId>/` kopieren.
 
 ## Stages und Outputs
 
