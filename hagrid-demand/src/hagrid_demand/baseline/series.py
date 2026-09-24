@@ -62,6 +62,9 @@ def _market(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
                 for delta in range(1, year - end + 1):
                     value += annual[carrier] * (1 / np.sqrt(delta + 1)) * anchor["post_2022_multiplier"]["value"]
             values[carrier] = max(0.0, value)
+        # Notebook 00 first rescales the six carriers to 100 % and only then adds Amazon.
+        carrier_total = sum(values.values())
+        values = {carrier: 100.0 * value / carrier_total for carrier, value in values.items()}
         values["Amazon"] = 0.0 if year == 2014 else max(0.0, float(_sigmoid(year, *fit)))
         total = sum(values.values())
         for provider, value in values.items():
@@ -172,21 +175,39 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
-def _priors(inputs: dict[str, Any], years: list[int]) -> pd.DataFrame:
-    """Materialize the public, year-keyed provider-prior contract.
+def _bound_scale(spec: dict[str, Any], year: int) -> float:
+    """Notebook 05 ``adjust_bounds_by_year`` (linear): factor applied to every lower bound."""
+    start, end = spec["year_start"], spec["year_end"]
+    current = spec["b2b_start"] + (spec["b2b_end"] - spec["b2b_start"]) * (min(max(year, start), end) - start) / (end - start)
+    return current / spec["b2b_start"]
 
-    The packaged priors are currently constant assumptions, but publishing a row
-    per requested year prevents consumers from accidentally applying an
-    undated value to a different market series year.
-    """
+
+def _priors(inputs: dict[str, Any], years: list[int], market: pd.DataFrame) -> pd.DataFrame:
+    """Materialize year-keyed carrier B2B bounds, corner priors and scales from notebook 05."""
+    spec = inputs["provider_priors"]
+    scaling = spec["bound_scaling"]
+    shares = market.set_index(["year", "carrier"]).market_share
     rows = []
     for year in years:
-        for carrier, value in inputs["provider_priors"]["providers"].items():
-            rows.append({"year": year, "carrier": carrier, "lower": 0.0, "upper": 1.0,
-                         "q_prior": value["initial"], "q_scale": value["scale"],
+        factor = _bound_scale(scaling, year)
+        for carrier, value in spec["providers"].items():
+            base_lower, upper = (float(item) for item in value["legacy_bounds"])
+            lower = round(base_lower * factor, int(scaling["round"]))
+            if value["prior_corner"] not in {"lower", "upper"}:
+                raise ValueError(f"provider_priors.{carrier}.prior_corner must be lower or upper")
+            prior = lower if value["prior_corner"] == "lower" else upper
+            prior = min(max(prior, float(value.get("prior_floor", prior))), upper)
+            share = float(shares.get((year, carrier), np.nan))
+            if not np.isfinite(share) or share < 0:
+                raise ValueError(f"provider prior {carrier}/{year} requires a nonnegative market share")
+            # A carrier without market share (Amazon 2014) cannot move the B2B balance; its scale is inert.
+            scale = float(np.sqrt(prior / share)) if share > 0 else 1.0
+            rows.append({"year": year, "carrier": carrier, "lower": lower, "upper": upper,
+                         "q_prior": prior, "q_scale": scale,
                          "b2b_preference": value["b2b_preference"], "status": "assumption", "unit": "share",
                          "source": value["source"], "notebook_cell": value["notebook_cell"],
-                         "legacy_bounds": value["legacy_bounds"]})
+                         "legacy_bounds": value["legacy_bounds"], "bound_scale": factor,
+                         "prior_rule": spec["prior_rule"], "scale_rule": spec["scale_rule"]})
     return pd.DataFrame(rows)
 
 
@@ -227,6 +248,7 @@ def build_series(inputs: dict, years: list[int], *, volume_fit_policy: str,
     years = sorted({int(year) for year in years})
     if not years:
         raise ValueError("years must contain at least one year")
-    return {"market": _market(inputs, years), "b2b": _b2b(inputs, years),
-            "volume": _volume(inputs, years, volume_fit_policy), "providers": _priors(inputs, years),
+    market = _market(inputs, years)
+    return {"market": market, "b2b": _b2b(inputs, years),
+            "volume": _volume(inputs, years, volume_fit_policy), "providers": _priors(inputs, years, market),
             "weekly": _weekly(weekly_profile)}

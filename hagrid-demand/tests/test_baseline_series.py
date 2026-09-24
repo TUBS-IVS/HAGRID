@@ -215,3 +215,48 @@ def test_b2b_forecast_uses_the_notebook_relative_year_sigmoid():
 
     result = build_series(packaged_series_inputs(), [2024], volume_fit_policy="observed_only")["b2b"]
     assert result.loc[0, "share"] == pytest.approx(0.2209639502)
+
+
+def test_market_normalizes_the_six_carriers_before_adding_amazon_like_notebook_00():
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    market = build_series(packaged_series_inputs(), [2021, 2025, 2030], volume_fit_policy="observed_only")["market"]
+    shares = market.set_index(["year", "carrier"]).market_share
+    # Values of parcel-demand-estimation/output/00_markedshare_with_amazon.csv (percent).
+    assert shares[(2021, "Amazon")] == pytest.approx(0.13900527, abs=2e-4)
+    assert shares[(2025, "Amazon")] == pytest.approx(0.18277914, abs=2e-4)
+    assert shares[(2030, "Amazon")] == pytest.approx(0.18334205, abs=2e-4)
+    assert shares[(2030, "DHL")] == pytest.approx(0.44195614, abs=2e-4)
+
+
+def test_provider_priors_follow_notebook_05_dynamic_bounds_and_hit_every_b2b_target():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = list(range(2021, 2051))
+    series = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only")
+    priors = series["providers"].set_index(["year", "carrier"])
+    # Notebook 05: lower_c(y) = round(base_lower_c * cur(y) / 0.45, 4); cur(2021) = 0.2667, cur(>=2025) = 0.20.
+    assert priors.loc[(2021, "DHL"), "lower"] == pytest.approx(0.1659)
+    assert priors.loc[(2021, "UPS"), "lower"] == pytest.approx(0.2963)
+    assert priors.loc[(2025, "DHL"), "lower"] == pytest.approx(0.1244)
+    assert priors.loc[(2030, "FedEx/TNT"), "lower"] == pytest.approx(0.3467)
+    assert priors.loc[(2021, "UPS"), "upper"] == pytest.approx(0.88)
+    # Corner priors reproduce the notebook 05 optimum (05_optimized_b2b_shares_by_year.csv).
+    assert priors.loc[(2021, "DHL"), "q_prior"] == pytest.approx(0.1659)
+    assert priors.loc[(2021, "FedEx/TNT"), "q_prior"] == pytest.approx(0.95)
+    assert priors.loc[(2021, "Amazon"), "q_prior"] == pytest.approx(0.01)
+    market = series["market"].set_index(["year", "carrier"]).market_share
+    assert priors.loc[(2021, "DHL"), "q_scale"] == pytest.approx(np.sqrt(0.1659 / market[(2021, "DHL")]))
+
+    for year in years:
+        rows = priors.loc[year]
+        m = market.loc[year].reindex(rows.index).to_numpy()
+        target = float(series["b2b"].set_index("year").share[year])
+        result = reconcile_carriers(m, rows.q_prior.to_numpy(), target, rows.lower.to_numpy(),
+                                    rows.upper.to_numpy(), rows.q_scale.to_numpy())
+        q = np.asarray(result["q"])
+        assert float(m @ q) == pytest.approx(target, abs=1e-9)
+        assert (q >= rows.lower.to_numpy() - 1e-12).all() and (q <= rows.upper.to_numpy() + 1e-12).all()

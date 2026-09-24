@@ -22,7 +22,7 @@ from hagrid_demand.data import (build_business, build_residential, read_dhl, rea
 
 from .config import load_baseline_config
 from .dashboard import _report_markdown, build_report_data, render_baseline
-from .calendar import calendar_weights
+from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
 from .spatial import resolve_spatial_plan
 from .allocation import generate_days
@@ -196,15 +196,24 @@ def _write_sources(config: dict, output: Path) -> None:
 
 def _write_series(config: dict, source: Path, output: Path) -> None:
     weekly = pd.read_csv(source / "weekly_profile.csv")
-    series = build_series(packaged_series_inputs(), config["years"], volume_fit_policy="observed_only",
+    # The reference stage always needs the reference-year series, even for future-only daily runs.
+    years = sorted({*config["years"], config["reference_year"]})
+    series = build_series(packaged_series_inputs(), years, volume_fit_policy=config.get("volume_fit_policy", "observed_only"),
                           weekly_profile=weekly)
     for name, table in series.items():
         table.to_parquet(output / f"{name}.parquet", index=False)
 
 
-def _write_potentials(source: Path, output: Path) -> None:
+def _business_employee_weight(config: dict) -> float | None:
+    spec = config.get("business_potential", {"model": "company_locations"})
+    if not isinstance(spec, dict) or spec.get("model") not in {"company_plus_employees", "company_locations"}:
+        raise ValueError("business_potential.model must be company_plus_employees or company_locations")
+    return float(spec.get("employee_weight", 0.1)) if spec["model"] == "company_plus_employees" else None
+
+
+def _write_potentials(source: Path, output: Path, config: dict) -> None:
     sites = gpd.read_parquet(source / "sites.parquet")
-    potentials = build_potentials(sites.drop(columns="geometry"))
+    potentials = build_potentials(sites.drop(columns="geometry"), employee_weight=_business_employee_weight(config))
     potentials.to_parquet(output / "potentials.parquet", index=False)
 
 
@@ -270,14 +279,41 @@ def _write_report(config: dict, reference_dir: Path, output: Path, run_id: str, 
     (output / "report.md").write_text(_report_markdown(report), encoding="utf-8")
 
 
-def _daily_calendar(config: dict) -> pd.DataFrame:
+def _daily_calendar(config: dict, run: Path) -> tuple[pd.DataFrame, dict]:
+    """Build the normalised delivery calendar from the source weekly profile, weekdays and holidays."""
     calendar = config.get("calendar", {})
     if not isinstance(calendar, dict):
         raise ValueError("calendar must be a mapping")
-    cfg = {"weekday_weights": calendar.get("weekday_weights", {"private": [1.] * 7, "business": [1.] * 7}),
-           "monthly_weights": calendar.get("monthly_weights", [1.] * 12), "holiday_dates": calendar.get("holiday_dates", []),
-           "holiday_factor": calendar.get("holiday_factor", 1.), "seasonality_strength": calendar.get("seasonality_strength", {})}
-    return pd.concat([calendar_weights(year, segment, None, cfg) for year in config["years"] for segment in ("private", "business")], ignore_index=True)
+    weekly_mode = calendar.get("weekly_profile", "source")
+    if weekly_mode not in {"source", "none"}:
+        raise ValueError("calendar.weekly_profile must be source or none")
+    weekly = pd.read_parquet(run / "series" / "weekly.parquet") if weekly_mode == "source" else None
+    region = calendar.get("holiday_region", "NI")
+    extra = calendar.get("holiday_dates", [])
+    if not isinstance(extra, list):
+        raise ValueError("calendar.holiday_dates must be a list of ISO dates")
+    holidays = sorted({*extra, *(day for year in config["years"] for day in public_holidays(year, region))})
+    cfg = {"weekday_weights": calendar.get("weekday_weights", {"private": DEFAULT_WEEKDAY_WEIGHTS,
+                                                                "business": DEFAULT_WEEKDAY_WEIGHTS}),
+           "monthly_weights": calendar.get("monthly_weights", [1.] * 12), "holiday_dates": holidays,
+           "holiday_factor": calendar.get("holiday_factor", 0.), "seasonality_strength": calendar.get("seasonality_strength", {})}
+    frame = pd.concat([calendar_weights(year, segment, weekly, cfg) for year in config["years"]
+                       for segment in ("private", "business")], ignore_index=True)
+    active = frame.loc[frame.segment.eq("private") & frame.calendar_weight.gt(0)]
+    metadata = {"weekly_profile": weekly_mode,
+                "weekly_status": None if weekly is None else sorted(weekly.status.astype(str).unique().tolist()),
+                "weekday_weights": cfg["weekday_weights"], "holiday_region": region, "holiday_dates": holidays,
+                "holiday_factor": cfg["holiday_factor"],
+                "delivery_days": {str(year): int(count) for year, count in active.groupby("year").size().items()},
+                "reference_operating_days": config["reference_operating_days"]}
+    return frame, metadata
+
+
+def _matsim_export_enabled(config: dict) -> bool:
+    value = config.get("matsim_export", True)
+    if not isinstance(value, bool):
+        raise ValueError("matsim_export must be true or false")
+    return value
 
 
 def _write_daily(config: dict, run: Path, output: Path) -> None:
@@ -288,21 +324,28 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
                  "geometry": gpd.read_parquet(run / "reference_geometry.parquet")}
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
     projection = project_annual(reference, series, config["years"], {"memory": {"fixed": 1}, "regional_level": config["regional_level"]})
-    calendar = _daily_calendar(config)
+    calendar, calendar_metadata = _daily_calendar(config, run)
     plan = resolve_spatial_plan(reference, projection, {"seed": config["seed"], "spatial": config["spatial"]}, 0, Path(config["cache_root"]))
     generation = {"seed": config["seed"], "spatial": config["spatial"], "dates": config.get("dates"),
                   "regime": config.get("regime", "fixed_annual"), "process": config.get("process", {})}
     detail_draws = {tuple(item) for item in config.get("detail_draws", [[0, 0]])}
     if any(len(item) != 2 for item in detail_draws):
         raise ValueError("detail_draws must contain [outer_id, inner_id] pairs")
-    summary = write_daily_aggregates(generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
-                                                   spatial_plan=plan, cache_dir=Path(config["cache_root"])), output, detail_draws)
+    chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
+                           spatial_plan=plan, cache_dir=Path(config["cache_root"]))
+    matsim_ledgers: list[dict] = []
+    if _matsim_export_enabled(config):
+        from hagrid_demand.compatibility.matsim_export import with_matsim_export, write_matsim_manifest
+        chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers)
+    summary = write_daily_aggregates(chunks, output, detail_draws)
+    if _matsim_export_enabled(config):
+        write_matsim_manifest(matsim_ledgers, output / "matsim", str(reference["geometry"].crs))
     projection.sites.to_parquet(output / "annual_projection.parquet", index=False)
     projection.profiles.to_parquet(output / "carrier_profiles.parquet", index=False)
     projection.postal.to_parquet(output / "postal_projection.parquet", index=False)
     calendar.to_parquet(output / "calendar_weights.parquet", index=False)
     _json(output / "daily_status.json", {"output_scope": "daily", "years": config["years"], "selected_dates_are_filter_only": True,
-                                          "spatial_status": plan.status, "writer": summary})
+                                          "spatial_status": plan.status, "calendar": calendar_metadata, "writer": summary})
     if config.get("legacy_export"):
         from hagrid_demand.compatibility.legacy_exports import export_legacy
         export_legacy(series, reference, projection, Path(config["legacy_contract"]), config["years"], output / "legacy", config["schema_version"])
@@ -442,7 +485,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                                           {"workflow": Path(__file__), "potentials": Path(__file__).with_name("potentials.py")},
                                           dependency_snapshot=potential_snapshot)
         resolve_stage(run, "potentials", potential_fingerprint, cache_root=cache_root, dependencies=potential_dependencies,
-                      build=lambda output: _write_potentials(run / "sources", output),
+                      build=lambda output: _write_potentials(run / "sources", output, config),
                       validate=lambda output: _validate(output, ["potentials.parquet"]), dependency_snapshot=potential_snapshot)
         state["completed_stages"].append("potentials")
         reference_dependencies = {"sources": run / "sources", "series": run / "series", "potentials": run / "potentials"}
@@ -473,13 +516,22 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
             daily_fingerprint = stage_key("daily", daily_dependencies, config,
                                           {"workflow": Path(__file__), "projection": Path(__file__).with_name("projection.py"),
                                            "calendar": Path(__file__).with_name("calendar.py"), "allocation": Path(__file__).with_name("allocation.py"),
-                                           "outputs": Path(__file__).with_name("outputs.py")}, dependency_snapshot=daily_snapshot)
+                                           "outputs": Path(__file__).with_name("outputs.py"),
+                                           "spatial": Path(__file__).with_name("spatial.py"),
+                                           "matsim_export": Path(__file__).parents[1] / "compatibility" / "matsim_export.py"},
+                                          dependency_snapshot=daily_snapshot)
             resolve_stage(run, "daily", daily_fingerprint, cache_root=cache_root, dependencies=daily_dependencies,
                           build=lambda output: _write_daily(config, run, output),
-                          validate=lambda output: _validate(output, ["daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"] + (["legacy/05_ga_corrected_b2b_with_marked_adjust_gdf.csv"] if config.get("legacy_export") else [])),
+                          validate=lambda output: _validate(output, ["daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"] + (["legacy/05_ga_corrected_b2b_with_marked_adjust_gdf.csv"] if config.get("legacy_export") else [])
+                                                               + (["matsim/matsim_export.json"] if _matsim_export_enabled(config) else [])),
                           dependency_snapshot=daily_snapshot)
             for name in ("daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"):
                 _copy_public(run, "daily", name)
+            if _matsim_export_enabled(config):
+                target = run / "matsim"
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(run / "daily" / "matsim", target)
             state["completed_stages"].extend(["calendar", "daily"])
         report_dependencies = {"reference": run / "reference", "run_id": run_id, "baseline_fingerprint": baseline_fingerprint}
         report_snapshot = dependency_snapshot(report_dependencies)

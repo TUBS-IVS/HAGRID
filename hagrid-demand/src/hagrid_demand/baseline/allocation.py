@@ -145,8 +145,13 @@ def annual_day_counts(annual_total: float, b2b: float, calendars: dict, shocks: 
 
 
 def spatial_dirichlet(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray, between: float,
-                      within: float, rng: np.random.Generator) -> np.ndarray:
-    """Draw site shares with separate postal and within-postal concentrations."""
+                      within: float | None, rng: np.random.Generator, *, within_per_site: float | None = None) -> np.ndarray:
+    """Draw site shares with separate postal and within-postal concentrations.
+
+    ``within=None`` scales the within-postal concentration with the number of sites in each
+    postal area (``within_per_site * n_sites``), which keeps a typical site's share CV near
+    ``1/sqrt(within_per_site)`` regardless of how many sites a postal area contains.
+    """
     values = np.asarray(weights, dtype=float)
     postal = np.asarray(plz, dtype=object)
     sites = np.asarray(site_ids, dtype=object)
@@ -155,8 +160,16 @@ def spatial_dirichlet(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray
     if not isinstance(rng, np.random.Generator):
         raise ValueError("rng must be a numpy Generator")
     between_value = _number(between, "between", nonnegative=False)
-    within_value = _number(within, "within", nonnegative=False)
-    if between_value <= 0 or within_value <= 0:
+    if within is None:
+        per_site = _number(within_per_site, "within_per_site", nonnegative=False)
+        if per_site <= 0:
+            raise ValueError("within_per_site must be a positive Dirichlet concentration per site")
+        within_value = None
+    else:
+        within_value = _number(within, "within", nonnegative=False)
+        if within_value <= 0:
+            raise ValueError("between and within must be positive Dirichlet concentrations")
+    if between_value <= 0:
         raise ValueError("between and within must be positive Dirichlet concentrations")
     if not np.isfinite(values).all() or (values < 0).any():
         raise ValueError("spatial inputs require finite nonnegative weights")
@@ -179,7 +192,8 @@ def spatial_dirichlet(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray
     for group, postal_share in zip(groups, postal_shares, strict=True):
         group_indices = sorted_indices[sorted_postal == group]
         local = _normalised(values[group_indices], f"site weights in postal {group}")
-        local_share = np.ones(1, dtype=float) if len(group_indices) == 1 else rng.dirichlet(within_value * local)
+        concentration = within_value if within_value is not None else per_site * len(group_indices)
+        local_share = np.ones(1, dtype=float) if len(group_indices) == 1 else rng.dirichlet(concentration * local)
         result[group_indices] = postal_share * local_share
     return result
 
@@ -287,10 +301,21 @@ def _process_shocks(calendar: dict[str, pd.DataFrame], cfg: dict, *, year: int, 
     return {segment: np.asarray(values, dtype=float) for segment, values in result.items()}
 
 
-def _concentration(spatial: dict, name: str, segment: str) -> float:
-    value = spatial.get(name, spatial.get(f"{name}_concentration", 1.))
+# Notebook defaults (ParcelDemandScenarioGenerator: alpha=50000 between PLZ).  Within a PLZ the
+# notebook used 12500 over ~300 grid cells, i.e. about 40 per unit; the baseline scales the
+# within concentration with the number of sites so a site's share keeps a comparable CV (~16 %).
+DEFAULT_BETWEEN_CONCENTRATION = 50_000.
+DEFAULT_WITHIN_PER_SITE = 40.
+
+
+def _concentration(spatial: dict, name: str, segment: str, default: float | None) -> float | None:
+    value = spatial.get(name, spatial.get(f"{name}_concentration", default))
+    if value is None:
+        return None
     if isinstance(value, dict):
-        value = value.get(segment, value.get(str(segment).lower(), 1.))
+        value = value.get(segment, value.get(str(segment).lower(), default))
+        if value is None:
+            return None
     result = _number(value, f"spatial.{name}", nonnegative=False)
     if result <= 0:
         raise ValueError(f"spatial.{name} must be positive")
@@ -484,7 +509,9 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
                                           inner_id=coupling_id if coupling_id is not None else inner_id,
                                           segment=segment, date=timestamp.date().isoformat(), channel="spatial-dirichlet")
                     shares = spatial_dirichlet(item["site_weights"], sites.plz.to_numpy(), sites.site_id.to_numpy(),
-                                               _concentration(spatial, "between", segment), _concentration(spatial, "within", segment), share_rng)
+                                               _concentration(spatial, "between", segment, DEFAULT_BETWEEN_CONCENTRATION),
+                                               _concentration(spatial, "within", segment, None), share_rng,
+                                               within_per_site=_concentration(spatial, "within_per_site", segment, DEFAULT_WITHIN_PER_SITE))
                 else:
                     shares = _correlated_shares(sites, item, spatial_plan, cfg, year=year, segment=segment,
                                                 outer_id=outer_id, inner_id=inner_id, date=timestamp,
@@ -494,20 +521,24 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
                                            inner_id=coupling_id if coupling_id is not None else inner_id,
                                            segment=segment, date=timestamp.date().isoformat(), channel="site-counts")
                 site_counts = allocation_rng.multinomial(daily_count, shares)
-                for index, site in sites.iterrows():
-                    carrier_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
-                                            inner_id=coupling_id if coupling_id is not None else inner_id,
-                                            segment=segment, site_id=site.site_id, date=timestamp.date().isoformat(),
-                                            channel="carrier-counts")
-                    assigned = carrier_rng.multinomial(int(site_counts[index]), carrier_share)
-                    date_rows.append(pd.DataFrame({
-                        "date": timestamp, "year": year, "outer_id": outer_id, "inner_id": inner_id,
-                        "site_id": site.site_id, "plz": site.plz, "segment": segment,
-                        "carrier": carriers.carrier.to_numpy(), "allocation_status": site.allocation_status,
-                        "baseline_expected": float(site.annual_expected) * float(item["calendar"].at[timestamp, "calendar_weight"]) * carrier_share,
-                        "conditional_expected": float(daily_count) * float(shares[index]) * carrier_share,
-                        "daily_count": daily_count, "count": assigned,
-                    }))
+                # One canonical carrier stream per date/segment; sites are already in stable
+                # (plz, site_id) order, so the draw is independent of input row order.
+                carrier_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id,
+                                        inner_id=coupling_id if coupling_id is not None else inner_id,
+                                        segment=segment, date=timestamp.date().isoformat(), channel="carrier-counts-by-site")
+                assigned = carrier_rng.multinomial(site_counts, carrier_share)
+                n_sites, n_carriers = assigned.shape
+                calendar_weight = float(item["calendar"].at[timestamp, "calendar_weight"])
+                date_rows.append(pd.DataFrame({
+                    "date": timestamp, "year": year, "outer_id": outer_id, "inner_id": inner_id,
+                    "site_id": np.repeat(sites.site_id.to_numpy(), n_carriers),
+                    "plz": np.repeat(sites.plz.to_numpy(), n_carriers), "segment": segment,
+                    "carrier": np.tile(carriers.carrier.to_numpy(), n_sites),
+                    "allocation_status": np.repeat(sites.allocation_status.to_numpy(), n_carriers),
+                    "baseline_expected": np.outer(sites.annual_expected.to_numpy(float) * calendar_weight, carrier_share).ravel(),
+                    "conditional_expected": np.outer(float(daily_count) * shares, carrier_share).ravel(),
+                    "daily_count": daily_count, "count": assigned.ravel().astype(np.int64),
+                }))
             if date_rows:
                 frame = pd.concat(date_rows, ignore_index=True)
                 frame["_segment_order"] = frame.segment.map(_segment_order)

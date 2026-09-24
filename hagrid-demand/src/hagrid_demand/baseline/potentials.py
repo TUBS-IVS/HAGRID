@@ -25,7 +25,7 @@ def _segment(value: object) -> str:
 
 
 def build_potentials(sites: pd.DataFrame, power: float = 1.0,
-                     branch_multipliers: dict | None = None) -> pd.DataFrame:
+                     branch_multipliers: dict | None = None, employee_weight: float | None = None) -> pd.DataFrame:
     """Return one grid-free demand potential for each supplied demand location.
 
     The canonical default is people for private locations and one unit per company
@@ -61,7 +61,19 @@ def build_potentials(sites: pd.DataFrame, power: float = 1.0,
     result["weight"] = 0.0
     result.loc[private, "weight"] = population.loc[private].astype(float)
     business = ~private
-    if branch_multipliers is None:
+    if employee_weight is not None and branch_multipliers is not None:
+        raise ValueError("employee_weight and branch_multipliers are alternative business potentials")
+    if employee_weight is not None:
+        # Notebook 06 (calculate_weights): one unit per company plus 0.1 per employee.
+        if isinstance(employee_weight, bool) or not np.isfinite(employee_weight) or employee_weight < 0:
+            raise ValueError("employee_weight must be finite and nonnegative")
+        employees = pd.to_numeric(result.employees, errors="coerce") if "employees" in result else pd.Series(np.nan, index=result.index)
+        valid = employees.notna() & np.isfinite(employees) & employees.ge(0)
+        # Invalid employee values keep the company unit only; the reference stage still rejects
+        # them inside the verified postal scope, so nothing is silently erased there.
+        result.loc[business, "weight"] = 1.0 + float(employee_weight) * employees.where(valid, 0.).loc[business].astype(float)
+        result["potential_model"] = "company_plus_employees"
+    elif branch_multipliers is None:
         result.loc[business, "weight"] = 1.0
         result["potential_model"] = "company_locations"
     else:

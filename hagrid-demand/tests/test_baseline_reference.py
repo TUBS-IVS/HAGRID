@@ -523,3 +523,12 @@ def test_reference_keeps_extreme_eta_as_log_k_and_avoids_site_allocation_overflo
                               "allocation_status": ["located"]})
     allocated = solve_reference(huge_site, dhl, {"conditional": np.array([[1., 0.], [0., 0.]]), "dhl_index": 0}, 0., 313)
     assert np.isfinite(allocated["sites"].reference_annual).all()
+
+
+def test_notebook_06_business_potential_adds_a_tenth_per_employee():
+    from hagrid_demand.baseline.potentials import build_potentials
+
+    result = build_potentials(_sites(), employee_weight=0.1)
+    business = result.loc[result.segment.eq("business")]
+    assert business.weight.tolist() == pytest.approx((1 + 0.1 * business.employees).tolist())
+    assert result.potential_model.eq("company_plus_employees").all()
