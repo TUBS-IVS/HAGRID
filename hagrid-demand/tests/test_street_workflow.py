@@ -47,3 +47,8 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     day = manifest["days"][0]
     frame = gpd.read_file(run / "matsim" / day["file"])
     assert set(frame.stop_id) <= set(stops.stop_id) and int(frame.total.sum()) == day["parcels"]
+    report = json.loads((run / "report_data.json").read_text(encoding="utf-8"))
+    assert report["views"]["anchor"]["q_dhl"] == pytest.approx(anchor["q_dhl"])
+    assert "plausibility" in report["views"]["anchor"] and "buildings" in report["views"]["anchor"]
+    markdown = (run / "report.md").read_text(encoding="utf-8")
+    assert "Straßen-Anker" in markdown and "OpenStreetMap" in markdown
