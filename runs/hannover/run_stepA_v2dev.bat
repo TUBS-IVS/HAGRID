@@ -13,7 +13,7 @@ rem    and the only JVM crash ever seen here was inside a ZGC frame (hs_err_1910
 rem  - ExitOnOutOfMemoryError WITHOUT HeapDumpOnOutOfMemoryError: an unattended run
 rem    should die fast and visibly, not spend minutes writing a 48 GB dump.
 set "VMARGS=-Xms8g -Xmx48g -Xss512k -XX:MaxDirectMemorySize=4g -XX:ActiveProcessorCount=12 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Dhagrid.log.dir=hagrid-output/logs -Dhagrid.pipeline.root=. --add-opens=java.base/java.lang=ALL-UNNAMED"
-cd /d "C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID\hagrid\simulation"
+cd /d "%~dp0..\..\hagrid\simulation"
 if not exist "hagrid-output\logs\jvm" mkdir "hagrid-output\logs\jvm"
 echo ===== STEPA_V2DEV START %date% %time% =====
 "%JAVA_EXE%" -version

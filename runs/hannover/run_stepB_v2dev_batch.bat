@@ -10,7 +10,7 @@ set "JAVA_EXE=C:\Program Files\Java\jdk-21.0.10\bin\java.exe"
 set "JAR=target\hagrid-1.0-SNAPSHOT.jar"
 set "VMARGS=-Xms8g -Xmx48g -Xss512k -XX:MaxDirectMemorySize=4g -XX:ActiveProcessorCount=12 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:ErrorFile=hagrid-output\logs\jvm\hs_err_%%p.log -Dhagrid.log.dir=hagrid-output/logs -Dhagrid.pipeline.root=. --add-opens=java.base/java.lang=ALL-UNNAMED"
 set "ARGS_TAIL=,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
-cd /d "C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID\hagrid\simulation"
+cd /d "%~dp0..\..\hagrid\simulation"
 if not exist "hagrid-output\logs\jvm" mkdir "hagrid-output\logs\jvm"
 echo ===== STEPB_V2DEV BATCH START %date% %time% =====
 echo ===== RUN 1/26  tag=160v2  START %date% %time% =====
