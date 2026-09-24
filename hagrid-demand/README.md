@@ -117,6 +117,33 @@ Punkte je Nachfragestandort (EPSG:25832), `postal_cod`, `<anbieter>_tag` = B2C, 
 Tage ohne Lieferung (Sonntag, Feiertag) erzeugen keine Datei. `matsim_export.json` enthält die Tagesbilanz.
 Für MATSim den Ordner nach `hagrid-input/demand/<runId>/` kopieren.
 
+### Straßen-Anker, OSM-Gebäude und Stopps
+
+Mit `osm_buildings`/`osm_points` rechnet die Referenz im Straßenmodus (`anchor.mode: street`,
+Spezifikation `docs/superpowers/specs/2026-09-24-hagrid-street-anchor-buildings-design.md`):
+
+1. **Gebäude** (`<run>/buildings/`): Personen-Gebäudepunkte gehen an OSM-Gebäude (Stand 01.01.2021), Firmen
+   innerhalb ihrer Zensus-100-m-Zelle an passende Gebäude (Fläche × Branchenpassung). Jedes Gebäude bekommt
+   seine DHL-Straße (Straßenname + PLZ, sonst nächste Straße bis 100 m, dann bis 250 m), 50-m-Abschnitt und Straßenseite.
+2. **Anker** (`reference_anchor.json`, `reference_streets.parquet`): Pegelkorrektur je PLZ über Wohnstraßen
+   (nur PLZ mit extremem DHL-Pegel, 2021: 30855), DHL-Raten je Einwohner und Firma, Aufteilung jeder DHL-Straße in
+   B2C/B2B, DHL-B2B-Anteil aus diesen Daten, Hochrechnung auf alle Anbieter. Straßen mit DHL-Menge ohne Gebäude
+   bekommen synthetische Punkte, Gebäude ohne Straße und DHL-Lücken das Strukturmodell.
+3. **Stopps** (`reference_stops.parquet`): Gebäude derselben Straßenseite innerhalb von 2 × 40 m bilden einen Stopp,
+   Großempfänger (≥ 15 Pakete/Tag) einen eigenen. Der MATSim-Export schreibt je Stopp eine Zeile (`id`, `stop_id`,
+   `str_idx`, `section_id`) und teilt Zeilen über 400 Paketen.
+
+Die OSM-Dateien entstehen einmalig aus dem Geofabrik-Auszug (© OpenStreetMap contributors, ODbL):
+
+```powershell
+python -m hagrid_demand baseline osm-clip --pbf ../parcel-demand-estimation/input/osm/niedersachsen-210101.osm.pbf --plz ../parcel-demand-estimation/input/plz_region_hannover.csv --out ../parcel-demand-estimation/input/osm
+```
+
+Abnahmelauf 24.09.2026 (8 Tage wie der Notebook-Generator, 6 min): q_DHL 0,254; Regionalmenge 2021 60,3 Mio.
+Pakete bei 306 Liefertagen; 99,5 % der Personen in Gebäuden; 98 % der Menge direkt aus DHL-Straßen, 0,6 % Strukturrückfall;
+Median 51 Pakete je Einwohner und Jahr; Tagesmengen 4–5 % unter dem Notebook (Pegelkorrektur 30855),
+PLZ-Korrelation ohne 30855 0,97–0,98; 44–51 Tsd. Stopps je Tag mit im Median 2–3 Paketen.
+
 ## Stages und Outputs
 
 1. `ingest`: SHA-256 der konsumierten Dateien einschließlich SHP-Komponenten; Inventar weiterer lokaler Dateien.
