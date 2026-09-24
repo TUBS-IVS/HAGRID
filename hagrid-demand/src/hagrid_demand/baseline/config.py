@@ -17,9 +17,10 @@ _ALLOWED_KEYS = {
     "source_mode", "sources", "foundation_run", "weekly_source", "reference_year", "reference_operating_days",
     "output_scope", "dates", "years", "legacy_export", "persons_crs", "plz_crs", "target_crs",
     "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial", "business_potential", "matsim_export", "volume_fit_policy", "reference_operating_days_rule",
+    "osm_buildings", "osm_points", "buildings", "anchor", "stops",
     "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples",
 }
-_PATH_KEYS = {"input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
+_PATH_KEYS = {"osm_buildings", "osm_points", "input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
 _SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
 
 

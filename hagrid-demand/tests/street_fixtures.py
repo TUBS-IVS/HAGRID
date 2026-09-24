@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import LineString, Point, box
 
 CRS = "EPSG:25832"
@@ -45,3 +46,27 @@ def streets() -> gpd.GeoDataFrame:
 
 def postal() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame({"plz": ["01000"], "geometry": [box(X0 - 100, Y0 - 100, X0 + 1000, Y0 + 1000)]}, crs=CRS)
+
+
+def write_street_fixture(root):
+    """The raw baseline fixture plus OSM buildings for its persons and firms (street anchor mode)."""
+    import json
+    from pathlib import Path
+
+    from baseline_fixtures import CRS as FIXTURE_CRS, write_fixture
+
+    config_path = write_fixture(Path(root))
+    inputs = Path(root) / "inputs"
+    gpd.GeoDataFrame({
+        "osm_way_id": ["1", "2", "3", "4"], "osm_id": [None] * 4,
+        "building": ["house", "house", "retail", "office"],
+        "addr_street": ["Alpha", "Gamma", "Beta", "Delta"], "addr_housenumber": ["1", "2", "3", "4"], "shop": [None] * 4,
+    }, geometry=[box(8, 8, 12, 12), box(108, 8, 112, 12), box(18, 18, 22, 22), box(118, 18, 122, 22)], crs=FIXTURE_CRS
+    ).to_parquet(inputs / "osm_buildings.parquet", index=False)
+    gpd.GeoDataFrame({"osm_id": pd.Series([], dtype=object), "addr_street": pd.Series([], dtype=object),
+                      "addr_housenumber": pd.Series([], dtype=object), "shop": pd.Series([], dtype=object)},
+                     geometry=gpd.GeoSeries([], crs=FIXTURE_CRS)).to_parquet(inputs / "osm_points.parquet", index=False)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.update({"osm_buildings": "inputs/osm_buildings.parquet", "osm_points": "inputs/osm_points.parquet"})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    return config_path

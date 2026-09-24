@@ -58,7 +58,7 @@ def zensus_cell(points: gpd.GeoSeries) -> pd.Series:
 
 def _cell_polygons(cells: pd.Series, crs) -> gpd.GeoDataFrame:
     unique = pd.Series(pd.unique(cells))
-    parsed = unique.str.extract(r"100mN(?P<y>\d+)E(?P<x>\d+)").astype("int64")
+    parsed = unique.str.extract(r"100mN(?P<y>-?\d+)E(?P<x>-?\d+)").astype("int64")
     shapes = [box(x * 100, y * 100, x * 100 + 100, y * 100 + 100) for x, y in zip(parsed.x, parsed.y)]
     return gpd.GeoDataFrame({"cell": unique}, geometry=shapes, crs=3035).to_crs(crs)
 
@@ -205,3 +205,78 @@ def project_on_streets(points: gpd.GeoDataFrame, parts: gpd.GeoDataFrame, sectio
         "section_id": [f"{s}-{p}-{k}" for s, p, k in zip(best.sid, best.part, section)],
         "axis_x": shapely.get_x(axis), "axis_y": shapely.get_y(axis),
     })
+
+
+_COLUMNS = ["building_key", "footprint", "building_type", "area_m2", "plz", "population", "companies", "employees",
+            "street_norm", "sid", "match_stage", "distance_m", "part", "position_m", "side", "section_id", "axis_x", "axis_y",
+            "geometry"]
+
+
+def _with_point_attributes(buildings: gpd.GeoDataFrame, points: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Mark POIs inside buildings and fill missing addresses from address points inside the footprint."""
+    buildings = buildings.copy()
+    if not len(points):
+        return buildings
+    poi_columns = [column for column in ("shop", "office", "amenity", "craft") if column in points]
+    if poi_columns:
+        poi_points = points[points[poi_columns].notna().any(axis=1)]
+        hit = gpd.sjoin(poi_points[["geometry"]], buildings[["building_key", "geometry"]], predicate="within")
+        buildings.loc[buildings.building_key.isin(hit.building_key), "poi"] = True
+    if {"addr_housenumber", "addr_street"}.issubset(points.columns):
+        address = points[points.addr_housenumber.notna() & points.addr_street.notna()]
+        inside = gpd.sjoin(address[["addr_street", "geometry"]], buildings[["building_key", "geometry"]], predicate="within")
+        inside = inside.sort_index().drop_duplicates("building_key").set_index("building_key")
+        fill = buildings.addr_street.isna()
+        buildings.loc[fill, "addr_street"] = buildings.loc[fill, "building_key"].map(inside.addr_street)
+    return buildings
+
+
+def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, osm_points: gpd.GeoDataFrame,
+                    streets: gpd.GeoDataFrame, postal: gpd.GeoDataFrame, cfg: dict | None, seed: int):
+    """Demand buildings with persons, firms, PLZ, DHL street, section and side (spec 5.1-5.4, 5.11)."""
+    cfg = cfg or {}
+    buildings = load_buildings(osm_buildings, tuple(cfg.get("exclude_types", EXCLUDED_TYPES)))
+    buildings = _with_point_attributes(buildings, osm_points)
+    private = assign_private(sites, buildings, float(cfg.get("residential_max_distance_m", 65.)))
+    by_site = sites.set_index("site_id")
+    residents = private.assign(persons=private.site_id.map(by_site.population)).groupby("building_key").persons.sum()
+    firms = assign_firms(sites, buildings, residents, seed, float(cfg.get("firm_candidate_distance_m", 100.)),
+                         float(cfg.get("firm_fallback_distance_m", 250.)))
+    mapping = pd.concat([private.assign(segment="private"), firms.drop(columns="fit").assign(segment="business")], ignore_index=True)
+    mapping["population"] = mapping.site_id.map(by_site.population).fillna(0.).astype(float)
+    mapping["employees"] = mapping.site_id.map(by_site.employees).fillna(0.).astype(float)
+    mapping["is_firm"] = mapping.segment.eq("business").astype(int)
+    demand = mapping.groupby("building_key").agg(population=("population", "sum"), companies=("is_firm", "sum"),
+                                                  employees=("employees", "sum"))
+    located = buildings[buildings.building_key.isin(demand.index)].copy()
+    located["footprint"] = True
+    points = mapping[mapping.building_key.str.startswith("pt:")].drop_duplicates("building_key")
+    point_rows = gpd.GeoDataFrame({"building_key": points.building_key.to_numpy(), "building_type": "point",
+                                   "addr_street": None, "addr_housenumber": None, "poi": False, "area_m2": 0., "footprint": False},
+                                  geometry=list(points.site_id.map(by_site.geometry)), crs=sites.crs)
+    table = gpd.GeoDataFrame(pd.concat([located, point_rows], ignore_index=True), geometry="geometry", crs=sites.crs)
+    table = table.join(demand, on="building_key")
+    table["geometry"] = table.geometry.representative_point()
+    with_plz = gpd.sjoin(table[["building_key", "geometry"]], postal[["plz", "geometry"]], predicate="within", how="left")
+    table["plz"] = table.building_key.map(with_plz.drop_duplicates("building_key").set_index("building_key").plz)
+    site_plz = (mapping.assign(plz=mapping.site_id.map(by_site.plz)).sort_values(["building_key", "site_id"])
+                .drop_duplicates("building_key").set_index("building_key").plz)
+    table["plz"] = table.plz.fillna(table.building_key.map(site_plz)).astype(str)
+    table["street_norm"] = table.addr_street.map(normalize_street)
+    lines = streets.assign(street_norm=streets.street.map(normalize_street))
+    matched = match_streets(table[["building_key", "plz", "street_norm", "geometry"]], lines,
+                            float(cfg.get("match_distance_m", 100.)), float(cfg.get("name_max_distance_m", 500.)))
+    table = table.merge(matched, on="building_key", how="left")
+    projected = project_on_streets(table.loc[table.sid >= 0, ["building_key", "sid", "geometry"]], street_parts(lines),
+                                   float(cfg.get("section_length_m", 50.)))
+    table = gpd.GeoDataFrame(table.merge(projected, on="building_key", how="left"), geometry="geometry", crs=sites.crs)
+    total_persons = float(sites.loc[sites.segment.eq("private"), "population"].sum())
+    in_buildings = mapping.segment.eq("private") & ~mapping.building_key.str.startswith("pt:")
+    report = {
+        "buildings": int(len(table)), "footprint_share": float(table.footprint.mean()) if len(table) else 0.,
+        "persons_in_buildings_share": float(mapping.loc[in_buildings, "population"].sum() / total_persons) if total_persons else 0.,
+        "private_stages": {str(k): int(v) for k, v in private.stage.value_counts().items()},
+        "firm_stages": {str(k): int(v) for k, v in firms.stage.value_counts().items()},
+        "street_match_stages": {str(k): int(v) for k, v in table.match_stage.value_counts().items()},
+    }
+    return table[_COLUMNS], mapping[["site_id", "segment", "building_key", "stage"]], report

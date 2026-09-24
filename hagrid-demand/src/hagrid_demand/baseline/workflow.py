@@ -204,6 +204,34 @@ def _write_series(config: dict, source: Path, output: Path) -> None:
         table.to_parquet(output / f"{name}.parquet", index=False)
 
 
+def _anchor_mode(config: dict) -> str:
+    mode = (config.get("anchor") or {}).get("mode", "street" if config.get("osm_buildings") else "postal")
+    if mode not in {"street", "postal"}:
+        raise ValueError("anchor.mode must be street or postal")
+    if mode == "street" and not (config.get("osm_buildings") and config.get("osm_points")):
+        raise ValueError("anchor.mode=street requires osm_buildings and osm_points")
+    return mode
+
+
+def _dhl_streets(source: Path) -> gpd.GeoDataFrame:
+    frame = gpd.read_parquet(source / "dhl_observations.parquet")
+    frame = frame[frame.geometry_usable.astype(bool)]
+    return gpd.GeoDataFrame({"sid": frame.source_row.astype("int64").to_numpy(), "plz": frame.plz.astype(str).to_numpy(),
+                             "street": frame.street.astype(str).to_numpy(), "value": frame.value.astype(float).to_numpy()},
+                            geometry=frame.geometry.to_numpy(), crs=frame.crs)
+
+
+def _write_buildings(config: dict, source: Path, output: Path) -> None:
+    from .buildings import build_buildings
+
+    table, mapping, report = build_buildings(
+        gpd.read_parquet(source / "sites.parquet"), gpd.read_parquet(config["osm_buildings"]), gpd.read_parquet(config["osm_points"]),
+        _dhl_streets(source), gpd.read_parquet(source / "postal_support.parquet"), config.get("buildings", {}), int(config["seed"]))
+    table.to_parquet(output / "buildings.parquet", index=False)
+    mapping.to_parquet(output / "site_buildings.parquet", index=False)
+    _json(output / "buildings_report.json", report)
+
+
 def _business_employee_weight(config: dict) -> float | None:
     spec = config.get("business_potential", {"model": "company_locations"})
     if not isinstance(spec, dict) or spec.get("model") not in {"company_plus_employees", "company_locations"}:
@@ -488,6 +516,18 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                       build=lambda output: _write_potentials(run / "sources", output, config),
                       validate=lambda output: _validate(output, ["potentials.parquet"]), dependency_snapshot=potential_snapshot)
         state["completed_stages"].append("potentials")
+        if _anchor_mode(config) == "street":
+            buildings_dependencies = {"sources": run / "sources", "osm_buildings": Path(config["osm_buildings"]),
+                                      "osm_points": Path(config["osm_points"])}
+            buildings_snapshot = dependency_snapshot(buildings_dependencies)
+            buildings_fingerprint = stage_key("buildings", buildings_dependencies, config,
+                                              {"workflow": Path(__file__), "buildings": Path(__file__).with_name("buildings.py")},
+                                              dependency_snapshot=buildings_snapshot)
+            resolve_stage(run, "buildings", buildings_fingerprint, cache_root=cache_root, dependencies=buildings_dependencies,
+                          build=lambda output: _write_buildings(config, run / "sources", output),
+                          validate=lambda output: _validate(output, ["buildings.parquet", "site_buildings.parquet", "buildings_report.json"]),
+                          dependency_snapshot=buildings_snapshot)
+            state["completed_stages"].append("buildings")
         reference_dependencies = {"sources": run / "sources", "series": run / "series", "potentials": run / "potentials"}
         reference_snapshot = dependency_snapshot(reference_dependencies)
         reference_fingerprint = stage_key("reference", reference_dependencies, config,
