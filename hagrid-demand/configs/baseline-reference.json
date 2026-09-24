@@ -6,15 +6,55 @@
   "output_dir": "../runs",
   "source_mode": "raw",
   "sources": [
-    {"id": "H01", "file": "persons_total.csv", "adapter": "persons", "kind": "synthetic_or_derived_unconfirmed", "year": null, "unit": "person", "role": "structure"},
-    {"id": "H02", "file": "companies_Total_reduced.shp", "adapter": "companies", "kind": "unconfirmed", "year": null, "unit": "establishment", "role": "structure"},
-    {"id": "H03", "file": "dhl2streets_2021.shp", "adapter": "dhl", "kind": "reported_observation", "year": 2021, "unit": "unconfirmed_daily_mean", "role": "reference_anchor"},
-    {"id": "H04", "file": "Hermes_PLZ-Menge_2019-2021.csv", "adapter": "hermes", "kind": "reported_observation", "year": null, "unit": "unconfirmed", "role": "inventory_only"},
-    {"id": "H06", "file": "plz_region_hannover.csv", "adapter": "plz", "kind": "geometry", "year": null, "unit": "postal_area", "role": "support"}
+    {
+      "id": "H01",
+      "file": "persons_total.csv",
+      "adapter": "persons",
+      "kind": "synthetic_or_derived_unconfirmed",
+      "year": null,
+      "unit": "person",
+      "role": "structure"
+    },
+    {
+      "id": "H02",
+      "file": "companies_Total_reduced.shp",
+      "adapter": "companies",
+      "kind": "unconfirmed",
+      "year": null,
+      "unit": "establishment",
+      "role": "structure"
+    },
+    {
+      "id": "H03",
+      "file": "dhl2streets_2021.shp",
+      "adapter": "dhl",
+      "kind": "reported_observation",
+      "year": 2021,
+      "unit": "unconfirmed_daily_mean",
+      "role": "reference_anchor"
+    },
+    {
+      "id": "H04",
+      "file": "Hermes_PLZ-Menge_2019-2021.csv",
+      "adapter": "hermes",
+      "kind": "reported_observation",
+      "year": null,
+      "unit": "unconfirmed",
+      "role": "inventory_only"
+    },
+    {
+      "id": "H06",
+      "file": "plz_region_hannover.csv",
+      "adapter": "plz",
+      "kind": "geometry",
+      "year": null,
+      "unit": "postal_area",
+      "role": "support"
+    }
   ],
   "weekly_source": "../../parcel-demand-estimation/input/Parcels19_20_21_inter.xlsx",
   "reference_year": 2021,
-  "reference_operating_days": 313,
+  "reference_operating_days": "calendar",
   "output_scope": "reference",
   "legacy_export": false,
   "persons_crs": "EPSG:25832",
@@ -23,6 +63,32 @@
   "dhl_exclude_above": 1000,
   "assumptions": [
     "DHL tagesschni is treated as a documented reference anchor pending measurement-definition review.",
-    "Hermes rows are inventory only and do not anchor the reference level."
-  ]
+    "Hermes rows are inventory only and do not anchor the reference level.",
+    "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL)."
+  ],
+  "osm_buildings": "../../parcel-demand-estimation/input/osm/osm_buildings_region_hannover_2021.parquet",
+  "osm_points": "../../parcel-demand-estimation/input/osm/osm_address_poi_region_hannover_2021.parquet",
+  "anchor": {
+    "mode": "street",
+    "level_correction": {
+      "min_persons": 30,
+      "min_streets": 20,
+      "upper": 2.0,
+      "lower": 0.5
+    },
+    "gap_threshold": 5.0
+  },
+  "buildings": {
+    "residential_max_distance_m": 65,
+    "firm_candidate_distance_m": 100,
+    "firm_fallback_distance_m": 250,
+    "match_distance_m": 100,
+    "extended_match_distance_m": 250
+  },
+  "stops": {
+    "walking_radius_m": 40,
+    "own_stop_parcels_per_day": 15,
+    "max_parcels_per_row": 400,
+    "section_length_m": 50
+  }
 }
