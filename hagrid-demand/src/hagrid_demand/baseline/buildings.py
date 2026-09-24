@@ -155,8 +155,12 @@ def street_parts(streets: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def match_streets(points: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, max_distance_m: float = 100.,
-                  name_max_distance_m: float = 500.) -> pd.DataFrame:
-    """Building -> DHL street: same normalised name and PLZ first, else the nearest street."""
+                  name_max_distance_m: float = 500., extended_distance_m: float | None = None) -> pd.DataFrame:
+    """Building -> DHL street: same normalised name and PLZ first, else the nearest street.
+
+    ``extended_distance_m`` adds a last stage (``nearest_far``) for sites behind internal access roads
+    (industrial estates, hospitals) whose parcels DHL records on the nearest public street.
+    """
     frame = pd.DataFrame({"building_key": points.building_key.to_numpy(), "plz": points.plz.astype(str).to_numpy(),
                           "street_norm": points.street_norm.to_numpy(), "pgeom": points.geometry.to_numpy()})
     lines = pd.DataFrame({"sid": streets.sid.to_numpy(), "plz": streets.plz.astype(str).to_numpy(),
@@ -177,6 +181,14 @@ def match_streets(points: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, max_dista
         result.loc[missing, "sid"] = result.loc[missing, "building_key"].map(near.sid).to_numpy()
         result.loc[missing, "distance_m"] = result.loc[missing, "building_key"].map(near.distance_m).to_numpy()
         result.loc[missing & result.sid.notna(), "match_stage"] = "nearest"
+    far = result.sid.isna()
+    if extended_distance_m is not None and extended_distance_m > max_distance_m and far.any():
+        near = gpd.sjoin_nearest(points[points.building_key.isin(result.loc[far, "building_key"])][["building_key", "geometry"]],
+                                 streets[["sid", "geometry"]], max_distance=extended_distance_m, how="left", distance_col="distance_m")
+        near = near.sort_values(["building_key", "distance_m", "sid"]).drop_duplicates("building_key").set_index("building_key")
+        result.loc[far, "sid"] = result.loc[far, "building_key"].map(near.sid).to_numpy()
+        result.loc[far, "distance_m"] = result.loc[far, "building_key"].map(near.distance_m).to_numpy()
+        result.loc[far & result.sid.notna(), "match_stage"] = "nearest_far"
     result.loc[result.sid.isna(), "match_stage"] = "none"
     result["sid"] = result.sid.fillna(-1).astype("int64")
     return result
@@ -265,7 +277,8 @@ def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, os
     table["street_norm"] = table.addr_street.map(normalize_street)
     lines = streets.assign(street_norm=streets.street.map(normalize_street))
     matched = match_streets(table[["building_key", "plz", "street_norm", "geometry"]], lines,
-                            float(cfg.get("match_distance_m", 100.)), float(cfg.get("name_max_distance_m", 500.)))
+                            float(cfg.get("match_distance_m", 100.)), float(cfg.get("name_max_distance_m", 500.)),
+                            float(cfg.get("extended_match_distance_m", 250.)))
     table = table.merge(matched, on="building_key", how="left")
     projected = project_on_streets(table.loc[table.sid >= 0, ["building_key", "sid", "geometry"]], street_parts(lines),
                                    float(cfg.get("section_length_m", 50.)))
