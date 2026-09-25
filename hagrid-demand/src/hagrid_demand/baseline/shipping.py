@@ -16,7 +16,8 @@ from .calendar import calendar_weights
 _DATA = Path(__file__).with_name("data") / "temporal_inputs.json"
 _SEGMENTS = ("private", "business")
 _KEYS = {"mode", "shipping_weekday_weights", "transit_days", "saturday_delivery", "business_saturday_open",
-         "week_log_sd", "week_ar", "carrier_week_log_sd", "carrier_day_log_sd", "weekday_concentration"}
+         "week_log_sd", "week_ar", "carrier_week_log_sd", "carrier_day_log_sd", "weekday_concentration",
+         "christmas_pull_forward_days", "new_year_spread"}
 
 
 def load_temporal_inputs() -> dict:
@@ -129,7 +130,13 @@ def resolve_temporal(cfg: dict | None) -> dict | None:
     week_ar = _finite(cfg.get("week_ar", 0.5), "temporal.week_ar")
     if not 0 <= week_ar < 1:
         raise ValueError("temporal.week_ar must be in [0, 1)")
+    pull_forward = cfg.get("christmas_pull_forward_days", 14)
+    if isinstance(pull_forward, bool) or not isinstance(pull_forward, int) or pull_forward < 0:
+        raise ValueError("temporal.christmas_pull_forward_days must be a nonnegative integer")
+    if not isinstance(cfg.get("new_year_spread", True), bool):
+        raise ValueError("temporal.new_year_spread must be true or false")
     result = {"mode": mode, "shipping": shipping, "kernels": kernels, "saturday": saturday,
+              "christmas_pull_forward_days": pull_forward, "new_year_spread": cfg.get("new_year_spread", True),
               "business_saturday_open": _unit(cfg.get("business_saturday_open", inputs["business_saturday_open"]["value"]),
                                               "temporal.business_saturday_open"),
               "week_ar": week_ar}
@@ -216,6 +223,32 @@ def expected_delivery(shipping_weights: np.ndarray, cal: DeliveryCalendar, kerne
     return result
 
 
+def _move_mass(weights: np.ndarray, source: np.ndarray, target: np.ndarray) -> None:
+    """Move the shipping mass of the *source* days onto the *target* days in proportion to their weights."""
+    if source.any() and target.any() and weights[target].sum() > 0:
+        weights[target] += weights[source].sum() * weights[target] / weights[target].sum()
+        weights[source] = 0.
+
+
+def _season_holidays(weights: np.ndarray, dates: pd.DatetimeIndex, closed: np.ndarray, year: int, temporal: dict) -> None:
+    """Christmas orders are placed before Christmas; New Year's orders spread over the rest of its week.
+
+    Shipping mass of 24-26 December moves into the ``christmas_pull_forward_days`` days before 24 December,
+    the mass of 1 January onto the open shipping days until the end of its ISO week (the next 7 days if
+    1 January is a Sunday). Neither is caught up on the next shipping day.
+    """
+    open_days = (weights > 0) & ~closed
+    days = int(temporal.get("christmas_pull_forward_days", 0))
+    if days > 0:
+        eve = pd.Timestamp(year=year, month=12, day=24)
+        _move_mass(weights, ((dates >= eve) & (dates <= eve + pd.Timedelta(days=2))),
+                   open_days & (dates >= eve - pd.Timedelta(days=days)) & (dates < eve))
+    if temporal.get("new_year_spread", False):
+        new_year = pd.Timestamp(year=year, month=1, day=1)
+        end = new_year + pd.Timedelta(days=6 - new_year.dayofweek if new_year.dayofweek < 6 else 7)
+        _move_mass(weights, dates == new_year, open_days & (dates > new_year) & (dates <= end))
+
+
 def shipping_weights(year: int, segment: str, weekly: pd.DataFrame | None, temporal: dict, calendar_cfg: dict) -> np.ndarray:
     """Normalised shipping weight per day: season × shipping weekday profile.
 
@@ -229,6 +262,7 @@ def shipping_weights(year: int, segment: str, weekly: pd.DataFrame | None, tempo
     weights = frame.calendar_weight.to_numpy(float).copy()
     holidays = set(pd.to_datetime(list(calendar_cfg.get("holiday_dates", []))).normalize())
     closed = frame.date.isin(holidays).to_numpy()
+    _season_holidays(weights, pd.DatetimeIndex(frame.date), closed, year, temporal)
     if closed.any():
         target = _successor((weights > 0) & ~closed)
         for day in np.flatnonzero(closed):
