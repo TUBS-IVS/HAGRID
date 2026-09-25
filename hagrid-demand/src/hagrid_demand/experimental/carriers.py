@@ -121,7 +121,7 @@ def build_profiles(sites,weights,shares,cfg,output):
           'limits':'Uses reference observations after demand fitting. Original holdout scores do not evaluate this correction. Site totals remain fixed; regional carrier totals may change. Future years inherit local patterns as an assumption.',
           'capped_plz':sorted(report.loc[report.target_capped,'plz'].unique().tolist())}
     write_json(output/'carrier_allocation.json',note)
-    page='<!doctype html><meta charset="utf-8"><title>Lokale Anbieterprofile</title><style>body{font:16px system-ui;margin:30px}td,th{padding:7px}table{border-collapse:collapse}</style><h1>Lokale Anbieterprofile</h1><p>'+html.escape(note['limits'])+'</p><p>Branchenprofile und dauerhafte Praeferenzen sind Annahmen. Hermes liefert nur die raeumliche Form. P10/P90 beschreiben die ungewichtete Streuung der Standortanteile, keine Unsicherheitsintervalle.</p>'
+    page='<!doctype html><meta charset="utf-8"><title>Local carrier profiles</title><style>body{font:16px system-ui;margin:30px}td,th{padding:7px}table{border-collapse:collapse}</style><h1>Local carrier profiles</h1><p>'+html.escape(note['limits'])+'</p><p>Branch profiles and persistent preferences are assumptions. Hermes provides only the spatial shape. P10/P90 describe the unweighted dispersion of the site shares, not uncertainty intervals.</p>'
     page+=report.to_html(index=False,float_format=lambda x:f'{x:.3f}')
     (output/'carriers.html').write_text(page,encoding='utf-8')
     return prob

@@ -19,17 +19,17 @@ from hagrid_demand.common.provenance import canonical_digest, resource_hash
 _CATALOG_SCHEMA_VERSION = 1
 _REPORT_SCHEMA_VERSION = 1
 _STAGES = (
-    ("overview", "Übersicht"),
-    ("data_quality", "Daten/Qualität"),
-    ("market_b2b", "Markt und B2B"),
-    ("regional_reference", "Regionale Referenz"),
-    ("future", "Zukunft/DHL-Gewicht"),
-    ("calendar", "Kalender"),
-    ("daily", "Tägliche Mengen und Orte"),
-    ("carriers", "Anbieter"),
+    ("overview", "Overview"),
+    ("data_quality", "Data/quality"),
+    ("market_b2b", "Market and B2B"),
+    ("regional_reference", "Regional reference"),
+    ("future", "Future/DHL weight"),
+    ("calendar", "Calendar"),
+    ("daily", "Daily volumes and locations"),
+    ("carriers", "Carriers"),
     ("monte_carlo", "Monte Carlo"),
-    ("sensitivity", "Sensitivität"),
-    ("checks", "Prüfungen/Exporte"),
+    ("sensitivity", "Sensitivity"),
+    ("checks", "Checks/exports"),
 )
 
 
@@ -47,15 +47,15 @@ def _atomic_json(path: Path, value: dict) -> None:
 def _report_markdown(report: dict) -> str:
     scope, b2b, quality = report["excluded_quantities"], report["b2b_adjustment"], report["remaining_potentials"]
     text = (
-        f"# HAGRID Referenzlauf: {report['run_id']}\n\n"
-        f"Referenzjahr 2021. Die Tagesmittel-Annahme verwendet {report['operating_days']} Betriebstage.\n\n"
-        "## Ausgeschlossene Beobachtungen\n\n"
-        f"{scope['excluded_rows']} in-scope Beobachtungen / {scope['excluded_volume']:.1f} Mengeneinheiten ausgeschlossen. "
-        f"Außerhalb des verifizierten Scope: {scope.get('out_of_scope_rows', 0)}.\n\n"
-        "## B2B-Anpassung\n\n"
-        f"Ziel {b2b['b2b_target']:.6f}; erreicht {b2b['b2b_achieved']:.6f}; Residuum {b2b['b2b_residual']:.3g}.\n\n"
-        "## Restpotenziale\n\n"
-        f"Unbekannte PLZ: {len(quality.get('unknown_plz_sites', []))}; bekannte PLZ außerhalb Anker: "
+        f"# HAGRID reference run: {report['run_id']}\n\n"
+        f"Reference year 2021. The daily-mean assumption uses {report['operating_days']} operating days.\n\n"
+        "## Excluded observations\n\n"
+        f"{scope['excluded_rows']} in-scope observations / {scope['excluded_volume']:.1f} volume units excluded. "
+        f"Outside the verified scope: {scope.get('out_of_scope_rows', 0)}.\n\n"
+        "## B2B adjustment\n\n"
+        f"Target {b2b['b2b_target']:.6f}; achieved {b2b['b2b_achieved']:.6f}; residual {b2b['b2b_residual']:.3g}.\n\n"
+        "## Remaining potentials\n\n"
+        f"Unknown PLZ: {len(quality.get('unknown_plz_sites', []))}; known PLZ outside the anchor: "
         f"{len(quality.get('known_plz_outside_anchor_sites', []))}.\n"
     )
     anchor = report.get("views", {}).get("anchor")
@@ -63,26 +63,26 @@ def _report_markdown(report: dict) -> str:
         corrected = [row for row in anchor["corrections"] if row["applied"]]
         rates = anchor["rates_dhl_per_day"]
         text += (
-            "\n## Straßen-Anker\n\n"
-            f"DHL-B2B-Anteil aus den Straßendaten: {anchor['q_dhl']:.3f}. DHL-Raten je Tag: {rates['person']:.4f} je Einwohner, "
-            f"{rates['company']:.3f} je Firma.\n\n"
-            f"B2B-Anteil: beobachteter Teil {report['b2b_adjustment']['b2b_achieved']:.4f} (Ziel "
-            f"{report['b2b_adjustment']['b2b_target']:.4f}); inklusive Rückfall {anchor.get('b2b_incl_fallback') or 0.:.4f}.\n\n"
-            "Pegelkorrektur: " + (", ".join(f"{row['plz']} (Faktor {row['factor']:.2f})" for row in corrected) or "keine") + ".\n\n"
-            "Tagesmenge nach Ankerstatus: " + ", ".join(f"{key} {value:,.0f}" for key, value in anchor["daily_by_status"].items()) + ".\n\n"
-            "Holdout des Strukturmodells (PLZ-wMAPE): " + ", ".join(
+            "\n## Street anchor\n\n"
+            f"DHL B2B share from the street data: {anchor['q_dhl']:.3f}. DHL rates per day: {rates['person']:.4f} per resident, "
+            f"{rates['company']:.3f} per firm.\n\n"
+            f"B2B share: observed part {report['b2b_adjustment']['b2b_achieved']:.4f} (target "
+            f"{report['b2b_adjustment']['b2b_target']:.4f}); including fallback {anchor.get('b2b_incl_fallback') or 0.:.4f}.\n\n"
+            "Level correction: " + (", ".join(f"{row['plz']} (factor {row['factor']:.2f})" for row in corrected) or "none") + ".\n\n"
+            "Daily volume by anchor status: " + ", ".join(f"{key} {value:,.0f}" for key, value in anchor["daily_by_status"].items()) + ".\n\n"
+            "Structural model holdout (PLZ wMAPE): " + ", ".join(
                 f"{name} {values['postal_wmape']:.1%}" for name, values in anchor["holdout"].items()) + ".\n\n"
-            "Gebäude und Adressen: © OpenStreetMap contributors (ODbL), Stand 01.01.2021.\n"
+            "Buildings and addresses: © OpenStreetMap contributors (ODbL), as of 01.01.2021.\n"
         )
         zero = anchor.get("zero_street_units")
         if zero:
-            text += (f"\nDHL-Straßen mit Wert 0 ohne Datenlücke: {zero['streets']} Straßen mit {zero['persons']:,.0f} Einwohnern "
-                     f"und {zero['firms']:,.0f} Firmen erhalten keine Nachfrage.\n")
+            text += (f"\nDHL streets with value 0 and no data gap: {zero['streets']} streets with {zero['persons']:,.0f} residents "
+                     f"and {zero['firms']:,.0f} firms receive no demand.\n")
     stops = report.get("views", {}).get("stops")
     if stops and stops.get("days"):
         comparison = {row["date"]: row for row in (stops.get("notebook_comparison") or [])}
-        text += ("\n## Tage und Stopps\n\n| Datum | Pakete | B2B | Stopps | Pakete/Stopp (Median) | belieferte Wohngebäude | "
-                 "belieferte Firmengebäude | Notebook |\n|---|---|---|---|---|---|---|---|\n")
+        text += ("\n## Days and stops\n\n| Date | Parcels | B2B | Stops | Parcels/stop (median) | Residential buildings served | "
+                 "Firm buildings served | Notebook |\n|---|---|---|---|---|---|---|---|\n")
         for day in stops["days"]:
             share = day.get("active_share", {})
             other = comparison.get(day["date"])
@@ -384,16 +384,16 @@ def _index(catalog: dict) -> str:
         for stage, label in _STAGES
     )
     stages = json.dumps([stage for stage, _ in _STAGES])
-    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HAGRID Dashboard</title><style>
 :root{{color-scheme:light;font-family:system-ui,sans-serif;color:#18303b;background:#f4f7f8}}body{{margin:0}}header{{background:#173d50;color:#fff;padding:22px max(24px,calc((100vw - 1160px)/2))}}main{{max-width:1160px;margin:auto;padding:18px 24px}}nav{{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}}button,select{{font:inherit;padding:7px 10px;border:1px solid #b9cbd2;border-radius:5px;background:#fff}}button.active{{background:#126a89;color:#fff}}.filters{{display:flex;flex-wrap:wrap;gap:10px;background:#e9f0f2;padding:12px;border-radius:6px}}pre{{white-space:pre-wrap;background:#fff;border:1px solid #dce5e8;padding:14px;overflow:auto}}.status{{font-weight:600}}small{{color:#48616d}}</style></head><body>
-<header><small>HAGRID / KONSOLIDIERTE AUSWERTUNG</small><h1>Nachfrage-Dashboard</h1><p>Referenz und spätere Stages teilen einen Einstieg; nicht berechnete Stages sind ausdrücklich markiert.</p></header>
-<main><div class="filters"><label>Run <select id="run"></select></label><label>Jahr <select id="year"><option value="2021">2021</option></select></label><label>Datum <input id="date" type="date"></label><label>Region <input id="region" placeholder="PLZ/Region"></label><label>Segment <select id="segment"><option value="all">Alle</option><option value="private">Privat</option><option value="business">Geschäftlich</option></select></label><label>Anbieter <select id="carrier"><option value="all">Alle</option></select></label></div>
+<header><small>HAGRID / CONSOLIDATED ANALYSIS</small><h1>Demand dashboard</h1><p>The reference and later stages share one entry point; stages that have not been computed are explicitly marked.</p></header>
+<main><div class="filters"><label>Run <select id="run"></select></label><label>Year <select id="year"><option value="2021">2021</option></select></label><label>Date <input id="date" type="date"></label><label>Region <input id="region" placeholder="PLZ/region"></label><label>Segment <select id="segment"><option value="all">All</option><option value="private">Private</option><option value="business">Business</option></select></label><label>Carrier <select id="carrier"><option value="all">All</option></select></label></div>
 <nav>{navigation}</nav><p id="status" class="status"></p><pre id="view"></pre></main>
 <script>const catalogFile='report_catalog.json';const catalog={payload};const stages={stages};const store='hagrid-baseline-filters-v1';
 const byId=id=>document.getElementById(id);const run=byId('run');const year=byId('year');const date=byId('date');const region=byId('region');const segment=byId('segment');const carrier=byId('carrier');const entries=catalog.runs||[];
 const params=()=>new URLSearchParams(location.hash.replace(/^#/,''));function selected(){{const p=params();const saved=JSON.parse(localStorage.getItem(store)||'{{}}');return {{run:p.get('run')||saved.run||entries[0]?.run_id||'',stage:p.get('stage')||saved.stage||'overview',year:p.get('year')||saved.year||'2021',date:p.get('date')||saved.date||'',region:p.get('region')||saved.region||'',segment:p.get('segment')||saved.segment||'all',carrier:p.get('carrier')||saved.carrier||'all'}}}}
-function write(s){{localStorage.setItem(store,JSON.stringify(s));location.hash=new URLSearchParams(s).toString()}}const viewForStage={{overview:'reference',data_quality:'quality',market_b2b:'market_b2b',regional_reference:'reference',checks:'quality'}};function refresh(){{const s=selected();run.innerHTML='';entries.forEach(e=>{{const o=document.createElement('option');o.value=e.run_id;o.textContent=e.run_id+' · '+String(e.baseline_fingerprint||'historical').slice(0,12);run.append(o)}});let e=entries.find(x=>x.run_id===s.run)||entries[0];if(e)s.run=e.run_id;run.value=s.run;year.value=s.year;date.value=s.date;region.value=s.region;segment.value=s.segment;const profiles=e?.views?.market_b2b?.carrier_profiles||e?.report?.views?.market_b2b?.carrier_profiles||[];const remembered=s.carrier;carrier.innerHTML='<option value="all">Alle</option>';[...new Set(profiles.map(p=>p.carrier).filter(Boolean))].forEach(name=>{{const o=document.createElement('option');o.value=name;o.textContent=name;carrier.append(o)}});carrier.value=[...carrier.options].some(o=>o.value===remembered)?remembered:'all';s.carrier=carrier.value;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.stage===s.stage));const stages=e?.stage_status||e?.stages||{{}};byId('status').textContent=e?('Stage '+s.stage+': '+(stages[s.stage]||'not_run')+' · Run '+e.run_id):'Kein Lauf vorhanden.';const views=e?.views||e?.report?.views||{{}};const view=views[viewForStage[s.stage]]||{{status:e?(stages[s.stage]||'not_run'):'not_run'}};byId('view').textContent=e?JSON.stringify({{filters:{{year:s.year,date:s.date,region:s.region,segment:s.segment,carrier:s.carrier}},stage:s.stage,view,catalog_file:catalogFile}},null,2):''}}
+function write(s){{localStorage.setItem(store,JSON.stringify(s));location.hash=new URLSearchParams(s).toString()}}const viewForStage={{overview:'reference',data_quality:'quality',market_b2b:'market_b2b',regional_reference:'reference',checks:'quality'}};function refresh(){{const s=selected();run.innerHTML='';entries.forEach(e=>{{const o=document.createElement('option');o.value=e.run_id;o.textContent=e.run_id+' · '+String(e.baseline_fingerprint||'historical').slice(0,12);run.append(o)}});let e=entries.find(x=>x.run_id===s.run)||entries[0];if(e)s.run=e.run_id;run.value=s.run;year.value=s.year;date.value=s.date;region.value=s.region;segment.value=s.segment;const profiles=e?.views?.market_b2b?.carrier_profiles||e?.report?.views?.market_b2b?.carrier_profiles||[];const remembered=s.carrier;carrier.innerHTML='<option value="all">All</option>';[...new Set(profiles.map(p=>p.carrier).filter(Boolean))].forEach(name=>{{const o=document.createElement('option');o.value=name;o.textContent=name;carrier.append(o)}});carrier.value=[...carrier.options].some(o=>o.value===remembered)?remembered:'all';s.carrier=carrier.value;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.stage===s.stage));const stages=e?.stage_status||e?.stages||{{}};byId('status').textContent=e?('Stage '+s.stage+': '+(stages[s.stage]||'not_run')+' · Run '+e.run_id):'No run available.';const views=e?.views||e?.report?.views||{{}};const view=views[viewForStage[s.stage]]||{{status:e?(stages[s.stage]||'not_run'):'not_run'}};byId('view').textContent=e?JSON.stringify({{filters:{{year:s.year,date:s.date,region:s.region,segment:s.segment,carrier:s.carrier}},stage:s.stage,view,catalog_file:catalogFile}},null,2):''}}
 [run,year,date,region,segment,carrier].forEach(x=>x.addEventListener('change',()=>{{const s=selected();s.run=run.value;s.year=year.value;s.date=date.value;s.region=region.value;s.segment=segment.value;s.carrier=carrier.value;write(s)}}));document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{{const s=selected();s.stage=b.dataset.stage;write(s)}}));addEventListener('hashchange',refresh);refresh();</script></body></html>"""
 
 

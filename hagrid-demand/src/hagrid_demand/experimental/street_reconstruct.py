@@ -132,15 +132,15 @@ def main(argv=None):
     paths += [foundation/n for n in ['dhl_candidate_links.parquet', 'dhl_observations.parquet', 'config.resolved.json']]
     write_json(output/'provenance.json', {'inputs': {str(p.resolve()): digest(p) for p in paths},
         'code': _code_hashes()})
-    page = '<!doctype html><meta charset="utf-8"><title>DHL Straßenrekonstruktion 2021</title><style>body{font:16px system-ui;max-width:1150px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}</style><h1>DHL 2021: Straßen als Mengenanker</h1>'
+    page = '<!doctype html><meta charset="utf-8"><title>DHL street reconstruction 2021</title><style>body{font:16px system-ui;max-width:1150px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}</style><h1>DHL 2021: streets as volume anchors</h1>'
     def number(v): return f'{v:,.1f}'.replace(',', '_').replace('.', ',').replace('_', '.')
-    page += f'<p><b>{number(note["observed_DHL"])}</b> beobachtete Mengeneinheiten; <b>{number(note["assigned_to_sites"])}</b> an Standorten modelliert; <b>{number(note["unallocated_at_streets"])}</b> verbleiben an den beobachteten Straßen.</p>'
-    page += '<p>Jede Straßenmenge bleibt erhalten. Die exakte Übereinstimmung wird durch die Beobachtung vorgegeben und ist kein Vorhersagetest. Standortnähe, B2B/B2C-Aufteilung und Mengen anderer Anbieter bleiben Modellannahmen. Unzugeordnete Mengen stehen in einer eigenen Datei mit ihrer ursprünglichen Straßengeometrie.</p>'
-    table = check.rename(columns={'observed_DHL':'DHL beobachtet','assigned_to_sites':'Standorten zugeordnet',
-        'unallocated_at_streets':'Offen an Straßen','difference':'Bilanzabweichung'})
-    page += '<h2>Kontrolle nach PLZ</h2><p><label>PLZ filtern: <input id="postal-filter" placeholder="z. B. 30855" inputmode="numeric"></label></p>' + table.to_html(float_format=number,table_id='postal-table')
+    page += f'<p><b>{number(note["observed_DHL"])}</b> observed volume units; <b>{number(note["assigned_to_sites"])}</b> modeled at sites; <b>{number(note["unallocated_at_streets"])}</b> remain at the observed streets.</p>'
+    page += '<p>Every street volume is preserved. The exact match is imposed by the observation and is not a prediction test. Site proximity, the B2B/B2C split and volumes of other carriers remain model assumptions. Unassigned volumes are in a separate file with their original street geometry.</p>'
+    table = check.rename(columns={'observed_DHL':'DHL observed','assigned_to_sites':'Assigned to sites',
+        'unallocated_at_streets':'Open at streets','difference':'Balance deviation'})
+    page += '<h2>Check by PLZ</h2><p><label>Filter PLZ: <input id="postal-filter" placeholder="e.g., 30855" inputmode="numeric"></label></p>' + table.to_html(float_format=number,table_id='postal-table')
     page += '<script>document.getElementById("postal-filter").addEventListener("input",e=>{for(const row of document.querySelectorAll("#postal-table tbody tr"))row.hidden=!row.querySelector("th").textContent.includes(e.target.value.trim());});</script>'
-    page += '<h2>Größte noch nicht auf Standorte verteilte Mengen</h2>' + ledger.loc[ledger.unallocated_DHL.gt(1e-8), ['plz','street','value','unallocated_DHL','allocation_status']].sort_values('unallocated_DHL',ascending=False).head(30).to_html(index=False)
+    page += '<h2>Largest volumes not yet distributed to sites</h2>' + ledger.loc[ledger.unallocated_DHL.gt(1e-8), ['plz','street','value','unallocated_DHL','allocation_status']].sort_values('unallocated_DHL',ascending=False).head(30).to_html(index=False)
     (output/'dashboard.html').write_text(page, encoding='utf-8')
     print(json.dumps(note, indent=2), flush=True)
 

@@ -199,7 +199,7 @@ def street_distances(streets, explicit):
 def audit_map(boundary, streets, osm):
     """Offline SVG map; hover geometries for source IDs, amounts and OSM tags."""
     x0, y0, x1, y1 = boundary.bounds
-    parts = [f'<svg viewBox="{x0} {-y1} {x1-x0} {y1-y0}" style="width:100%;max-height:620px;background:#f4f6f9" role="img" aria-label="DHL-Straßen und OSM-Standorte in 30855">']
+    parts = [f'<svg viewBox="{x0} {-y1} {x1-x0} {y1-y0}" style="width:100%;max-height:620px;background:#f4f6f9" role="img" aria-label="DHL streets and OSM sites in 30855">']
     def add(geom, color, title, fill='none', line=8):
         if geom.geom_type == 'GeometryCollection':
             for part in geom.geoms: add(part, color, title, fill, line)
@@ -278,7 +278,7 @@ def main(argv=None):
                 'volume_street_within_100m_with_source_context':float(with_evidence.loc[with_evidence.distance_m.le(100),'value'].sum()),
                 'volume_midpoint_within_100m_with_source_context':float(with_evidence.loc[with_evidence.midpoint_distance_m.le(100),'value'].sum())})
             print(snapshot, results[snapshot], flush=True)
-            panels.append('<h2>OSM-Datenstand ' + snapshot + '</h2><p>Blau: DHL-Straßen. Orange: explizite Lager-/Logistik-Tags. Grau: weitere Industrie-/Namenskandidaten. Details beim Überfahren.</p>' + audit_map(boundary, streets, osm)
+            panels.append('<h2>OSM data snapshot ' + snapshot + '</h2><p>Blue: DHL streets. Orange: explicit warehouse/logistics tags. Gray: other industrial/name candidates. Details on hover.</p>' + audit_map(boundary, streets, osm)
                 + matches.sort_values('value', ascending=False).head(25).to_html(index=False, float_format=lambda v: f'{v:,.1f}'))
         except (OSError, ValueError) as exc:
             failures[snapshot] = str(exc)
@@ -286,13 +286,13 @@ def main(argv=None):
             print(f'Snapshot {snapshot} incomplete: {exc}', flush=True)
     write_json(output / 'summary.json', results)
     write_json(output / 'failures.json', failures)
-    page = '<!doctype html><meta charset="utf-8"><title>Langenhagen Logistik</title><style>body{font:16px system-ui;max-width:1200px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}h1,h2{color:#164372}</style><h1>Langenhagen: Logistikstandorte und DHL 2021</h1><p>OSM-Objekte sind keine eindeutigen Betriebe. Warehouse-Tags belegen weder DHL-Kundschaft noch Paketmenge. Nähe einer ganzen Straße kann sehr viel mehr Menge erfassen als Nähe ihres Mittelpunktes: beides ist keine Lieferzuordnung. Relationen werden als Mittelpunkt behandelt und tragen keine Fläche bei. Historischer OSM-Datenstand bedeutet damaligen Karteninhalt, nicht vollständigen Gebäudebestand 2021. Die Ausschlussregel bleibt >1000; keine weiteren Mengen entfernt.</p>'
-    page += '<p>DHL Freight hat sein Frachtzentrum bereits am 13.09.2019 eröffnet: <a href="https://group.dhl.com/en/media-relations/press-releases/2019/dhl-freight-opens-new-freight-hub-in-hanover-langenhagen.html">DHL-Pressemitteilung</a>. Stückgut-/Frachtumschlag darf nicht als lokale Paketzustellung gezählt werden.</p>'
-    page += '<p>Auch der Hermes-Hub ist vor 2021 belegt: <a href="https://hermesworld.com/int/about-us/history/current-decade/">Hermes-Unternehmenschronik</a>. Für die lokale Prüfung werden die passenden benannten OSM-Flächen zusätzlich berücksichtigt. Diese manuell geprüften Standortrollen fließen nicht als Langenhagen-Sondermerkmal in den regionalen Modellvergleich ein. Die Quellen bestätigen keine DHL-Liefermenge an diesen Standorten.</p>'
-    page += '<p>Geodaten: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, ODbL</a>. Aktuelle Daten werden nicht rückwirkend als historische Merkmale ausgegeben. Serverstände können je Teilabfrage abweichen; die tatsächlichen Datenzeitpunkte sind unten ausgewiesen. Bei historischen Abfragen gilt unabhängig davon der angeforderte Stichtag 31.12.2021.</p>'
+    page = '<!doctype html><meta charset="utf-8"><title>Langenhagen logistics</title><style>body{font:16px system-ui;max-width:1200px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}h1,h2{color:#164372}</style><h1>Langenhagen: logistics sites and DHL 2021</h1><p>OSM objects are not unique firms. Warehouse tags establish neither DHL customers nor parcel volume. Proximity of an entire street can capture much more volume than proximity of its midpoint: neither is a delivery assignment. Relations are treated as center points and contribute no area. A historical OSM data snapshot means the map content at that time, not the complete 2021 building stock. The exclusion rule remains >1000; no further volumes removed.</p>'
+    page += '<p>DHL Freight already opened its freight center on 13.09.2019: <a href="https://group.dhl.com/en/media-relations/press-releases/2019/dhl-freight-opens-new-freight-hub-in-hanover-langenhagen.html">DHL press release</a>. General cargo/freight transshipment must not be counted as local parcel delivery.</p>'
+    page += '<p>The Hermes hub is also documented before 2021: <a href="https://hermesworld.com/int/about-us/history/current-decade/">Hermes company history</a>. For the local check, the matching named OSM areas are additionally taken into account. These manually reviewed site roles do not enter the regional model comparison as a Langenhagen-specific feature. The sources do not confirm any DHL delivery volume at these sites.</p>'
+    page += '<p>Geodata: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, ODbL</a>. Current data are not output retroactively as historical features. Server states can differ per partial query; the actual data timestamps are shown below. For historical queries, the requested reference date 31.12.2021 applies regardless.</p>'
     page += pd.DataFrame(results).to_html() + ''.join(panels)
     if failures:
-        page += '<h2>Unvollständige Downloads</h2><pre>' + escape(json.dumps(failures, ensure_ascii=False)) + '</pre>'
+        page += '<h2>Incomplete downloads</h2><pre>' + escape(json.dumps(failures, ensure_ascii=False)) + '</pre>'
     (output / 'dashboard.html').write_text(page, encoding='utf-8')
     write_json(output / 'provenance.json', {'code': _code_hashes(),
         'inputs': {n: digest(source/n) for n in ['postal_support.parquet', 'dhl_observations.parquet', 'sites.parquet']},

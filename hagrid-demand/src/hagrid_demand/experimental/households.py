@@ -45,7 +45,7 @@ def main():
     candidates.to_parquet(output/'household_candidates.parquet',index=False)
     write_json(output/'summary.json',result)
     write_json(output/'provenance.json',{'persons_sha256':digest(args.persons),'code':_code_hashes()})
-    (output/'report.md').write_text('# Haushaltszuordnung\n\n'+str(result)+'\n',encoding='utf-8')
+    (output/'report.md').write_text('# Household assignment\n\n'+str(result)+'\n',encoding='utf-8')
     print(result)
 
 

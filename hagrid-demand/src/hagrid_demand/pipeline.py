@@ -222,43 +222,43 @@ def run_foundation(config_path, run_id):
                               "Candidate links carry no allocation weights", "No travel access or entrances inferred"]}
         write_json(run / "summary.json", summary)
         rows = "\n".join(f"| {k} | {int(v.sites):,} | {int(v.population):,} |" for k, v in groups.iterrows())
-        report = f"""# HAGRID Datenfundament: {run_id}
+        report = f"""# HAGRID data foundation: {run_id}
 
-Der Datenlauf ist abgeschlossen. **Noch nicht zur Nachfragekalibrierung freigegeben.**
+The data run is complete. **Not yet approved for demand calibration.**
 
-| Bestand | Anzahl |
+| Inventory | Count |
 |---|---:|
-| Personen | {person_count:,} |
-| Private Gebäudeeinheiten | {len(residential):,} |
-| Betriebsstätten | {len(business):,} |
-| DHL-Linienbeobachtungen | {len(dhl):,} |
-| Hermes-PLZ/Jahr-Beobachtungen | {len(hermes):,} |
+| Persons | {person_count:,} |
+| Private building units | {len(residential):,} |
+| Firm sites | {len(business):,} |
+| DHL line observations | {len(dhl):,} |
+| Hermes PLZ/year observations | {len(hermes):,} |
 
-## Räumliche Kandidatenzuordnung
+## Spatial candidate assignment
 
-| Status | Standorte | Einwohner |
+| Status | Sites | Residents |
 |---|---:|---:|
 {rows}
 
-Die Zuordnung nutzt eindeutig zugeordnete PLZ und die nächste DHL-Linie bis {cfg['max_street_distance_m']} m.
-Das ist eine dokumentierte Kandidatensuche, kein Nachweis der tatsächlichen Zustellstraße.
-Gleich weit entfernte Kandidaten und wiederholte Straßenschlüssel bleiben sichtbar.
-Standorte mit widersprüchlichen Gebäudekoordinaten werden nicht automatisch verknüpft.
-Paketmengen wurden weder geschätzt noch auf Standorte verteilt.
+The assignment uses uniquely assigned PLZ and the nearest DHL line up to {cfg['max_street_distance_m']} m.
+This is a documented candidate search, not proof of the actual delivery street.
+Equidistant candidates and repeated street keys remain visible.
+Sites with contradictory building coordinates are not linked automatically.
+Parcel volumes were neither estimated nor distributed to sites.
 
-## Vor Kalibrierung zu klären
+## To clarify before calibration
 
-- Einheit und Zeitraum der DHL-/Hermes-Werte; Nullwerte versus fehlende Abdeckung.
-- Bedeutung wiederholter DHL-Straßenschlüssel: Linienfragmente oder getrennte Beobachtungen.
-- Kandidaten anhand von Adressen, Eingängen oder Originalzuordnungen bestätigen.
-- Referenzjahre, Herkunft der Standortdaten und ursprüngliche PLZ-CRS-Metadaten bestätigen.
+- Unit and period of the DHL/Hermes values; zero values versus missing coverage.
+- Meaning of repeated DHL street keys: line fragments or separate observations.
+- Confirm candidates using addresses, entrances or original assignments.
+- Confirm reference years, provenance of the site data and original PLZ CRS metadata.
 
-## Nachvollziehbarkeit
+## Traceability
 
-`sources.json` enthält SHA-256-Hashes aller konsumierten Dateien einschließlich SHP-Komponenten.
-`config.resolved.json`, `runtime.json` und `run.json` dokumentieren Konfiguration, Code und Stages.
-`audit.json` und `summary.json` enthalten aggregierte Prüfungen. Parquet-Dateien enthalten lokale
-Standorte und Quellkennungen; das Run-Verzeichnis ist vom Git-Tracking ausgeschlossen.
+`sources.json` contains SHA-256 hashes of all consumed files including SHP components.
+`config.resolved.json`, `runtime.json` and `run.json` document configuration, code and stages.
+`audit.json` and `summary.json` contain aggregated checks. Parquet files contain local
+sites and source identifiers; the run directory is excluded from Git tracking.
 """
         (run / "report.md").write_text(report, encoding="utf-8")
         completed("report")

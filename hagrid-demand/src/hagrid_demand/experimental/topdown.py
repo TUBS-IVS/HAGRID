@@ -38,7 +38,7 @@ def main():
     table=pd.DataFrame(scores);table.to_csv(output/'metrics.csv',index=False)
     pd.DataFrame(rows).to_csv(output/'predictions.csv',index=False)
     summary=table.assign(protocol=np.where(table.layout.eq('spatial'),'spatial','random_mean')).groupby(['protocol','model','condition'])[['wMAPE','bias']].mean()
-    page='<!doctype html><meta charset="utf-8"><title>Top-down-Test</title><style>body{font:16px system-ui;margin:40px}td,th{padding:8px}</style><h1>Vorhersage und Top-down-Verteilung</h1><p>Bekannte Summen stammen hier aus den Beobachtungen: Die entsprechenden Zeilen bewerten ausschliesslich die bedingte Verteilung, keine unabhaengige Mengenvorhersage. Bei bekannten Testblock-Summen steht zusaetzliche Information zur Verfuegung. Die Quellmodelle sind ausserhalb der jeweiligen Testgebiete angepasst.</p>'
+    page='<!doctype html><meta charset="utf-8"><title>Top-down test</title><style>body{font:16px system-ui;margin:40px}td,th{padding:8px}</style><h1>Prediction and top-down allocation</h1><p>Known totals here come from the observations: the corresponding rows evaluate only the conditional allocation, not an independent volume prediction. With known test-block totals, additional information is available. The source models are fitted outside the respective test areas.</p>'
     (output/'dashboard.html').write_text(page+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
     write_json(output/'provenance.json',{'source_sha256':digest(source/'predictions.csv'),'code':_code_hashes()})
     print(summary.to_string())

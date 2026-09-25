@@ -91,7 +91,7 @@
     "National relative volume growth is provisionally transferred to the region. No building-level future stock changes are invented.",
     "An empty holiday list means weekday/month seasonality only; no official holiday calendar has been supplied.",
     "No exact PANDA reproduction: original OSM/Zensus caches are unavailable in the review clone.",
-    "User-defined KEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
+    "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
   ],
   "dhl_exclude_above": 1000
 }

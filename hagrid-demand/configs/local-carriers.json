@@ -96,7 +96,7 @@
     "Square-root business exposure chosen from exploratory repeated postal CV after prior test inspection. New split metrics are not an untouched confirmation.",
     "Branch multipliers and stable site carrier preferences are declared hypotheses.",
     "Local carrier correction uses observed reference DHL and normalized Hermes shape after fitting; this is conditional reconstruction, not held-out prediction.",
-    "User-defined KEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
+    "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
   ],
   "weekly_profile_file": "../../parcel-demand-estimation/output/03_yearly_weekly_parcel_forecast.csv",
   "date_start": "2021-09-13",

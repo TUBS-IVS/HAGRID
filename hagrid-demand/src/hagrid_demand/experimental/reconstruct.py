@@ -69,7 +69,7 @@ def main():
     write_json(output/'result.json',note)
     paths=[source/'baseline_sites.parquet',source/'carrier_site_profiles.parquet',source/'config.resolved.json',dhl_path]
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':_code_hashes()})
-    page='<!doctype html><meta charset="utf-8"><title>Rekonstruktion 2021</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:8px}</style><h1>DHL 2021: beobachtungsgebundene Rekonstruktion</h1><p>Alle beobachteten PLZ-Mengen werden exakt getroffen. Dies ist eine auferlegte Datenbindung, keine unabhaengige Vorhersageguete.</p><ul>'+''.join('<li>'+s+'</li>' for s in note['limitations'])+'</ul>'
+    page='<!doctype html><meta charset="utf-8"><title>Reconstruction 2021</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:8px}</style><h1>DHL 2021: observation-constrained reconstruction</h1><p>All observed PLZ volumes are matched exactly. This is an imposed data constraint, not independent predictive accuracy.</p><ul>'+''.join('<li>'+s+'</li>' for s in note['limitations'])+'</ul>'
     (output/'dashboard.html').write_text(page+check.to_html(float_format=lambda x:f'{x:,.3f}'),encoding='utf-8')
     print(json.dumps(note,indent=2))
 

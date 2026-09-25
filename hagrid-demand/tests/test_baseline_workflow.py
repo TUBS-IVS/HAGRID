@@ -21,7 +21,7 @@ def test_reference_run_and_resume(fixture_config):
     assert (run / "reference_postal.parquet").exists()
     assert (run / "report_data.json").exists()
     report = (run / "report.md").read_text(encoding="utf-8")
-    assert "2021" in report and "Betriebstage" in report and "B2B" in report
+    assert "2021" in report and "operating days" in report and "B2B" in report
     assert (run.parent / "dashboard" / "index.html").exists()
     assert run_baseline(fixture_config, "reference-fixture", resume=True) == run
 
@@ -179,7 +179,7 @@ def test_renderer_restores_markdown_independently_when_its_public_copy_is_missin
     render_baseline(run)
 
     state = json.loads((run / "run.json").read_text(encoding="utf-8"))
-    assert "in-scope Beobachtungen" in public.read_text(encoding="utf-8")
+    assert "in-scope observations" in public.read_text(encoding="utf-8")
     assert json.loads((run / "report_data.json").read_text(encoding="utf-8"))["baseline_fingerprint"] == state["baseline_fingerprint"]
 
 
