@@ -103,8 +103,9 @@ Die Jahresmenge wird einmal über das ganze Jahr verteilt; `dates` wählt nur au
 
 - **Jahr:** Gesamtmenge × nationale Volumenreihe V(y)/V(2021), B2B-Ziel und Marktanteile je Jahr (Notebooks 00–02).
 - **Woche:** Wochenprofil aus `Parcels19_20_21_inter.xlsx` (Notebook 03), `calendar.weekly_profile: "source"`.
-- **Wochentag:** Notebook-Verteilung Mo .16, Di .17, Mi .19, Do .18, Fr .15, Sa .115, So 0 (`calendar.weekday_weights`).
-- **Feiertage:** gesetzliche Feiertage Niedersachsen mit Faktor 0 (`calendar.holiday_region`, `holiday_dates`, `holiday_factor`).
+- **Wochentag:** Standard ist der Versandtag-/Laufzeitmechanismus (Abschnitt „Versandtage, Laufzeit und Jahresspeicher“).
+  Ohne `temporal` gilt direkt die Notebook-Verteilung Mo .16, Di .17, Mi .19, Do .18, Fr .15, Sa .115, So 0 (`calendar.weekday_weights`).
+- **Feiertage:** gesetzliche Feiertage Niedersachsen (`calendar.holiday_region`, `holiday_dates`); ohne `temporal` mit `holiday_factor` 0.
 - **Betriebstage:** `reference_operating_days: "calendar"` zählt die Liefertage des Referenzjahres mit demselben Kalender (2021: 306).
 - **B2B je Anbieter:** Grenzen, Startwerte und Skalierung wie Notebook 05 (`data/provider_priors.json`); das nationale B2B-Ziel wird jedes Jahr exakt getroffen, ohne die Grenzen zu verlassen.
 - **Gewerbegewicht:** 1 je Firma; im DHL-Straßencheck erklärt die Beschäftigtenzahl nichts. `business_potential.model: company_plus_employees` (1 + 0,1 × Beschäftigte wie Notebook 06) bleibt optional.
@@ -144,6 +145,48 @@ Abnahmelauf 24.09.2026 (8 Tage wie der Notebook-Generator, 6 min): q_DHL 0,254; 
 Pakete bei 306 Liefertagen; 99,5 % der Personen in Gebäuden; 98 % der Menge direkt aus DHL-Straßen, 0,6 % Strukturrückfall;
 Median 51 Pakete je Einwohner und Jahr; Tagesmengen 4–5 % unter dem Notebook (Pegelkorrektur 30855),
 PLZ-Korrelation ohne 30855 0,97–0,98; 44–51 Tsd. Stopps je Tag mit im Median 2–3 Paketen.
+
+### Versandtage, Laufzeit und Jahresspeicher
+
+Mit `temporal.mode: shipping_transit` (Standard in `configs/baseline-daily.json`, Spezifikation
+`docs/superpowers/specs/2026-09-25-hagrid-shipping-week-annual-design.md`) entsteht der Tagesverlauf aus
+Versandtag und Laufzeit statt aus einem festen Zustellprofil:
+
+1. **Versandtag:** Saisonfaktor der Kalenderwoche × Versandprofil je Wochentag (`data/temporal_inputs.json`).
+   Gewerbe: LogIKTram-Abholungen Mo .23, Di .21, Mi .18, Do .16, Fr .17, Sa .05. Privat: aus dem Notebook-Zustellprofil
+   zurückgerechnet (`derive_shipping_profile`, Sa:So = 2:1) Mo .178, Di .200, Mi .185, Do .150, Fr .113, Sa .116, So .058.
+   An Feiertagen wird nichts versendet; diese Menge geht am nächsten Versandtag raus.
+2. **Laufzeit:** E+1/E+2/E+3 = 0,85/0,13/0,02 Liefertage (Mo–Sa ohne Feiertage, nie Sonntag), je Anbieter über `transit_days`.
+3. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
+   Firmen nehmen samstags an (`business_saturday_open`), der Rest kommt am nächsten Werktag.
+4. **Stochastik je Paket:** Wochenfaktor je Segment (AR(1), log-SD 0,016, ρ 0,5), Wochenfaktor je Anbieter (log-SD 0,02),
+   Dirichlet-Aufteilung auf die Wochentage (κ 1000), Laufzeit und Samstagsannahme je Paket. So weichen die Anbieter
+   von Woche zu Woche voneinander ab, im Erwartungswert bleibt der Verlauf gleich. Die Jahresmenge bleibt erhalten.
+
+Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
+(`<run>/annual/`): `stop_daily.parquet` (Datum, Stopp, 14 Zählspalten `<anbieter>_b2c`/`_b2b`), `plz_daily.parquet`,
+`days.parquet` (Tagessummen, Stoppkennzahlen) und `annual_summary.json` (Wochen, Monate, Wochentagsprofile).
+`dates` legt weiter fest, welche Tage direkt als MATSim-Datei entstehen. Jeden anderen Tag schreibt `export-day`
+aus dem Speicher, im selben Format und bei konfigurierten Tagen identisch zum direkten Export:
+
+```powershell
+python -m hagrid_demand baseline export-day --run runs/<run-id> --date 2025-06-03
+python -m hagrid_demand baseline annual-dashboard --run runs/<run-id> --out runs/<run-id>/year.html
+```
+
+`annual-dashboard` baut „Hannover Parcel Year“ (eine HTML-Datei, hell/dunkel, mobil): Kalender mit Tages- und
+Wochenauswahl, Kennzahlen, Zeitreihe je Anbieter, Wochentagsprofil, PLZ-Karte und -Tabelle.
+`--artifact` lässt Doctype und Head weg, wenn der Host sie selbst setzt.
+
+Abnahmelauf 25.09.2026 (2025, alle 365 Tage, die 8 Notebook-Tage direkt als MATSim-Datei): 16,5 min ohne Cache
+(Quellen, Gebäude und Referenz 6 min, Jahres-Tagesstage 7,4 min, Export mit Notebook-Vergleich 2,6 min),
+Jahresspeicher 97,6 MB. 58,32 Mio. Pakete an 303 Liefertagen, Jahresmenge je Segment und Anbieter exakt erhalten.
+Privates Zustellprofil in den 37 Wochen ohne Feiertag (auch in der Vorwoche) Mo 16,45, Di 17,63, Mi 19,72, Do 18,69,
+Fr 15,57, Sa 11,94 % (Notebook 16,58/17,62/19,69/18,65/15,54/11,92); Gewerbe samstags 3,39 %. Nachholtage: Dienstag nach
+Ostermontag +57 %, Freitag nach dem 1. Mai +17 %, Samstag nach dem 3. Oktober +29 % gegenüber demselben Wochentag.
+Nach Pfingstmontag kommt die Nachholmenge erst am Mittwoch (+78 %); der Dienstag bekommt nur die Wochenendsendungen (−6 %).
+KW 20: 1,12 Mio. Pakete; gegenüber dem Notebook-Generator werktags −5 bis −15 %, samstags −24 % (Firmen nehmen samstags
+kaum an: B2B-Anteil 6–7 % statt 22 %). `export-day` ist für die direkt exportierten Tage identisch.
 
 ## Stages und Outputs
 
