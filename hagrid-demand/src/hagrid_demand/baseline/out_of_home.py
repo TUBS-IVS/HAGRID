@@ -9,6 +9,7 @@ have a daily capacity and overflow goes to the next point or back to the home ad
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -168,3 +169,163 @@ def divert(counts: np.ndarray, propensity: np.ndarray, factors: np.ndarray, prim
     home = counts.copy().ravel()
     np.subtract.at(home, pairs, kept + placed)
     return home.reshape(counts.shape), points, int((home_back + rejected).sum())
+
+
+def resolve_out_of_home(cfg: dict | None) -> dict | None:
+    """Defaults from ``data/out_of_home.json`` merged with the config block; ``None`` when disabled."""
+    if cfg is None or cfg is False:
+        return None
+    if not isinstance(cfg, dict):
+        raise ValueError("out_of_home must be a mapping")
+    if cfg.get("enabled", True) is False:
+        return None
+    inputs = load_out_of_home_inputs()
+    for key, value in cfg.items():
+        if key in {"shares_2025", "shares_by_year", "capacity_per_day", "national_shops"} and isinstance(value, dict):
+            inputs[key] = {**inputs.get(key, {}), **value}
+        elif key != "enabled":
+            inputs[key] = value
+    for carrier, share in inputs["shares_2025"].items():
+        if not 0 <= float(share) < 1:
+            raise ValueError(f"out_of_home.shares_2025.{carrier} must be a share in [0, 1)")
+    inputs.setdefault("synthetic_shops", True)
+    return inputs
+
+
+def load_points(path: Path, crs) -> gpd.GeoDataFrame:
+    """Pickup points written by ``baseline osm-parcel-points`` (point_id, kind, carriers, brand, synthetic, geometry)."""
+    points = gpd.read_parquet(path)
+    missing = {"point_id", "kind", "carriers"} - set(points.columns)
+    if missing:
+        raise ValueError(f"parcel points file lacks columns: {sorted(missing)}")
+    points = points.to_crs(crs) if points.crs is not None else points.set_crs(crs)
+    if "synthetic" not in points:
+        points["synthetic"] = False
+    return points.reset_index(drop=True)
+
+
+def synthetic_candidates(pois: gpd.GeoDataFrame, types: dict) -> gpd.GeoDataFrame:
+    """Retail POIs that can host a pickup shop (kiosks, supermarkets, fuel stations, ...)."""
+    mask = np.zeros(len(pois), dtype=bool)
+    for column, values in types.items():
+        if column in pois:
+            mask |= pois[column].isin(values).to_numpy()
+    return pois.loc[mask].reset_index(drop=True)
+
+
+def population_near(points: gpd.GeoDataFrame, units: gpd.GeoDataFrame, radius: float) -> np.ndarray:
+    """Residents within *radius* of each point."""
+    from scipy.spatial import cKDTree
+
+    if points.empty or units.empty:
+        return np.zeros(len(points))
+    centroids = units.geometry.centroid
+    tree = cKDTree(np.column_stack([centroids.x, centroids.y]))
+    population = units.population.fillna(0.).to_numpy(float)
+    neighbours = tree.query_ball_point(np.column_stack([points.geometry.x, points.geometry.y]), r=radius)
+    return np.asarray([population[index].sum() for index in neighbours], dtype=float)
+
+
+def shop_targets(inputs: dict, region_population: float) -> dict[str, int]:
+    """Expected number of pickup shops per carrier from the national networks scaled by population."""
+    share = region_population / float(inputs["germany_population"])
+    return {carrier: int(round(float(count) * share)) for carrier, count in inputs["national_shops"].items()}
+
+
+@dataclass
+class OutOfHomePlan:
+    """One year's routing of a segment's sites (in SegmentDay order) to pickup points."""
+
+    points: gpd.GeoDataFrame
+    carriers: list
+    propensity: np.ndarray
+    primary: np.ndarray
+    secondary: np.ndarray
+    capacity: np.ndarray
+    factors: np.ndarray
+    extended_sites: pd.DataFrame
+    shares: dict
+
+
+def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray, population: np.ndarray,
+               points: gpd.GeoDataFrame, inputs: dict, year: int, days: int, factor_rng) -> OutOfHomePlan:
+    """Primary/secondary point, calibrated propensity and daily factors for every site and carrier."""
+    from scipy.spatial import cKDTree
+
+    from .shipping_draws import ar1_lognormal
+
+    count, width = len(sites), len(carriers)
+    point_xy = np.column_stack([points.geometry.x, points.geometry.y])
+    served = points.carriers.astype(str).str.split("|")
+    apartment = np.where(np.asarray(population, dtype=float) >= float(inputs["apartment_min_population"]),
+                         float(inputs["apartment_factor"]), float(inputs["house_factor"]))
+    weights = sites.annual_expected.to_numpy(float)
+    valid = np.isfinite(site_xy).all(axis=1)
+    propensity = np.zeros((count, width))
+    primary = -np.ones((count, width), dtype=np.int64)
+    secondary = -np.ones((count, width), dtype=np.int64)
+    shares = {}
+    for column, carrier in enumerate(carriers):
+        shares[carrier] = out_of_home_share(year, carrier, inputs)
+        candidates = np.flatnonzero(served.apply(lambda values, carrier=carrier: carrier in values).to_numpy())
+        if not len(candidates) or shares[carrier] <= 0 or not valid.any():
+            continue
+        k = min(2, len(candidates))
+        distance, nearest = cKDTree(point_xy[candidates]).query(np.where(valid[:, None], site_xy, 0.), k=k)
+        distance, nearest = distance.reshape(count, k), nearest.reshape(count, k)
+        first = valid & (distance[:, 0] <= float(inputs["reach_m"]))
+        primary[first, column] = candidates[nearest[first, 0]]
+        if k > 1:
+            second = valid & (distance[:, 1] <= float(inputs["reach_m"]))
+            secondary[second, column] = candidates[nearest[second, 1]]
+        base = np.where(first, apartment * np.exp(-distance[:, 0] / float(inputs["decay_m"])), 0.)
+        propensity[:, column] = calibrate_propensity(weights, base, shares[carrier], float(inputs["max_propensity"]))
+    capacity_by_kind = inputs["capacity_per_day"]
+    capacity = points.kind.map(capacity_by_kind).fillna(capacity_by_kind["shop"]).to_numpy(dtype=np.int64)
+    factors = (np.column_stack([ar1_lognormal(days, float(inputs["day_log_sd"]), float(inputs["day_ar"]), factor_rng(carrier))
+                                for carrier in carriers]) if width else np.ones((days, 0)))
+    pseudo = pd.DataFrame({"year": year, "site_id": "ooh:" + points.point_id.astype(str), "plz": points.plz.astype(str),
+                           "segment": "private", "annual_expected": 0., "allocation_status": "out_of_home"})
+    extended = pd.concat([sites.reset_index(drop=True), pseudo.reindex(columns=sites.columns)], ignore_index=True)
+    return OutOfHomePlan(points, list(carriers), propensity, primary, secondary, capacity, factors, extended, shares)
+
+
+def apply_plan(item, plan: OutOfHomePlan, day: int, rng: np.random.Generator):
+    """Route one day's B2C SegmentDay through *plan*; points become extra rows of the returned SegmentDay."""
+    from .allocation import SegmentDay
+
+    if list(item.carriers) != plan.carriers:
+        raise ValueError("out-of-home plan and segment day list different carriers")
+    home, points, overflow = divert(item.counts, plan.propensity, plan.factors[day], plan.primary, plan.secondary,
+                                    plan.capacity, rng)
+    extra = len(plan.points)
+    carrier_shares = None if item.carrier_shares is None else np.vstack([item.carrier_shares, np.zeros((extra, points.shape[1]))])
+    result = SegmentDay(plan.extended_sites, item.carriers, np.vstack([home, points]).astype(np.int64),
+                        np.concatenate([np.asarray(item.shares, dtype=float), np.zeros(extra)]), item.delivered, carrier_shares)
+    return result, points.sum(axis=0), overflow
+
+
+def point_stops(points: gpd.GeoDataFrame, first_index: int) -> gpd.GeoDataFrame:
+    """Stop rows for pickup points, numbered after the reference stops."""
+    return gpd.GeoDataFrame({"stop_id": ("ooh:" + points.point_id.astype(str)).to_numpy(),
+                             "stop_index": np.arange(len(points)) + int(first_index), "str_idx": -1, "section_id": "",
+                             "plz": points.plz.astype(str).to_numpy(), "n_units": 0, "expected_daily": 0.,
+                             "stop_type": points.kind.astype(str).to_numpy(), "point_id": points.point_id.astype(str).to_numpy(),
+                             "carriers": points.carriers.astype(str).to_numpy(), "synthetic": points.synthetic.astype(bool).to_numpy()},
+                            geometry=points.geometry.to_numpy(), crs=points.crs)
+
+
+def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: int = 240) -> gpd.GeoDataFrame:
+    """Download parcel lockers, post offices and partner shops from the Overpass API for *region_wgs84*."""
+    import urllib.parse
+    import urllib.request
+
+    west, south, east, north = region_wgs84.bounds
+    box = f"{south},{west},{north},{east}"
+    query = ("[out:json][timeout:%d];(nwr[\"amenity\"=\"parcel_locker\"](%s);nwr[\"amenity\"=\"post_office\"](%s);"
+             "nwr[\"post_office\"](%s););out center tags;" % (timeout, box, box, box))
+    request = urllib.request.Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": query}).encode(),
+                                     headers={"User-Agent": "HAGRID-demand/1.0"})
+    with urllib.request.urlopen(request, timeout=timeout + 60) as response:
+        elements = json.load(response)["elements"]
+    return points_from_elements(elements, region_wgs84, crs, shared)

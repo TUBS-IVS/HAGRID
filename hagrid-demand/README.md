@@ -182,6 +182,30 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    (Standard 0; per IPF bleiben PLZ- und Anbietermengen gleich, verschoben wird dann aber auch DHL).
    Beides ist eine Annahme ohne Daten und gilt nur im Versandmodus.
 
+### Packstationen, Paketshops und offene Boxen
+
+Mit `out_of_home` (Standard in `configs/baseline-daily.json`, Spezifikation
+`docs/superpowers/specs/2026-09-25-hagrid-out-of-home-design.md`) stellt jeder Anbieter einen Teil seiner B2C-Pakete an
+Abholpunkte statt an die Haustür zu:
+
+1. **Punkte:** OSM-Stand über Overpass (`baseline osm-parcel-points --plz <plz.csv> --out <parquet>`, Konfiguration
+   `osm_parcel_points`): 2026 in der Region 229 Automaten (DHL-Packstation, Amazon Locker/Hub), 14 offene Boxen
+   (Myflexbox u. a., nutzbar für Hermes, DPD, GLS und UPS) und 192 Filialen/Shops. Fehlende Partner-Shops von DHL, Hermes,
+   DPD, GLS und UPS werden bis zur hochgerechneten Netzdichte an Kiosken, Supermärkten, Bäckereien, Drogerien und
+   Tankstellen ergänzt (`synthetic_shops`, gewichtet nach Einwohnern im Umkreis von 500 m).
+2. **Anteil je Anbieter und Jahr:** begrenzte Sigmoid-Kurve wie in den Notebooks, an DHL angepasst (3 % 2019, 5 % 2021,
+   10 % 2025); 2025 DHL 12, GLS 12, DPD 10, Hermes 8, UPS 8, Amazon 5 % der B2C-Pakete (`shares_2025`, oder
+   `shares_by_year` als Tabelle). Täglich schwankt der Anteil je Anbieter (log-SD 0,10, AR(1) ρ 0,6).
+3. **Wer abholt:** Wahrscheinlichkeit je Gebäude und Anbieter mit der Entfernung zum nächsten passenden Punkt
+   (bis 1,5 km, Abfall über 600 m) und höher in Mehrfamilienhäusern, je Jahr so skaliert, dass der Anteil stimmt.
+4. **Kapazität:** Automat 47, offene Box 40, Shop 120 Pakete am Tag (≈ 70 Fächer bei 1,5 Tagen Liegezeit); was nicht
+   passt, geht an den zweitnächsten Punkt, sonst doch an die Haustür.
+5. **Ausgabe:** Abholpunkte sind eigene Stopps im Jahresspeicher (`annual/out_of_home_points.parquet`) und im
+   MATSim-Export (Feld `stop_type`: `home`, `locker`, `shared_locker`, `shop`); `days.parquet` zählt `out_of_home`.
+   Die MATSim-Pipeline setzt für diese Stopps den Zustellmodus `PARCEL_LOCKER_EXISTING` und legt die feste Zusatzmenge
+   von 25 Paketen je Packstation nicht mehr an (`hubs.fixedParcelLockerDemand`, Standard `false`), damit nichts doppelt
+   zählt.
+
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
 (`<run>/annual/`): `stop_daily.parquet` (Datum, Stopp, 14 Zählspalten `<anbieter>_b2c`/`_b2b`), `plz_daily.parquet`,
 `days.parquet` (Tagessummen, Stoppkennzahlen) und `annual_summary.json` (Wochen, Monate, Wochentagsprofile).
