@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 from datetime import datetime, timezone
 import re
 
@@ -44,6 +45,7 @@ def main():
         ("osm-clip", "Clip a Geofabrik OSM extract to the study region"),
         ("export-day", "Write the MATSim shapefile of one day from a run's annual store"),
         ("annual-dashboard", "Render the annual calendar dashboard of a run"),
+        ("osm-parcel-points", "Download parcel lockers and pickup shops of the study region from OpenStreetMap"),
     ]:
         command = baseline_sub.add_parser(name, help=help_text)
         if name == "osm-clip":
@@ -57,6 +59,10 @@ def main():
             command.add_argument("--run", required=True)
             command.add_argument("--date", required=True)
             command.add_argument("--out", default=None)
+        elif name == "osm-parcel-points":
+            command.add_argument("--plz", required=True)
+            command.add_argument("--out", required=True)
+            command.add_argument("--plz-crs", default="EPSG:25832")
         elif name == "annual-dashboard":
             command.add_argument("--run", required=True)
             command.add_argument("--out", required=True)
@@ -72,6 +78,15 @@ def main():
             if args.baseline_command == "osm-clip":
                 from .baseline.osm import clip_osm_region
                 print(json.dumps(clip_osm_region(args.pbf, args.plz, args.out, args.buffer_m), indent=2, ensure_ascii=False))
+                return 0
+            if args.baseline_command == "osm-parcel-points":
+                from .baseline.out_of_home import fetch_osm_parcel_points, load_out_of_home_inputs
+                from .data import read_plz
+                region = read_plz(Path(args.plz), args.plz_crs, "EPSG:25832").to_crs(4326).union_all()
+                points = fetch_osm_parcel_points(region, "EPSG:25832", load_out_of_home_inputs()["shared_locker_carriers"])
+                Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+                points.to_parquet(args.out, index=False)
+                print(json.dumps({"out": str(args.out), "points": points.kind.value_counts().to_dict()}, indent=2))
                 return 0
             if args.baseline_command == "annual-dashboard":
                 from .baseline.annual_dashboard import write_annual_dashboard

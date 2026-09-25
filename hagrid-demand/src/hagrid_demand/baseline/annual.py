@@ -55,18 +55,23 @@ class AnnualStoreWriter:
             if positions.isna().any():
                 raise ValueError("site stop mapping refers to unknown stops")
             codes, index = np.unique(sites.plz.astype(str).to_numpy(), return_inverse=True)
-            cached = (sites, positions.to_numpy(dtype=np.int64), codes, index)
+            cached = (sites, positions.to_numpy(dtype=np.int64), codes, index, ids.str.startswith("ooh:").to_numpy())
             self.cache[id(sites)] = cached
         return cached[1], cached[2], cached[3]
+
+    def _out_of_home(self, sites: pd.DataFrame) -> np.ndarray:
+        self._positions(sites)
+        return self.cache[id(sites)][4]
 
     def add_day(self, date: pd.Timestamp, segment_days: dict) -> dict:
         date = pd.Timestamp(date).normalize()
         matrix = np.zeros((len(self.stop_index), len(self.columns)), dtype=np.int64)
         row = {"date": date, "weekday": int(date.dayofweek), "holiday": date.date().isoformat() in self.holidays,
-               "b2c": 0, "b2b": 0, "sites_active": 0}
+               "b2c": 0, "b2b": 0, "sites_active": 0, "out_of_home": 0}
         for segment, item in segment_days.items():
             positions, codes, index = self._positions(item.sites)
             row["sites_active"] += int((item.counts.sum(axis=1) > 0).sum())
+            row["out_of_home"] += int(item.counts[self._out_of_home(item.sites)].sum())
             for column_index, carrier in enumerate(item.carriers):
                 if carrier not in CARRIER_FIELDS:
                     raise ValueError(f"carrier without store column: {carrier}")
@@ -147,6 +152,12 @@ def export_day(run_dir: Path, date: str, output_dir: Path | None = None, max_par
     if table.empty:
         return ledger
     stops = gpd.read_parquet(run_dir / "reference_stops.parquet")
+    if (store / "out_of_home_points.parquet").is_file():
+        points = gpd.read_parquet(store / "out_of_home_points.parquet").to_crs(stops.crs)
+        extra = gpd.GeoDataFrame({"stop_id": ("ooh:" + points.point_id.astype(str)).to_numpy(), "stop_index": points.stop_index.to_numpy(),
+                                  "str_idx": -1, "section_id": "", "plz": points.plz.astype(str).to_numpy(),
+                                  "stop_type": points.kind.astype(str).to_numpy()}, geometry=points.geometry.to_numpy(), crs=stops.crs)
+        stops = gpd.GeoDataFrame(pd.concat([stops.assign(stop_type="home"), extra], ignore_index=True), crs=stops.crs)
     stop_id = stops.drop_duplicates("stop_id").set_index("stop_index").stop_id
     grouped = pd.DataFrame(index=pd.Index(stop_id.reindex(table.stop.to_numpy()).to_numpy(), name="stop_id"))
     for provider, short in CARRIER_FIELDS.values():

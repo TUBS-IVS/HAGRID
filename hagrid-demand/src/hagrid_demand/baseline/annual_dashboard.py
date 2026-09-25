@@ -109,6 +109,7 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                  "holiday": days.holiday.astype(bool).tolist(), "parcels": days.parcels.astype(int).tolist(),
                  "b2c": days.b2c.astype(int).tolist(), "b2b": days.b2b.astype(int).tolist(),
                  "stops_active": days.stops_active.astype(int).tolist(),
+                 "out_of_home": (days.out_of_home.astype(int).tolist() if "out_of_home" in days else [0] * len(days)),
                  "parcels_per_stop_mean": days.parcels_per_stop_mean.round(3).tolist(),
                  "carriers": {carrier: (days[carrier].astype(int).tolist() if carrier in days else [0] * len(days))
                               for carrier in CARRIER_FIELDS}},

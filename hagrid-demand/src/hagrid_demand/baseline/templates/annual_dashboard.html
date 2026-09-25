@@ -281,7 +281,9 @@ function setStatic(){
   $('run-id').textContent=M.run_id; $('year').textContent=M.year;
   var tot=sum(DAYS.parcels), del=DELIV.filter(Boolean).length, b2b=sum(DAYS.b2b);
   $('lede').textContent='Modeled deliveries of all seven CEP carriers in Region Hannover for '+M.year+': '+short(tot)+' parcels on '+del+' delivery days, '+pct(b2b/tot)+' to firms. Every parcel gets a shipping day and a transit time; the delivery day follows from them, with a stochastic weekly layer.';
+  var ooh=sum(DAYS.out_of_home||[]), b2c=sum(DAYS.b2c);
   var facts=[['Parcels in the year',short(tot)],['Per delivery day',int(tot/del)],['B2B share',pct(b2b/tot)],['Delivery days',String(del)],['Reference stops',int(M.stops_total)],['Residents',int(M.persons)]];
+  if(ooh>0) facts.splice(3,0,['B2C out of home',pct(ooh/b2c)]);
   $('facts').replaceChildren.apply($('facts'),facts.map(function(f){ return h('div',null,h('dt',{text:f[0]}),h('dd',{text:f[1]})); }));
   $('foot').textContent='HAGRID · run '+M.run_id+' · generated '+M.generated_at.slice(0,10);
   var peak=0; for(var i=0;i<N;i++) if(DAYS.parcels[i]>DAYS.parcels[peak]) peak=i;
@@ -293,6 +295,7 @@ function setStatic(){
     ['Events:',((t.events||[]).length?t.events.map(function(e){ return e.name+' ('+(e.carriers==='all'?'all carriers':e.carriers.join('/'))+', orders ×'+dec(e.uplift,2)+')'; }).join(', '):'none')+'; half delivery days '+Object.keys(t.half_delivery_days||{}).map(function(k){ return (+k.slice(3))+' '+MON[+k.slice(0,2)-1]+' ('+pct(t.half_delivery_days[k],0)+')'; }).join(', ')+', the rest follows on the next delivery day. Each carrier keeps its annual volume.'],
     ['Weekly layer:','week volume per segment varies log-normally (sd '+pct(t.week_log_sd||0,1)+', AR(1) ρ '+dec(t.week_ar||0,1)+'), per carrier (sd '+pct(t.carrier_week_log_sd||0,1)+'), carrier shares vary per day (sd '+pct(t.carrier_day_log_sd||0,1)+'), and the weekday split of each week is redrawn (Dirichlet, κ '+int(t.weekday_concentration||0)+').'],
     ['Space:','business parcels go to firms and private parcels to homes, so carrier mixes follow the local B2B share'+(S.site_frailty_cv?'; some addresses receive more all year (heavy receivers, CV '+pct(S.site_frailty_cv,0)+')':'')+(S.carrier_plz_log_sd?'; random carrier strongholds per PLZ (sd '+pct(S.carrier_plz_log_sd,0)+')':'')+'. Per day and segment the spatial Dirichlet shares are drawn once; every carrier allocates its own parcels to buildings and stops.'],
+    ['Out of home:',(function(o){ if(!o||!o.delivered) return 'not modelled.'; var shares=Object.keys(o.delivered).filter(function(c){ return o.delivered[c]>0; }).map(function(c){ return c+' '+pct(o.delivered[c]/Math.max(1,o.b2c_delivered[c]),0); }).join(', '); var pts=o.osm_points||{}; return 'B2C parcels to lockers, shared boxes and pickup shops ('+shares+'); '+int(pts.locker||0)+' lockers, '+int(pts.shared_locker||0)+' shared boxes, '+int(pts.shop||0)+' mapped and '+int(o.synthetic_shops||0)+' synthetic shops; parcels that do not fit a full point ('+int(o.overflow_home||0)+') stay home deliveries.'; })(t.out_of_home)],
     ['Sources:','shipping profiles: LogIKTram 2023 (B2B), derived from the notebook delivery profile (B2C); Saturday opening: KIT 2024; transit and weekly variability are assumptions.']];
   list.replaceChildren.apply(list,items.map(function(it){ return h('li',null,h('b',{text:it[0]}),' '+it[1]); }));
 }

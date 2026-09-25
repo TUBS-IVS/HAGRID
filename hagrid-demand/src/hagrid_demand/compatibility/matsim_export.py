@@ -83,6 +83,9 @@ def stop_table_frame(grouped: pd.DataFrame, stops: dict, ledger: dict, limit: in
         "postal_cod": parts.plz.astype(str).to_numpy(), "date": ledger["date"]})
     for column in _count_columns():
         frame[column] = parts[column].to_numpy(dtype=np.int64)
+    # Home stops, parcel lockers, shared boxes and pickup shops; the Java pipeline maps the type to its delivery mode.
+    frame["stop_type"] = (info.stop_type.reindex(parts.stop_id).fillna("home").astype(str).to_numpy()
+                          if "stop_type" in info else "home")
     per_stop = parts.groupby("stop_id").total.sum()
     ledger.update({"stops_active": int(len(per_stop)), "rows": int(len(parts)),
                    "parcels_per_stop": {"mean": float(per_stop.mean()), "median": float(per_stop.median()),

@@ -18,10 +18,13 @@ import pandas as pd
 from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage_key
 from hagrid_demand.common.contracts import verified_scope_id
 from hagrid_demand.common.provenance import canonical_json, resource_hash
+from hagrid_demand.common.rng import named_rng
 from hagrid_demand.data import (build_business, build_residential, read_dhl, read_hermes,
                                 read_persons, read_plz)
 
 from .config import load_baseline_config
+from .out_of_home import (apply_plan, build_plan, load_points, point_stops, population_near, resolve_out_of_home,
+                          shop_targets, synthesize_shops, synthetic_candidates)
 from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
@@ -436,15 +439,58 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         links = pd.read_parquet(run / "reference_site_stops.parquet").drop_duplicates("site_id")
         site_groups = pd.Series(links.stop_id.map(street).to_numpy(), index=links.site_id.astype(str).to_numpy())
 
+    ooh = resolve_out_of_home(config.get("out_of_home"))
+    export_stops = points = None
+    if ooh is not None:
+        if not config.get("osm_parcel_points"):
+            raise ValueError("out_of_home requires osm_parcel_points")
+        if not (run / "reference_stops.parquet").is_file():
+            raise ValueError("out_of_home requires the street anchor with stops")
+        base_stops = gpd.read_parquet(run / "reference_stops.parquet")
+        base_links = pd.read_parquet(run / "reference_site_stops.parquet")
+        points, status["out_of_home"] = _out_of_home_points(config, run, ooh, base_stops.crs)
+        extra = point_stops(points, int(base_stops.stop_index.max()) + 1)
+        export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
+                        "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
+        extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "synthetic", "plz", "geometry"]].to_parquet(
+            output / "out_of_home_points.parquet", index=False)
+        site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
+        site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
+        population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
+        status["out_of_home"].update({"delivered": {}, "b2c_delivered": {}, "overflow_home": 0})
+
     writer = None
     if config.get("annual_store"):
         if not (run / "reference_stops.parquet").is_file():
             raise ValueError("annual_store requires the street anchor with stops")
         from .annual import AnnualStoreWriter
-        writer = AnnualStoreWriter(output, gpd.read_parquet(run / "reference_stops.parquet"),
-                                   pd.read_parquet(run / "reference_site_stops.parquet"),
+        writer = AnnualStoreWriter(output, export_stops["stops"] if export_stops else gpd.read_parquet(run / "reference_stops.parquet"),
+                                   export_stops["site_stops"] if export_stops else pd.read_parquet(run / "reference_site_stops.parquet"),
                                    {day for year in config["years"] for day in _holidays(config, year)})
         status["annual_store"] = True
+        if export_stops is not None:
+            shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
+    plans = {}
+
+    def route(year: int, day: int, date: pd.Timestamp, segment_days: dict, days: int) -> dict:
+        item = segment_days.get("private")
+        if item is None:
+            return segment_days
+        if year not in plans:
+            ids = item.sites.site_id.astype(str).to_numpy()
+            located = gpd.GeoSeries(site_xy_of.reindex(site_stop_of.reindex(ids).to_numpy()).to_numpy(), crs=site_xy_of.crs)
+            site_xy = np.column_stack([located.x.to_numpy(), located.y.to_numpy()])
+            plans[year] = build_plan(item.sites, item.carriers, site_xy, population_of.reindex(ids).fillna(0.).to_numpy(), points, ooh,
+                                     year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"))
+            status["out_of_home"]["target_share"] = {carrier: round(share, 5) for carrier, share in plans[year].shares.items()}
+        routed, per_carrier, overflow = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
+                                                                                     date=date.date().isoformat(), channel="ooh-divert"))
+        totals = status["out_of_home"]
+        for carrier, parcels, delivered in zip(item.carriers, per_carrier, item.counts.sum(axis=0)):
+            totals["delivered"][carrier] = totals["delivered"].get(carrier, 0) + int(parcels)
+            totals["b2c_delivered"][carrier] = totals["b2c_delivered"].get(carrier, 0) + int(delivered)
+        totals["overflow_home"] += int(overflow)
+        return {**segment_days, "private": routed}
 
     def frames():
         completed = False
@@ -457,6 +503,8 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                 for position, (date, segment_days) in enumerate(draw_delivery_days(
                         sites, profiles, subset, cal.dates[indices], generation, 0, 0, spatial_plan=plan,
                         cache_dir=Path(config["cache_root"]), site_groups=site_groups)):
+                    if ooh is not None:
+                        segment_days = route(year, int(indices[position]), date, segment_days, len(cal.dates))
                     if writer is not None:
                         writer.add_day(date, segment_days)
                     if selected is None or date.normalize() in selected:
@@ -469,7 +517,25 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                 else:
                     writer.abort()
 
-    return frames(), status
+    return frames(), status, export_stops
+
+
+def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.GeoDataFrame, dict]:
+    """OSM pickup points plus synthetic shops, each with its PLZ."""
+    points = load_points(Path(config["osm_parcel_points"]), crs)
+    postal = gpd.read_parquet(run / "sources" / "postal_support.parquet").to_crs(crs)
+    status = {"osm_points": {str(kind): int(count) for kind, count in points.kind.value_counts().items()}, "synthetic_shops": 0}
+    if ooh.get("synthetic_shops", True) and config.get("osm_points"):
+        units = gpd.read_parquet(run / "reference_units.parquet").to_crs(crs)
+        candidates = synthetic_candidates(gpd.read_parquet(config["osm_points"]).to_crs(crs), ooh["synthetic_poi_types"])
+        candidates = candidates.loc[candidates.within(postal.union_all())].reset_index(drop=True)
+        targets = shop_targets(ooh, float(units.population.sum()))
+        points = synthesize_shops(points, candidates, population_near(candidates, units, float(ooh["synthetic_population_radius_m"])),
+                                  targets, named_rng(int(config["seed"]), channel="ooh-synthetic-shops"))
+        status.update({"synthetic_shops": int(points.synthetic.sum()), "shop_targets": targets})
+    joined = gpd.sjoin_nearest(points[["point_id", "geometry"]], postal[["plz", "geometry"]], how="left")
+    points["plz"] = joined.groupby(level=0).plz.first().reindex(points.index).astype(str).to_numpy()
+    return points, status
 
 
 def _matsim_export_enabled(config: dict) -> bool:
@@ -502,16 +568,20 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     if temporal is None:
         if config.get("annual_store"):
             raise ValueError("annual_store requires temporal.mode = shipping_transit")
+        if config.get("out_of_home"):
+            raise ValueError("out_of_home requires temporal.mode = shipping_transit")
         chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
                                spatial_plan=plan, cache_dir=Path(config["cache_root"]))
-        temporal_status = {"mode": "delivery_calendar"}
+        temporal_status, ooh_stops = {"mode": "delivery_calendar"}, None
     else:
-        chunks, temporal_status = _shipping_transit_chunks(config, run, output, projection, plan, generation, temporal)
+        chunks, temporal_status, ooh_stops = _shipping_transit_chunks(config, run, output, projection, plan, generation, temporal)
     matsim_ledgers: list[dict] = []
     stops = None
     if _matsim_export_enabled(config):
         from hagrid_demand.compatibility.matsim_export import compare_with_notebook, with_matsim_export, write_matsim_manifest
-        if (run / "reference_stops.parquet").is_file():
+        if ooh_stops is not None:
+            stops = ooh_stops
+        elif (run / "reference_stops.parquet").is_file():
             stops = {"site_stops": pd.read_parquet(run / "reference_site_stops.parquet"),
                      "stops": gpd.read_parquet(run / "reference_stops.parquet")}
         chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers, stops,
@@ -713,6 +783,8 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         _json(run / "run.json", state)
         if config["output_scope"] == "daily":
             daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
+            if config.get("out_of_home") and config.get("osm_parcel_points"):
+                daily_dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
             daily_snapshot = dependency_snapshot(daily_dependencies)
             daily_fingerprint = stage_key("daily", daily_dependencies, config, _daily_code(),
                                           dependency_snapshot=daily_snapshot)
@@ -726,6 +798,8 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                 _copy_public(run, "daily", name)
             if (run / "daily" / "delivery_calendar.parquet").is_file():
                 _copy_public(run, "daily", "delivery_calendar.parquet")
+            if (run / "daily" / "out_of_home_points.parquet").is_file():
+                _copy_public(run, "daily", "out_of_home_points.parquet")
             if (run / "daily" / "annual").is_dir():
                 if (run / "annual").exists():
                     shutil.rmtree(run / "annual")

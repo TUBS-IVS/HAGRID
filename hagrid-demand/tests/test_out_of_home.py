@@ -65,3 +65,68 @@ def test_synthetic_shops_fill_missing_carrier_points():
     assert sorted(added.carriers.tolist()) == ["DPD", "DPD", "Hermes", "Hermes"]
     assert added.geometry.apply(lambda point: point.x).nunique() == 4 and (added.kind == "shop").all()
     assert len(result) == 5
+
+
+def test_points_from_elements_maps_and_clips():
+    from shapely.geometry import box
+    from hagrid_demand.baseline.out_of_home import points_from_elements
+
+    elements = [{"type": "node", "id": 1, "lat": 52.40, "lon": 9.70, "tags": {"amenity": "parcel_locker", "brand": "DHL Packstation"}},
+                {"type": "way", "id": 2, "center": {"lat": 52.41, "lon": 9.71}, "tags": {"amenity": "post_office", "name": "Hermes PaketShop"}},
+                {"type": "node", "id": 3, "lat": 53.50, "lon": 9.70, "tags": {"amenity": "parcel_locker", "brand": "Amazon Locker"}},
+                {"type": "node", "id": 4, "lat": 52.42, "lon": 9.72, "tags": {"amenity": "post_depot", "operator": "DHL"}}]
+    points = points_from_elements(elements, box(9.5, 52.3, 9.9, 52.5), "EPSG:25832", SHARED)
+    assert points.point_id.tolist() == ["osm:n1", "osm:w2"] and points.kind.tolist() == ["locker", "shop"]
+    assert points.carriers.tolist() == ["DHL", "Hermes"] and points.crs.to_epsg() == 25832
+
+
+@pytest.fixture(scope="module")
+def ooh_run(tmp_path_factory):
+    import json
+
+    from street_fixtures import write_street_fixture
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    root = tmp_path_factory.mktemp("ooh")
+    config_path = write_street_fixture(root)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    gpd.GeoDataFrame({"point_id": ["osm:n1", "osm:n2"], "kind": ["locker", "shared_locker"], "carriers": ["DHL", "DPD|GLS|Hermes|UPS"],
+                      "brand": ["DHL Packstation", "Myflexbox"], "synthetic": [False, False]},
+                     geometry=[Point(15, 15), Point(115, 15)], crs="EPSG:25832").to_parquet(root / "inputs" / "parcel_points.parquet", index=False)
+    shares = {"DHL": .3, "DPD": .3, "GLS": .3, "Hermes": .3, "UPS": .3, "Amazon": 0., "FedEx/TNT": 0.}
+    config.update({"output_scope": "daily", "years": [2025], "dates": ["2025-05-16"], "anchor": {"mode": "street", "min_streets": 99},
+                   "temporal": {"mode": "shipping_transit"}, "annual_store": True, "osm_parcel_points": "inputs/parcel_points.parquet",
+                   "out_of_home": {"shares_2025": shares, "synthetic_shops": False}})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    return run_baseline(config_path, "street-ooh")
+
+
+def test_out_of_home_run_routes_parcels_to_points(ooh_run):
+    import pandas as pd
+
+    days = pd.read_parquet(ooh_run / "annual" / "days.parquet")
+    points = gpd.read_parquet(ooh_run / "annual" / "out_of_home_points.parquet")
+    stop_daily = pd.read_parquet(ooh_run / "annual" / "stop_daily.parquet")
+    at_points = stop_daily.loc[stop_daily.stop.isin(points.stop_index)]
+    assert days.out_of_home.sum() > 0 and set(points.kind) == {"locker", "shared_locker"}
+    assert at_points.filter(like="_b2b").to_numpy().sum() == 0
+    assert int(at_points.filter(like="_b2c").to_numpy().sum()) == int(days.out_of_home.sum())
+    assert int(stop_daily.filter(regex="_b2[bc]$").to_numpy().sum()) == int(days.parcels.sum())
+    calendar = pd.read_parquet(ooh_run / "delivery_calendar.parquet")
+    assert int(calendar.delivered.sum()) == int(days.parcels.sum())
+
+
+def test_out_of_home_points_reach_the_matsim_export(ooh_run):
+    import pandas as pd
+
+    from hagrid_demand.baseline.annual import export_day
+
+    direct = gpd.read_file(next((ooh_run / "matsim").glob("*.shp")))
+    assert "stop_type" in direct and set(direct.stop_type) <= {"home", "locker", "shared_locker", "shop"}
+    days = pd.read_parquet(ooh_run / "annual" / "days.parquet")
+    busiest = days.loc[days.out_of_home.idxmax()]
+    ledger = export_day(ooh_run, str(pd.Timestamp(busiest.date).date()), ooh_run / "ooh_export")
+    exported = gpd.read_file(ooh_run / "ooh_export" / ledger["file"])
+    assert {"locker", "shared_locker"} & set(exported.stop_type)
+    assert int(exported.total.sum()) == int(busiest.parcels)
