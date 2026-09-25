@@ -207,10 +207,12 @@ Mit Tages-Marktanteilen und Vielbestellern (gleiche Konfiguration plus Punkt 4/5
 statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), Jahresmenge je Stopp gegenüber dem Erwartungswert CV 27 % statt 4 %;
 Jahresmengen, Wochentagsprofile, Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich. Anbieteranteile je PLZ
 aus der Mischung: UPS 7–19 %, Amazon 8–21 %, Hermes 5–11 %, DHL 42–45 % (B2B-Anteil der PLZ 9–68 %).
-Weihnachten 2025 (gegenüber demselben Wochentag im November): 15.–22.12. +29 bis +59 %, 23.–24.12. +7/+8 %, danach nur
-Laufzeit-Reste (27.12.: 0,27×, 29.–31.12.: 0,64–0,75×); Neujahr ohne Spitze (3.1.: 0,92×). Die Spitzentage des Jahres
-liegen im Dezember (erwartet Do 11.12. mit 380 Tsd.; realisiert 7 der 8 stärksten Tage im Dezember, dazu der Mittwoch
-nach Ostern). Über das Jahr treffen Marktanteile, Anteile je Segment,
+Weihnachten 2025 (gegenüber demselben Wochentag im November): 15.–19.12. +9 bis +34 %, 20.–24.12. +47 bis +86 %, danach
+nur Laufzeit-Reste (27.12.: 0,37×, 29.–31.12.: 0,64–0,77×); Neujahr ohne Spitze (3.1.: 0,92×). Spitzentage des Jahres
+sind Mo 22.12. (423 Tsd.), Mi 24.12. und Di 23.12., danach der Mittwoch nach Ostern (374 Tsd.). Wochenverlauf gegenüber den
+Schweizer Wochenwerten aus Notebook 03: Korrelation 0,94, 44 von 51 vollen Wochen im Konfidenzband des Notebooks;
+außerhalb liegen nur Feiertagswochen (Delle) und die Wochen danach (Nachholwelle), die das Schweizer Mittel 2019–2021
+nicht kennt. Über das Jahr treffen Marktanteile, Anteile je Segment,
 B2B-Quoten je Anbieter und der B2B-Anteil (21,54 %) die berechneten Werte exakt (höchstens 0,5 Pakete Rundung); die
 PLZ-Mengen liegen zu 90 % innerhalb von −0,7 bis +0,4 % des Erwartungswerts, nur die Kleinst-PLZ 30521 und 30669
 (1.400–7.500 Pakete im Jahr) streuen bis −6 %.
