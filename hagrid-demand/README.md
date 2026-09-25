@@ -164,10 +164,12 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    Tagesmenge im Mittel gleich bleibt), Dirichlet-Aufteilung auf die Wochentage (κ 1000), Laufzeit und Samstagsannahme
    je Paket. So weichen die Anbieter von Tag zu Tag und von Woche zu Woche voneinander ab, im Erwartungswert bleibt der
    Verlauf gleich. Die Jahresmenge je Anbieter bleibt erhalten.
-5. **Raum:** Jeder Anbieter hat eigene PLZ-Hochburgen (`spatial.carrier_plz_log_sd` 0,15: fester Jahresfaktor je Anbieter
-   und PLZ, per IPF so skaliert, dass PLZ- und Anbietermengen gleich bleiben). Vielbesteller (`spatial.site_frailty_cv`
+5. **Raum:** Hochburgen ergeben sich aus der B2B/B2C-Mischung: B2B-Pakete gehen an Firmenstandorte, B2C-Pakete an
+   Wohnungen, jeweils mit den Anbieteranteilen des Segments. Wo viel Gewerbe ist, sind UPS und FedEx stark, in
+   Wohngebieten Amazon und Hermes; DHL folgt seinen gemessenen Straßenmengen. Vielbesteller (`spatial.site_frailty_cv`
    0,5: Gamma-Faktor je Standort und Jahr, je Straße und PLZ normiert, damit Straßenanker und PLZ-Mengen halten) sind an
-   vielen Tagen groß.
+   vielen Tagen groß. Optional würfelt `spatial.carrier_plz_log_sd` zusätzliche zufällige Hochburgen je Anbieter und PLZ
+   (Standard 0; per IPF bleiben PLZ- und Anbietermengen gleich, verschoben wird dann aber auch DHL).
    Beides ist eine Annahme ohne Daten und gilt nur im Versandmodus.
 
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
@@ -194,10 +196,10 @@ Ostermontag +57 %, Freitag nach dem 1. Mai +17 %, Samstag nach dem 3. Oktober +2
 Nach Pfingstmontag kommt die Nachholmenge erst am Mittwoch (+78 %); der Dienstag bekommt nur die Wochenendsendungen (−6 %).
 KW 20: 1,12 Mio. Pakete; gegenüber dem Notebook-Generator werktags −5 bis −15 %, samstags −24 % (Firmen nehmen samstags
 kaum an: B2B-Anteil 6–7 % statt 22 %). `export-day` ist für die direkt exportierten Tage identisch.
-Mit Tages-Marktanteilen, PLZ-Hochburgen und Vielbestellern (gleicher Tag, gleiche Konfiguration plus Punkt 4/5):
-Tagesanteil DHL privat ± 0,86 pp statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), PLZ-Verteilung der Anbieter log-SD
-0,10–0,19 statt ≈ 0, Jahresmenge je Stopp gegenüber dem Erwartungswert CV 27 % statt 4 %; Jahresmengen, Wochentagsprofile,
-Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich. Über das Jahr treffen Marktanteile, Anteile je Segment,
+Mit Tages-Marktanteilen und Vielbestellern (gleiche Konfiguration plus Punkt 4/5): Tagesanteil DHL privat ± 0,86 pp
+statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), Jahresmenge je Stopp gegenüber dem Erwartungswert CV 27 % statt 4 %;
+Jahresmengen, Wochentagsprofile, Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich. Anbieteranteile je PLZ
+aus der Mischung: UPS 7–19 %, Amazon 8–21 %, Hermes 5–11 %, DHL 42–45 % (B2B-Anteil der PLZ 9–68 %). Über das Jahr treffen Marktanteile, Anteile je Segment,
 B2B-Quoten je Anbieter und der B2B-Anteil (21,54 %) die berechneten Werte exakt (höchstens 0,5 Pakete Rundung); die
 PLZ-Mengen liegen zu 90 % innerhalb von −0,7 bis +0,4 % des Erwartungswerts, nur die Kleinst-PLZ 30521 und 30669
 (1.400–7.500 Pakete im Jahr) streuen bis −6 %.
