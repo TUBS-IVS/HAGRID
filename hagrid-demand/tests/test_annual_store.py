@@ -81,7 +81,8 @@ def test_daily_stage_code_includes_temporal_inputs():
 
     code = _daily_code()
     assert code["temporal_inputs"].name == "temporal_inputs.json" and code["temporal_inputs"].is_file()
-    assert {"shipping", "shipping_draws", "annual", "allocation"} <= set(code)
+    assert {"shipping", "shipping_draws", "annual", "allocation", "out_of_home"} <= set(code)
+    assert all(code[name].is_file() for name in ("events", "out_of_home_inputs"))
 
 
 def test_draw_dates_skip_unselected_without_writer():
