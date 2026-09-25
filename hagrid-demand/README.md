@@ -196,8 +196,11 @@ KW 20: 1,12 Mio. Pakete; gegenüber dem Notebook-Generator werktags −5 bis −
 kaum an: B2B-Anteil 6–7 % statt 22 %). `export-day` ist für die direkt exportierten Tage identisch.
 Mit Tages-Marktanteilen, PLZ-Hochburgen und Vielbestellern (gleicher Tag, gleiche Konfiguration plus Punkt 4/5):
 Tagesanteil DHL privat ± 0,86 pp statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), PLZ-Verteilung der Anbieter log-SD
-0,10–0,19 statt ≈ 0, Jahresmenge je Stopp gegenüber dem Erwartungswert CV 28 % statt 4 %; Jahresmengen, Wochentagsprofile,
-Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich.
+0,10–0,19 statt ≈ 0, Jahresmenge je Stopp gegenüber dem Erwartungswert CV 27 % statt 4 %; Jahresmengen, Wochentagsprofile,
+Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich. Über das Jahr treffen Marktanteile, Anteile je Segment,
+B2B-Quoten je Anbieter und der B2B-Anteil (21,54 %) die berechneten Werte exakt (höchstens 0,5 Pakete Rundung); die
+PLZ-Mengen liegen zu 90 % innerhalb von −0,7 bis +0,4 % des Erwartungswerts, nur die Kleinst-PLZ 30521 und 30669
+(1.400–7.500 Pakete im Jahr) streuen bis −6 %.
 
 ## Stages und Outputs
 
