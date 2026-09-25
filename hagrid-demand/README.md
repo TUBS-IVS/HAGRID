@@ -183,8 +183,9 @@ python -m hagrid_demand baseline export-day --run runs/<run-id> --date 2025-06-0
 python -m hagrid_demand baseline annual-dashboard --run runs/<run-id> --out runs/<run-id>/year.html
 ```
 
-`annual-dashboard` baut „Hannover Parcel Year“ (eine HTML-Datei, hell/dunkel, mobil): Kalender mit Tages- und
-Wochenauswahl, Kennzahlen, Zeitreihe je Anbieter, Wochentagsprofil, PLZ-Karte und -Tabelle.
+Jeder Lauf mit Jahresspeicher schreibt dazu automatisch `<run>/annual_dashboard.html`: „Hannover Parcel Year“ (eine
+HTML-Datei, offline lesbar, hell/dunkel, mobil) mit Kalender für Tages- und Wochenauswahl, Kennzahlen, Zeitreihe je
+Anbieter, Wochentagsprofil, PLZ-Karte und -Tabelle. `annual-dashboard` baut es neu, etwa für ein anderes Jahr (`--year`);
 `--artifact` lässt Doctype und Head weg, wenn der Host sie selbst setzt.
 
 Abnahmelauf 25.09.2026 (2025, alle 365 Tage, die 8 Notebook-Tage direkt als MATSim-Datei): 16,5 min ohne Cache

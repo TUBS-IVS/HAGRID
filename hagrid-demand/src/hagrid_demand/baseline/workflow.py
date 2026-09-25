@@ -747,6 +747,9 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["completed_stages"].append("dashboard")
         state["status"] = "complete_daily" if config["output_scope"] == "daily" else "complete_reference"
         _json(run / "run.json", state)
+        if (run / "annual" / "days.parquet").is_file():
+            from .annual_dashboard import write_annual_dashboard
+            write_annual_dashboard(run, run / "annual_dashboard.html")
         render_baseline(run)
         return run
     except Exception as exc:

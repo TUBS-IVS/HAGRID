@@ -91,6 +91,8 @@ def main():
             from .baseline.workflow import run_baseline
             run = run_baseline(args.config, args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), args.resume)
             print(f"Baseline dashboard: {render_baseline(run)}")
+            if (run / "annual_dashboard.html").is_file():
+                print(f"Annual dashboard: {run / 'annual_dashboard.html'}")
             return 0
         except (ValueError, FileExistsError, FileNotFoundError, NotImplementedError) as exc:
             parser.exit(2, f"Baseline failed: {exc}\n")
