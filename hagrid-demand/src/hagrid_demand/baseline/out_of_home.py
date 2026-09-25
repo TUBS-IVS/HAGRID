@@ -21,6 +21,8 @@ _DATA = Path(__file__).with_name("data") / "out_of_home.json"
 _BRANDS = (("packstation", "DHL"), ("dhl", "DHL"), ("deutsche post", "DHL"), ("post", "DHL"), ("amazon", "Amazon"),
            ("hermes", "Hermes"), ("dpd", "DPD"), ("gls", "GLS"), ("ups", "UPS"), ("fedex", "FedEx/TNT"))
 _OPEN = ("myflexbox", "paketbox", "parcellock", "parcel lock")
+_OVERPASS = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+             "https://overpass.private.coffee/api/interpreter")
 
 
 def load_out_of_home_inputs() -> dict:
@@ -31,9 +33,13 @@ def load_out_of_home_inputs() -> dict:
 def point_carriers(tags: dict, shared: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
     """Kind (locker, shared_locker, shop) and carriers of an OSM pickup point; ``None`` for anything else."""
     amenity = str(tags.get("amenity", ""))
+    label = " ".join(str(tags.get(key, "")) for key in ("brand", "operator", "post_office:brand", "name")).lower()
+    if tags.get("shop") == "outpost":
+        # Pickup outposts: Amazon Hub Lockers are sometimes tagged this way; retailer outposts are not parcel carriers.
+        carriers = sorted({carrier for token, carrier in _BRANDS if token in label})
+        return (("locker" if "locker" in label else "shop"), tuple(carriers)) if carriers else None
     if amenity == "post_depot" or (amenity not in {"parcel_locker", "post_office"} and not tags.get("post_office")):
         return None
-    label = " ".join(str(tags.get(key, "")) for key in ("brand", "operator", "post_office:brand", "name")).lower()
     if amenity == "parcel_locker":
         if any(token in label for token in _OPEN) or not label.strip():
             return "shared_locker", tuple(sorted(shared))
@@ -343,17 +349,34 @@ def point_stops(points: gpd.GeoDataFrame, first_index: int) -> gpd.GeoDataFrame:
                             geometry=points.geometry.to_numpy(), crs=points.crs)
 
 
-def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: int = 240) -> gpd.GeoDataFrame:
-    """Download parcel lockers, post offices and partner shops from the Overpass API for *region_wgs84*."""
+def _overpass(query: str, timeout: int) -> list[dict]:
     import urllib.parse
     import urllib.request
 
+    errors = []
+    for endpoint in _OVERPASS:
+        request = urllib.request.Request(endpoint, data=urllib.parse.urlencode({"data": query}).encode(),
+                                         headers={"User-Agent": "HAGRID-demand/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout + 60) as response:
+                return json.load(response)["elements"]
+        except (OSError, ValueError) as exc:  # busy or unreachable instance: try the next mirror
+            errors.append(f"{endpoint}: {exc}")
+    raise RuntimeError("no Overpass instance answered: " + "; ".join(errors))
+
+
+def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: int = 180) -> gpd.GeoDataFrame:
+    """Download parcel lockers, post offices, partner shops and pickup outposts from Overpass for *region_wgs84*.
+
+    One small query per tag keeps each request below the public instances' gateway limits.
+    """
     west, south, east, north = region_wgs84.bounds
     box = f"{south},{west},{north},{east}"
-    query = ("[out:json][timeout:%d];(nwr[\"amenity\"=\"parcel_locker\"](%s);nwr[\"amenity\"=\"post_office\"](%s);"
-             "nwr[\"post_office\"](%s););out center tags;" % (timeout, box, box, box))
-    request = urllib.request.Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": query}).encode(),
-                                     headers={"User-Agent": "HAGRID-demand/1.0"})
-    with urllib.request.urlopen(request, timeout=timeout + 60) as response:
-        elements = json.load(response)["elements"]
+    elements, seen = [], set()
+    for selector in ('["amenity"="parcel_locker"]', '["amenity"="post_office"]', '["post_office"]', '["shop"="outpost"]'):
+        for element in _overpass(f"[out:json][timeout:{timeout}];nwr{selector}({box});out center tags;", timeout):
+            key = (element["type"], element["id"])
+            if key not in seen:
+                seen.add(key)
+                elements.append(element)
     return points_from_elements(elements, region_wgs84, crs, shared)
