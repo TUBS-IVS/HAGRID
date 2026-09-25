@@ -157,8 +157,10 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    zurückgerechnet (`derive_shipping_profile`, Sa:So = 2:1) Mo .178, Di .200, Mi .185, Do .150, Fr .113, Sa .116, So .058.
    An Feiertagen wird nichts versendet; diese Bestellungen gehen über die nächsten 3 Versandtage raus
    (`holiday_spread_days`, 1 = alles am nächsten Tag), so verteilt sich die Nachholwelle über mehrere Tage. Was am
-   24.–26.12. versendet würde, wird in die 14 Tage davor vorgezogen (`christmas_pull_forward_days`, 0 = aus), damit
-   Geschenke vor Weihnachten ankommen und danach nur Laufzeit-Reste bleiben.
+   24.–26.12. versendet würde, wird in die 5 Tage davor vorgezogen (`christmas_pull_forward_days`, 0 = aus), damit
+   Geschenke vor Weihnachten ankommen und danach nur Laufzeit-Reste bleiben. Die 5 Tage treffen die Schweizer
+   Wochenwerte aus Notebook 03 am besten (KW 49–52 1,46/1,55/1,47/1,13 gegenüber 1,49/1,57/1,36/1,11; 14 Tage schieben zu
+   viel aus KW 52 in KW 50/51, 3 Tage erzeugen eine Spitze an Heiligabend).
 2. **Laufzeit:** E+1/E+2/E+3 = 0,85/0,13/0,02 Liefertage (Mo–Sa ohne Feiertage, nie Sonntag), je Anbieter über `transit_days`.
 3. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
    Firmen nehmen samstags an (`business_saturday_open`), der Rest kommt am nächsten Werktag.

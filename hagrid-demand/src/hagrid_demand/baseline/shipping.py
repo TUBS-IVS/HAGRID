@@ -130,7 +130,7 @@ def resolve_temporal(cfg: dict | None) -> dict | None:
     week_ar = _finite(cfg.get("week_ar", 0.5), "temporal.week_ar")
     if not 0 <= week_ar < 1:
         raise ValueError("temporal.week_ar must be in [0, 1)")
-    pull_forward = cfg.get("christmas_pull_forward_days", 14)
+    pull_forward = cfg.get("christmas_pull_forward_days", 5)
     if isinstance(pull_forward, bool) or not isinstance(pull_forward, int) or pull_forward < 0:
         raise ValueError("temporal.christmas_pull_forward_days must be a nonnegative integer")
     spread_days = cfg.get("holiday_spread_days", 3)
