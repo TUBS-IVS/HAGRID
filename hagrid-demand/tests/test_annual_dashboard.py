@@ -44,3 +44,11 @@ def test_dashboard_standalone_and_artifact_variants(annual_run, tmp_path):
 def test_run_writes_annual_dashboard(annual_run):
     page = (annual_run / "annual_dashboard.html").read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>") and "<title>Hannover Parcel Year</title>" in page[:8192]
+
+
+def test_dashboard_explains_peaks_with_current_rules(annual_run):
+    from hagrid_demand.baseline.annual_dashboard import TEMPLATE, build_annual_dashboard_data
+
+    assert "could not be delivered on the holiday" not in TEMPLATE.read_text(encoding="utf-8")
+    meta = build_annual_dashboard_data(annual_run)["meta"]
+    assert set(meta["spatial"]) == {"carrier_plz_log_sd", "site_frailty_cv"} and "holiday_spread_days" in meta["temporal"]

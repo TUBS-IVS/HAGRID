@@ -92,6 +92,8 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                 by_day = group.groupby("weekday")[kind].sum().reindex(range(7), fill_value=0.)
                 entry[kind] = (by_day / by_day.sum()).round(5).tolist() if by_day.sum() > 0 else [0.] * 7
             weekday.append(entry)
+    config_path = run_dir / "config.resolved.json"
+    spatial = json.loads(config_path.read_text(encoding="utf-8")).get("spatial", {}) if config_path.is_file() else {}
     status_path = run_dir / "daily_status.json"
     temporal = json.loads(status_path.read_text(encoding="utf-8")).get("temporal", {}) if status_path.is_file() else {}
     return {
@@ -101,7 +103,8 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                  "column_carriers": [carrier for carrier in CARRIER_FIELDS for _ in (0, 1)],
                  "column_segments": ["private", "business"] * len(CARRIER_FIELDS),
                  "holidays": days.loc[days.holiday.astype(bool), "date"].dt.strftime("%Y-%m-%d").tolist(),
-                 "temporal": temporal, "attribution": "© OpenStreetMap contributors (ODbL)"},
+                 "temporal": temporal, "attribution": "© OpenStreetMap contributors (ODbL)",
+                 "spatial": {name: float(spatial.get(name, 0.) or 0.) for name in ("carrier_plz_log_sd", "site_frailty_cv")}},
         "days": {"date": days.date.dt.strftime("%Y-%m-%d").tolist(), "weekday": days.weekday.astype(int).tolist(),
                  "holiday": days.holiday.astype(bool).tolist(), "parcels": days.parcels.astype(int).tolist(),
                  "b2c": days.b2c.astype(int).tolist(), "b2b": days.b2b.astype(int).tolist(),
