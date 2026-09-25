@@ -25,7 +25,9 @@ from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
 from .spatial import resolve_spatial_plan
-from .allocation import generate_days
+from .allocation import delivery_frame, draw_delivery_days, generate_days
+from .shipping import delivery_calendar, resolve_temporal, shipping_weights
+from .shipping_draws import expected_deliveries, simulate_deliveries
 from .outputs import write_daily_aggregates
 from .potentials import build_potentials
 from .reference import solve_reference
@@ -367,6 +369,53 @@ def _daily_calendar(config: dict, run: Path) -> tuple[pd.DataFrame, dict]:
     return frame, metadata
 
 
+def _holidays(config: dict, year: int) -> list[str]:
+    calendar = config.get("calendar", {})
+    return sorted({*calendar.get("holiday_dates", []), *public_holidays(year, calendar.get("holiday_region", "NI"))})
+
+
+def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, plan, generation: dict, temporal: dict):
+    """Draw shipping days, transit and Saturday rule per carrier; yield detail frames for the selected dates."""
+    calendar = config.get("calendar", {})
+    weekly = pd.read_parquet(run / "series" / "weekly.parquet") if calendar.get("weekly_profile", "source") == "source" else None
+    sites, profiles = projection.sites, projection.profiles
+    selected = None if generation.get("dates") is None else set(pd.to_datetime(generation["dates"]).normalize())
+    regime = generation.get("regime", "fixed_annual")
+    prepared, rows = [], []
+    for year in config["years"]:
+        holidays = _holidays(config, year)
+        cal = delivery_calendar(year, holidays)
+        calendar_cfg = {"monthly_weights": calendar.get("monthly_weights", [1.] * 12), "holiday_dates": holidays,
+                        "seasonality_strength": calendar.get("seasonality_strength", {})}
+        shipping = {segment: shipping_weights(year, segment, weekly, temporal, calendar_cfg) for segment in ("private", "business")}
+        segment_totals = sites.loc[sites.year.eq(year)].groupby("segment").annual_expected.sum()
+        targets = {(row.segment, row.carrier): float(segment_totals.get(row.segment, 0.)) * float(row.share)
+                   for row in profiles.loc[profiles.year.eq(year)].itertuples()}
+        expected = expected_deliveries(targets, shipping, cal, temporal)
+        delivered = simulate_deliveries(targets, shipping, cal, temporal, seed=int(config["seed"]), year=year, regime=regime,
+                                        process=generation.get("process"))
+        for (segment, carrier), values in expected.items():
+            rows.append(pd.DataFrame({"date": cal.dates, "year": year, "segment": segment, "carrier": carrier,
+                                      "expected": values, "delivered": delivered[(segment, carrier)]}))
+        prepared.append((year, cal, expected, delivered))
+    pd.concat(rows, ignore_index=True).to_parquet(output / "delivery_calendar.parquet", index=False)
+    status = {"mode": "shipping_transit", "regime": regime,
+              "shipping_weekday_weights": {segment: values.round(6).tolist() for segment, values in temporal["shipping"].items()},
+              "transit_days": {name: values.tolist() for name, values in temporal["kernels"].items()},
+              "saturday_delivery": temporal["saturday"], "business_saturday_open": temporal["business_saturday_open"],
+              "week_log_sd": temporal["week_log_sd"], "week_ar": temporal["week_ar"],
+              "carrier_week_log_sd": temporal["carrier_week_log_sd"], "weekday_concentration": temporal["weekday_concentration"]}
+
+    def frames():
+        for year, cal, expected, delivered in prepared:
+            for index, (date, segment_days) in enumerate(draw_delivery_days(sites, profiles, delivered, cal.dates, generation, 0, 0,
+                                                                            spatial_plan=plan, cache_dir=Path(config["cache_root"]))):
+                if selected is None or date.normalize() in selected:
+                    yield delivery_frame(date, segment_days, expected, index, year, 0, 0)
+
+    return frames(), status
+
+
 def _matsim_export_enabled(config: dict) -> bool:
     value = config.get("matsim_export", True)
     if not isinstance(value, bool):
@@ -393,8 +442,13 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     detail_draws = {tuple(item) for item in config.get("detail_draws", [[0, 0]])}
     if any(len(item) != 2 for item in detail_draws):
         raise ValueError("detail_draws must contain [outer_id, inner_id] pairs")
-    chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
-                           spatial_plan=plan, cache_dir=Path(config["cache_root"]))
+    temporal = resolve_temporal(config.get("temporal"))
+    if temporal is None:
+        chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
+                               spatial_plan=plan, cache_dir=Path(config["cache_root"]))
+        temporal_status = {"mode": "delivery_calendar"}
+    else:
+        chunks, temporal_status = _shipping_transit_chunks(config, run, output, projection, plan, generation, temporal)
     matsim_ledgers: list[dict] = []
     stops = None
     if _matsim_export_enabled(config):
@@ -415,7 +469,8 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     projection.postal.to_parquet(output / "postal_projection.parquet", index=False)
     calendar.to_parquet(output / "calendar_weights.parquet", index=False)
     _json(output / "daily_status.json", {"output_scope": "daily", "years": config["years"], "selected_dates_are_filter_only": True,
-                                          "spatial_status": plan.status, "calendar": calendar_metadata, "writer": summary})
+                                          "spatial_status": plan.status, "calendar": calendar_metadata, "temporal": temporal_status,
+                                          "writer": summary})
     if config.get("legacy_export"):
         from hagrid_demand.compatibility.legacy_exports import export_legacy
         export_legacy(series, reference, projection, Path(config["legacy_contract"]), config["years"], output / "legacy", config["schema_version"])
@@ -606,6 +661,8 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                                            "calendar": Path(__file__).with_name("calendar.py"), "allocation": Path(__file__).with_name("allocation.py"),
                                            "outputs": Path(__file__).with_name("outputs.py"),
                                            "spatial": Path(__file__).with_name("spatial.py"),
+                                           "shipping": Path(__file__).with_name("shipping.py"),
+                                           "shipping_draws": Path(__file__).with_name("shipping_draws.py"),
                                            "matsim_export": Path(__file__).parents[1] / "compatibility" / "matsim_export.py"},
                                           dependency_snapshot=daily_snapshot)
             resolve_stage(run, "daily", daily_fingerprint, cache_root=cache_root, dependencies=daily_dependencies,
@@ -615,6 +672,8 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                           dependency_snapshot=daily_snapshot)
             for name in ("daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"):
                 _copy_public(run, "daily", name)
+            if (run / "daily" / "delivery_calendar.parquet").is_file():
+                _copy_public(run, "daily", "delivery_calendar.parquet")
             if _matsim_export_enabled(config):
                 target = run / "matsim"
                 if target.exists():
