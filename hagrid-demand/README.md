@@ -193,6 +193,10 @@ Ostermontag +57 %, Freitag nach dem 1. Mai +17 %, Samstag nach dem 3. Oktober +2
 Nach Pfingstmontag kommt die Nachholmenge erst am Mittwoch (+78 %); der Dienstag bekommt nur die Wochenendsendungen (−6 %).
 KW 20: 1,12 Mio. Pakete; gegenüber dem Notebook-Generator werktags −5 bis −15 %, samstags −24 % (Firmen nehmen samstags
 kaum an: B2B-Anteil 6–7 % statt 22 %). `export-day` ist für die direkt exportierten Tage identisch.
+Mit Tages-Marktanteilen, PLZ-Hochburgen und Vielbestellern (gleicher Tag, gleiche Konfiguration plus Punkt 4/5):
+Tagesanteil DHL privat ± 0,86 pp statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), PLZ-Verteilung der Anbieter log-SD
+0,10–0,19 statt ≈ 0, Jahresmenge je Stopp gegenüber dem Erwartungswert CV 28 % statt 4 %; Jahresmengen, Wochentagsprofile,
+Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich.
 
 ## Stages und Outputs
 
