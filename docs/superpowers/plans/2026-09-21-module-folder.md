@@ -999,7 +999,7 @@ git commit -q -m "docs(restructure): METHODS-LOG entry for the module move (evid
 Kein Subagent. Läuft erst, wenn die Gesamt-Review über `hendrik..restructure-3` sauber ist und **kein Lauf** auf dem Dev aktiv ist (`Get-Process java` leer bzw. keine MATSim-JVM).
 
 - [ ] **Step 0: Go/No-Go Pfadlängen (Spec §5.5)** — `pathlen.txt` aus Task 0 lesen. Regel je Werkzeug mit `FAIL`:
-  - **PowerShell**: Blocker für die Migration, es sei denn, der Selbsttest Fall 6 (Task 2) ist grün — er belegt, dass `Move-Item` nur die erste Ebene umbenennt und die lange Datei danach lesbar ist. Fall 6 grün → Go mit Vermerk im Ledger.
+  - **PowerShell**: Blocker für die Migration, es sei denn, der Selbsttest Fall 6 (Task 2) ist grün — er belegt, dass `Move-Item` nur die erste Ebene umbenennt und die lange Datei danach lesbar ist. Fall 6 grün → Go mit Vermerk im Ledger. `POWERSHELL ok` mit leerem Rücklese-Inhalt gilt als unbewiesen → Fall 6 des Selbsttests ist der Beleg.
   - **Java**: Blocker ohne Ausnahme (Java schreibt und liest die Läufe). Abhilfe: `LongPathsEnabled` setzen (`reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1`, Admin, Neuanmeldung), `pathlen.ps1` erneut laufen lassen, Ergebnis in den Ledger.
   - **Python**: kein Blocker für die Migration (sie ruft kein Python), aber ein Befund für die KPI-Schicht, der schon heute gilt (262 Zeichen existieren). Abhilfe wie bei Java; bis dahin Backlog-Punkt aus Task 5.
   Erst wenn jede `FAIL`-Zeile eine dieser Auflösungen im Ledger hat, geht es zu Step 1.
@@ -1010,14 +1010,15 @@ Kein Subagent. Läuft erst, wenn die Gesamt-Review über `hendrik..restructure-3
 
 ```powershell
 Set-Location 'C:\Users\Hendrik Bimmermann\Documents\GitHub\HAGRID'
-# Die drei fremd geaenderten Docs blockieren einen FF, der dieselben Dateien anfasst (BACKLOG, METHODS-LOG in Task 3/5):
-git stash push -m 'r3-ff: fremde Docs (Emissions-Session)' -- docs/BACKLOG.md docs/METHODS-LOG.md docs/PAPER-RUNS.md
+# Die fremd geaenderten Dateien blockieren einen FF, der dieselben Dateien anfasst (.gitignore, README, BACKLOG,
+# METHODS-LOG in Task 1/3/5). PAPER-RUNS.md ist seit 22.09. ungetrackt und gehoert deshalb NICHT in den Stash:
+git stash push -m 'r3-ff: fremde Aenderungen (Emissions-Session)' -- .gitignore README.md docs/BACKLOG.md docs/METHODS-LOG.md
 $stash = git rev-parse 'stash@{0}'; "stash=$stash"      # Hash notieren (Ledger)
 git merge --ff-only restructure-3
-git stash apply $stash                                   # gezielt DIESEN Stash; bei Konflikt: loesen, `git add`, `git restore --staged`, nie committen
-Select-String -Path docs/BACKLOG.md, docs/METHODS-LOG.md, docs/PAPER-RUNS.md -Pattern '^<<<<<<<|^>>>>>>>' | Measure-Object   # 0
+git stash apply $stash                                   # gezielt DIESEN Stash; bei .gitignore ist ein 3-Wege-Apply zu erwarten (beide Seiten geaendert); bei Konflikt: loesen, `git add`, `git restore --staged`, nie committen
+Select-String -Path .gitignore, README.md, docs/BACKLOG.md, docs/METHODS-LOG.md -Pattern '^<<<<<<<|^>>>>>>>' | Measure-Object   # 0
 git stash drop $stash
-git status --short                            # M bei den drei Docs (fremd, uncommittet), sonst nichts; ignorierte Altdaten liegen noch unter hagrid/
+git status --short                            # M bei den vier fremd geaenderten Dateien (uncommittet), sonst nur Ungetracktes; ignorierte Altdaten liegen noch unter hagrid/
 Get-ChildItem hagrid | Select-Object Name     # demand, simulation, und die Altordner: bin, test, output, sim-input, sim-output, logs, routerCache, hagrid-output, hagrid-matsim-output, input, target, .pytest_cache, devlog(leer)
 ```
 
@@ -1040,13 +1041,14 @@ foreach ($d in 'bin','test','output','sim-input','sim-output','.pytest_cache') {
 "Geparkt am $(Get-Date -Format s) aus HAGRID\hagrid\ (Repo-Umbau Teil 3, Spec 2026-09-21 #4, Entscheidung C). Loeschung nach Karenz, siehe BACKLOG." | Set-Content "$park\README-parked.txt"
 Remove-Item hagrid\build.log, hagrid\build-package.log -ErrorAction SilentlyContinue
 if (Test-Path hagrid\devlog) { Remove-Item hagrid\devlog -Recurse -Force }
+Get-ChildItem hagrid -Force | Where-Object { $_.Attributes -match 'ReparsePoint' }   # muss leer sein, sonst waere ein Rename eine Kopie
 powershell -NoProfile -File tools\migrate-input-layout.ps1     # No-op erwartet ("fertig", nichts verschoben)
 powershell -NoProfile -File tools\migrate-module-layout.ps1    # 149 GB + 7 GB + 314 MB: Renames erster Ebene
 Get-ChildItem hagrid | Select-Object Name                       # demand, simulation
 Get-ChildItem hagrid\simulation\logs -Filter 'migrate-module-layout-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content | Select-String 'BEFORE|AFTER|result'
 ```
 
-Erwartet: fünf `EQUAL`, `result=OK`. Die Summenzeilen gehen wörtlich in den Ledger und in die Memory-Notiz.
+Erwartet: fünf `EQUAL`, `result=OK`. Die Summenzeilen gehen wörtlich in den Ledger und in die Memory-Notiz. Preflight und Inventar laufen über alle Dateien der 149 GB: zehn bis dreißig Minuten sind normal, nicht abbrechen.
 
 - [ ] **Step 4: Bauen und Kurzbeleg**
 
@@ -1058,7 +1060,7 @@ Set-Location hagrid\simulation
 & "$env:JAVA_HOME\bin\java.exe" '@vmargs_dev.txt' '-Dhagrid.pipeline.root=.' -cp target\hagrid-1.0-SNAPSHOT.jar hagrid.lausitz.drt.PrepareLausitzDrtInputs 'concept=drt_baseline,date=2025-05-13,studyArea=LAUSITZ_HOYERSWERDA,fleetSize=120,maxIter=2,jspritIter=10,freight=true,tag=rsprobe,kpiDashboard=false'
 ```
 
-P1-Hashes wie Task 4 Step 2 gegen `after\hashes.txt` (7 Zeilen).
+P1-Hashes wie Task 4 Step 2 gegen `after\hashes.txt` (6 P1-Zeilen).
 
 - [ ] **Step 5: Worktree und Branch aufräumen**
 

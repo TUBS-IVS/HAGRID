@@ -69,14 +69,12 @@ HAGRID/
 
 The tree shows tracked content only. Locally, `analysis/lausitz/` additionally holds `paper-figures/` (excluded via `.gitignore`) and `lmd/`; both are produced by simulation runs and are not versioned.
 
-`docs/legacy/hagrid/` keeps the pre-restructure module documentation unchanged, for reference only.
-
 - `hagrid/` is an umbrella folder: `hagrid/demand/` holds the demand-estimation notebooks, `hagrid/simulation/` is the only Maven module. Java sources are organised along the three root packages `hagrid.core`, `hagrid.hannover` and `hagrid.lausitz`; inputs live under `hagrid/simulation/input/` (git-ignored).
 - `analysis/` holds the Python analyses, split into `common` (cross-study, e.g. run monitoring), `hannover` and `lausitz`.
 - `runs/` holds the Windows launch scripts, split by study; every script changes into the right directory itself.
 - `external/` bundles third-party code: the `matsim-libs` fork as a submodule, the `freight` POM shim and the `libs` jars.
 - `tools/` holds helper scripts for setup, migration and static checks that are not study-specific runs.
-- `docs/` holds the living project documentation (backlog, methods log, study data, Obsidian export) and the Superpowers specs and plans.
+- `docs/` holds the living project documentation (backlog, methods log, study data, Obsidian export) and the Superpowers specs and plans; `docs/legacy/hagrid/` keeps the pre-restructure module documentation unchanged, for reference only.
 
 `hagrid/demand/` holds the Jupyter notebooks for the Hannover demand estimation (`estimation/`; `estimation-batch/` is an older batch variant of the same chain). `analysis/hannover/notebooks/` holds the older Hannover result-analysis notebooks used for the published papers; they carry absolute paths from the original author's machine and are kept as documentation of the analyses, not as a runnable pipeline. The paths in this paragraph are relative to the respective notebook folder, not to the repository root:
 
@@ -132,10 +130,14 @@ fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-subm
 **Bumping the MATSim/freight version:** see `tools/resync-freight.ps1` (header comment).
 
 **Inputs:** `hagrid/simulation/input/` is git-ignored; its layout and provenance are described in `hagrid/simulation/input/README.md`.
-Checkouts created before 2026-09-21 must run `tools/migrate-input-layout.ps1` (layout before 2026-09-17, no-op
-otherwise) and `tools/migrate-module-layout.ps1` once, then build with `mvn -q clean install`. `clean` is
+A checkout whose local, git-ignored data still sit directly under `hagrid/` (inputs, `hagrid-output/`,
+`hagrid-matsim-output/`, i.e. any clone updated before this change landed on `hendrik` on 2026-09-25) must run
+`tools/migrate-input-layout.ps1` (no-op unless the pre-2026-09-17 layout is present) and then
+`tools/migrate-module-layout.ps1` once, then build with `mvn -q clean install`. `clean` is
 mandatory: the module directory changed and a stale `target/` would let `shade` pack both layouts.
-Both scripts write a protocol with file counts and byte sums before and after. Rollback order:
+`migrate-module-layout.ps1` writes a protocol with file counts and byte sums before and after to
+`hagrid/simulation/logs/`; expect five `EQUAL` lines and `result=OK`. It renames first-level folders only,
+but its preflight enumerates every file, so on a machine with 150 GB of runs allow tens of minutes. Rollback order:
 `git checkout <previous commit>` first (git moves the tracked skeleton back), then
 `tools/migrate-module-layout.ps1 -Reverse` (moves the ignored data back into it), then `mvn -q clean install`.
 
