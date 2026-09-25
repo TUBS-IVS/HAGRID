@@ -100,6 +100,11 @@ class AnnualStoreWriter:
         self.day_rows.append(row)
         return row
 
+    def abort(self) -> None:
+        """Close the open Parquet file after a failure so the stage directory can be cleaned up."""
+        if self.writer.is_open:
+            self.writer.close()
+
     def close(self, extra: dict | None = None) -> dict:
         self.writer.close()
         plz = pd.DataFrame(self.plz_rows, columns=["date", "plz", "segment", "carrier", "parcels"])

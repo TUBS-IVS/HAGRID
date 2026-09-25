@@ -122,8 +122,12 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
     }
 
 
-def write_annual_dashboard(run_dir: Path, out_html: Path, year: int | None = None) -> Path:
-    """Render the annual dashboard page for *run_dir* into *out_html*."""
+def write_annual_dashboard(run_dir: Path, out_html: Path, year: int | None = None, standalone: bool = True) -> Path:
+    """Render the annual dashboard page for *run_dir* into *out_html*.
+
+    ``standalone`` writes a complete HTML document for opening from disk; ``False`` writes the page
+    body for hosts (such as claude.ai artifacts) that add doctype, charset and viewport themselves.
+    """
     payload = json.dumps(build_annual_dashboard_data(run_dir, year), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     payload = payload.replace("</", "<\\/").replace("<!--", "<\\!--")
     page = TEMPLATE.read_text(encoding="utf-8")
@@ -131,5 +135,11 @@ def write_annual_dashboard(run_dir: Path, out_html: Path, year: int | None = Non
         raise ValueError("annual dashboard template needs exactly one data placeholder")
     out_html = Path(out_html)
     out_html.parent.mkdir(parents=True, exist_ok=True)
-    out_html.write_text(page.replace(PLACEHOLDER, payload), encoding="utf-8")
+    page = page.replace(PLACEHOLDER, payload)
+    if standalone:
+        head, _, body = page.partition("</style>")
+        page = ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+                + head + "</style></head><body>" + body + "</body></html>\n")
+    out_html.write_text(page, encoding="utf-8")
     return out_html

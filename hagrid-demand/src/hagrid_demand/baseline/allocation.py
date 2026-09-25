@@ -199,6 +199,67 @@ def spatial_dirichlet(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray
     return result
 
 
+
+@dataclass(frozen=True)
+class SpatialStructure:
+    """Canonical PLZ groups of fixed site weights, prepared once for repeated daily draws."""
+
+    size: int
+    postal_weights: np.ndarray
+    groups: tuple
+    local_weights: tuple
+
+
+def prepare_spatial(weights: np.ndarray, plz: np.ndarray, site_ids: np.ndarray) -> SpatialStructure:
+    """Validate and order sites exactly as :func:`spatial_dirichlet` does, without drawing."""
+    values = np.asarray(weights, dtype=float)
+    postal = np.asarray(plz, dtype=object)
+    sites = np.asarray(site_ids, dtype=object)
+    if values.ndim != 1 or postal.ndim != 1 or sites.ndim != 1 or not (len(values) == len(postal) == len(sites)):
+        raise ValueError("weights, plz, and site_ids must be one-dimensional arrays of equal length")
+    if not np.isfinite(values).all() or (values < 0).any():
+        raise ValueError("spatial inputs require finite nonnegative weights")
+    canonical_postal = np.asarray([_identifier(value, "plz") for value in postal], dtype=object)
+    canonical_sites = np.asarray([_identifier(value, "site_id") for value in sites], dtype=object)
+    if len(set(zip(canonical_postal.tolist(), canonical_sites.tolist(), strict=True))) != len(values):
+        raise ValueError("spatial inputs require unique canonical (plz, site_id) keys")
+    active_indices = np.flatnonzero(values > 0)
+    if not len(active_indices):
+        raise ValueError("spatial weights require positive support")
+    order = sorted(active_indices.tolist(), key=lambda index: (canonical_postal[index], canonical_sites[index]))
+    sorted_indices = np.asarray(order, dtype=int)
+    sorted_values = values[sorted_indices]
+    sorted_postal = canonical_postal[sorted_indices]
+    names = sorted(set(sorted_postal.tolist()))
+    postal_weights = np.asarray([sorted_values[sorted_postal == name].sum() for name in names], dtype=float)
+    groups = tuple(sorted_indices[sorted_postal == name] for name in names)
+    return SpatialStructure(size=len(values), postal_weights=_normalised(postal_weights, "postal weights"), groups=groups,
+                            local_weights=tuple(_normalised(values[group], "site weights") for group in groups))
+
+
+def spatial_dirichlet_prepared(structure: SpatialStructure, between: float, within: float | None, rng: np.random.Generator,
+                               *, within_per_site: float | None = None) -> np.ndarray:
+    """Same draws as :func:`spatial_dirichlet` for the prepared weights, in the same RNG order."""
+    between_value = _number(between, "between", nonnegative=False)
+    if between_value <= 0:
+        raise ValueError("between and within must be positive Dirichlet concentrations")
+    if within is None:
+        per_site = _number(within_per_site, "within_per_site", nonnegative=False)
+        if per_site <= 0:
+            raise ValueError("within_per_site must be a positive Dirichlet concentration per site")
+        within_value = None
+    else:
+        within_value = _number(within, "within", nonnegative=False)
+        if within_value <= 0:
+            raise ValueError("between and within must be positive Dirichlet concentrations")
+    result = np.zeros(structure.size, dtype=float)
+    postal_shares = rng.dirichlet(between_value * structure.postal_weights)
+    for group, local, postal_share in zip(structure.groups, structure.local_weights, postal_shares, strict=True):
+        concentration = within_value if within_value is not None else per_site * len(group)
+        local_share = np.ones(1, dtype=float) if len(group) == 1 else rng.dirichlet(concentration * local)
+        result[group] = postal_share * local_share
+    return result
+
 def _frame_digest(frame: pd.DataFrame) -> str:
     normalized = frame.copy()
     for column in normalized.columns:
@@ -588,7 +649,9 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
             if totals.sum() > 0:
                 raise ValueError(f"positive daily {segment} deliveries have no site support")
             continue
-        inputs[segment] = {"sites": sites, "carriers": carriers, "totals": totals, "site_weights": weights}
+        inputs[segment] = {"sites": sites, "carriers": carriers, "totals": totals, "site_weights": weights,
+                           "structure": prepare_spatial(weights, sites.plz.to_numpy(), sites.site_id.to_numpy())
+                           if spatial_plan.mode == "dirichlet" else None}
     for day, date in enumerate(dates):
         result = {}
         for segment, item in inputs.items():
@@ -600,10 +663,10 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
                 if spatial_plan.mode == "dirichlet":
                     share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id, inner_id=stream, segment=segment,
                                           date=date.date().isoformat(), channel="spatial-dirichlet")
-                    shares = spatial_dirichlet(item["site_weights"], item["sites"].plz.to_numpy(), item["sites"].site_id.to_numpy(),
-                                               _concentration(spatial, "between", segment, DEFAULT_BETWEEN_CONCENTRATION),
-                                               _concentration(spatial, "within", segment, None), share_rng,
-                                               within_per_site=_concentration(spatial, "within_per_site", segment, DEFAULT_WITHIN_PER_SITE))
+                    shares = spatial_dirichlet_prepared(item["structure"],
+                                                        _concentration(spatial, "between", segment, DEFAULT_BETWEEN_CONCENTRATION),
+                                                        _concentration(spatial, "within", segment, None), share_rng,
+                                                        within_per_site=_concentration(spatial, "within_per_site", segment, DEFAULT_WITHIN_PER_SITE))
                 else:
                     shares = _correlated_shares(item["sites"], item, spatial_plan, cfg, year=year, segment=segment,
                                                 outer_id=outer_id, inner_id=inner_id, date=date, coupling_id=coupling_id,
