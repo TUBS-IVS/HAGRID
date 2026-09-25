@@ -203,7 +203,10 @@ kaum an: B2B-Anteil 6–7 % statt 22 %). `export-day` ist für die direkt export
 Mit Tages-Marktanteilen und Vielbestellern (gleiche Konfiguration plus Punkt 4/5): Tagesanteil DHL privat ± 0,86 pp
 statt ± 0,61 pp (gewerblich ± 0,97 statt ± 0,59), Jahresmenge je Stopp gegenüber dem Erwartungswert CV 27 % statt 4 %;
 Jahresmengen, Wochentagsprofile, Speicher (96 MB) und Notebook-Vergleich bleiben praktisch gleich. Anbieteranteile je PLZ
-aus der Mischung: UPS 7–19 %, Amazon 8–21 %, Hermes 5–11 %, DHL 42–45 % (B2B-Anteil der PLZ 9–68 %). Über das Jahr treffen Marktanteile, Anteile je Segment,
+aus der Mischung: UPS 7–19 %, Amazon 8–21 %, Hermes 5–11 %, DHL 42–45 % (B2B-Anteil der PLZ 9–68 %).
+Weihnachten 2025 (gegenüber demselben Wochentag im November): 15.–20.12. +35 %, 22.–24.12. +11 bis +26 %, danach nur
+Laufzeit-Reste (27.12.: 0,27×, 29.–31.12.: 0,66–0,69×); Neujahr ohne Spitze (3.1.: 0,89× statt 1,31×). Spitzentag des
+Jahres ist damit der Mittwoch nach Ostern (429 Tsd.; das Modell kennt keine Kapazitätsgrenze der Anbieter). Über das Jahr treffen Marktanteile, Anteile je Segment,
 B2B-Quoten je Anbieter und der B2B-Anteil (21,54 %) die berechneten Werte exakt (höchstens 0,5 Pakete Rundung); die
 PLZ-Mengen liegen zu 90 % innerhalb von −0,7 bis +0,4 % des Erwartungswerts, nur die Kleinst-PLZ 30521 und 30669
 (1.400–7.500 Pakete im Jahr) streuen bis −6 %.
