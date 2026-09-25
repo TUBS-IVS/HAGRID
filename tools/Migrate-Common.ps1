@@ -17,6 +17,9 @@ function Find-Collisions([string] $src, [string] $dst) {
     if (-not (Test-Path -LiteralPath $src) -or -not (Test-Path -LiteralPath $dst)) { return $out }
     $files = cmd /c "dir /s /b /a-d `"$src`" 2>nul" | Where-Object { $_ -and ($_ -notlike '*\.gitkeep') }
     foreach ($f in $files) {
+        # Substring blind auf die Laenge von $src anzuwenden schneidet bei einem unerwarteten Praefix
+        # (Kurzname 8.3, anderes Laufwerk) stumm den falschen Rest ab - dann faende der Preflight nichts.
+        if (-not $f.StartsWith($src, [StringComparison]::OrdinalIgnoreCase)) { throw "Unerwarteter Pfad aus dir /s /b: $f (erwartet unter $src)" }
         $rel = $f.Substring($src.Length).TrimStart('\')
         if (Test-Path -LiteralPath (Join-Path $dst $rel)) { $out += $rel }
     }

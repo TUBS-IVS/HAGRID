@@ -9,6 +9,9 @@
 #>
 param([string] $RepoRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
+# Aufloesen, bevor daraus Pfade gebaut werden: Rel() schneidet $RepoRoot.Length ab, ein relativer
+# -RepoRoot (z.B. '.') wuerde die Meldungen sonst mitten im Pfad abschneiden.
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $PSScriptRoot 'Migrate-Common.ps1')
 
 $old = Join-Path $RepoRoot 'parcel-demand-2-matsim-pipeline'

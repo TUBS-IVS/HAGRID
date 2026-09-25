@@ -1,0 +1,5 @@
+hagrid[\\/](?!simulation\b|demand\b|core\b|hannover\b|lausitz\b|\{|2025)
+[\\/]hagrid["']
+Paths?\.(of|get)\(\s*"hagrid"\s*(,\s*"(?!simulation")|\))
+Join-Path\s+[^\r\n]*'hagrid'
+-pl\s+hagrid\b

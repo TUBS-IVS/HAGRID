@@ -1,5 +1,6 @@
 # Selbsttest fuer migrate-module-layout.ps1. Faelle: frisch, idempotent, Wiederanlauf nach Teilabbruch,
-# Dateikollision, -Reverse, abgeleitete Artefakte, Summenprotokoll, langer Pfad (nur mit JAVA_HOME).
+# Dateikollision, -Reverse, abgeleitete Artefakte, Summenprotokoll, langer Pfad (nur mit JAVA_HOME),
+# relativer -RepoRoot.
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot 'migrate-module-layout.ps1'
 $fails = 0
@@ -26,7 +27,9 @@ function Inv($p) { return @(cmd /c "dir /s /b /a-d `"$p`" 2>nul" | Where-Object 
 $fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
 $nBefore = Inv $old
 Write-Host 'Fall 1: frische Migration in das Skelett'
-& $script -RepoRoot $tmp
+# Ein Fremdling direkt unter hagrid\: gehoert nicht zur Migration, muss aber gemeldet werden.
+Set-Content (Join-Path $old 'stray.txt') 'fremd'
+$out1 = & $script -RepoRoot $tmp 3>&1 | Out-String -Width 500
 Assert (Test-Path "$new\input\hannover\config\probe.txt")   'input zieht ins Skelett'
 Assert (Test-Path "$new\input\hannover\config\.gitkeep")    'getracktes .gitkeep bleibt liegen'
 Assert (Test-Path "$new\hagrid-output\RUN1\x.csv")           'hagrid-output zieht'
@@ -35,12 +38,14 @@ Assert (Test-Path "$new\routerCache\c.bin")                  'routerCache zieht'
 Assert (Test-Path "$new\logs\old.log")                       'logs zieht'
 Assert (-not (Test-Path "$old\target"))                      'target/ wird geloescht, nicht migriert'
 Assert (-not (Test-Path "$old\run_hagrid_sim.bat"))          'generiertes Bat wird geloescht'
-Assert ((Get-ChildItem $old -Force | Where-Object { $_.Name -ne 'simulation' }).Count -eq 0) 'unter hagrid/ bleibt nur simulation/'
+Assert ((Get-ChildItem $old -Force | Where-Object { $_.Name -notin 'simulation', 'stray.txt' }).Count -eq 0) 'unter hagrid/ bleiben nur simulation/ und der Fremdling'
+Assert ($out1 -match 'Unter hagrid\\ liegen noch: stray\.txt') 'Fremdling wird als Warnung gemeldet'
 $logs = Get-ChildItem "$new\logs" -Filter 'migrate-module-layout-*.log'
 Assert ($logs.Count -eq 1)                                  'ein Protokoll geschrieben'
 Assert ((Get-Content $logs[0].FullName -Raw) -match 'result=OK') 'Protokoll meldet OK (Summen gleich)'
 Assert (((Get-Content $logs[0].FullName) | Where-Object { $_ -like 'AFTER*' -and $_ -like '*EQUAL' }).Count -eq 5) 'fuenf Paare mit gleichen Summen'
 Assert ((((Get-Content $logs[0].FullName) | Where-Object { $_ -like 'BEFORE input*' }) -join '') -match 'src files=[1-9]') 'Inventar zaehlt Dateien, nicht nur Bytes (robocopy-Zusammenfassung sprachunabhaengig gelesen)'
+Assert ((Get-Content $logs[0].FullName -Raw) -match 'Unter hagrid\\ liegen noch: stray\.txt') 'Fremdling steht auch im Protokoll'
 
 Write-Host 'Fall 2: zweiter Lauf ist ein No-op'
 $snap = Inv $new
@@ -96,5 +101,16 @@ if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
     Assert ($read -eq 'deep')                               'Java liest die Datei am neuen Ort'
 } else { Write-Host '  skip JAVA_HOME nicht gesetzt' }
 
-Get-ChildItem $env:TEMP -Directory -Filter 'mml-*' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host 'Fall 7: relativer -RepoRoot'
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+Push-Location $tmp
+try { & $script -RepoRoot . } finally { Pop-Location }
+Assert (Test-Path "$new\input\hannover\config\probe.txt")   'relativer RepoRoot migriert wie der absolute'
+$logs7 = Get-ChildItem "$new\logs" -Filter 'migrate-module-layout-*.log'
+Assert (($logs7.Count -eq 1) -and ((Get-Content $logs7[0].FullName -Raw) -match 'result=OK')) 'Protokoll meldet OK (RepoRoot wurde aufgeloest)'
+
+# Remove-Item scheitert am > 260 Zeichen langen Pfad aus Fall 6 und -ErrorAction SilentlyContinue
+# verschluckt genau das; rd /s /q der cmd-Shell raeumt ihn weg. Danach wird nachgesehen.
+foreach ($d in (Get-ChildItem $env:TEMP -Directory -Filter 'mml-*')) { cmd /c "rd /s /q `"$($d.FullName)`" 2>nul" | Out-Null }
+Assert ((Get-ChildItem $env:TEMP -Directory -Filter 'mml-*').Count -eq 0) 'Fixturen restlos entfernt, auch der lange Pfad'
 if ($fails -gt 0) { Write-Host "$fails Pruefungen fehlgeschlagen"; exit 1 } else { Write-Host 'alle Pruefungen bestanden'; exit 0 }
