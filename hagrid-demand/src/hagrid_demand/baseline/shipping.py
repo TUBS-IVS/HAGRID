@@ -16,7 +16,7 @@ from .calendar import calendar_weights
 _DATA = Path(__file__).with_name("data") / "temporal_inputs.json"
 _SEGMENTS = ("private", "business")
 _KEYS = {"mode", "shipping_weekday_weights", "transit_days", "saturday_delivery", "business_saturday_open",
-         "week_log_sd", "week_ar", "carrier_week_log_sd", "weekday_concentration"}
+         "week_log_sd", "week_ar", "carrier_week_log_sd", "carrier_day_log_sd", "weekday_concentration"}
 
 
 def load_temporal_inputs() -> dict:
@@ -133,7 +133,7 @@ def resolve_temporal(cfg: dict | None) -> dict | None:
               "business_saturday_open": _unit(cfg.get("business_saturday_open", inputs["business_saturday_open"]["value"]),
                                               "temporal.business_saturday_open"),
               "week_ar": week_ar}
-    for name, default in (("week_log_sd", 0.016), ("carrier_week_log_sd", 0.02)):
+    for name, default in (("week_log_sd", 0.016), ("carrier_week_log_sd", 0.02), ("carrier_day_log_sd", 0.03)):
         value = _finite(cfg.get(name, default), f"temporal.{name}")
         if value < 0:
             raise ValueError(f"temporal.{name} must be nonnegative")

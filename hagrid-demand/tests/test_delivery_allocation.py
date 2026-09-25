@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from hagrid_demand.baseline.allocation import delivery_frame, draw_delivery_days, generate_days, make_dirichlet_plan
+from hagrid_demand.baseline.allocation import (carrier_plz_tilt, delivery_frame, draw_delivery_days, generate_days,
+                                               make_dirichlet_plan, site_frailty)
 from hagrid_demand.baseline.calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights
 
 CFG = {"seed": 11, "spatial": {"mode": "dirichlet"}}
@@ -85,3 +86,46 @@ def test_subset_dates_reproduce_full_year_draws():
     (date, segments), = list(draw_delivery_days(annual, profiles, subset, DATES[[2]], CFG, 0, 0, spatial_plan=plan))
     assert date == DATES[2]
     assert all(np.array_equal(segments[s].counts, full[2][1][s].counts) for s in segments)
+
+
+def test_carrier_plz_tilt_preserves_margins():
+    weights, shares = np.array([.5, .3, .2]), np.array([.6, .3, .1])
+    z = np.random.default_rng(2).standard_normal((3, 3))
+    ratio = carrier_plz_tilt(weights, shares, .5, z)
+    assert np.allclose((shares[:, None] * ratio).sum(axis=0), 1., atol=1e-9)
+    assert np.allclose((ratio * weights[None, :]).sum(axis=1), 1., atol=1e-9)
+    assert ratio.std() > .05
+    assert np.array_equal(carrier_plz_tilt(weights, shares, 0., z), np.ones((3, 3)))
+
+
+def test_site_frailty_keeps_group_totals():
+    weights = np.arange(1., 2001.)
+    groups = np.repeat(np.arange(20), 100)
+    tilted = site_frailty(weights, groups, .5, np.random.default_rng(4))
+    assert np.allclose(np.bincount(groups, tilted), np.bincount(groups, weights))
+    assert .4 < (tilted / weights).std() < .6
+    assert np.array_equal(site_frailty(weights, groups, 0., np.random.default_rng(4)), weights)
+
+
+def test_strongholds_and_frailty_keep_carrier_totals():
+    annual, profiles, delivered = _inputs(("private",))
+    big = {key: value * 100_000 for key, value in delivered.items()}
+    cfg = {"seed": 11, "spatial": {"mode": "dirichlet", "carrier_plz_log_sd": 1., "site_frailty_cv": .5}}
+    streets = pd.Series(["s1", "s1", "s2", "s3", "s3"], index=[f"p{index}" for index in range(5)])
+    days = list(draw_delivery_days(annual, profiles, big, DATES, cfg, 0, 0, spatial_plan=make_dirichlet_plan(annual, cfg),
+                                   site_groups=streets))
+    plain = list(draw_delivery_days(annual, profiles, big, DATES, CFG, 0, 0, spatial_plan=make_dirichlet_plan(annual, CFG)))
+    for day, (date, segments) in enumerate(days):
+        item = segments["private"]
+        assert item.counts.sum(axis=0).tolist() == [int(big[("private", carrier)][day]) for carrier in item.carriers]
+    tilted, base = days[0][1]["private"].counts, plain[0][1]["private"].counts
+    share = lambda counts: counts[:3].sum(axis=0) / counts.sum(axis=0)
+    assert abs(share(tilted)[0] - share(tilted)[1]) > .02 > abs(share(base)[0] - share(base)[1])
+
+
+def test_legacy_mode_rejects_strongholds_and_frailty(tmp_path):
+    annual, profiles, _ = _inputs()
+    cfg = {"seed": 1, "spatial": {"mode": "dirichlet", "site_frailty_cv": .5}}
+    with pytest.raises(ValueError, match="shipping_transit"):
+        list(generate_days(annual, profiles, pd.DataFrame(), cfg, 0, 0, spatial_plan=make_dirichlet_plan(annual, cfg),
+                           cache_dir=tmp_path))

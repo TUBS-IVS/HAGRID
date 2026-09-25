@@ -160,8 +160,14 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
 3. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
    Firmen nehmen samstags an (`business_saturday_open`), der Rest kommt am nächsten Werktag.
 4. **Stochastik je Paket:** Wochenfaktor je Segment (AR(1), log-SD 0,016, ρ 0,5), Wochenfaktor je Anbieter (log-SD 0,02),
-   Dirichlet-Aufteilung auf die Wochentage (κ 1000), Laufzeit und Samstagsannahme je Paket. So weichen die Anbieter
-   von Woche zu Woche voneinander ab, im Erwartungswert bleibt der Verlauf gleich. Die Jahresmenge bleibt erhalten.
+   täglicher Marktanteils-Schock je Anbieter (`carrier_day_log_sd` 0,03, je Tag über die Anbieter normiert, damit die
+   Tagesmenge im Mittel gleich bleibt), Dirichlet-Aufteilung auf die Wochentage (κ 1000), Laufzeit und Samstagsannahme
+   je Paket. So weichen die Anbieter von Tag zu Tag und von Woche zu Woche voneinander ab, im Erwartungswert bleibt der
+   Verlauf gleich. Die Jahresmenge je Anbieter bleibt erhalten.
+5. **Raum:** Jeder Anbieter hat eigene PLZ-Hochburgen (`spatial.carrier_plz_log_sd` 0,15: fester Jahresfaktor je Anbieter
+   und PLZ, per IPF so skaliert, dass PLZ- und Anbietermengen gleich bleiben). Vielbesteller (`spatial.site_frailty_cv`
+   0,5: Gamma-Faktor je Standort und Jahr, je Straße normiert, damit der DHL-Straßenanker hält) sind an vielen Tagen groß.
+   Beides ist eine Annahme ohne Daten und gilt nur im Versandmodus.
 
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
 (`<run>/annual/`): `stop_daily.parquet` (Datum, Stopp, 14 Zählspalten `<anbieter>_b2c`/`_b2b`), `plz_daily.parquet`,

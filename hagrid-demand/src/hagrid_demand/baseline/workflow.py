@@ -423,7 +423,14 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
               "transit_days": {name: values.tolist() for name, values in temporal["kernels"].items()},
               "saturday_delivery": temporal["saturday"], "business_saturday_open": temporal["business_saturday_open"],
               "week_log_sd": temporal["week_log_sd"], "week_ar": temporal["week_ar"],
-              "carrier_week_log_sd": temporal["carrier_week_log_sd"], "weekday_concentration": temporal["weekday_concentration"]}
+              "carrier_week_log_sd": temporal["carrier_week_log_sd"], "carrier_day_log_sd": temporal["carrier_day_log_sd"],
+              "weekday_concentration": temporal["weekday_concentration"]}
+    site_groups = None
+    if float(config.get("spatial", {}).get("site_frailty_cv", 0.) or 0.) > 0 and (run / "reference_site_stops.parquet").is_file():
+        street = (pd.read_parquet(run / "reference_stops.parquet", columns=["stop_id", "str_idx"])
+                  .drop_duplicates("stop_id").set_index("stop_id").str_idx)
+        links = pd.read_parquet(run / "reference_site_stops.parquet").drop_duplicates("site_id")
+        site_groups = pd.Series(links.stop_id.map(street).to_numpy(), index=links.site_id.astype(str).to_numpy())
 
     writer = None
     if config.get("annual_store"):
@@ -445,7 +452,7 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                 subset = {key: values[indices] for key, values in delivered.items()}
                 for position, (date, segment_days) in enumerate(draw_delivery_days(
                         sites, profiles, subset, cal.dates[indices], generation, 0, 0, spatial_plan=plan,
-                        cache_dir=Path(config["cache_root"]))):
+                        cache_dir=Path(config["cache_root"]), site_groups=site_groups)):
                     if writer is not None:
                         writer.add_day(date, segment_days)
                     if selected is None or date.normalize() in selected:

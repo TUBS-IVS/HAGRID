@@ -64,12 +64,13 @@ def test_shipping_transit_daily_run(tmp_path):
     config_path = write_street_fixture(tmp_path)
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config.update({"output_scope": "daily", "years": [2021, 2025], "dates": ["2025-05-16", "2025-05-17"],
-                   "anchor": {"mode": "street", "min_streets": 99}, "temporal": {"mode": "shipping_transit"}})
+                   "anchor": {"mode": "street", "min_streets": 99}, "temporal": {"mode": "shipping_transit"},
+                   "spatial": {**config.get("spatial", {}), "carrier_plz_log_sd": .15, "site_frailty_cv": .5}})
     config_path.write_text(json.dumps(config), encoding="utf-8")
     run = run_baseline(config_path, "street-shipping")
 
     status = json.loads((run / "daily_status.json").read_text(encoding="utf-8"))
-    assert status["temporal"]["mode"] == "shipping_transit"
+    assert status["temporal"]["mode"] == "shipping_transit" and status["temporal"]["carrier_day_log_sd"] == .03
     calendar = pd.read_parquet(run / "delivery_calendar.parquet")
     projection = pd.read_parquet(run / "annual_projection.parquet")
     profiles = pd.read_parquet(run / "carrier_profiles.parquet")

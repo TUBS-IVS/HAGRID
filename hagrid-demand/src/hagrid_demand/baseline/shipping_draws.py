@@ -49,12 +49,22 @@ def _day_factors(process: dict | None, count: int, rng_keys: dict, segment: str)
     return factors
 
 
+def carrier_day_factors(shares: np.ndarray, sd: float, z: np.ndarray) -> np.ndarray:
+    """Daily market-share shocks: log-normal carrier factors scaled so that sum_c share_c * factor_c = 1 each day."""
+    z = np.asarray(z, dtype=float)
+    if sd <= 0:
+        return np.ones_like(z)
+    raw = np.exp(sd * z)
+    return raw / (np.asarray(shares, dtype=float)[:, None] * raw).sum(axis=0)
+
+
 def simulate_deliveries(targets: dict[tuple[str, str], float], shipping: dict[str, np.ndarray], cal: DeliveryCalendar,
                         temporal: dict, *, seed: int, year: int, regime: str, outer_id: int = 0, inner_id: int = 0,
                         process: dict | None = None, return_shipments: bool = False):
     """Draw delivered parcels per day and (segment, carrier) from shipping days, transit and the Saturday rule.
 
-    Shipments carry a week factor per segment (AR(1)), a week factor per carrier and a Dirichlet split of
+    Shipments carry a week factor per segment (AR(1)), a week factor per carrier, a daily market-share
+    shock per carrier (the segment's day total stays unchanged in expectation) and a Dirichlet split of
     each week over its shipping days; every parcel then draws its transit offset and, when it lands on a
     Saturday, whether it is delivered that day or on the next Monday–Friday delivery day.
     """
@@ -83,6 +93,13 @@ def simulate_deliveries(targets: dict[tuple[str, str], float], shipping: dict[st
             split[members] = (base[members] if len(members) == 1 else
                               mass * split_rng.dirichlet(temporal["weekday_concentration"] * base[members] / mass))
         day_factor = _day_factors(process, days, keys, segment)
+        share_factor = {carrier: np.ones(days) for carrier in carriers}
+        active = [carrier for carrier in carriers if float(targets[(segment, carrier)]) > 0]
+        if temporal.get("carrier_day_log_sd", 0.) > 0 and len(active) > 1:
+            shares = np.asarray([float(targets[(segment, carrier)]) for carrier in active])
+            z = np.vstack([named_rng(**keys, segment=segment, carrier=carrier, channel="shipping-carrier-day").standard_normal(days)
+                           for carrier in active])
+            share_factor.update(zip(active, carrier_day_factors(shares / shares.sum(), temporal["carrier_day_log_sd"], z)))
         for carrier in carriers:
             target = float(targets[(segment, carrier)])
             if target <= 0:
@@ -92,7 +109,7 @@ def simulate_deliveries(targets: dict[tuple[str, str], float], shipping: dict[st
             carrier_keys = {**keys, "segment": segment, "carrier": carrier}
             carrier_factor = ar1_lognormal(week_count, temporal["carrier_week_log_sd"], 0.,
                                            named_rng(**carrier_keys, channel="shipping-carrier-week"))[weeks]
-            mean = target * split * week_factor * carrier_factor * day_factor
+            mean = target * split * week_factor * carrier_factor * day_factor * share_factor[carrier]
             counts_rng = named_rng(**carrier_keys, channel="shipping-counts")
             shipped = (counts_rng.multinomial(int(round(target)), mean / mean.sum()) if regime == "fixed_annual"
                        else counts_rng.poisson(mean)).astype(np.int64)

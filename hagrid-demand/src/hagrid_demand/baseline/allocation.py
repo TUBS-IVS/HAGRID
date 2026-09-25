@@ -260,6 +260,40 @@ def spatial_dirichlet_prepared(structure: SpatialStructure, between: float, with
         result[group] = postal_share * local_share
     return result
 
+def carrier_plz_tilt(plz_weights: np.ndarray, carrier_shares: np.ndarray, sd: float, z: np.ndarray,
+                     *, tolerance: float = 1e-12, max_iterations: int = 1000) -> np.ndarray:
+    """Carrier strongholds: ratio r[c, p] of carrier c's PLZ distribution to the segment's.
+
+    Log-normal factors exp(sd * z[c, p]) are raked (IPF) so that every PLZ keeps its volume
+    (sum_c s_c r_cp = 1) and every carrier its total (sum_p w_p r_cp = 1).
+    """
+    weights, shares = np.asarray(plz_weights, dtype=float), np.asarray(carrier_shares, dtype=float)
+    ratio = np.ones(np.shape(z), dtype=float)
+    rows, cols = shares > 0, weights > 0
+    if sd <= 0 or rows.sum() < 2 or cols.sum() < 2:
+        return ratio
+    s, w = shares[rows] / shares[rows].sum(), weights[cols] / weights[cols].sum()
+    matrix = s[:, None] * w[None, :] * np.exp(sd * np.asarray(z, dtype=float)[np.ix_(rows, cols)])
+    for _ in range(max_iterations):
+        matrix *= (w / matrix.sum(axis=0))[None, :]
+        matrix *= (s / matrix.sum(axis=1))[:, None]
+        if np.abs(matrix.sum(axis=0) - w).max() < tolerance:
+            break
+    ratio[np.ix_(rows, cols)] = matrix / (s[:, None] * w[None, :])
+    return ratio
+
+
+def site_frailty(weights: np.ndarray, groups: np.ndarray, cv: float, rng: np.random.Generator) -> np.ndarray:
+    """Heavy and light receivers: mean-one gamma factors (CV *cv*) rescaled so that every group keeps its total."""
+    values = np.asarray(weights, dtype=float)
+    if cv <= 0:
+        return values.copy()
+    tilted = values * rng.gamma(1. / cv ** 2, cv ** 2, size=len(values))
+    codes = pd.factorize(pd.Index(np.asarray(groups).astype(str)))[0]
+    before, after = np.bincount(codes, values), np.bincount(codes, tilted)
+    return tilted * np.divide(before, after, out=np.ones_like(before), where=after > 0)[codes]
+
+
 def _frame_digest(frame: pd.DataFrame) -> str:
     normalized = frame.copy()
     for column in normalized.columns:
@@ -501,6 +535,8 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
         raise ValueError("profiles requires year, segment, carrier, and share columns")
     if not isinstance(cfg, dict):
         raise ValueError("cfg must be a mapping")
+    if any(_number(_spatial_parameters(cfg).get(name, 0.), f"spatial.{name}") > 0 for name in ("carrier_plz_log_sd", "site_frailty_cv")):
+        raise ValueError("spatial.carrier_plz_log_sd and spatial.site_frailty_cv require temporal.mode = shipping_transit")
     _validate_plan(spatial_plan, annual_frame, cfg)
     profiles_frame = profiles.copy()
     profiles_frame["year"] = pd.to_numeric(profiles_frame.year, errors="coerce")
@@ -616,16 +652,21 @@ class SegmentDay:
     counts: np.ndarray
     shares: np.ndarray
     delivered: np.ndarray
+    carrier_shares: np.ndarray | None = None
 
 
 def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: dict[tuple[str, str], np.ndarray],
                        dates: pd.DatetimeIndex, cfg: dict, outer_id: int, inner_id: int, *, spatial_plan: SpatialPlan,
-                       coupling_id: str | None = None, cache_dir: Path | None = None) -> Iterator[tuple[pd.Timestamp, dict[str, SegmentDay]]]:
+                       coupling_id: str | None = None, cache_dir: Path | None = None,
+                       site_groups: pd.Series | None = None) -> Iterator[tuple[pd.Timestamp, dict[str, SegmentDay]]]:
     """Allocate each carrier's delivered count per day to sites with the day's shared spatial shares.
 
     *delivered* holds one count per date in *dates* for every (segment, carrier); all dates must
     belong to one year. The spatial draw reuses the legacy ``spatial-dirichlet`` stream, each carrier
-    draws its own multinomial from ``carrier-sites``.
+    draws its own multinomial from ``carrier-sites``. ``spatial.site_frailty_cv`` scales the site
+    weights once per year by gamma factors that keep every group total (*site_groups*: site_id ->
+    street, else the PLZ); ``spatial.carrier_plz_log_sd`` tilts each carrier's shares towards its
+    own PLZ strongholds while PLZ and carrier totals stay unchanged.
     """
     annual_frame = _annual_frame(annual)
     _validate_plan(spatial_plan, annual_frame, cfg)
@@ -636,6 +677,9 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
     year = int(years[0])
     spatial = _spatial_parameters(cfg)
     stream = coupling_id if coupling_id is not None else inner_id
+    stronghold_sd = _number(spatial.get("carrier_plz_log_sd", 0.), "spatial.carrier_plz_log_sd")
+    frailty_cv = _number(spatial.get("site_frailty_cv", 0.), "spatial.site_frailty_cv")
+    keys = {"year": year, "outer_id": outer_id, "inner_id": stream}
     inputs = {}
     for segment in _SEGMENTS:
         carriers = sorted(carrier for (item, carrier) in delivered if item == segment)
@@ -649,7 +693,21 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
             if totals.sum() > 0:
                 raise ValueError(f"positive daily {segment} deliveries have no site support")
             continue
-        inputs[segment] = {"sites": sites, "carriers": carriers, "totals": totals, "site_weights": weights,
+        if frailty_cv > 0:
+            ids = sites.site_id.astype(str).to_numpy()
+            street = (site_groups.reindex(ids) if site_groups is not None else pd.Series(np.nan, index=ids)).to_numpy(dtype=object)
+            groups = np.where(pd.isna(street), "plz:" + sites.plz.astype(str).to_numpy(), "street:" + street.astype(str))
+            weights = site_frailty(weights, groups, frailty_cv,
+                                   named_rng(int(cfg["seed"]), **keys, segment=segment, channel="site-frailty"))
+        tilt = None
+        if stronghold_sd > 0 and len(carriers) > 1:
+            codes, plz_index = np.unique(sites.plz.astype(str).to_numpy(), return_inverse=True)
+            share_of = profiles.loc[profiles.year.eq(year) & profiles.segment.eq(segment)].groupby("carrier").share.sum()
+            z = np.asarray([[named_rng(int(cfg["seed"]), **keys, carrier=carrier, plz=code, channel="carrier-plz").standard_normal()
+                             for code in codes] for carrier in carriers])
+            tilt = carrier_plz_tilt(np.bincount(plz_index, weights, minlength=len(codes)),
+                                    np.asarray([float(share_of.get(carrier, 0.)) for carrier in carriers]), stronghold_sd, z)[:, plz_index]
+        inputs[segment] = {"sites": sites, "carriers": carriers, "totals": totals, "site_weights": weights, "tilt": tilt,
                            "structure": prepare_spatial(weights, sites.plz.to_numpy(), sites.site_id.to_numpy())
                            if spatial_plan.mode == "dirichlet" else None}
     for day, date in enumerate(dates):
@@ -671,11 +729,17 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
                     shares = _correlated_shares(item["sites"], item, spatial_plan, cfg, year=year, segment=segment,
                                                 outer_id=outer_id, inner_id=inner_id, date=date, coupling_id=coupling_id,
                                                 checkpoint_dir=Path(cache_dir or ".") / "spatial_field_checkpoints")
+                carrier_shares = (None if item["tilt"] is None else
+                                  (shares[None, :] * item["tilt"]) / (shares[None, :] * item["tilt"]).sum(axis=1, keepdims=True))
                 counts = np.column_stack([
                     named_rng(int(cfg["seed"]), year=year, outer_id=outer_id, inner_id=stream, segment=segment, carrier=carrier,
-                              date=date.date().isoformat(), channel="carrier-sites").multinomial(int(total), shares)
-                    for carrier, total in zip(item["carriers"], totals, strict=True)]).astype(np.int64)
-            result[segment] = SegmentDay(item["sites"], item["carriers"], counts, shares, totals.astype(np.int64))
+                              date=date.date().isoformat(), channel="carrier-sites").multinomial(
+                        int(total), shares if carrier_shares is None else carrier_shares[column])
+                    for column, (carrier, total) in enumerate(zip(item["carriers"], totals, strict=True))]).astype(np.int64)
+                if carrier_shares is not None:
+                    carrier_shares = carrier_shares.T
+            result[segment] = SegmentDay(item["sites"], item["carriers"], counts, shares, totals.astype(np.int64),
+                                         None if totals.sum() == 0 else carrier_shares)
         yield date, result
 
 
@@ -697,7 +761,8 @@ def delivery_frame(date: pd.Timestamp, segment_days: dict[str, SegmentDay], expe
             "carrier": np.tile(np.asarray(item.carriers, dtype=object), n_sites),
             "allocation_status": np.repeat(item.sites.allocation_status.to_numpy(), n_carriers),
             "baseline_expected": np.outer(weights / weights.sum(), expected_day).ravel(),
-            "conditional_expected": np.outer(item.shares, item.delivered.astype(float)).ravel(),
+            "conditional_expected": (np.outer(item.shares, item.delivered.astype(float)) if item.carrier_shares is None
+                                     else item.carrier_shares * item.delivered.astype(float)[None, :]).ravel(),
             "daily_count": int(item.delivered.sum()), "count": item.counts.ravel().astype(np.int64),
         }))
     columns = ["date", "year", "outer_id", "inner_id", "site_id", "plz", "segment", "carrier", "allocation_status",
