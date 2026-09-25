@@ -257,6 +257,7 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
     count, width = len(sites), len(carriers)
     point_xy = np.column_stack([points.geometry.x, points.geometry.y])
     served = points.carriers.astype(str).str.split("|")
+    kinds = points.kind.astype(str).to_numpy()
     apartment = np.where(np.asarray(population, dtype=float) >= float(inputs["apartment_min_population"]),
                          float(inputs["apartment_factor"]), float(inputs["house_factor"]))
     weights = sites.annual_expected.to_numpy(float)
@@ -270,15 +271,28 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         candidates = np.flatnonzero(served.apply(lambda values, carrier=carrier: carrier in values).to_numpy())
         if not len(candidates) or shares[carrier] <= 0 or not valid.any():
             continue
-        k = min(2, len(candidates))
-        distance, nearest = cKDTree(point_xy[candidates]).query(np.where(valid[:, None], site_xy, 0.), k=k)
-        distance, nearest = distance.reshape(count, k), nearest.reshape(count, k)
-        first = valid & (distance[:, 0] <= float(inputs["reach_m"]))
-        primary[first, column] = candidates[nearest[first, 0]]
-        if k > 1:
-            second = valid & (distance[:, 1] <= float(inputs["reach_m"]))
-            secondary[second, column] = candidates[nearest[second, 1]]
-        base = np.where(first, apartment * np.exp(-distance[:, 0] / float(inputs["decay_m"])), 0.)
+        origin = np.where(valid[:, None], site_xy, 0.)
+        reach = float(inputs["reach_m"])
+        if inputs.get("prefer_lockers", True):
+            # Recipients who choose out-of-home delivery mostly pick a locker; shops take the rest and the overflow.
+            lockers = candidates[np.isin(kinds[candidates], ["locker", "shared_locker"])]
+            shops = candidates[~np.isin(kinds[candidates], ["locker", "shared_locker"])]
+            locker_d, locker_i = _nearest(point_xy, lockers, origin, 2)
+            shop_d, shop_i = _nearest(point_xy, shops, origin, 2)
+            use_locker = locker_d[:, 0] <= reach
+            first_d = np.where(use_locker, locker_d[:, 0], shop_d[:, 0])
+            first_i = np.where(use_locker, locker_i[:, 0], shop_i[:, 0])
+            shop_near = shop_d[:, 0] <= reach
+            second_d = np.where(use_locker, np.where(shop_near, shop_d[:, 0], locker_d[:, 1]), shop_d[:, 1])
+            second_i = np.where(use_locker, np.where(shop_near, shop_i[:, 0], locker_i[:, 1]), shop_i[:, 1])
+        else:
+            both_d, both_i = _nearest(point_xy, candidates, origin, 2)
+            first_d, first_i, second_d, second_i = both_d[:, 0], both_i[:, 0], both_d[:, 1], both_i[:, 1]
+        first = valid & (first_d <= reach) & (first_i >= 0)
+        primary[first, column] = first_i[first]
+        second = valid & (second_d <= reach) & (second_i >= 0)
+        secondary[second, column] = second_i[second]
+        base = np.where(first, apartment * np.exp(-np.where(first, first_d, 0.) / float(inputs["decay_m"])), 0.)
         propensity[:, column] = calibrate_propensity(weights, base, shares[carrier], float(inputs["max_propensity"]))
     capacity_by_kind = inputs["capacity_per_day"]
     capacity = points.kind.map(capacity_by_kind).fillna(capacity_by_kind["shop"]).to_numpy(dtype=np.int64)
@@ -288,6 +302,20 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
                            "segment": "private", "annual_expected": 0., "allocation_status": "out_of_home"})
     extended = pd.concat([sites.reset_index(drop=True), pseudo.reindex(columns=sites.columns)], ignore_index=True)
     return OutOfHomePlan(points, list(carriers), propensity, primary, secondary, capacity, factors, extended, shares)
+
+
+def _nearest(point_xy: np.ndarray, group: np.ndarray, origin: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    """Distances and global indices of the *k* nearest points of *group* (inf / -1 where there are fewer)."""
+    from scipy.spatial import cKDTree
+
+    distance = np.full((len(origin), k), np.inf)
+    index = -np.ones((len(origin), k), dtype=np.int64)
+    if len(group):
+        found = min(k, len(group))
+        near_d, near_i = cKDTree(point_xy[group]).query(origin, k=found)
+        distance[:, :found] = near_d.reshape(len(origin), found)
+        index[:, :found] = group[near_i.reshape(len(origin), found)]
+    return distance, index
 
 
 def apply_plan(item, plan: OutOfHomePlan, day: int, rng: np.random.Generator):

@@ -6,6 +6,7 @@
   "reach_m": 1500.0,
   "decay_m": 600.0,
   "max_propensity": 0.9,
+  "prefer_lockers": true,
   "apartment_min_population": 6,
   "apartment_factor": 1.5,
   "house_factor": 0.7,
