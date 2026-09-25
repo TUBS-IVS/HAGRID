@@ -68,14 +68,12 @@ def _split_rows(table: pd.DataFrame, counts: list[str], limit: int) -> pd.DataFr
     return result
 
 
-def _stop_frame(table: pd.DataFrame, stops: dict, ledger: dict, limit: int) -> gpd.GeoDataFrame:
-    stop_of = stops["site_stops"].drop_duplicates("site_id").set_index("site_id").stop_id
-    missing = sorted(set(table.index) - set(stop_of.index))
-    if missing:
-        raise ValueError(f"sites without stop mapping: {missing[:5]}")
+def stop_table_frame(grouped: pd.DataFrame, stops: dict, ledger: dict, limit: int) -> gpd.GeoDataFrame:
+    """Turn per-stop count columns (index ``stop_id``) into split MATSim rows at the stop points."""
     counts = [column for column in _count_columns() if column not in {"total", "total_sim", "wl_tag"}]
-    grouped = table[counts].groupby(table.index.map(stop_of)).sum()
     info = stops["stops"].drop_duplicates("stop_id").set_index("stop_id")
+    grouped = grouped[counts].copy()
+    grouped.index.name = "stop_id"
     grouped["plz"] = info.plz.reindex(grouped.index).astype(str).to_numpy()
     parts = _split_rows(grouped, counts, limit)
     frame = pd.DataFrame({
@@ -86,10 +84,37 @@ def _stop_frame(table: pd.DataFrame, stops: dict, ledger: dict, limit: int) -> g
     for column in _count_columns():
         frame[column] = parts[column].to_numpy(dtype=np.int64)
     per_stop = parts.groupby("stop_id").total.sum()
-    ledger.update({"stops_active": int(len(per_stop)), "rows": int(len(parts)), "sites_active": int(len(table)),
+    ledger.update({"stops_active": int(len(per_stop)), "rows": int(len(parts)),
                    "parcels_per_stop": {"mean": float(per_stop.mean()), "median": float(per_stop.median()),
                                         "p90": float(per_stop.quantile(.9)), "max": int(per_stop.max())}})
     return gpd.GeoDataFrame(frame, geometry=info.geometry.reindex(parts.stop_id).to_numpy(), crs=stops["stops"].crs)
+
+
+def _stop_frame(table: pd.DataFrame, stops: dict, ledger: dict, limit: int) -> gpd.GeoDataFrame:
+    stop_of = stops["site_stops"].drop_duplicates("site_id").set_index("site_id").stop_id
+    missing = sorted(set(table.index) - set(stop_of.index))
+    if missing:
+        raise ValueError(f"sites without stop mapping: {missing[:5]}")
+    counts = [column for column in _count_columns() if column not in {"total", "total_sim", "wl_tag"}]
+    result = stop_table_frame(table[counts].groupby(table.index.map(stop_of)).sum(), stops, ledger, limit)
+    ledger["sites_active"] = int(len(table))
+    return result
+
+
+def write_demand_frame(result: gpd.GeoDataFrame, output_dir: Path, date: pd.Timestamp, ledger: dict) -> dict:
+    """Validate and write one day's MATSim demand shapefile; update and return the ledger."""
+    if not result.geometry.geom_type.eq("Point").all():
+        raise ValueError("MATSim demand sites must be Point geometries")
+    invalid = ~result.postal_cod.astype(str).str.fullmatch(r"\d{5}")
+    if invalid.any():
+        # The Java pipeline cuts carrier ids at the PLZ ("dhl_30159") and fails on anything else.
+        raise ValueError(f"invalid postal codes for MATSim export: {sorted(set(result.loc[invalid, 'postal_cod'].astype(str)))[:5]}")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    name = matsim_file_name(pd.Timestamp(date))
+    result.to_file(output_dir / name, driver="ESRI Shapefile", encoding="UTF-8")
+    ledger.update({"file": name, "features": int(len(result))})
+    return ledger
 
 
 def write_matsim_day(chunk: pd.DataFrame, geometry: gpd.GeoDataFrame, output_dir: Path, stops: dict | None = None,
@@ -152,18 +177,7 @@ def write_matsim_day(chunk: pd.DataFrame, geometry: gpd.GeoDataFrame, output_dir
         for column in _count_columns():
             frame[column] = table[column].to_numpy(dtype=np.int64)
         result = gpd.GeoDataFrame(frame, geometry=points.reindex(table.index).to_numpy(), crs=geometry.crs)
-    if not result.geometry.geom_type.eq("Point").all():
-        raise ValueError("MATSim demand sites must be Point geometries")
-    invalid = ~result.postal_cod.astype(str).str.fullmatch(r"\d{5}")
-    if invalid.any():
-        # The Java pipeline cuts carrier ids at the PLZ ("dhl_30159") and fails on anything else.
-        raise ValueError(f"invalid postal codes for MATSim export: {sorted(set(result.loc[invalid, 'postal_cod'].astype(str)))[:5]}")
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    name = matsim_file_name(date)
-    result.to_file(output_dir / name, driver="ESRI Shapefile", encoding="UTF-8")
-    ledger.update({"file": name, "features": int(len(result))})
-    return ledger
+    return write_demand_frame(result, output_dir, date, ledger)
 
 
 def with_matsim_export(chunks: Iterator[pd.DataFrame], geometry: gpd.GeoDataFrame, output_dir: Path,

@@ -406,12 +406,26 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
               "week_log_sd": temporal["week_log_sd"], "week_ar": temporal["week_ar"],
               "carrier_week_log_sd": temporal["carrier_week_log_sd"], "weekday_concentration": temporal["weekday_concentration"]}
 
+    writer = None
+    if config.get("annual_store"):
+        if not (run / "reference_stops.parquet").is_file():
+            raise ValueError("annual_store requires the street anchor with stops")
+        from .annual import AnnualStoreWriter
+        writer = AnnualStoreWriter(output, gpd.read_parquet(run / "reference_stops.parquet"),
+                                   pd.read_parquet(run / "reference_site_stops.parquet"),
+                                   {day for year in config["years"] for day in _holidays(config, year)})
+        status["annual_store"] = True
+
     def frames():
         for year, cal, expected, delivered in prepared:
             for index, (date, segment_days) in enumerate(draw_delivery_days(sites, profiles, delivered, cal.dates, generation, 0, 0,
                                                                             spatial_plan=plan, cache_dir=Path(config["cache_root"]))):
+                if writer is not None:
+                    writer.add_day(date, segment_days)
                 if selected is None or date.normalize() in selected:
                     yield delivery_frame(date, segment_days, expected, index, year, 0, 0)
+        if writer is not None:
+            writer.close({"years": config["years"], "temporal": status})
 
     return frames(), status
 
@@ -444,6 +458,8 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
         raise ValueError("detail_draws must contain [outer_id, inner_id] pairs")
     temporal = resolve_temporal(config.get("temporal"))
     if temporal is None:
+        if config.get("annual_store"):
+            raise ValueError("annual_store requires temporal.mode = shipping_transit")
         chunks = generate_days(projection.sites, projection.profiles, calendar, generation, 0, 0,
                                spatial_plan=plan, cache_dir=Path(config["cache_root"]))
         temporal_status = {"mode": "delivery_calendar"}
@@ -663,17 +679,23 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                                            "spatial": Path(__file__).with_name("spatial.py"),
                                            "shipping": Path(__file__).with_name("shipping.py"),
                                            "shipping_draws": Path(__file__).with_name("shipping_draws.py"),
+                                           "annual": Path(__file__).with_name("annual.py"),
                                            "matsim_export": Path(__file__).parents[1] / "compatibility" / "matsim_export.py"},
                                           dependency_snapshot=daily_snapshot)
             resolve_stage(run, "daily", daily_fingerprint, cache_root=cache_root, dependencies=daily_dependencies,
                           build=lambda output: _write_daily(config, run, output),
                           validate=lambda output: _validate(output, ["daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"] + (["legacy/05_ga_corrected_b2b_with_marked_adjust_gdf.csv"] if config.get("legacy_export") else [])
-                                                               + (["matsim/matsim_export.json"] if _matsim_export_enabled(config) else [])),
+                                                               + (["matsim/matsim_export.json"] if _matsim_export_enabled(config) else [])
+                                                               + (["annual/days.parquet", "annual/stop_daily.parquet"] if config.get("annual_store") else [])),
                           dependency_snapshot=daily_snapshot)
             for name in ("daily_aggregates.parquet", "annual_projection.parquet", "carrier_profiles.parquet", "postal_projection.parquet", "calendar_weights.parquet", "daily_status.json"):
                 _copy_public(run, "daily", name)
             if (run / "daily" / "delivery_calendar.parquet").is_file():
                 _copy_public(run, "daily", "delivery_calendar.parquet")
+            if (run / "daily" / "annual").is_dir():
+                if (run / "annual").exists():
+                    shutil.rmtree(run / "annual")
+                shutil.copytree(run / "daily" / "annual", run / "annual")
             if _matsim_export_enabled(config):
                 target = run / "matsim"
                 if target.exists():
