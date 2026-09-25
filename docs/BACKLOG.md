@@ -520,6 +520,20 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 - **`[S]` `docs/legacy/hagrid/PIPELINE_DOCUMENTATION.md` und `docs/legacy/hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
   beschreiben noch das Layout vor dem Restructure vom 2026-09-17 und sogar vor dem
   `hagrid-input`-Common/Hannover/Lausitz-Split; tragen bis dahin nur einen Stale-Hinweis. _(added 2026-09-18)_
+- **`[S]` Markerbasierte Repo-Wurzel-Erkennung** statt `getParent().getParent()` in
+  `KpiDashboardTrigger` (Spec §5.2). _(added 2026-09-25)_
+- **`[M]` `LongPathsEnabled=1` auf Dev, Sim und Lausitz-VM setzen** (Admin); auf IVS100 (kein
+  Admin) die Werkzeugkette gegen den längsten Pfad prüfen. Python 3.13 scheitert heute bei 273
+  Zeichen, Pfade > 260 existieren seit dem `CRASHED_…`-Lauf. _(added 2026-09-25)_
+- **`[S]` Geparkte Altlasten** `%USERPROFILE%\hagrid-parked-inputs\legacy-phd\` (≈ 2,7 GB) nach
+  Karenz löschen (Entscheidung C). _(added 2026-09-25)_
+- **`[S]` `runs/lausitz/campaigns/run_r3smoke.bat` nach dem Ausrollen** auf allen Maschinen
+  entfernen oder als Dauer-Smoke behalten. _(added 2026-09-25)_
+- **`[S]` `runs/lausitz/chosen_theta.txt` ist ein getracktes Laufergebnis**; untracken +
+  ignorieren, damit die Wochenendkette nie einen alten Wert lesen kann. _(added 2026-09-25)_
+- **`[S]` `tools/migrate-module-layout.ps1`: Protokoll auch bei Abbruch** in Phase 2 schreiben
+  (`try/finally`), Warnung für Reste direkt unter `hagrid/`, `StartsWith`-Guard in
+  `Find-Collisions`; Allowlist des Prüfskripts je Datei und Muster statt pauschal. _(added 2026-09-25)_
 
 - **`[M]` Autonomie-Switch-Plan** — Labour aus / Roboter-Dwell / Speed-Cap / Autobahn-Ausschluss,
   orthogonal über beide integrierten Szenarien. **User-Entscheidung 2026-07-30: nicht von

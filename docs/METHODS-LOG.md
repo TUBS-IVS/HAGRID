@@ -4138,6 +4138,24 @@ KPI-Analyse liest sie weiter, weil sie relativ zum Laufordner rechnet (`run_dir.
 
 ---
 
+### 2.75 Repo-Umbau Teil 3 (2026-09-24/25): Modul nach `hagrid/simulation/`, verhaltensneutral
+
+_(Nummerierung: §2.74 steht uncommittet im Arbeitsbaum der parallelen Emissions-Session im Haupt-Checkout, daher §2.75.)_
+
+Umbau nach Spec `docs/superpowers/specs/2026-09-21-module-folder-design.md`: Maven-Modul `hagrid/` → `hagrid/simulation/`, weil `hagrid/` künftig auch `demand/` als Dachordner trägt.
+Unverändert: Klassennamen, -pakete, Jar-Name/-Inhalt, Output-Wurzeln (`hagrid-output`, `hagrid-matsim-output`) und die Systemproperty `hagrid.pipeline.root`.
+
+Belege (Worktree `HAGRID-r3`, Commit `73a8324`):
+- Suite aus geleertem `target/`: `hagrid` 660 Tests/0/0/0 (127 Report-Dateien), `external/freight` 272/0/0 (9 skip, 92 Report-Dateien); 657 vor dem Umbau (`2dd4618`) plus vier Testdeltas (Ersatz Marker-Test, neu `oldLayoutIsNotDetected`, Ersatz `scriptFor`-Test, +3 `scriptFor`-Tests) — die Deltas summieren rechnerisch auf 659, gemessen sind 660, Diskrepanz ungeklärt.
+- P1 (`PrepareLausitzDrtInputs`, drt_baseline f120, `-HashOnly`): **6** vergleichbare Hash-Zeilen, nicht 7 — die siebte (`lmd_carriers_routed.xml`) schreibt erst der P2-Jar-Lauf (Spec §6.3 korrigiert); davon 5 byte-identisch, `drt_inputs.properties` in allen 14 Nicht-`#`-Zeilen identisch, Unterschied nur im Zeitstempel-Kommentar.
+- Smoke (`run_r3smoke.bat`, drt_baseline f80, maxIter=1, freight=false): exit 0, 14 min 15 s; `ITERS/it.0`, `run_metadata.json`, `kpis_long.csv` (124 Zeilen), `kpi_dashboard.html` (~890 kB) vorhanden; KPI-Trigger löst `build_kpis.py` zwei Ebenen über dem Modul auf.
+- Migration (Task 2 Step 8, echte Daten): 130 Dateien, Bytes vorher = nachher, fünf Stichproben `EQUAL`, `result=OK`.
+- Pfadlängen (Dev, Task 0): heute 261 Zeichen, nach dem Umbau 272; `LongPathsEnabled=0`. Bei der 273-Zeichen-Probe: Java schreibt und liest 273 Zeichen; PowerShell-Ergebnis unbewiesen (kein Fehler, aber leerer rückgelesener Inhalt); Python scheitert (`FileNotFoundError`).
+
+Ausroll-Regel je Maschine: `git pull` → `migrate-input-layout.ps1` (No-op) → `migrate-module-layout.ps1` (Protokoll: fünf `EQUAL`, `result=OK`) → `mvn -q clean install` → P1-Probe; Rückweg `git checkout <alt>` → `migrate-module-layout.ps1 -Reverse` → `mvn -q clean install`. Nur zwischen Läufen.
+
+---
+
 ## 3 · Zurückgezogene Befunde
 
 Chronologisch nach Zurückziehung. Format: **was geglaubt wurde → was gemessen wurde → was bleibt.**
