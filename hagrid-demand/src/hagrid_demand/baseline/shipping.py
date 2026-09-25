@@ -217,8 +217,21 @@ def expected_delivery(shipping_weights: np.ndarray, cal: DeliveryCalendar, kerne
 
 
 def shipping_weights(year: int, segment: str, weekly: pd.DataFrame | None, temporal: dict, calendar_cfg: dict) -> np.ndarray:
-    """Normalised shipping weight per day: season × shipping weekday profile, no shipping on public holidays."""
+    """Normalised shipping weight per day: season × shipping weekday profile.
+
+    Nothing ships on a public holiday; the orders of that day ship on the next open shipping day,
+    which produces the catch-up peak after holidays.
+    """
     cfg = {key: value for key, value in calendar_cfg.items() if key not in {"weekday_weights", "holiday_factor"}}
     cfg["weekday_weights"] = {segment: temporal["shipping"][segment].tolist()}
-    cfg["holiday_factor"] = 0.
-    return calendar_weights(year, segment, weekly, cfg).calendar_weight.to_numpy(float)
+    cfg["holiday_factor"] = 1.
+    frame = calendar_weights(year, segment, weekly, cfg)
+    weights = frame.calendar_weight.to_numpy(float).copy()
+    holidays = set(pd.to_datetime(list(calendar_cfg.get("holiday_dates", []))).normalize())
+    closed = frame.date.isin(holidays).to_numpy()
+    if closed.any():
+        target = _successor((weights > 0) & ~closed)
+        for day in np.flatnonzero(closed):
+            weights[target[day]] += weights[day]
+            weights[day] = 0.
+    return weights
