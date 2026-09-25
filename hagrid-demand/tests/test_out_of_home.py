@@ -18,6 +18,8 @@ def test_point_carriers_from_osm_tags():
     assert point_carriers({"post_office": "post_partner", "post_office:brand": "DHL"}, SHARED) == ("shop", ("DHL",))
     assert point_carriers({"amenity": "post_office", "brand": "Deutsche Post;DHL"}, SHARED) == ("shop", ("DHL",))
     assert point_carriers({"amenity": "post_depot", "operator": "DHL"}, SHARED) is None
+    assert point_carriers({"shop": "outpost", "brand": "Amazon Hub Locker"}, SHARED) == ("locker", ("Amazon",))
+    assert point_carriers({"shop": "outpost", "name": "Zalando"}, SHARED) is None
 
 
 def test_out_of_home_share_follows_the_trend():
