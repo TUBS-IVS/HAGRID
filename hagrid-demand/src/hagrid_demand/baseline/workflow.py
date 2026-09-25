@@ -425,7 +425,9 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
               "week_log_sd": temporal["week_log_sd"], "week_ar": temporal["week_ar"],
               "carrier_week_log_sd": temporal["carrier_week_log_sd"], "carrier_day_log_sd": temporal["carrier_day_log_sd"],
               "weekday_concentration": temporal["weekday_concentration"],
-              "christmas_pull_forward_days": temporal["christmas_pull_forward_days"], "holiday_spread_days": temporal["holiday_spread_days"]}
+              "christmas_pull_forward_days": temporal["christmas_pull_forward_days"], "holiday_spread_days": temporal["holiday_spread_days"],
+              "events": [{"name": event["name"], "carriers": event["carriers"], "uplift": event["uplift"]} for event in temporal["events"]],
+              "half_delivery_days": temporal["half_delivery_days"]}
     site_groups = None
     if float(config.get("spatial", {}).get("site_frailty_cv", 0.) or 0.) > 0 and (run / "reference_site_stops.parquet").is_file():
         street = (pd.read_parquet(run / "reference_stops.parquet", columns=["stop_id", "str_idx"])

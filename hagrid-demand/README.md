@@ -162,14 +162,19 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    Wochenwerte aus Notebook 03 am besten (KW 49–52 1,46/1,55/1,47/1,13 gegenüber 1,49/1,57/1,36/1,11; 14 Tage schieben zu
    viel aus KW 52 in KW 50/51, 3 Tage erzeugen eine Spitze an Heiligabend).
 2. **Laufzeit:** E+1/E+2/E+3 = 0,85/0,13/0,02 Liefertage (Mo–Sa ohne Feiertage, nie Sonntag), je Anbieter über `transit_days`.
-3. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
+3. **Events und halbe Liefertage:** Prime Day (Amazon, Bestellungen ×2,0), Black Week (Black Friday bis Cyber Monday,
+   alle Anbieter ×1,8) und Singles' Day (Ankunft 18.–21.11., DHL/Hermes/GLS/DPD ×1,15) erhöhen die B2C-Bestellungen der
+   Anbieter an diesen Versandtagen; jeder Anbieter behält seine Jahresmenge (`events`, Standard `data/events.json` mit
+   Terminen und Quellen). Heiligabend und Silvester stellen nur die Hälfte zu (`half_delivery_days`), der Rest kommt am
+   nächsten Liefertag, bei Firmen am nächsten Werktag.
+4. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
    Firmen nehmen samstags an (`business_saturday_open`), der Rest kommt am nächsten Werktag.
-4. **Stochastik je Paket:** Wochenfaktor je Segment (AR(1), log-SD 0,016, ρ 0,5), Wochenfaktor je Anbieter (log-SD 0,02),
+5. **Stochastik je Paket:** Wochenfaktor je Segment (AR(1), log-SD 0,016, ρ 0,5), Wochenfaktor je Anbieter (log-SD 0,02),
    täglicher Marktanteils-Schock je Anbieter (`carrier_day_log_sd` 0,03, je Tag über die Anbieter normiert, damit die
    Tagesmenge im Mittel gleich bleibt), Dirichlet-Aufteilung auf die Wochentage (κ 1000), Laufzeit und Samstagsannahme
    je Paket. So weichen die Anbieter von Tag zu Tag und von Woche zu Woche voneinander ab, im Erwartungswert bleibt der
    Verlauf gleich. Die Jahresmenge je Anbieter bleibt erhalten.
-5. **Raum:** Hochburgen ergeben sich aus der B2B/B2C-Mischung: B2B-Pakete gehen an Firmenstandorte, B2C-Pakete an
+6. **Raum:** Hochburgen ergeben sich aus der B2B/B2C-Mischung: B2B-Pakete gehen an Firmenstandorte, B2C-Pakete an
    Wohnungen, jeweils mit den Anbieteranteilen des Segments. Wo viel Gewerbe ist, sind UPS und FedEx stark, in
    Wohngebieten Amazon und Hermes; DHL folgt seinen gemessenen Straßenmengen. Vielbesteller (`spatial.site_frailty_cv`
    0,5: Gamma-Faktor je Standort und Jahr, je Straße und PLZ normiert, damit Straßenanker und PLZ-Mengen halten) sind an

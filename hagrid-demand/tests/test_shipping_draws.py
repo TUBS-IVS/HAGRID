@@ -38,7 +38,7 @@ def test_simulation_conserves_expectation():
 
 
 def test_weekly_cv_matches_configured_sd():
-    temporal, cal, shipping = _setup(week_log_sd=0.05, week_ar=0., carrier_week_log_sd=0.)
+    temporal, cal, shipping = _setup(week_log_sd=0.05, week_ar=0., carrier_week_log_sd=0., events=[])
     targets = {("private", "DHL"): 5e7}
     _, shipped = simulate_deliveries(targets, shipping, cal, temporal, seed=3, year=2025, regime="expected_annual",
                                      return_shipments=True)
@@ -103,3 +103,19 @@ def test_carrier_day_log_sd_default_and_validation():
     assert resolve_temporal({"mode": "shipping_transit"})["carrier_day_log_sd"] == .03
     with pytest.raises(ValueError, match="carrier_day_log_sd"):
         resolve_temporal({"mode": "shipping_transit", "carrier_day_log_sd": -.1})
+
+
+def test_events_shift_carrier_volume_within_the_year():
+    targets = {("private", "Amazon"): 1e6, ("private", "DHL"): 1e6}
+    runs = {}
+    for label, events in (("on", "standard"), ("off", [])):
+        temporal, cal, shipping = _setup(events=events)
+        runs[label] = simulate_deliveries(targets, shipping, cal, temporal, seed=5, year=2025, regime="fixed_annual")
+        expected = expected_deliveries(targets, shipping, cal, temporal)
+        assert all(expected[key].sum() == pytest.approx(targets[key], rel=1e-9) for key in targets)
+    prime = (cal.dates >= "2025-07-09") & (cal.dates <= "2025-07-12")
+    amazon_on, amazon_off = runs["on"][("private", "Amazon")], runs["off"][("private", "Amazon")]
+    assert amazon_on.sum() == amazon_off.sum() == 1_000_000
+    assert amazon_on[prime].sum() > 1.5 * amazon_off[prime].sum()
+    dhl_on, dhl_off = runs["on"][("private", "DHL")], runs["off"][("private", "DHL")]
+    assert abs(dhl_on[prime].sum() / dhl_off[prime].sum() - 1) < .05
