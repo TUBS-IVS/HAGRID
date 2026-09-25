@@ -12,6 +12,7 @@ import uuid
 import importlib.metadata
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage_key
@@ -374,6 +375,24 @@ def _holidays(config: dict, year: int) -> list[str]:
     return sorted({*calendar.get("holiday_dates", []), *public_holidays(year, calendar.get("holiday_region", "NI"))})
 
 
+
+def _draw_indices(dates: pd.DatetimeIndex, selected: set | None, *, has_writer: bool) -> np.ndarray:
+    """Days to draw: all of them for the annual store, otherwise only the selected ones (streams are keyed by date)."""
+    if has_writer or selected is None:
+        return np.arange(len(dates))
+    return np.flatnonzero(pd.DatetimeIndex(dates).normalize().isin(list(selected)))
+
+
+def _daily_code() -> dict:
+    """Code and packaged inputs whose content keys the daily stage cache."""
+    here = Path(__file__)
+    return {"workflow": here, "projection": here.with_name("projection.py"), "calendar": here.with_name("calendar.py"),
+            "allocation": here.with_name("allocation.py"), "outputs": here.with_name("outputs.py"),
+            "spatial": here.with_name("spatial.py"), "shipping": here.with_name("shipping.py"),
+            "shipping_draws": here.with_name("shipping_draws.py"), "annual": here.with_name("annual.py"),
+            "temporal_inputs": here.with_name("data") / "temporal_inputs.json",
+            "matsim_export": here.parents[1] / "compatibility" / "matsim_export.py"}
+
 def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, plan, generation: dict, temporal: dict):
     """Draw shipping days, transit and Saturday rule per carrier; yield detail frames for the selected dates."""
     calendar = config.get("calendar", {})
@@ -417,15 +436,27 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         status["annual_store"] = True
 
     def frames():
-        for year, cal, expected, delivered in prepared:
-            for index, (date, segment_days) in enumerate(draw_delivery_days(sites, profiles, delivered, cal.dates, generation, 0, 0,
-                                                                            spatial_plan=plan, cache_dir=Path(config["cache_root"]))):
-                if writer is not None:
-                    writer.add_day(date, segment_days)
-                if selected is None or date.normalize() in selected:
-                    yield delivery_frame(date, segment_days, expected, index, year, 0, 0)
-        if writer is not None:
-            writer.close({"years": config["years"], "temporal": status})
+        completed = False
+        try:
+            for year, cal, expected, delivered in prepared:
+                indices = _draw_indices(cal.dates, selected, has_writer=writer is not None)
+                if not len(indices):
+                    continue
+                subset = {key: values[indices] for key, values in delivered.items()}
+                for position, (date, segment_days) in enumerate(draw_delivery_days(
+                        sites, profiles, subset, cal.dates[indices], generation, 0, 0, spatial_plan=plan,
+                        cache_dir=Path(config["cache_root"]))):
+                    if writer is not None:
+                        writer.add_day(date, segment_days)
+                    if selected is None or date.normalize() in selected:
+                        yield delivery_frame(date, segment_days, expected, int(indices[position]), year, 0, 0)
+            completed = True
+        finally:
+            if writer is not None:
+                if completed:
+                    writer.close({"years": config["years"], "temporal": status})
+                else:
+                    writer.abort()
 
     return frames(), status
 
@@ -672,15 +703,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         if config["output_scope"] == "daily":
             daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
             daily_snapshot = dependency_snapshot(daily_dependencies)
-            daily_fingerprint = stage_key("daily", daily_dependencies, config,
-                                          {"workflow": Path(__file__), "projection": Path(__file__).with_name("projection.py"),
-                                           "calendar": Path(__file__).with_name("calendar.py"), "allocation": Path(__file__).with_name("allocation.py"),
-                                           "outputs": Path(__file__).with_name("outputs.py"),
-                                           "spatial": Path(__file__).with_name("spatial.py"),
-                                           "shipping": Path(__file__).with_name("shipping.py"),
-                                           "shipping_draws": Path(__file__).with_name("shipping_draws.py"),
-                                           "annual": Path(__file__).with_name("annual.py"),
-                                           "matsim_export": Path(__file__).parents[1] / "compatibility" / "matsim_export.py"},
+            daily_fingerprint = stage_key("daily", daily_dependencies, config, _daily_code(),
                                           dependency_snapshot=daily_snapshot)
             resolve_stage(run, "daily", daily_fingerprint, cache_root=cache_root, dependencies=daily_dependencies,
                           build=lambda output: _write_daily(config, run, output),

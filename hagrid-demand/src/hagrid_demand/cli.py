@@ -61,6 +61,7 @@ def main():
             command.add_argument("--run", required=True)
             command.add_argument("--out", required=True)
             command.add_argument("--year", type=int, default=None)
+            command.add_argument("--artifact", action="store_true", help="omit doctype and head for artifact hosts")
         else:
             command.add_argument("--config", required=True)
             command.add_argument("--run-id", default=None)
@@ -74,7 +75,7 @@ def main():
                 return 0
             if args.baseline_command == "annual-dashboard":
                 from .baseline.annual_dashboard import write_annual_dashboard
-                print(f"Annual dashboard: {write_annual_dashboard(args.run, args.out, args.year)}")
+                print(f"Annual dashboard: {write_annual_dashboard(args.run, args.out, args.year, standalone=not args.artifact)}")
                 return 0
             if args.baseline_command == "export-day":
                 from .baseline.annual import export_day

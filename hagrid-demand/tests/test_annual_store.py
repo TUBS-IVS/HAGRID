@@ -60,3 +60,34 @@ def test_export_day_empty_sunday(annual_run, tmp_path):
     direct_day = next(day for day in manifest["days"] if day["date"] == DATES[1])
     ledger = export_day(annual_run, DATES[1], tmp_path)
     assert direct_day["file"] is None and ledger["file"] is None and ledger["parcels"] == 0
+
+
+def test_writer_abort_closes_file(tmp_path):
+    import numpy as np
+    from hagrid_demand.baseline.allocation import SegmentDay
+    from hagrid_demand.baseline.annual import AnnualStoreWriter
+
+    stops = pd.DataFrame({"stop_id": ["a"], "stop_index": [0], "plz": ["30159"]})
+    writer = AnnualStoreWriter(tmp_path, stops, pd.DataFrame({"site_id": ["s1"], "stop_id": ["a"]}))
+    bad = SegmentDay(pd.DataFrame({"site_id": ["s1"], "plz": ["30159"]}), ["Unknown"], np.array([[1]]), np.array([1.]), np.array([1]))
+    with pytest.raises(ValueError):
+        writer.add_day(pd.Timestamp("2025-05-16"), {"private": bad})
+    writer.abort()
+    (tmp_path / "annual" / "stop_daily.parquet").unlink()
+
+
+def test_daily_stage_code_includes_temporal_inputs():
+    from hagrid_demand.baseline.workflow import _daily_code
+
+    code = _daily_code()
+    assert code["temporal_inputs"].name == "temporal_inputs.json" and code["temporal_inputs"].is_file()
+    assert {"shipping", "shipping_draws", "annual", "allocation"} <= set(code)
+
+
+def test_draw_dates_skip_unselected_without_writer():
+    from hagrid_demand.baseline.workflow import _draw_indices
+
+    dates = pd.date_range("2025-01-01", periods=10)
+    assert _draw_indices(dates, {pd.Timestamp("2025-01-03"), pd.Timestamp("2025-01-07")}, has_writer=False).tolist() == [2, 6]
+    assert len(_draw_indices(dates, {pd.Timestamp("2025-01-03")}, has_writer=True)) == 10
+    assert len(_draw_indices(dates, None, has_writer=False)) == 10

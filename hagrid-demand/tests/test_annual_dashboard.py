@@ -30,3 +30,12 @@ def test_dashboard_html_written(annual_run, tmp_path):
     payload = re.search(r'<script id="hagrid-annual" type="application/json">(.*?)</script>', text, re.S).group(1)
     assert "</" not in payload
     assert set(json.loads(payload)) >= {"meta", "days", "plz", "plz_daily", "profiles", "weekday", "geo"}
+
+
+def test_dashboard_standalone_and_artifact_variants(annual_run, tmp_path):
+    from hagrid_demand.baseline.annual_dashboard import write_annual_dashboard
+
+    standalone = write_annual_dashboard(annual_run, tmp_path / "local.html").read_text(encoding="utf-8")
+    assert standalone.startswith("<!doctype html>") and '<meta charset="utf-8">' in standalone[:400]
+    artifact = write_annual_dashboard(annual_run, tmp_path / "artifact.html", standalone=False).read_text(encoding="utf-8")
+    assert artifact.startswith("<title>") and "<!doctype" not in artifact[:200]
