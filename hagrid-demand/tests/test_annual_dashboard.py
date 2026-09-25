@@ -39,3 +39,8 @@ def test_dashboard_standalone_and_artifact_variants(annual_run, tmp_path):
     assert standalone.startswith("<!doctype html>") and '<meta charset="utf-8">' in standalone[:400]
     artifact = write_annual_dashboard(annual_run, tmp_path / "artifact.html", standalone=False).read_text(encoding="utf-8")
     assert artifact.startswith("<title>") and "<!doctype" not in artifact[:200]
+
+
+def test_run_writes_annual_dashboard(annual_run):
+    page = (annual_run / "annual_dashboard.html").read_text(encoding="utf-8")
+    assert page.startswith("<!doctype html>") and "<title>Hannover Parcel Year</title>" in page[:8192]
