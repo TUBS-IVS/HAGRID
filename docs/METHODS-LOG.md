@@ -4149,8 +4149,9 @@ Belege (Worktree `HAGRID-r3`, Commit `73a8324`):
 - Suite aus geleertem `target/`: `hagrid` **660** Tests/0/0/0 (127 Report-Dateien), `external/freight` 272/0/0 (9 skip, 92 Report-Dateien); 657 vor dem Umbau (`2dd4618`) − 1 alter Marker-Test `markerInSubfolderMeansHagrid` + 1 neuer `markerInSubfolderMeansHagridSimulation` + 1 `oldLayoutIsNotDetected` − 1 alter `scriptForResolvesRepoLevelAnalysis` + 3 (`scriptForAbsoluteRoot`, `scriptForRelativeRootFromRepo`, `scriptForDotRootFromModule`) = **660**.
 - P1 (`PrepareLausitzDrtInputs`, drt_baseline f120, `-HashOnly`): **6** vergleichbare Hash-Zeilen, nicht 7 — die siebte (`lmd_carriers_routed.xml`) schreibt erst der P2-Jar-Lauf (Spec §6.3 korrigiert); davon 5 byte-identisch, `drt_inputs.properties` in allen 14 Nicht-`#`-Zeilen identisch, Unterschied nur im Zeitstempel-Kommentar.
 - Smoke (`run_r3smoke.bat`, drt_baseline f80, maxIter=1, freight=false): exit 0, 14 min 15 s; `ITERS/it.0`, `run_metadata.json`, `kpis_long.csv` (124 Zeilen), `kpi_dashboard.html` (~890 kB) vorhanden; KPI-Trigger löst `build_kpis.py` zwei Ebenen über dem Modul auf.
-- Migration (Task 2 Step 8, echte Daten): 130 Dateien, Bytes vorher = nachher, fünf Stichproben `EQUAL`, `result=OK`.
+- Migration (Task 2 Step 8, echte Daten): 130 Dateien (113 migriert + 17 getracktes Skelett), Bytes vorher = nachher, fünf Stichproben `EQUAL`, `result=OK`.
 - Pfadlängen (Dev, Task 0): heute 261 Zeichen, nach dem Umbau 272; `LongPathsEnabled=0`. Bei der 273-Zeichen-Probe: Java schreibt und liest 273 Zeichen; PowerShell-Ergebnis unbewiesen (kein Fehler, aber leerer rückgelesener Inhalt); Python scheitert (`FileNotFoundError`).
+- Residuum: der Carriers-Writer (`…lmd_carriers_routed.xml`) hat keinen Nach-Umzug-Hash (P2 nicht gelaufen), nur den Golden-Test der Suite; sein Codepfad enthält kein geändertes Pfadliteral.
 
 Ausroll-Regel je Maschine: `git pull` → `migrate-input-layout.ps1` (No-op) → `migrate-module-layout.ps1` (Protokoll: fünf `EQUAL`, `result=OK`) → `mvn -q clean install` → P1-Probe; Rückweg `git checkout <alt>` → `migrate-module-layout.ps1 -Reverse` → `mvn -q clean install`. Nur zwischen Läufen.
 

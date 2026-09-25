@@ -399,6 +399,9 @@ class HagridPathsTest {
 
             Path detected = HagridPaths.detectPipelineRoot(tempDir);
             assertThat(detected).isEqualTo(Path.of("hagrid", "simulation"));
+            // Cases 3 and 4 return the SAME path, so isEqualTo alone cannot tell a hit from the
+            // fallback. The marker check below is what says case 3 really found something; its
+            // negative is asserted in noMarkerFallsBack.
             assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isTrue();
         }
 

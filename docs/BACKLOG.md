@@ -531,9 +531,18 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   entfernen oder als Dauer-Smoke behalten. _(added 2026-09-25)_
 - **`[S]` `runs/lausitz/chosen_theta.txt` ist ein getracktes Laufergebnis**; untracken +
   ignorieren, damit die Wochenendkette nie einen alten Wert lesen kann. _(added 2026-09-25)_
-- **`[S]` `tools/migrate-module-layout.ps1`: Protokoll auch bei Abbruch** in Phase 2 schreiben
-  (`try/finally`), Warnung für Reste direkt unter `hagrid/`, `StartsWith`-Guard in
-  `Find-Collisions`; Allowlist des Prüfskripts je Datei und Muster statt pauschal. _(added 2026-09-25)_
+- **`[S]` Allowlist von `tools/check-run-scripts.ps1` je Datei und Muster** statt pauschal je Datei.
+  _(added 2026-09-25)_
+- **`[S]` `runs/lausitz/run_nightbc_wrap.bat:2` leitet ins Leere** — die Konsolenausgabe geht nach
+  `…\HAGRID\hagrid-output\logs\nightbc.console.log`, einen Ordner, den es in keinem Layout gab (weder
+  vor noch nach dem Umbau). Vorbestehend, nicht durch den Umbau entstanden. _(added 2026-09-25)_
+- **`[S]` Selbsttest des Prüfskripts diskriminiert die zwei neuen Alt-String-Regeln nicht** —
+  Mutation: eine der beiden Regeln aus `tools/check-run-scripts.ps1` entfernen, `Test-CheckRunScripts.ps1`
+  bleibt grün. Je ein Positivfall fehlt. _(added 2026-09-25)_
+- **`[S]` `tools/migrate-module-layout.ps1 -Reverse` ist ungesichert** — es prüft nicht, dass
+  `git checkout <alter Commit>` vorher lief (ohne wiederhergestelltes Skelett wandern die Daten in ein
+  leeres `hagrid/`), und es räumt `hagrid/simulation/target/` nicht ab, obwohl der Vorwärtslauf
+  `hagrid/target/` löscht. _(added 2026-09-25)_
 
 - **`[M]` Autonomie-Switch-Plan** — Labour aus / Roboter-Dwell / Speed-Cap / Autobahn-Ausschluss,
   orthogonal über beide integrierten Szenarien. **User-Entscheidung 2026-07-30: nicht von
