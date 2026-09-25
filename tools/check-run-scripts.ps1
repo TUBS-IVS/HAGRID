@@ -21,13 +21,14 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 # Die letzten drei Muster fangen den alten Modulort ab: hagrid\<etwas, das kein neuer Unterordner ist>,
-# ein auf ...\hagrid endender Pfad in Anfuehrungszeichen, und der alte Maven-Selektor -pl hagrid.
+# ein auf ...\hagrid endender Pfad in Anfuehrungszeichen, und der alte Maven-Selektor -pl hagrid
+# (auch in PowerShell-Array-Form '-pl', 'hagrid').
 # (?-i) ist Pflicht: -match ist sonst case-insensitiv und der REPO-Ordner heisst HAGRID, womit
 # jeder absolute Pfad (...\GitHub\HAGRID\hagrid\simulation) ein falscher Befund waere.
 $oldStrings = 'parcel-demand-2-matsim-pipeline', 'hagrid-input', 'hagrid\.integrated\.', 'hagrid\.HAGRID',
               'hagrid\.simulation\.', 'hagrid\.utils\.', 'hagrid\.Hagrid(Paths|Config)',
               '(?-i)hagrid[\\/](?!simulation|demand|core|hannover|lausitz|\{|2025)',
-              '(?-i)[\\/]hagrid["'']', '-pl\s+hagrid\b'
+              '(?-i)[\\/]hagrid["'']', '-pl(\s+|'',\s*'')hagrid\b'
 # Diese Werkzeuge FUEHREN die alten Namen als Daten mit: die Migrationsskripte lesen den alten
 # Layoutpfad, und die Selbsttests bauen ihre Fixtures daraus. Fuer sie ist ein alter
 # String kein Befund; alle anderen Regeln gelten fuer sie unveraendert weiter.

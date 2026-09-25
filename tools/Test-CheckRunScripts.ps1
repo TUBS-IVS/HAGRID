@@ -106,5 +106,14 @@ $out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
 Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match '-pl')) 'Exit 1 bei -pl hagrid'
 Remove-Item "$tmp\runs\lausitz\plold.bat"
 
+Write-Host 'Fall 13: alter Selektor in PowerShell-Array-Form ''-pl'', ''hagrid'' ist ein alter String'
+# Diskriminierend: die Fixture hat hagrid\pom.xml, die pom-Regel schweigt also - nur die alte-String-Regel kann melden.
+New-Item -ItemType Directory -Force "$tmp\hagrid" | Out-Null
+Set-Content "$tmp\hagrid\pom.xml" '<project><artifactId>old</artifactId></project>' -Encoding ascii
+Write-Script "$tmp\runs\lausitz\plarr.ps1" "Set-Location `"`$PSScriptRoot\..\..`"`r`n& mvn @('-pl', 'hagrid', 'exec:java', '-Dexec.mainClass=hagrid.core.simulation.HAGRIDSimulationRunner')`r`n"
+$out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
+Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match "alter String '-pl")) 'Exit 1 mit alter-String-Befund fuer Array-Form'
+Remove-Item "$tmp\runs\lausitz\plarr.ps1"; Remove-Item "$tmp\hagrid\pom.xml"
+
 Remove-Item -Recurse -Force $tmp
 if ($fails -gt 0) { exit 1 } else { Write-Host 'alle Pruefungen bestanden'; exit 0 }
