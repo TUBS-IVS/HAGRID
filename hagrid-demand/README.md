@@ -163,7 +163,7 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    viel aus KW 52 in KW 50/51, 3 Tage erzeugen eine Spitze an Heiligabend).
 2. **Laufzeit:** E+1/E+2/E+3 = 0,85/0,13/0,02 Liefertage (Mo–Sa ohne Feiertage, nie Sonntag), je Anbieter über `transit_days`.
 3. **Events und halbe Liefertage:** Prime Day (Amazon, Bestellungen ×2,0), Black Week (Black Friday bis Cyber Monday,
-   alle Anbieter ×1,8) und Singles' Day (Ankunft 18.–21.11., DHL/Hermes/GLS/DPD ×1,15) erhöhen die B2C-Bestellungen der
+   alle Anbieter ×1,35, so dass die Spitze wie bei DHL 2025 bei 0,89 der Weihnachtsspitze liegt) und Singles' Day (Ankunft 18.–21.11., DHL/Hermes/GLS/DPD ×1,15) erhöhen die B2C-Bestellungen der
    Anbieter an diesen Versandtagen; jeder Anbieter behält seine Jahresmenge (`events`, Standard `data/events.json` mit
    Terminen und Quellen). Heiligabend und Silvester stellen nur die Hälfte zu (`half_delivery_days`), der Rest kommt am
    nächsten Liefertag, bei Firmen am nächsten Werktag.

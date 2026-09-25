@@ -133,7 +133,7 @@ def test_carrier_events_prime_day_black_week_singles_day():
     amazon = pd.Series(event_factor(dates, temporal, "private", "Amazon"), index=dates)
     dhl = pd.Series(event_factor(dates, temporal, "private", "DHL"), index=dates)
     assert (amazon["2025-07-08":"2025-07-11"] == 2.).all() and amazon["2025-07-12"] == 1. and dhl["2025-07-08"] == 1.
-    assert (amazon["2025-11-28":"2025-12-01"] == 1.8).all() and dhl["2025-11-28"] == 1.8 and amazon["2025-12-02"] == 1.
+    assert (amazon["2025-11-28":"2025-12-01"] == 1.35).all() and dhl["2025-11-28"] == 1.35 and amazon["2025-12-02"] == 1.
     assert dhl["2025-11-18"] == 1.15 and amazon["2025-11-18"] == 1.
     assert event_factor(dates, temporal, "business", "Amazon").max() == 1.
     assert event_factor(dates, resolve_temporal({"mode": "shipping_transit", "events": []}), "private", "Amazon").max() == 1.
