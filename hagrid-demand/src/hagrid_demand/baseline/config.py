@@ -79,6 +79,9 @@ def _validate_spatial(value: Any) -> dict:
                 raise ValueError(f"correlated spatial requires numeric {name}")
         if not value["length_scale_m"] > 0 or not value["log_sigma"] >= 0 or not 0 <= value["rho"] < 1:
             raise ValueError("correlated spatial parameters are out of range")
+    for name in ("carrier_plz_log_sd", "site_frailty_cv"):
+        if name in value and (isinstance(value[name], bool) or not isinstance(value[name], (int, float)) or not value[name] >= 0):
+            raise ValueError(f"spatial.{name} must be a nonnegative number")
     return value
 
 

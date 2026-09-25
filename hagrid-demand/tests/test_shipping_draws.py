@@ -3,7 +3,7 @@ import pytest
 
 from hagrid_demand.baseline.calendar import public_holidays
 from hagrid_demand.baseline.shipping import delivery_calendar, resolve_temporal, shipping_weights
-from hagrid_demand.baseline.shipping_draws import expected_deliveries, simulate_deliveries, week_index
+from hagrid_demand.baseline.shipping_draws import carrier_day_factors, expected_deliveries, simulate_deliveries, week_index
 
 
 def _setup(year=2025, **overrides):
@@ -76,3 +76,30 @@ def test_iso_week_53_and_leap_year(year, days):
     result = simulate_deliveries({("private", "DHL"): 1_000.}, shipping, cal, temporal, seed=2, year=year,
                                  regime="expected_annual")
     assert result[("private", "DHL")].shape == (days,)
+
+
+def test_carrier_day_factors_shift_shares_only():
+    shares = np.array([.5, .3, .2])
+    z = np.random.default_rng(1).standard_normal((3, 2000))
+    factors = carrier_day_factors(shares, .1, z)
+    assert np.allclose((shares[:, None] * factors).sum(axis=0), 1., atol=1e-12)
+    assert .05 < np.log(factors[0]).std() < .1
+    assert np.array_equal(carrier_day_factors(shares, 0., z), np.ones_like(z))
+
+
+def test_carrier_day_shock_moves_daily_shares():
+    targets = {("private", "DHL"): 2e6, ("private", "Hermes"): 1e6}
+    spread = []
+    for sd in (0., .1):
+        temporal, cal, shipping = _setup(carrier_day_log_sd=sd, carrier_week_log_sd=0.)
+        out = simulate_deliveries(targets, shipping, cal, temporal, seed=3, year=2025, regime="fixed_annual")
+        assert [int(out[key].sum()) for key in targets] == [2_000_000, 1_000_000]
+        total = out[("private", "DHL")] + out[("private", "Hermes")]
+        spread.append((out[("private", "DHL")][total > 0] / total[total > 0]).std())
+    assert spread[1] > 3 * spread[0]
+
+
+def test_carrier_day_log_sd_default_and_validation():
+    assert resolve_temporal({"mode": "shipping_transit"})["carrier_day_log_sd"] == .03
+    with pytest.raises(ValueError, match="carrier_day_log_sd"):
+        resolve_temporal({"mode": "shipping_transit", "carrier_day_log_sd": -.1})
