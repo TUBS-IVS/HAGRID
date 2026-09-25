@@ -17,12 +17,84 @@ _DATA = Path(__file__).with_name("data") / "temporal_inputs.json"
 _SEGMENTS = ("private", "business")
 _KEYS = {"mode", "shipping_weekday_weights", "transit_days", "saturday_delivery", "business_saturday_open",
          "week_log_sd", "week_ar", "carrier_week_log_sd", "carrier_day_log_sd", "weekday_concentration",
-         "christmas_pull_forward_days", "holiday_spread_days"}
+         "christmas_pull_forward_days", "holiday_spread_days", "events", "half_delivery_days"}
+_EVENTS = Path(__file__).with_name("data") / "events.json"
+_EVENT_RULES = {"prime_day", "black_week", "fixed"}
 
 
 def load_temporal_inputs() -> dict:
     """Return the documented default profiles, kernel and Saturday opening share."""
     return json.loads(_DATA.read_text(encoding="utf-8"))
+
+
+def load_events() -> list[dict]:
+    """Return the documented default carrier events (Prime Day, Black Week, Singles' Day)."""
+    return json.loads(_EVENTS.read_text(encoding="utf-8"))["events"]
+
+
+def _event(value: object) -> dict:
+    if not isinstance(value, dict) or not isinstance(value.get("name"), str):
+        raise ValueError("temporal.events entries must be mappings with a name")
+    carriers = value.get("carriers", "all")
+    if carriers != "all" and (not isinstance(carriers, list) or not all(isinstance(item, str) for item in carriers)):
+        raise ValueError(f"temporal.events.{value['name']}.carriers must be 'all' or a list of carriers")
+    segments = value.get("segments", ["private"])
+    if not isinstance(segments, list) or not set(segments) <= set(_SEGMENTS):
+        raise ValueError(f"temporal.events.{value['name']}.segments must list private and/or business")
+    uplift = _finite(value.get("uplift"), f"temporal.events.{value['name']}.uplift")
+    if uplift <= 0:
+        raise ValueError(f"temporal.events.{value['name']}.uplift must be positive")
+    if value.get("rule", "fixed") not in _EVENT_RULES:
+        raise ValueError(f"temporal.events.{value['name']}.rule must be one of {sorted(_EVENT_RULES)}")
+    return {**value, "carriers": carriers, "segments": segments, "uplift": uplift, "rule": value.get("rule", "fixed")}
+
+
+def _event_range(event: dict, year: int) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """First and last shipping day of *event* in *year* (known dates first, then its rule)."""
+    known = event.get("dates", {}).get(str(year))
+    if known:
+        return pd.Timestamp(f"{year}-{known[0]}"), pd.Timestamp(f"{year}-{known[1]}")
+    if event["rule"] == "prime_day":
+        july = pd.date_range(f"{year}-07-01", f"{year}-07-31")
+        start = july[july.dayofweek == 1][1]
+        return start, start + pd.Timedelta(days=1)
+    if event["rule"] == "black_week":
+        november = pd.date_range(f"{year}-11-01", f"{year}-11-30")
+        black_friday = november[november.dayofweek == 3][3] + pd.Timedelta(days=1)
+        return black_friday, black_friday + pd.Timedelta(days=3)
+    if event.get("start") and event.get("end"):
+        return pd.Timestamp(f"{year}-{event['start']}"), pd.Timestamp(f"{year}-{event['end']}")
+    return None
+
+
+def event_factor(dates: pd.DatetimeIndex, temporal: dict, segment: str, carrier: str) -> np.ndarray:
+    """Order multiplier per shipping day for one carrier and segment (1 outside the carrier's events)."""
+    dates = pd.DatetimeIndex(dates)
+    factor = np.ones(len(dates))
+    for event in temporal.get("events", []):
+        if segment not in event["segments"] or (event["carriers"] != "all" and str(carrier) not in event["carriers"]):
+            continue
+        for year in sorted(set(dates.year)):
+            span = _event_range(event, int(year))
+            if span is not None:
+                factor[(dates >= span[0]) & (dates <= span[1])] *= event["uplift"]
+    return factor
+
+
+def day_acceptance(cal: "DeliveryCalendar", accept: float, half_days: dict | None, business: bool) -> tuple[np.ndarray, np.ndarray]:
+    """Share of the parcels landing on each day that is delivered that day, and the day that takes the rest.
+
+    Saturdays deliver *accept*; half delivery days (24 and 31 December) deliver their factor. The rest goes to the
+    next Monday–Friday delivery day after a Saturday or for business recipients, otherwise to the next delivery day.
+    """
+    saturday = cal.weekday == 5
+    share = np.where(saturday, float(accept), 1.)
+    if half_days:
+        keys = cal.dates.strftime("%m-%d")
+        for key, value in half_days.items():
+            share = np.where(keys == key, share * float(value), share)
+    rest = np.where(saturday | bool(business), cal.next_weekday_delivery, cal.next_delivery)
+    return share, rest
 
 
 def _finite(value: object, label: str) -> float:
@@ -136,7 +208,20 @@ def resolve_temporal(cfg: dict | None) -> dict | None:
     spread_days = cfg.get("holiday_spread_days", 3)
     if isinstance(spread_days, bool) or not isinstance(spread_days, int) or spread_days < 1:
         raise ValueError("temporal.holiday_spread_days must be a positive integer")
+    events = cfg.get("events", "standard")
+    if events == "standard":
+        events = load_events()
+    if not isinstance(events, list):
+        raise ValueError("temporal.events must be 'standard' or a list of events")
+    half_days = cfg.get("half_delivery_days", {"12-24": .5, "12-31": .5})
+    if not isinstance(half_days, dict):
+        raise ValueError("temporal.half_delivery_days must map MM-DD to a delivered share")
+    for key, value in half_days.items():
+        share = _finite(value, f"temporal.half_delivery_days.{key}")
+        if not 0 < share <= 1 or len(str(key)) != 5:
+            raise ValueError(f"temporal.half_delivery_days.{key} must be a share in (0, 1] keyed by MM-DD")
     result = {"mode": mode, "shipping": shipping, "kernels": kernels, "saturday": saturday,
+              "events": [_event(item) for item in events], "half_delivery_days": {str(k): float(v) for k, v in half_days.items()},
               "christmas_pull_forward_days": pull_forward, "holiday_spread_days": spread_days,
               "business_saturday_open": _unit(cfg.get("business_saturday_open", inputs["business_saturday_open"]["value"]),
                                               "temporal.business_saturday_open"),
@@ -209,18 +294,17 @@ def landing(cal: DeliveryCalendar, offset: int) -> np.ndarray:
     return index
 
 
-def expected_delivery(shipping_weights: np.ndarray, cal: DeliveryCalendar, kernel: np.ndarray, accept: float) -> np.ndarray:
-    """Deterministic delivered mass per day; Saturday landings not accepted move to the next Mon–Fri delivery day."""
+def expected_delivery(shipping_weights: np.ndarray, cal: DeliveryCalendar, kernel: np.ndarray, accept: float, *,
+                      half_days: dict | None = None, business: bool = False) -> np.ndarray:
+    """Deterministic delivered mass per day; see :func:`day_acceptance` for Saturdays and half delivery days."""
     weights = np.asarray(shipping_weights, dtype=float)
     result = np.zeros(len(cal.dates))
-    saturday = cal.weekday == 5
+    share, rest = day_acceptance(cal, accept, half_days, business)
     for offset, probability in enumerate(kernel, start=1):
         target = landing(cal, offset)
         mass = weights * probability
-        on_saturday = saturday[target]
-        np.add.at(result, target[~on_saturday], mass[~on_saturday])
-        np.add.at(result, target[on_saturday], accept * mass[on_saturday])
-        np.add.at(result, cal.next_weekday_delivery[target[on_saturday]], (1. - accept) * mass[on_saturday])
+        np.add.at(result, target, share[target] * mass)
+        np.add.at(result, rest[target], (1. - share[target]) * mass)
     return result
 
 

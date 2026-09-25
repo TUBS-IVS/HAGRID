@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from hagrid_demand.baseline.calendar import public_holidays
-from hagrid_demand.baseline.shipping import (delivery_calendar, derive_shipping_profile, expected_delivery, landing,
+from hagrid_demand.baseline.shipping import (delivery_calendar, derive_shipping_profile, event_factor, expected_delivery, landing,
                                              resolve_temporal, shipping_weights)
 
 KERNEL = np.array([0.85, 0.13, 0.02])
@@ -111,3 +111,31 @@ def test_christmas_orders_ship_before_christmas():
     assert new["2025-01-02"] < old["2025-01-02"] and new["2025-01-03":"2025-01-05"].sum() > old["2025-01-03":"2025-01-05"].sum()
     with pytest.raises(ValueError, match="christmas_pull_forward_days"):
         resolve_temporal({"mode": "shipping_transit", "christmas_pull_forward_days": -1})
+
+
+def test_half_delivery_days_move_the_rest_to_the_next_day():
+    cal = delivery_calendar(2025, public_holidays(2025, "NI"))
+    weights = np.zeros(len(cal.dates))
+    weights[_index(cal, "2025-12-23")] = 1.
+    private = expected_delivery(weights, cal, np.array([1.]), 1., half_days={"12-24": .5})
+    business = expected_delivery(weights, cal, np.array([1.]), .2, half_days={"12-24": .5}, business=True)
+    assert private[_index(cal, "2025-12-24")] == pytest.approx(.5) and private[_index(cal, "2025-12-27")] == pytest.approx(.5)
+    assert business[_index(cal, "2025-12-24")] == pytest.approx(.5) and business[_index(cal, "2025-12-29")] == pytest.approx(.5)
+    assert private.sum() == pytest.approx(1.) and business.sum() == pytest.approx(1.)
+    assert resolve_temporal({"mode": "shipping_transit"})["half_delivery_days"] == {"12-24": .5, "12-31": .5}
+    with pytest.raises(ValueError, match="half_delivery_days"):
+        resolve_temporal({"mode": "shipping_transit", "half_delivery_days": {"12-24": 1.5}})
+
+
+def test_carrier_events_prime_day_black_week_singles_day():
+    temporal = resolve_temporal({"mode": "shipping_transit"})
+    dates = pd.date_range("2025-01-01", "2025-12-31")
+    amazon = pd.Series(event_factor(dates, temporal, "private", "Amazon"), index=dates)
+    dhl = pd.Series(event_factor(dates, temporal, "private", "DHL"), index=dates)
+    assert (amazon["2025-07-08":"2025-07-11"] == 2.).all() and amazon["2025-07-12"] == 1. and dhl["2025-07-08"] == 1.
+    assert (amazon["2025-11-28":"2025-12-01"] == 1.8).all() and dhl["2025-11-28"] == 1.8 and amazon["2025-12-02"] == 1.
+    assert dhl["2025-11-18"] == 1.15 and amazon["2025-11-18"] == 1.
+    assert event_factor(dates, temporal, "business", "Amazon").max() == 1.
+    assert event_factor(dates, resolve_temporal({"mode": "shipping_transit", "events": []}), "private", "Amazon").max() == 1.
+    with pytest.raises(ValueError, match="events"):
+        resolve_temporal({"mode": "shipping_transit", "events": [{"name": "x", "carriers": "all", "segments": ["private"], "uplift": -1}]})

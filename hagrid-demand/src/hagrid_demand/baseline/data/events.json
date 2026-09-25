@@ -1,0 +1,39 @@
+{
+  "events": [
+    {
+      "name": "Prime Day",
+      "carriers": ["Amazon"],
+      "segments": ["private"],
+      "uplift": 2.0,
+      "rule": "prime_day",
+      "dates": {
+        "2019": ["07-15", "07-16"],
+        "2020": ["10-13", "10-14"],
+        "2021": ["06-21", "06-22"],
+        "2022": ["07-12", "07-13"],
+        "2023": ["07-11", "07-12"],
+        "2024": ["07-16", "07-17"],
+        "2025": ["07-08", "07-11"]
+      },
+      "source": "Dates from Amazon announcements, later years by rule (second Tuesday of July, two days); uplift is an assumption."
+    },
+    {
+      "name": "Black Week",
+      "carriers": "all",
+      "segments": ["private"],
+      "uplift": 1.8,
+      "rule": "black_week",
+      "source": "Black Friday to Cyber Monday; DHL sorted 12.4 million parcels on a Black Week day in 2025 against 6.7 million on a normal day (x1.85)."
+    },
+    {
+      "name": "Singles' Day",
+      "carriers": ["DHL", "Hermes", "GLS", "DPD"],
+      "segments": ["private"],
+      "uplift": 1.15,
+      "rule": "fixed",
+      "start": "11-18",
+      "end": "11-21",
+      "source": "Orders of 11 November reach German networks about a week later; Temu and Shein send about 460,000 parcels a day to Germany (Euronews 2026). Uplift is an assumption."
+    }
+  ]
+}

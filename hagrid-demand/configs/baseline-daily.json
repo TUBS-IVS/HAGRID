@@ -109,7 +109,12 @@
     "carrier_day_log_sd": 0.03,
     "weekday_concentration": 1000,
     "christmas_pull_forward_days": 5,
-    "holiday_spread_days": 3
+    "holiday_spread_days": 3,
+    "events": "standard",
+    "half_delivery_days": {
+      "12-24": 0.5,
+      "12-31": 0.5
+    }
   },
   "business_potential": {
     "model": "company_locations"

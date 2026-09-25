@@ -6,7 +6,7 @@ import numpy as np
 
 from hagrid_demand.common.rng import named_rng
 
-from .shipping import DeliveryCalendar, expected_delivery, kernel_for, landing, saturday_accept
+from .shipping import DeliveryCalendar, day_acceptance, event_factor, expected_delivery, kernel_for, landing, saturday_accept
 
 
 def week_index(cal: DeliveryCalendar) -> np.ndarray:
@@ -30,9 +30,23 @@ def ar1_lognormal(count: int, sd: float, rho: float, rng: np.random.Generator) -
 def expected_deliveries(targets: dict[tuple[str, str], float], shipping: dict[str, np.ndarray], cal: DeliveryCalendar,
                         temporal: dict) -> dict[tuple[str, str], np.ndarray]:
     """Expected delivered parcels per day for each (segment, carrier) annual target."""
-    return {(segment, carrier): float(target) * expected_delivery(shipping[segment], cal, kernel_for(temporal, carrier),
-                                                                  saturday_accept(temporal, carrier, segment))
+    return {(segment, carrier): float(target) * expected_delivery(
+                _with_events(shipping[segment], cal, temporal, segment, carrier), cal, kernel_for(temporal, carrier),
+                saturday_accept(temporal, carrier, segment), half_days=temporal.get("half_delivery_days"),
+                business=segment == "business")
             for (segment, carrier), target in targets.items()}
+
+
+def _event_weights(shipping: np.ndarray, cal: DeliveryCalendar, temporal: dict, segment: str, carrier: str) -> np.ndarray:
+    """Carrier event multipliers scaled so that they only move volume within the year."""
+    base = np.asarray(shipping, dtype=float)
+    factor = event_factor(cal.dates, temporal, segment, carrier)
+    total = float((base * factor).sum())
+    return factor * (base.sum() / total) if total > 0 else factor
+
+
+def _with_events(shipping: np.ndarray, cal: DeliveryCalendar, temporal: dict, segment: str, carrier: str) -> np.ndarray:
+    return np.asarray(shipping, dtype=float) * _event_weights(shipping, cal, temporal, segment, carrier)
 
 
 def _day_factors(process: dict | None, count: int, rng_keys: dict, segment: str) -> np.ndarray:
@@ -109,23 +123,25 @@ def simulate_deliveries(targets: dict[tuple[str, str], float], shipping: dict[st
             carrier_keys = {**keys, "segment": segment, "carrier": carrier}
             carrier_factor = ar1_lognormal(week_count, temporal["carrier_week_log_sd"], 0.,
                                            named_rng(**carrier_keys, channel="shipping-carrier-week"))[weeks]
-            mean = target * split * week_factor * carrier_factor * day_factor * share_factor[carrier]
+            mean = (target * split * week_factor * carrier_factor * day_factor * share_factor[carrier]
+                    * _event_weights(base, cal, temporal, segment, carrier))
             counts_rng = named_rng(**carrier_keys, channel="shipping-counts")
             shipped = (counts_rng.multinomial(int(round(target)), mean / mean.sum()) if regime == "fixed_annual"
                        else counts_rng.poisson(mean)).astype(np.int64)
             kernel = kernel_for(temporal, carrier)
             offsets = named_rng(**carrier_keys, channel="shipping-transit").multinomial(shipped, kernel)
-            accept = saturday_accept(temporal, carrier, segment)
+            share, rest = day_acceptance(cal, saturday_accept(temporal, carrier, segment), temporal.get("half_delivery_days"),
+                                         segment == "business")
             saturday_rng = named_rng(**carrier_keys, channel="shipping-saturday")
             delivered = np.zeros(days, dtype=np.int64)
             for offset in range(len(kernel)):
                 destination = landing(cal, offset + 1)
                 counts = offsets[:, offset]
-                on_saturday = saturday[destination]
-                np.add.at(delivered, destination[~on_saturday], counts[~on_saturday])
-                stay = counts[on_saturday] if accept >= 1 else saturday_rng.binomial(counts[on_saturday], accept)
-                np.add.at(delivered, destination[on_saturday], stay)
-                np.add.at(delivered, cal.next_weekday_delivery[destination[on_saturday]], counts[on_saturday] - stay)
+                partial = share[destination] < 1
+                np.add.at(delivered, destination[~partial], counts[~partial])
+                stay = saturday_rng.binomial(counts[partial], share[destination[partial]])
+                np.add.at(delivered, destination[partial], stay)
+                np.add.at(delivered, rest[destination[partial]], counts[partial] - stay)
             delivered_all[(segment, carrier)] = delivered
             shipped_all[(segment, carrier)] = shipped
     return (delivered_all, shipped_all) if return_shipments else delivered_all
