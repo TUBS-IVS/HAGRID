@@ -130,3 +130,21 @@ def test_out_of_home_points_reach_the_matsim_export(ooh_run):
     exported = gpd.read_file(ooh_run / "ooh_export" / ledger["file"])
     assert {"locker", "shared_locker"} & set(exported.stop_type)
     assert int(exported.total.sum()) == int(busiest.parcels)
+
+
+def test_plan_prefers_lockers_within_reach():
+    import pandas as pd
+
+    from hagrid_demand.baseline.out_of_home import build_plan
+
+    inputs = {**load_out_of_home_inputs(), "shares_2025": {"DHL": .1}}
+    sites = pd.DataFrame({"site_id": ["a", "b"], "plz": ["30159", "30159"], "annual_expected": [100., 100.]})
+    points = gpd.GeoDataFrame({"point_id": ["shop", "locker"], "kind": ["shop", "locker"], "carriers": ["DHL", "DHL"],
+                               "synthetic": [False, False], "plz": ["30159", "30159"]},
+                              geometry=[Point(100, 0), Point(800, 0)], crs="EPSG:25832")
+    xy = np.array([[0., 0.], [5000., 0.]])
+    plan = build_plan(sites, ["DHL"], xy, np.array([2., 10.]), points, inputs, 2025, 365, lambda carrier: np.random.default_rng(1))
+    assert plan.primary[0, 0] == 1 and plan.secondary[0, 0] == 0 and plan.primary[1, 0] == -1
+    shop_first = build_plan(sites, ["DHL"], xy, np.array([2., 10.]), points, {**inputs, "prefer_lockers": False}, 2025, 365,
+                            lambda carrier: np.random.default_rng(1))
+    assert shop_first.primary[0, 0] == 0 and shop_first.secondary[0, 0] == 1
