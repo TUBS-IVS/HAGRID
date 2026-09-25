@@ -129,3 +129,15 @@ def test_legacy_mode_rejects_strongholds_and_frailty(tmp_path):
     with pytest.raises(ValueError, match="shipping_transit"):
         list(generate_days(annual, profiles, pd.DataFrame(), cfg, 0, 0, spatial_plan=make_dirichlet_plan(annual, cfg),
                            cache_dir=tmp_path))
+
+
+def test_frailty_keeps_plz_totals_when_streets_cross_plz():
+    annual, profiles, delivered = _inputs(("private",))
+    cfg = {"seed": 11, "spatial": {"mode": "dirichlet", "between": 1e12, "within_per_site": 1e9, "site_frailty_cv": .5}}
+    streets = pd.Series(["s1"] * 5, index=[f"p{index}" for index in range(5)])
+    (date, segments), *_ = draw_delivery_days(annual, profiles, delivered, DATES, cfg, 0, 0,
+                                              spatial_plan=make_dirichlet_plan(annual, cfg), site_groups=streets)
+    item = segments["private"]
+    weights = item.sites.annual_expected.to_numpy(float)
+    first = item.sites.plz.eq("30159").to_numpy()
+    assert item.shares[first].sum() == pytest.approx(weights[first].sum() / weights.sum(), abs=1e-4)
