@@ -43,6 +43,7 @@ def main():
         ("report", "Render an existing baseline run"),
         ("osm-clip", "Clip a Geofabrik OSM extract to the study region"),
         ("export-day", "Write the MATSim shapefile of one day from a run's annual store"),
+        ("annual-dashboard", "Render the annual calendar dashboard of a run"),
     ]:
         command = baseline_sub.add_parser(name, help=help_text)
         if name == "osm-clip":
@@ -56,6 +57,10 @@ def main():
             command.add_argument("--run", required=True)
             command.add_argument("--date", required=True)
             command.add_argument("--out", default=None)
+        elif name == "annual-dashboard":
+            command.add_argument("--run", required=True)
+            command.add_argument("--out", required=True)
+            command.add_argument("--year", type=int, default=None)
         else:
             command.add_argument("--config", required=True)
             command.add_argument("--run-id", default=None)
@@ -66,6 +71,10 @@ def main():
             if args.baseline_command == "osm-clip":
                 from .baseline.osm import clip_osm_region
                 print(json.dumps(clip_osm_region(args.pbf, args.plz, args.out, args.buffer_m), indent=2, ensure_ascii=False))
+                return 0
+            if args.baseline_command == "annual-dashboard":
+                from .baseline.annual_dashboard import write_annual_dashboard
+                print(f"Annual dashboard: {write_annual_dashboard(args.run, args.out, args.year)}")
                 return 0
             if args.baseline_command == "export-day":
                 from .baseline.annual import export_day
