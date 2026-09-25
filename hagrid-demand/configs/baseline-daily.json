@@ -108,7 +108,7 @@
     "carrier_week_log_sd": 0.02,
     "carrier_day_log_sd": 0.03,
     "weekday_concentration": 1000,
-    "christmas_pull_forward_days": 14,
+    "christmas_pull_forward_days": 5,
     "holiday_spread_days": 3
   },
   "business_potential": {
