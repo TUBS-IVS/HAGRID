@@ -21,9 +21,9 @@
       "name": "Black Week",
       "carriers": "all",
       "segments": ["private"],
-      "uplift": 1.8,
+      "uplift": 1.35,
       "rule": "black_week",
-      "source": "Black Friday to Cyber Monday; DHL sorted 12.4 million parcels on a Black Week day in 2025 against 6.7 million on a normal day (x1.85)."
+      "source": "Black Friday to Cyber Monday; DHL sorted 12.4 million parcels on a Black Week day in 2025 against 6.7 million on a normal day and expected more than 14 million before Christmas. The Swiss weekly source already raises late November, so the uplift is calibrated to a Black Week peak of 0.89 of the Christmas peak."
     },
     {
       "name": "Singles' Day",
