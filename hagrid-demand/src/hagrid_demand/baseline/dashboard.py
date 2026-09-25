@@ -91,6 +91,16 @@ def _report_markdown(report: dict) -> str:
             text += (f"| {day['date']} | {day['parcels']:,} | {day['b2b'] / day['parcels']:.1%} | {day.get('stops_active', day.get('features', 0)):,} | "
                      f"{per_stop if per_stop is not None else '–'} | {share.get('private', 0):.1%} | {share.get('business', 0):.1%} | {notebook} |\n"
                      if day.get("parcels") else f"| {day['date']} | 0 | – | 0 | – | – | – | {notebook} |\n")
+    weekday = report.get("views", {}).get("weekday_profile")
+    if weekday:
+        realised = {(row["segment"], row["carrier"]): row["shares"] for row in weekday if row["kind"] == "delivered"}
+        text += ("\n## Weekday profile by carrier and segment\n\n"
+                 f"Share of the {weekday[0]['year']} deliveries per weekday, expected / realised.\n\n"
+                 "| Carrier | Segment | Mon | Tue | Wed | Thu | Fri | Sat |\n|---|---|---|---|---|---|---|---|\n")
+        for row in (item for item in weekday if item["kind"] == "expected"):
+            other = realised.get((row["segment"], row["carrier"]), [0.] * 7)
+            cells = " | ".join(f"{a:.1%} / {b:.1%}" for a, b in zip(row["shares"][:6], other[:6]))
+            text += f"| {row['carrier']} | {row['segment']} | {cells} |\n"
     return text
 
 
@@ -161,6 +171,20 @@ def build_report_data(reference_dir: Path, config: dict | None = None, run_id: s
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             report["views"]["stops"] = {"days": manifest.get("days", []),
                                         "notebook_comparison": manifest.get("notebook_comparison")}
+            break
+    for candidate in (reference_dir / "delivery_calendar.parquet", reference_dir.parent / "delivery_calendar.parquet"):
+        if candidate.is_file():
+            calendar = pd.read_parquet(candidate)
+            year = int(calendar.year.max())
+            rows = calendar.loc[calendar.year.eq(year)].assign(weekday=lambda frame: pd.to_datetime(frame.date).dt.dayofweek)
+            profile = []
+            for (segment, carrier), group in rows.groupby(["segment", "carrier"], sort=True):
+                for kind in ("expected", "delivered"):
+                    by_day = group.groupby("weekday")[kind].sum().reindex(range(7), fill_value=0.)
+                    total = float(by_day.sum())
+                    profile.append({"year": year, "segment": segment, "carrier": carrier, "kind": kind,
+                                    "shares": (by_day / total).round(4).tolist() if total > 0 else [0.] * 7})
+            report["views"]["weekday_profile"] = profile
             break
     daily_path = reference_dir / "daily_aggregates.parquet"
     if daily_path.is_file():

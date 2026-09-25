@@ -86,6 +86,28 @@
     "holiday_region": "NI",
     "holiday_factor": 0.0
   },
+  "temporal": {
+    "mode": "shipping_transit",
+    "shipping_weekday_weights": {
+      "private": "standard",
+      "business": "standard"
+    },
+    "transit_days": {
+      "default": [
+        0.85,
+        0.13,
+        0.02
+      ]
+    },
+    "saturday_delivery": {
+      "default": 1.0
+    },
+    "business_saturday_open": 0.2,
+    "week_log_sd": 0.016,
+    "week_ar": 0.5,
+    "carrier_week_log_sd": 0.02,
+    "weekday_concentration": 1000
+  },
   "business_potential": {
     "model": "company_locations"
   },

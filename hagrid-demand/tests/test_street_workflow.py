@@ -56,3 +56,30 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     assert "Days and stops" in markdown
     assert "b2c_parcels_per_person_year" in report["views"]["anchor"]["plausibility"][0]
     assert report["views"]["stops"]["days"][0]["stops_active"] > 0
+
+
+def test_shipping_transit_daily_run(tmp_path):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config_path = write_street_fixture(tmp_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.update({"output_scope": "daily", "years": [2021, 2025], "dates": ["2025-05-16", "2025-05-17"],
+                   "anchor": {"mode": "street", "min_streets": 99}, "temporal": {"mode": "shipping_transit"}})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(config_path, "street-shipping")
+
+    status = json.loads((run / "daily_status.json").read_text(encoding="utf-8"))
+    assert status["temporal"]["mode"] == "shipping_transit"
+    calendar = pd.read_parquet(run / "delivery_calendar.parquet")
+    projection = pd.read_parquet(run / "annual_projection.parquet")
+    profiles = pd.read_parquet(run / "carrier_profiles.parquet")
+    totals = projection.groupby(["year", "segment"]).annual_expected.sum()
+    for (year, segment, carrier), expected in calendar.groupby(["year", "segment", "carrier"]).expected.sum().items():
+        share = profiles.set_index(["year", "segment", "carrier"]).share[(year, segment, carrier)]
+        assert expected == pytest.approx(totals[(year, segment)] * share, rel=1e-6)
+    daily = pd.read_parquet(run / "daily_aggregates.parquet")
+    daily["date"] = pd.to_datetime(daily.date).dt.strftime("%Y-%m-%d")
+    by_day = daily.groupby(["date", "segment"])["count"].sum().unstack(fill_value=0)
+    b2b = by_day.business / by_day.sum(axis=1)
+    assert b2b["2025-05-17"] < b2b["2025-05-16"]
+    assert "Weekday profile by carrier and segment" in (run / "report.md").read_text(encoding="utf-8")
