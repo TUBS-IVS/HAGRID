@@ -78,3 +78,17 @@ def test_shipping_weights_zero_on_holidays_and_sundays():
     assert weights.sum() == pytest.approx(1.)
     assert weights[dates.dayofweek == 6].sum() == 0.
     assert all(weights[dates.get_loc(pd.Timestamp(day))] == 0. for day in holidays)
+
+
+def test_holiday_shipments_move_to_next_shipping_day():
+    temporal = resolve_temporal({"mode": "shipping_transit"})
+    holidays = public_holidays(2025, "NI")
+    weights = shipping_weights(2025, "private", None, temporal, {"holiday_dates": holidays})
+    assert weights.sum() == pytest.approx(1.)
+    cal = delivery_calendar(2025, holidays)
+    delivered = expected_delivery(weights, cal, KERNEL, 1.)
+    spring = pd.date_range("2025-04-01", "2025-05-31")
+    for date, weekday in (("2025-04-22", 1), ("2025-04-23", 2)):
+        others = [day for day in spring if day.dayofweek == weekday and day != pd.Timestamp(date)
+                  and day.strftime("%Y-%m-%d") not in holidays]
+        assert delivered[_index(cal, date)] > np.mean([delivered[_index(cal, day)] for day in others])
