@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -543,3 +544,104 @@ def generate_days(annual: pd.DataFrame, profiles: pd.DataFrame, calendar: pd.Dat
                 frame = pd.concat(date_rows, ignore_index=True)
                 frame["_segment_order"] = frame.segment.map(_segment_order)
                 yield frame.sort_values(["date", "_segment_order", "plz", "site_id", "carrier"], kind="stable").drop(columns="_segment_order").reset_index(drop=True)
+
+
+@dataclass
+class SegmentDay:
+    """One segment on one day: site order, carrier order, site×carrier counts and the spatial shares used."""
+
+    sites: pd.DataFrame
+    carriers: list[str]
+    counts: np.ndarray
+    shares: np.ndarray
+    delivered: np.ndarray
+
+
+def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: dict[tuple[str, str], np.ndarray],
+                       dates: pd.DatetimeIndex, cfg: dict, outer_id: int, inner_id: int, *, spatial_plan: SpatialPlan,
+                       coupling_id: str | None = None, cache_dir: Path | None = None) -> Iterator[tuple[pd.Timestamp, dict[str, SegmentDay]]]:
+    """Allocate each carrier's delivered count per day to sites with the day's shared spatial shares.
+
+    *delivered* holds one count per date in *dates* for every (segment, carrier); all dates must
+    belong to one year. The spatial draw reuses the legacy ``spatial-dirichlet`` stream, each carrier
+    draws its own multinomial from ``carrier-sites``.
+    """
+    annual_frame = _annual_frame(annual)
+    _validate_plan(spatial_plan, annual_frame, cfg)
+    dates = pd.DatetimeIndex(dates)
+    years = sorted(set(dates.year.tolist()))
+    if len(years) != 1:
+        raise ValueError("draw_delivery_days expects the dates of exactly one year")
+    year = int(years[0])
+    spatial = _spatial_parameters(cfg)
+    stream = coupling_id if coupling_id is not None else inner_id
+    inputs = {}
+    for segment in _SEGMENTS:
+        carriers = sorted(carrier for (item, carrier) in delivered if item == segment)
+        sites = annual_frame.loc[annual_frame.year.eq(year) & annual_frame.segment.eq(segment)].sort_values(
+            ["plz", "site_id"], kind="stable").reset_index(drop=True)
+        totals = np.column_stack([np.asarray(delivered[(segment, carrier)], dtype=np.int64) for carrier in carriers])             if carriers else np.zeros((len(dates), 0), dtype=np.int64)
+        if totals.shape[0] != len(dates):
+            raise ValueError(f"delivered counts for {segment} do not match the dates")
+        weights = sites.annual_expected.to_numpy(float)
+        if sites.empty or weights.sum() <= 0:
+            if totals.sum() > 0:
+                raise ValueError(f"positive daily {segment} deliveries have no site support")
+            continue
+        inputs[segment] = {"sites": sites, "carriers": carriers, "totals": totals, "site_weights": weights}
+    for day, date in enumerate(dates):
+        result = {}
+        for segment, item in inputs.items():
+            totals = item["totals"][day]
+            if totals.sum() == 0:
+                shares = item["site_weights"] / item["site_weights"].sum()
+                counts = np.zeros((len(item["sites"]), len(item["carriers"])), dtype=np.int64)
+            else:
+                if spatial_plan.mode == "dirichlet":
+                    share_rng = named_rng(int(cfg["seed"]), year=year, outer_id=outer_id, inner_id=stream, segment=segment,
+                                          date=date.date().isoformat(), channel="spatial-dirichlet")
+                    shares = spatial_dirichlet(item["site_weights"], item["sites"].plz.to_numpy(), item["sites"].site_id.to_numpy(),
+                                               _concentration(spatial, "between", segment, DEFAULT_BETWEEN_CONCENTRATION),
+                                               _concentration(spatial, "within", segment, None), share_rng,
+                                               within_per_site=_concentration(spatial, "within_per_site", segment, DEFAULT_WITHIN_PER_SITE))
+                else:
+                    shares = _correlated_shares(item["sites"], item, spatial_plan, cfg, year=year, segment=segment,
+                                                outer_id=outer_id, inner_id=inner_id, date=date, coupling_id=coupling_id,
+                                                checkpoint_dir=Path(cache_dir or ".") / "spatial_field_checkpoints")
+                counts = np.column_stack([
+                    named_rng(int(cfg["seed"]), year=year, outer_id=outer_id, inner_id=stream, segment=segment, carrier=carrier,
+                              date=date.date().isoformat(), channel="carrier-sites").multinomial(int(total), shares)
+                    for carrier, total in zip(item["carriers"], totals, strict=True)]).astype(np.int64)
+            result[segment] = SegmentDay(item["sites"], item["carriers"], counts, shares, totals.astype(np.int64))
+        yield date, result
+
+
+def delivery_frame(date: pd.Timestamp, segment_days: dict[str, SegmentDay], expected: dict[tuple[str, str], np.ndarray],
+                   cal_index: int, year: int, outer_id: int, inner_id: int) -> pd.DataFrame:
+    """Build the legacy site/carrier detail frame for one day from :func:`draw_delivery_days` output."""
+    rows = []
+    for segment in _SEGMENTS:
+        item = segment_days.get(segment)
+        if item is None:
+            continue
+        n_sites, n_carriers = item.counts.shape
+        weights = item.sites.annual_expected.to_numpy(float)
+        expected_day = np.asarray([expected[(segment, carrier)][cal_index] for carrier in item.carriers], dtype=float)
+        rows.append(pd.DataFrame({
+            "date": pd.Timestamp(date), "year": year, "outer_id": outer_id, "inner_id": inner_id,
+            "site_id": np.repeat(item.sites.site_id.to_numpy(), n_carriers),
+            "plz": np.repeat(item.sites.plz.to_numpy(), n_carriers), "segment": segment,
+            "carrier": np.tile(np.asarray(item.carriers, dtype=object), n_sites),
+            "allocation_status": np.repeat(item.sites.allocation_status.to_numpy(), n_carriers),
+            "baseline_expected": np.outer(weights / weights.sum(), expected_day).ravel(),
+            "conditional_expected": np.outer(item.shares, item.delivered.astype(float)).ravel(),
+            "daily_count": int(item.delivered.sum()), "count": item.counts.ravel().astype(np.int64),
+        }))
+    columns = ["date", "year", "outer_id", "inner_id", "site_id", "plz", "segment", "carrier", "allocation_status",
+               "baseline_expected", "conditional_expected", "daily_count", "count"]
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    frame = pd.concat(rows, ignore_index=True)
+    frame["_segment_order"] = frame.segment.map(_segment_order)
+    return frame.sort_values(["date", "_segment_order", "plz", "site_id", "carrier"], kind="stable").drop(
+        columns="_segment_order").reset_index(drop=True)
