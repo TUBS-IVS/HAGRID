@@ -206,6 +206,13 @@ Abholpunkte statt an die Haustür zu:
    von 25 Paketen je Packstation nicht mehr an (`hubs.fixedParcelLockerDemand`, Standard `false`), damit nichts doppelt
    zählt.
 
+Abnahmelauf 2025 mit allen Komponenten: 8,6 % der B2C-Pakete gehen an Abholpunkte (DHL 12,0, GLS 11,9, DPD 9,9, Hermes 8,0,
+UPS 7,7 %; Amazon nur 2,5 % statt 5 %, weil OSM in der Region nur 21 Amazon-Locker kennt und diese voll laufen). Eine
+DHL-Packstation bekommt im Median 25 Pakete je Liefertag, 17 % der Punkte sind an ihrem stärksten Tag voll; 641 Shops
+sind synthetisch ergänzt. Events: Amazon-B2C am 9.–12.7. ×1,8–1,9, Black-Week-Spitze (Di 2.12.) bei 0,90 der
+Weihnachtsspitze (Mo 22.12., 420 Tsd. Pakete); Heiligabend und Silvester stellen die halbe Menge zu, der Rest kommt am
+27.12. bzw. 2.1. Die Jahresanteile je Anbieter und Segment bleiben exakt.
+
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
 (`<run>/annual/`): `stop_daily.parquet` (Datum, Stopp, 14 Zählspalten `<anbieter>_b2c`/`_b2b`), `plz_daily.parquet`,
 `days.parquet` (Tagessummen, Stoppkennzahlen) und `annual_summary.json` (Wochen, Monate, Wochentagsprofile).
