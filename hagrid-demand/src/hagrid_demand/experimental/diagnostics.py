@@ -35,7 +35,7 @@ def special_offsets(observations, special, groups):
 def run_diagnostics(config_path, run_id, special_path):
     cfg = config(config_path)
     if cfg.get('dhl_exclude_above') is not None:
-        raise ValueError('Legacy raw/core comparison: use model_search for the configured KEP scope')
+        raise ValueError('Legacy raw/core comparison: use model_search for the configured CEP scope')
     if cfg['reference_year'] != 2021:
         raise ValueError('This diagnosis requires the confirmed DHL reference year 2021')
     source = Path(cfg['foundation_run'])
@@ -94,9 +94,9 @@ def run_diagnostics(config_path, run_id, special_path):
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},
         'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
     summary=table.groupby(['mode','model'])[['wMAPE','bias']].agg(['mean','min','max'])
-    content='<h1>DHL 2021: Reproduktion und Fehlerdiagnose</h1><p>Keine Hochrechnung, keine simulierten Tagesschwankungen. Fehler auf jeweils zurückgehaltenen PLZ.</p>'
+    content='<h1>DHL 2021: reproduction and error diagnosis</h1><p>No scale-up, no simulated daily fluctuations. Errors on the respective held-out PLZ.</p>'
     content+=summary.to_html(float_format=lambda x:f'{x:.1%}')
-    content+='<h2>Prüfgrenzen</h2><ul>'+''.join('<li>'+html.escape(x)+'</li>' for x in result['limitations'])+'</ul>'
-    content+=f'<p>Rohmenge: {raw.sum():,.0f}; separat angenommene Großkundenmenge: {offset.sum():,.1f}.</p>'
-    (output/'dashboard.html').write_text('<!doctype html><html lang="de"><meta charset="utf-8"><title>DHL 2021 Diagnose</title><style>body{font:17px system-ui;max-width:1200px;margin:40px auto;padding:20px}td,th{padding:10px;text-align:right}li{margin:12px}</style>'+content+'</html>',encoding='utf-8')
+    content+='<h2>Validation limits</h2><ul>'+''.join('<li>'+html.escape(x)+'</li>' for x in result['limitations'])+'</ul>'
+    content+=f'<p>Raw volume: {raw.sum():,.0f}; separately assumed large-customer volume: {offset.sum():,.1f}.</p>'
+    (output/'dashboard.html').write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>DHL 2021 diagnosis</title><style>body{font:17px system-ui;max-width:1200px;margin:40px auto;padding:20px}td,th{padding:10px;text-align:right}li{margin:12px}</style>'+content+'</html>',encoding='utf-8')
     return output

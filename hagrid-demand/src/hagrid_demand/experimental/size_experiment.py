@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--special-customers',required=True)
     parser.add_argument('--output',required=True)
     args=parser.parse_args();cfg=config(args.config)
-    if cfg.get('dhl_exclude_above') is not None: raise ValueError('Legacy comparison: use model_search for the configured KEP scope')
+    if cfg.get('dhl_exclude_above') is not None: raise ValueError('Legacy comparison: use model_search for the configured CEP scope')
     output=Path(args.output);output.mkdir(parents=True,exist_ok=False)
     source=Path(cfg['foundation_run'])
     priors=load_legacy(cfg['legacy_output'],2021)
@@ -45,7 +45,7 @@ def main():
     table=pd.DataFrame(scores);table.to_csv(output/'metrics.csv',index=False)
     summary=table.groupby(['mode','power'])[['wMAPE','bias']].mean()
     print(summary.to_string())
-    (output/'dashboard.html').write_text('<!doctype html><meta charset="utf-8"><h1>Betriebsgroesse: Modellvergleich</h1><p>Explorative wiederholte PLZ-CV. Conditional core setzt bekannte DHL-Grosskundenmengen voraus. Kein unberuehrter Test und keine automatische Modellfreigabe.</p>'+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
+    (output/'dashboard.html').write_text('<!doctype html><meta charset="utf-8"><h1>Firm size: model comparison</h1><p>Exploratory repeated PLZ CV. Conditional core presupposes known DHL large-customer volumes. No untouched test and no automatic model approval.</p>'+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
     paths=[Path(args.config),Path(args.special_customers),*source.glob('*.parquet'),*Path(cfg['legacy_output']).glob('0[0125]_*.csv')]
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
 

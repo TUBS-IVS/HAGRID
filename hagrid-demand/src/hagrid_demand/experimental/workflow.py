@@ -271,21 +271,21 @@ def render(output,result):
 
     template=Path(__file__).with_name('model.html').read_text(encoding='utf-8')
 
-    (output/'dashboard.html').write_text(template.replace('</body>','<p><a href="temporal.html">Zeitverlauf: Tage, Wochen, Monate und Simulationsbänder</a></p></body>').replace('__RUN__',html.escape(result['run_id'])).replace('__DATA__',data),encoding='utf-8')
+    (output/'dashboard.html').write_text(template.replace('</body>','<p><a href="temporal.html">Time course: days, weeks, months and simulation bands</a></p></body>').replace('__RUN__',html.escape(result['run_id'])).replace('__DATA__',data),encoding='utf-8')
 
     if (output/'carriers.html').exists():
         dashboard=output/'dashboard.html'
-        dashboard.write_text(dashboard.read_text(encoding='utf-8').replace('</body>','<p><a href="carriers.html">Lokale Anbieterprofile und Annahmen</a></p></body>'),encoding='utf-8')
+        dashboard.write_text(dashboard.read_text(encoding='utf-8').replace('</body>','<p><a href="carriers.html">Local carrier profiles and assumptions</a></p></body>'),encoding='utf-8')
     e=result['evaluation'];test=e.get('test_dhl')
 
-    report=f"# Gemeinsames Nachfragemodell: {result['run_id']}\n\nStatus: vorlÃ¤ufige Kalibrierung unter dokumentierten Annahmen.\n\nGewÃ¤hlt: {result['selected']}\n\n"
+    report=f"# Joint demand model: {result['run_id']}\n\nStatus: provisional calibration under documented assumptions.\n\nSelected: {result['selected']}\n\n"
 
-    if test: report+=f"DHL-Test-wMAPE: {test['wMAPE']:.2%}; Bias: {test['bias']:.2%}; {test['groups']} Test-PLZ.\n\n"
+    if test: report+=f"DHL test wMAPE: {test['wMAPE']:.2%}; bias: {test['bias']:.2%}; {test['groups']} test PLZ.\n\n"
 
-    report+='## Annahmen\n\n'+'\n'.join('- '+x for x in result['assumptions'])
+    report+='## Assumptions\n\n'+'\n'.join('- '+x for x in result['assumptions'])
 
-    report+='\n\n## PrÃ¼fgrenzen\n\n'+'\n'.join('- '+x for x in result['unimplemented_or_unavailable_evidence'])
+    report+='\n\n## Validation limits\n\n'+'\n'.join('- '+x for x in result['unimplemented_or_unavailable_evidence'])
 
-    report+='\n\nDashboard: [dashboard.html](dashboard.html). Modell, Datenherkunft und Evaluation liegen als JSON vor.\n'
+    report+='\n\nDashboard: [dashboard.html](dashboard.html). Model, data provenance and evaluation are available as JSON.\n'
 
     (output/'report.md').write_text(report,encoding='utf-8')

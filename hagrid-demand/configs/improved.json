@@ -94,7 +94,7 @@
     "Seasonality uses the inherited Swiss 2019-2021 weekly mean profile. Week 53 interpolates weeks 52 and 1; monthly weights are neutral.",
     "Weekly and annual correlated shocks are user-adjustable assumptions, not fitted uncertainty.",
     "Square-root business exposure chosen from exploratory repeated postal CV after prior test inspection. New split metrics are not an untouched confirmation.",
-    "User-defined KEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
+    "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
   ],
   "weekly_profile_file": "../../parcel-demand-estimation/output/03_yearly_weekly_parcel_forecast.csv",
   "date_start": "2021-12-20",

@@ -14,13 +14,13 @@ from .data import write_json
 
 
 LABELS = {
-    "nearest_within_postal_unverified": "Eindeutiger geometrischer Kandidat",
-    "equidistant_candidates": "Mehrere gleich nahe Kandidaten",
-    "no_street_within_threshold_or_coverage": "Kein DHL-Kandidat im Suchradius",
-    "no_postal_coverage": "Keine PLZ-Abdeckung",
-    "ambiguous_postal_boundary": "Mehrdeutige PLZ-Zuordnung",
-    "unresolved_site_location": "Ungeklärte Standortlage",
-    "repeated_street_definition_unresolved": "Wiederholter Straßenschlüssel",
+    "nearest_within_postal_unverified": "Unique geometric candidate",
+    "equidistant_candidates": "Several equally near candidates",
+    "no_street_within_threshold_or_coverage": "No DHL candidate within the search radius",
+    "no_postal_coverage": "No PLZ coverage",
+    "ambiguous_postal_boundary": "Ambiguous PLZ assignment",
+    "unresolved_site_location": "Unresolved site location",
+    "repeated_street_definition_unresolved": "Repeated street key",
 }
 UNIQUE = "nearest_within_postal_unverified"
 
@@ -86,7 +86,7 @@ def build_dashboard(run_dir):
                                    "p95": float(distances.quantile(.95)) if len(distances) else None,
                                    "histogram": [{"label": f"{edges[i]:g}–{edges[i+1]:g} m", "count": int(n)} for i, n in enumerate(bins)]}}
     branches = frame.loc[frame.recipient_type.eq("business")].copy()
-    branches["branch"] = branches.branch.fillna("Unbekannt").astype(str)
+    branches["branch"] = branches.branch.fillna("Unknown").astype(str)
     branch_stats = branches.groupby("branch").agg(sites=("site_id", "size"), employees=("employees", "sum"),
                                                   unresolved=("unresolved", "sum")).reset_index()
     branch_stats["unresolved_pct"] = branch_stats.unresolved / branch_stats.sites * 100

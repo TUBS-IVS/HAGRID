@@ -283,7 +283,7 @@ def main():
     write_json(output/'selection.json',choices);write_json(output/'failures.json',failures)
     summary=score.assign(protocol=np.where(score.layout.eq('spatial'),'spatial','random_mean')).groupby(['mode','protocol','model'])[['wMAPE','bias']].mean()
     print(summary.to_string())
-    page='<!doctype html><meta charset="utf-8"><title>Modellsuche</title><style>body{font:16px system-ui;max-width:1200px;margin:40px auto}td,th{padding:8px}</style><h1>Breiter Modellvergleich</h1><p>'+protocol['limits']+'</p><p>nested_selection bewertet die gesamte Auswahlprozedur. Einzelne Kandidaten dienen der explorativen Diagnose; die beste Tabellenzeile ist kein unabhaengiger Auswahltest.</p>'
+    page='<!doctype html><meta charset="utf-8"><title>Model search</title><style>body{font:16px system-ui;max-width:1200px;margin:40px auto}td,th{padding:8px}</style><h1>Broad model comparison</h1><p>'+protocol['limits']+'</p><p>nested_selection evaluates the entire selection procedure. Individual candidates serve exploratory diagnosis; the best table row is not an independent selection test.</p>'
     if args.logistics_run: page+='<p><strong>'+protocol['osm_information']+'</strong></p>'
     (output/'dashboard.html').write_text(page+summary.to_html(float_format=lambda x:f'{x:.2%}'),encoding='utf-8')
     import sklearn

@@ -86,5 +86,5 @@ def write_time_report(output, summaries):
         summary=totals.groupby(period)[measures].quantile([.1,.5,.9]).unstack()
         summary.to_csv(output/f'temporal_{period}_quantiles.csv')
         tables.append('<h2>'+period+'</h2>'+summary.to_html(float_format=lambda x:f'{x:,.0f}'))
-    page='<!doctype html><meta charset="utf-8"><title>Nachfrage im Zeitverlauf</title><style>body{font:16px system-ui;margin:40px}td,th{padding:8px}table{border-collapse:collapse}</style><h1>Nachfrage im Zeitverlauf</h1><p>10/50/90-%-Quantile der simulierten Verläufe; keine kalibrierten Vorhersageintervalle. Wochen- und Monatswerte umfassen nur angeforderte Tage. Parameter- und Anbieterunsicherheit sind nicht enthalten.</p>'
+    page='<!doctype html><meta charset="utf-8"><title>Demand over time</title><style>body{font:16px system-ui;margin:40px}td,th{padding:8px}table{border-collapse:collapse}</style><h1>Demand over time</h1><p>10/50/90 % quantiles of the simulated paths; not calibrated prediction intervals. Weekly and monthly values cover only the requested days. Parameter and carrier uncertainty are not included.</p>'
     (output/'temporal.html').write_text(page+''.join(tables),encoding='utf-8')
