@@ -92,3 +92,20 @@ def test_holiday_shipments_move_to_next_shipping_day():
         others = [day for day in spring if day.dayofweek == weekday and day != pd.Timestamp(date)
                   and day.strftime("%Y-%m-%d") not in holidays]
         assert delivered[_index(cal, date)] > np.mean([delivered[_index(cal, day)] for day in others])
+
+
+def test_christmas_orders_ship_before_christmas_and_new_year_spreads():
+    holidays = public_holidays(2025, "NI")
+    dates = pd.date_range("2025-01-01", "2025-12-31")
+    weights = lambda **extra: pd.Series(shipping_weights(2025, "private", None, resolve_temporal({"mode": "shipping_transit", **extra}),
+                                                         {"holiday_dates": holidays}), index=dates)
+    new, old = weights(), weights(christmas_pull_forward_days=0, new_year_spread=False)
+    assert new.sum() == pytest.approx(old.sum())
+    assert new["2025-12-24":"2025-12-26"].sum() == 0
+    assert old["2025-12-27"] > 2 * old["2025-12-06"] and new["2025-12-27"] == pytest.approx(new["2025-12-06"])
+    assert new["2025-12-10":"2025-12-23"].sum() > old["2025-12-10":"2025-12-23"].sum()
+    assert new["2025-01-02"] < old["2025-01-02"] and new["2025-01-03":"2025-01-05"].sum() > old["2025-01-03":"2025-01-05"].sum()
+    with pytest.raises(ValueError, match="christmas_pull_forward_days"):
+        resolve_temporal({"mode": "shipping_transit", "christmas_pull_forward_days": -1})
+    with pytest.raises(ValueError, match="new_year_spread"):
+        resolve_temporal({"mode": "shipping_transit", "new_year_spread": "yes"})

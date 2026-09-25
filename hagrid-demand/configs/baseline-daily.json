@@ -107,7 +107,9 @@
     "week_ar": 0.5,
     "carrier_week_log_sd": 0.02,
     "carrier_day_log_sd": 0.03,
-    "weekday_concentration": 1000
+    "weekday_concentration": 1000,
+    "christmas_pull_forward_days": 14,
+    "new_year_spread": true
   },
   "business_potential": {
     "model": "company_locations"
