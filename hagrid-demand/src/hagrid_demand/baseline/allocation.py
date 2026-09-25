@@ -665,7 +665,7 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
     belong to one year. The spatial draw reuses the legacy ``spatial-dirichlet`` stream, each carrier
     draws its own multinomial from ``carrier-sites``. ``spatial.site_frailty_cv`` scales the site
     weights once per year by gamma factors that keep every group total (*site_groups*: site_id ->
-    street, else the PLZ); ``spatial.carrier_plz_log_sd`` tilts each carrier's shares towards its
+    street, split by PLZ; else the PLZ); ``spatial.carrier_plz_log_sd`` tilts each carrier's shares towards its
     own PLZ strongholds while PLZ and carrier totals stay unchanged.
     """
     annual_frame = _annual_frame(annual)
@@ -696,7 +696,9 @@ def draw_delivery_days(annual: pd.DataFrame, profiles: pd.DataFrame, delivered: 
         if frailty_cv > 0:
             ids = sites.site_id.astype(str).to_numpy()
             street = (site_groups.reindex(ids) if site_groups is not None else pd.Series(np.nan, index=ids)).to_numpy(dtype=object)
-            groups = np.where(pd.isna(street), "plz:" + sites.plz.astype(str).to_numpy(), "street:" + street.astype(str))
+            postal = sites.plz.astype(str).to_numpy()
+            # Street parts per PLZ: keeps the street anchor and the PLZ totals where a street crosses a PLZ border.
+            groups = np.where(pd.isna(street), "plz:" + postal, "street:" + street.astype(str) + "|" + postal)
             weights = site_frailty(weights, groups, frailty_cv,
                                    named_rng(int(cfg["seed"]), **keys, segment=segment, channel="site-frailty"))
         tilt = None

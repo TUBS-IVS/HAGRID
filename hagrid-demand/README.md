@@ -166,7 +166,8 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
    Verlauf gleich. Die Jahresmenge je Anbieter bleibt erhalten.
 5. **Raum:** Jeder Anbieter hat eigene PLZ-Hochburgen (`spatial.carrier_plz_log_sd` 0,15: fester Jahresfaktor je Anbieter
    und PLZ, per IPF so skaliert, dass PLZ- und Anbietermengen gleich bleiben). Vielbesteller (`spatial.site_frailty_cv`
-   0,5: Gamma-Faktor je Standort und Jahr, je Straße normiert, damit der DHL-Straßenanker hält) sind an vielen Tagen groß.
+   0,5: Gamma-Faktor je Standort und Jahr, je Straße und PLZ normiert, damit Straßenanker und PLZ-Mengen halten) sind an
+   vielen Tagen groß.
    Beides ist eine Annahme ohne Daten und gilt nur im Versandmodus.
 
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
