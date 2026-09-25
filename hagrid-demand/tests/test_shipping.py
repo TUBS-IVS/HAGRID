@@ -80,26 +80,30 @@ def test_shipping_weights_zero_on_holidays_and_sundays():
     assert all(weights[dates.get_loc(pd.Timestamp(day))] == 0. for day in holidays)
 
 
-def test_holiday_shipments_move_to_next_shipping_day():
-    temporal = resolve_temporal({"mode": "shipping_transit"})
+def test_holiday_shipments_spread_over_next_shipping_days():
     holidays = public_holidays(2025, "NI")
-    weights = shipping_weights(2025, "private", None, temporal, {"holiday_dates": holidays})
-    assert weights.sum() == pytest.approx(1.)
     cal = delivery_calendar(2025, holidays)
-    delivered = expected_delivery(weights, cal, KERNEL, 1.)
-    spring = pd.date_range("2025-04-01", "2025-05-31")
-    for date, weekday in (("2025-04-22", 1), ("2025-04-23", 2)):
-        others = [day for day in spring if day.dayofweek == weekday and day != pd.Timestamp(date)
-                  and day.strftime("%Y-%m-%d") not in holidays]
-        assert delivered[_index(cal, date)] > np.mean([delivered[_index(cal, day)] for day in others])
+
+    def delivered(days):
+        temporal = resolve_temporal({"mode": "shipping_transit", "holiday_spread_days": days})
+        weights = shipping_weights(2025, "private", None, temporal, {"holiday_dates": holidays})
+        assert weights.sum() == pytest.approx(1.) and weights[cal.dates.isin(pd.to_datetime(list(holidays)))].sum() == 0
+        return pd.Series(expected_delivery(weights, cal, KERNEL, 1.), index=cal.dates)
+
+    next_day, spread = delivered(1), delivered(3)
+    easter, normal = pd.date_range("2025-04-22", "2025-04-26"), pd.date_range("2025-05-13", "2025-05-17")
+    assert next_day["2025-04-22"] > next_day["2025-05-13"]
+    assert spread[easter].max() < next_day[easter].max() and spread[easter].sum() > spread[normal].sum()
+    with pytest.raises(ValueError, match="holiday_spread_days"):
+        resolve_temporal({"mode": "shipping_transit", "holiday_spread_days": 0})
 
 
-def test_christmas_orders_ship_before_christmas_and_new_year_spreads():
+def test_christmas_orders_ship_before_christmas():
     holidays = public_holidays(2025, "NI")
     dates = pd.date_range("2025-01-01", "2025-12-31")
     weights = lambda **extra: pd.Series(shipping_weights(2025, "private", None, resolve_temporal({"mode": "shipping_transit", **extra}),
                                                          {"holiday_dates": holidays}), index=dates)
-    new, old = weights(), weights(christmas_pull_forward_days=0, new_year_spread=False)
+    new, old = weights(), weights(christmas_pull_forward_days=0, holiday_spread_days=1)
     assert new.sum() == pytest.approx(old.sum())
     assert new["2025-12-24":"2025-12-26"].sum() == 0
     assert old["2025-12-27"] > 2 * old["2025-12-06"] and new["2025-12-27"] == pytest.approx(new["2025-12-06"])
@@ -107,5 +111,3 @@ def test_christmas_orders_ship_before_christmas_and_new_year_spreads():
     assert new["2025-01-02"] < old["2025-01-02"] and new["2025-01-03":"2025-01-05"].sum() > old["2025-01-03":"2025-01-05"].sum()
     with pytest.raises(ValueError, match="christmas_pull_forward_days"):
         resolve_temporal({"mode": "shipping_transit", "christmas_pull_forward_days": -1})
-    with pytest.raises(ValueError, match="new_year_spread"):
-        resolve_temporal({"mode": "shipping_transit", "new_year_spread": "yes"})
