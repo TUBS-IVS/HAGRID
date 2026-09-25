@@ -155,10 +155,10 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
 1. **Versandtag:** Saisonfaktor der Kalenderwoche × Versandprofil je Wochentag (`data/temporal_inputs.json`).
    Gewerbe: LogIKTram-Abholungen Mo .23, Di .21, Mi .18, Do .16, Fr .17, Sa .05. Privat: aus dem Notebook-Zustellprofil
    zurückgerechnet (`derive_shipping_profile`, Sa:So = 2:1) Mo .178, Di .200, Mi .185, Do .150, Fr .113, Sa .116, So .058.
-   An Feiertagen wird nichts versendet; diese Menge geht am nächsten Versandtag raus. Ausnahmen: Was am 24.–26.12.
-   versendet würde, wird in die 14 Tage davor vorgezogen (`christmas_pull_forward_days`, 0 = aus), damit Geschenke vor
-   Weihnachten ankommen und danach nur Laufzeit-Reste bleiben; die Menge vom 1.1. verteilt sich auf die übrigen
-   Versandtage der Woche (`new_year_spread`).
+   An Feiertagen wird nichts versendet; diese Bestellungen gehen über die nächsten 3 Versandtage raus
+   (`holiday_spread_days`, 1 = alles am nächsten Tag), so verteilt sich die Nachholwelle über mehrere Tage. Was am
+   24.–26.12. versendet würde, wird in die 14 Tage davor vorgezogen (`christmas_pull_forward_days`, 0 = aus), damit
+   Geschenke vor Weihnachten ankommen und danach nur Laufzeit-Reste bleiben.
 2. **Laufzeit:** E+1/E+2/E+3 = 0,85/0,13/0,02 Liefertage (Mo–Sa ohne Feiertage, nie Sonntag), je Anbieter über `transit_days`.
 3. **Samstag:** alle Anbieter stellen samstags zu (`saturday_delivery: 1.0`, zu Unterschieden fehlen Daten). Nur 20 % der
    Firmen nehmen samstags an (`business_saturday_open`), der Rest kommt am nächsten Werktag.
