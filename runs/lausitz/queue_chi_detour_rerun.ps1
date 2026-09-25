@@ -119,11 +119,11 @@ function Invoke-Maven {
 function Invoke-Arm {
     param([string] $Label, [string] $ArgLine)
     $code = Invoke-Maven -Label ($Label + '_PREPARE') -MvnArgs @(
-        '-pl', 'hagrid', 'exec:java',
+        '-pl', ':hagrid', 'exec:java',
         "-Dexec.mainClass=$prepareClass", "-Dexec.args=$ArgLine")
     if ($code -ne 0) { return $code }
     return Invoke-Maven -Label ($Label + '_RUN') -MvnArgs @(
-        '-pl', 'hagrid', 'exec:java',
+        '-pl', ':hagrid', 'exec:java',
         "-Dexec.mainClass=$runClass", "-Dexec.args=$ArgLine")
 }
 
