@@ -390,7 +390,8 @@ def _daily_code() -> dict:
             "allocation": here.with_name("allocation.py"), "outputs": here.with_name("outputs.py"),
             "spatial": here.with_name("spatial.py"), "shipping": here.with_name("shipping.py"),
             "shipping_draws": here.with_name("shipping_draws.py"), "annual": here.with_name("annual.py"),
-            "temporal_inputs": here.with_name("data") / "temporal_inputs.json",
+            "temporal_inputs": here.with_name("data") / "temporal_inputs.json", "events": here.with_name("data") / "events.json",
+            "out_of_home": here.with_name("out_of_home.py"), "out_of_home_inputs": here.with_name("data") / "out_of_home.json",
             "matsim_export": here.parents[1] / "compatibility" / "matsim_export.py"}
 
 def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, plan, generation: dict, temporal: dict):
