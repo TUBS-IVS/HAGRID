@@ -506,6 +506,9 @@ public class HagridConfig {
         // Parcel locker settings
         private int parcelLockerDemand = 25;
         private int parcelLockerDurationMinutes = 20;
+        // The demand files carry out-of-home stops (stop_type locker/shop); the fixed extra demand per
+        // DHL Packstation would count those parcels twice and is only kept for older demand files.
+        private boolean fixedParcelLockerDemand = false;
 
         public int getLimitDHL() { return limitDHL; }
         public void setLimitDHL(int limit) { this.limitDHL = limit; }
@@ -518,6 +521,9 @@ public class HagridConfig {
 
         public int getParcelLockerDurationMinutes() { return parcelLockerDurationMinutes; }
         public void setParcelLockerDurationMinutes(int minutes) { this.parcelLockerDurationMinutes = minutes; }
+
+        public boolean isFixedParcelLockerDemand() { return fixedParcelLockerDemand; }
+        public void setFixedParcelLockerDemand(boolean enabled) { this.fixedParcelLockerDemand = enabled; }
     }
 
     // =========================================================================
@@ -798,6 +804,7 @@ public class HagridConfig {
     public int getHubLimitPost() { return hubs.getLimitPost(); }
     public int getParcelLockerDemand() { return hubs.getParcelLockerDemand(); }
     public int getParcelLockerDuration() { return hubs.getParcelLockerDurationMinutes(); }
+    public boolean isFixedParcelLockerDemand() { return hubs.isFixedParcelLockerDemand(); }
 
     // --- Network ---
     public double getMinLinkLength() { return network.getMinLinkLengthMeters(); }

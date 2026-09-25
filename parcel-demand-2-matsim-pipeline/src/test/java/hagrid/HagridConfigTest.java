@@ -41,6 +41,12 @@ class HagridConfigTest {
         }
 
         @Test
+        @DisplayName("fixed parcel locker demand is off because the demand files carry out-of-home stops")
+        void fixedParcelLockerDemandOff() {
+            assertThat(config.isFixedParcelLockerDemand()).isFalse();
+        }
+
+        @Test
         @DisplayName("simulationDate is null before setSimulationDate")
         void noDateInitially() {
             assertThat(config.getSimulationDate()).isNull();
