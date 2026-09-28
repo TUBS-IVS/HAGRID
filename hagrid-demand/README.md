@@ -193,14 +193,22 @@ Abholpunkte statt an die Haustür zu:
    (Myflexbox u. a., nutzbar für Hermes, DPD, GLS und UPS) und 192 Filialen/Shops. Fehlende Partner-Shops von DHL, Hermes,
    DPD, GLS und UPS werden bis zur hochgerechneten Netzdichte an Kiosken, Supermärkten, Bäckereien, Drogerien und
    Tankstellen ergänzt (`synthetic_shops`, gewichtet nach Einwohnern im Umkreis von 500 m).
-2. **Anteil je Anbieter und Jahr:** begrenzte Sigmoid-Kurve wie in den Notebooks, an DHL angepasst (3 % 2019, 5 % 2021,
-   10 % 2025); 2025 DHL 12, GLS 12, DPD 10, Hermes 8, UPS 8, Amazon 5 % der B2C-Pakete (`shares_2025`, oder
-   `shares_by_year` als Tabelle). Täglich schwankt der Anteil je Anbieter (log-SD 0,10, AR(1) ρ 0,6).
-3. **Wer abholt:** Wahrscheinlichkeit je Gebäude und Anbieter mit der Entfernung zum nächsten passenden Punkt
+2. **Nur Automaten:** Vorerst nehmen nur Automaten und offene Boxen Pakete an (`kinds`, Standard `locker` und
+   `shared_locker`); die Shops bleiben in der Punktedatei und kommen mit der Modellierung der Fehlzustellung. Die
+   Automaten-Infrastruktur ist vollständig enthalten, auch Automaten ohne Pakete an einem Tag. Offene Boxen (Myflexbox,
+   Paketbox) bedienen Hermes, DPD, GLS, UPS und FedEx; DeinFach und inboxx zusätzlich DHL. Amazon-Locker und
+   Packstationen sind anbietereigen.
+3. **Anteil je Anbieter und Jahr:** begrenzte Sigmoid-Kurve wie in den Notebooks, an DHL angepasst (3 % 2019, 5 % 2021,
+   10 % 2025); 2025 DHL 10, Amazon 5, Hermes/DPD/GLS/UPS/FedEx je 2 % der B2C-Pakete an Automaten (`shares_2025`, oder
+   `shares_by_year` als Tabelle; die kleinen Netze begrenzen die Anteile zusätzlich). Täglich schwankt der Anteil je
+   Anbieter (log-SD 0,10, AR(1) ρ 0,6). `synthetic_lockers` ergänzt Szenario-Automaten je Anbieter an Kiosken,
+   Supermärkten und Tankstellen; die Tageskonfiguration setzt 22 zusätzliche Amazon-Locker (Annahme, damit Amazon die
+   5 % erreicht; das echte Netz hat 22).
+4. **Wer abholt:** Wahrscheinlichkeit je Gebäude und Anbieter mit der Entfernung zum nächsten passenden Punkt
    (bis 1,5 km, Abfall über 600 m) und höher in Mehrfamilienhäusern, je Jahr so skaliert, dass der Anteil stimmt.
-4. **Kapazität:** Automat 47, offene Box 40, Shop 120 Pakete am Tag (≈ 70 Fächer bei 1,5 Tagen Liegezeit); was nicht
+5. **Kapazität:** Automat 47, offene Box 40, Shop 120 Pakete am Tag (≈ 70 Fächer bei 1,5 Tagen Liegezeit); was nicht
    passt, geht an den zweitnächsten Punkt, sonst doch an die Haustür.
-5. **Ausgabe:** Abholpunkte sind eigene Stopps im Jahresspeicher (`annual/out_of_home_points.parquet`) und im
+6. **Ausgabe:** Abholpunkte sind eigene Stopps im Jahresspeicher (`annual/out_of_home_points.parquet`) und im
    MATSim-Export (Feld `stop_type`: `home`, `locker`, `shared_locker`, `shop`); `days.parquet` zählt `out_of_home`.
    Die MATSim-Pipeline setzt für diese Stopps den Zustellmodus `PARCEL_LOCKER_EXISTING` und legt die feste Zusatzmenge
    von 25 Paketen je Packstation nicht mehr an (`hubs.fixedParcelLockerDemand`, Standard `false`), damit nichts doppelt
