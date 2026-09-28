@@ -369,6 +369,56 @@ Die Datumsbindung der Zufallsströme erlaubt verlängerte oder verschobene Zeitf
 Die räumlich umverteilte Erwartung beträgt in diesem Beispiel 8,33–11,37 % für private und 12,06–24,66 %
 für gewerbliche Nachfrage. Diese Werte hängen unmittelbar von den angenommenen Parametern ab.
 
+## Mehrjahresprojektion 2025–2035
+
+Spezifikation: [`docs/demand/specs/2026-09-28-decade-projection-design.md`](../../../docs/demand/specs/2026-09-28-decade-projection-design.md),
+Plan: [`docs/demand/plans/2026-09-29-decade-projection.md`](../../../docs/demand/plans/2026-09-29-decade-projection.md).
+
+`years` darf mehrere Jahre enthalten; Kalender, Versandtage, Marktanteile, B2B-Anteil, OOH-Anteile und Abholpläne werden je Jahr
+aufgebaut, der Jahresspeicher führt alle Jahre. Drei Lauf-Configs decken 2025–2035 ab:
+
+| Config | `volume_scenario` | national 2035 (Mrd.) | Faktor 2035/2025 | Exportierte Tage |
+|---|---|---|---|---|
+| `configs/decade-trend.json` | – (linearer Fit der beobachteten Reihe, Standardpfad) | 5,57 | 1,27 (≈ 2,5 %/a) | acht Vergleichstage je Jahr |
+| `configs/decade-saettigung.json` | `legacy_assumptions` / `logistic` | 5,26 | 1,20 (≈ 1,9 %/a) | 2030 und 2035 |
+| `configs/decade-boom.json` | `legacy_assumptions` / `exponential` | 6,45 | 1,48 (≈ 4,0 %/a) | 2030 und 2035 |
+
+**Volumenszenarien.** `series.py::apply_volume_scenario` verkettet eine der drei Fit-Kurven der Notebook-Volumenreihe
+(`linear`, `logistic`, `exponential`, jeweils unter `observed_only` oder `legacy_assumptions`) am Niveau des `chain_year`:
+`V(y) = V_basis(2025) · C(y) / C(2025)` für `y > 2025`. Alle Szenarien teilen damit das abgenommene Niveau 2025 und
+unterscheiden sich nur in der Steigung; ohne den Block bleibt jeder Lauf bitidentisch. Die Vergleichstage sind Fr/Sa der
+ISO-Woche 19 und Mo–Sa der ISO-Woche 20 (`tests/test_decade_configs.py` prüft die Regel).
+
+**Wachsendes Abholnetz** (`network_growth.py`, Defaults in `data/out_of_home.json::network_growth`). Ein Vorpass vor der
+Tagesschleife legt für jedes Jahr nach dem Referenzjahr neue Punkte an, damit das Stop-Register vollständig ist:
+
+- Netzgruppen sind die `(kind, carriers)`-Paare des Referenznetzes (DHL-Packstationen, Amazon Locker, geteilte Boxen,
+  Amazon-Counter). Zielzahl je Gruppe: `N(y) = max(N(y−1), round(N(2025) · (D(y)/D(2025))^0,6))` mit `D` = erwartete
+  OOH-Sendungen der Gruppe (B2C-Jahresmenge × Anbieteranteil × OOH-Anteil des Jahres); der Rest des Nachfragewachstums
+  geht in größere Stationen (Fächer werden jährlich nachdimensioniert, nie verkleinert, Obergrenze 390).
+- Kandidaten sind Einzelhandels- und Tankstellen-POIs aus OSM (`candidate_types`); Gewicht = B2C-Nachfrage im Umkreis von
+  500 m × Abdeckungslücke `1 − exp(−d/600 m)` zum nächsten Punkt derselben Gruppe × Kind-Präferenz (Packstation:
+  Supermarkt/Tankstelle/Convenience, Counter: Kiosk/Convenience/…, geteilte Box: Supermarkt/Tankstelle; sonst Faktor 0,25).
+  Mindestabstand 150 m, Ziehung ohne Zurücklegen, deterministisch (`named_rng(..., channel="ooh-network-growth")`).
+- Neue Punkte tragen `year_opened`, `poi_type` (z. B. `shop=supermarket`), `synthetic = true`, Kontext `retail`; nur bis zum
+  Tagesjahr eröffnete Punkte nehmen Sendungen an und erscheinen im MATSim-Export.
+- Ergebnis Region Hannover, Trendlauf: DHL-Packstationen 207 → 477 (2025 → 2035), insgesamt 330 neue Standorte, keine
+  Kandidatenknappheit; der Vorpass dauert ≈ 5 s.
+
+**Ausgaben je Lauf:** `out_of_home_network.parquet` (eine Zeile je Punkt und aktivem Jahr: Fächer, PLZ, Koordinaten,
+Eröffnungsjahr, POI-Typ), `daily_status.json` → `temporal.out_of_home.network_growth` (Ziel, Zusätze, Kandidaten,
+Fehlbestand je Jahr und Gruppe), `annual_dashboard.html` (letztes Jahr) plus `annual_dashboard_<jahr>.html` je Jahr.
+
+**Dekaden-Dashboard.** `python -m hagrid_demand baseline decade-dashboard --run trend=<lauf> --run saettigung=<lauf>
+--run boom=<lauf> --out decade_dashboard.html` (`decade_dashboard.py`, Template `templates/decade_dashboard.html`,
+eigenständig ohne CDN) zeigt Volumenfächer, Anbieter- und Kanalverschiebung, PLZ-Karte mit Jahresregler, Wachstums-
+Hotspots, Netzwachstum und Auslastung, Kalenderteppich und die Annahmen. Der erste `--run` ist das Basisszenario und muss
+vollständig sein; fehlende Jahre der Nebenszenarien werden markiert.
+
+**Lauf:** `runs\hannoverun_demand_decade.bat [trend saettigung boom]` rechnet die Szenarien nacheinander
+(≈ 1,5 h je Szenario, ≈ 0,5 GB Details je Jahr plus ≈ 45 MB je exportiertem Tag) und schreibt danach
+`hagrid\demanduns\decade_dashboard.html`.
+
 ## Tests ausführen
 
 ```powershell
