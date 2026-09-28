@@ -1,7 +1,7 @@
 {
   "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
   "output_dir": "../runs",
-  "legacy_output": "../../parcel-demand-estimation/output",
+  "legacy_output": "../input/hannover/notebook-output",
   "reference_year": 2021,
   "reference_operating_days": 313,
   "seed": 42,
@@ -41,18 +41,18 @@
     ]
   },
   "monthly_weights": [
-    0.85,
-    0.85,
-    0.95,
-    0.95,
-    0.95,
-    0.95,
-    0.9,
-    0.9,
     1,
-    1.05,
-    1.25,
-    1.4
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
   ],
   "holiday_dates": [],
   "holiday_factor": 0,
@@ -74,7 +74,7 @@
   "segment_day_log_sd": 0.05,
   "persistent_site_log_sd": 0,
   "stock_updates": null,
-  "export_geopackage": true,
+  "export_geopackage": false,
   "delivery_mapping": null,
   "network_file": null,
   "network_modes": [
@@ -91,7 +91,20 @@
     "National relative volume growth is provisionally transferred to the region. No building-level future stock changes are invented.",
     "An empty holiday list means weekday/month seasonality only; no official holiday calendar has been supplied.",
     "No exact PANDA reproduction: original OSM/Zensus caches are unavailable in the review clone.",
+    "Seasonality uses the inherited Swiss 2019-2021 weekly mean profile. Week 53 interpolates weeks 52 and 1; monthly weights are neutral.",
+    "Weekly and annual correlated shocks are user-adjustable assumptions, not fitted uncertainty.",
     "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
   ],
+  "weekly_profile_file": "../input/hannover/notebook-output/03_yearly_weekly_parcel_forecast.csv",
+  "date_start": "2021-12-20",
+  "date_end": "2021-12-26",
+  "week_log_sd": 0.08,
+  "week_rho": 0.7,
+  "year_log_sd": 0.03,
+  "year_rho": 0.85,
+  "seasonality_strength": {
+    "private": 1,
+    "business": 1
+  },
   "dhl_exclude_above": 1000
 }

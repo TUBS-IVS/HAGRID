@@ -1,6 +1,6 @@
-package hagrid.demand;
+package hagrid.hannover.demand;
 
-import hagrid.utils.demand.Delivery.DeliveryMode;
+import hagrid.core.util.Delivery.DeliveryMode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,6 @@
 # HAGRID Demand: Daten, Kalibrierung und Prognose
 
-Ausführbare Umsetzung der Kernstages des [Gesamtentwurfs](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/MASTERPLAN.md).
+Ausführbare Umsetzung der Kernstages des [Gesamtentwurfs](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand/demand-audit/MASTERPLAN.md).
 Neben dem Datenfundament existiert die gemeinsame Nachfrage-/Anbieterschätzung mit Modellvergleich,
 eingefrorener Anwendung, Kalender, räumlich-zeitlichen Schwankungen, Zukunftspfaden und Liefer-/GIS-Exporten.
 **Die Kalibrierung ist vorläufig und hängt von dokumentierten Annahmen ab.**
@@ -8,10 +8,10 @@ eingefrorener Anwendung, Kalender, räumlich-zeitlichen Schwankungen, Zukunftspf
 Vollständiger Modelllauf aus dem Repository-Stamm nach Installation:
 
 ```powershell
-python -m hagrid_demand run --config hagrid-demand/configs/model.json
+python -m hagrid_demand run --config hagrid/demand/model/configs/model.json
 ```
 
-[Modellbeschreibung, Ein-/Ausgaben und Prüfgrenzen](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/MODEL_WORKFLOW.md).
+[Modellbeschreibung, Ein-/Ausgaben und Prüfgrenzen](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid/demand/model/MODEL_WORKFLOW.md).
 Der weitere Abschnitt beschreibt den weiterhin separat verfügbaren Datenfundament-Befehl.
 
 ## Straßenanker und historischer OSM-Abgleich
@@ -19,8 +19,8 @@ Der weitere Abschnitt beschreibt den weiterhin separat verfügbaren Datenfundame
 Die zusätzlichen Befehle arbeiten ohne MATSim und schreiben jeweils ein eigenes Dashboard:
 
 ```powershell
-python -m hagrid_demand street-reference --model-run hagrid-demand/runs/kep-reference-20260910 --output hagrid-demand/runs/mein-strassenbezug
-python -m hagrid_demand logistics-audit --foundation hagrid-demand/runs/hannover-foundation-dashboard-20260909 --output hagrid-demand/runs/mein-osm-abgleich --regional
+python -m hagrid_demand street-reference --model-run hagrid/demand/runs/kep-reference-20260910 --output hagrid/demand/runs/mein-strassenbezug
+python -m hagrid_demand logistics-audit --foundation hagrid/demand/runs/hannover-foundation-dashboard-20260909 --output hagrid/demand/runs/mein-osm-abgleich --regional
 ```
 
 Die Straßenrekonstruktion erhält die bereinigten DHL-Beobachtungen von 2021 einzeln. Eindeutige,
@@ -38,7 +38,7 @@ keine nachgewiesene Abwesenheit von Gebäuden; Objekte und Betriebe dürfen nich
 Ein eigener explorativer Vergleich prüft historische OSM-Merkmale unter den bisherigen äußeren und inneren Folds:
 
 ```powershell
-python -m hagrid_demand.model_search --config hagrid-demand/configs/local-carriers.json --persons parcel-demand-estimation/input/persons_total.csv --logistics-run hagrid-demand/runs/mein-osm-abgleich --output hagrid-demand/runs/mein-logistikvergleich
+python -m hagrid_demand.model_search --config hagrid/demand/model/configs/local-carriers.json --persons hagrid/demand/input/hannover/raw/persons_total.csv --logistics-run hagrid/demand/runs/mein-osm-abgleich --output hagrid/demand/runs/mein-logistikvergleich
 ```
 
 Dieser Vergleich benötigt einen vollständigen regionalen OSM-Abgleich. Fehlende PLZ werden nicht mit
@@ -57,7 +57,7 @@ Die vollständige historische Abfrage blieb durch Serverfehler blockiert. Ein ge
 `runs/continuation-20260914/dashboard.html`, der Methodenbericht daneben unter `report.md`.
 Die neue Straßenreferenz ist noch nicht an die Tages-/Zukunftssimulation angeschlossen.
 
-[Verifizierter Lauf und Ergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/VALIDATION.md): sieben Tests bestanden; vollständiger Lauf mit 280.572 Standorten und erhaltener Populationsbilanz.
+[Verifizierter Lauf und Ergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid/demand/model/VALIDATION.md): sieben Tests bestanden; vollständiger Lauf mit 280.572 Standorten und erhaltener Populationsbilanz.
 
 ## Start
 
@@ -121,7 +121,7 @@ Für MATSim den Ordner nach `hagrid-input/demand/<runId>/` kopieren.
 ### Straßen-Anker, OSM-Gebäude und Stopps
 
 Mit `osm_buildings`/`osm_points` rechnet die Referenz im Straßenmodus (`anchor.mode: street`,
-Spezifikation `docs/superpowers/specs/2026-09-24-hagrid-street-anchor-buildings-design.md`):
+Spezifikation `docs/demand/specs/2026-09-24-hagrid-street-anchor-buildings-design.md`):
 
 1. **Gebäude** (`<run>/buildings/`): Personen-Gebäudepunkte gehen an OSM-Gebäude (Stand 01.01.2021), Firmen
    innerhalb ihrer Zensus-100-m-Zelle an passende Gebäude (Fläche × Branchenpassung). Jedes Gebäude bekommt
@@ -138,7 +138,7 @@ Spezifikation `docs/superpowers/specs/2026-09-24-hagrid-street-anchor-buildings-
 Die OSM-Dateien entstehen einmalig aus dem Geofabrik-Auszug (© OpenStreetMap contributors, ODbL):
 
 ```powershell
-python -m hagrid_demand baseline osm-clip --pbf ../parcel-demand-estimation/input/osm/niedersachsen-210101.osm.pbf --plz ../parcel-demand-estimation/input/plz_region_hannover.csv --out ../parcel-demand-estimation/input/osm
+python -m hagrid_demand baseline osm-clip --pbf ../input/hannover/raw/osm/niedersachsen-210101.osm.pbf --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/raw/osm
 ```
 
 Abnahmelauf 24.09.2026 (8 Tage wie der Notebook-Generator, 6 min): q_DHL 0,254; Regionalmenge 2021 60,3 Mio.
@@ -149,7 +149,7 @@ PLZ-Korrelation ohne 30855 0,97–0,98; 44–51 Tsd. Stopps je Tag mit im Median
 ### Versandtage, Laufzeit und Jahresspeicher
 
 Mit `temporal.mode: shipping_transit` (Standard in `configs/baseline-daily.json`, Spezifikation
-`docs/superpowers/specs/2026-09-25-hagrid-shipping-week-annual-design.md`) entsteht der Tagesverlauf aus
+`docs/demand/specs/2026-09-25-hagrid-shipping-week-annual-design.md`) entsteht der Tagesverlauf aus
 Versandtag und Laufzeit statt aus einem festen Zustellprofil:
 
 1. **Versandtag:** Saisonfaktor der Kalenderwoche × Versandprofil je Wochentag (`data/temporal_inputs.json`).
@@ -185,7 +185,7 @@ Versandtag und Laufzeit statt aus einem festen Zustellprofil:
 ### Packstationen, Paketshops und offene Boxen
 
 Mit `out_of_home` (Standard in `configs/baseline-daily.json`, Spezifikation
-`docs/superpowers/specs/2026-09-25-hagrid-out-of-home-design.md`) stellt jeder Anbieter einen Teil seiner B2C-Pakete an
+`docs/demand/specs/2026-09-25-hagrid-out-of-home-design.md`) stellt jeder Anbieter einen Teil seiner B2C-Pakete an
 Abholpunkte statt an die Haustür zu:
 
 1. **Punkte:** OSM-Stand über Overpass (`baseline osm-parcel-points --plz <plz.csv> --out <parquet>`, Konfiguration
@@ -217,7 +217,7 @@ Abholpunkte statt an die Haustür zu:
    `id` nach Sailer, Klein & Steinhardt 2026, Tabelle 2): 60 % verlassen das Fach am Zustelltag, 20 % am Folgetag, 20 %
    am zweiten Folgetag (dort auch Entnahme durch den Betreiber am Fristende). Das ist eine literaturgestützte
    Modellannahme, keine lokale Messung (Hovi et al. 2023: rund 60 % innerhalb eines Tages; Morganti et al. 2014: 70 %
-   binnen 24 h; Einordnung in `docs/demand-audit/Paketstationen_Abholzeiten_Literatur_und_Modellannahmen.md`). Ein Fach
+   binnen 24 h; Einordnung in `docs/demand/demand-audit/Paketstationen_Abholzeiten_Literatur_und_Modellannahmen.md`). Ein Fach
    ist bis zur Freigabe belegt und erst am Folgetag wieder frei; Abholungen laufen auch sonn- und feiertags. Der
    OSM-Kontext der Station verschiebt die Liegezeit (`pickup_context_factor`, nach den mittleren Abholzeiten bei Hovi et
    al. 2023: Supermarkt 30,5 h, Verkehrsknoten 34,5 h, gesamt 31,6 h): `retail` (Laden bis 75 m) 60/25,6/14,4 %,
@@ -314,7 +314,7 @@ Dieser Befehl aktualisiert nur die beiden Dashboard-Artefakte. Der ursprünglich
 Erzeugungszeit und Renderer-Hashes werden separat in `dashboard_data.json` gespeichert. Ältere Foundation-Runs
 können damit mit einem neueren Dashboard ausgewertet werden, ohne ihre ursprüngliche Codeversion umzuschreiben.
 
-Die [Auswertung des ersten Dashboard-Laufs](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/DASHBOARD_ANALYSIS.md)
+Die [Auswertung des ersten Dashboard-Laufs](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid/demand/model/DASHBOARD_ANALYSIS.md)
 beschreibt die auffälligsten Unterschiede und die daraus abgeleiteten nächsten Prüfungen.
 
 Der Fit darf die Kandidaten nicht als bestätigte Zuordnung verwenden. Bei fehlenden Adressen sind Nähe und PLZ
@@ -340,7 +340,7 @@ nur zur Auswertung verwendet. Er benötigt einen vorhandenen Foundation-Run.
 Aus dem Repository-Stamm:
 
 ```powershell
-python -m hagrid_demand spatial-demo --config hagrid-demand/configs/spatial-demo.json
+python -m hagrid_demand spatial-demo --config hagrid/demand/model/configs/spatial-demo.json
 ```
 
 Die Beispielkonfiguration verwendet sieben Tage, Seed 42 und illustrative Mengen von 180.000 privaten sowie
@@ -364,7 +364,7 @@ ausgeklammert. Das Beispiel belegt Mengenbilanzen und Reproduzierbarkeit, keine 
 Die Datumsbindung der Zufallsströme erlaubt verlängerte oder verschobene Zeitfenster mit identischen
 überlappenden Tagen, solange Standortbestand, Parameter, Seed und Zeitanker gleich bleiben.
 
-[Erster Vergleichslauf](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/runs/spatial-comparison-20260909/dashboard.html):
+[Erster Vergleichslauf](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid/demand/runs/spatial-comparison-20260909/dashboard.html):
 13 Tests bestanden; alle 14 Tages-/Segmentdateien erhalten die vorgegebenen ganzzahligen Mengen.
 Die räumlich umverteilte Erwartung beträgt in diesem Beispiel 8,33–11,37 % für private und 12,06–24,66 %
 für gewerbliche Nachfrage. Diese Werte hängen unmittelbar von den angenommenen Parametern ab.

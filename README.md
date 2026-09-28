@@ -17,7 +17,7 @@ For Hannover, this means projecting and allocating daily parcel demand across th
 3. [Data Sources](#3-data-sources)  
 4. [Setup](#4-setup) (clone, freight submodule, inputs, runs)  
 5. [Installation (Python)](#5-installation-python)  
-6. [Notebook Workflow](#6-notebook-workflow)  
+6. [Demand model and notebook workflow](#6-demand-model-and-notebook-workflow)  
 7. [Supported Output Formats](#7-supported-output-formats)  
 8. [Example Output](#8-example-parcel_demand_2050-04-09_samstagcsv)  
 9. [Limitations & Assumptions](#9-limitations--assumptions)  
@@ -44,7 +44,11 @@ HAGRID/
 ├── README.md
 ├── pom.xml                    parent POM; modules: external/freight + hagrid/simulation
 ├── hagrid/
-│   ├── demand/{estimation,estimation-batch}/   Jupyter notebooks: Hannover parcel-demand estimation
+│   ├── demand/
+│   │   ├── model/           Python package hagrid_demand: street-level parcel demand, annual store, dashboards (see hagrid/demand/README.md)
+│   │   ├── input/hannover/  git-ignored inputs (raw sources, OSM extracts, notebook outputs); tools/migrate-demand-input.ps1
+│   │   ├── runs/            git-ignored model runs (daily MATSim demand, annual store, annual_dashboard.html)
+│   │   └── archive/notebooks/{estimation,estimation-batch}/   the earlier notebook chain (superseded by model/)
 │   └── simulation/            the single Maven module (packages hagrid.core / hannover / lausitz)
 │       ├── src/main/java/hagrid/{core,hannover,lausitz}/…
 │       ├── src/test/java/hagrid/{core,hannover,lausitz}/…
@@ -69,16 +73,16 @@ HAGRID/
 
 The tree shows tracked content only. Locally, `analysis/lausitz/` additionally holds `paper-figures/` (excluded via `.gitignore`) and `lmd/`; both are produced by simulation runs and are not versioned.
 
-- `hagrid/` is an umbrella folder: `hagrid/demand/` holds the demand-estimation notebooks, `hagrid/simulation/` is the only Maven module. Java sources are organised along the three root packages `hagrid.core`, `hagrid.hannover` and `hagrid.lausitz`; inputs live under `hagrid/simulation/input/` (git-ignored).
+- `hagrid/` is an umbrella folder: `hagrid/demand/` holds the Python demand model (`model/`) and the archived notebook chain, `hagrid/simulation/` is the only Maven module. Java sources are organised along the three root packages `hagrid.core`, `hagrid.hannover` and `hagrid.lausitz`; inputs live under `hagrid/simulation/input/` (git-ignored).
 - `analysis/` holds the Python analyses, split into `common` (cross-study, e.g. run monitoring), `hannover` and `lausitz`.
 - `runs/` holds the Windows launch scripts, split by study; every script changes into the right directory itself.
 - `external/` bundles third-party code: the `matsim-libs` fork as a submodule, the `freight` POM shim and the `libs` jars.
 - `tools/` holds helper scripts for setup, migration and static checks that are not study-specific runs.
 - `docs/` holds the living project documentation (backlog, methods log, study data, Obsidian export) and the Superpowers specs and plans; `docs/legacy/hagrid/` keeps the pre-restructure module documentation unchanged, for reference only.
 
-`hagrid/demand/` holds the Jupyter notebooks for the Hannover demand estimation (`estimation/`; `estimation-batch/` is an older batch variant of the same chain). `analysis/hannover/notebooks/` holds the older Hannover result-analysis notebooks used for the published papers; they carry absolute paths from the original author's machine and are kept as documentation of the analyses, not as a runnable pipeline. The paths in this paragraph are relative to the respective notebook folder, not to the repository root:
+`hagrid/demand/model/` is the current demand model (Python, tested; `runs/hannover/run_demand_year.bat` produces a whole year and hands the MATSim demand to `hagrid/simulation`). `hagrid/demand/archive/notebooks/` holds the Jupyter notebooks of the earlier Hannover demand estimation (`estimation/`; `estimation-batch/` is an older batch variant of the same chain); the model took its national series and profiles from them. `analysis/hannover/notebooks/` holds the older Hannover result-analysis notebooks used for the published papers; they carry absolute paths from the original author's machine and are kept as documentation of the analyses, not as a runnable pipeline. The paths in this paragraph are relative to the respective notebook folder, not to the repository root:
 
-- **Notebooks 00–06** (under `hagrid/demand/estimation/`): each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
+- **Notebooks 00–06** (under `hagrid/demand/archive/notebooks/estimation/`): each focuses on one part of the pipeline (global shares, B2B ratio, volumes, weekly distribution, local adaptations, and segment-level weighting).  
 - **ParcelDemandScenarioGenerator.ipynb**: the final assembly that produces daily, segment-level demand.  
 - **input/**: stores the notebooks' input data (e.g. shapefiles, CSVs, geospatial layers) — this is not `hagrid/simulation/input/`.  
 - **output/**: default directory for exported results (CSV, SHP, GeoPackage, or GeoJSON).
@@ -167,12 +171,16 @@ cd HAGRID
 pip install -r requirements.txt
 ```
 
-The notebooks themselves are then opened from `hagrid/demand/estimation/`.
+The notebooks themselves are then opened from `hagrid/demand/archive/notebooks/estimation/`.
 
 > 💡 It is recommended to execute the notebooks in sequential order:  
 > `00_` → `06_`, followed by `ParcelDemandScenarioGenerator.ipynb`.
 
-## 6. Notebook Workflow
+## 6. Demand model and notebook workflow
+
+The demand model lives in `hagrid/demand/model/` (package `hagrid_demand`): `python -m pip install -e ".[test]"` there, `python -m pytest -q` for the tests, `runs\hannoverun_demand_year.bat <run-id>` for a full year with dashboard and MATSim demand. Method, assumptions and sources: `hagrid/demand/README.md` and `hagrid/demand/model/README.md`. The notebook workflow below is the archived predecessor.
+
+### Notebook workflow (archived)
 
 Each notebook builds on the results of the previous ones. The general workflow moves from national-level parcel data to localized, street-level demand estimations for each day and carrier.
 
