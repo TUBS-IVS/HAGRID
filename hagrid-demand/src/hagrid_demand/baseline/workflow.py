@@ -524,15 +524,38 @@ def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.Ge
     """OSM pickup points plus synthetic shops, each with its PLZ."""
     points = load_points(Path(config["osm_parcel_points"]), crs)
     postal = gpd.read_parquet(run / "sources" / "postal_support.parquet").to_crs(crs)
-    status = {"osm_points": {str(kind): int(count) for kind, count in points.kind.value_counts().items()}, "synthetic_shops": 0}
-    if ooh.get("synthetic_shops", True) and config.get("osm_points"):
+    status = {"osm_points": {str(kind): int(count) for kind, count in points.kind.value_counts().items()}, "synthetic_shops": 0,
+              "kinds": list(ooh["kinds"])}
+    # The whole locker infrastructure stays in; shops only take parcels when out_of_home.kinds includes them.
+    points = points.loc[points.kind.isin(ooh["kinds"])].reset_index(drop=True)
+    if "shop" in ooh["kinds"] and ooh.get("synthetic_shops", True) and config.get("osm_points"):
         units = gpd.read_parquet(run / "reference_units.parquet").to_crs(crs)
         candidates = synthetic_candidates(gpd.read_parquet(config["osm_points"]).to_crs(crs), ooh["synthetic_poi_types"])
         candidates = candidates.loc[candidates.within(postal.union_all())].reset_index(drop=True)
         targets = shop_targets(ooh, float(units.population.sum()))
-        points = synthesize_shops(points, candidates, population_near(candidates, units, float(ooh["synthetic_population_radius_m"])),
-                                  targets, named_rng(int(config["seed"]), channel="ooh-synthetic-shops"))
+        weights = population_near(candidates, units, float(ooh["synthetic_population_radius_m"]))
+        points = synthesize_shops(points, candidates, weights, targets, named_rng(int(config["seed"]), channel="ooh-synthetic-shops"))
         status.update({"synthetic_shops": int(points.synthetic.sum()), "shop_targets": targets})
+    if config.get("osm_points") and (ooh.get("synthetic_lockers") or ooh.get("synthetic_shared_lockers")):
+        units = gpd.read_parquet(run / "reference_units.parquet").to_crs(crs)
+        candidates = synthetic_candidates(gpd.read_parquet(config["osm_points"]).to_crs(crs), ooh["synthetic_poi_types"])
+        candidates = candidates.loc[candidates.within(postal.union_all())].reset_index(drop=True)
+        weights = population_near(candidates, units, float(ooh["synthetic_population_radius_m"]))
+        # Scenario lockers: extra carrier lockers or shared boxes at retail POIs (out_of_home.synthetic_lockers,
+        # out_of_home.synthetic_shared_lockers), for example to let Amazon reach its target share.
+        # synthetic_lockers counts *additional* lockers per carrier on top of the mapped ones.
+        existing = points.loc[points.kind.eq("locker"), "carriers"].str.split("|")
+        lockers = {carrier: int(existing.apply(lambda values, carrier=carrier: carrier in values).sum()) + int(count)
+                   for carrier, count in (ooh.get("synthetic_lockers") or {}).items() if int(count) > 0}
+        if lockers:
+            points = synthesize_shops(points, candidates, weights, lockers, named_rng(int(config["seed"]), channel="ooh-synthetic-lockers"),
+                                      kind="locker")
+        shared = int(ooh.get("synthetic_shared_lockers") or 0)
+        if shared:
+            points = synthesize_shops(points, candidates, weights, {"shared": shared},
+                                      named_rng(int(config["seed"]), channel="ooh-synthetic-shared"), kind="shared_locker",
+                                      shared_carriers=ooh["shared_locker_carriers"])
+        status["synthetic_lockers"] = int((points.synthetic & points.kind.ne("shop")).sum())
     joined = gpd.sjoin_nearest(points[["point_id", "geometry"]], postal[["plz", "geometry"]], how="left")
     points["plz"] = joined.groupby(level=0).plz.first().reindex(points.index).astype(str).to_numpy()
     return points, status

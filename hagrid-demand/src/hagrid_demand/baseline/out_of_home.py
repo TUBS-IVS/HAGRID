@@ -21,6 +21,8 @@ _DATA = Path(__file__).with_name("data") / "out_of_home.json"
 _BRANDS = (("packstation", "DHL"), ("dhl", "DHL"), ("deutsche post", "DHL"), ("post", "DHL"), ("amazon", "Amazon"),
            ("hermes", "Hermes"), ("dpd", "DPD"), ("gls", "GLS"), ("ups", "UPS"), ("fedex", "FedEx/TNT"))
 _OPEN = ("myflexbox", "paketbox", "parcellock", "parcel lock")
+# Open lockers that also take DHL parcels: DeinFach (DHL subsidiary) and carrier-neutral inboxx boxes.
+_OPEN_ALL = ("dein fach", "deinfach", "inboxx")
 _OVERPASS = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
              "https://overpass.private.coffee/api/interpreter")
 
@@ -41,6 +43,8 @@ def point_carriers(tags: dict, shared: Sequence[str]) -> tuple[str, tuple[str, .
     if amenity == "post_depot" or (amenity not in {"parcel_locker", "post_office"} and not tags.get("post_office")):
         return None
     if amenity == "parcel_locker":
+        if any(token in label for token in _OPEN_ALL):
+            return "shared_locker", tuple(sorted(set(shared) | {"DHL"}))
         if any(token in label for token in _OPEN) or not label.strip():
             return "shared_locker", tuple(sorted(shared))
         carriers = sorted({carrier for token, carrier in _BRANDS if token in label})
@@ -69,26 +73,29 @@ def points_from_elements(elements: list[dict], region, crs: str, shared: Sequenc
 
 
 def synthesize_shops(points: gpd.GeoDataFrame, candidates: gpd.GeoDataFrame, weights: np.ndarray, targets: dict[str, int],
-                     rng: np.random.Generator) -> gpd.GeoDataFrame:
-    """Add synthetic shops at candidate POIs until every carrier reaches its target number of shops.
+                     rng: np.random.Generator, *, kind: str = "shop", shared_carriers: Sequence[str] | None = None) -> gpd.GeoDataFrame:
+    """Add synthetic points of *kind* at candidate POIs until every carrier reaches its target count of that kind.
 
     Candidates are drawn without replacement with probability proportional to *weights* (population nearby);
-    each POI hosts at most one synthetic carrier.
+    each POI hosts at most one synthetic point per call. The target key ``shared`` adds boxes open to all
+    *shared_carriers* (kind ``shared_locker``).
     """
     weights = np.asarray(weights, dtype=float)
     available = np.ones(len(candidates), dtype=bool)
     added = []
-    shops = points.loc[points.kind.eq("shop")]
+    existing = points.loc[points.kind.eq(kind)]
     for carrier in sorted(targets):
-        have = int(shops.carriers.str.split("|").apply(lambda values: carrier in values).sum())
+        served = "|".join(sorted(shared_carriers or ())) if carrier == "shared" else carrier
+        have = int(existing.carriers.eq(served).sum()) if carrier == "shared" else \
+            int(existing.carriers.str.split("|").apply(lambda values: carrier in values).sum())
         missing = max(0, int(targets[carrier]) - have)
         pool = np.flatnonzero(available & (weights > 0))
         if not missing or not len(pool):
             continue
         chosen = rng.choice(pool, size=min(missing, len(pool)), replace=False, p=weights[pool] / weights[pool].sum())
         available[chosen] = False
-        added.append(gpd.GeoDataFrame({"point_id": [f"syn:{carrier}:{index}" for index in range(len(chosen))], "kind": "shop",
-                                       "carriers": carrier, "brand": "synthetic", "synthetic": True},
+        added.append(gpd.GeoDataFrame({"point_id": [f"syn:{kind}:{carrier}:{index}" for index in range(len(chosen))], "kind": kind,
+                                       "carriers": served, "brand": "synthetic", "synthetic": True},
                                       geometry=candidates.geometry.iloc[np.sort(chosen)].to_numpy(), crs=candidates.crs))
     if not added:
         return points.reset_index(drop=True)
@@ -187,7 +194,7 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
         return None
     inputs = load_out_of_home_inputs()
     for key, value in cfg.items():
-        if key in {"shares_2025", "shares_by_year", "capacity_per_day", "national_shops"} and isinstance(value, dict):
+        if key in {"shares_2025", "shares_by_year", "capacity_per_day", "national_shops", "synthetic_lockers"} and isinstance(value, dict):
             inputs[key] = {**inputs.get(key, {}), **value}
         elif key != "enabled":
             inputs[key] = value
@@ -195,6 +202,9 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
         if not 0 <= float(share) < 1:
             raise ValueError(f"out_of_home.shares_2025.{carrier} must be a share in [0, 1)")
     inputs.setdefault("synthetic_shops", True)
+    kinds = inputs.setdefault("kinds", ["locker", "shared_locker"])
+    if not isinstance(kinds, list) or not set(kinds) <= {"locker", "shared_locker", "shop"}:
+        raise ValueError("out_of_home.kinds must list locker, shared_locker and/or shop")
     return inputs
 
 

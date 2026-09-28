@@ -20,15 +20,20 @@ def test_point_carriers_from_osm_tags():
     assert point_carriers({"amenity": "post_depot", "operator": "DHL"}, SHARED) is None
     assert point_carriers({"shop": "outpost", "brand": "Amazon Hub Locker"}, SHARED) == ("locker", ("Amazon",))
     assert point_carriers({"shop": "outpost", "name": "Zalando"}, SHARED) is None
+    # Open lockers that also take DHL parcels (DeinFach is a DHL subsidiary, inboxx is carrier-neutral)
+    assert point_carriers({"amenity": "parcel_locker", "brand": "Dein Fach"}, SHARED) == ("shared_locker", ("DHL", "DPD", "GLS", "Hermes", "UPS"))
+    assert point_carriers({"amenity": "parcel_locker", "operator": "inboxx"}, SHARED) == ("shared_locker", ("DHL", "DPD", "GLS", "Hermes", "UPS"))
+    assert point_carriers({"amenity": "parcel_locker", "brand": "FedEx myflexbox"}, SHARED) == ("shared_locker", ("DPD", "GLS", "Hermes", "UPS"))
 
 
 def test_out_of_home_share_follows_the_trend():
     inputs = load_out_of_home_inputs()
-    assert out_of_home_share(2025, "DHL", inputs) == pytest.approx(.12)
+    assert out_of_home_share(2025, "DHL", inputs) == pytest.approx(.10)
     shares = [out_of_home_share(year, "DHL", inputs) for year in range(2019, 2031)]
     assert all(later > earlier for earlier, later in zip(shares, shares[1:]))
-    assert .03 < shares[0] < .045 and .2 < shares[-1] < .3
-    assert out_of_home_share(2025, "FedEx/TNT", inputs) == 0.
+    # DHL Packstation share: 3 % 2019, 5 % 2021, 10 % 2025, about 20 % 2030
+    assert shares[0] == pytest.approx(.03, abs=.005) and shares[2] == pytest.approx(.05, abs=.01) and .18 < shares[-1] < .25
+    assert out_of_home_share(2025, "FedEx/TNT", inputs) == pytest.approx(.02)
     assert out_of_home_share(2030, "DHL", {**inputs, "shares_by_year": {"DHL": {"2030": .5}}}) == .5
 
 
@@ -93,9 +98,10 @@ def ooh_run(tmp_path_factory):
     root = tmp_path_factory.mktemp("ooh")
     config_path = write_street_fixture(root)
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    gpd.GeoDataFrame({"point_id": ["osm:n1", "osm:n2"], "kind": ["locker", "shared_locker"], "carriers": ["DHL", "DPD|GLS|Hermes|UPS"],
-                      "brand": ["DHL Packstation", "Myflexbox"], "synthetic": [False, False]},
-                     geometry=[Point(15, 15), Point(115, 15)], crs="EPSG:25832").to_parquet(root / "inputs" / "parcel_points.parquet", index=False)
+    gpd.GeoDataFrame({"point_id": ["osm:n1", "osm:n2", "osm:n3"], "kind": ["locker", "shared_locker", "shop"],
+                      "carriers": ["DHL", "DPD|GLS|Hermes|UPS", "Hermes"], "brand": ["DHL Packstation", "Myflexbox", "Hermes PaketShop"],
+                      "synthetic": [False, False, False]},
+                     geometry=[Point(15, 15), Point(115, 15), Point(20, 20)], crs="EPSG:25832").to_parquet(root / "inputs" / "parcel_points.parquet", index=False)
     shares = {"DHL": .3, "DPD": .3, "GLS": .3, "Hermes": .3, "UPS": .3, "Amazon": 0., "FedEx/TNT": 0.}
     config.update({"output_scope": "daily", "years": [2025], "dates": ["2025-05-16"], "anchor": {"mode": "street", "min_streets": 99},
                    "temporal": {"mode": "shipping_transit"}, "annual_store": True, "osm_parcel_points": "inputs/parcel_points.parquet",
@@ -111,7 +117,9 @@ def test_out_of_home_run_routes_parcels_to_points(ooh_run):
     points = gpd.read_parquet(ooh_run / "annual" / "out_of_home_points.parquet")
     stop_daily = pd.read_parquet(ooh_run / "annual" / "stop_daily.parquet")
     at_points = stop_daily.loc[stop_daily.stop.isin(points.stop_index)]
+    # Shops stay out of the out-of-home routing for now (they will come with the failed-delivery model).
     assert days.out_of_home.sum() > 0 and set(points.kind) == {"locker", "shared_locker"}
+    assert not points.point_id.eq("osm:n3").any()
     assert at_points.filter(like="_b2b").to_numpy().sum() == 0
     assert int(at_points.filter(like="_b2c").to_numpy().sum()) == int(days.out_of_home.sum())
     assert int(stop_daily.filter(regex="_b2[bc]$").to_numpy().sum()) == int(days.parcels.sum())
@@ -150,3 +158,41 @@ def test_plan_prefers_lockers_within_reach():
     shop_first = build_plan(sites, ["DHL"], xy, np.array([2., 10.]), points, {**inputs, "prefer_lockers": False}, 2025, 365,
                             lambda carrier: np.random.default_rng(1))
     assert shop_first.primary[0, 0] == 0 and shop_first.secondary[0, 0] == 1
+
+
+def test_synthetic_lockers_and_shared_boxes():
+    points = gpd.GeoDataFrame({"point_id": ["osm:1"], "kind": ["locker"], "carriers": ["Amazon"], "brand": ["Amazon Locker"],
+                               "synthetic": [False]}, geometry=[Point(0, 0)], crs="EPSG:25832")
+    candidates = gpd.GeoDataFrame({"poi_id": [f"p{index}" for index in range(10)]},
+                                  geometry=[Point(index * 100, 0) for index in range(10)], crs="EPSG:25832")
+    weights = np.arange(1., 11.)
+    lockers = synthesize_shops(points, candidates, weights, {"Amazon": 3}, np.random.default_rng(2), kind="locker")
+    added = lockers.loc[lockers.synthetic]
+    assert len(added) == 2 and (added.kind == "locker").all() and (added.carriers == "Amazon").all()
+    shared = synthesize_shops(points, candidates, weights, {"shared": 2}, np.random.default_rng(2), kind="shared_locker",
+                              shared_carriers=SHARED)
+    boxes = shared.loc[shared.synthetic]
+    assert len(boxes) == 2 and (boxes.kind == "shared_locker").all() and (boxes.carriers == "DPD|GLS|Hermes|UPS").all()
+    assert boxes.point_id.str.startswith("syn:shared_locker:").all()
+
+
+def test_run_adds_synthetic_lockers_on_top_of_mapped_ones(tmp_path):
+    import json
+
+    from street_fixtures import write_street_fixture
+
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config_path = write_street_fixture(tmp_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    gpd.GeoDataFrame({"point_id": ["osm:n1"], "kind": ["locker"], "carriers": ["Amazon"], "brand": ["Amazon Locker"], "synthetic": [False]},
+                     geometry=[Point(15, 15)], crs="EPSG:25832").to_parquet(tmp_path / "inputs" / "parcel_points.parquet", index=False)
+    gpd.GeoDataFrame({"osm_id": ["p1", "p2"], "addr_street": ["Alpha", "Gamma"], "addr_housenumber": ["9", "9"], "shop": ["kiosk", "supermarket"]},
+                     geometry=[Point(10, 30), Point(110, 30)], crs="EPSG:25832").to_parquet(tmp_path / "inputs" / "osm_points.parquet", index=False)
+    config.update({"output_scope": "daily", "years": [2025], "dates": ["2025-05-16"], "anchor": {"mode": "street", "min_streets": 99},
+                   "temporal": {"mode": "shipping_transit"}, "annual_store": True, "osm_parcel_points": "inputs/parcel_points.parquet",
+                   "out_of_home": {"shares_2025": {"Amazon": .3}, "synthetic_lockers": {"Amazon": 2}}})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(config_path, "street-ooh-lockers")
+    points = gpd.read_parquet(run / "annual" / "out_of_home_points.parquet")
+    assert len(points) == 3 and int(points.synthetic.sum()) == 2 and (points.kind == "locker").all()
