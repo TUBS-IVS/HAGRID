@@ -1,0 +1,16 @@
+<title>Hannover Parcel Decade</title>
+<style>
+:root{color-scheme:light;--bg:#f3f5f8;--ink:#0f1623;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0b0f16;--ink:#f2f5f9}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+</style>
+
+<script id="hagrid-decade" type="application/json">__DECADE_DATA__</script>
+
+<div class="page" id="app"></div>
+
+<script>
+'use strict';
+const D = JSON.parse(document.getElementById('hagrid-decade').textContent);
+document.getElementById('app').textContent = 'Hannover Parcel Decade · ' + D.years[0] + '–' + D.years[D.years.length - 1];
+</script>
