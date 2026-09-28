@@ -415,9 +415,9 @@ eigenständig ohne CDN) zeigt Volumenfächer, Anbieter- und Kanalverschiebung, P
 Hotspots, Netzwachstum und Auslastung, Kalenderteppich und die Annahmen. Der erste `--run` ist das Basisszenario und muss
 vollständig sein; fehlende Jahre der Nebenszenarien werden markiert.
 
-**Lauf:** `runs\hannoverun_demand_decade.bat [trend saettigung boom]` rechnet die Szenarien nacheinander
+**Lauf:** `runs\hannover\run_demand_decade.bat [trend saettigung boom]` rechnet die Szenarien nacheinander
 (≈ 1,5 h je Szenario, ≈ 0,5 GB Details je Jahr plus ≈ 45 MB je exportiertem Tag) und schreibt danach
-`hagrid\demanduns\decade_dashboard.html`.
+`hagrid\demand\runs\decade_dashboard.html`.
 
 ## Tests ausführen
 
