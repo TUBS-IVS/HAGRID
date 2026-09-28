@@ -23,8 +23,8 @@ from hagrid_demand.data import (build_business, build_residential, read_dhl, rea
                                 read_persons, read_plz)
 
 from .config import load_baseline_config
-from .out_of_home import (apply_plan, build_plan, load_points, point_stops, population_near, resolve_out_of_home,
-                          shop_targets, synthesize_shops, synthetic_candidates)
+from .out_of_home import (apply_plan, build_plan, load_points, point_compartments, point_stops, population_near,
+                          resolve_out_of_home, shop_targets, synthesize_shops, synthetic_candidates)
 from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
@@ -452,12 +452,14 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         extra = point_stops(points, int(base_stops.stop_index.max()) + 1)
         export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
                         "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
-        extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "synthetic", "plz", "geometry"]].to_parquet(
-            output / "out_of_home_points.parquet", index=False)
+        extra = extra.assign(compartments=point_compartments(points, ooh))
+        extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "synthetic", "compartments", "plz", "geometry"]] \
+            .to_parquet(output / "out_of_home_points.parquet", index=False)
         site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
         site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
         population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
         status["out_of_home"].update({"delivered": {}, "b2c_delivered": {}, "overflow_home": 0})
+        occupancy_rows: list[pd.DataFrame] = []
 
     writer = None
     if config.get("annual_store"):
@@ -483,8 +485,9 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             plans[year] = build_plan(item.sites, item.carriers, site_xy, population_of.reindex(ids).fillna(0.).to_numpy(), points, ooh,
                                      year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"))
             status["out_of_home"]["target_share"] = {carrier: round(share, 5) for carrier, share in plans[year].shares.items()}
-        routed, per_carrier, overflow = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
-                                                                                     date=date.date().isoformat(), channel="ooh-divert"))
+        routed, per_carrier, overflow, occupancy = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
+                                                                                                date=date.date().isoformat(), channel="ooh-divert"))
+        occupancy_rows.append(occupancy.assign(date=date.normalize(), stop_index=extra.stop_index.to_numpy()[occupancy.stop_index.to_numpy()]))
         totals = status["out_of_home"]
         for carrier, parcels, delivered in zip(item.carriers, per_carrier, item.counts.sum(axis=0)):
             totals["delivered"][carrier] = totals["delivered"].get(carrier, 0) + int(parcels)
@@ -513,6 +516,9 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         finally:
             if writer is not None:
                 if completed:
+                    if ooh is not None and occupancy_rows:
+                        pd.concat(occupancy_rows, ignore_index=True)[["date", "stop_index", "compartments", "occupied", "stored", "rejected", "occupied_next_morning"]] \
+                            .to_parquet(writer.directory / "locker_occupancy.parquet", index=False)
                     writer.close({"years": config["years"], "temporal": status})
                 else:
                     writer.abort()

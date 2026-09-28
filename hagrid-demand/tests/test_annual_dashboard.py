@@ -52,3 +52,10 @@ def test_dashboard_explains_peaks_with_current_rules(annual_run):
     assert "could not be delivered on the holiday" not in TEMPLATE.read_text(encoding="utf-8")
     meta = build_annual_dashboard_data(annual_run)["meta"]
     assert set(meta["spatial"]) == {"carrier_plz_log_sd", "site_frailty_cv"} and "holiday_spread_days" in meta["temporal"]
+
+
+def test_dashboard_reports_locker_fill_when_present(annual_run):
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data
+
+    data = build_annual_dashboard_data(annual_run)
+    assert data["locker"] is None  # this run has no out-of-home delivery

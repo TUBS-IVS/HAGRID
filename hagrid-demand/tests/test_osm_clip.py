@@ -42,3 +42,31 @@ def test_parse_other_tags_handles_escaped_quotes():
 
     assert parse_other_tags('"a"=>"1","name"=>"x \\"y\\""') == {"a": "1", "name": 'x \\"y\\"'}
     assert parse_other_tags(None) == {}
+
+
+TRANSIT_OSM = """<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="test">
+ <node id="1" lat="52.3701" lon="9.7301"><tag k="railway" v="station"/><tag k="name" v="Test Hbf"/></node>
+ <node id="2" lat="52.3702" lon="9.7303"><tag k="railway" v="tram_stop"/><tag k="name" v="Markt"/></node>
+ <node id="3" lat="52.3703" lon="9.7305"><tag k="highway" v="bus_stop"/></node>
+ <node id="4" lat="52.3704" lon="9.7307"><tag k="amenity" v="bus_station"/></node>
+ <node id="5" lat="53.0001" lon="9.7301"><tag k="railway" v="station"/><tag k="name" v="Far away"/></node>
+</osm>
+"""
+
+
+def test_transit_extract_keeps_stations_and_tram_stops_in_the_region(tmp_path):
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import box
+
+    from hagrid_demand.baseline.osm import extract_transit_stations
+
+    pbf = tmp_path / "transit.osm"
+    pbf.write_text(TRANSIT_OSM, encoding="utf-8")
+    region = gpd.GeoSeries([box(9.72, 52.36, 9.74, 52.38)], crs=4326).to_crs(25832)
+    pd.DataFrame({"postal_cod": ["30159"], "geometry": [region.iloc[0].wkt]}).to_csv(tmp_path / "plz.csv", index=False)
+    out = extract_transit_stations(pbf, tmp_path / "plz.csv", tmp_path / "transit.parquet", buffer_m=0)
+    stations = gpd.read_parquet(out)
+    assert sorted(stations.kind) == ["bus_station", "station", "tram_stop"] and stations.crs.to_epsg() == 25832
+    assert "Test Hbf" in set(stations.name)

@@ -46,6 +46,7 @@ def main():
         ("export-day", "Write the MATSim shapefile of one day from a run's annual store"),
         ("annual-dashboard", "Render the annual calendar dashboard of a run"),
         ("osm-parcel-points", "Download parcel lockers and pickup shops of the study region from OpenStreetMap"),
+        ("osm-transit", "Extract railway stations, tram stops and bus terminals from a Geofabrik OSM extract"),
     ]:
         command = baseline_sub.add_parser(name, help=help_text)
         if name == "osm-clip":
@@ -60,9 +61,17 @@ def main():
             command.add_argument("--date", required=True)
             command.add_argument("--out", default=None)
         elif name == "osm-parcel-points":
-            command.add_argument("--plz", required=True)
+            command.add_argument("--plz", default=None)
             command.add_argument("--out", required=True)
             command.add_argument("--plz-crs", default="EPSG:25832")
+            command.add_argument("--pois", default=None, help="local OSM POI parquet for the retail context (else Overpass)")
+            command.add_argument("--transit", default=None, help="local station parquet (baseline osm-transit) for the transit context")
+            command.add_argument("--points", default=None, help="existing points parquet: only recompute the context, no download")
+        elif name == "osm-transit":
+            command.add_argument("--pbf", required=True)
+            command.add_argument("--plz", required=True)
+            command.add_argument("--out", required=True)
+            command.add_argument("--buffer-m", type=float, default=250.)
         elif name == "annual-dashboard":
             command.add_argument("--run", required=True)
             command.add_argument("--out", required=True)
@@ -79,14 +88,30 @@ def main():
                 from .baseline.osm import clip_osm_region
                 print(json.dumps(clip_osm_region(args.pbf, args.plz, args.out, args.buffer_m), indent=2, ensure_ascii=False))
                 return 0
+            if args.baseline_command == "osm-transit":
+                from .baseline.osm import extract_transit_stations
+                out = extract_transit_stations(args.pbf, args.plz, args.out, args.buffer_m)
+                import geopandas as gpd
+                print(json.dumps({"out": str(out), "stations": gpd.read_parquet(out).kind.value_counts().to_dict()}, indent=2))
+                return 0
             if args.baseline_command == "osm-parcel-points":
-                from .baseline.out_of_home import fetch_osm_parcel_points, load_out_of_home_inputs
-                from .data import read_plz
-                region = read_plz(Path(args.plz), args.plz_crs, "EPSG:25832").to_crs(4326).union_all()
-                points = fetch_osm_parcel_points(region, "EPSG:25832", load_out_of_home_inputs()["shared_locker_carriers"])
+                import geopandas as gpd
+                from .baseline.out_of_home import add_context, fetch_osm_parcel_points, load_out_of_home_inputs, load_points
+                inputs = load_out_of_home_inputs()
+                pois = gpd.read_parquet(args.pois) if args.pois else None
+                transit = gpd.read_parquet(args.transit) if args.transit else None
+                if args.points:
+                    points = add_context(load_points(Path(args.points), "EPSG:25832"), transit, pois, inputs)
+                else:
+                    from .data import read_plz
+                    region = read_plz(Path(args.plz), args.plz_crs, "EPSG:25832").to_crs(4326).union_all()
+                    points = fetch_osm_parcel_points(region, "EPSG:25832", inputs["shared_locker_carriers"], retail_pois=pois)
+                    if transit is not None:
+                        points = add_context(points, transit, pois, inputs)
                 Path(args.out).parent.mkdir(parents=True, exist_ok=True)
                 points.to_parquet(args.out, index=False)
-                print(json.dumps({"out": str(args.out), "points": points.kind.value_counts().to_dict()}, indent=2))
+                print(json.dumps({"out": str(args.out), "points": points.kind.value_counts().to_dict(),
+                                  "context": points.context.value_counts().to_dict()}, indent=2))
                 return 0
             if args.baseline_command == "annual-dashboard":
                 from .baseline.annual_dashboard import write_annual_dashboard
