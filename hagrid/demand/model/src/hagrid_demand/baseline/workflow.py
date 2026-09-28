@@ -986,6 +986,10 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         if (run / "annual" / "days.parquet").is_file():
             from .annual_dashboard import write_annual_dashboard
             write_annual_dashboard(run, run / "annual_dashboard.html")
+            if len(config["years"]) > 1:
+                # Multi-year runs get one sub-page per simulated year next to the last year's page.
+                for year in sorted(config["years"]):
+                    write_annual_dashboard(run, run / f"annual_dashboard_{year}.html", year)
         render_baseline(run)
         return run
     except Exception as exc:
