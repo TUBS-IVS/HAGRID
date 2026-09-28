@@ -1,6 +1,6 @@
 {
-  "input_dir": "../input/hannover/raw",
-  "output_dir": "../runs",
+  "input_dir": "../../input/hannover/raw",
+  "output_dir": "../../runs",
   "target_crs": "EPSG:25832",
   "persons_crs": "EPSG:25832",
   "plz_crs": "EPSG:25832",

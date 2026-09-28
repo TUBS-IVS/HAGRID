@@ -1,7 +1,7 @@
 {
-  "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
-  "output_dir": "../runs",
-  "legacy_output": "../input/hannover/notebook-output",
+  "foundation_run": "../../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../../runs",
+  "legacy_output": "../../input/hannover/notebook-output",
   "reference_year": 2021,
   "reference_operating_days": 313,
   "seed": 42,

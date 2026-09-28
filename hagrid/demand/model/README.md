@@ -138,7 +138,7 @@ Spezifikation `docs/demand/specs/2026-09-24-hagrid-street-anchor-buildings-desig
 Die OSM-Dateien entstehen einmalig aus dem Geofabrik-Auszug (© OpenStreetMap contributors, ODbL):
 
 ```powershell
-python -m hagrid_demand baseline osm-clip --pbf ../input/hannover/raw/osm/niedersachsen-210101.osm.pbf --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/raw/osm
+python -m hagrid_demand baseline osm-clip --pbf ../input/hannover/osm/niedersachsen-210101.osm.pbf --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/osm
 ```
 
 Abnahmelauf 24.09.2026 (8 Tage wie der Notebook-Generator, 6 min): q_DHL 0,254; Regionalmenge 2021 60,3 Mio.

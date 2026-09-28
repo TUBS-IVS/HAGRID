@@ -2,8 +2,8 @@
   "schema_version": 1,
   "rng_version": 1,
   "seed": 42,
-  "input_dir": "../input/hannover/raw",
-  "output_dir": "../runs",
+  "input_dir": "../../input/hannover/raw",
+  "output_dir": "../../runs",
   "source_mode": "raw",
   "sources": [
     {
@@ -52,7 +52,7 @@
       "role": "support"
     }
   ],
-  "weekly_source": "../input/hannover/raw/Parcels19_20_21_inter.xlsx",
+  "weekly_source": "../../input/hannover/raw/Parcels19_20_21_inter.xlsx",
   "reference_year": 2021,
   "reference_operating_days": "calendar",
   "output_scope": "reference",
@@ -66,8 +66,8 @@
     "Hermes rows are inventory only and do not anchor the reference level.",
     "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL)."
   ],
-  "osm_buildings": "../input/hannover/osm/osm_buildings_region_hannover_2021.parquet",
-  "osm_points": "../input/hannover/osm/osm_address_poi_region_hannover_2021.parquet",
+  "osm_buildings": "../../input/hannover/osm/osm_buildings_region_hannover_2021.parquet",
+  "osm_points": "../../input/hannover/osm/osm_address_poi_region_hannover_2021.parquet",
   "anchor": {
     "mode": "street",
     "level_correction": {

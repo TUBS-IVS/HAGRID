@@ -1,7 +1,7 @@
 {
-  "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
-  "output_dir": "../runs",
-  "legacy_output": "../input/hannover/notebook-output",
+  "foundation_run": "../../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../../runs",
+  "legacy_output": "../../input/hannover/notebook-output",
   "reference_year": 2021,
   "reference_operating_days": 313,
   "seed": 42,
@@ -98,7 +98,7 @@
     "Local carrier correction uses observed reference DHL and normalized Hermes shape after fitting; this is conditional reconstruction, not held-out prediction.",
     "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
   ],
-  "weekly_profile_file": "../input/hannover/notebook-output/03_yearly_weekly_parcel_forecast.csv",
+  "weekly_profile_file": "../../input/hannover/notebook-output/03_yearly_weekly_parcel_forecast.csv",
   "date_start": "2021-09-13",
   "date_end": "2021-09-15",
   "week_log_sd": 0.08,
