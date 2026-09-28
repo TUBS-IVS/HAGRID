@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import re
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Reproducible HAGRID demand estimation and evaluation")
     sub = parser.add_subparsers(dest="command", required=True)
     diagnostic = sub.add_parser("diagnose-2021", help="Repeated postal CV without growth or daily simulation")
@@ -45,6 +45,7 @@ def main():
         ("osm-clip", "Clip a Geofabrik OSM extract to the study region"),
         ("export-day", "Write the MATSim shapefile of one day from a run's annual store"),
         ("annual-dashboard", "Render the annual calendar dashboard of a run"),
+        ("decade-dashboard", "Render the decade dashboard over scenario runs (the first --run is the primary scenario)"),
         ("osm-parcel-points", "Download parcel lockers and pickup shops of the study region from OpenStreetMap"),
         ("osm-transit", "Extract railway stations, tram stops and bus terminals from a Geofabrik OSM extract"),
     ]:
@@ -77,11 +78,16 @@ def main():
             command.add_argument("--out", required=True)
             command.add_argument("--year", type=int, default=None)
             command.add_argument("--artifact", action="store_true", help="omit doctype and head for artifact hosts")
+        elif name == "decade-dashboard":
+            command.add_argument("--run", action="append", required=True, metavar="NAME=PATH",
+                                 help="scenario name and run directory; repeat per scenario, the first is the primary scenario")
+            command.add_argument("--out", required=True)
+            command.add_argument("--artifact", action="store_true", help="omit doctype and head for artifact hosts")
         else:
             command.add_argument("--config", required=True)
             command.add_argument("--run-id", default=None)
             command.add_argument("--resume", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "baseline":
         try:
             if args.baseline_command == "osm-clip":
@@ -116,6 +122,18 @@ def main():
             if args.baseline_command == "annual-dashboard":
                 from .baseline.annual_dashboard import write_annual_dashboard
                 print(f"Annual dashboard: {write_annual_dashboard(args.run, args.out, args.year, standalone=not args.artifact)}")
+                return 0
+            if args.baseline_command == "decade-dashboard":
+                from .baseline.decade_dashboard import write_decade_dashboard
+                runs = {}
+                for spec in args.run:
+                    name, separator, path = (part.strip() for part in spec.partition("="))
+                    if not separator or not path or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}", name):
+                        parser.error(f"--run expects NAME=PATH with a name of letters, digits, _ and -: {spec!r}")
+                    if name in runs:
+                        parser.error(f"--run names scenario {name!r} twice")
+                    runs[name] = Path(path)
+                print(f"Decade dashboard: {write_decade_dashboard(runs, args.out, standalone=not args.artifact)}")
                 return 0
             if args.baseline_command == "export-day":
                 from .baseline.annual import export_day
