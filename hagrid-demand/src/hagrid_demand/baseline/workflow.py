@@ -482,8 +482,15 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             ids = item.sites.site_id.astype(str).to_numpy()
             located = gpd.GeoSeries(site_xy_of.reindex(site_stop_of.reindex(ids).to_numpy()).to_numpy(), crs=site_xy_of.crs)
             site_xy = np.column_stack([located.x.to_numpy(), located.y.to_numpy()])
+            shares = profiles.loc[profiles.year.eq(year) & profiles.segment.eq("private")].groupby("carrier").share.sum().to_dict()
             plans[year] = build_plan(item.sites, item.carriers, site_xy, population_of.reindex(ids).fillna(0.).to_numpy(), points, ooh,
-                                     year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"))
+                                     year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"),
+                                     carrier_shares=shares)
+            sized = gpd.read_parquet(output / "out_of_home_points.parquet")
+            sized["compartments"] = plans[year].queue.compartments
+            sized.to_parquet(output / "out_of_home_points.parquet", index=False)
+            if writer is not None:
+                shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
             status["out_of_home"]["target_share"] = {carrier: round(share, 5) for carrier, share in plans[year].shares.items()}
         routed, per_carrier, overflow, occupancy = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
                                                                                                 date=date.date().isoformat(), channel="ooh-divert"))

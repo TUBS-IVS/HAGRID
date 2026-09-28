@@ -209,8 +209,11 @@ Abholpunkte statt an die Haustür zu:
    Kiosken, Supermärkten und Tankstellen (in der Tageskonfiguration nicht gesetzt).
 4. **Wer abholt:** Wahrscheinlichkeit je Gebäude und Anbieter mit der Entfernung zum nächsten passenden Punkt
    (bis 1,5 km, Abfall über 600 m) und höher in Mehrfamilienhäusern, je Jahr so skaliert, dass der Anteil stimmt.
-5. **Fächer und Abholung:** Jeder Automat hat Fächer (OSM-Tag `capacity`, sonst 70 je Packstation/Locker, 40 je offene
-   Box; `compartments`). Jedes eingelagerte Paket zieht einmalig seine Abholklasse (`pickup_profile`, Referenzprofil
+5. **Fächer und Abholung:** Jeder Automat hat Fächer: OSM-Tag `capacity`, sonst nach Bedarf dimensioniert
+   (`compartments_by_demand`: 1,6 × 1,25 × erwarteter Tagesbedarf, auf 10 gerundet, 48 bis 390 Fächer; DHLs modulare
+   Packstation wächst von 76 auf bis zu 390 Fächer, offene Boxen 40, Counter 80). Empfänger wählen unter den drei
+   nächsten Punkten in Reichweite (`choice_k`, Wahrscheinlichkeit ~ exp(−Entfernung/300 m)); ist der gewählte voll, geht
+   das Paket an den nächsten anderen. Jedes eingelagerte Paket zieht einmalig seine Abholklasse (`pickup_profile`, Referenzprofil
    `id` nach Sailer, Klein & Steinhardt 2026, Tabelle 2): 60 % verlassen das Fach am Zustelltag, 20 % am Folgetag, 20 %
    am zweiten Folgetag (dort auch Entnahme durch den Betreiber am Fristende). Das ist eine literaturgestützte
    Modellannahme, keine lokale Messung (Hovi et al. 2023: rund 60 % innerhalb eines Tages; Morganti et al. 2014: 70 %
@@ -227,16 +230,14 @@ Abholpunkte statt an die Haustür zu:
    von 25 Paketen je Packstation nicht mehr an (`hubs.fixedParcelLockerDemand`, Standard `false`), damit nichts doppelt
    zählt.
 
-Abnahmelauf 2025 (Automaten, Boxen und Counter, Literaturprofil 60/20/20 mit Stationskontext): 4,7 % der B2C-Pakete
-gehen an Abholpunkte (DHL 8,5 % von 10 % Ziel; Amazon 3,8 % von 5 % über 22 kartierte Locker und 15 synthetische
-Counter, die im Median 32 bzw. 50 Pakete je Liefertag aufnehmen; Hermes/DPD/GLS/UPS je 0,7 % und FedEx 0,6 % von 2 %
-über die 14 offenen Boxen). Die Netze begrenzen: 79 % der B2C-Nachfrage liegt innerhalb von 1,5 km einer Packstation
-(Amazon 40 %), und an Spitzentagen sind Stationen voll: 29 % der Stations-Liefertage voll, 1,08 Mio. Pakete abgewiesen,
-561 Tsd. davon an die Haustür. Füllgrad am Nachmittag im Mittel 60 % (Läden 52 %, Haltestellen 64 %, sonst 64 %);
-Packstation im Median 25 Pakete je Liefertag bei 70 Fächern, Amazon-Locker 38. Nur 14 Automaten haben in OSM eine
-Fächerzahl. Events: Amazon-B2C am 9.–12.7. ×1,8–1,9, Black-Week-Spitze (Di 2.12.) bei 0,90 der Weihnachtsspitze
-(Mo 22.12., 420 Tsd. Pakete); Heiligabend und Silvester stellen die halbe Menge zu. Die Jahresanteile je Anbieter und
-Segment bleiben exakt.
+Abnahmelauf 2025 (Automaten, Boxen und Counter; Literaturprofil 60/20/20 mit Stationskontext; Fächer nach Bedarf;
+Wahl unter den drei nächsten Punkten): 5,9 % der B2C-Pakete gehen an Abholpunkte (DHL 9,9 % von 10 % Ziel; Amazon 4,9 %
+von 5 % über 22 kartierte Locker und 15 synthetische Counter; Hermes/DPD/GLS/UPS je 1,9–2,0 % von 2 % über die 14
+offenen Boxen, FedEx 0,7 %). Fächer: Packstation im Median 76 (90 %-Quantil 130, vier Stationen ≥ 200, gesamt 18,4 Tsd.),
+offene Boxen und Counter 120. Füllgrad am Nachmittag im Mittel 55 %, 5 % der Stations-Liefertage voll, 112 Tsd. Pakete
+abgewiesen (59 Tsd. davon an die Haustür); Packstation im Median 24 Pakete je Liefertag, Amazon-Locker 32, Counter 56.
+Events: Amazon-B2C am 9.–12.7. ×1,8–1,9, Black-Week-Spitze (Di 2.12.) bei 0,90 der Weihnachtsspitze (Mo 22.12., 420 Tsd.
+Pakete); Heiligabend und Silvester stellen die halbe Menge zu. Die Jahresanteile je Anbieter und Segment bleiben exakt.
 
 Mit `annual_store: true` rechnet der Lauf jeden Tag des Jahres und legt statt 365 Shapefiles einen Jahresspeicher an
 (`<run>/annual/`): `stop_daily.parquet` (Datum, Stopp, 14 Zählspalten `<anbieter>_b2c`/`_b2b`), `plz_daily.parquet`,

@@ -61,10 +61,12 @@
     "shared_locker_carriers": "myflexbox boxes serve UPS, DPD, GLS and FedEx (Kaufland 2026); DeinFach (DHL subsidiary, about 600 boxes nationally, first ones 2025 in Berlin, Cologne, Bonn, Stuttgart, Hamburg; one in the region) and inboxx are open to all carriers including DHL.",
     "synthetic_lockers": "Scenario option: extra lockers per carrier or shared boxes placed at retail POIs; not observed. Amazon's own network is small (about 1,486 stations nationally, 22 in the region in OSM), so its share stays below target unless lockers are added here.",
     "kinds": "Lockers, shared boxes and staffed pickup counters take out-of-home parcels; pickup shops (in the points file) will be served by the failed-delivery model.",
-    "compartments": "About 17,000 parcel lockers with more than 1.2 million compartments in Germany (Bundesnetzagentur 2024), i.e. about 70 per locker; open boxes are smaller (assumption 40). The OSM capacity tag overrides the default per point. Counters: assumed 80 parcels held at a time.",
+    "compartments": "DHL's standard Packstation has 76 compartments; the modular version grows to 390 at busy places (Verkehrsrundschau 2021, DHL). Open boxes about 40 (assumption), counters 80 parcels held (assumption). The OSM capacity tag overrides the default per point.",
     "pickup_profile": "Reference profile 'id' of Sailer, Klein & Steinhardt (2026, Transportation Science, Table 2): 60/20/20 % of the parcels leave the compartment on model day 1 (delivery day), 2 and 3; day 3 includes removal by the operator at the end of the storage period. Consistent with Hovi et al. (2023, TOI 1959/2023: about 60 % collected within a day at PostNord lockers) and Morganti et al. (2014: 70 % within 24 h at DHL Packstations, DHL 2011). Each parcel draws its class once at storage (multinomial); a compartment released on day t is free for the deliveries of day t + 1. Applied uniformly to all stations as a literature-based assumption, not a local calibration; see docs/demand-audit/Paketstationen_Abholzeiten_Literatur_und_Modellannahmen.md.",
     "pickup_context_factor": "Station context from the OSM surroundings (baseline osm-parcel-points): the first-day share stays the same (Hovi et al. 2023 report similar first-day shares across location types), the mean pickup class is scaled by the ratio of the mean pickup times in Hovi et al. 2023 (grocery stores 30.5 h, transport hubs 34.5 h, all lockers 31.6 h) by moving mass between the second and the third class. Transfer of the Norwegian ratios is an assumption.",
-    "synthetic_counters": "Staffed pickup counters chosen by the recipient (Amazon Counter at fuel stations, supermarkets, kiosks and department stores; Amazon 2019: about 50 Galeria stores plus kiosks and convenience shops). OSM maps none in the region, so the daily config adds 15 Amazon counters (assumption: 'dozens' of Amazon lockers and counters in and around Hannover; 22 lockers are mapped). Amazon parcels shipped by DHL can also go to DHL Packstations, but those parcels belong to the DHL carrier in this model."
+    "synthetic_counters": "Staffed pickup counters chosen by the recipient (Amazon Counter at fuel stations, supermarkets, kiosks and department stores; Amazon 2019: about 50 Galeria stores plus kiosks and convenience shops). OSM maps none in the region, so the daily config adds 15 Amazon counters (assumption: 'dozens' of Amazon lockers and counters in and around Hannover; 22 lockers are mapped). Amazon parcels shipped by DHL can also go to DHL Packstations, but those parcels belong to the DHL carrier in this model.",
+    "compartments_by_demand": "Operators size stations to demand: points without an OSM tag get days_factor (mean afternoon occupancy per daily parcel with the 60/20/20 profile = 1.6) x safety 1.25 x expected daily demand, rounded up to 10, at least the standard size of the kind (DHL Packstation 76, open boxes 40, counters 40) and at most 390 (DHL's largest modular Packstation).",
+    "choice_k": "Recipients choose among the choice_k nearest lockers, boxes or counters within reach with probability ~ exp(-distance / choice_decay_m); the nearest other one is the fallback when the chosen point is full."
   },
   "synthetic_lockers": {},
   "synthetic_shared_lockers": 0,
@@ -74,7 +76,7 @@
     "counter"
   ],
   "compartments": {
-    "locker": 70,
+    "locker": 76,
     "shared_locker": 40,
     "counter": 80
   },
@@ -115,5 +117,19 @@
     "amenity": [
       "fuel"
     ]
-  }
+  },
+  "compartments_by_demand": {
+    "days_factor": 1.6,
+    "safety": 1.25,
+    "min": {
+      "locker": 76,
+      "shared_locker": 40,
+      "counter": 40
+    },
+    "max": 390,
+    "step": 10
+  },
+  "choice_k": 3,
+  "choice_decay_m": 300.0,
+  "delivery_days_per_year": 303
 }
