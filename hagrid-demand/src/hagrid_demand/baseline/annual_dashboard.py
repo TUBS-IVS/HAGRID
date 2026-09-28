@@ -44,6 +44,27 @@ def _geo(postal: gpd.GeoDataFrame) -> dict:
     return json.loads(json.dumps({"type": "FeatureCollection", "features": features}))
 
 
+def _lockers_payload(store: Path, days: pd.DataFrame) -> dict:
+    """Pickup points with their daily fill, stored and rejected parcels (points x days, row-major)."""
+    points = gpd.read_parquet(store / "out_of_home_points.parquet").sort_values("stop_index").reset_index(drop=True)
+    wgs = points.geometry.to_crs(4326)
+    occupancy = pd.read_parquet(store / "locker_occupancy.parquet")
+    occupancy["date"] = pd.to_datetime(occupancy.date).dt.normalize()
+    occupancy = occupancy.loc[occupancy.date.isin(days.date)]
+    frame = occupancy.set_index(["stop_index", "date"])
+    index = pd.MultiIndex.from_product([points.stop_index, days.date], names=["stop_index", "date"])
+    fill = (frame.occupied / frame.compartments.replace(0, np.nan) * 100).reindex(index).fillna(0.).clip(0, 100).round().astype(int)
+    stored = frame.stored.reindex(index).fillna(0).astype(int)
+    rejected = frame.rejected.reindex(index).fillna(0).astype(int)
+    return {"ids": points.point_id.astype(str).tolist(), "stop_index": points.stop_index.astype(int).tolist(),
+            "kind": points.kind.astype(str).tolist(), "carriers": points.carriers.astype(str).tolist(),
+            "brand": (points.brand.astype(str).tolist() if "brand" in points else [""] * len(points)),
+            "context": (points.context.astype(str).tolist() if "context" in points else ["other"] * len(points)),
+            "synthetic": points.synthetic.astype(bool).tolist(), "compartments": points.compartments.astype(int).tolist(),
+            "plz": points.plz.astype(str).tolist(), "lon": wgs.x.round(5).tolist(), "lat": wgs.y.round(5).tolist(),
+            "fill": fill.tolist(), "stored": stored.tolist(), "rejected": rejected.tolist()}
+
+
 def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
     """Collect one simulated year of a run's annual store into the dashboard payload."""
     run_dir = Path(run_dir)
@@ -94,9 +115,10 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
             weekday.append(entry)
     config_path = run_dir / "config.resolved.json"
     spatial = json.loads(config_path.read_text(encoding="utf-8")).get("spatial", {}) if config_path.is_file() else {}
-    locker = None
+    locker = lockers = None
     occupancy_path = store / "locker_occupancy.parquet"
     if occupancy_path.is_file():
+        lockers = _lockers_payload(store, days)
         occupancy = pd.read_parquet(occupancy_path)
         occupancy["date"] = pd.to_datetime(occupancy.date).dt.normalize()
         occupancy = occupancy.loc[occupancy.date.dt.year.eq(year)]
@@ -135,6 +157,7 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                      for carrier, group in profiles.groupby("carrier")],
         "weekday": weekday,
         "locker": locker,
+        "lockers": lockers,
         "geo": _geo(postal),
     }
 

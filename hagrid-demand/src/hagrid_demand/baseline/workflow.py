@@ -453,8 +453,8 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
                         "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
         extra = extra.assign(compartments=point_compartments(points, ooh))
-        extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "synthetic", "compartments", "plz", "geometry"]] \
-            .to_parquet(output / "out_of_home_points.parquet", index=False)
+        extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic",
+                                                     "compartments", "plz", "geometry"]].to_parquet(output / "out_of_home_points.parquet", index=False)
         site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
         site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
         population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
@@ -542,7 +542,7 @@ def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.Ge
         weights = population_near(candidates, units, float(ooh["synthetic_population_radius_m"]))
         points = synthesize_shops(points, candidates, weights, targets, named_rng(int(config["seed"]), channel="ooh-synthetic-shops"))
         status.update({"synthetic_shops": int(points.synthetic.sum()), "shop_targets": targets})
-    if config.get("osm_points") and (ooh.get("synthetic_lockers") or ooh.get("synthetic_shared_lockers")):
+    if config.get("osm_points") and (ooh.get("synthetic_lockers") or ooh.get("synthetic_shared_lockers") or ooh.get("synthetic_counters")):
         units = gpd.read_parquet(run / "reference_units.parquet").to_crs(crs)
         candidates = synthetic_candidates(gpd.read_parquet(config["osm_points"]).to_crs(crs), ooh["synthetic_poi_types"])
         candidates = candidates.loc[candidates.within(postal.union_all())].reset_index(drop=True)
@@ -561,7 +561,16 @@ def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.Ge
             points = synthesize_shops(points, candidates, weights, {"shared": shared},
                                       named_rng(int(config["seed"]), channel="ooh-synthetic-shared"), kind="shared_locker",
                                       shared_carriers=ooh["shared_locker_carriers"])
-        status["synthetic_lockers"] = int((points.synthetic & points.kind.ne("shop")).sum())
+        # Staffed pickup counters (e.g. Amazon Counter) at fuel stations, supermarkets and kiosks; counted on top of mapped ones.
+        counters = {carrier: int(count) for carrier, count in (ooh.get("synthetic_counters") or {}).items() if int(count) > 0}
+        if counters:
+            hosts = synthetic_candidates(candidates, ooh["counter_poi_types"])
+            have = points.loc[points.kind.eq("counter"), "carriers"].str.split("|")
+            targets = {carrier: int(have.apply(lambda values, carrier=carrier: carrier in values).sum()) + count for carrier, count in counters.items()}
+            points = synthesize_shops(points, hosts, population_near(hosts, units, float(ooh["synthetic_population_radius_m"])), targets,
+                                      named_rng(int(config["seed"]), channel="ooh-synthetic-counters"), kind="counter")
+        status["synthetic_lockers"] = int((points.synthetic & points.kind.isin(["locker", "shared_locker"])).sum())
+        status["synthetic_counters"] = int((points.synthetic & points.kind.eq("counter")).sum())
     joined = gpd.sjoin_nearest(points[["point_id", "geometry"]], postal[["plz", "geometry"]], how="left")
     points["plz"] = joined.groupby(level=0).plz.first().reindex(points.index).astype(str).to_numpy()
     return points, status

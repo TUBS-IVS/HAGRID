@@ -18,6 +18,7 @@ class DeliveryModeOfTest {
         assertThat(DeliveryGenerator.deliveryModeOf("locker")).isEqualTo(DeliveryMode.PARCEL_LOCKER_EXISTING);
         assertThat(DeliveryGenerator.deliveryModeOf("shared_locker")).isEqualTo(DeliveryMode.PARCEL_LOCKER_EXISTING);
         assertThat(DeliveryGenerator.deliveryModeOf("shop")).isEqualTo(DeliveryMode.PARCEL_LOCKER_EXISTING);
+        assertThat(DeliveryGenerator.deliveryModeOf("counter")).isEqualTo(DeliveryMode.PARCEL_LOCKER_EXISTING);
     }
 
     @Test
