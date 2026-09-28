@@ -1,0 +1,14 @@
+{
+  "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../runs",
+  "start_date": "2026-09-14",
+  "days": 7,
+  "seed": 42,
+  "field_anchor_date": "2026-01-01",
+  "fourier_features": 64,
+  "segments": {
+    "private": {"daily_total": 180000, "weight_column": "population", "log_sigma": 0.3, "length_scale_m": 3000, "temporal_rho": 0.7},
+    "business": {"daily_total": 40000, "weight_column": "employees", "log_sigma": 0.45, "length_scale_m": 2000, "temporal_rho": 0.65}
+  },
+  "interpretation": "Synthetic method comparison on real location structure. Totals, intensity weights and fluctuation parameters are assumptions, not estimated current parcel demand. No carrier allocation."
+}

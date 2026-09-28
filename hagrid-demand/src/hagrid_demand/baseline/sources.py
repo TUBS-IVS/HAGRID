@@ -1,0 +1,270 @@
+"""Package inputs and auditable source preparation for the demand baseline."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.resources
+import json
+import copy
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import geopandas as gpd
+from pyproj import CRS
+
+
+_INPUT_FILES = ("market_inputs.json", "b2b_inputs.json", "volume_inputs.json", "provider_priors.json")
+_METADATA_FIELDS = ("source", "notebook_cell", "status", "unit")
+_FOUNDATION_STAGES = {"ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard"}
+_FOUNDATION_GEOMETRY = {"sites.parquet", "dhl_observations.parquet", "postal_support.parquet"}
+
+
+def _require_metadata(value: dict[str, Any], label: str) -> None:
+    for field in _METADATA_FIELDS:
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"{label}.{field} must be a non-empty string")
+
+
+def _inherit_metadata(parent: dict[str, Any], value: dict[str, Any], label: str) -> dict[str, Any]:
+    """Validate an explicitly stated field or copy the validated parent value."""
+    inherited = dict(value)
+    for field in _METADATA_FIELDS:
+        inherited[field] = inherited.get(field, parent[field])
+    _require_metadata(inherited, label)
+    return inherited
+
+
+def validate_series_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Strictly validate and materialize inherited provenance for each constant row."""
+    result = copy.deepcopy(inputs)
+    for name in ("market_inputs", "b2b_inputs", "volume_inputs", "provider_priors"):
+        if not isinstance(result.get(name), dict):
+            raise ValueError(f"{name} must be an object")
+        _require_metadata(result[name], name)
+    market = result["market_inputs"]
+    if not isinstance(market.get("carrier_anchor"), dict) or not isinstance(market.get("amazon"), dict):
+        raise ValueError("market_inputs requires carrier_anchor and amazon objects")
+    market["carrier_anchor"] = _inherit_metadata(market, market["carrier_anchor"], "market_inputs.carrier_anchor")
+    market["amazon"] = _inherit_metadata(market, market["amazon"], "market_inputs.amazon")
+    carrier_anchor = market["carrier_anchor"]
+    for field in ("shares", "change_2016_2022"):
+        values = carrier_anchor.get(field)
+        if not isinstance(values, dict):
+            raise ValueError(f"market_inputs.carrier_anchor.{field} must be an object")
+        normalized = {}
+        for provider, value in values.items():
+            if not isinstance(value, dict) or not isinstance(value.get("value"), (int, float)):
+                raise ValueError(f"market_inputs.carrier_anchor.{field}.{provider} requires numeric value")
+            normalized[provider] = _inherit_metadata(
+                carrier_anchor, value, f"market_inputs.carrier_anchor.{field}.{provider}"
+            )
+        carrier_anchor[field] = normalized
+    multiplier = carrier_anchor.get("post_2022_multiplier")
+    if not isinstance(multiplier, dict) or not isinstance(multiplier.get("value"), (int, float)):
+        raise ValueError("market_inputs.carrier_anchor.post_2022_multiplier requires numeric value")
+    carrier_anchor["post_2022_multiplier"] = _inherit_metadata(
+        carrier_anchor, multiplier, "market_inputs.carrier_anchor.post_2022_multiplier"
+    )
+    points = market["amazon"].get("points")
+    if not isinstance(points, list):
+        raise ValueError("market_inputs.amazon.points must be a list")
+    normalized_points = []
+    for index, point in enumerate(points):
+        if not isinstance(point, dict) or not isinstance(point.get("year"), int) or not isinstance(point.get("value"), (int, float)):
+            raise ValueError(f"market_inputs.amazon.points[{index}] requires year and numeric value")
+        normalized_points.append(_inherit_metadata(market["amazon"], point, f"market_inputs.amazon.points[{index}]"))
+    market["amazon"]["points"] = normalized_points
+    initial_guess = market["amazon"].get("initial_guess")
+    if not isinstance(initial_guess, dict) or not isinstance(initial_guess.get("values"), list):
+        raise ValueError("market_inputs.amazon.initial_guess requires values")
+    market["amazon"]["initial_guess"] = _inherit_metadata(
+        market["amazon"], initial_guess, "market_inputs.amazon.initial_guess"
+    )
+    for name, key in (("b2b_inputs", "anchors"), ("volume_inputs", "anchors")):
+        spec = result[name]
+        if not isinstance(spec.get(key), list):
+            raise ValueError(f"{name}.{key} must be a list")
+        normalized = []
+        for index, item in enumerate(spec[key]):
+            if not isinstance(item, dict):
+                raise ValueError(f"{name}.{key}[{index}] must be an object")
+            normalized.append(_inherit_metadata(spec, item, f"{name}.{key}[{index}]"))
+        spec[key] = normalized
+    providers = result["provider_priors"].get("providers")
+    if not isinstance(providers, dict):
+        raise ValueError("provider_priors.providers must be an object")
+    normalized_providers = {}
+    for provider, value in providers.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"provider_priors.providers.{provider} must be an object")
+        normalized_providers[provider] = _inherit_metadata(
+            result["provider_priors"], value, f"provider_priors.providers.{provider}"
+        )
+    result["provider_priors"]["providers"] = normalized_providers
+    return result
+
+
+def _digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def packaged_series_inputs() -> dict[str, Any]:
+    """Read only the four versioned constant files installed with this package."""
+    data = importlib.resources.files("hagrid_demand").joinpath("baseline/data")
+    inputs = {
+        filename.removesuffix(".json"): json.loads(data.joinpath(filename).read_text(encoding="utf-8"))
+        for filename in _INPUT_FILES
+    }
+    return validate_series_inputs(inputs)
+
+
+def _weekly_profile(path: Path) -> pd.DataFrame:
+    """Reproduce notebook 03's 52-week relative profile without importing its export."""
+    # The historical workbook has its real headings on the second physical row; test and
+    # replacement workbooks commonly have them on the first one.
+    weekly = pd.read_excel(path, sheet_name="Tabelle1")
+    if not {"2019", "2020", "2021"}.issubset({str(column) for column in weekly.columns}):
+        weekly = pd.read_excel(path, sheet_name="Tabelle1", header=1)
+    weekly.columns = [str(column).replace(".0", "") for column in weekly.columns]
+    required = ["2019", "2020", "2021"]
+    if not set(required).issubset(weekly.columns):
+        raise ValueError("Weekly workbook must contain 2019, 2020, and 2021 columns")
+    week_column = next((column for column in weekly.columns if column.lower() in {"week", "kw", "calendar_week"}),
+                       weekly.columns[0])
+    result = pd.DataFrame({"week": pd.to_numeric(weekly[week_column], errors="coerce")})
+    for year in required:
+        result[year] = pd.to_numeric(weekly[year], errors="coerce")
+    result = result.loc[result.week.between(1, 52)].dropna(subset=["week"]).copy()
+    result["week"] = result["week"].astype(int)
+    if result.week.duplicated().any() or result.week.tolist() != list(range(1, 53)):
+        raise ValueError("Weekly workbook must contain each numeric calendar week 1 through 52 once")
+    relative = result[required].div(result[required].mean(axis=0), axis=1)
+    result = result[["week"]].copy()
+    result["relative_volume"] = relative.mean(axis=1)
+    result["relative_volume"] = result["relative_volume"] / result["relative_volume"].mean()
+    if result.relative_volume.isna().any() or (result.relative_volume <= 0).any():
+        raise ValueError("Weekly source must yield positive relative values for all 52 weeks")
+    return result
+
+
+def _contained_artifact(root: Path, relative: object) -> Path:
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Foundation artifact manifest requires a relative_path")
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts or candidate.as_posix() != relative.replace("\\", "/"):
+        raise ValueError("Foundation artifact path must be a contained relative path")
+    resolved_root = root.resolve()
+    resolved = (resolved_root / candidate).resolve()
+    if not resolved.is_relative_to(resolved_root):
+        raise ValueError("Foundation artifact path escapes its run directory")
+    return resolved
+
+
+def _crs_identifier(crs: object) -> str | None:
+    if crs is None:
+        return None
+    parsed = CRS.from_user_input(crs)
+    epsg = parsed.to_epsg()
+    return f"EPSG:{epsg}" if epsg is not None else parsed.to_wkt()
+
+
+def read_foundation(path: Path) -> dict[str, pd.DataFrame]:
+    """Load only complete, contained, hashed foundation artifacts.
+
+    The neutral producer is the authority for this mapping.  A file next to a
+    foundation run is never implicitly trusted merely because its name looks
+    familiar.
+    """
+    path = Path(path).resolve()
+    manifest_path = path / "artifact_manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Foundation artifact manifest is required: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1 or manifest.get("status") != "complete":
+        raise ValueError("Foundation artifact manifest must declare schema_version=1 and complete status")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict) or not artifacts:
+        raise ValueError("Foundation artifact manifest requires an artifacts mapping")
+    run_state_path = path / "run.json"
+    try:
+        run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Foundation run state is required for a complete artifact manifest") from exc
+    if (not isinstance(run_state, dict) or run_state.get("status") != "complete_with_calibration_blockers"
+            or run_state.get("status") != manifest.get("run_status")
+            or run_state.get("run_id") != manifest.get("run_id")):
+        raise ValueError("Foundation artifact manifest status does not match run state")
+    completed = run_state.get("completed_stages")
+    if not isinstance(completed, list) or not _FOUNDATION_STAGES.issubset(set(completed)):
+        raise ValueError("Foundation run must have completed all expected producer stages")
+    tables: dict[str, pd.DataFrame] = {}
+    for name, expected in artifacts.items():
+        if not isinstance(name, str) or not isinstance(expected, dict):
+            raise ValueError("Foundation artifact manifest has an invalid artifact entry")
+        relative = expected.get("relative_path")
+        expected_hash = expected.get("sha256")
+        columns = expected.get("schema")
+        crs = expected.get("crs")
+        if relative != name or not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise ValueError("Foundation artifact manifest has an invalid path or SHA-256 entry")
+        if (not isinstance(columns, list) or not columns or any(not isinstance(column, str) for column in columns)
+                or len(columns) != len(set(columns)) or not (isinstance(crs, str) or crs is None)):
+            raise ValueError("Foundation artifact manifest has an invalid schema or CRS entry")
+        artifact = _contained_artifact(path, relative)
+        if not artifact.is_file() or _digest(artifact) != expected_hash:
+            raise ValueError(f"Foundation artifact hash mismatch: {name}")
+        if artifact.suffix == ".parquet":
+            table = gpd.read_parquet(artifact) if "geometry" in columns else pd.read_parquet(artifact)
+        elif artifact.suffix == ".csv":
+            table = pd.read_csv(artifact)
+        else:
+            raise ValueError(f"Unsupported foundation artifact table: {name}")
+        if table.columns.tolist() != columns:
+            raise ValueError(f"Foundation artifact schema mismatch: {name}")
+        actual_crs = _crs_identifier(getattr(table, "crs", None)) if "geometry" in columns else None
+        if actual_crs != crs:
+            raise ValueError(f"Foundation artifact CRS mismatch: {name}")
+        if name in _FOUNDATION_GEOMETRY and actual_crs != "EPSG:25832":
+            raise ValueError(f"Foundation geometry must use EPSG:25832: {name}")
+        tables[name] = table
+    return tables
+
+
+def prepare_sources(config: dict, output: Path) -> dict[str, Any]:
+    """Prepare raw weekly seasonality or verify an already materialized foundation.
+
+    This deliberately never invokes ``pipeline.run_foundation``: the baseline owns its
+    run state and foundation mode is a read-and-verify operation.
+    """
+    mode = config.get("source_mode")
+    output = Path(output)
+    root = Path(config["input_dir"])
+    source = Path(config.get("weekly_source") or root / "Parcels19_20_21_inter.xlsx")
+    if not source.is_file():
+        raise FileNotFoundError(f"Missing weekly source: {source}")
+    profile = _weekly_profile(source)
+    output.mkdir(parents=True, exist_ok=True)
+    profile.to_csv(output / "weekly_profile.csv", index=False)
+    provenance = {
+        "weekly_source": str(source.resolve()),
+        "weekly_source_sha256": _digest(source),
+        "source": "Parcels19_20_21_inter.xlsx / Tabelle1",
+        "notebook_cell": "03_EstimateWeekyParcelDistribution.py CELL 2",
+        "unit": "relative weekly factor (mean=1)",
+        "status": "derived_from_raw_source",
+    }
+    (output / "sources.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    if mode == "foundation_run":
+        run = config.get("foundation_run")
+        if not run:
+            raise ValueError("foundation_run is required in foundation_run mode")
+        tables = read_foundation(Path(run))
+        return {"mode": mode, "foundation": tables, "weekly_profile": profile, "sources": provenance}
+    if mode != "raw":
+        raise ValueError("source_mode must be raw or foundation_run")
+    return {"mode": mode, "weekly_profile": profile, "sources": provenance}

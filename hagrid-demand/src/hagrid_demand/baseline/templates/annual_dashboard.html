@@ -1,0 +1,537 @@
+<title>Hannover Parcel Year</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f3f5f8;--surface:#fcfcfd;--surface-2:#eef1f5;--surface-3:#e3e7ee;
+  --ink:#0f1623;--ink-2:#465063;--muted:#6c7688;--grid:#e2e6ec;--axis:#c3c9d3;
+  --line:rgba(15,22,35,.10);--line-strong:rgba(15,22,35,.22);--band:rgba(30,64,175,.08);--band-strong:rgba(30,64,175,.15);
+  --primary:#1e40af;--on-primary:#ffffff;--focus:#1e40af;--deemph:#cbd2dc;--closed:#e7eaef;
+  --c-amazon:#eb6834;--c-hermes:#1baf7a;--c-dhl:#eda100;--c-ups:#e87ba4;--c-gls:#008300;--c-fedex:#4a3aa7;--c-dpd:#e34948;--all:#2a78d6;
+  --q1:#b7d3f6;--q2:#86b6ef;--q3:#5598e7;--q4:#2a78d6;--q5:#1c5cab;--q6:#104281;
+  --good:#006300;--bad:#b3261e;
+  --sans:"Fira Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:"Fira Code",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;--bg:#0b0f16;--surface:#141a24;--surface-2:#1b2230;--surface-3:#252e3e;
+  --ink:#f2f5f9;--ink-2:#c3cad5;--muted:#8f99a8;--grid:#232b38;--axis:#3a4453;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--band:rgba(96,140,230,.12);--band-strong:rgba(96,140,230,.2);
+  --primary:#7aa2f7;--on-primary:#0b0f16;--focus:#7aa2f7;--deemph:#3a4453;--closed:#1d2431;
+  --c-amazon:#d95926;--c-hermes:#199e70;--c-dhl:#c98500;--c-ups:#d55181;--c-gls:#008300;--c-fedex:#9085e9;--c-dpd:#e66767;--all:#3987e5;
+  --q1:#104281;--q2:#1c5cab;--q3:#2a78d6;--q4:#5598e7;--q5:#86b6ef;--q6:#b7d3f6;--good:#0ca30c;--bad:#f07f78;}}
+:root[data-theme="dark"]{
+  color-scheme:dark;--bg:#0b0f16;--surface:#141a24;--surface-2:#1b2230;--surface-3:#252e3e;
+  --ink:#f2f5f9;--ink-2:#c3cad5;--muted:#8f99a8;--grid:#232b38;--axis:#3a4453;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--band:rgba(96,140,230,.12);--band-strong:rgba(96,140,230,.2);
+  --primary:#7aa2f7;--on-primary:#0b0f16;--focus:#7aa2f7;--deemph:#3a4453;--closed:#1d2431;
+  --c-amazon:#d95926;--c-hermes:#199e70;--c-dhl:#c98500;--c-ups:#d55181;--c-gls:#008300;--c-fedex:#9085e9;--c-dpd:#e66767;--all:#3987e5;
+  --q1:#104281;--q2:#1c5cab;--q3:#2a78d6;--q4:#5598e7;--q5:#86b6ef;--q6:#b7d3f6;--good:#0ca30c;--bad:#f07f78;}
+*{box-sizing:border-box}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.page{max-width:1400px;margin:0 auto;padding-inline:clamp(16px,3vw,36px);padding-block:24px 56px}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.mast{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px 36px;align-items:end;padding-bottom:20px}
+.eyebrow{font:500 12px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px}
+h1{font:700 clamp(32px,4.6vw,56px)/1.02 var(--sans);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.lede{max-width:64ch;color:var(--ink-2);font-size:16.5px;margin:14px 0 0;text-wrap:pretty}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.facts div{background:var(--surface);padding:10px 14px}
+.facts dt{font:500 11px/1.3 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 2px}
+.facts dd{margin:0;font-size:19px;font-weight:600;white-space:nowrap}
+.controls{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;margin-inline:calc(-1*clamp(16px,3vw,36px));padding:10px clamp(16px,3vw,36px);background:var(--bg);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-block:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center}
+.ctl{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%}
+.ctl-l{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px;overflow-x:auto;max-width:100%}
+.seg button{border:0;background:transparent;padding:8px 12px;min-height:36px;border-radius:6px;cursor:pointer;font-size:13.5px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.08)}
+.nav{display:inline-flex;align-items:center;gap:6px}
+.icon{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
+.icon:hover{border-color:var(--line-strong)}
+.icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+.sel-label{font-weight:600;font-size:14px;min-width:12ch}
+.chips{display:flex;gap:6px;overflow-x:auto;max-width:100%;padding:1px}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 11px 7px 9px;min-height:36px;cursor:pointer;font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.section{padding-top:36px;scroll-margin-top:90px}
+h2{font:700 clamp(22px,2.4vw,28px)/1.15 var(--sans);letter-spacing:-.01em;margin:0 0 6px}
+.finding{margin:0 0 14px;max-width:80ch;color:var(--ink-2)}
+.finding b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s7{grid-column:span 7}.s5{grid-column:span 5}.s4{grid-column:span 4}
+@media (max-width:1060px){.grid>*{grid-column:span 12!important}}
+.panel{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.fig-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px}
+h3{font-size:15.5px;font-weight:600;margin:0}
+.sub{margin:2px 0 0;color:var(--muted);font-size:13px}
+.cap{color:var(--muted);font-size:12.5px;margin:8px 0 0;max-width:100ch}
+.scroll-x{overflow-x:auto;overflow-y:hidden}
+.chart svg{display:block;overflow:visible}
+svg text{font-family:var(--sans);fill:var(--muted);font-size:11.5px}
+svg .tick{font-family:var(--mono);font-size:10.5px}
+svg .lbl{fill:var(--ink-2);font-size:12px}
+svg .lbl-b{fill:var(--ink);font-size:12px;font-weight:600}
+svg .val{fill:var(--ink);font-size:11.5px;font-weight:600}
+svg .gl{stroke:var(--grid);stroke-width:1}
+svg .ax{stroke:var(--axis);stroke-width:1}
+svg .hit{fill:transparent;cursor:pointer}
+.cal-cell{cursor:pointer;transition:opacity .15s}
+.cal-cell:hover{stroke:var(--ink);stroke-width:1.5}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+.legend button,.legend span.li{border:0;background:none;padding:2px 0;display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:inherit}
+.legend span.li{cursor:default}
+.lk{display:inline-block;width:14px;height:2px;border-radius:1px}
+.kpis{display:grid;grid-template-columns:1.5fr repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.kpi{background:var(--surface);padding:14px 16px;min-width:0}
+.kpi p{margin:0 0 4px;font-size:12.5px;color:var(--ink-2)}
+.kpi .v{font-size:26px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.kpi .v small{font-size:13px;color:var(--ink-2);font-weight:500;margin-left:3px}
+.kpi .d{font-size:12.5px;color:var(--muted);margin-top:3px}
+.kpi.hero .v{font-size:clamp(36px,4vw,50px);font-weight:700;line-height:1.05}
+@media (max-width:1180px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi.hero{grid-column:span 3}}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi.hero{grid-column:span 2}.mast{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.scale{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;color:var(--ink-2);margin-top:6px}
+.bins{display:flex;gap:2px}.bins span{display:flex;flex-direction:column;gap:3px;min-width:42px;font:10.5px var(--mono);color:var(--muted)}.bins i{height:9px;border-radius:2px;display:block}
+.tbl{overflow:auto;border:1px solid var(--line);border-radius:9px;max-height:460px}
+.tbl.free{max-height:none}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+th{position:sticky;top:0;background:var(--surface-2);text-align:right;font-weight:600;color:var(--ink-2);padding:0;white-space:nowrap;border-bottom:1px solid var(--line);font-size:12px}
+th button{border:0;background:none;width:100%;text-align:inherit;padding:8px 10px;cursor:pointer;font:inherit;color:inherit}
+td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-family:var(--mono);font-size:12.5px}
+th.l,td.l{text-align:left;font-family:var(--sans)}
+tbody tr{cursor:pointer}tbody tr:hover td{background:var(--band)}tbody tr.on td{background:var(--band-strong)}
+.bar-i{display:inline-block;height:8px;border-radius:2px;vertical-align:middle;margin-left:8px}
+.map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:1060px){.map-wrap{grid-template-columns:1fr}}
+.select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-height:36px;font:inherit;font-size:13px;color:var(--ink)}
+#map-svg path.plz{stroke:var(--surface);stroke-width:1;cursor:pointer}
+#map-svg path.plz:hover,#map-svg path.plz.on{stroke:var(--ink);stroke-width:1.8}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px;position:sticky;top:100px}
+.dot{stroke:var(--surface);stroke-width:1;cursor:pointer}.dot.on{stroke:var(--ink);stroke-width:2}.plz.faint{fill:var(--surface-2);stroke:var(--axis);pointer-events:none}
+#lk-facts{margin:0 0 16px}
+.card .code{font:500 28px/1 var(--mono)}.card .name{color:var(--ink-2);margin-top:4px}
+.card dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:12px 0}.card dt{font-size:11.5px;color:var(--muted);margin:0}.card dd{margin:0;font-weight:600;font-family:var(--mono)}
+.mix{display:grid;gap:3px}.mix div{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12.5px}
+.note{font-size:12.5px;color:var(--ink-2);background:var(--surface-2);border-radius:7px;padding:8px 10px;margin-top:8px}
+.list{margin:6px 0 0;padding-left:18px;color:var(--ink-2);line-height:1.6}.list b{color:var(--ink)}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.tip{position:fixed;z-index:60;left:0;top:0;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);box-shadow:0 14px 34px -14px rgba(0,0,0,.45);border-radius:9px;padding:9px 11px;font-size:12.5px;min-width:180px;max-width:300px}
+.tip strong{display:block;font-size:13px}.tip .s{color:var(--muted);font-size:11.5px;margin-bottom:5px;display:block}
+.tr{display:grid;grid-template-columns:12px minmax(52px,auto) 1fr;gap:0 8px;align-items:center;line-height:1.6}
+.tr b{font-family:var(--mono);font-weight:500;text-align:right}.tr span{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tr i{width:12px;height:2px;display:block;border-radius:1px}
+</style>
+
+<script id="hagrid-annual" type="application/json">__HAGRID_ANNUAL_DATA__</script>
+
+<div class="page">
+  <header class="mast">
+    <div>
+      <p class="eyebrow">HAGRID parcel demand · run <span id="run-id"></span> · year <span id="year"></span></p>
+      <h1>Hannover Parcel Year</h1>
+      <p class="lede" id="lede"></p>
+    </div>
+    <dl class="facts" id="facts"></dl>
+  </header>
+
+  <div class="controls" role="toolbar" aria-label="Selection for all views">
+    <div class="ctl"><span class="ctl-l" id="l-mode">View</span><div class="seg" id="ctl-mode" role="group" aria-labelledby="l-mode"></div></div>
+    <div class="ctl nav">
+      <button class="icon" id="prev" type="button" aria-label="Previous period"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <span class="sel-label" id="sel-label" aria-live="polite"></span>
+      <button class="icon" id="next" type="button" aria-label="Next period"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+    </div>
+    <div class="ctl"><span class="ctl-l" id="l-seg">Segment</span><div class="seg" id="ctl-seg" role="group" aria-labelledby="l-seg"></div></div>
+    <div class="ctl"><span class="ctl-l" id="l-car">Carrier</span><div class="chips" id="ctl-car" role="group" aria-labelledby="l-car"></div></div>
+  </div>
+
+  <section class="section" id="calendar" aria-labelledby="h-cal">
+    <h2 id="h-cal">Calendar</h2>
+    <p class="finding" id="f-cal"></p>
+    <figure class="panel">
+      <div class="fig-head"><div><h3>Parcels per day</h3><p class="sub" id="s-cal"></p></div></div>
+      <div class="scroll-x"><div class="chart" id="ch-cal" tabindex="0" role="application" aria-label="Year calendar. Arrow keys move the selected day, Enter keeps it."></div></div>
+      <div class="scale" id="sc-cal"></div>
+      <p class="cap">Click a day to select it in the current view (day, ISO week or month); click a month name to select the month. Arrow keys move the selection. Grey: Sundays and public holidays in Lower Saxony (no deliveries); a dot marks a holiday.</p>
+    </figure>
+  </section>
+
+  <section class="section" id="overview" aria-labelledby="h-ov">
+    <h2 id="h-ov">Selected period</h2>
+    <div class="kpis" id="kpis"></div>
+    <div class="grid" style="margin-top:16px">
+      <figure class="panel s8">
+        <div class="fig-head"><div><h3>Parcels over the year by carrier</h3><p class="sub" id="s-ts"></p></div>
+          <div class="seg" id="ctl-gran" role="group" aria-label="Time resolution"></div></div>
+        <div class="legend" id="lg-ts"></div>
+        <div class="chart" id="ch-ts"></div>
+        <p class="cap">Stacked from the bottom: Amazon, Hermes, DHL, UPS, GLS, FedEx/TNT, DPD. The band marks the selected period; hover for the breakdown.</p>
+      </figure>
+      <figure class="panel s4">
+        <div class="fig-head"><div><h3>Weekday profile</h3><p class="sub" id="s-wd"></p></div></div>
+        <div class="legend" id="lg-wd"></div>
+        <div class="chart" id="ch-wd"></div>
+        <p class="cap" id="cap-wd"></p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section" id="carriers" aria-labelledby="h-car">
+    <h2 id="h-car">Carriers</h2>
+    <p class="finding" id="f-car"></p>
+    <figure class="panel"><div id="car-table"></div>
+      <p class="cap">Monday and Saturday: share of the carrier's parcels in the selected period that are delivered on that weekday. B2B-heavy carriers deliver less on Saturdays because only about one firm in five is open.</p></figure>
+  </section>
+
+  <section class="section" id="map" aria-labelledby="h-map">
+    <h2 id="h-map">Where the parcels arrive</h2>
+    <div class="map-wrap">
+      <figure class="panel" style="min-width:0">
+        <div class="fig-head"><div><h3 id="t-map">Postcode areas</h3><p class="sub" id="s-map"></p></div>
+          <label><span class="ctl-l" style="margin-right:6px">Indicator</span><select class="select" id="ctl-metric"></select></label></div>
+        <div class="chart" id="ch-map"></div>
+        <div class="scale" id="sc-map"></div>
+        <p class="cap">Postcode areas © OpenStreetMap contributors (ODbL). District names are for orientation only.</p>
+      </figure>
+      <aside class="card" id="plz-card" aria-live="polite"></aside>
+    </div>
+    <figure class="panel" style="margin-top:16px"><div class="fig-head"><div><h3>All postcode areas</h3><p class="sub" id="s-plz"></p></div></div><div id="plz-table"></div></figure>
+  </section>
+
+  <section class="section" id="lockers" aria-labelledby="h-lk" hidden>
+    <h2 id="h-lk">Parcel lockers</h2>
+    <p class="finding" id="f-lk"></p>
+    <dl class="facts" id="lk-facts"></dl>
+    <div class="map-wrap">
+      <figure class="panel" style="min-width:0">
+        <div class="fig-head"><div><h3>Lockers, boxes and counters</h3><p class="sub" id="s-lk-map"></p></div></div>
+        <div class="chart" id="ch-lk-map"></div>
+        <div class="scale" id="sc-lk"></div>
+        <p class="cap">Circle size: compartments. Colour: mean afternoon fill on the delivery days of the selected period. Hover for the station, click to pin it.</p>
+      </figure>
+      <aside class="card" id="lk-card" aria-live="polite"></aside>
+    </div>
+    <figure class="panel" style="margin-top:16px"><div class="fig-head"><div><h3>Fill over the year</h3><p class="sub" id="s-lk-ts"></p></div></div>
+      <div class="chart" id="ch-lk-ts"></div>
+      <p class="cap">Mean fill of all points on delivery days (thick line) and share of points that are full that day (thin line). The band marks the selected period; click a day to select it.</p></figure>
+    <figure class="panel" style="margin-top:16px"><div class="fig-head"><div><h3>All points</h3><p class="sub" id="s-lk-table"></p></div></div><div id="lk-table"></div></figure>
+  </section>
+
+  <section class="section" id="method" aria-labelledby="h-me">
+    <h2 id="h-me">How the days are generated</h2>
+    <figure class="panel"><ol class="list" id="method-list"></ol></figure>
+  </section>
+
+  <footer><span id="foot"></span><span>Maps and buildings © OpenStreetMap contributors (ODbL) · calibrated to DHL street volumes 2021</span></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script>
+(function(){
+'use strict';
+var D=JSON.parse(document.getElementById('hagrid-annual').textContent);
+var M=D.meta, DAYS=D.days, N=DAYS.date.length, P=D.plz, NP=P.codes.length, NC=M.columns.length;
+var CUBE=D.plz_daily;
+var KEY={'Amazon':'amazon','DHL':'dhl','DPD':'dpd','FedEx/TNT':'fedex','GLS':'gls','Hermes':'hermes','UPS':'ups'};
+var STACK=['Amazon','Hermes','DHL','UPS','GLS','FedEx/TNT','DPD'];
+var CARS=M.carriers.slice();
+var COLC=M.column_carriers, COLS=M.column_segments;
+var WD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], WDL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var SEG={all:'B2C + B2B',b2c:'B2C only',b2b:'B2B only'};
+function col(c){ return 'var(--c-'+KEY[c]+')'; }
+function nf(d){ return new Intl.NumberFormat('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+var NF=[nf(0),nf(1),nf(2)];
+function int(x){ return x==null||!isFinite(x)?'–':NF[0].format(Math.round(x)); }
+function dec(x,d){ return x==null||!isFinite(x)?'–':NF[d==null?1:d].format(x); }
+function pct(x,d){ return x==null||!isFinite(x)?'–':NF[d==null?1:d].format(x*100)+' %'; }
+function short(n){ var a=Math.abs(n); if(a>=1e6) return NF[2].format(n/1e6)+'M'; if(a>=1e4) return NF[0].format(n/1e3)+'k'; return NF[0].format(n); }
+function sum(a){ var s=0; for(var i=0;i<a.length;i++) s+=a[i]; return s; }
+var DATE=DAYS.date.map(function(s){ return new Date(s+'T12:00:00Z'); });
+function dlabel(i){ var d=DATE[i]; return WD[DAYS.weekday[i]]+' '+d.getUTCDate()+' '+MON[d.getUTCMonth()]; }
+function dlong(i){ var d=DATE[i]; return WDL[DAYS.weekday[i]]+', '+d.getUTCDate()+' '+MON[d.getUTCMonth()]+' '+d.getUTCFullYear(); }
+function isoWeek(i){ var d=new Date(DATE[i]); var day=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-day+3); var first=new Date(Date.UTC(d.getUTCFullYear(),0,4)); return 1+Math.round(((d-first)/864e5-3+((first.getUTCDay()+6)%7))/7); }
+var WEEK=DAYS.date.map(function(_,i){ return isoWeek(i); });
+var MONTH=DATE.map(function(d){ return d.getUTCMonth(); });
+var DELIV=DAYS.date.map(function(_,i){ return DAYS.weekday[i]<6 && !DAYS.holiday[i]; });
+var NS='http://www.w3.org/2000/svg';
+function s(tag,a,p){ var e=document.createElementNS(NS,tag); if(a) for(var k in a){ var v=a[k]; if(v==null) continue; if(k==='text') e.textContent=v; else if(k==='fill'||k==='stroke'||k==='opacity') e.style[k]=v; else e.setAttribute(k,v); } if(p) p.appendChild(e); return e; }
+function h(tag,a){ var e=document.createElement(tag); if(a) for(var k in a){ var v=a[k]; if(v==null||v===false) continue; if(k==='text') e.textContent=v; else if(k==='class') e.className=v; else if(k==='style') e.setAttribute('style',v); else e.setAttribute(k,v===true?'':v); }
+  for(var i=2;i<arguments.length;i++){ var c=arguments[i]; if(c==null) continue; (Array.isArray(c)?c:[c]).forEach(function(x){ if(x!=null) e.appendChild(typeof x==='string'?document.createTextNode(x):x); }); } return e; }
+function $(id){ return document.getElementById(id); }
+function root(box,W,H,label){ var v=s('svg',{width:W,height:H,viewBox:'0 0 '+W+' '+H,role:'img','aria-label':label}); box.replaceChildren(v); return v; }
+function niceMax(v){ if(v<=0) return 1; var e=Math.pow(10,Math.floor(Math.log10(v))), m=v/e; return (m<=1?1:m<=1.2?1.2:m<=1.5?1.5:m<=2?2:m<=2.5?2.5:m<=3?3:m<=4?4:m<=5?5:m<=6?6:m<=8?8:10)*e; }
+function ticks(max,n){ var st=niceMax(max/n), o=[]; for(var v=0; v<=max+st*1e-6; v+=st) o.push(v); return o; }
+var tip=$('tip');
+function place(ev){ var x,y; if(ev&&ev.clientX!=null&&ev.type!=='focus'){ x=ev.clientX; y=ev.clientY; } else { var r=ev.target.getBoundingClientRect(); x=r.left+r.width/2; y=r.top; }
+  var w=tip.offsetWidth, hh=tip.offsetHeight, L=x+14, T=y+14; if(L+w>innerWidth-8) L=x-14-w; if(T+hh>innerHeight-8) T=y-14-hh; tip.style.transform='translate('+Math.max(8,L)+'px,'+Math.max(8,T)+'px)'; }
+function show(ev,build){ tip.replaceChildren(); build(tip); tip.hidden=false; place(ev); }
+function hide(){ tip.hidden=true; }
+function hover(node,build,click){ node.addEventListener('pointermove',function(e){ show(e,build); }); node.addEventListener('pointerleave',hide); if(click) node.addEventListener('click',click); }
+function tH(t,sub){ return [h('strong',{text:t}),sub?h('span',{class:'s',text:sub}):null].filter(Boolean); }
+function tR(v,l,c){ return h('div',{class:'tr'},h('i',{style:c?'background:'+c:''}),h('b',{text:v}),h('span',{text:l})); }
+
+/* ---------- state ---------- */
+var firstDelivery=DELIV.indexOf(true);
+var state={mode:'week',anchor:Math.max(0,DAYS.date.indexOf(M.year+'-05-14')),carrier:'all',segment:'all',gran:'week',metric:'per1000',pin:null};
+try{ var st=JSON.parse(localStorage.getItem('hagrid-parcel-year')||'null'); if(st&&st.year===M.year){ ['mode','anchor','carrier','segment','gran','metric'].forEach(function(k){ if(st[k]!=null) state[k]=st[k]; }); } }catch(e){}
+if(state.anchor<0||state.anchor>=N) state.anchor=firstDelivery;
+function persist(){ try{ localStorage.setItem('hagrid-parcel-year',JSON.stringify(Object.assign({year:M.year},state,{pin:null}))); }catch(e){} }
+function selected(){ var a=state.anchor, o=[]; for(var i=0;i<N;i++){ if(state.mode==='year'||(state.mode==='month'&&MONTH[i]===MONTH[a])||(state.mode==='week'&&WEEK[i]===WEEK[a]&&Math.abs(i-a)<7)||(state.mode==='day'&&i===a)) o.push(i); } return o; }
+function selLabel(){ var d=selected(); if(state.mode==='year') return 'Year '+M.year; if(state.mode==='month') return MON[MONTH[state.anchor]]+' '+M.year; if(state.mode==='week') return 'Week '+WEEK[state.anchor]+' · '+DATE[d[0]].getUTCDate()+' '+MON[MONTH[d[0]]]+' – '+DATE[d[d.length-1]].getUTCDate()+' '+MON[MONTH[d[d.length-1]]]; return dlong(state.anchor); }
+function colOK(j){ var c=COLC[j], sg=COLS[j]; return (state.carrier==='all'||state.carrier===c)&&(state.segment==='all'||(state.segment==='b2c'?sg==='private':sg==='business')); }
+function dayTotal(i,carrier,segment){ var t=0, base=i*NP*NC; for(var p=0;p<NP;p++){ var b=base+p*NC; for(var j=0;j<NC;j++){ var c=COLC[j], sg=COLS[j]; if((carrier==='all'||carrier===c)&&(segment==='all'||(segment==='b2c'?sg==='private':sg==='business'))) t+=CUBE[b+j]; } } return t; }
+var DT={}; function dayCarrierSeg(i){ if(DT[i]) return DT[i]; var o={}; CARS.forEach(function(c){ o[c]={private:0,business:0}; }); var base=i*NP*NC; for(var p=0;p<NP;p++){ var b=base+p*NC; for(var j=0;j<NC;j++){ o[COLC[j]][COLS[j]]+=CUBE[b+j]; } } DT[i]=o; return o; }
+function pickSeg(v){ return state.segment==='all'?v.private+v.business:state.segment==='b2c'?v.private:v.business; }
+function totals(days){ var o={}; CARS.forEach(function(c){ o[c]={private:0,business:0}; }); days.forEach(function(i){ var d=dayCarrierSeg(i); CARS.forEach(function(c){ o[c].private+=d[c].private; o[c].business+=d[c].business; }); }); return o; }
+function plzTotals(days){ var o=new Float64Array(NP*NC); days.forEach(function(i){ var base=i*NP*NC; for(var k=0;k<NP*NC;k++) o[k]+=CUBE[base+k]; }); return o; }
+
+/* ---------- static ---------- */
+function peakReason(i,t){
+  var md=DAYS.date[i].slice(5), last=-1;
+  if(md>='12-01'&&md<'12-25') return 'It falls in the pre-Christmas peak: gifts are ordered and shipped before 24 December'+(t.christmas_pull_forward_days?', including the orders that would otherwise ship on 24–26 December':'')+'.';
+  (M.holidays||[]).forEach(function(x){ var gap=(DATE[i]-new Date(x))/864e5; if(gap>0&&gap<=7) last=DAYS.date.indexOf(x); });
+  if(last>=0) return 'It follows the public holiday on '+dlong(last)+': orders from the holiday ship over the next '+(t.holiday_spread_days||1)+' shipping days.';
+  return 'It reflects the season of week '+WEEK[i]+' and the weekday pattern.';
+}
+function setStatic(){
+  $('run-id').textContent=M.run_id; $('year').textContent=M.year;
+  var tot=sum(DAYS.parcels), del=DELIV.filter(Boolean).length, b2b=sum(DAYS.b2b);
+  $('lede').textContent='Modeled deliveries of all seven CEP carriers in Region Hannover for '+M.year+': '+short(tot)+' parcels on '+del+' delivery days, '+pct(b2b/tot)+' to firms. Every parcel gets a shipping day and a transit time; the delivery day follows from them, with a stochastic weekly layer.';
+  var ooh=sum(DAYS.out_of_home||[]), b2c=sum(DAYS.b2c);
+  var facts=[['Parcels in the year',short(tot)],['Per delivery day',int(tot/del)],['B2B share',pct(b2b/tot)],['Delivery days',String(del)],['Reference stops',int(M.stops_total)],['Residents',int(M.persons)]];
+  if(ooh>0) facts.splice(3,0,['B2C out of home',pct(ooh/b2c)]);
+  if(D.locker){ var L=D.locker, dl=L.fill.filter(function(v,i){ return DELIV[i]; }); facts.push(['Locker fill (delivery days)',pct(dl.reduce(function(a,b){return a+b;},0)/Math.max(1,dl.length))],['Locker days full',pct(L.full_share.filter(function(v,i){return DELIV[i];}).reduce(function(a,b){return a+b;},0)/Math.max(1,dl.length))]); }
+  $('facts').replaceChildren.apply($('facts'),facts.map(function(f){ return h('div',null,h('dt',{text:f[0]}),h('dd',{text:f[1]})); }));
+  $('foot').textContent='HAGRID · run '+M.run_id+' · generated '+M.generated_at.slice(0,10);
+  var peak=0; for(var i=0;i<N;i++) if(DAYS.parcels[i]>DAYS.parcels[peak]) peak=i;
+  var t=M.temporal||{}, S=M.spatial||{}, list=$('method-list');
+  $('f-cal').replaceChildren('The busiest day is ',h('b',{text:dlong(peak)+' with '+int(DAYS.parcels[peak])+' parcels'}),'. '+peakReason(peak,t));
+  var items=[['Shipping day:','each parcel is shipped on a day drawn from a weekday profile per segment (B2C '+(t.shipping_weekday_weights?t.shipping_weekday_weights.private.map(function(v){return NF[0].format(v*100);}).join('/'):'')+' %, B2B '+(t.shipping_weekday_weights?t.shipping_weekday_weights.business.map(function(v){return NF[0].format(v*100);}).join('/'):'')+' %, Mon…Sun); no shipping on public holidays, their orders ship over the next '+(t.holiday_spread_days||1)+' shipping days'+(t.christmas_pull_forward_days?'; orders of 24–26 December ship in the '+t.christmas_pull_forward_days+' days before Christmas':'')+'.'],
+    ['Transit:','each parcel arrives on the 1st, 2nd or 3rd delivery day after shipping ('+(t.transit_days?t.transit_days.default.map(function(v){return NF[0].format(v*100);}).join('/'):'')+' %); Sundays and holidays are skipped.'],
+    ['Saturday:','all carriers deliver on Saturdays; business recipients take a Saturday parcel with probability '+pct(t.business_saturday_open||0.2,0)+', otherwise it moves to the next weekday.'],
+    ['Events:',((t.events||[]).length?t.events.map(function(e){ return e.name+' ('+(e.carriers==='all'?'all carriers':e.carriers.join('/'))+', orders ×'+dec(e.uplift,2)+')'; }).join(', '):'none')+'; half delivery days '+Object.keys(t.half_delivery_days||{}).map(function(k){ return (+k.slice(3))+' '+MON[+k.slice(0,2)-1]+' ('+pct(t.half_delivery_days[k],0)+')'; }).join(', ')+', the rest follows on the next delivery day. Each carrier keeps its annual volume.'],
+    ['Weekly layer:','week volume per segment varies log-normally (sd '+pct(t.week_log_sd||0,1)+', AR(1) ρ '+dec(t.week_ar||0,1)+'), per carrier (sd '+pct(t.carrier_week_log_sd||0,1)+'), carrier shares vary per day (sd '+pct(t.carrier_day_log_sd||0,1)+'), and the weekday split of each week is redrawn (Dirichlet, κ '+int(t.weekday_concentration||0)+').'],
+    ['Space:','business parcels go to firms and private parcels to homes, so carrier mixes follow the local B2B share'+(S.site_frailty_cv?'; some addresses receive more all year (heavy receivers, CV '+pct(S.site_frailty_cv,0)+')':'')+(S.carrier_plz_log_sd?'; random carrier strongholds per PLZ (sd '+pct(S.carrier_plz_log_sd,0)+')':'')+'. Per day and segment the spatial Dirichlet shares are drawn once; every carrier allocates its own parcels to buildings and stops.'],
+    ['Out of home:',(function(o){ if(!o||!o.delivered) return 'not modelled.'; var shares=Object.keys(o.delivered).filter(function(c){ return o.delivered[c]>0; }).map(function(c){ return c+' '+pct(o.delivered[c]/Math.max(1,o.b2c_delivered[c]),0); }).join(', '); var pts=o.osm_points||{}; var kinds=o.kinds||['locker','shared_locker','shop'], names={locker:'lockers',shared_locker:'shared boxes',counter:'pickup counters',shop:'pickup shops'}; var parts=kinds.map(function(k){ return int(pts[k]||0)+' '+names[k]; }); if(kinds.indexOf('shop')>=0) parts.push(int(o.synthetic_shops||0)+' synthetic shops'); if(o.synthetic_lockers) parts.push(int(o.synthetic_lockers)+' scenario lockers'); if(o.synthetic_counters) parts.push(int(o.synthetic_counters)+' synthetic counters'); return 'B2C parcels to '+kinds.map(function(k){ return names[k]; }).join(', ').replace(/, ([^,]*)$/,' and $1')+' ('+shares+'); '+parts.join(', ')+'; parcels that do not fit a full point ('+int(o.overflow_home||0)+') stay home deliveries.'; })(t.out_of_home)],
+    ['Lockers:',(D.locker?int(D.locker.points)+' points (lockers, boxes, counters) with '+int(D.locker.compartments)+' compartments (OSM capacity tag, else sized to the demand the point attracts: DHL Packstations grow from 76 to 390 compartments); recipients choose among the three nearest points; each parcel draws once when it leaves the compartment: 60 % on the delivery day, 20 % the next day, 20 % the day after (Sailer, Klein & Steinhardt 2026, reference profile; includes removal by the operator), a released compartment is free from the next day; parcels that do not fit go to the next point or home.':'not modelled.')],
+    ['Sources:','shipping profiles: LogIKTram 2023 (B2B), derived from the notebook delivery profile (B2C); Saturday opening: KIT 2024; transit and weekly variability are assumptions.']];
+  list.replaceChildren.apply(list,items.map(function(it){ return h('li',null,h('b',{text:it[0]}),' '+it[1]); }));
+}
+
+/* ---------- controls ---------- */
+function build(){
+  var m=$('ctl-mode'); [['year','Year'],['month','Month'],['week','Week'],['day','Day']].forEach(function(x){ var b=h('button',{type:'button','data-v':x[0]},x[1]); b.addEventListener('click',function(){ state.mode=x[0]; update(); }); m.appendChild(b); });
+  var g=$('ctl-seg'); [['all','All'],['b2c','B2C'],['b2b','B2B']].forEach(function(x){ var b=h('button',{type:'button','data-v':x[0]},x[1]); b.addEventListener('click',function(){ state.segment=x[0]; update(); }); g.appendChild(b); });
+  var c=$('ctl-car'); function chip(v,l){ var b=h('button',{type:'button',class:'chip','data-v':v},v==='all'?null:h('span',{class:'sw',style:'background:'+col(v)}),l); b.addEventListener('click',function(){ state.carrier=state.carrier===v&&v!=='all'?'all':v; update(); }); c.appendChild(b); }
+  chip('all','All'); CARS.forEach(function(x){ chip(x,x); });
+  var gr=$('ctl-gran'); [['week','Weekly'],['day','Daily']].forEach(function(x){ var b=h('button',{type:'button','data-v':x[0]},x[1]); b.addEventListener('click',function(){ state.gran=x[0]; update(); }); gr.appendChild(b); });
+  $('prev').addEventListener('click',function(){ step(-1); }); $('next').addEventListener('click',function(){ step(1); });
+  $('ctl-metric').addEventListener('change',function(e){ state.metric=e.target.value; update(); });
+  $('ch-cal').addEventListener('keydown',function(e){ var d={ArrowLeft:-7,ArrowRight:7,ArrowUp:-1,ArrowDown:1}[e.key]; if(d){ e.preventDefault(); state.anchor=Math.max(0,Math.min(N-1,state.anchor+d)); if(state.mode==='year') state.mode='day'; update(); } });
+}
+function step(dir){ var a=state.anchor; if(state.mode==='day') a+=dir; else if(state.mode==='week') a+=7*dir; else if(state.mode==='month'){ var target=MONTH[a]+dir; for(var i=0;i<N;i++) if(MONTH[i]===target){ a=i; break; } } state.anchor=Math.max(0,Math.min(N-1,a)); update(); }
+function sync(){ function mark(id,v){ $(id).querySelectorAll('button[data-v]').forEach(function(b){ b.setAttribute('aria-pressed',String(b.getAttribute('data-v')===v)); }); }
+  mark('ctl-mode',state.mode); mark('ctl-seg',state.segment); mark('ctl-car',state.carrier); mark('ctl-gran',state.gran); $('sel-label').textContent=selLabel(); }
+
+/* ---------- calendar ---------- */
+function breaks(vals,n){ var v=vals.filter(function(x){return x>0;}).sort(function(a,b){return a-b;}); var o=[]; for(var i=1;i<n;i++){ var q=v[Math.min(v.length-1,Math.floor(i*v.length/n))]; if(q==null) continue; var e=Math.pow(10,Math.floor(Math.log10(q||1))-1), r=Math.round(q/e)*e; if(!o.length||r>o[o.length-1]) o.push(r); } return o; }
+function cls(v,br){ var k=0; while(k<br.length&&v>=br[k]) k++; return k; }
+function legend(el,br,fmt,title){ if(!br.length){ el.replaceChildren(h('span',{text:title+' no data in the selection'})); return; } el.replaceChildren(h('span',{text:title})); var b=h('span',{class:'bins'}); for(var k=0;k<=br.length;k++) b.appendChild(h('span',null,h('i',{style:'background:var(--q'+(k+1)+')'}),h('span',{text:k===0?'< '+fmt(br[0]):'from '+fmt(br[k-1])}))); el.appendChild(b); }
+function renderCal(){
+  var box=$('ch-cal'); var offset=DAYS.weekday[0]; var cols=Math.ceil((N+offset)/7); var cell=Math.max(13,Math.min(20,Math.floor((box.parentNode.clientWidth-40)/cols)));
+  var L=30, T=20, W=L+cols*cell+4, H=T+7*cell+4; var v=root(box,W,H,'Calendar of parcels per day');
+  var vals=DAYS.date.map(function(_,i){ return dayTotal(i,state.carrier,state.segment); });
+  var br=breaks(vals.filter(function(_,i){return DELIV[i];}),6);
+  var sel={}; selected().forEach(function(i){ sel[i]=1; });
+  [0,2,4].forEach(function(r){ s('text',{x:L-6,y:T+r*cell+cell*0.7,'text-anchor':'end',class:'tick',text:WD[r]},v); });
+  var lastM=-1;
+  for(var i=0;i<N;i++){ var c=Math.floor((i+offset)/7), r=DAYS.weekday[i], x=L+c*cell, y=T+r*cell;
+    if(MONTH[i]!==lastM){ lastM=MONTH[i]; (function(mi,xx,idx){ var t=s('text',{x:xx,y:12,class:'lbl-b',text:MON[mi],style:'cursor:pointer;font-size:11.5px'},v); t.addEventListener('click',function(){ state.mode='month'; state.anchor=idx; update(); }); })(MONTH[i],x,i); }
+    var fill=DELIV[i]?'var(--q'+(cls(vals[i],br)+1)+')':'var(--closed)';
+    var rect=s('rect',{x:x+1,y:y+1,width:cell-2,height:cell-2,rx:3,class:'cal-cell',fill:fill,stroke:sel[i]?'var(--ink)':null,'stroke-width':sel[i]?2:null},v);
+    if(DAYS.holiday[i]) s('circle',{cx:x+cell/2,cy:y+cell/2,r:2.2,fill:'var(--muted)',style:'pointer-events:none'},v);
+    (function(idx){ hover(rect,function(t){ t.append.apply(t,tH(dlong(idx),DAYS.holiday[idx]?'public holiday':DELIV[idx]?'week '+WEEK[idx]:'no deliveries')); t.appendChild(tR(int(vals[idx]),'parcels'+(state.carrier==='all'?'':' '+state.carrier)+(state.segment==='all'?'':' ('+SEG[state.segment]+')'))); if(DELIV[idx]) t.appendChild(tR(int(DAYS.stops_active[idx]),'active stops')); },function(){ state.anchor=idx; if(state.mode==='year') state.mode='day'; update(); }); })(i); }
+  legend($('sc-cal'),br,function(x){return short(x);},'Parcels per day:');
+  $('s-cal').textContent=(state.carrier==='all'?'all carriers':state.carrier)+' · '+SEG[state.segment];
+}
+
+/* ---------- KPIs ---------- */
+function renderKPIs(){
+  var d=selected(), t=totals(d), all=0, b2b=0; CARS.forEach(function(c){ if(state.carrier==='all'||state.carrier===c){ all+=t[c].private+t[c].business; b2b+=t[c].business; } });
+  var sel=0; CARS.forEach(function(c){ if(state.carrier==='all'||state.carrier===c) sel+=pickSeg(t[c]); });
+  var del=d.filter(function(i){return DELIV[i];}).length||1;
+  var box=$('kpis'); box.replaceChildren();
+  function tile(l,v,u,dd,cl){ box.appendChild(h('div',{class:'kpi'+(cl?' '+cl:'')},h('p',{text:l}),h('div',{class:'v'},v,u?h('small',{text:u}):null),dd?h('div',{class:'d',text:dd}):null)); }
+  tile('Parcels'+(state.carrier==='all'?'':' '+state.carrier)+(state.segment==='all'?'':' ('+state.segment.toUpperCase()+')')+' · '+selLabel(),int(sel),null,pct(sel/sum(DAYS.parcels),2)+' of the year','hero');
+  tile('Per delivery day',int(sel/del),null,del+' delivery day'+(del===1?'':'s'));
+  tile('B2B share',pct(all?b2b/all:NaN),null,state.carrier==='all'?'all carriers':state.carrier);
+  var stops=d.filter(function(i){return DELIV[i];}).map(function(i){return DAYS.stops_active[i];});
+  tile('Active stops per day',stops.length?int(sum(stops)/stops.length):'–',null,'all carriers, B2C + B2B');
+  var pps=stops.length?sum(d.filter(function(i){return DELIV[i];}).map(function(i){return DAYS.parcels[i];}))/sum(stops):NaN;
+  tile('Parcels per active stop',dec(pps,2),null,'all carriers');
+  tile('Per 1,000 residents',dec(sel/del/M.persons*1000,1),'/ day',int(M.persons)+' residents');
+}
+
+/* ---------- time series ---------- */
+function renderTS(){
+  var lg=$('lg-ts'); lg.replaceChildren.apply(lg,STACK.map(function(c){ var b=h('button',{type:'button'},h('span',{class:'sw',style:'background:'+(state.carrier==='all'||state.carrier===c?col(c):'var(--deemph)')}),c); b.addEventListener('click',function(){ state.carrier=state.carrier===c?'all':c; update(); }); return b; }));
+  var box=$('ch-ts'), W=Math.max(300,box.clientWidth), H=280, m={t:10,r:8,b:28,l:52}; var v=root(box,W,H,'Stacked area of parcels over the year');
+  var groups=[]; if(state.gran==='day'){ for(var i=0;i<N;i++) groups.push([i]); } else { var map={}; for(var j=0;j<N;j++){ var k=WEEK[j]+'-'+(j<7&&WEEK[j]>50?'p':j>350&&WEEK[j]===1?'n':''); (map[k]=map[k]||[]).push(j); } groups=Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return a[0]-b[0];}); }
+  var series=groups.map(function(g){ var t=totals(g), o={}; STACK.forEach(function(c){ o[c]=pickSeg(t[c]); }); return o; });
+  var mx=Math.max.apply(null,series.map(function(o){ return sum(STACK.map(function(c){return o[c];})); })); var yM=niceMax(mx*1.05);
+  function x(i){ return m.l+(W-m.l-m.r)*(groups.length===1?0.5:i/(groups.length-1)); } function y(val){ return m.t+(H-m.t-m.b)*(1-val/yM); }
+  ticks(yM,4).forEach(function(t){ s('line',{x1:m.l,x2:W-m.r,y1:y(t),y2:y(t),class:t===0?'ax':'gl'},v); s('text',{x:m.l-8,y:y(t)+4,'text-anchor':'end',class:'tick',text:short(t)},v); });
+  var sel=selected(), g0=-1, g1=-1; groups.forEach(function(g,gi){ if(g.some(function(i){return sel.indexOf(i)>=0;})){ if(g0<0) g0=gi; g1=gi; } });
+  if(g0>=0){ var half=(W-m.l-m.r)/Math.max(1,groups.length-1)/2; s('rect',{x:Math.max(m.l,x(g0)-half),y:m.t,width:Math.min(W-m.r,x(g1)+half)-Math.max(m.l,x(g0)-half),height:H-m.t-m.b,fill:'var(--band-strong)'},v); }
+  var base=series.map(function(){return 0;});
+  STACK.forEach(function(c){ var top=series.map(function(o,i){ return base[i]+o[c]; }); var d='M'+x(0)+','+y(base[0]); for(var i=0;i<series.length;i++) d+='L'+x(i).toFixed(1)+','+y(top[i]).toFixed(1); for(var k=series.length-1;k>=0;k--) d+='L'+x(k).toFixed(1)+','+y(base[k]).toFixed(1); d+='Z';
+    s('path',{d:d,fill:state.carrier==='all'||state.carrier===c?col(c):'var(--deemph)',opacity:.92},v); base=top; });
+  for(var mi=0;mi<12;mi++){ var first=MONTH.indexOf(mi); if(first<0) continue; var gi=groups.findIndex(function(g){return g.indexOf(first)>=0;}); s('text',{x:x(gi),y:H-8,'text-anchor':'middle',class:'tick',text:MON[mi]},v); }
+  var cross=s('line',{x1:0,x2:0,y1:m.t,y2:H-m.b,stroke:'var(--ink)','stroke-width':1,opacity:0},v);
+  var hit=s('rect',{x:m.l,y:m.t,width:W-m.l-m.r,height:H-m.t-m.b,class:'hit'},v);
+  function near(e){ var r=v.getBoundingClientRect(); var px=e.clientX-r.left; return Math.max(0,Math.min(groups.length-1,Math.round((px-m.l)/(W-m.l-m.r)*(groups.length-1)))); }
+  hit.addEventListener('pointermove',function(e){ var gi=near(e); cross.setAttribute('x1',x(gi)); cross.setAttribute('x2',x(gi)); cross.style.opacity=.5; var g=groups[gi], o=series[gi];
+    show(e,function(t){ t.append.apply(t,tH(state.gran==='day'?dlong(g[0]):'Week '+WEEK[g[0]]+' · from '+dlabel(g[0]),SEG[state.segment])); STACK.slice().reverse().forEach(function(c){ var r=tR(int(o[c]),c,col(c)); if(state.carrier!=='all'&&state.carrier!==c) r.style.opacity=.5; t.appendChild(r); }); t.appendChild(tR(int(sum(STACK.map(function(c){return o[c];}))),'total')); t.appendChild(h('span',{class:'s',text:'Click to select'})); }); });
+  hit.addEventListener('pointerleave',function(){ hide(); cross.style.opacity=0; });
+  hit.addEventListener('click',function(e){ var g=groups[near(e)]; state.anchor=g.filter(function(i){return DELIV[i];})[0]||g[0]; if(state.mode==='year') state.mode=state.gran==='day'?'day':'week'; update(); });
+  $('s-ts').textContent=(state.gran==='day'?'Parcels per day':'Parcels per ISO week')+' · '+SEG[state.segment];
+}
+
+/* ---------- weekday profile ---------- */
+function renderWD(){
+  var d=selected(), useYear=d.length<7; if(useYear) d=DAYS.date.map(function(_,i){return i;});
+  var prof={}; CARS.concat(['all']).forEach(function(c){ prof[c]=[0,0,0,0,0,0,0]; });
+  d.forEach(function(i){ var t=dayCarrierSeg(i), wd=DAYS.weekday[i]; CARS.forEach(function(c){ var v=pickSeg(t[c]); prof[c][wd]+=v; prof.all[wd]+=v; }); });
+  Object.keys(prof).forEach(function(c){ var tot=sum(prof[c]); prof[c]=prof[c].map(function(v){ return tot?v/tot:0; }); });
+  var box=$('ch-wd'), W=Math.max(260,box.clientWidth), H=250, m={t:10,r:10,b:26,l:40}; var v=root(box,W,H,'Weekday profile per carrier');
+  var yM=niceMax(Math.max.apply(null,Object.keys(prof).map(function(c){return Math.max.apply(null,prof[c].slice(0,6));}))*1.08);
+  function x(k){ return m.l+(W-m.l-m.r)*k/5; } function y(val){ return m.t+(H-m.t-m.b)*(1-val/yM); }
+  ticks(yM,4).forEach(function(t){ s('line',{x1:m.l,x2:W-m.r,y1:y(t),y2:y(t),class:t===0?'ax':'gl'},v); s('text',{x:m.l-6,y:y(t)+4,'text-anchor':'end',class:'tick',text:NF[0].format(t*100)+'%'},v); });
+  WD.slice(0,6).forEach(function(l,k){ s('text',{x:x(k),y:H-8,'text-anchor':'middle',class:'tick',text:l},v); });
+  var order=CARS.filter(function(c){return c!==state.carrier;}); if(state.carrier!=='all') order.push(state.carrier);
+  order.forEach(function(c){ var on=state.carrier==='all'||state.carrier===c; var pts=prof[c].slice(0,6).map(function(val,k){return x(k).toFixed(1)+','+y(val).toFixed(1);}).join(' ');
+    s('polyline',{points:pts,fill:'none',stroke:on?col(c):'var(--deemph)','stroke-width':on?2:1.5,'stroke-linejoin':'round','stroke-linecap':'round'},v);
+    prof[c].slice(0,6).forEach(function(val,k){ var dot=s('circle',{cx:x(k),cy:y(val),r:on?3.8:2.5,fill:on?col(c):'var(--deemph)',stroke:'var(--surface)','stroke-width':1.5},v); hover(dot,function(t){ t.append.apply(t,tH(c+' · '+WDL[k],useYear?'whole year':selLabel())); t.appendChild(tR(pct(val,1),'of the weekly volume',col(c))); t.appendChild(tR(pct(prof.all[k],1),'all carriers')); }); }); });
+  s('polyline',{points:prof.all.slice(0,6).map(function(val,k){return x(k).toFixed(1)+','+y(val).toFixed(1);}).join(' '),fill:'none',stroke:'var(--ink)','stroke-width':2.4,opacity:.8},v);
+  var lg=$('lg-wd'); lg.replaceChildren(h('span',{class:'li'},h('span',{class:'lk',style:'background:var(--ink);height:3px'}),'all carriers'),h('span',{class:'li',text:'colored: carriers (see chips)'}));
+  $('s-wd').textContent='Share of parcels per weekday · '+SEG[state.segment]; $('cap-wd').textContent=useYear?'Selection shorter than a week: profile of the whole year.':'Profile of the selected period.';
+}
+
+/* ---------- carrier table ---------- */
+var SORT={};
+function table(host,cols,rows,opt){ opt=opt||{}; var key=host.id, st=SORT[key]||{k:opt.sort,dir:-1};
+  var sorted=rows.slice(); if(st.k){ var c0=cols.filter(function(c){return c.k===st.k;})[0]; sorted.sort(function(a,b){ var x=c0.sv?c0.sv(a):a[c0.k], y=c0.sv?c0.sv(b):b[c0.k]; return (x<y?-1:x>y?1:0)*st.dir; }); }
+  var head=h('tr'); cols.forEach(function(c){ var th=h('th',{class:c.l?'l':null,'aria-sort':st.k===c.k?(st.dir<0?'descending':'ascending'):'none'}); var b=h('button',{type:'button'},c.t+(st.k===c.k?(st.dir<0?' ↓':' ↑'):'')); b.addEventListener('click',function(){ SORT[key]={k:c.k,dir:st.k===c.k?-st.dir:-1}; table(host,cols,rows,opt); }); th.appendChild(b); head.appendChild(th); });
+  var body=h('tbody'); sorted.forEach(function(r){ var tr=h('tr',{class:opt.on&&opt.on(r)?'on':null,tabindex:'0'}); cols.forEach(function(c){ var val=c.f?c.f(r):r[c.k]; var td=h('td',{class:c.l?'l':null}); if(val instanceof Node) td.appendChild(val); else td.textContent=val==null?'–':val; tr.appendChild(td); }); if(opt.click){ tr.addEventListener('click',function(){ opt.click(r); }); tr.addEventListener('keydown',function(e){ if(e.key==='Enter') opt.click(r); }); } body.appendChild(tr); });
+  host.replaceChildren(h('div',{class:'tbl'+(opt.free?' free':'')},h('table',null,h('thead',null,head),body))); }
+function renderCarriers(){
+  var d=selected(), t=totals(d), del=d.filter(function(i){return DELIV[i];}).length||1, all=0; CARS.forEach(function(c){ all+=pickSeg(t[c]); });
+  var wd={}; CARS.forEach(function(c){ wd[c]=[0,0,0,0,0,0,0]; }); d.forEach(function(i){ var x=dayCarrierSeg(i); CARS.forEach(function(c){ wd[c][DAYS.weekday[i]]+=pickSeg(x[c]); }); });
+  var mx=Math.max.apply(null,CARS.map(function(c){return pickSeg(t[c]);}));
+  var rows=CARS.map(function(c){ var v=pickSeg(t[c]), both=t[c].private+t[c].business, w=sum(wd[c])||1; return {c:c,parcels:v,share:all?v/all:0,b2b:both?t[c].business/both:0,perday:v/del,mon:wd[c][0]/w,sat:wd[c][5]/w}; });
+  table($('car-table'),[{k:'c',t:'Carrier',l:true,f:function(r){ return h('span',null,h('span',{class:'sw',style:'background:'+col(r.c)+';margin-right:8px'}),r.c); },sv:function(r){return r.c;}},
+    {k:'parcels',t:'Parcels',f:function(r){ return h('span',null,int(r.parcels),h('i',{class:'bar-i',style:'width:'+Math.round(60*r.parcels/(mx||1))+'px;background:'+col(r.c)})); },sv:function(r){return r.parcels;}},
+    {k:'share',t:'Share',f:function(r){return pct(r.share);}},{k:'b2b',t:'B2B share',f:function(r){return pct(r.b2b);}},{k:'perday',t:'Per delivery day',f:function(r){return int(r.perday);}},
+    {k:'mon',t:'Monday',f:function(r){return pct(r.mon);}},{k:'sat',t:'Saturday',f:function(r){return pct(r.sat);}}],rows,{sort:'parcels',free:true,on:function(r){return state.carrier===r.c;},click:function(r){ state.carrier=state.carrier===r.c?'all':r.c; update(); }});
+  var sat=rows.slice().sort(function(a,b){return a.sat-b.sat;});
+  $('f-car').replaceChildren('In '+selLabel()+', ',h('b',{text:sat[0].c+' delivers the smallest Saturday share ('+pct(sat[0].sat)+')'}),', '+sat[sat.length-1].c+' the largest ('+pct(sat[sat.length-1].sat)+'). The difference follows from the B2B share: business parcels rarely arrive on Saturdays.');
+}
+
+/* ---------- map ---------- */
+var GEO=D.geo.features, B={x0:1e9,x1:-1e9,y0:1e9,y1:-1e9};
+GEO.forEach(function(f){ (f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates).forEach(function(poly){ poly.forEach(function(ring){ ring.forEach(function(p){ B.x0=Math.min(B.x0,p[0]); B.x1=Math.max(B.x1,p[0]); B.y0=Math.min(B.y0,p[1]); B.y1=Math.max(B.y1,p[1]); }); }); }); });
+var KX=Math.cos((B.y0+B.y1)/2*Math.PI/180), PI={}; P.codes.forEach(function(c,i){ PI[c]=i; });
+function proj(W){ var pad=8, sc=(W-2*pad)/((B.x1-B.x0)*KX), H=(B.y1-B.y0)*sc+2*pad, mh=Math.max(340,Math.min(640,innerHeight*0.75)); if(H>mh){ sc=(mh-2*pad)/(B.y1-B.y0); H=mh; } var ox=(W-(B.x1-B.x0)*KX*sc)/2; return {H:H,f:function(lo,la){ return [ox+(lo-B.x0)*KX*sc,pad+(B.y1-la)*sc]; }}; }
+function pathOf(g,pr){ var d=''; (g.type==='Polygon'?[g.coordinates]:g.coordinates).forEach(function(poly){ poly.forEach(function(ring){ ring.forEach(function(p,i){ var q=pr.f(p[0],p[1]); d+=(i?'L':'M')+q[0].toFixed(1)+','+q[1].toFixed(1); }); d+='Z'; }); }); return d; }
+function plzValues(){ var d=selected(), tot=plzTotals(d), del=d.filter(function(i){return DELIV[i];}).length||1, o=[];
+  for(var p=0;p<NP;p++){ var selv=0, all=0, b2b=0, carv=0; for(var j=0;j<NC;j++){ var v=tot[p*NC+j]; all+=v; if(COLS[j]==='business') b2b+=v; if(colOK(j)) selv+=v; if(state.carrier!=='all'&&COLC[j]===state.carrier&&(state.segment==='all'||(state.segment==='b2c'?COLS[j]==='private':COLS[j]==='business'))) carv+=v; }
+    var allSeg=0; for(var k=0;k<NC;k++){ if(state.segment==='all'||(state.segment==='b2c'?COLS[k]==='private':COLS[k]==='business')) allSeg+=tot[p*NC+k]; }
+    o.push({p:P.codes[p],name:P.names[p],persons:P.persons[p],firms:P.firms[p],parcels:selv,per1000:P.persons[p]>500?selv/del/P.persons[p]*1000:null,b2b:all?b2b/all:null,share:state.carrier==='all'?null:(allSeg?carv/allSeg:null),stops:P.stops[p],tot:tot,idx:p}); }
+  return o; }
+function metrics(){ var o=[['per1000','Parcels per 1,000 residents per day'],['total','Parcels in the period'],['b2b','B2B share']]; if(state.carrier!=='all') o.push(['share','Share of '+state.carrier+' in the postcode']); return o; }
+function mval(r){ return state.metric==='per1000'?r.per1000:state.metric==='total'?r.parcels:state.metric==='b2b'?r.b2b:r.share; }
+function mfmt(v){ return v==null?'–':(state.metric==='b2b'||state.metric==='share')?pct(v):state.metric==='total'?int(v):dec(v,0); }
+function renderMap(){
+  var ms=metrics(); if(!ms.some(function(x){return x[0]===state.metric;})) state.metric='per1000';
+  var sel=$('ctl-metric'); sel.replaceChildren.apply(sel,ms.map(function(x){ var o=h('option',{value:x[0]},x[1]); if(x[0]===state.metric) o.selected=true; return o; }));
+  var rows=plzValues(), br=breaks(rows.map(mval).filter(function(v){return v!=null;}),6);
+  var box=$('ch-map'), W=Math.max(300,box.clientWidth), pr=proj(W), v=root(box,W,pr.H,'Map of Region Hannover'); v.id='map-svg';
+  GEO.forEach(function(f){ var p=f.properties.plz, r=rows[PI[p]], val=mval(r); var path=s('path',{d:pathOf(f.geometry,pr),class:'plz'+(state.pin===p?' on':''),fill:val==null?'var(--surface-3)':'var(--q'+(cls(val,br)+1)+')',tabindex:0,'aria-label':p+' '+r.name},v);
+    hover(path,function(t){ t.append.apply(t,tH(p+' '+r.name,selLabel())); t.appendChild(tR(mfmt(val),ms.filter(function(x){return x[0]===state.metric;})[0][1])); t.appendChild(tR(int(r.parcels),'parcels')); t.appendChild(tR(int(r.persons),'residents')); },function(){ state.pin=state.pin===p?null:p; update(); });
+    path.addEventListener('pointerenter',function(){ card(r); }); path.addEventListener('pointerleave',function(){ card(state.pin?rows[PI[state.pin]]:null); }); });
+  legend($('sc-map'),br,function(x){ return mfmt(x); },ms.filter(function(x){return x[0]===state.metric;})[0][1]+':');
+  $('s-map').textContent=selLabel()+' · '+(state.carrier==='all'?'all carriers':state.carrier)+' · '+SEG[state.segment];
+  card(state.pin?rows[PI[state.pin]]:null);
+  table($('plz-table'),[{k:'p',t:'Postcode',l:true,f:function(r){return h('span',{class:'mono',text:r.p});}},{k:'name',t:'Area',l:true},{k:'persons',t:'Residents',f:function(r){return int(r.persons);}},{k:'firms',t:'Firms',f:function(r){return int(r.firms);}},
+    {k:'parcels',t:'Parcels',f:function(r){return int(r.parcels);}},{k:'per1000',t:'per 1,000 res./day',f:function(r){return r.per1000==null?'–':dec(r.per1000,0);},sv:function(r){return r.per1000==null?-1:r.per1000;}},{k:'b2b',t:'B2B share',f:function(r){return pct(r.b2b);},sv:function(r){return r.b2b||0;}},{k:'stops',t:'Stops',f:function(r){return int(r.stops);}}],
+    rows,{sort:'parcels',on:function(r){return state.pin===r.p;},click:function(r){ state.pin=state.pin===r.p?null:r.p; update(); }});
+  $('s-plz').textContent=selLabel()+' · click a row to mark the postcode on the map';
+}
+function card(r){ var el=$('plz-card'); el.replaceChildren(); if(!r){ var d=selected(), tot=0; d.forEach(function(i){ tot+=dayTotal(i,state.carrier,state.segment); }); el.append(h('div',{class:'code',text:'Region'}),h('div',{class:'name',text:'Region Hannover · '+NP+' postcode areas'}),h('dl',null,h('div',null,h('dt',{text:'Parcels'}),h('dd',{text:int(tot)})),h('div',null,h('dt',{text:'Residents'}),h('dd',{text:int(M.persons)}))),h('p',{class:'note',text:'Hover over a postcode area for its profile; click to pin it.'})); return; }
+  el.append(h('div',{class:'code',text:r.p}),h('div',{class:'name',text:r.name+(state.pin===r.p?' · pinned':'')}),h('dl',null,h('div',null,h('dt',{text:'Parcels'}),h('dd',{text:int(r.parcels)})),h('div',null,h('dt',{text:'per 1,000 res./day'}),h('dd',{text:r.per1000==null?'–':dec(r.per1000,0)})),h('div',null,h('dt',{text:'Residents'}),h('dd',{text:int(r.persons)})),h('div',null,h('dt',{text:'Firms'}),h('dd',{text:int(r.firms)})),h('div',null,h('dt',{text:'B2B share'}),h('dd',{text:pct(r.b2b)})),h('div',null,h('dt',{text:'Stops'}),h('dd',{text:int(r.stops)}))));
+  var mix=h('div',{class:'mix'}), sums={}, all=0; CARS.forEach(function(c){ sums[c]=0; }); for(var j=0;j<NC;j++){ if(state.segment==='all'||(state.segment==='b2c'?COLS[j]==='private':COLS[j]==='business')){ sums[COLC[j]]+=r.tot[r.idx*NC+j]; all+=r.tot[r.idx*NC+j]; } }
+  CARS.forEach(function(c){ mix.appendChild(h('div',null,h('span',{class:'sw',style:'background:'+col(c)}),h('span',{text:c}),h('span',{class:'mono',text:all?pct(sums[c]/all):'–'}))); }); el.appendChild(mix); }
+
+/* ---------- parcel lockers ---------- */
+var LK=D.lockers, KIND={locker:'Locker',shared_locker:'Shared box',counter:'Counter',shop:'Shop'}, CTX={retail:'at a shop',transit:'at a station',other:'street'};
+function lkStats(days){ if(!LK) return []; var deliv=days.filter(function(i){return DELIV[i];}), o=[];
+  for(var p=0;p<LK.ids.length;p++){ var base=p*N, fill=0, n=0, st=0, rj=0, full=0; deliv.forEach(function(i){ var f=LK.fill[base+i]; fill+=f; n++; if(f>=100) full++; }); days.forEach(function(i){ st+=LK.stored[base+i]; rj+=LK.rejected[base+i]; });
+    o.push({idx:p,id:LK.ids[p],kind:LK.kind[p],carriers:LK.carriers[p],brand:LK.brand[p],context:LK.context[p],synthetic:LK.synthetic[p],comp:LK.compartments[p],plz:LK.plz[p],fill:n?fill/n/100:null,perDay:deliv.length?st/deliv.length:0,stored:st,rejected:rj,demand:deliv.length?(st+rj)/deliv.length:0,full:full,days:deliv.length}); }
+  return o; }
+function lkLabel(r){ return (r.brand&&r.brand!=='synthetic'?r.brand:KIND[r.kind]+(r.synthetic?' (synthetic)':''))+' · '+r.carriers.split('|').join(', '); }
+function renderLockers(){ var sec=$('lockers'); if(!LK){ sec.hidden=true; return; } sec.hidden=false;
+  var d=selected(), rows=lkStats(d), vals=rows.map(function(r){return r.fill;}).filter(function(v){return v!=null;}), br=breaks(vals,6);
+  var meanFill=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:0, fullDays=rows.reduce(function(a,r){return a+r.full;},0), pointDays=rows.reduce(function(a,r){return a+r.days;},0);
+  var stored=rows.reduce(function(a,r){return a+r.stored;},0), rejected=rows.reduce(function(a,r){return a+r.rejected;},0), comp=rows.reduce(function(a,r){return a+r.comp;},0);
+  var facts=[['Points',int(rows.length)],['Compartments',int(comp)],['Parcels stored',int(stored)],['Mean fill',pct(meanFill)],['Point-days full',pointDays?pct(fullDays/pointDays):'–'],['Turned away',int(rejected)]];
+  $('lk-facts').replaceChildren.apply($('lk-facts'),facts.map(function(f){ return h('div',null,h('dt',{text:f[0]}),h('dd',{text:f[1]})); }));
+  var top=rows.slice().sort(function(a,b){return (b.fill||0)-(a.fill||0);})[0];
+  $('f-lk').replaceChildren(selLabel()+': the '+int(rows.length)+' pickup points hold '+int(stored)+' parcels and are '+pct(meanFill)+' full on an average delivery afternoon; ',h('b',{text:int(rejected)+' parcels'}),' did not fit and went to the next point or home.'+(top&&top.fill!=null?' Fullest: '+lkLabel(top)+' in '+top.plz+' ('+pct(top.fill)+').':''));
+  var box=$('ch-lk-map'), W=Math.max(300,box.clientWidth), pr=proj(W), v=root(box,W,pr.H,'Map of pickup points');
+  GEO.forEach(function(f){ s('path',{d:pathOf(f.geometry,pr),class:'plz faint'},v); });
+  rows.slice().sort(function(a,b){return b.comp-a.comp;}).forEach(function(r){ var q=pr.f(LK.lon[r.idx],LK.lat[r.idx]);
+    var c=s('circle',{cx:q[0].toFixed(1),cy:q[1].toFixed(1),r:(3+Math.sqrt(r.comp/70)*3).toFixed(1),class:'dot'+(state.pin===r.id?' on':''),fill:r.fill==null?'var(--surface-3)':'var(--q'+(cls(r.fill,br)+1)+')',tabindex:0,'aria-label':lkLabel(r)},v);
+    hover(c,function(t){ t.append.apply(t,tH(lkLabel(r),r.plz+' · '+CTX[r.context]+' · '+int(r.comp)+' compartments')); t.appendChild(tR(r.fill==null?'–':pct(r.fill),'mean fill')); t.appendChild(tR(dec(r.demand,1),'wanted per delivery day')); t.appendChild(tR(dec(r.perDay,1),'stored per delivery day')); t.appendChild(tR(int(r.full)+' of '+int(r.days),'days full')); t.appendChild(tR(int(r.rejected),'turned away')); },function(){ state.pin=state.pin===r.id?null:r.id; update(); });
+    c.addEventListener('pointerenter',function(){ lkCard(r); }); c.addEventListener('pointerleave',function(){ lkCard(pinned(rows)); }); });
+  legend($('sc-lk'),br,function(x){ return pct(x); },'Mean fill:');
+  $('s-lk-map').textContent=selLabel()+' · '+int(rows.length)+' points';
+  lkCard(pinned(rows));
+  lkSeries();
+  table($('lk-table'),[{k:'label',t:'Point',l:true,f:function(r){return lkLabel(r);},sv:function(r){return lkLabel(r);}},{k:'plz',t:'Postcode',l:true,f:function(r){return h('span',{class:'mono',text:r.plz});}},{k:'context',t:'Context',l:true,f:function(r){return CTX[r.context];},sv:function(r){return r.context;}},
+    {k:'comp',t:'Compartments',f:function(r){return int(r.comp);}},{k:'fill',t:'Mean fill',f:function(r){return r.fill==null?'–':pct(r.fill);},sv:function(r){return r.fill==null?-1:r.fill;}},{k:'demand',t:'Wanted/day',f:function(r){return dec(r.demand,1);}},{k:'perDay',t:'Stored/day',f:function(r){return dec(r.perDay,1);}},{k:'full',t:'Days full',f:function(r){return int(r.full);}},{k:'rejected',t:'Turned away',f:function(r){return int(r.rejected);}}],
+    rows,{sort:'fill',on:function(r){return state.pin===r.id;},click:function(r){ state.pin=state.pin===r.id?null:r.id; update(); }});
+  $('s-lk-table').textContent=selLabel()+' · click a row to mark the point on the map'; }
+function pinned(rows){ for(var i=0;i<rows.length;i++) if(rows[i].id===state.pin) return rows[i]; return null; }
+function lkCard(r){ var el=$('lk-card'); el.replaceChildren(); if(!r){ el.append(h('div',{class:'code',text:'Pickup points'}),h('div',{class:'name',text:'Hover over a point for its profile; click to pin it.'})); return; }
+  el.append(h('div',{class:'code',text:KIND[r.kind]}),h('div',{class:'name',text:lkLabel(r)+(state.pin===r.id?' · pinned':'')}),h('dl',null,h('div',null,h('dt',{text:'Postcode'}),h('dd',{text:r.plz})),h('div',null,h('dt',{text:'Context'}),h('dd',{text:CTX[r.context]})),h('div',null,h('dt',{text:'Compartments'}),h('dd',{text:int(r.comp)})),h('div',null,h('dt',{text:'Mean fill'}),h('dd',{text:r.fill==null?'–':pct(r.fill)})),h('div',null,h('dt',{text:'Wanted/day'}),h('dd',{text:dec(r.demand,1)})),h('div',null,h('dt',{text:'Stored/day'}),h('dd',{text:dec(r.perDay,1)})),h('div',null,h('dt',{text:'Days full'}),h('dd',{text:int(r.full)+' / '+int(r.days)})),h('div',null,h('dt',{text:'Turned away'}),h('dd',{text:int(r.rejected)}))));
+  var base=r.idx*N, w=Math.max(200,el.clientWidth-32), hgt=54, sv=s('svg',{width:w,height:hgt,viewBox:'0 0 '+w+' '+hgt,role:'img','aria-label':'Fill by day'}), d='';
+  for(var i=0;i<N;i++){ if(!DELIV[i]) continue; var x=i/(N-1)*w, y=hgt-2-LK.fill[base+i]/100*(hgt-6); d+=(d?'L':'M')+x.toFixed(1)+','+y.toFixed(1); }
+  s('line',{x1:0,x2:w,y1:hgt-2-(hgt-6),y2:hgt-2-(hgt-6),stroke:'var(--axis)','stroke-dasharray':'2 3'},sv); s('path',{d:d,fill:'none',stroke:'var(--q4)','stroke-width':1.5},sv); el.appendChild(sv); el.appendChild(h('p',{class:'note',text:'Fill by day over the year; dashed line = full.'})); }
+function lkSeries(){ var box=$('ch-lk-ts'), W=Math.max(300,box.clientWidth), H=220, pad={l:44,r:12,t:12,b:26}, v=root(box,W,H,'Locker fill over the year'), n=LK.ids.length;
+  var fill=[], full=[]; for(var i=0;i<N;i++){ if(!DELIV[i]){ fill.push(null); full.push(null); continue; } var f=0, k=0; for(var p=0;p<n;p++){ var x=LK.fill[p*N+i]; f+=x; if(x>=100) k++; } fill.push(f/n/100); full.push(k/n); }
+  var x=function(i){ return pad.l+i/(N-1)*(W-pad.l-pad.r); }, y=function(v){ return pad.t+(1-v)*(H-pad.t-pad.b); }, d=selected();
+  s('rect',{x:x(d[0]),y:pad.t,width:Math.max(2,x(d[d.length-1])-x(d[0])),height:H-pad.t-pad.b,fill:'var(--band)'},v);
+  [0,.25,.5,.75,1].forEach(function(t){ s('line',{x1:pad.l,x2:W-pad.r,y1:y(t),y2:y(t),stroke:'var(--grid)'},v); s('text',{x:pad.l-6,y:y(t)+4,class:'lbl','text-anchor':'end',text:Math.round(t*100)+'%'},v); });
+  var lastM=-1; for(var i=0;i<N;i++){ if(MONTH[i]!==lastM){ lastM=MONTH[i]; s('text',{x:x(i),y:H-8,class:'lbl',text:MON[lastM]},v); } }
+  function line(arr,stroke,width){ var p=''; for(var i=0;i<N;i++){ if(arr[i]==null) continue; p+=(p?'L':'M')+x(i).toFixed(1)+','+y(arr[i]).toFixed(1); } s('path',{d:p,fill:'none',stroke:stroke,'stroke-width':width,'stroke-linejoin':'round'},v); }
+  line(full,'var(--q2)',1); line(fill,'var(--q5)',2);
+  var hit=s('rect',{x:pad.l,y:pad.t,width:W-pad.l-pad.r,height:H-pad.t-pad.b,fill:'transparent'},v);
+  function near(e){ var r=v.getBoundingClientRect(); return Math.max(0,Math.min(N-1,Math.round((e.clientX-r.left-pad.l)/(W-pad.l-pad.r)*(N-1)))); }
+  hit.addEventListener('pointerleave',hide);
+  hit.addEventListener('pointermove',function(e){ var i=near(e); show(e,function(t){ t.append.apply(t,tH(dlong(i),int(DAYS.parcels[i])+' parcels')); t.appendChild(tR(fill[i]==null?'–':pct(fill[i]),'mean fill')); t.appendChild(tR(full[i]==null?'–':pct(full[i]),'points full')); }); });
+  hit.addEventListener('click',function(e){ state.anchor=near(e); if(state.mode==='year') state.mode='day'; update(); });
+  $('s-lk-ts').textContent='All '+int(n)+' points · delivery days'; }
+
+/* ---------- orchestration ---------- */
+function update(){ DT={}; hide(); persist(); sync(); renderCal(); renderKPIs(); renderTS(); renderWD(); renderCarriers(); renderMap(); renderLockers(); }
+setStatic(); build(); update();
+var lastW=document.documentElement.clientWidth, rt=null;
+addEventListener('resize',function(){ clearTimeout(rt); rt=setTimeout(function(){ var w=document.documentElement.clientWidth; if(w!==lastW){ lastW=w; update(); } },150); });
+document.addEventListener('scroll',hide,{passive:true});
+})();
+</script>
