@@ -1,0 +1,148 @@
+{
+  "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../runs",
+  "legacy_output": "../../parcel-demand-estimation/output",
+  "reference_year": 2021,
+  "reference_operating_days": 313,
+  "seed": 42,
+  "holdout_fraction": 0.2,
+  "validation_fraction": 0.2,
+  "branch_log_sd": 0.6,
+  "carrier_log_sd": 0.5,
+  "market_share_sd": 0.05,
+  "b2b_share_sd": 0.07,
+  "hermes_shape_weight": 0.2,
+  "max_fit_evaluations": 500,
+  "dates": [
+    "2026-09-14",
+    "2026-09-15",
+    "2030-09-16"
+  ],
+  "realizations": 2,
+  "volume_curve": "linear",
+  "weekday_weights": {
+    "private": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.8,
+      0
+    ],
+    "business": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.15,
+      0
+    ]
+  },
+  "monthly_weights": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "holiday_dates": [],
+  "holiday_factor": 0,
+  "field_anchor_date": "2021-01-01",
+  "fourier_features": 64,
+  "spatial": {
+    "private": {
+      "log_sigma": 0.3,
+      "length_scale_m": 3000,
+      "temporal_rho": 0.7
+    },
+    "business": {
+      "log_sigma": 0.45,
+      "length_scale_m": 2000,
+      "temporal_rho": 0.65
+    }
+  },
+  "common_day_log_sd": 0.1,
+  "segment_day_log_sd": 0.05,
+  "persistent_site_log_sd": 0,
+  "stock_updates": null,
+  "export_geopackage": false,
+  "delivery_mapping": null,
+  "network_file": null,
+  "network_modes": [
+    "car"
+  ],
+  "network_max_distance_m": 100,
+  "assumptions": [
+    "DHL tagesschni is treated as mean parcels per operating day, following existing HAGRID/PANDA usage; measurement definition unconfirmed.",
+    "DHL rows are additive within PLZ, following PANDA; repeated street records remain a flagged uncertainty.",
+    "Hermes is used only for within-training spatial shape, not absolute units.",
+    "Historical source population and firms are used as reference-year proxies; their actual vintages remain unconfirmed.",
+    "313 reference operating days, calendar weights, spatial and daily noise parameters are explicit assumptions.",
+    "Legacy market/B2B/volume series are inherited priors and projection paths, not new independent observations.",
+    "National relative volume growth is provisionally transferred to the region. No building-level future stock changes are invented.",
+    "An empty holiday list means weekday/month seasonality only; no official holiday calendar has been supplied.",
+    "No exact PANDA reproduction: original OSM/Zensus caches are unavailable in the review clone.",
+    "Seasonality uses the inherited Swiss 2019-2021 weekly mean profile. Week 53 interpolates weeks 52 and 1; monthly weights are neutral.",
+    "Weekly and annual correlated shocks are user-adjustable assumptions, not fitted uncertainty.",
+    "Square-root business exposure chosen from exploratory repeated postal CV after prior test inspection. New split metrics are not an untouched confirmation.",
+    "Branch multipliers and stable site carrier preferences are declared hypotheses.",
+    "Local carrier correction uses observed reference DHL and normalized Hermes shape after fitting; this is conditional reconstruction, not held-out prediction.",
+    "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
+  ],
+  "weekly_profile_file": "../../parcel-demand-estimation/output/03_yearly_weekly_parcel_forecast.csv",
+  "date_start": "2021-09-13",
+  "date_end": "2021-09-15",
+  "week_log_sd": 0.08,
+  "week_rho": 0.7,
+  "year_log_sd": 0.03,
+  "year_rho": 0.85,
+  "seasonality_strength": {
+    "private": 1,
+    "business": 1
+  },
+  "business_size_power": 0.5,
+  "candidate_kinds": [
+    "pooled"
+  ],
+  "carrier_allocation": {
+    "enabled": true,
+    "preference_log_sd": {
+      "private": 0.15,
+      "business": 0.65
+    },
+    "local_strength": {
+      "DHL": 0.5,
+      "Hermes": 0.3
+    },
+    "branch_multipliers": {
+      "C": {
+        "UPS": 1.15,
+        "FedEx/TNT": 1.15
+      },
+      "G": {
+        "DPD": 1.1,
+        "GLS": 1.1
+      },
+      "H": {
+        "UPS": 1.15,
+        "FedEx/TNT": 1.15
+      },
+      "M": {
+        "DHL": 1.1
+      },
+      "N": {
+        "DHL": 1.1
+      }
+    }
+  },
+  "dhl_exclude_above": 1000
+}

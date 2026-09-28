@@ -1,0 +1,135 @@
+{
+  "shares_2025": {
+    "DHL": 0.1,
+    "Amazon": 0.05,
+    "Hermes": 0.02,
+    "DPD": 0.02,
+    "GLS": 0.02,
+    "UPS": 0.02,
+    "FedEx/TNT": 0.02
+  },
+  "trend": {
+    "growth": 0.2418,
+    "midpoint": 2028.8,
+    "reference_year": 2025
+  },
+  "day_log_sd": 0.1,
+  "day_ar": 0.6,
+  "reach_m": 1500.0,
+  "decay_m": 600.0,
+  "max_propensity": 0.9,
+  "prefer_lockers": true,
+  "apartment_min_population": 6,
+  "apartment_factor": 1.5,
+  "house_factor": 0.7,
+  "shared_locker_carriers": [
+    "Hermes",
+    "DPD",
+    "GLS",
+    "UPS",
+    "FedEx/TNT"
+  ],
+  "national_shops": {
+    "DHL": 24000,
+    "Hermes": 16000,
+    "DPD": 8000,
+    "GLS": 10000,
+    "UPS": 4000
+  },
+  "germany_population": 84700000,
+  "synthetic_poi_types": {
+    "shop": [
+      "kiosk",
+      "convenience",
+      "supermarket",
+      "chemist",
+      "newsagent",
+      "stationery",
+      "tobacco",
+      "variety_store",
+      "bakery"
+    ],
+    "amenity": [
+      "fuel"
+    ]
+  },
+  "synthetic_population_radius_m": 500.0,
+  "sources": {
+    "shares_2025": "Locker shares of B2C parcels: DHL 3 % (2019), 5 % (2021) and a 10 % target for 2025 (Statista/DHL); Amazon 5 % is an assumption for its own lockers; Hermes, DPD, GLS, UPS and FedEx 2 % via shared boxes (myflexbox/Kaufland, DeinFach) - assumptions, capped by the small shared network in the region.",
+    "trend": "Bounded sigmoid fitted to DHL 3 % 2019, 5 % 2021, 10 % 2025; other carriers keep the shape with their 2025 level.",
+    "national_shops": "DHL about 24,000 staffed outlets (DHL annual report 2025); DPD and GLS about 8,000-10,000 points each (DPD, GLS 2025/26); Hermes 16,000 and UPS 4,000 are assumptions to verify.",
+    "shared_locker_carriers": "myflexbox boxes serve UPS, DPD, GLS and FedEx (Kaufland 2026); DeinFach (DHL subsidiary, about 600 boxes nationally, first ones 2025 in Berlin, Cologne, Bonn, Stuttgart, Hamburg; one in the region) and inboxx are open to all carriers including DHL.",
+    "synthetic_lockers": "Scenario option: extra lockers per carrier or shared boxes placed at retail POIs; not observed. Amazon's own network is small (about 1,486 stations nationally, 22 in the region in OSM), so its share stays below target unless lockers are added here.",
+    "kinds": "Lockers, shared boxes and staffed pickup counters take out-of-home parcels; pickup shops (in the points file) will be served by the failed-delivery model.",
+    "compartments": "DHL's standard Packstation has 76 compartments; the modular version grows to 390 at busy places (Verkehrsrundschau 2021, DHL). Open boxes about 40 (assumption), counters 80 parcels held (assumption). The OSM capacity tag overrides the default per point.",
+    "pickup_profile": "Reference profile 'id' of Sailer, Klein & Steinhardt (2026, Transportation Science, Table 2): 60/20/20 % of the parcels leave the compartment on model day 1 (delivery day), 2 and 3; day 3 includes removal by the operator at the end of the storage period. Consistent with Hovi et al. (2023, TOI 1959/2023: about 60 % collected within a day at PostNord lockers) and Morganti et al. (2014: 70 % within 24 h at DHL Packstations, DHL 2011). Each parcel draws its class once at storage (multinomial); a compartment released on day t is free for the deliveries of day t + 1. Applied uniformly to all stations as a literature-based assumption, not a local calibration; see docs/demand-audit/Paketstationen_Abholzeiten_Literatur_und_Modellannahmen.md.",
+    "pickup_context_factor": "Station context from the OSM surroundings (baseline osm-parcel-points): the first-day share stays the same (Hovi et al. 2023 report similar first-day shares across location types), the mean pickup class is scaled by the ratio of the mean pickup times in Hovi et al. 2023 (grocery stores 30.5 h, transport hubs 34.5 h, all lockers 31.6 h) by moving mass between the second and the third class. Transfer of the Norwegian ratios is an assumption.",
+    "synthetic_counters": "Staffed pickup counters chosen by the recipient (Amazon Counter at fuel stations, supermarkets, kiosks and department stores; Amazon 2019: about 50 Galeria stores plus kiosks and convenience shops). OSM maps none in the region, so the daily config adds 15 Amazon counters (assumption: 'dozens' of Amazon lockers and counters in and around Hannover; 22 lockers are mapped). Amazon parcels shipped by DHL can also go to DHL Packstations, but those parcels belong to the DHL carrier in this model.",
+    "compartments_by_demand": "Operators size stations to demand: points without an OSM tag get days_factor (mean afternoon occupancy per daily parcel with the 60/20/20 profile = 1.6) x safety 1.25 x expected daily demand, rounded up to 10, at least the standard size of the kind (DHL Packstation 76, open boxes 40, counters 40) and at most 390 (DHL's largest modular Packstation).",
+    "choice_k": "Recipients choose among the choice_k nearest lockers, boxes or counters within reach with probability ~ exp(-distance / choice_decay_m); the nearest other one is the fallback when the chosen point is full."
+  },
+  "synthetic_lockers": {},
+  "synthetic_shared_lockers": 0,
+  "kinds": [
+    "locker",
+    "shared_locker",
+    "counter"
+  ],
+  "compartments": {
+    "locker": 76,
+    "shared_locker": 40,
+    "counter": 80
+  },
+  "pickup_profile": {
+    "locker": [
+      0.6,
+      0.2,
+      0.2
+    ],
+    "shared_locker": [
+      0.6,
+      0.2,
+      0.2
+    ],
+    "counter": [
+      0.6,
+      0.2,
+      0.2
+    ]
+  },
+  "pickup_profile_by_carrier": {},
+  "pickup_context_factor": {
+    "retail": 0.965,
+    "transit": 1.092,
+    "other": 1.0
+  },
+  "context_transit_m": 150.0,
+  "context_retail_m": 75.0,
+  "synthetic_counters": {},
+  "counter_poi_types": {
+    "shop": [
+      "supermarket",
+      "convenience",
+      "kiosk",
+      "department_store",
+      "mall"
+    ],
+    "amenity": [
+      "fuel"
+    ]
+  },
+  "compartments_by_demand": {
+    "days_factor": 1.6,
+    "safety": 1.25,
+    "min": {
+      "locker": 76,
+      "shared_locker": 40,
+      "counter": 40
+    },
+    "max": 390,
+    "step": 10
+  },
+  "choice_k": 3,
+  "choice_decay_m": 300.0,
+  "delivery_days_per_year": 303
+}
