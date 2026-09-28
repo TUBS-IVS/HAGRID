@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-08-17._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-25._
 
 ---
 
@@ -4070,6 +4070,544 @@ der dritte Vintage-Fall in vier Tagen, neben dem JAR-Vintage (§2.64e) und der P
 Verwandt: §2.55 (die BEV-Korrekturkette), §2.63 (Nebenverbraucher), §2.66 (Paketbasis),
 §3.12 (die Reichweitenklammer), §2.62/§2.65 (die Iso-Service-Frage hinter den Flottengrößen).
 
+### 2.68 Die 1c-Flottenkurve: Iso-Service liegt bei 138, und dort ist der Emissionsabstand null
+
+`trägt` · beide Fächer abgeschlossen 2026-09-12 08:44. Acht Läufe, Seeds 1337/1338, Flotten
+120/130/140/150, χ=900, 250 Iterationen, Sim; f140 zusätzlich mit n=5. Beantwortet, was §2.65
+offenlassen musste: dort war f140 als überversorgt erkannt, aber der richtige Punkt unbekannt.
+
+| Flotte | Fahrten | CO₂e wtw [kg] | DRT-km | Grenzertrag ab Vorpunkt |
+|---|---:|---:|---:|---|
+| 120 | 7.952,0 | 12.690,6 | 46.901 | — |
+| 130 | 8.537,5 | 13.522,7 | 50.039 | 58,6 Fahrten/Fzg · 5,36 km je Grenzfahrt |
+| 140 | 9.222,6 | 14.301,8 | 52.883 | 68,5 Fahrten/Fzg · 4,15 km je Grenzfahrt |
+| 150 | 9.528,5 | 14.852,9 | 55.023 | **30,6** Fahrten/Fzg · 7,00 km je Grenzfahrt |
+
+**Der tragende Befund.** Für die Baseline-Fahrtenzahl 9.056,2 ± 101,9 liegt 1c bei **Flotte
+≈ 138** und emittiert dort **14.112,6 kg gegen 14.128,5 kg — −15,9 kg, 0,10 sd** (1c-Laufrauschen
+gepoolt sd = 123,3 kg, 7 df; Baseline 160,2 kg). **Bei gleichem Service sind die beiden Konzepte
+emissionsneutral.** Das ist keine Aussage „Unterschied nicht trennbar bei großer Unsicherheit“,
+sondern ein Abstand von einem Zehntel einer Standardabweichung. Der kalibrierte Punkt f140 lag
+bei 250 Iterationen rund **zwei Fahrzeuge zu hoch**.
+
+**Sättigung oberhalb f140.** Der Grenzertrag bricht von 68,5 auf 30,6 Fahrten je Fahrzeug ein,
+die km je Grenzfahrt steigen von 4,15 auf 7,00. Der günstigste Bereich ist 130–140. Die Kurve ist
+auf der Fahrtenachse also nicht monoton konkav, sondern U-förmig im Grenzaufwand — das war am
+Einzelseed sichtbar, hielt aber erst auf den Mitteln als Befund.
+
+⚠️ **Der Seed-Versatz ist nicht konstant und wechselt das Vorzeichen** (s1338 − s1337):
+f120 +74 Fahrten / +124,6 kg · f130 −61 / −15,1 · f140 +134 / +131,0 · f150 −61 / +134,7. Eine
+Ankerkorrektur einzelner Punkte auf einen gemeinsamen Seed ist damit **nicht zulässig** — nur
+die Mittel je Flottengröße tragen. Zwei Zwischenstände dieser Kampagne, die auf einem
+konstanten Versatz beruhten (−138 kg roh, +17 kg „korrigiert“), sind damit gegenstandslos.
+
+**Nebenbefund, unabhängige Stütze für §2.67.** Die Emissionsintensität liegt über alle acht
+Läufe bei **270,2–270,7 g/km** — über 30 Fahrzeuge Flottenspanne und zwei Seeds. Der Kanal ist
+ein reiner Kilometerzähler; die Streuung entsteht in der Mobsim, nicht im Emissionsmodell.
+
+**Paketkanal flotteninvariant:** 5.946 per DRT + 91 gelaufen in **allen acht** Läufen, auf die
+Einheit. Flottengröße kauft ausschließlich Personenfahrten. 1c stellt damit 6.037 der 6.052
+Pakete beim Kunden zu (15 bleiben am Depot-Link), die Baseline 6.052 (§2.66).
+
+Verwandt: §2.65 (die Überversorgung), §2.66 (Paketbasis), §2.67 (Emissionskanal).
+
+**Nachtrag 2026-09-21 — n=3 je Punkt (f140 n=5), Kurve bis f100 verlängert.** Dritter Seed 1339 für
+f100–f130 und f150, Sim, 18.–20.09. (Plan-A-Fächer, `docs/superpowers/plans/2026-09-18-seed-fan-completion-runplan.md`);
+Laufliste in PAPER-RUNS.
+
+| Flotte | n | Fahrten | CO₂e wtw [kg] | DRT-km | Fahrten/Fzg · km je Grenzfahrt ab Vorpunkt |
+|---|---:|---:|---:|---:|---|
+| 100 ⚠️ | 3 | 6.700,7 ± 72,1 | 11.007,5 ± 140,9 | 40.666 | — |
+| 110 | 3 | 7.325,0 ± 40,0 | 11.899,4 ± 73,5 | 43.969 | 62,4 · 5,29 |
+| 120 | 3 | 7.923,7 ± 61,5 | 12.679,1 ± 65,4 | 46.869 | 59,9 · 4,84 |
+| 130 | 3 | 8.598,0 ± 109,1 | 13.567,5 ± 78,0 | 50.171 | 67,4 · 4,90 |
+| 140 | 5 | 9.222,6 ± 62,1 | 14.301,8 ± 149,6 | 52.883 | 62,5 · 4,34 |
+| 150 | 3 | 9.538,7 ± 35,2 | 14.826,7 ± 81,1 | 54.896 | **31,6 · 6,37** |
+
+- **Iso-Service bleibt bei ≈137 (137,3):** dort 14.106,2 kg gegen 14.128,5 kg = **−22,3 kg, 0,2 sd**
+  (1c-Laufrauschen gepoolt jetzt 111,5 kg bei 14 df). Der Befund „bei gleichem Service emissionsneutral“
+  steht mit n=3 unverändert.
+- **Die Sättigung oberhalb f140 bleibt, aber schwächer:** 62,5 → 31,6 Fahrten je Fahrzeug, 4,34 → 6,37 km
+  je Grenzfahrt (bei n=2 waren es 68,5 → 30,6 und 4,15 → 7,00). Der günstigste Bereich ist weiter 130–140.
+  Die U-Form im Grenzaufwand ist ein Befund der Mittel, nicht eines Seeds.
+- **Seed-Versatz wechselt auch mit dem dritten Seed das Vorzeichen** — s1339 liegt bei f110 und f120 unter
+  s1337 (−79 / −48 Fahrten), bei f130 darüber (+151). Die Sperre gegen Ankerkorrektur einzelner Punkte gilt.
+- **f100 liegt in allen drei Seeds unter der Zustellkante** (5.789 / 5.626 / 5.912 per DRT), f110 stellt in
+  allen dreien 5.946 + 91 zu. Die Kante zwischen 100 und 110 ist damit reproduziert; die f100-Zeile ist als
+  Emissionspunkt gesperrt (§2.67-Regel) und steht nur der Vollständigkeit halber in der Tabelle.
+- Emissionsintensität aller 16 Läufe 270,0–270,9 g/km — der Kilometerzähler (§2.67) hält auch hier.
+
+---
+
+---
+
+### 2.69 Elektrifizierung am Iso-Service-Punkt: die Klammer, und zwei Instrumentenfehler auf dem Weg
+
+`trägt` · 2026-09-13, `analysis/paper-figures/emissions-services/charging_feasibility.py`, 13 Läufe
+(S1 f120 n=5 · S2 f140 n=5 · S3 f130 n=3), alle mit **einem** Codestand gerechnet.
+
+**Die Klammer.** Zwei Zahlen je Arm, keine allein zitierfähig. Untergrenze = Anteil der
+Fahrzeugtage, deren Tagesstrecke die Reichweite übersteigt (annahmefrei — die Energie hängt nicht
+von der Tagesanordnung ab). Obergrenze = Anteil, der selbst dann strandet, wenn **jeder** Halt
+≥ W min die Batterie **voll** lädt. Mittel über die Seeds, Seed-Spanne in Klammern, Mercedes
+eSprinter 113 kWh (396,4 km):
+
+| | braucht ≥1 Zwischenladung | strandet trotz Vollladen ≥20 min | ≥40 min | ≥60 min |
+|---|---|---|---|---|
+| S1 Baseline f120 | 68,9 % [66,7–72,5] | 14,2 % [10,1–17,5] | 31,2 % | 45,1 % |
+| S2 1c f140 | 43,1 % [37,9–47,1] | 5,4 % [2,1–9,3] | 16,0 % | 25,3 % |
+| S3 1d f130 | 55,6 % [52,3–61,5] | 12,1 % [8,5–14,6] | 25,4 % | 36,2 % |
+
+Median-Fahrzeugtag 429,7 / 385,6 / 409,2 km. Die **41 LMD-Vans der Baseline sind bei jeder der
+drei Batterien zu 0 % betroffen** (Median 57,0 km, Max 124,5 km) — das Reichweitenproblem sitzt
+vollständig im DRT-Fahrzeugtag, nicht in der Zustellung. Ebenso die 1d-Kapseltouren (Max 96 km).
+
+**Instrumentenfehler 1 — die ausgelieferte KPI teilt den 1d-Fahrzeugtag in zwei Fahrzeuge.**
+`ev_range_exceed_drt_*` vergleicht die Reichweite gegen die **Passagier**-Kilometer eines
+Fahrzeugs; dessen Frachtregime-Kilometer stehen als eigener Posten unter `freight_modular` und
+gehen in den Vergleich nicht ein. Die Batterie kennt kein Regime. Gemessen bei S3 f130:
+**51,8 % → 55,6 %** (+3,8 pp). Betroffen ist ausschließlich der 1d-Arm und ausschließlich die
+Tageskennzahl — `drive_block_*` läuft laut `_blocks_from_seq` bewusst über beide Regime und ist
+korrekt. Der KPI-Kanal wurde **nicht** angefasst (laufende Kampagne); der Papierpfad rechnet die
+Summe, siehe BACKLOG.
+
+**Instrumentenfehler 2 — zwei Vintages im selben Tabellensatz.** Die zehn S1/S2-Läufe sind auf dem
+Sim-PC KPI-gebaut, der für den Hannover-Sweep auf altem HEAD steht: sie tragen die Schwellen
+150/200/250 km und keinen Nebenverbraucher-Aufschlag (bev/diesel 0,348), die Dev-Läufe
+245,5/301,7/396,4 und 0,459. Ein Neubau war lokal unmöglich — die zehn Läufe liegen hier nur als
+beschnittene Kopien ohne `output_trips`/`output_legs`/`output_plans`. Deshalb das eigene Modul auf
+Events + Netz, das alle 13 Läufe mit einem Stand rechnet.
+
+**Die Kontrolle ist stärker als die Neuzahlen.** `--verify` rechnet zuerst nach, was auf der Platte
+steht — für den Tageswert **absichtlich in der Regime-Trennung**, weil das die veröffentlichte
+Konvention ist — und bricht bei jeder Abweichung ab. **16/16 Schlüssel reproduzieren in allen 13
+Läufen**, über beide Vintages (Schwellen aus den Schlüsselnamen der geprüften Datei, nicht aus dem
+heutigen Supplement). Verglichen wird auf `{:.6g}`, der Schreibgenauigkeit von `kpi_writer.py:13`,
+statt auf einer selbstgewählten Toleranz. Unabhängige Gegenprobe: der Baseline-Seed 1337 liefert
+**72,5 % / 17,5 %** — exakt die Zahlen aus §3.12, die dort anders gemessen worden waren.
+
+**Die beiden Instrumente sind dieselbe Messung.** §3.12 stellt Energie je Fahrzeugtag gegen
+Batteriekapazität, dieses Modul km gegen Reichweite. Über 9 Zellen (3 Seeds × 3 Batterien, 1d f130)
+stimmen sie in 7 exakt überein und weichen in 2 um **ein Fahrzeug** (0,8 pp) ab: der
+Flottenmittelverbrauch liegt bei 284,8 Wh/km gegen die 285,1 im Supplement. Daher auch 43,1 %
+hier gegen 42,7 % in §3.12 für 1c — kein Widerspruch, ein Fahrzeug auf einem Seed.
+
+⚠️ **S2 ist an einem überversorgten Punkt gemessen.** §2.68 verortet den 1c-Iso-Service bei
+f≈138; f140 ist rund zwei Fahrzeuge zu hoch. Mehr Fahrzeuge heißt weniger km je Fahrzeugtag, also
+ist **43,1 % eine Untergrenze** für S2 am echten Iso-Service-Punkt. Die Größe des Versatzes ist
+**nicht gemessen**: 1c liegt lokal nur bei f140 vor, f130/f150 stehen auf dem Sim. S1 und S3 sind
+davon nicht berührt.
+
+⚠️ **Die Obergrenze ist extrem optimistisch und darf nie allein zitiert werden.** 113 kWh in ein
+20-min-Fenster sind 339 kW am Bordstein; eine Depot-Wallbox liefert dort 3,67 kWh (11 kW) bzw.
+7,33 kWh (22 kW), also 15 bzw. 30 km. Die belastbare Fassung nennt beide Zahlen (§3.12).
+
+Verwandt: §3.12 (die Vorfassung auf f135 und die zurückgezogene Bindungs-Aussage), §2.63
+(Nebenverbraucher), §2.68 (f138), §2.67 (Kilometerzähler).
+
+---
+
+### 2.70 CO₂e je Paket und je Fahrgast: der Nenner war das Overlay, und der Armvergleich hängt an einer Konvention
+
+`trägt` · 2026-09-13, `analysis/paper-figures/emissions-services/per_unit_emissions.py`, dieselben
+13 Läufe wie §2.69 (S1 f120 n=5 · S2 f140 n=5 · S3 f130 n=3). Löst die Einzellauf-Zahlen vom
+Juli-Artifact ab, von denen **alle drei** sich bewegt haben.
+
+**Was am Artifact falsch war.** Drei unabhängige Fehler, die ersten beiden in derselben Richtung:
+
+| | Artifact | jetzt | Ursache |
+|---|---|---|---|
+| Baseline-Paketnenner | 5.656 | **6.042** | `parcels_handled` = das am 10.09. zurückgezogene Not-at-home-Overlay (§2.66) |
+| 1d-Arm | f135 | **f130** | f135 ist nicht der Iso-Service-Punkt; die Modularfracht emittiert bei f130 20,2 % mehr |
+| Baseline-Kernzone | 6.755 kg | **6.860 kg** | älter als `spatial_emissions.py`, lag 1,53 % neben dem reconciled Zonentotal |
+
+**Die Emissionsseite selbst war unverändert** — b120rgs 13.602,3 DRT + 732,45 LMD = 14.334,7 kg
+reproduziert auf die Nachkommastelle. Der Fehler saß ausschließlich in Nennern und Zonenaufteilung.
+
+**Die Zahlen.** g CO₂e je Einheit, Mittel [Seed-Spanne], Betriebskern 22,86 km²:
+
+| | Pakete Kern | Pakete Umland | S/U | Fahrgäste Kern | Fahrgäste Umland |
+|---|---|---|---|---|---|
+| S1 f120 | 72,5 | 227,5 | 3,14× | 1.377 [1.368–1.387] | 1.593 |
+| S2 f140 | 1,2 *(Masse)* · 55,5 *(Einheiten)* | 2,7 · — | 2,28× | 1.439 [1.421–1.460] | 1.674 |
+| S3 f130 | 32,7 [31,3–33,9] | 129,5 | 3,96× | 1.376 [1.372–1.382] | 1.578 |
+
+**Je Fahrgast sind die drei Arme eine Zahl** — 1,0 % Spanne im Kern — und das ist der belastbare
+Befund der Tabelle: Fracht mitzunehmen macht die Fahrgastfahrt nicht schmutziger. Er ist zudem
+flotteninvariant (f135→f130 bewegt 1d um −0,2 %).
+
+⚠️ **Je Paket sind die drei Arme NICHT dasselbe Maß.** S1 (eigene Vans) und S3 (restfreier
+Regimesplit) teilen **physisch**, S2 teilt per **Konvention** — dort trägt ein Kilometer beides.
+Die drei im Code vorhandenen Konventionen spannen hier Faktor 47 (Kern | Umland): Masse 1,2 | 2,7 g,
+Slots 22,7 | 51,8 g, Einheiten 55,5 | 127,1 g. **Der Zonenkontrast hängt aber NICHT an der
+Konvention** — S/U ist auf allen dreien 2,28–2,29×. Die Wahl bewegt das *Niveau* von 1c und lässt
+seine räumliche Struktur unberührt; zitierfähig ist damit der Kontrast, kaveatpflichtig das Niveau. Der ausgelieferte KPI-Kanal rechnet Masse. Wer die
+1,2 g gegen S1s gemessene 72,5 g hält, vergleicht eine Konvention mit einer Messung. Alle drei
+stehen in `per_unit_runs.csv`, die Anteile werden **je Zone** gemessen, nicht flottenweit —
+ein globaler Anteil machte den Zonenkontrast zur Tautologie aus Emissions- mal Paketkontrast.
+
+⚠️ **Der Frachtvorsprung gegenüber S1 ist überwiegend Konsolidierung, nicht Integration** —
+3.123 providergebundene Halte gegen 892 bezirkskonsolidierte bei identisch 6.052 Paketen. Ein
+konsolidierter konventioneller Zusteller hätte denselben Vorteil ohne jedes DRT. Sauber ist nur
+**S2 gegen S3**. (Unverändert aus dem Artifact übernommen; der Kontrollarm fehlt weiter, M12.)
+
+**Zwei Guards, und beide haben je einen echten Fehler gefangen** — keiner davon wäre am Ergebnis
+aufgefallen:
+1. *Die Paketpartition muss 4.323 / 1.719 / 10 reproduzieren.* Ein `<service>` im Carrier-Plan ist
+   ein **Halt, kein Paket**: 3.123 Services tragen 6.052 Pakete. Ungewichtet gezählt wäre jede
+   Je-Paket-Zahl um Faktor 1,94 zu groß gewesen — und hätte plausibel ausgesehen.
+2. *Der Pax/Fracht-Split darf die Zonentotale nur TEILEN, nie ändern.* Die **Kilometer** sind linear
+   und werden exakt geprüft; sie fanden den zweiten Fehler (km wurden nur gebucht, wenn eine
+   Emission berechenbar war → 0,65 % der X-Zone verschwanden). CO₂e ist **nicht** linear: der
+   Regimesplit wertet die Geschwindigkeitskurve zweimal aus. Deshalb gegen die **Laufsumme**
+   geschrankt (2·10⁻⁴) statt gegen die winzige Zone. Gemessen: exakt 0 bei S1 und S2, die keinen
+   Regimesplit haben, maximal 0,0026 % bei S3.
+
+**Bestätigt statt widerlegt:** die Allokationsanteile des Artifacts (Einheiten 3,24 %, Slots
+1,32 % flottenweit) reproduzieren auf die zweite Stelle. Der KPI `alloc_share_parcels_slots`
+= 20,6 % ist **keine** Gegenaussage — er ist eine reine **Kopfzahl-Quote** (Pakete/2,5 gegen
+Fahrgäste), während Masse, Slots und Einheiten hier alle auf kg·km-artiger Basis stehen. Zwei
+verschiedene Größen mit ähnlichem Namen.
+
+Verwandt: §2.66 (das Overlay), §2.69 (dieselben Iso-Service-Punkte), §2.67 (Kilometerzähler),
+§4.2 (der fehlende DOF-Kontrollarm).
+
+### 2.71 Die drei Umweltindikatoren stehen auf ZWEI Systemgrenzen, nicht auf einer
+
+`trägt` · 2026-09-14, aus einem Review-Einwand des Nutzers, im Code verifiziert.
+
+**Der Befund.** Die einzigen Vorketten-Faktoren im gesamten Faktorensatz sind CO₂e-Faktoren:
+`wtt_co2e_g_per_mj_diesel` und `grid_co2e_g_per_mj_{low,mid,high}`. Es gibt **kein** Vorketten-NOx
+und **kein** Vorketten-PM — weder für Diesel (Raffinerie) noch für Strom (Kraftwerk).
+
+| Indikator | Diesel | BEV | Grenze |
+|---|---|---|---|
+| CO₂e | TTW + WTT | Netzstrom inkl. Vorketten | **well-to-wheel** |
+| NOx | Auspuff (EMEP Tier 3) | 0 | **vehicle operation** |
+| PM10 | Auspuff + Abrieb | 0 + Abrieb | **vehicle operation** |
+
+`assumptions-table.tex` behauptete bis heute in **einer** Zeile „System boundary: well-to-wheel +
+non-exhaust" für alle Indikatoren — das ist genau die Gleichsetzung, die eine mit
+„environmental impacts" überschriebene Tabelle suggeriert. Zeile ist in zwei aufgeteilt.
+
+**Das ist ein Etikettenfehler, keine Modelllücke.** Die Betriebsgrenze für Luftschadstoffe *ist*
+die EMEP/EEA-Konvention; das Guidebook ist so gebaut und führt für diese Spezies keine
+Vorkettenfaktoren. Sauber, sobald es dasteht.
+
+⚠️ **Tragend ist es an genau einer Zahl: den −100 % NOx des BEV-Arms — und dort kippt das
+Vorzeichen.** Gemessen mit dem echten Faktor (UBA-Tabelle, Spalte 2021, **0,374 g/kWh**) statt
+mit meinem ersten Überschlag: bei ~16.000 kWh netzseitig je Tag entstehen **5.982 g** am
+Kraftwerk gegen **4.620 g** Diesel-Auspuff — also **+29 % statt −100 %**. Alle drei Arme liegen
+bei +29 bis +30 %.
+
+*Mein erster Überschlag (0,10–0,20 g/kWh ⇒ −65 bis −31 %) war um den Faktor 2–4 zu niedrig
+angesetzt und ist damit gegenstandslos — ich hatte eine Größenordnung geraten, statt die
+publizierte Tabelle zu holen. Die Richtung der Aussage hat sich dadurch umgekehrt.*
+
+**Der Mechanismus.** Unser Euro-7-SCR-Diesel liegt bei **0,0884 g NOx/km**, der Strom bei
+0,374 g/kWh und 0,3061 kWh/km netzseitig bei **0,1144 g/km**. Ein moderner SCR-Diesel ist je
+Kilometer sauberer als der deutsche Strommix von 2021 — nicht weil der Diesel gut wäre, sondern
+weil NOx am Fahrzeug seit Euro 6d/7 drastisch gefallen ist, während Kohle im Mix 2021 noch
+groß war. Zum Vergleich der älteren Spalten: 2000 (0,490) gäbe +70 %, 1990 (1,055) +265 %.
+
+**PM10 ist dagegen robust**, wie vermutet: Kraftwerks-PM10 (0,009 g/kWh) sind 144 g gegen
+1.792 g Abrieb, die −41,8 % werden zu **−37 %**. CO₂e ist gar nicht betroffen.
+
+**Gegenprobe der Quelle gegen unseren eigenen Faktorensatz:** die UBA-Tabelle nennt für 2021
+418 g CO₂e/kWh *direkt*; unser Satz führt 442 g/kWh *mit Vorketten* für 2023 und 54 g/kWh
+Vorketten allein ⇒ 388 g direkt für 2023. 418 (2021) → 388 (2023) ist fallend und konsistent.
+Die beiden UBA-Quellen widersprechen sich nicht.
+
+⚠️ **Zweiter Einwand des Nutzers, 2026-09-14 — und er sitzt: die Sensitivität ist EINSEITIG.**
+Sie belastet den Strom mit dem Kraftwerk, lässt dem Diesel aber Rohölförderung, Tankertransport,
+Raffinerie und Verteilung geschenkt. Ich habe die Asymmetrie beim Reparieren **gespiegelt statt
+behoben**. Es gibt drei konsistente Zuschnitte:
+
+| | Diesel | BEV | |
+|---|---|---|---|
+| A | Betrieb | Betrieb | die publizierten Tabellen — symmetrisch, BEV-Null ist Grenzartefakt |
+| B | Betrieb + Vorkette | Betrieb + Kraftwerk | **der faire Vergleich** |
+| C | Betrieb | Betrieb + Kraftwerk | **diese Sensitivität** |
+
+Die **+29 % sind C und damit eine OBERGRENZE des Nachteils, kein Schätzwert.**
+
+**Was ohne zweiten Faktorensatz trotzdem exakt geht: die Frage umdrehen.** Die Schwelle folgt
+allein aus unseren Läufen — Lücke geteilt durch unseren eigenen Kraftstoffverbrauch:
+
+| Arm | MJ Diesel/Tag | Lücke | Break-even Vorkette | je Liter | Anteil am Auspuff |
+|---|---|---|---|---|---|
+| S1 f120 | 149.840 | 1.362 g | **0,0091 g NOx/MJ** | 0,323 g/l | **29 %** |
+| S2 f140 | 151.684 | 1.398 g | 0,0092 | 0,328 g/l | 30 % |
+| S3 f130 | 147.326 | 1.361 g | 0,0092 | 0,328 g/l | 30 % |
+
+Die Anteilsform ist die brauchbare: **das +29 % verschwindet genau dann, wenn die
+Kraftstoffvorkette mehr als 29 % dessen emittiert, was der Auspuff emittiert.** Arithmetisch
+identisch mit der berichteten Prozentzahl, als *Aussage* aber gegen Literatur prüfbar — während
+die Prozentzahl allein dazu einlädt, als Ergebnis gelesen zu werden. Und sie veraltet nicht, wenn
+ein besserer Vorkettenfaktor kommt. Implementiert als `break_even()`, im Ausdruck des Skripts.
+
+⚠️ **Eine Zahl für die Dieselvorkette wird hier bewusst NICHT geschätzt.** Genau diese Schätzung
+hat oben, auf der Stromseite, um Faktor 2–4 danebengelegen und das Vorzeichen invertiert. Zu
+holen aus ecoinvent (`diesel, low-sulfur, market for`) oder ProBas. Qualitativ lässt sich nur
+sagen: unser Euro-7-SCR-Auspuff liegt nahe der regulatorischen Untergrenze, der *Anteil* der
+Vorkette ist damit historisch maximal — ein Argument, die Schwelle zu **messen**, keines, sie
+anzunehmen.
+
+**Teilmessung 2026-09-14 (Nutzer lieferte beide Quellen).** Gegen die Schwelle 0,0091 g/MJ:
+
+*Weg A — EMEP/EEA, gleiche Quellenfamilie.* Zwei Kettenglieder, beide Tier 1 je Mg Rohöl:
+1.A.1.b Raffinerie-Feuerung (Tab. 4-2) 0,2218 + 1.B.2.a.iv diffus (Tab. 3-1) 0,0350 =
+**0,2568 kg NOx/Mg Rohöl**. Bei 42,3 MJ/kg (IPCC-Default) und 93 % Energieausbeute:
+
+| | g NOx/MJ Diesel | Anteil an der Schwelle |
+|---|---|---|
+| untere CI | 0,0037 | 41 % |
+| **Zentralwert** | **0,0065** | **72 %** |
+| obere CI | 0,0096 | **106 %** |
+
+⚠️ Das ist eine **Untergrenze**: Rohölförderung (1.B.2.a.i) und Seetransport (1.A.3.d) fehlen.
+Der Auszug führt für beide kein NOx, und sie wären keine Nachschlage-, sondern eine
+Modellierungsaufgabe (Mg × km × Schiffsverbrauch). **Zwei von vier Gliedern erreichen 72 %, die
+obere CI allein reißt die Schwelle.** Die Richtung steht damit; das Vorzeichen ist *nicht*
+bewiesen. Implementiert als `diesel_upstream_emep()`, Rohdaten unter
+`emissions-services/data/emep_upstream_1a1b_1b2a.csv`.
+
+*Weg B — ProBas `Diesel-Mix-DE-2030 (inkl. Biokraftstoffe)`: **verworfen**.* Er gäbe 36,3 kg
+NOx/TJ = 0,0363 g/MJ = 399 % der Schwelle, und die Zahl ist **intern konsistent**
+(0,7·36,3 + 26,1 + 1,88·0,226 = 51,9 kg SO₂-Äq = exakt die ausgewiesene Versauerung, also kein
+Tippfehler). Ausschlussgrund ist trotzdem eindeutig: **37 % Biomasse-Input** (370.000 von
+1.000.000 MJ). Der Beleg steckt im Datensatz selbst — seine **9,87 g CO₂e/MJ gegen unsere
+fossilen 18,9** (nur 52 %, weil biogenes CO₂ ungezählt bleibt) zeigen, dass das kein fossiler
+Dieselstrang ist. Dazu Referenzjahr 2030, Projekt renewbility II (2012), GEMIS-Handbücher
+1995–2004, und doppelt konvertiert (GEMIS → ILCD → ProBas2). **Gesucht ist stattdessen ein
+ProBas-Datensatz für fossilen Diesel OHNE Bio-Anteil mit gegenwartsnahem Bezugsjahr** — der
+lieferte die Vollkette in einer Zahl.
+
+*Robust ist schon jetzt PM10:* die Vorkette trägt 53 g (EMEP) bis 785 g (ProBas) auf die
+**Diesel**seite. Beides vergrößert den BEV-Vorteil; die −37 % sind nach unten sicher.
+
+**Abschluss noch am 2026-09-14: der Nutzer fand den passenden ProBas-Datensatz.**
+`Diesel-Mix-DE-2020 (inkl. Biokraftstoffe) – Szenario`, **UUID fd182012-1e39-48da-bc2a-03acb869bf1b**,
+Datensatztyp **LCI result**. ⚠️ Ein Geschwisterdatensatz mit *identischem Namen* (UUID 64be43ea)
+ist ein **Unit process** und führt gar keine Emissionen — **am Typ unterscheiden, nicht am Titel.**
+
+Je 1 TJ Diesel: **NOx 30,8 kg** (= 0,0308 g/MJ, **338 % der Schwelle**), PM10 4,49 kg.
+Reine Bereitstellung, keine Verbrennung — belegt durch die eigenen 10,7 g CO₂e/MJ gegen ein
+WTW von 93,1, also **keine Doppelzählung** mit unserem EMEP-Auspuff. Zwei unabhängige interne
+Proben gehen exakt auf: Versauerung 0,7·30,8 + 25,9 + 1,88·16,1 = **77,7** (ausgewiesen 77,7),
+THG 8.305 + 28·18,3 + 265·6,99 = **10.670** (ausgewiesen 10.705).
+
+**Damit ist das +29 % widerlegt.** Mit beiden Ketten, soweit publizierte Faktoren reichen:
+
+| S1 f120 | Auspuff | + Vorkette | = Diesel | BEV Kraftwerk | |
+|---|---|---|---|---|---|
+| NOx | 4.620 g | 4.615 g | **9.236 g** | **5.982 g** | **−35 %** |
+| PM10 | | | 3.751 g | 1.936 g | −48 % |
+
+S2 und S3 liegen bei −35 % beziehungsweise −35 %. PM10 verbessert sich von −37 % auf −48 %.
+
+⚠️ **Die Bio-Frage trägt den Befund NICHT.** 16 % Bio → 30,8 kg, 37 % Bio → 36,3 kg;
+Zwei-Punkt-Extrapolation auf 0 % Bio ergibt 0,0266 g/MJ, weiterhin **292 %** der Schwelle. Die
+Vorketten-NOx stammt also überwiegend aus Förderung, Seetransport und Raffinerie — konsistent
+mit dem EMEP-Weg, der allein für die Raffinerie schon 72 % erreichte.
+
+⚠️ **Methodische Grenze — nicht mit unserem Faktorensatz mischen.** ProBas/GEMIS rechnet mit
+Systemerweiterung und Koppelprodukt-Gutschriften; sein THG von 10,7 g CO₂e/MJ liegt deutlich
+unter unseren 18,9, und das ist **nicht nur der Bio-Anteil**: sein rein **fossiles** CO₂ ist
+8,3 g/MJ, wo JEC ~15–16 impliziert. Taugt für Richtung und Größenordnung, nicht als Zahl in
+derselben Tabelle wie die EMEP/JEC-Werte.
+
+⚠️ **Die Asymmetrie ist jetzt UMGEDREHT, nicht beseitigt.** Dem BEV fehlt weiterhin die
+Brennstoffvorkette seiner Kraftwerke (Kohleförderung, Gasgewinnung) — die UBA-Tabelle ist reine
+Direkterzeugung. Schwelle dafür, analog gerechnet: sie müsste **54 % des Schornsteins** erreichen,
+um den Vorteil zu tilgen.
+
+⚠️ **Unerklärte Auffälligkeit, bewusst stehen gelassen:** der 2030er-Satz nennt 0,226 kg NH₃/TJ
+gegen die 16,1 kg hier — Faktor 70 bei *höherem* Bio-Anteil. Die NOx-Größe ist über beide stabil,
+die **Zerlegung** in fossile und agrarische Anteile ist aus diesen Daten daher **nicht belastbar**.
+
+⚠️ **Und eine Korrektur an mir selbst:** ich hatte dem Nutzer den Treibhauseffekt (~19.000 kg/TJ)
+als Ein-Zahl-Echtheitstest gegeben. Der Verbrennungs-Zweig davon greift korrekt (10.705 statt
+93.000), der Bio-Zweig **nicht** — er vermischt Bio-Anteil und Allokationsmethodik und hätte
+diesen brauchbaren Datensatz fälschlich verworfen. Ebenso falsch war meine vorherige Vorgabe
+„fossiler Diesel **ohne** Bio-Anteil": unser eigener JEC-Faktor ist **B7**, also Marktdiesel mit
+Bio-Anteil.
+
+**Abschluss (2): der Nutzer fand auch die Stromseite — `El-mix-DE-2020`**, UUID
+**7bdea37b-ecf0-4b13-a204-9dd0bfca662b**, LCI result, je 1 TJ Strom **NOx 102 kg, PM₁₀ 7,13 kg**
+(= 0,3672 bzw. 0,02567 g/kWh). Dieser Satz **enthält die Brennstoffvorkette der Kraftwerke** —
+damit ist der Vergleich erstmals **symmetrisch aus EINER Quellenfamilie, einem Bezugsjahr und
+einer Methodik**. Proben gehen auf: Versauerung 0,7·102 + 53,4 + 1,88·19,8 = 162,0 (ausgewiesen
+163,0); THG 103.874 + 28·99,9 + 265·7,52 = 108.664 (ausgewiesen 108.903).
+
+| S1 f120 | Diesel | BEV | |
+|---|---|---|---|
+| NOx Betrieb *(publiziert)* | 4.620 g | 0 g | −100 % |
+| **NOx Vollkette beidseitig** | 9.236 g | 5.873 g | **−36 %** |
+| PM₁₀ Betrieb *(publiziert)* | 3.078 g | 1.792 g | **−41,8 %** |
+| **PM₁₀ Vollkette beidseitig** | 3.751 g | 2.203 g | **−41,3 %** |
+
+✅ **Tragender Befund: PM₁₀ ist grenzinvariant.** −41,8 % gegen −41,3 % — die publizierte Zahl
+überlebt die Vollkettenbehandlung unverändert und ist jetzt **belegt**, nicht nur gehofft.
+Mechanismus: gegen den UBA-Direktwert liegt der ProBas-Stromfaktor bei NOx auf Faktor **0,98**
+(0,3672 vs 0,3740), bei PM₁₀ auf **2,85** (0,0257 vs 0,0090) — Kohleförderung macht Staub, kaum
+NOx. Deshalb heben sich die Vorketten bei PM₁₀ nahezu auf und bei NOx nicht.
+
+⚠️ **Retraktion: meine −48 % für PM₁₀ waren falsch** — derselbe einseitige Schnitt wie beim
++29 % NOx (Diesel mit Vollkette, Strom nur mit Schornstein). Korrekt sind **−41,3 %**. Das ist
+*zweimal derselbe Fehler in derselben Sitzung*; das Skript warnt jetzt an der Stelle explizit.
+
+⚠️ `El-mix-DE-2020` ist ein **KS95-Szenario** (IINAS 2019), kein Ist-Mix: 392 g CO₂e/kWh gegen
+UBA ~418 direkt (2021). Beim NOx unerheblich (Faktor 0,98), bei CO₂e nicht — **CO₂e behält
+deshalb den UBA-Faktor**. Außerdem: 38 % erneuerbarer Primärenergie-Input, **davon die Hälfte
+Biomasse** (337.495 von 676.099 MJ) — Biomasseverbrennung emittiert NOx (NH₃ 19,8 kg/TJ als
+Indiz). **„Erneuerbar" impliziert also NICHT null**; ein Null-NOx-Szenario muss als
+*Wind/Sonne/Wasser ohne Verbrennung* definiert werden. Ungeklärt: ob „Elektrizität" bei ProBas
+Erzeugung oder Verbrauch meint (hier auf die netzseitige kWh angewandt).
+
+**Paperseitige Konsequenz:** die −100 % NOx sind nicht haltbar — die symmetrische Antwort ist
+rund −36 %. **PM₁₀ dagegen bleibt bei −41,8 % und braucht keine Änderung.** CO₂e (−54,0 %) war
+nie betroffen. Die ProBas-Werte gehören als geschlossene Sensitivität ausgewiesen, nicht in
+dieselbe Tabelle wie die EMEP/JEC-Hauptwerte.
+
+**Zur Zitierbarkeit der Quelle** (aus der Datei selbst gelesen, 2026-09-14): Urheberin
+`kristina.juhrich@uba.de`, Arbeitsmappe zuletzt geändert **2023-07-10**, Blätter „ohne CO2"/
+„mit CO2", Jahre 1990/2000/2021. Das PDF-Exportblatt trägt **kein Datum, keine Version, kein
+Berichtskürzel** — einzige Herkunftsangabe „Quelle: Umweltbundesamt". Zitierfähig ist daher die
+**Webseite mit Abrufdatum**, nicht die Datei. ⚠️ Mein früher notierter „Stand 2024-07-02" ist
+durch das Artefakt **nicht gedeckt und zurückgezogen**. Qualitätsgefälle zum CO₂e-Faktor, der mit
+UBA CLIMATE CHANGE 16/2026 (Icha & Lauf, DOI 10.60810/openumwelt-8399) eine echte Publikation
+hat: für eine Sensitivität trägt die Webtabelle, als Hauptergebnis wäre sie dünn.
+
+**Warum der Faktor NICHT eingerechnet, sondern als Sensitivität ausgewiesen wird** — zwei Gründe,
+beide von der Quelle selbst (UBA, *Spezifische Emissionsfaktoren für den deutschen Strommix*,
+Arbeitsmappe zuletzt geändert 2023-07-10):
+1. Sie ist **nur direkte Erzeugung**: „Emissionen, die in den Vorketten entstehen … sind in dieser
+   Auswertung nicht berücksichtigt." Eingerechnet läge NOx damit auf einer **dritten** Grenze
+   (Fahrzeug + Schornstein), nicht auf CO₂e's WTW. Die Asymmetrie verschwände nicht, sie wechselte
+   die Form — drei Indikatoren, drei Grenzen.
+2. Sie existiert **nur für 1990, 2000 und 2021**, unser CO₂e-Faktor ist der Mix **2025**. Die
+   Spanne überdeckt den Kohleausstieg, über den das Kraftwerks-NOx steil fiel. Ein 2021er-NOx
+   gegen eine 2025er-CO₂e-Basis ist derselbe Fehlertyp wie §2.55, nur mit dem Jahr statt dem
+   Grenzzuschnitt als unbelegtem Träger.
+
+Rechenhilfe: `analysis/paper-figures/emissions-services/grid_nox_sensitivity.py --g-per-kwh <x>
+--year <y>` liest `spatial_runs.csv` und rechnet je Arm; der Jahresparameter ist Pflicht im
+Ausdruck, damit die Zahl das Jahr nicht verliert.
+
+⚠️ **Was das NICHT repariert:** `table_environmental_impacts` ist **vollständig Diesel**. Ein
+Strommixfaktor korrigiert dort nichts. Die dortige Asymmetrie wäre das Vorketten-NOx des
+**Kraftstoffs** (Raffinerie, Transport) — andere Quelle: JEC WTW v5, aus dem unsere 18,9 g
+CO₂e/MJ stammen, führt im Wesentlichen Treibhausgase; Luftschadstoffe der Kraftstoffvorkette
+bräuchten ecoinvent oder ProBas, also einen zweiten Faktorensatz mit eigener Grenzendefinition.
+**Bewusst nicht gemacht — stattdessen beschriftet.**
+
+**Lehre.** Der Einwand kam aus dem Review, nicht aus dem Code, obwohl er im Code trivial
+nachweisbar war (ein `grep` nach Upstream-Faktoren im Supplement). Ich habe drei Tabellen auf
+diesem Faktorensatz gebaut und die Grenzenfrage nie gestellt, weil jede einzelne Größe für sich
+korrekt gerechnet war. **Dieselbe Blindstelle wie bei den Nennern in §2.70: die Teile stimmten,
+die Zusammenstellung suggerierte etwas anderes.** Eine Tabelle mit mehreren Indikatoren braucht
+eine explizite Grenzenzeile je Indikator, nicht eine für die Tabelle.
+
+Verwandt: §2.55 (unbelegter Parameter mit Vorzeichen), §2.67 (Kilometerzähler), §2.70 (dieselbe
+Art Fehler auf der Nennerseite), §2.69.
+
+### 2.72 Zwei Flottenkurven gegeneinander: bei gleichem Service ist der Emissionsabstand null
+
+`trägt` · Baseline-Flottenfächer abgeschlossen 2026-09-13 21:31 (f130/f140/f150, Seed 1338, je
+~11,1 h, Sim). Zusammen mit §2.68 liegen damit **zwei vollständige Kurven** über denselben vier
+Flottengrößen vor. Damit entfällt der Punktvergleich, an dem §2.65 die Kalibrierung scheitern sah.
+
+| Flotte | Baseline s1338 | 1c (Mittel) |
+|---|---|---|
+| 120 | 9.033 · 14.006,0 kg | 7.952,0 · 12.690,6 kg |
+| 130 | 9.477 · 14.786,8 kg | 8.537,5 · 13.522,7 kg |
+| 140 | 9.965 · 15.386,3 kg | 9.222,6 · 14.301,8 kg |
+| 150 | 10.330 · 15.683,7 kg | 9.528,5 · 14.852,9 kg |
+
+**Der tragende Befund.** Auf jedem Serviceniveau, das beide Kurven abdecken, lokal interpoliert:
+
+| Serviceniveau | Baseline | 1c | 1c − Baseline |
+|---|---|---|---|
+| 9.056 Fahrten | f120,5 · 14.046,8 | f137,6 · 14.112,6 | **+65,8 kg** |
+| 9.223 | f124,3 · 14.339,4 | f140,0 · 14.301,8 | **−37,6 kg** |
+| 9.477 | f130,0 · 14.786,8 | f148,3 · 14.760,1 | **−26,7 kg** |
+| 9.529 | f131,1 · 14.850,1 | f150,0 · 14.852,9 | **+2,8 kg** |
+
+Mittel **+1,1 kg**, Spanne −37,6 bis +65,8, sd 46,4 — gegen ein Laufrauschen von 160,2 kg
+(Baseline) und 123,3 kg (1c). **Bei gleichem Service emittieren die beiden Konzepte gleich viel,
+über den gesamten vermessenen Bereich.** Kein Trend mit dem Serviceniveau, kein Vorzeichen.
+
+**1c braucht dafür rund 17–18 Fahrzeuge mehr** (f137,6 gegen f120,5 usw.) und stellt dabei
+6.037 der 6.052 Pakete zu, die Baseline 6.052 (§2.66). Der Mehrbedarf ist der Preis der
+Kapazität, die an die Pakete geht — nicht ein Effizienznachteil.
+
+**Strukturell verschiedene Sättigung, und das trägt über beide Kampagnen:**
+
+| km je Grenzfahrt | 120→130 | 130→140 | 140→150 |
+|---|---|---|---|
+| Baseline | 6,56 | 4,50 | **3,31** |
+| 1c | 5,36 | 4,15 | **7,00** |
+
+Die Baseline wird je zusätzlicher Fahrt **sparsamer**, 1c oberhalb f140 **teurer**. 1c hat seinen
+günstigsten Bereich bei 130–140; die Baseline hat ihn am oberen Rand. Das ist kein
+Interpolationsartefakt — es sind sechs gemessene Segmente aus zwei getrennten Fächern.
+
+⚠️ **Grenzen.** Die Baseline-Kurve ist n=1 je Punkt, und ihr f120-Anker liegt 122,5 kg unter
+dem 5-Seed-Mittel; die Kurve ist damit tendenziell zu tief verankert, was 1c eher schlechter
+aussehen lässt als es ist. Korrigieren lässt sich das nicht (§2.68: der Seed-Versatz ist über
+Flottengrößen nicht konstant). Die vier Differenzen streuen mit sd 46,4 kg ohnehin weit unter
+dem Rauschen beider Arme.
+
+**Zwei Zwischenstände dieser Auswertung sind zurückgezogen** — beide entstanden durch lineare
+Interpolation über zu große Flöttenspannen: „1c +206 kg bei 9.529 Fahrten“ (Sehne f120–f150,
+verfehlte f140 um 262 kg) und „der Abstand wächst mit dem Serviceniveau“ (aus +72/+206). Mit
+allen vier Punkten bleibt weder das eine noch das andere.
+
+Verwandt: §2.65, §2.67 (Emissionskanal), §2.68 (die 1c-Kurve).
+
+**Nachtrag 2026-09-21 — beide Kurven mit n=3 je Punkt, f100–f150.** Die Baseline-Kurve hat jetzt Seeds
+1337/1338/1339 an jeder Flottengröße (f120 n=5), gefahren auf VM, Sim und IVS100 mit drei JAR-Ständen —
+zulässig, weil die Baseline über vier Codestände bitidentisch reproduziert (`b120rgs_s1338` 9.033 auf drei
+Maschinen, `b140rgs` 9.940 auf VM und Dev, jeweils auch CO₂e gleich). Damit **entfällt die Einschränkung
+„Baseline n=1, Anker 122,5 kg zu tief“** aus dem Grenzen-Absatz oben.
+
+| Flotte | Baseline (n=3; f120 n=5) | 1c (n=3; f140 n=5) |
+|---|---|---|
+| 100 | 7.827,7 · 12.489,4 kg | 6.700,7 · 11.007,5 kg ⚠️ unter der Kante |
+| 110 | 8.502,3 · 13.410,7 kg | 7.325,0 · 11.899,4 kg |
+| 120 | 9.056,2 · 14.128,5 kg | 7.923,7 · 12.679,1 kg |
+| 130 | 9.521,7 · 14.748,5 kg | 8.598,0 · 13.567,5 kg |
+| 140 | 9.939,3 · 15.264,6 kg | 9.222,6 · 14.301,8 kg |
+| 150 | 10.277,7 · 15.706,2 kg | 9.538,7 · 14.826,7 kg |
+
+Lokal interpoliert auf jedes Serviceniveau, das beide Kurven abdecken (Baseline f100–f120 und 1c f130–f150
+als Stützstellen):
+
+| Serviceniveau | Baseline | 1c | 1c − Baseline | Flottenabstand |
+|---|---|---|---|---|
+| 7.828 Fahrten | f100,0 · 12.489,4 | f118,4 · 12.554,1 | **+64,7 kg** | 18,4 |
+| 8.502 | f110,0 · 13.410,7 | f128,6 · 13.441,4 | **+30,7 kg** | 18,6 |
+| 8.598 | f111,7 · 13.534,7 | f130,0 · 13.567,5 | **+32,8 kg** | 18,3 |
+| 9.056 | f120,0 · 14.128,5 | f137,3 · 14.106,2 | **−22,3 kg** | 17,3 |
+| 9.223 | f123,6 · 14.350,1 | f140,0 · 14.301,8 | **−48,3 kg** | 16,4 |
+| 9.539 | f130,4 · 14.769,5 | f150,0 · 14.826,7 | **+57,2 kg** | 19,6 |
+
+Mittel **+19,1 kg**, Spanne −48,3 bis +64,7, sd 45,0 — gegen ein Laufrauschen von 114,3 kg (Baseline,
+14 df) und 111,5 kg (1c, 14 df). **Der tragende Befund steht: bei gleichem Service emittieren beide
+Konzepte gleich viel, über den gesamten vermessenen Bereich, kein Trend.** Der Flottenabstand ist mit
+**16–20 Fahrzeugen** etwas breiter als die 17–18 bei n=2.
+
+⚠️ **Ein Nebenbefund von oben ist mit n=3 zurückgenommen.** „Die Baseline wird je zusätzlicher Fahrt
+sparsamer (6,56 → 4,50 → 3,31 km je Grenzfahrt)“ war die s1338-Einzelkurve. Auf den Mitteln ist die
+Baseline **flach**: 5,03 · 4,90 · 4,86 · 4,70 · 4,95 km je Grenzfahrt von f100 bis f150. Was bleibt, ist
+die **einseitige** Aussage: 1c sättigt oberhalb f140 (4,34 → 6,37), die Baseline nicht. Der Satz „die
+Baseline hat ihren günstigsten Bereich am oberen Rand“ ist damit gegenstandslos.
+
+---
+
+---
+
 ---
 
 ### 2.73 Repo-Umbau 2026-09-17 ist verhaltensneutral (Belege)
@@ -4135,6 +4673,97 @@ behält ihren Namen; sie ist im Rewrite-Mapping explizit ausgenommen (Spec §11.
 
 Einschränkung: Läufe von vor dem Umbau tragen Pfade des alten Layouts in `run_meta.json`/Logs; die
 KPI-Analyse liest sie weiter, weil sie relativ zum Laufordner rechnet (`run_dir.parent.parent`).
+
+
+**Nachtrag 2026-09-25 — erster End-to-End-Beleg über 250 Iterationen, und die Herkunft des 1d-JAR.**
+Die Belege oben stammen aus Tests und Kurzläufen (P2: zwei Iterationen); ein voller paper-tauglicher
+Lauf auf dem umgebauten Stand lief bis hierhin nicht. Nachgeholt als Probe `d1d_f130_d30_th02_head`
+auf dem Sim (Checkout `HAGRID-head`, e9d81d1, `mvn clean install -DskipTests`, 21.09. 23:49 →
+22.09. 12:54, 13:05 h), verglichen gegen den 1d-Referenzlauf `d1d_f130_d30_th02` vom Dev (08.09.),
+Spec zeichengleich:
+
+| Artefakt | Ergebnis |
+|---|---|
+| `analysis/kpis_long.csv`, 211 gemeinsame KPIs | **wertgleich, 0 Abweichungen** (9.156 Fahrten · 6.052/6.052 Pakete · 54/54 Touren · 51.135,7 km) |
+| `*.drt_customer_stats_drt.csv`, 252 Zeilen | identisch ohne die Namensspalte (md5 `db823d0dec8f`) |
+| `*.drt_vehicle_stats_drt.csv`, 252 Zeilen | identisch (md5 `631cb1f2eafd`) |
+| `*.modular_tour_stats.csv`, 41 Zeilen | identisch (md5 `55c7d92f1e16`) |
+| Population nach Prepare | `F76FE8A8…` byteidentisch — das neue Input-Layout liefert dieselbe Population |
+
+Das belegt zweierlei. Erstens ist der Umbau **auch über 250 Iterationen** verhaltensneutral, und zwar
+für 1d — den Arm mit der meisten umgebauten Mechanik (`hagrid.lausitz.modular`). Zweitens ist der
+JAR vom 06.09. 13:55, mit dem die gesamte 1d-Kurve gefahren wurde, **verhaltensgleich zum Stand
+e9d81d1**: er stammte aus einem uncommitteten Arbeitsbaum (Commit 8a3e8bb ist erst vom 08.09.) und
+existierte nur noch als Kopie auf dem IVS100. Die 1d-Ergebnisse hängen damit an einem Commit statt
+an einer Binärdatei; weitere 1d-Läufe werden **gebaut, nicht kopiert**. Nebenbei ist es der erste
+1d-Arm, der auf zwei Maschinen (Dev → Sim) dasselbe Ergebnis liefert — für die Baseline war das
+belegt (§2.67), für 1d nicht.
+
+⚠️ Zwei Einschränkungen. Der HEAD-Lauf schreibt **16 KPIs mehr** (`kpi_group=environment`:
+`*_co2e_ctg`, `*_pm10_total`, `emission_factor_set`). Das ist der **Vintage des KPI-Bauers**, nicht
+des Laufs — die Referenz-CSV entstand vor der WTW-Umstellung (§2.71), die Rohausgaben sind identisch.
+Wer KPI-CSVs verschiedener Läufe nebeneinanderlegt, vergleicht deshalb möglicherweise zwei
+Bauer-Stände; Abhilfe ist ein Neubau der KPIs aus den Rohausgaben, kein Neulauf. Und: `mvn clean
+install` **mit** Tests brach auf dem Sim nach 17 min in einem jsprit-Test auf dem vollen Lausitz-Netz
+ohne absehbares Ende ab (`-q` verschluckte den Namen); der Beleg oben steht auf `-DskipTests` plus
+der Dev-Suite. Welcher Test das ist, ist offen (BACKLOG).
+
+---
+
+### 2.74 Seed-Fächer n=3 in allen 18 Zellen: die 1d-Zustellkante liegt bei 120–130, und der Seed-Versatz wechselt auf beiden Achsen das Vorzeichen
+
+`trägt` · 14 Arme 18.–20.09.2026 auf Sim, IVS100 und VM (Makespan 53,1 h, Plan
+`docs/superpowers/plans/2026-09-18-seed-fan-completion-runplan.md`, Laufliste PAPER-RUNS). Damit hat jede
+Zelle Szenario × Flotte (100–150) mindestens drei Seeds bei 250 Iterationen. Nachträge zu den Kurven in
+§2.68 und §2.72; hier das Neue.
+
+**1d: f120 stellt in zwei von drei Seeds nicht voll zu.** s1337 6.052/54 Touren · s1338 5.631/50 (421
+verfallen) · s3337 5.671/50 (381 verfallen); Quoten 1,000 / 0,930 / 0,937. Die bisherige Aussage „die
+Vollzustellung bricht zwischen 110 und 120; ab 120 stellen alle Arme voll zu“ beruhte auf **einem** f120-Arm
+(s1337) und ist zurückgezogen (§3.15). **Die Kante liegt zwischen 120 und 130:** f130 stellt in 3/3 Seeds
+voll zu, f120 in 1/3, f110 und f100 in 0/3. Der Betriebspunkt f130 ist davon nicht berührt — aber er
+liegt **einen Zehnerschritt über der Kante**, nicht zwei. f120 fällt als Emissionspunkt unter die
+§2.67-Sperre (weniger Fracht ⇒ Fahrten hoch, Emission runter).
+
+**1d-Flottenkurve mit n=3 (Mittel ± sd):**
+
+| Flotte | voll | Fahrten | CO₂e wtw [kg] | DRT-km | Fahrten/Fzg ab Vorpunkt |
+|---|---:|---:|---:|---:|---:|
+| 120 ⚠️ | 1/3 | 8.585,7 ± 107,1 | 13.123,7 ± 140,2 | 48.480 | — |
+| 130 | 3/3 | 9.192,3 ± 48,2 | 13.892,3 ± 70,7 | 51.337 | 60,7 |
+| 140 | 3/3 | 9.665,0 ± 100,2 | 14.491,3 ± 101,7 | 53.550 | 47,3 |
+| 150 | 3/3 | 10.090,7 ± 45,0 | 15.081,3 ± 65,1 | 55.793 | 42,6 |
+
+1d-Laufrauschen gepoolt (CO₂e, f120–f150, 8 df): 99,0 kg — dieselbe Größenordnung wie Baseline (114,3)
+und 1c (111,5). Auf der Kurve liegt 1d bei jedem Flottenpunkt **unter** der Baseline (f130: 13.892 gegen
+14.749; f140: 14.491 gegen 15.265; f150: 15.081 gegen 15.706) und **über** 1c — aber 1d ersetzt die
+LMD-Flotte ganz, während die Baseline sie zusätzlich fährt; ein Iso-Service-Vergleich der drei Kurven ist
+der nächste Schritt und hier bewusst noch nicht gezogen.
+
+**Der Seed-Versatz wechselt mit dem dritten Seed auch auf der Fahrtenachse das Vorzeichen.** Bei n=2 sah
+1d auf der Fahrtenachse „eng und gleichgerichtet“ aus (s1338 − s1337 = +67…+81 an drei Punkten). s1339 −
+s1337 ist an denselben Punkten **negativ** (f110 −153, f140 −130, f150 −14). Dasselbe bei 1c (§2.68) und
+in der Baseline (f110: s1338 +147, s1339 −8). Zwei Seeds können also einen scheinbar systematischen
+Versatz zeigen, der keiner ist. **Konsequenz:** keine Ankerkorrektur, keine Differenz aus Einzelpunkten,
+auf keiner Achse — nur Mittel je Zelle, und für Armdifferenzen die gepoolten Streuungen.
+
+**Unterhalb der Kante streut die Fracht mit dem Abstand zur Kante:** s/Mittel der Pakete 4,0 % (f120) →
+3,3 % (f110) → 21,2 % (f100), die Pax-Seite bleibt bei 1,2 / 1,5 / 0,3 %. Bei f120 entscheidet der Seed,
+ob überhaupt gebrochen wird (vier verfallene Touren oder keine); das ist kein Schwellenparameter, sondern
+Kapazität am Rand (§2.64).
+
+**Betrieblich, weil es Zahlen kostet:** der stille KPI-Build-Ausfall auf dem IVS100 traf den **vierten**
+Arm (`b130rgs_s1339`, 19.09.) — den **ersten** eines Sweeps. Das Positionsmuster „immer der letzte Arm“
+(3 von 4 Schluss-Armen bis 17.09.) ist damit widerlegt, Quote 4 von 17, Ursache offen. Der Arm ist von Hand
+gebaut; ein Resume-Guard, der an `kpis_long.csv` klassifiziert, hätte ihn gelöscht (PAPER-RUNS).
+
+**Codestände im Fächer.** Baseline-Arme stammen von drei JAR-Ständen (`101e093` Sim, `7da217b` VM,
+`8a3e8bb`-Stand IVS100/Dev); zulässig wegen der bitidentischen Duplikate (§2.72-Nachtrag). 1c ist
+durchgehend `101e093`, 1d durchgehend der 06.09.-JAR. Die IVS100-Baseline-Arme tragen in `parcels_handled`
+noch den Overlay-Abzug (5.665; Builder-Stand `cbc7378`), Fahrten/CO₂e/km unberührt (§2.66).
+
+Verwandt: §2.64 (θ und die Kapazität am Rand), §2.67 (Sperre für unvollständige Zustellung), §2.68,
+§2.72, §3.15.
 
 ---
 
@@ -4483,6 +5112,12 @@ lautet jetzt „wie teuer ist der Ausläufer" und nicht mehr „ist es überhaup
 Verwandt: §2.56 (die neuen Schwellen und die externe Gegenprobe), §2.55 (derselbe Fehlertyp
 auf der Netzintensität).
 
+⚠️ **Nachtrag 2026-09-13 (§2.69).** Die Tabelle oben steht auf **1d f135**; der Iso-Service-
+Punkt des Papers ist **f130**, und dort ist der Befund deutlich härter: **55,6 % statt 42,2 %**
+brauchen eine Zwischenladung, **12,1 % statt 6,7 %** stranden im 20-min-Fenster. Ein Teil davon ist
+die kleinere Flotte, 3,8 pp sind ein Zählfehler der ausgelieferten KPI (Regime-Split, §2.69). Die
+Baseline-Zahlen 72,5 % / 17,5 % reproduzieren dagegen exakt. **Für das Paper gelten die Werte aus §2.69**, nicht die hier.
+
 ---
 
 ### 3.13 „Scharfer Knick bei χ≈600: 27 Pax-Fahrten je pp Zustellung“
@@ -4536,6 +5171,23 @@ Population zugeschrieben und daraufhin den POPHASH-Check gebaut. Die Populatione
 Dev-Läufe sind byteidentisch (`f76fe8a8…`, dieselbe, die auch das Sim-Paar meldet) — **der
 POPHASH-Check hätte diesen Fehler nicht gefangen**. Die Absicherung eines Paarvergleichs muss
 ein vollständiger Config-Diff sein, nicht ein Hash über die Eingangspopulation. Im BACKLOG.
+
+### 3.15 „Die 1d-Vollzustellung bricht zwischen 110 und 120 Fahrzeugen; ab 120 stellen alle Arme voll zu“
+
+`zurückgezogen` · 2026-09-21, durch den dritten Seed bei f120 (§2.74).
+
+**Geglaubt.** Stand 13.09.: f110 bricht bei beiden Seeds (0,817 / 0,841), f120 stellt voll zu — aber f120
+war **ein** Arm (s1337). Daraus wurde „ab 120 stellen alle neun Arme 6.052/6.052 zu“ (PAPER-RUNS) und die
+Kante „zwischen 110 und 120“.
+
+**Gemessen.** `d1d_f120_d30_s3337` (Dev, fertig 13.09., in PAPER-RUNS bis 18.09. als „läuft“ geführt):
+5.671/6.052, 50/54 Touren. `d1d_f120_d30_s1338` (IVS100, 18.09.): 5.631/6.052, 50/54. Quoten 0,937 und
+0,930. Nur s1337 liefert 6.052.
+
+**Was bleibt.** Die Kante liegt **zwischen 120 und 130** und ist bei f120 seedabhängig; f130 (3/3 voll)
+bleibt Betriebspunkt, steht aber einen Schritt über der Kante statt zwei. f120 ist als Emissionspunkt
+gesperrt. Die Lehre ist dieselbe wie in §3.14: ein Einzelarm an einer Kante ist kein Befund über die
+Kante — dort entscheidet der Seed.
 
 ## 4 · Bewusst ausgeklammert
 

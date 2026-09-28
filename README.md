@@ -3,10 +3,10 @@
 HAGRID bundles two studies on a shared core:
 
 - **Hannover** — parcel demand (2014–2050) at street-segment level and last-mile delivery simulation with jsprit + MATSim, including a vehicle-capacity sweep (`analysis/hannover/sweep`).
-- **Lausitz (Hoyerswerda)** — integrated passenger and parcel service with demand-responsive transport (DRT): baseline, cargo hitching (1c, `drt_shareduse`) and capsule swap (1d, `drt_modular`), KPI dashboard v2 (`analysis/lausitz/kpi`). Study documentation lives in `docs/` (`DATA-LAUSITZ.md`, `PAPER-RUNS.md`, `METHODS-LOG.md`).
+- **Lausitz (Hoyerswerda)** — integrated passenger and parcel service with demand-responsive transport (DRT): baseline, cargo hitching (1c, `drt_shareduse`) and capsule swap (1d, `drt_modular`), KPI dashboard v2 (`analysis/lausitz/kpi`). Study documentation lives in `docs/` (`DATA-LAUSITZ.md`, `METHODS-LOG.md`); the run list `docs/PAPER-RUNS.md` is a local working file and not tracked.
 - **Core** — geo, demand and routing utilities, repository-root detection and simulation wiring (`hagrid.core`).
 
-The separation is enforced as an import rule: `hagrid/simulation/src/test/java/hagrid/core/ArchitectureRulesTest.java`.
+The separation is guarded by a source-scan test (`hagrid/simulation/src/test/java/hagrid/core/ArchitectureRulesTest.java`): it fails the build when `hagrid.hannover` and `hagrid.lausitz` reference each other, or when a `hagrid.core` class outside a four-class switchboard allowlist references a study package. It scans comment-stripped source text for package tokens, not the compiled dependency graph.
 
 For Hannover, this means projecting and allocating daily parcel demand across the region from **2014 to 2050** at **street-segment granularity (~50 m intervals)**, deriving **realistic carrier-level and B2B/B2C parcel shares**, generating synthetic yet empirically grounded **daily parcel delivery datasets**, and simulating last-mile delivery with jsprit and MATSim — enabling analysis of future parcel traffic patterns, evaluation of delivery concepts and urban logistics infrastructure, and policy-relevant scenario design. While projections are technically available for the full 2014–2050 range, results are considered **most reliable up to approximately 2030**, assuming a moderately stable market evolution without major disruptive events. For Lausitz, this means the integrated passenger- and parcel-service DRT simulation described above.
 
