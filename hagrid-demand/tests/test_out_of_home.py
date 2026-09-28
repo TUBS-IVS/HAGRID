@@ -52,12 +52,14 @@ def test_divert_respects_capacity_and_keeps_totals():
     propensity = np.array([[1., 0.], [1., 1.], [0., 1.]])
     primary = np.array([[0, -1], [0, 1], [-1, 1]])
     secondary = np.array([[1, -1], [1, -1], [-1, -1]])
-    home, points, overflow = divert(counts, propensity, np.ones(2), primary, secondary, np.array([12, 20]),
-                                    np.random.default_rng(3))
+    home, points, overflow, turned_away = divert(counts, propensity, np.ones(2), primary, secondary, np.array([12, 20]),
+                                                 np.random.default_rng(3))
+    assert turned_away.tolist() == [3, 0]
     assert (points.sum(axis=1) <= [12, 20]).all() and points[0].sum() == 12
     assert (home.sum(axis=0) + points.sum(axis=0) == counts.sum(axis=0)).all() and overflow == 0
-    tight_home, tight_points, tight_overflow = divert(counts, propensity, np.ones(2), primary, secondary, np.array([12, 14]),
-                                                      np.random.default_rng(3))
+    tight_home, tight_points, tight_overflow, tight_away = divert(counts, propensity, np.ones(2), primary, secondary, np.array([12, 14]),
+                                                                  np.random.default_rng(3))
+    assert tight_away.sum() >= tight_overflow
     assert tight_points.sum() == 26 and tight_overflow == 2
     assert (tight_home.sum(axis=0) + tight_points.sum(axis=0) == counts.sum(axis=0)).all()
 
@@ -196,3 +198,89 @@ def test_run_adds_synthetic_lockers_on_top_of_mapped_ones(tmp_path):
     run = run_baseline(config_path, "street-ooh-lockers")
     points = gpd.read_parquet(run / "annual" / "out_of_home_points.parquet")
     assert len(points) == 3 and int(points.synthetic.sum()) == 2 and (points.kind == "locker").all()
+
+
+def test_locker_queue_frees_compartments_after_pickup():
+    from hagrid_demand.baseline.out_of_home import LockerQueue
+
+    rng = np.random.default_rng(0)
+    same_day = LockerQueue(np.array([10]), np.array([[1., 0., 0.]]))
+    assert same_day.free(0).tolist() == [10]
+    same_day.store(np.array([10]), rng)
+    assert same_day.free(0).tolist() == [0] and same_day.free(1).tolist() == [10]
+    next_day = LockerQueue(np.array([10, 5]), np.array([[0., 1., 0.], [0., 0., 1.]]))
+    next_day.store(np.array([4, 5]), rng)
+    assert next_day.free(1).tolist() == [6, 0] and next_day.free(2).tolist() == [10, 0] and next_day.free(3).tolist() == [10, 5]
+    assert next_day.occupancy().tolist() == [0, 0]
+    late = LockerQueue(np.array([3]), np.array([[0., 1.]]))
+    late.free(5)
+    late.store(np.array([3]), rng)
+    assert late.free(5).tolist() == [0] and late.free(40).tolist() == [3]
+
+
+def test_points_keep_osm_compartments():
+    from shapely.geometry import box
+    from hagrid_demand.baseline.out_of_home import points_from_elements
+
+    elements = [{"type": "node", "id": 1, "lat": 52.4, "lon": 9.7, "tags": {"amenity": "parcel_locker", "brand": "DHL Packstation", "capacity": "96"}},
+                {"type": "node", "id": 2, "lat": 52.41, "lon": 9.71, "tags": {"amenity": "parcel_locker", "brand": "DHL Packstation"}}]
+    points = points_from_elements(elements, box(9.5, 52.3, 9.9, 52.5), "EPSG:25832", SHARED)
+    assert points.compartments.tolist()[0] == 96 and np.isnan(points.compartments.tolist()[1])
+
+
+def test_out_of_home_run_writes_locker_occupancy(ooh_run):
+    import pandas as pd
+
+    occupancy = pd.read_parquet(ooh_run / "annual" / "locker_occupancy.parquet")
+    points = gpd.read_parquet(ooh_run / "annual" / "out_of_home_points.parquet")
+    assert {"date", "stop_index", "compartments", "occupied", "stored", "rejected", "occupied_next_morning"} <= set(occupancy.columns)
+    assert (occupancy.occupied_next_morning <= occupancy.occupied).all() and (occupancy.occupied >= occupancy.stored).all()
+    assert set(occupancy.stop_index) == set(points.stop_index) and len(occupancy) == 365 * len(points)
+    assert (occupancy.occupied <= occupancy.compartments).all() and occupancy.stored.sum() > 0
+    assert points.compartments.tolist() == [70, 40]
+
+
+def test_default_pickup_profile_is_the_literature_reference():
+    from hagrid_demand.baseline.out_of_home import locker_queue, resolve_out_of_home
+
+    inputs = resolve_out_of_home({"enabled": True})
+    assert inputs["pickup_profile"]["locker"] == [.6, .2, .2] and "pickup_first_day_concentration" not in inputs
+    points = gpd.GeoDataFrame({"point_id": ["a", "b"], "kind": ["locker", "shared_locker"], "carriers": ["DHL", "DPD|GLS|Hermes|UPS"],
+                               "synthetic": [False, False], "compartments": [np.nan, 96.]}, geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:25832")
+    queue = locker_queue(points, inputs, np.random.default_rng(0))
+    assert np.allclose(queue.profiles, [[.6, .2, .2], [.6, .2, .2]]) and queue.compartments.tolist() == [70, 96]
+
+
+def test_context_profile_keeps_first_day_and_scales_the_mean():
+    from hagrid_demand.baseline.out_of_home import context_profile
+
+    base = np.array([.6, .2, .2])
+    retail, transit, other = context_profile(base, .965), context_profile(base, 1.092), context_profile(base, 1.)
+    classes = np.arange(1, 4)
+    assert np.allclose(other, base) and np.allclose(retail.sum(), 1.) and np.allclose(transit.sum(), 1.)
+    assert retail[0] == transit[0] == .6
+    assert (retail * classes).sum() == pytest.approx(1.6 * .965) and (transit * classes).sum() == pytest.approx(1.6 * 1.092)
+    assert np.allclose(context_profile(base, 3.), [.6, 0., .4])  # mean is capped by the last class
+
+
+def test_point_context_from_osm_surroundings():
+    from hagrid_demand.baseline.out_of_home import point_context
+
+    points = gpd.GeoDataFrame({"point_id": ["a", "b", "c", "d"]}, geometry=[Point(0, 0), Point(500, 0), Point(1000, 0), Point(1500, 0)],
+                              crs="EPSG:25832")
+    transit = gpd.GeoDataFrame({"kind": ["station"]}, geometry=[Point(60, 0)], crs="EPSG:25832")
+    retail = gpd.GeoDataFrame({"kind": ["supermarket", "kiosk"]}, geometry=[Point(40, 0), Point(1050, 0)], crs="EPSG:25832")
+    context = point_context(points, transit, retail, transit_m=150., retail_m=75.)
+    assert context.tolist() == ["transit", "other", "retail", "other"]
+
+
+def test_locker_queue_uses_the_point_context():
+    from hagrid_demand.baseline.out_of_home import locker_queue, resolve_out_of_home
+
+    inputs = resolve_out_of_home({"enabled": True})
+    points = gpd.GeoDataFrame({"point_id": ["a", "b", "c"], "kind": ["locker"] * 3, "carriers": ["DHL"] * 3, "synthetic": [False] * 3,
+                               "compartments": [np.nan] * 3, "context": ["retail", "transit", "other"]},
+                              geometry=[Point(0, 0), Point(1, 1), Point(2, 2)], crs="EPSG:25832")
+    queue = locker_queue(points, inputs, np.random.default_rng(0))
+    means = (queue.profiles * np.arange(1, queue.profiles.shape[1] + 1)).sum(axis=1)
+    assert means[0] < means[2] < means[1] and np.allclose(queue.profiles[:, 0], .6)

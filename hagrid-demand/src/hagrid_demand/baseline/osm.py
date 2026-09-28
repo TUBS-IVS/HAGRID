@@ -47,6 +47,48 @@ def study_region(plz_csv: Path, buffer_m: float):
     return plz.union_all().buffer(buffer_m), len(plz)
 
 
+TRANSIT_RAILWAY = ("station", "halt", "tram_stop")
+
+
+def extract_transit_stations(pbf: Path, plz_csv: Path, out: Path, buffer_m: float = 250.) -> Path:
+    """Write railway stations, halts, tram stops and bus terminals of the buffered postal-area union (EPSG:25832).
+
+    Stations change little over the years, so the 2021 extract serves the station context of pickup points.
+    """
+    pbf, out = Path(pbf), Path(out)
+    region, _ = study_region(Path(plz_csv), buffer_m)
+    bbox = tuple(gpd.GeoSeries([region], crs=25832).to_crs(4326).total_bounds)
+    pyogrio.set_gdal_config_options({"OSM_MAX_TMPFILE_SIZE": "4000", "OSM_USE_CUSTOM_INDEXING": "YES"})
+    frames = []
+    for layer in ("points", "multipolygons"):
+        frame = pyogrio.read_dataframe(pbf, layer=layer, bbox=bbox)
+        if frame.empty:
+            continue
+        tags = frame["other_tags"].map(parse_other_tags) if "other_tags" in frame else pd.Series([{}] * len(frame), index=frame.index)
+        railway = frame["railway"] if "railway" in frame else tags.map(lambda item: item.get("railway"))
+        amenity = frame["amenity"] if "amenity" in frame else tags.map(lambda item: item.get("amenity"))
+        transport = tags.map(lambda item: item.get("public_transport"))
+        kind = pd.Series(pd.NA, index=frame.index, dtype=object)
+        kind = kind.mask(railway.isin(TRANSIT_RAILWAY), railway)
+        kind = kind.mask(kind.isna() & amenity.eq("bus_station"), "bus_station")
+        kind = kind.mask(kind.isna() & transport.eq("station"), "station")
+        selected = frame.loc[kind.notna()].copy()
+        if selected.empty:
+            continue
+        selected["kind"] = kind.loc[selected.index].astype(str)
+        selected = selected.to_crs(25832)
+        selected["geometry"] = selected.geometry.centroid
+        frames.append(selected[["osm_id", "name", "kind", "geometry"] if "name" in selected else ["osm_id", "kind", "geometry"]])
+    stations = (gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), crs=25832) if frames
+                else gpd.GeoDataFrame({"osm_id": [], "name": [], "kind": []}, geometry=gpd.GeoSeries([], crs=25832), crs=25832))
+    if "name" not in stations:
+        stations["name"] = None
+    stations = stations[stations.intersects(region)].reset_index(drop=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stations.to_parquet(out, index=False)
+    return out
+
+
 def clip_osm_region(pbf: Path, plz_csv: Path, out_dir: Path, buffer_m: float = 250.) -> dict:
     """Write buildings, address/POI points and a manifest for the buffered postal-area union."""
     started = time.time()

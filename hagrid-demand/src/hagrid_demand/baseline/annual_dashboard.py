@@ -94,6 +94,18 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
             weekday.append(entry)
     config_path = run_dir / "config.resolved.json"
     spatial = json.loads(config_path.read_text(encoding="utf-8")).get("spatial", {}) if config_path.is_file() else {}
+    locker = None
+    occupancy_path = store / "locker_occupancy.parquet"
+    if occupancy_path.is_file():
+        occupancy = pd.read_parquet(occupancy_path)
+        occupancy["date"] = pd.to_datetime(occupancy.date).dt.normalize()
+        occupancy = occupancy.loc[occupancy.date.dt.year.eq(year)]
+        by_day = occupancy.groupby("date").agg(occupied=("occupied", "sum"), compartments=("compartments", "sum"), stored=("stored", "sum"))
+        by_day["full"] = occupancy.assign(full=occupancy.occupied.ge(occupancy.compartments)).groupby("date").full.mean()
+        by_day = by_day.reindex(days.date).fillna(0.)
+        locker = {"points": int(occupancy.stop_index.nunique()), "compartments": int(occupancy.groupby("stop_index").compartments.first().sum()),
+                  "fill": (by_day.occupied / by_day.compartments.replace(0, np.nan)).fillna(0.).round(4).tolist(),
+                  "full_share": by_day.full.round(4).tolist(), "stored": by_day.stored.astype(int).tolist()}
     status_path = run_dir / "daily_status.json"
     temporal = json.loads(status_path.read_text(encoding="utf-8")).get("temporal", {}) if status_path.is_file() else {}
     return {
@@ -122,6 +134,7 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                       "p_b2b": float(group.loc[group.segment.eq("business"), "share"].sum())}
                      for carrier, group in profiles.groupby("carrier")],
         "weekday": weekday,
+        "locker": locker,
         "geo": _geo(postal),
     }
 

@@ -63,10 +63,12 @@ def points_from_elements(elements: list[dict], region, crs: str, shared: Sequenc
         if lat is None or mapped is None:
             continue
         tags = element.get("tags", {})
+        capacity = pd.to_numeric(str(tags.get("capacity", "")).split(";")[0], errors="coerce")
         rows.append({"point_id": f"osm:{element['type'][0]}{element['id']}", "kind": mapped[0], "carriers": "|".join(mapped[1]),
                      "brand": tags.get("brand") or tags.get("post_office:brand") or tags.get("operator") or tags.get("name") or "",
-                     "synthetic": False, "lon": float(lon), "lat": float(lat)})
-    frame = pd.DataFrame(rows, columns=["point_id", "kind", "carriers", "brand", "synthetic", "lon", "lat"])
+                     "synthetic": False, "compartments": float(capacity) if capacity == capacity and capacity > 0 else np.nan,
+                     "lon": float(lon), "lat": float(lat)})
+    frame = pd.DataFrame(rows, columns=["point_id", "kind", "carriers", "brand", "synthetic", "compartments", "lon", "lat"])
     points = gpd.GeoDataFrame(frame.drop(columns=["lon", "lat"]), geometry=gpd.points_from_xy(frame.lon, frame.lat), crs=4326)
     points = points.loc[points.within(region)].drop_duplicates("point_id")
     return points.to_crs(crs).reset_index(drop=True)
@@ -95,7 +97,7 @@ def synthesize_shops(points: gpd.GeoDataFrame, candidates: gpd.GeoDataFrame, wei
         chosen = rng.choice(pool, size=min(missing, len(pool)), replace=False, p=weights[pool] / weights[pool].sum())
         available[chosen] = False
         added.append(gpd.GeoDataFrame({"point_id": [f"syn:{kind}:{carrier}:{index}" for index in range(len(chosen))], "kind": kind,
-                                       "carriers": served, "brand": "synthetic", "synthetic": True},
+                                       "carriers": served, "brand": "synthetic", "synthetic": True, "compartments": np.nan},
                                       geometry=candidates.geometry.iloc[np.sort(chosen)].to_numpy(), crs=candidates.crs))
     if not added:
         return points.reset_index(drop=True)
@@ -146,8 +148,8 @@ def divert(counts: np.ndarray, propensity: np.ndarray, factors: np.ndarray, prim
 
     Each parcel goes out of home with ``propensity × day factor``; parcels go to the site's primary point for the
     carrier, overflow above a point's capacity moves to the secondary point and whatever still does not fit stays
-    at home. Returns home counts (sites × carriers), point counts (points × carriers) and the parcels sent home
-    because of full points.
+    at home. Returns home counts (sites × carriers), point counts (points × carriers), the parcels sent home
+    because of full points and the parcels turned away per point.
     """
     counts = np.asarray(counts, dtype=np.int64)
     carriers = counts.shape[1]
@@ -181,7 +183,9 @@ def divert(counts: np.ndarray, propensity: np.ndarray, factors: np.ndarray, prim
     np.add.at(points, (np.where(second >= 0, second, 0), carrier), placed)
     home = counts.copy().ravel()
     np.subtract.at(home, pairs, kept + placed)
-    return home.reshape(counts.shape), points, int((home_back + rejected).sum())
+    rejected_by_point = (np.bincount(first, weights=moved, minlength=len(capacity))
+                         + np.bincount(np.where(second >= 0, second, 0), weights=rejected, minlength=len(capacity))).astype(np.int64)
+    return home.reshape(counts.shape), points, int((home_back + rejected).sum()), rejected_by_point
 
 
 def resolve_out_of_home(cfg: dict | None) -> dict | None:
@@ -194,7 +198,8 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
         return None
     inputs = load_out_of_home_inputs()
     for key, value in cfg.items():
-        if key in {"shares_2025", "shares_by_year", "capacity_per_day", "national_shops", "synthetic_lockers"} and isinstance(value, dict):
+        if key in {"shares_2025", "shares_by_year", "compartments", "pickup_profile", "pickup_profile_by_carrier", "pickup_context_factor",
+                   "national_shops", "synthetic_lockers"} and isinstance(value, dict):
             inputs[key] = {**inputs.get(key, {}), **value}
         elif key != "enabled":
             inputs[key] = value
@@ -217,6 +222,10 @@ def load_points(path: Path, crs) -> gpd.GeoDataFrame:
     points = points.to_crs(crs) if points.crs is not None else points.set_crs(crs)
     if "synthetic" not in points:
         points["synthetic"] = False
+    if "compartments" not in points:
+        points["compartments"] = np.nan
+    if "context" not in points:
+        points["context"] = "other"
     return points.reset_index(drop=True)
 
 
@@ -248,6 +257,76 @@ def shop_targets(inputs: dict, region_population: float) -> dict[str, int]:
     return {carrier: int(round(float(count) * share)) for carrier, count in inputs["national_shops"].items()}
 
 
+def context_profile(base: np.ndarray, factor: float) -> np.ndarray:
+    """Pickup profile of a station context: the first-day share stays, the mean class number is scaled by *factor*
+    (Hovi et al. 2023: mean pickup time 30.5 h at grocery stores, 34.5 h at transport hubs, 31.6 h overall) by
+    moving mass between the second and the last class."""
+    base = np.asarray(base, dtype=float)
+    base = base / base.sum()
+    classes = np.arange(1, len(base) + 1)
+    if len(base) < 3 or abs(float(factor) - 1.) < 1e-12:
+        return base.copy()
+    target = float((base * classes).sum()) * float(factor)
+    tail = base[1] + base[-1]
+    middle = float((base[2:-1] * classes[2:-1]).sum())
+    last = (target - base[0] - middle - 2. * tail) / (len(base) - 2)
+    last = float(np.clip(last, 0., tail))
+    profile = base.copy()
+    profile[1], profile[-1] = tail - last, last
+    return profile
+
+
+def point_context(points: gpd.GeoDataFrame, transit: gpd.GeoDataFrame, retail: gpd.GeoDataFrame, *, transit_m: float,
+                  retail_m: float) -> np.ndarray:
+    """Station context from the OSM surroundings: ``transit`` near a station or bus terminal, ``retail`` at a shop,
+    else ``other``."""
+    from scipy.spatial import cKDTree
+
+    xy = np.column_stack([points.geometry.x, points.geometry.y])
+    context = np.full(len(points), "other", dtype=object)
+    for label, features, radius in (("retail", retail, retail_m), ("transit", transit, transit_m)):
+        if features is None or features.empty:
+            continue
+        distance, _ = cKDTree(np.column_stack([features.geometry.x, features.geometry.y])).query(xy)
+        context[distance <= float(radius)] = label
+    return context
+
+
+class LockerQueue:
+    """Compartments of pickup points occupied until the recipients collect their parcels.
+
+    ``pending[p, k]`` parcels in point *p* will be collected *k* days after the current day; a parcel collected
+    on day *t* frees its compartment for the deliveries of day *t + 1*.
+    """
+
+    def __init__(self, compartments: np.ndarray, profiles: np.ndarray):
+        self.compartments = np.asarray(compartments, dtype=np.int64)
+        self.profiles = np.asarray(profiles, dtype=float)
+        self.pending = np.zeros((len(self.compartments), self.profiles.shape[1]), dtype=np.int64)
+        self.day = 0
+
+    def _advance(self, day: int) -> None:
+        shift = int(day) - self.day
+        if shift > 0:
+            self.pending = np.hstack([self.pending[:, shift:], np.zeros((len(self.compartments), min(shift, self.pending.shape[1])), dtype=np.int64)])
+            self.day = int(day)
+
+    def free(self, day: int) -> np.ndarray:
+        """Free compartments at delivery time of *day* (parcels still inside, including today's pickups, block)."""
+        self._advance(day)
+        return np.maximum(self.compartments - self.pending.sum(axis=1), 0)
+
+    def store(self, counts: np.ndarray, rng: np.random.Generator) -> None:
+        """Put today's delivered parcels into the compartments and draw their pickup days."""
+        counts = np.asarray(counts, dtype=np.int64)
+        for point in np.flatnonzero(counts > 0):
+            self.pending[point] += rng.multinomial(int(counts[point]), self.profiles[point])
+
+    def occupancy(self) -> np.ndarray:
+        """Parcels inside after today's pickups (occupied compartments tomorrow morning)."""
+        return self.pending[:, 1:].sum(axis=1) if self.pending.shape[1] > 1 else np.zeros(len(self.compartments), dtype=np.int64)
+
+
 @dataclass
 class OutOfHomePlan:
     """One year's routing of a segment's sites (in SegmentDay order) to pickup points."""
@@ -257,7 +336,7 @@ class OutOfHomePlan:
     propensity: np.ndarray
     primary: np.ndarray
     secondary: np.ndarray
-    capacity: np.ndarray
+    queue: LockerQueue
     factors: np.ndarray
     extended_sites: pd.DataFrame
     shares: dict
@@ -310,14 +389,35 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         secondary[second, column] = second_i[second]
         base = np.where(first, apartment * np.exp(-np.where(first, first_d, 0.) / float(inputs["decay_m"])), 0.)
         propensity[:, column] = calibrate_propensity(weights, base, shares[carrier], float(inputs["max_propensity"]))
-    capacity_by_kind = inputs["capacity_per_day"]
-    capacity = points.kind.map(capacity_by_kind).fillna(capacity_by_kind["shop"]).to_numpy(dtype=np.int64)
+    queue = locker_queue(points, inputs, factor_rng("pickup-profiles"))
     factors = (np.column_stack([ar1_lognormal(days, float(inputs["day_log_sd"]), float(inputs["day_ar"]), factor_rng(carrier))
                                 for carrier in carriers]) if width else np.ones((days, 0)))
     pseudo = pd.DataFrame({"year": year, "site_id": "ooh:" + points.point_id.astype(str), "plz": points.plz.astype(str),
                            "segment": "private", "annual_expected": 0., "allocation_status": "out_of_home"})
     extended = pd.concat([sites.reset_index(drop=True), pseudo.reindex(columns=sites.columns)], ignore_index=True)
-    return OutOfHomePlan(points, list(carriers), propensity, primary, secondary, capacity, factors, extended, shares)
+    return OutOfHomePlan(points, list(carriers), propensity, primary, secondary, queue, factors, extended, shares)
+
+
+def point_compartments(points: gpd.GeoDataFrame, inputs: dict) -> np.ndarray:
+    """Compartments per point: the OSM capacity tag where mapped, else the default of the point's kind."""
+    default = points.kind.map(inputs["compartments"]).fillna(inputs["compartments"]["locker"]).astype(float)
+    own = pd.to_numeric(points.get("compartments"), errors="coerce") if "compartments" in points else pd.Series(np.nan, index=points.index)
+    return own.fillna(default).round().astype(np.int64).to_numpy()
+
+
+def locker_queue(points: gpd.GeoDataFrame, inputs: dict, rng: np.random.Generator) -> LockerQueue:
+    """Queue of all points with their compartments and station-specific pickup profiles."""
+    profiles_by_kind = {kind: np.asarray(values, dtype=float) for kind, values in inputs["pickup_profile"].items()}
+    by_carrier = {carrier: np.asarray(values, dtype=float) for carrier, values in inputs.get("pickup_profile_by_carrier", {}).items()}
+    horizon = max([len(values) for values in profiles_by_kind.values()] + [len(values) for values in by_carrier.values()] + [1])
+    profiles = np.zeros((len(points), horizon))
+    factors = inputs.get("pickup_context_factor", {})
+    contexts = points.context.astype(str).to_numpy() if "context" in points else np.full(len(points), "other")
+    for position, (kind, carriers, context) in enumerate(zip(points.kind.astype(str), points.carriers.astype(str), contexts)):
+        base = by_carrier.get(carriers, profiles_by_kind.get(kind, profiles_by_kind["locker"]))
+        profile = context_profile(base, float(factors.get(context, 1.)))
+        profiles[position, :len(profile)] = profile
+    return LockerQueue(point_compartments(points, inputs), profiles)
 
 
 def _nearest(point_xy: np.ndarray, group: np.ndarray, origin: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
@@ -340,13 +440,19 @@ def apply_plan(item, plan: OutOfHomePlan, day: int, rng: np.random.Generator):
 
     if list(item.carriers) != plan.carriers:
         raise ValueError("out-of-home plan and segment day list different carriers")
-    home, points, overflow = divert(item.counts, plan.propensity, plan.factors[day], plan.primary, plan.secondary,
-                                    plan.capacity, rng)
+    free = plan.queue.free(day)
+    home, points, overflow, turned_away = divert(item.counts, plan.propensity, plan.factors[day], plan.primary, plan.secondary, free, rng)
+    stored = points.sum(axis=1)
+    plan.queue.store(stored, rng)
+    # occupied = afternoon peak after the delivery, before the evening pickups (compartments - free + stored)
+    occupancy = pd.DataFrame({"stop_index": np.arange(len(plan.points)), "compartments": plan.queue.compartments,
+                              "occupied": plan.queue.compartments - free + stored, "stored": stored, "rejected": turned_away,
+                              "occupied_next_morning": plan.queue.occupancy()})
     extra = len(plan.points)
     carrier_shares = None if item.carrier_shares is None else np.vstack([item.carrier_shares, np.zeros((extra, points.shape[1]))])
     result = SegmentDay(plan.extended_sites, item.carriers, np.vstack([home, points]).astype(np.int64),
                         np.concatenate([np.asarray(item.shares, dtype=float), np.zeros(extra)]), item.delivered, carrier_shares)
-    return result, points.sum(axis=0), overflow
+    return result, points.sum(axis=0), overflow, occupancy
 
 
 def point_stops(points: gpd.GeoDataFrame, first_index: int) -> gpd.GeoDataFrame:
@@ -375,10 +481,17 @@ def _overpass(query: str, timeout: int) -> list[dict]:
     raise RuntimeError("no Overpass instance answered: " + "; ".join(errors))
 
 
-def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: int = 180) -> gpd.GeoDataFrame:
+RETAIL_CONTEXT = {"shop": ["supermarket", "convenience", "kiosk", "department_store", "mall", "chemist", "variety_store"],
+                  "amenity": ["fuel"]}
+
+
+def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: int = 180,
+                            retail_pois: gpd.GeoDataFrame | None = None) -> gpd.GeoDataFrame:
     """Download parcel lockers, post offices, partner shops and pickup outposts from Overpass for *region_wgs84*.
 
-    One small query per tag keeps each request below the public instances' gateway limits.
+    One small query per tag keeps each request below the public instances' gateway limits. The station context
+    uses *retail_pois* (a local POI extract) when given, else Overpass; a failed context query leaves the context
+    ``other`` with a warning instead of failing the download.
     """
     west, south, east, north = region_wgs84.bounds
     box = f"{south},{west},{north},{east}"
@@ -389,4 +502,46 @@ def fetch_osm_parcel_points(region_wgs84, crs, shared: Sequence[str], timeout: i
             if key not in seen:
                 seen.add(key)
                 elements.append(element)
-    return points_from_elements(elements, region_wgs84, crs, shared)
+    points = points_from_elements(elements, region_wgs84, crs, shared)
+    inputs = load_out_of_home_inputs()
+    import warnings
+
+    def features(query: str, label: str) -> gpd.GeoDataFrame:
+        try:
+            return _feature_points(_overpass(query, timeout), crs)
+        except RuntimeError as exc:
+            warnings.warn(f"{label} context not available from Overpass, treated as absent: {exc}", stacklevel=2)
+            return gpd.GeoDataFrame({"kind": []}, geometry=gpd.GeoSeries([], crs=crs), crs=crs)
+
+    transit = features('[out:json][timeout:%d];(nwr["railway"~"^(station|halt|tram_stop)$"](%s);nwr["amenity"="bus_station"](%s);'
+                       'nwr["public_transport"="station"](%s););out center;' % (timeout, box, box, box), "transit")
+    if retail_pois is not None:
+        retail = synthetic_candidates(retail_pois.to_crs(crs), RETAIL_CONTEXT)
+    else:
+        retail = features('[out:json][timeout:%d];(nwr["shop"~"^(%s)$"](%s);nwr["amenity"="fuel"](%s););out center;'
+                          % (timeout, "|".join(RETAIL_CONTEXT["shop"]), box, box), "retail")
+    points["context"] = point_context(points, transit, retail, transit_m=float(inputs["context_transit_m"]),
+                                      retail_m=float(inputs["context_retail_m"]))
+    return points
+
+
+def add_context(points: gpd.GeoDataFrame, transit: gpd.GeoDataFrame | None, retail_pois: gpd.GeoDataFrame | None,
+                inputs: dict) -> gpd.GeoDataFrame:
+    """Station context of *points* from local station and POI extracts (no download)."""
+    points = points.copy()
+    crs = points.crs
+    retail = synthetic_candidates(retail_pois.to_crs(crs), RETAIL_CONTEXT) if retail_pois is not None else None
+    stations = transit.to_crs(crs) if transit is not None else None
+    points["context"] = point_context(points, stations, retail, transit_m=float(inputs["context_transit_m"]),
+                                      retail_m=float(inputs["context_retail_m"]))
+    return points
+
+
+def _feature_points(elements: list[dict], crs) -> gpd.GeoDataFrame:
+    """Point geometries (node position or way/relation centre) of Overpass elements, projected to *crs*."""
+    coords = [(el["lon"], el["lat"]) if "lat" in el else (el.get("center", {}).get("lon"), el.get("center", {}).get("lat"))
+              for el in elements]
+    coords = [(lon, lat) for lon, lat in coords if lon is not None and lat is not None]
+    frame = gpd.GeoDataFrame({"kind": ["feature"] * len(coords)},
+                             geometry=gpd.points_from_xy([c[0] for c in coords], [c[1] for c in coords]), crs=4326)
+    return frame.to_crs(crs)
