@@ -343,8 +343,14 @@ class OutOfHomePlan:
 
 
 def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray, population: np.ndarray,
-               points: gpd.GeoDataFrame, inputs: dict, year: int, days: int, factor_rng) -> OutOfHomePlan:
-    """Primary/secondary point, calibrated propensity and daily factors for every site and carrier."""
+               points: gpd.GeoDataFrame, inputs: dict, year: int, days: int, factor_rng,
+               carrier_shares: dict | None = None) -> OutOfHomePlan:
+    """Primary/secondary point, calibrated propensity and daily factors for every site and carrier.
+
+    Each site picks its primary point among the ``choice_k`` nearest lockers/boxes/counters within reach
+    (probability ~ exp(-distance / ``choice_decay_m``)); the nearest other one is its fallback. Points without
+    an OSM capacity tag are sized to the daily demand they attract (``compartments_by_demand``).
+    """
     from scipy.spatial import cKDTree
 
     from .shipping_draws import ar1_lognormal
@@ -369,19 +375,30 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         origin = np.where(valid[:, None], site_xy, 0.)
         reach = float(inputs["reach_m"])
         if inputs.get("prefer_lockers", True):
-            # Recipients who choose out-of-home delivery pick a locker, box or staffed counter by distance;
-            # pickup shops take the rest and the overflow.
+            # Recipients who choose out-of-home delivery pick a locker, box or staffed counter among the nearest
+            # ones (closer = likelier); pickup shops take the rest and the overflow.
             chosen_kinds = ["locker", "shared_locker", "counter"]
             lockers = candidates[np.isin(kinds[candidates], chosen_kinds)]
             shops = candidates[~np.isin(kinds[candidates], chosen_kinds)]
-            locker_d, locker_i = _nearest(point_xy, lockers, origin, 2)
+            k = max(1, int(inputs.get("choice_k", 1)))
+            locker_d, locker_i = _nearest(point_xy, lockers, origin, k)
             shop_d, shop_i = _nearest(point_xy, shops, origin, 2)
-            use_locker = locker_d[:, 0] <= reach
-            first_d = np.where(use_locker, locker_d[:, 0], shop_d[:, 0])
-            first_i = np.where(use_locker, locker_i[:, 0], shop_i[:, 0])
+            pick = _choose(locker_d, reach, float(inputs.get("choice_decay_m", 300.)), factor_rng(f"choice:{carrier}"))
+            rows_ = np.arange(count)
+            chosen_d, chosen_i = locker_d[rows_, pick], locker_i[rows_, pick]
+            use_locker = chosen_d <= reach
+            # fallback: the nearest other locker within reach, else the nearest shop
+            if locker_d.shape[1] > 1:
+                other = np.where(pick == 0, 1, 0)
+                other_d, other_i = locker_d[rows_, other], locker_i[rows_, other]
+            else:
+                other_d, other_i = np.full(count, np.inf), np.full(count, -1)
+            other_ok = (other_d <= reach) & (other_i >= 0)
+            first_d = np.where(use_locker, chosen_d, shop_d[:, 0])
+            first_i = np.where(use_locker, chosen_i, shop_i[:, 0])
             shop_near = shop_d[:, 0] <= reach
-            second_d = np.where(use_locker, np.where(shop_near, shop_d[:, 0], locker_d[:, 1]), shop_d[:, 1])
-            second_i = np.where(use_locker, np.where(shop_near, shop_i[:, 0], locker_i[:, 1]), shop_i[:, 1])
+            second_d = np.where(use_locker, np.where(other_ok, other_d, np.where(shop_near, shop_d[:, 0], np.inf)), shop_d[:, 1])
+            second_i = np.where(use_locker, np.where(other_ok, other_i, np.where(shop_near, shop_i[:, 0], -1)), shop_i[:, 1])
         else:
             both_d, both_i = _nearest(point_xy, candidates, origin, 2)
             first_d, first_i, second_d, second_i = both_d[:, 0], both_i[:, 0], both_d[:, 1], both_i[:, 1]
@@ -391,13 +408,38 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         secondary[second, column] = second_i[second]
         base = np.where(first, apartment * np.exp(-np.where(first, first_d, 0.) / float(inputs["decay_m"])), 0.)
         propensity[:, column] = calibrate_propensity(weights, base, shares[carrier], float(inputs["max_propensity"]))
-    queue = locker_queue(points, inputs, factor_rng("pickup-profiles"))
+    # expected daily demand per point (delivery days) for sizing stations without an OSM capacity tag
+    delivery_days = float(inputs.get("delivery_days_per_year", 303))
+    shares_of = {carrier: float((carrier_shares or {}).get(carrier, 1. / max(1, width))) for carrier in carriers}
+    demand = np.zeros(len(points))
+    for column, carrier in enumerate(carriers):
+        target_points = primary[:, column]
+        hit = target_points >= 0
+        np.add.at(demand, target_points[hit], propensity[hit, column] * weights[hit] * shares_of[carrier] / delivery_days)
+    compartments = size_compartments(points, demand, inputs["compartments"], inputs.get("compartments_by_demand"))
+    queue = locker_queue(points, inputs, factor_rng("pickup-profiles"), compartments)
     factors = (np.column_stack([ar1_lognormal(days, float(inputs["day_log_sd"]), float(inputs["day_ar"]), factor_rng(carrier))
                                 for carrier in carriers]) if width else np.ones((days, 0)))
     pseudo = pd.DataFrame({"year": year, "site_id": "ooh:" + points.point_id.astype(str), "plz": points.plz.astype(str),
                            "segment": "private", "annual_expected": 0., "allocation_status": "out_of_home"})
     extended = pd.concat([sites.reset_index(drop=True), pseudo.reindex(columns=sites.columns)], ignore_index=True)
     return OutOfHomePlan(points, list(carriers), propensity, primary, secondary, queue, factors, extended, shares)
+
+
+def size_compartments(points: gpd.GeoDataFrame, demand_per_day: np.ndarray, defaults: dict, rule: dict | None) -> np.ndarray:
+    """Compartments per point: the OSM capacity tag where mapped; otherwise sized to the expected daily demand
+    (``days_factor`` x ``safety`` x demand, rounded up to ``step``, within ``min``..``max``) when *rule* is given,
+    else the default of the point's kind. Operators size stations to demand: DHL's modular Packstation grows from
+    76 to 390 compartments where needed."""
+    default = points.kind.map(defaults).fillna(defaults["locker"]).astype(float).to_numpy()
+    own = (pd.to_numeric(points["compartments"], errors="coerce").to_numpy(float) if "compartments" in points
+           else np.full(len(points), np.nan))
+    if rule:
+        step = float(rule.get("step", 10))
+        sized = np.ceil(float(rule["days_factor"]) * float(rule["safety"]) * np.asarray(demand_per_day, dtype=float) / step) * step
+        minimum = float(rule["min"]) if not isinstance(rule["min"], dict) else             points.kind.map(rule["min"]).fillna(min(rule["min"].values())).astype(float).to_numpy()
+        default = np.clip(sized, np.maximum(minimum, float(rule.get("floor", 0))), float(rule["max"]))
+    return np.where(np.isfinite(own) & (own > 0), own, default).round().astype(np.int64)
 
 
 def point_compartments(points: gpd.GeoDataFrame, inputs: dict) -> np.ndarray:
@@ -407,8 +449,9 @@ def point_compartments(points: gpd.GeoDataFrame, inputs: dict) -> np.ndarray:
     return own.fillna(default).round().astype(np.int64).to_numpy()
 
 
-def locker_queue(points: gpd.GeoDataFrame, inputs: dict, rng: np.random.Generator) -> LockerQueue:
-    """Queue of all points with their compartments and station-specific pickup profiles."""
+def locker_queue(points: gpd.GeoDataFrame, inputs: dict, rng: np.random.Generator,
+                 compartments: np.ndarray | None = None) -> LockerQueue:
+    """Queue of all points with their compartments (given, else by kind/OSM tag) and context pickup profiles."""
     profiles_by_kind = {kind: np.asarray(values, dtype=float) for kind, values in inputs["pickup_profile"].items()}
     by_carrier = {carrier: np.asarray(values, dtype=float) for carrier, values in inputs.get("pickup_profile_by_carrier", {}).items()}
     horizon = max([len(values) for values in profiles_by_kind.values()] + [len(values) for values in by_carrier.values()] + [1])
@@ -419,7 +462,18 @@ def locker_queue(points: gpd.GeoDataFrame, inputs: dict, rng: np.random.Generato
         base = by_carrier.get(carriers, profiles_by_kind.get(kind, profiles_by_kind["locker"]))
         profile = context_profile(base, float(factors.get(context, 1.)))
         profiles[position, :len(profile)] = profile
-    return LockerQueue(point_compartments(points, inputs), profiles)
+    return LockerQueue(point_compartments(points, inputs) if compartments is None else np.asarray(compartments, dtype=np.int64), profiles)
+
+
+def _choose(distance: np.ndarray, reach: float, decay: float, rng: np.random.Generator) -> np.ndarray:
+    """Column of the chosen point per row: among the reachable candidates with probability ~ exp(-d / decay)."""
+    weight = np.where(np.isfinite(distance) & (distance <= reach), np.exp(-np.minimum(distance, 1e6) / decay), 0.)
+    total = weight.sum(axis=1, keepdims=True)
+    probability = np.where(total > 0, weight / np.where(total > 0, total, 1.), 0.)
+    cumulative = np.cumsum(probability, axis=1)
+    draw = rng.random(len(distance))[:, None]
+    pick = (cumulative < draw).sum(axis=1)
+    return np.minimum(pick, distance.shape[1] - 1)
 
 
 def _nearest(point_xy: np.ndarray, group: np.ndarray, origin: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:

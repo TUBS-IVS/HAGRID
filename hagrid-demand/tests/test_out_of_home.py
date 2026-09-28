@@ -237,7 +237,7 @@ def test_out_of_home_run_writes_locker_occupancy(ooh_run):
     assert (occupancy.occupied_next_morning <= occupancy.occupied).all() and (occupancy.occupied >= occupancy.stored).all()
     assert set(occupancy.stop_index) == set(points.stop_index) and len(occupancy) == 365 * len(points)
     assert (occupancy.occupied <= occupancy.compartments).all() and occupancy.stored.sum() > 0
-    assert points.compartments.tolist() == [70, 40]
+    assert points.compartments.tolist() == [76, 40]  # sized to the (small) fixture demand: the standard size of the kind
 
 
 def test_default_pickup_profile_is_the_literature_reference():
@@ -248,7 +248,7 @@ def test_default_pickup_profile_is_the_literature_reference():
     points = gpd.GeoDataFrame({"point_id": ["a", "b"], "kind": ["locker", "shared_locker"], "carriers": ["DHL", "DPD|GLS|Hermes|UPS"],
                                "synthetic": [False, False], "compartments": [np.nan, 96.]}, geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:25832")
     queue = locker_queue(points, inputs, np.random.default_rng(0))
-    assert np.allclose(queue.profiles, [[.6, .2, .2], [.6, .2, .2]]) and queue.compartments.tolist() == [70, 96]
+    assert np.allclose(queue.profiles, [[.6, .2, .2], [.6, .2, .2]]) and queue.compartments.tolist() == [76, 96]
 
 
 def test_context_profile_keeps_first_day_and_scales_the_mean():
@@ -308,7 +308,7 @@ def test_run_adds_amazon_counters_at_retail_pois(tmp_path):
     run = run_baseline(config_path, "street-ooh-counters")
     points = gpd.read_parquet(run / "annual" / "out_of_home_points.parquet")
     counters = points.loc[points.kind.eq("counter")]
-    assert len(counters) == 2 and counters.synthetic.all() and (counters.carriers == "Amazon").all() and (counters.compartments == 80).all()
+    assert len(counters) == 2 and counters.synthetic.all() and (counters.carriers == "Amazon").all() and (counters.compartments >= 40).all()
     assert set(counters.geometry.apply(lambda p: (p.x, p.y))) <= {(10., 30.), (110., 30.)}  # fuel station and supermarket, not the bakery
     days = __import__("pandas").read_parquet(run / "annual" / "days.parquet")
     ledger = export_day(run, "2025-05-16", run / "counter_export")
@@ -322,9 +322,41 @@ def test_dashboard_payload_lists_lockers_with_daily_fill(ooh_run):
     data = build_annual_dashboard_data(ooh_run)
     lockers = data["lockers"]
     assert lockers["ids"] == ["osm:n1", "osm:n2"] and lockers["kind"] == ["locker", "shared_locker"]
-    assert lockers["compartments"] == [70, 40] and all(-180 < lon < 180 for lon in lockers["lon"]) and lockers["context"] == ["other", "other"]
+    assert lockers["compartments"] == [76, 40] and all(-180 < lon < 180 for lon in lockers["lon"]) and lockers["context"] == ["other", "other"]
     n_days = len(data["days"]["date"])
     assert len(lockers["fill"]) == len(lockers["stored"]) == len(lockers["rejected"]) == 2 * n_days
     assert max(lockers["fill"]) <= 100 and sum(lockers["stored"]) == sum(data["days"]["out_of_home"])
     page = write_annual_dashboard(ooh_run, ooh_run / "lockers.html").read_text(encoding="utf-8")
     assert 'id="lockers"' in page and "renderLockers" in page
+
+
+def test_compartments_follow_demand_where_osm_has_no_tag():
+    from hagrid_demand.baseline.out_of_home import size_compartments
+
+    points = gpd.GeoDataFrame({"point_id": ["a", "b", "c", "d"], "kind": ["locker", "locker", "locker", "shared_locker"],
+                               "compartments": [96., np.nan, np.nan, np.nan]}, geometry=[Point(i, 0) for i in range(4)], crs="EPSG:25832")
+    rule = {"days_factor": 1.6, "safety": 1.25, "min": 48, "max": 300, "step": 10}
+    sizes = size_compartments(points, np.array([200., 10., 60., 5.]), {"locker": 70, "shared_locker": 40}, rule)
+    assert sizes.tolist() == [96, 48, 120, 48]  # tagged stays; 60/day -> 1.6 x 1.25 x 60 = 120; small demand -> minimum
+    per_kind = {**rule, "min": {"locker": 76, "shared_locker": 40}}
+    assert size_compartments(points, np.array([200., 10., 60., 5.]), {"locker": 70, "shared_locker": 40}, per_kind).tolist() == [96, 76, 120, 40]
+    assert size_compartments(points, np.array([10., 10., 1000., 10.]), {"locker": 70, "shared_locker": 40}, rule).tolist()[2] == 300
+    assert size_compartments(points, np.array([10., 10., 60., 10.]), {"locker": 70, "shared_locker": 40}, None).tolist() == [96, 70, 70, 40]
+
+
+def test_sites_choose_among_the_nearest_points():
+    import pandas as pd
+
+    from hagrid_demand.baseline.out_of_home import build_plan, load_out_of_home_inputs
+
+    inputs = {**load_out_of_home_inputs(), "shares_2025": {"DHL": .2}, "choice_k": 3, "choice_decay_m": 300.}
+    sites = pd.DataFrame({"site_id": [f"s{i}" for i in range(400)], "plz": ["30159"] * 400, "annual_expected": [50.] * 400})
+    xy = np.column_stack([np.random.default_rng(3).uniform(0, 100, 400), np.zeros(400)])
+    points = gpd.GeoDataFrame({"point_id": ["near", "far"], "kind": ["locker", "locker"], "carriers": ["DHL", "DHL"], "synthetic": [False, False],
+                               "compartments": [np.nan, np.nan], "context": ["other", "other"], "plz": ["30159", "30159"]},
+                              geometry=[Point(50, 100), Point(50, 400)], crs="EPSG:25832")
+    plan = build_plan(sites, ["DHL"], xy, np.full(400, 3.), points, inputs, 2025, 365, lambda carrier: np.random.default_rng(1))
+    share_far = (plan.primary[:, 0] == 1).mean()
+    assert .1 < share_far < .5 and (plan.secondary[:, 0] >= 0).all()
+    nearest_only = build_plan(sites, ["DHL"], xy, np.full(400, 3.), points, {**inputs, "choice_k": 1}, 2025, 365, lambda carrier: np.random.default_rng(1))
+    assert (nearest_only.primary[:, 0] == 0).all()
