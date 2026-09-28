@@ -1,6 +1,6 @@
 {
-  "foundation_run": "../runs/hannover-foundation-dashboard-20260909",
-  "output_dir": "../runs",
+  "foundation_run": "../../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../../runs",
   "start_date": "2026-09-14",
   "days": 7,
   "seed": 42,
