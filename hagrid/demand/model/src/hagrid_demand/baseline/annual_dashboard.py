@@ -47,6 +47,14 @@ def _geo(postal: gpd.GeoDataFrame) -> dict:
 def _lockers_payload(store: Path, days: pd.DataFrame) -> dict:
     """Pickup points with their daily fill, stored and rejected parcels (points x days, row-major)."""
     points = gpd.read_parquet(store / "out_of_home_points.parquet").sort_values("stop_index").reset_index(drop=True)
+    year = int(days.date.dt.year.max()) if len(days) else None
+    if year is not None and "year_opened" in points:
+        # a grown network: only the stations open in the dashboard year, with that year's compartments
+        points = points.loc[pd.to_numeric(points.year_opened, errors="coerce").fillna(-np.inf).le(year).to_numpy()].reset_index(drop=True)
+        if (store / "out_of_home_network.parquet").is_file():
+            network = pd.read_parquet(store / "out_of_home_network.parquet", columns=["year", "stop_index", "compartments"])
+            sized = network.loc[network.year.eq(year)].set_index("stop_index").compartments
+            points["compartments"] = sized.reindex(points.stop_index).fillna(points.compartments.set_axis(points.stop_index)).to_numpy()
     wgs = points.geometry.to_crs(4326)
     occupancy = pd.read_parquet(store / "locker_occupancy.parquet")
     occupancy["date"] = pd.to_datetime(occupancy.date).dt.normalize()

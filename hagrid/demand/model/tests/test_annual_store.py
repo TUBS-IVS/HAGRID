@@ -92,3 +92,62 @@ def test_draw_dates_skip_unselected_without_writer():
     assert _draw_indices(dates, {pd.Timestamp("2025-01-03"), pd.Timestamp("2025-01-07")}, has_writer=False).tolist() == [2, 6]
     assert len(_draw_indices(dates, {pd.Timestamp("2025-01-03")}, has_writer=True)) == 10
     assert len(_draw_indices(dates, None, has_writer=False)) == 10
+
+
+def test_daily_stage_code_includes_network_growth():
+    from hagrid_demand.baseline.workflow import _daily_code
+
+    code = _daily_code()
+    assert code["network_growth"].name == "network_growth.py" and code["network_growth"].is_file()
+    assert code["series"].name == "series.py" and code["series"].is_file()
+
+
+def _point_store(root, extra_rows=()):
+    """Minimal annual store: two home stops, a Packstation of the reference network and one opened in 2026."""
+    import datetime
+
+    import numpy as np
+    from shapely.geometry import Point
+
+    from hagrid_demand.baseline.annual import store_columns
+
+    run = root / "point-store"
+    (run / "annual").mkdir(parents=True)
+    gpd.GeoDataFrame({"stop_id": ["s0", "s1"], "stop_index": [0, 1], "str_idx": [0, 0], "section_id": ["a", "a"],
+                      "plz": ["30159", "30159"]}, geometry=[Point(0, 0), Point(10, 0)], crs="EPSG:25832") \
+        .to_parquet(run / "reference_stops.parquet", index=False)
+    gpd.GeoDataFrame({"stop_index": [2, 3], "point_id": ["osm:n1", "syn:locker:DHL:2026:0"], "kind": ["locker", "locker"],
+                      "carriers": ["DHL", "DHL"], "plz": ["30159", "30159"], "year_opened": [2025, 2026],
+                      "poi_type": [None, "shop=supermarket"]},
+                     geometry=[Point(20, 0), Point(30, 0)], crs="EPSG:25832").to_parquet(run / "annual" / "out_of_home_points.parquet", index=False)
+    first, second = datetime.date(2025, 5, 16), datetime.date(2026, 5, 15)
+    rows = [(first, 0, 5), (first, 2, 3), (second, 0, 4), (second, 2, 2), (second, 3, 6), *extra_rows]
+    table = pd.DataFrame({"date": [row[0] for row in rows], "stop": np.array([row[1] for row in rows], dtype=np.int32)})
+    for column in store_columns():
+        table[column] = np.zeros(len(rows), dtype=np.uint16)
+    table["dhl_b2c"] = np.array([row[2] for row in rows], dtype=np.uint16)
+    table.to_parquet(run / "annual" / "stop_daily.parquet", index=False)
+    totals = table.groupby("date").dhl_b2c.sum()
+    pd.DataFrame({"date": pd.to_datetime([first, second]), "parcels": [int(totals[first]), int(totals[second])],
+                  "b2b": [0, 0], "b2c": [int(totals[first]), int(totals[second])], "sites_active": [2, 3]}) \
+        .to_parquet(run / "annual" / "days.parquet", index=False)
+    return run
+
+
+def test_export_day_excludes_points_opened_later(tmp_path):
+    import datetime
+
+    from hagrid_demand.baseline.annual import export_day
+
+    run = _point_store(tmp_path)
+    early = export_day(run, "2025-05-16", tmp_path / "early")
+    exported = gpd.read_file(tmp_path / "early" / early["file"])
+    assert set(exported.stop_id) == {"s0", "ooh:osm:n1"} and int(exported.total.sum()) == 8
+    late = export_day(run, "2026-05-15", tmp_path / "late")
+    exported = gpd.read_file(tmp_path / "late" / late["file"])
+    assert set(exported.stop_id) == {"s0", "ooh:osm:n1", "ooh:syn:locker:DHL:2026:0"}
+    assert set(exported.loc[exported.stop_id.str.startswith("ooh:"), "stop_type"]) == {"locker"}
+    # parcels at a station that only opens next year cannot be exported as if it were there
+    broken = _point_store(tmp_path / "broken", extra_rows=[(datetime.date(2025, 5, 16), 3, 1)])
+    with pytest.raises(ValueError, match="not open"):
+        export_day(broken, "2025-05-16", tmp_path / "broken-export")
