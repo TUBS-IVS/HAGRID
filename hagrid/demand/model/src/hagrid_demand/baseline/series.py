@@ -175,6 +175,51 @@ def _volume(inputs: dict[str, Any], years: list[int], policy: str) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+_SCENARIO_POLICIES = {"observed_only", "legacy_assumptions"}
+_SCENARIO_CURVES = {"linear", "logistic", "exponential"}
+
+
+def validate_volume_scenario(value: Any, years: list[int]) -> dict:
+    """Normalise a ``volume_scenario`` block: name, fit policy, candidate curve and the chain year (one of *years*)."""
+    if not isinstance(value, dict):
+        raise ValueError("volume_scenario must be a mapping")
+    name, policy, curve, chain = value.get("name"), value.get("policy"), value.get("curve"), value.get("chain_year")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("volume_scenario.name must be a nonempty string")
+    if policy not in _SCENARIO_POLICIES:
+        raise ValueError(f"volume_scenario.policy must be one of {sorted(_SCENARIO_POLICIES)}")
+    if curve not in _SCENARIO_CURVES:
+        raise ValueError(f"volume_scenario.curve must be one of {sorted(_SCENARIO_CURVES)}")
+    if type(chain) is not int or chain not in {int(year) for year in years}:
+        raise ValueError("volume_scenario.chain_year must be one of the run years")
+    return {"name": name.strip(), "policy": policy, "curve": curve, "chain_year": chain}
+
+
+def apply_volume_scenario(basis: pd.DataFrame, policy_frame: pd.DataFrame, scenario: dict) -> pd.DataFrame:
+    """Chain the scenario's fit curve to the basis level of the chain year.
+
+    For years after ``chain_year``: value(y) = basis(chain) * C(y) / C(chain) with C the candidate column
+    ``scenario["curve"]`` of *policy_frame* (the volume frame fitted under ``scenario["policy"]``). Earlier years keep
+    the basis values, so every scenario shares the accepted level of the chain year and differs only in its slope.
+    """
+    out, curve, chain = basis.copy(), str(scenario["curve"]), int(scenario["chain_year"])
+    if curve not in policy_frame.columns:
+        raise ValueError(f"volume_scenario curve {curve} is missing from the fitted volume series")
+    reference = pd.to_numeric(policy_frame.set_index("year")[curve], errors="coerce")
+    later = out.year.gt(chain)
+    needed = reference.reindex([chain, *out.loc[later, "year"].tolist()])
+    if needed.isna().any() or not np.isfinite(needed.to_numpy(float)).all() or (needed <= 0).any():
+        raise ValueError(f"volume_scenario curve {curve} is not finite and positive from {chain} on")
+    base = out.loc[out.year.eq(chain), "value"]
+    if len(base) != 1 or not np.isfinite(float(base.iloc[0])) or float(base.iloc[0]) <= 0:
+        raise ValueError(f"volume basis has no positive value for chain year {chain}")
+    out.loc[later, "value"] = float(base.iloc[0]) * reference.reindex(out.loc[later, "year"]).to_numpy(float) / float(reference[chain])
+    out.loc[later, "status"] = "scenario_projection"
+    out.loc[later, "curve"] = f"{scenario['policy']}/{curve}"
+    out["scenario"] = str(scenario["name"])
+    return out
+
+
 def _bound_scale(spec: dict[str, Any], year: int) -> float:
     """Notebook 05 ``adjust_bounds_by_year`` (linear): factor applied to every lower bound."""
     start, end = spec["year_start"], spec["year_end"]
@@ -242,13 +287,21 @@ def _weekly(weekly_profile: pd.DataFrame | None) -> pd.DataFrame:
 
 
 def build_series(inputs: dict, years: list[int], *, volume_fit_policy: str,
-                 weekly_profile: pd.DataFrame | None = None) -> dict:
-    """Build national baseline inputs without consuming historical notebook exports."""
+                 weekly_profile: pd.DataFrame | None = None, volume_scenario: dict | None = None) -> dict:
+    """Build national baseline inputs without consuming historical notebook exports.
+
+    ``volume_scenario`` (optional) chains one of the fitted candidate curves to the basis level of its chain year
+    (see ``apply_volume_scenario``); without it the volume series is the plain ``volume_fit_policy`` path.
+    """
     inputs = validate_series_inputs(inputs)
     years = sorted({int(year) for year in years})
     if not years:
         raise ValueError("years must contain at least one year")
     market = _market(inputs, years)
+    volume = _volume(inputs, years, volume_fit_policy)
+    if volume_scenario is not None:
+        scenario = validate_volume_scenario(volume_scenario, years)
+        volume = apply_volume_scenario(volume, _volume(inputs, years, scenario["policy"]), scenario)
     return {"market": market, "b2b": _b2b(inputs, years),
-            "volume": _volume(inputs, years, volume_fit_policy), "providers": _priors(inputs, years, market),
+            "volume": volume, "providers": _priors(inputs, years, market),
             "weekly": _weekly(weekly_profile)}

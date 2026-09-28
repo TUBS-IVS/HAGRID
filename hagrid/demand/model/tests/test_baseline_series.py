@@ -260,3 +260,60 @@ def test_provider_priors_follow_notebook_05_dynamic_bounds_and_hit_every_b2b_tar
         q = np.asarray(result["q"])
         assert float(m @ q) == pytest.approx(target, abs=1e-9)
         assert (q >= rows.lower.to_numpy() - 1e-12).all() and (q <= rows.upper.to_numpy() + 1e-12).all()
+
+
+def _scenario(policy="legacy_assumptions", curve="logistic", chain=2025, name="saettigung"):
+    return {"name": name, "policy": policy, "curve": curve, "chain_year": chain}
+
+
+def test_apply_volume_scenario_chains_at_basis_level():
+    """Scenario years follow the chosen fit curve relative to the basis level of the chain year."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = list(range(2021, 2036))
+    inputs = packaged_series_inputs()
+    basis = build_series(inputs, years, volume_fit_policy="observed_only")["volume"].set_index("year")
+    out = build_series(inputs, years, volume_fit_policy="observed_only", volume_scenario=_scenario())["volume"].set_index("year")
+    assert out.loc[2025, "value"] == pytest.approx(basis.loc[2025, "value"])
+    policy = build_series(inputs, years, volume_fit_policy="legacy_assumptions")["volume"].set_index("year")
+    expected = basis.loc[2025, "value"] * policy.loc[2035, "logistic"] / policy.loc[2025, "logistic"]
+    assert out.loc[2035, "value"] == pytest.approx(expected)
+    assert out.loc[2035, "status"] == "scenario_projection" and out.loc[2035, "curve"] == "legacy_assumptions/logistic"
+    assert out.loc[2024, "status"] == basis.loc[2024, "status"] and out.loc[2024, "value"] == basis.loc[2024, "value"]
+    assert (out.scenario == "saettigung").all()
+
+
+def test_build_series_without_scenario_is_unchanged():
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = [2021, 2025]
+    first = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only")["volume"]
+    second = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only", volume_scenario=None)["volume"]
+    pd.testing.assert_frame_equal(first, second)
+    assert "scenario" not in first.columns
+
+
+@pytest.mark.parametrize("bad", [
+    {"name": "x", "policy": "other", "curve": "linear", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "spline", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "linear", "chain_year": 2040},
+    {"name": "", "policy": "observed_only", "curve": "linear", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "linear", "chain_year": 2025.0},
+])
+def test_apply_volume_scenario_rejects_bad_blocks(bad):
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    with pytest.raises(ValueError):
+        build_series(packaged_series_inputs(), [2021, 2025, 2030], volume_fit_policy="observed_only", volume_scenario=bad)
+
+
+def test_apply_volume_scenario_rejects_nonfinite_curve():
+    from hagrid_demand.baseline.series import apply_volume_scenario
+
+    basis = pd.DataFrame({"year": [2021, 2025, 2030], "value": [4.5e9, 4.4e9, 5e9], "status": "observed_anchor", "curve": "linear"})
+    policy = basis.assign(logistic=[4e9, np.nan, 5e9])
+    with pytest.raises(ValueError, match="logistic"):
+        apply_volume_scenario(basis, policy, _scenario())

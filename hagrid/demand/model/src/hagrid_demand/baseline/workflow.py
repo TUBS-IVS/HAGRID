@@ -205,7 +205,7 @@ def _write_series(config: dict, source: Path, output: Path) -> None:
     # The reference stage always needs the reference-year series, even for future-only daily runs.
     years = sorted({*config["years"], config["reference_year"]})
     series = build_series(packaged_series_inputs(), years, volume_fit_policy=config.get("volume_fit_policy", "observed_only"),
-                          weekly_profile=weekly)
+                          weekly_profile=weekly, volume_scenario=config.get("volume_scenario"))
     for name, table in series.items():
         table.to_parquet(output / f"{name}.parquet", index=False)
 

@@ -18,7 +18,7 @@ _ALLOWED_KEYS = {
     "output_scope", "dates", "years", "legacy_export", "persons_crs", "plz_crs", "target_crs",
     "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial", "business_potential", "matsim_export", "volume_fit_policy", "reference_operating_days_rule",
     "osm_buildings", "osm_points", "osm_parcel_points", "out_of_home", "buildings", "anchor", "stops", "notebook_output_dir", "temporal", "annual_store",
-    "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples",
+    "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples", "volume_scenario",
 }
 _PATH_KEYS = {"notebook_output_dir", "osm_buildings", "osm_points", "osm_parcel_points", "input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
 _SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
@@ -161,6 +161,11 @@ def load_baseline_config(path: Path) -> dict:
                                or any(type(year) is not int or year < 2021 for year in config["years"])):
         raise ValueError("years must contain integer years from 2021")
     config.setdefault("years", [config["reference_year"]])
+    if "volume_scenario" in config:
+        from hagrid_demand.baseline.series import validate_volume_scenario
+
+        config["volume_scenario"] = validate_volume_scenario(config["volume_scenario"],
+                                                             sorted({*config["years"], config["reference_year"]}))
     if config.get("legacy_export") and not isinstance(config.get("legacy_contract"), str):
         raise ValueError("legacy_export requires legacy_contract")
     config["regional_level"] = _validate_regional_level(config.get("regional_level"))
