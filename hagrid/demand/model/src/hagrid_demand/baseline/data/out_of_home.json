@@ -66,7 +66,8 @@
     "pickup_context_factor": "Station context from the OSM surroundings (baseline osm-parcel-points): the first-day share stays the same (Hovi et al. 2023 report similar first-day shares across location types), the mean pickup class is scaled by the ratio of the mean pickup times in Hovi et al. 2023 (grocery stores 30.5 h, transport hubs 34.5 h, all lockers 31.6 h) by moving mass between the second and the third class. Transfer of the Norwegian ratios is an assumption.",
     "synthetic_counters": "Staffed pickup counters chosen by the recipient (Amazon Counter at fuel stations, supermarkets, kiosks and department stores; Amazon 2019: about 50 Galeria stores plus kiosks and convenience shops). OSM maps none in the region, so the daily config adds 15 Amazon counters (assumption: 'dozens' of Amazon lockers and counters in and around Hannover; 22 lockers are mapped). Amazon parcels shipped by DHL can also go to DHL Packstations, but those parcels belong to the DHL carrier in this model.",
     "compartments_by_demand": "Operators size stations to demand: points without an OSM tag get days_factor (mean afternoon occupancy per daily parcel with the 60/20/20 profile = 1.6) x safety 1.25 x expected daily demand, rounded up to 10, at least the standard size of the kind (DHL Packstation 76, open boxes 40, counters 40) and at most 390 (DHL's largest modular Packstation).",
-    "choice_k": "Recipients choose among the choice_k nearest lockers, boxes or counters within reach with probability ~ exp(-distance / choice_decay_m); the nearest other one is the fallback when the chosen point is full."
+    "choice_k": "Recipients choose among the choice_k nearest lockers, boxes or counters within reach with probability ~ exp(-distance / choice_decay_m); the nearest other one is the fallback when the chosen point is full.",
+    "network_growth": "Multi-year runs grow the pickup network with the out-of-home demand (spec 2026-09-28, 4.3): per group of kind and carriers the station count follows N(y) = max(N(y-1), round(N(ref) x (D(y) / D(ref))^elasticity)) with D the B2C parcels the group's carriers deliver out of home (elasticity 0.6 is an assumption; the rest of the growth goes into larger stations). New stations go to retail and fuel-station POIs, drawn without replacement with weight = B2C demand within demand_radius_m x coverage gap (1 - exp(-d / gap_scale_m), d = distance to the group's nearest station) x kind preference (off_preference_weight otherwise); none within min_spacing_m of a station of the same group, one new station per POI. Stations without an OSM capacity tag are resized every year and never shrink (resize_existing). Pickup shops do not grow. A single simulated year keeps the reference network."
   },
   "synthetic_lockers": {},
   "synthetic_shared_lockers": 0,
@@ -131,5 +132,60 @@
   },
   "choice_k": 3,
   "choice_decay_m": 300.0,
-  "delivery_days_per_year": 303
+  "delivery_days_per_year": 303,
+  "network_growth": {
+    "enabled": true,
+    "reference_year": 2025,
+    "elasticity": 0.6,
+    "resize_existing": true,
+    "demand_radius_m": 500,
+    "gap_scale_m": 600,
+    "min_spacing_m": 150,
+    "off_preference_weight": 0.25,
+    "candidate_types": {
+      "shop": [
+        "supermarket",
+        "convenience",
+        "kiosk",
+        "chemist",
+        "newsagent",
+        "tobacco",
+        "variety_store",
+        "bakery"
+      ],
+      "amenity": [
+        "fuel"
+      ]
+    },
+    "kind_preferences": {
+      "locker": {
+        "shop": [
+          "supermarket",
+          "convenience"
+        ],
+        "amenity": [
+          "fuel"
+        ]
+      },
+      "shared_locker": {
+        "shop": [
+          "supermarket"
+        ],
+        "amenity": [
+          "fuel"
+        ]
+      },
+      "counter": {
+        "shop": [
+          "kiosk",
+          "convenience",
+          "newsagent",
+          "tobacco",
+          "chemist",
+          "variety_store",
+          "bakery"
+        ]
+      }
+    }
+  }
 }

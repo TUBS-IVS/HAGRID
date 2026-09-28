@@ -360,3 +360,60 @@ def test_sites_choose_among_the_nearest_points():
     assert .1 < share_far < .5 and (plan.secondary[:, 0] >= 0).all()
     nearest_only = build_plan(sites, ["DHL"], xy, np.full(400, 3.), points, {**inputs, "choice_k": 1}, 2025, 365, lambda carrier: np.random.default_rng(1))
     assert (nearest_only.primary[:, 0] == 0).all()
+
+
+def test_build_plan_never_shrinks_untagged_compartments():
+    import pandas as pd
+
+    from hagrid_demand.baseline.out_of_home import build_plan
+
+    inputs = {**load_out_of_home_inputs(), "shares_2025": {"DHL": .1}}
+    sites = pd.DataFrame({"site_id": ["a"], "plz": ["30159"], "annual_expected": [100.]})
+    points = gpd.GeoDataFrame({"point_id": ["new", "tagged", "grown"], "kind": ["locker"] * 3, "carriers": ["DHL"] * 3,
+                               "synthetic": [False] * 3, "compartments": [np.nan, 96., np.nan], "plz": ["30159"] * 3},
+                              geometry=[Point(10, 0), Point(20, 0), Point(30, 0)], crs="EPSG:25832")
+
+    def plan(previous=None):
+        return build_plan(sites, ["DHL"], np.array([[0., 0.]]), np.array([2.]), points, inputs, 2026, 365,
+                          lambda carrier: np.random.default_rng(1), previous_compartments=previous)
+
+    assert plan().queue.compartments.tolist() == [76, 96, 76]  # small demand: the standard Packstation, the OSM tag stays
+    # last year's size (120) is kept when this year's demand asks for less; the OSM tag stays fixed; 0 = not sized yet
+    assert plan(np.array([0, 200, 120])).queue.compartments.tolist() == [76, 96, 120]
+    assert plan(np.array([500, 0, 0])).queue.compartments.tolist() == [390, 96, 76]  # never above the largest module
+
+
+def test_resolve_out_of_home_merges_and_validates_network_growth():
+    from hagrid_demand.baseline.out_of_home import resolve_out_of_home
+
+    defaults = resolve_out_of_home({"enabled": True})["network_growth"]
+    assert defaults["enabled"] is True and defaults["reference_year"] == 2025 and defaults["elasticity"] == .6
+    assert defaults["candidate_types"]["amenity"] == ["fuel"] and defaults["kind_preferences"]["counter"]["shop"][0] == "kiosk"
+    merged = resolve_out_of_home({"network_growth": {"elasticity": 1, "kind_preferences": {"locker": {"shop": ["kiosk"]}}}})["network_growth"]
+    assert merged["elasticity"] == 1. and merged["min_spacing_m"] == 150. and merged["resize_existing"] is True
+    assert merged["kind_preferences"]["locker"] == {"shop": ["kiosk"]}
+    assert merged["kind_preferences"]["counter"] == defaults["kind_preferences"]["counter"]
+    assert resolve_out_of_home({"network_growth": {"enabled": False}})["network_growth"]["enabled"] is False
+    for bad in ({"enabled": "yes"}, {"resize_existing": 1}, {"elasticity": -.1}, {"elasticity": True}, {"demand_radius_m": 0},
+                {"gap_scale_m": -5}, {"min_spacing_m": 0}, {"off_preference_weight": 1.5}, {"reference_year": "2025"},
+                {"elasticty": .5}, {"candidate_types": {"shop": "kiosk"}}, {"kind_preferences": {"locker": ["kiosk"]}}, "on"):
+        with pytest.raises(ValueError, match="network_growth"):
+            resolve_out_of_home({"network_growth": bad})
+
+
+def test_single_year_run_keeps_the_reference_network(ooh_run):
+    import json
+
+    import pandas as pd
+
+    points = gpd.read_parquet(ooh_run / "out_of_home_points.parquet")
+    assert (points.year_opened == 2025).all() and points.poi_type.isna().all()
+    network = pd.read_parquet(ooh_run / "out_of_home_network.parquet")
+    assert network.columns.tolist() == ["year", "stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic",
+                                        "year_opened", "poi_type", "plz", "compartments", "lon", "lat"]
+    assert network.year.eq(2025).all() and network.point_id.tolist() == points.point_id.tolist()
+    assert network.compartments.tolist() == points.compartments.tolist() == [76, 40]
+    assert pd.read_parquet(ooh_run / "annual" / "out_of_home_network.parquet").equals(network)
+    growth = json.loads((ooh_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]["network_growth"]
+    assert growth["growth_years"] == [] and growth["reference_points"] == {"locker:DHL": 1, "shared_locker:DPD|GLS|Hermes|UPS": 1}
+    assert growth["years"]["2025"]["locker:DHL"] == {"points": 1, "compartments": 76}

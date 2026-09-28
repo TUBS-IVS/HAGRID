@@ -488,3 +488,177 @@ def test_default_business_potential_is_one_unit_per_company(fixture_config):
 
     assert _business_employee_weight({}) is None
     assert _business_employee_weight({"business_potential": {"model": "company_plus_employees"}}) == 0.1
+
+
+_NETWORK_COLUMNS = ["year", "stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic", "year_opened", "poi_type",
+                    "plz", "compartments", "lon", "lat"]
+
+
+def _growth_config(root, years):
+    """Street fixture with two DHL Packstations, one shared box and 20 retail POIs; DHL's out-of-home share doubles in 2026."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from street_fixtures import write_street_fixture
+
+    config_path = write_street_fixture(root)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    gpd.GeoDataFrame({"point_id": ["osm:n1", "osm:n2", "osm:n3"], "kind": ["locker", "locker", "shared_locker"],
+                      "carriers": ["DHL", "DHL", "DPD|GLS|Hermes|UPS"], "brand": ["DHL Packstation", "DHL Packstation", "Myflexbox"],
+                      "synthetic": [False] * 3},
+                     geometry=[Point(15, 15), Point(115, 15), Point(120, 40)], crs="EPSG:25832") \
+        .to_parquet(root / "inputs" / "parcel_points.parquet", index=False)
+    types = [("shop", "supermarket"), ("shop", "kiosk"), ("amenity", "fuel"), ("shop", "convenience"), ("shop", "bakery")]
+    offsets = [(3, 3), (25, 3), (47, 3), (3, 30), (47, 30), (3, 47), (25, 47), (47, 47), (30, 30), (35, 40)]
+    xy = [(x0 + dx, dy) for x0 in (0, 100) for dx, dy in offsets]
+    gpd.GeoDataFrame({"osm_id": [f"poi{index}" for index in range(20)], "addr_street": [None] * 20, "addr_housenumber": [None] * 20,
+                      "shop": [value if column == "shop" else None for column, value in (types[index % 5] for index in range(20))],
+                      "amenity": [value if column == "amenity" else None for column, value in (types[index % 5] for index in range(20))]},
+                     geometry=[Point(x, y) for x, y in xy], crs="EPSG:25832").to_parquet(root / "inputs" / "osm_points.parquet", index=False)
+    shares = {"DHL": .3, "DPD": .3, "GLS": .3, "Hermes": .3, "UPS": .3, "Amazon": 0., "FedEx/TNT": 0.}
+    config.update({"output_scope": "daily", "years": years, "dates": [f"{year}-05-{16 - (year - 2025)}" for year in years],
+                   "anchor": {"mode": "street", "min_streets": 99}, "temporal": {"mode": "shipping_transit"}, "annual_store": True,
+                   "osm_parcel_points": "inputs/parcel_points.parquet",
+                   "out_of_home": {"shares_2025": shares, "shares_by_year": {"DHL": {"2026": .6}}, "synthetic_shops": False,
+                                   "network_growth": {"elasticity": 1., "min_spacing_m": 5., "demand_radius_m": 100., "gap_scale_m": 30.}}})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    return config_path
+
+
+@pytest.fixture(scope="module")
+def growth_run(tmp_path_factory):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    root = tmp_path_factory.mktemp("growth")
+    return run_baseline(_growth_config(root, [2025, 2026]), "street-ooh-growth")
+
+
+def test_two_year_run_grows_the_pickup_network(growth_run):
+    import geopandas as gpd
+
+    network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
+    assert network.columns.tolist() == _NETWORK_COLUMNS
+    assert pd.read_parquet(growth_run / "annual" / "out_of_home_network.parquet").equals(network)
+    per_year = network.groupby("year").size()
+    assert per_year.index.tolist() == [2025, 2026] and per_year[2026] > per_year[2025] == 3
+    new = network.loc[network.year_opened.eq(2026)]
+    assert set(new.year) == {2026} and new.synthetic.all() and (new.kind == "locker").all() and (new.carriers == "DHL").all()
+    assert new.point_id.str.fullmatch(r"syn:locker:DHL:2026:\d+").all() and new.poi_type.str.fullmatch(r"(shop|amenity)=\w+").all()
+    assert new.brand.eq("synthetic").all() and new.context.eq("retail").all() and network.lon.between(-180, 180).all()
+    # stations of both years keep or grow their compartments
+    sizes = network.pivot(index="point_id", columns="year", values="compartments").dropna()
+    assert len(sizes) == 3 and (sizes[2026] >= sizes[2025]).all()
+    # stable stop register: the reference stations first, the additions after them
+    points = gpd.read_parquet(growth_run / "out_of_home_points.parquet")
+    assert points.point_id.iloc[:3].tolist() == ["osm:n1", "osm:n2", "osm:n3"] and len(points) == per_year[2026]
+    assert points.stop_index.is_monotonic_increasing and points.year_opened.tolist() == [2025] * 3 + [2026] * len(new)
+    assert points.poi_type.iloc[3:].tolist() == new.poi_type.tolist() and points.poi_type.iloc[:3].isna().all()
+    assert points.compartments.tolist() == network.loc[network.year.eq(2026), "compartments"].tolist()
+    growth = json.loads((growth_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]["network_growth"]
+    assert growth["growth_years"] == [2026] and growth["reference_points"] == {"locker:DHL": 2, "shared_locker:DPD|GLS|Hermes|UPS": 1}
+    entry = growth["years"]["2026"]["locker:DHL"]
+    assert entry["added"] == len(new) and entry["target"] == entry["points"] == 2 + len(new) and entry["shortfall"] == 0
+    assert entry["candidates"] > 0 and entry["demand"] > growth["reference_demand"]["locker:DHL"]
+    lockers = network.loc[network.year.eq(2026) & network.kind.eq("locker")]
+    assert entry["compartments"] == int(lockers.compartments.sum())
+    assert growth["years"]["2026"]["shared_locker:DPD|GLS|Hermes|UPS"]["added"] == 0
+    # the candidate POIs key the daily stage cache
+    assert "osm_points" in json.loads((growth_run / "stage_manifest.json").read_text(encoding="utf-8"))["stages"]["daily"]["dependencies"]
+    assert growth["years"]["2025"]["locker:DHL"] == {"points": 2, "compartments": int(network.loc[network.year.eq(2025) & network.kind.eq("locker"), "compartments"].sum())}
+
+
+def test_first_year_of_a_growing_run_equals_the_single_year_run(growth_run, tmp_path):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    single = run_baseline(_growth_config(tmp_path, [2025]), "street-ooh-2025")
+    for name in ("stop_daily.parquet", "locker_occupancy.parquet", "plz_daily.parquet", "days.parquet"):
+        grown = pd.read_parquet(growth_run / "annual" / name)
+        first = grown.loc[pd.to_datetime(grown.date).dt.year.eq(2025)].reset_index(drop=True)
+        assert pd.read_parquet(single / "annual" / name).equals(first), name
+    network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
+    assert pd.read_parquet(single / "out_of_home_network.parquet").equals(network.loc[network.year.eq(2025)].reset_index(drop=True))
+
+
+def test_new_stations_take_parcels_from_their_opening_year_on(growth_run):
+    network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
+    new_stops = set(network.loc[network.year_opened.eq(2026), "stop_index"])
+    occupancy = pd.read_parquet(growth_run / "annual" / "locker_occupancy.parquet")
+    year = pd.to_datetime(occupancy.date).dt.year
+    assert not occupancy.loc[year.eq(2025), "stop_index"].isin(new_stops).any()
+    assert new_stops <= set(occupancy.loc[year.eq(2026), "stop_index"])
+    sized = occupancy.assign(year=year).groupby(["year", "stop_index"]).compartments.first()
+    assert sized.to_dict() == network.set_index(["year", "stop_index"]).compartments.to_dict()
+    stop_daily = pd.read_parquet(growth_run / "annual" / "stop_daily.parquet")
+    assert not stop_daily.loc[pd.to_datetime(stop_daily.date).dt.year.eq(2025), "stop"].isin(new_stops).any()
+    days = pd.read_parquet(growth_run / "annual" / "days.parquet")
+    at_points = stop_daily.loc[stop_daily.stop.isin(network.stop_index)]
+    assert int(at_points.filter(like="_b2c").to_numpy().sum()) == int(days.out_of_home.sum()) > 0
+
+
+def test_annual_dashboard_shows_the_network_of_its_year(growth_run):
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data
+
+    network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
+    for year in (2025, 2026):
+        data = build_annual_dashboard_data(growth_run, year)
+        register = network.loc[network.year.eq(year)]
+        lockers = data["lockers"]
+        assert lockers["ids"] == register.point_id.tolist() and lockers["compartments"] == register.compartments.astype(int).tolist()
+        assert len(lockers["fill"]) == len(register) * len(data["days"]["date"])
+        assert sum(lockers["stored"]) == sum(data["days"]["out_of_home"])
+
+
+def test_network_growth_requires_osm_points(growth_run):
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.out_of_home import resolve_out_of_home
+    from hagrid_demand.baseline.workflow import _out_of_home_points
+
+    config = json.loads((growth_run / "config.resolved.json").read_text(encoding="utf-8"))
+    config.pop("osm_points")
+    ooh, crs = resolve_out_of_home(config["out_of_home"]), gpd.read_parquet(growth_run / "reference_stops.parquet").crs
+    with pytest.raises(ValueError, match="osm_points"):
+        _out_of_home_points(config, growth_run, ooh, crs)
+    # a single simulated year keeps the reference network and needs no POIs
+    points, status = _out_of_home_points({**config, "years": [2026]}, growth_run, ooh, crs)
+    assert points.point_id.tolist() == ["osm:n1", "osm:n2", "osm:n3"] and status["network_growth"]["growth_years"] == []
+    assert points.year_opened.tolist() == [2025] * 3
+
+
+def test_network_growth_projects_an_unsimulated_reference_year(growth_run):
+    import geopandas as gpd
+    import numpy as np
+
+    from hagrid_demand.baseline.network_growth import carrier_ooh_demand
+    from hagrid_demand.baseline.out_of_home import resolve_out_of_home
+    from hagrid_demand.baseline.workflow import _out_of_home_points, _project_years
+
+    config = json.loads((growth_run / "config.resolved.json").read_text(encoding="utf-8"))
+    ooh = resolve_out_of_home(config["out_of_home"])
+    stored = pd.read_parquet(growth_run / "annual_projection.parquet")
+    profiles = pd.read_parquet(growth_run / "carrier_profiles.parquet")
+    # the supplementary projection repeats the daily stage's projection of a year
+    again = _project_years(config, growth_run, [2025])
+    expected = stored.loc[stored.year.eq(2025)].reset_index(drop=True)
+    assert again.sites.site_id.tolist() == expected.site_id.tolist()
+    assert np.allclose(again.sites.annual_expected, expected.annual_expected, rtol=1e-12, atol=0.)
+    assert np.allclose(again.profiles.share, profiles.loc[profiles.year.eq(2025)].share, rtol=1e-12, atol=0.)
+    # a run of 2026 and 2027 grows from the 2025 reference network and the projected 2025 demand
+    later = {**config, "years": [2026, 2027]}
+    stops = gpd.read_parquet(growth_run / "reference_stops.parquet")
+    links = pd.read_parquet(growth_run / "reference_site_stops.parquet")
+    points, status = _out_of_home_points(later, growth_run, ooh, stops.crs, projection=_project_years(later, growth_run, [2026, 2027]),
+                                         site_xy_of=stops.drop_duplicates("stop_id").set_index("stop_id").geometry,
+                                         site_stop_of=links.drop_duplicates("site_id").set_index("site_id").stop_id)
+    growth = status["network_growth"]
+    reference = carrier_ooh_demand(expected, profiles.loc[profiles.year.eq(2025)], 2025, ooh)
+    assert growth["growth_years"] == [2026, 2027] and growth["reference_points"]["locker:DHL"] == 2
+    assert growth["reference_demand"]["locker:DHL"] == pytest.approx(reference["DHL"], rel=1e-12)
+    assert points.year_opened.iloc[:3].tolist() == [2025] * 3 and points.year_opened.iloc[3:].isin([2026, 2027]).all()
+    run_points = gpd.read_parquet(growth_run / "out_of_home_points.parquet")
+    run_growth = json.loads((growth_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]["network_growth"]
+    # same reference, demand and random stream: 2026 grows exactly as in the run that simulated 2025
+    assert growth["years"]["2026"]["locker:DHL"]["target"] == run_growth["years"]["2026"]["locker:DHL"]["target"]
+    assert points.loc[points.year_opened.eq(2026), "point_id"].tolist() == run_points.loc[run_points.year_opened.eq(2026), "point_id"].tolist()
+    assert points.loc[points.year_opened.eq(2026)].geometry.reset_index(drop=True).geom_equals(
+        run_points.loc[run_points.year_opened.eq(2026)].geometry.reset_index(drop=True)).all()

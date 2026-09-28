@@ -154,6 +154,13 @@ def export_day(run_dir: Path, date: str, output_dir: Path | None = None, max_par
     stops = gpd.read_parquet(run_dir / "reference_stops.parquet")
     if (store / "out_of_home_points.parquet").is_file():
         points = gpd.read_parquet(store / "out_of_home_points.parquet").to_crs(stops.crs)
+        if "year_opened" in points:
+            # a grown network lists the stations of all years; the day only has those opened by its year
+            opened = pd.to_numeric(points.year_opened, errors="coerce").fillna(-np.inf)
+            closed = set(points.loc[opened.gt(timestamp.year), "stop_index"].astype(int)) & set(table.stop.astype(int))
+            if closed:
+                raise ValueError(f"stop_daily has parcels at pickup points not open on {timestamp.date()}: {sorted(closed)[:5]}")
+            points = points.loc[opened.le(timestamp.year).to_numpy()]
         extra = gpd.GeoDataFrame({"stop_id": ("ooh:" + points.point_id.astype(str)).to_numpy(), "stop_index": points.stop_index.to_numpy(),
                                   "str_idx": -1, "section_id": "", "plz": points.plz.astype(str).to_numpy(),
                                   "stop_type": points.kind.astype(str).to_numpy()}, geometry=points.geometry.to_numpy(), crs=stops.crs)

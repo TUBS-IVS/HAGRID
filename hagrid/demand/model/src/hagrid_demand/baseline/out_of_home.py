@@ -201,8 +201,9 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
         if key in {"shares_2025", "shares_by_year", "compartments", "pickup_profile", "pickup_profile_by_carrier", "pickup_context_factor",
                    "national_shops", "synthetic_lockers", "synthetic_counters"} and isinstance(value, dict):
             inputs[key] = {**inputs.get(key, {}), **value}
-        elif key != "enabled":
+        elif key not in {"enabled", "network_growth"}:
             inputs[key] = value
+    inputs["network_growth"] = resolve_network_growth(inputs.get("network_growth"), cfg.get("network_growth"))
     for carrier, share in inputs["shares_2025"].items():
         if not 0 <= float(share) < 1:
             raise ValueError(f"out_of_home.shares_2025.{carrier} must be a share in [0, 1)")
@@ -211,6 +212,58 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
     if not isinstance(kinds, list) or not set(kinds) <= {"locker", "shared_locker", "counter", "shop"}:
         raise ValueError("out_of_home.kinds must list locker, shared_locker, counter and/or shop")
     return inputs
+
+
+_GROWTH_KEYS = {"enabled", "reference_year", "elasticity", "resize_existing", "demand_radius_m", "gap_scale_m", "min_spacing_m",
+                "off_preference_weight", "candidate_types", "kind_preferences"}
+
+
+def _growth_number(block: dict, key: str, *, positive: bool, upper: float | None = None) -> float:
+    value = block[key]
+    valid = not isinstance(value, bool) and isinstance(value, (int, float)) and np.isfinite(value)
+    if not valid or (value <= 0 if positive else value < 0) or (upper is not None and value > upper):
+        bound = "a positive number" if positive else "a nonnegative number"
+        raise ValueError(f"out_of_home.network_growth.{key} must be {bound}" + (f" of at most {upper:g}" if upper is not None else ""))
+    return float(value)
+
+
+def _poi_tags(value, label: str) -> dict:
+    """Validate a mapping of OSM tag columns to value lists, e.g. ``{"shop": ["kiosk"], "amenity": ["fuel"]}``."""
+    if not isinstance(value, dict) or not all(isinstance(column, str) and isinstance(values, list)
+                                              and all(isinstance(item, str) for item in values) for column, values in value.items()):
+        raise ValueError(f"out_of_home.network_growth.{label} must map OSM tag columns to lists of values")
+    return {column: list(values) for column, values in value.items()}
+
+
+def resolve_network_growth(defaults: dict | None, block=None) -> dict:
+    """Network-growth settings: the packaged defaults merged with the run's ``out_of_home.network_growth`` block
+    (``candidate_types`` and ``kind_preferences`` one level deep), validated."""
+    merged = json.loads(json.dumps(defaults or {}))
+    if block is not None:
+        if not isinstance(block, dict):
+            raise ValueError("out_of_home.network_growth must be a mapping")
+        if unknown := sorted(set(block) - _GROWTH_KEYS):
+            raise ValueError(f"out_of_home.network_growth has unknown keys: {unknown}")
+        for key, value in json.loads(json.dumps(block)).items():
+            nested = key in {"candidate_types", "kind_preferences"} and isinstance(value, dict) and isinstance(merged.get(key), dict)
+            merged[key] = {**merged[key], **value} if nested else value
+    if missing := sorted(_GROWTH_KEYS - set(merged)):
+        raise ValueError(f"out_of_home.network_growth lacks {missing}")
+    for key in ("enabled", "resize_existing"):
+        if not isinstance(merged[key], bool):
+            raise ValueError(f"out_of_home.network_growth.{key} must be true or false")
+    if type(merged["reference_year"]) is not int or merged["reference_year"] < 2021:
+        raise ValueError("out_of_home.network_growth.reference_year must be an integer year from 2021")
+    merged["elasticity"] = _growth_number(merged, "elasticity", positive=False)
+    for key in ("demand_radius_m", "gap_scale_m", "min_spacing_m"):
+        merged[key] = _growth_number(merged, key, positive=True)
+    merged["off_preference_weight"] = _growth_number(merged, "off_preference_weight", positive=False, upper=1.)
+    merged["candidate_types"] = _poi_tags(merged["candidate_types"], "candidate_types")
+    preferences = merged["kind_preferences"]
+    if not isinstance(preferences, dict) or not set(preferences) <= {"locker", "shared_locker", "counter", "shop"}:
+        raise ValueError("out_of_home.network_growth.kind_preferences must map locker, shared_locker, counter and/or shop to POI tags")
+    merged["kind_preferences"] = {kind: _poi_tags(tags, f"kind_preferences.{kind}") for kind, tags in preferences.items()}
+    return merged
 
 
 def load_points(path: Path, crs) -> gpd.GeoDataFrame:
@@ -344,12 +397,13 @@ class OutOfHomePlan:
 
 def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray, population: np.ndarray,
                points: gpd.GeoDataFrame, inputs: dict, year: int, days: int, factor_rng,
-               carrier_shares: dict | None = None) -> OutOfHomePlan:
+               carrier_shares: dict | None = None, previous_compartments: np.ndarray | None = None) -> OutOfHomePlan:
     """Primary/secondary point, calibrated propensity and daily factors for every site and carrier.
 
     Each site picks its primary point among the ``choice_k`` nearest lockers/boxes/counters within reach
     (probability ~ exp(-distance / ``choice_decay_m``)); the nearest other one is its fallback. Points without
-    an OSM capacity tag are sized to the daily demand they attract (``compartments_by_demand``).
+    an OSM capacity tag are sized to the daily demand they attract (``compartments_by_demand``); with
+    *previous_compartments* (one per point, 0 = not sized before) they never get smaller than last year.
     """
     from scipy.spatial import cKDTree
 
@@ -417,6 +471,8 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         hit = target_points >= 0
         np.add.at(demand, target_points[hit], propensity[hit, column] * weights[hit] * shares_of[carrier] / delivery_days)
     compartments = size_compartments(points, demand, inputs["compartments"], inputs.get("compartments_by_demand"))
+    if previous_compartments is not None:
+        compartments = keep_compartments(points, compartments, previous_compartments, inputs.get("compartments_by_demand"))
     queue = locker_queue(points, inputs, factor_rng("pickup-profiles"), compartments)
     factors = (np.column_stack([ar1_lognormal(days, float(inputs["day_log_sd"]), float(inputs["day_ar"]), factor_rng(carrier))
                                 for carrier in carriers]) if width else np.ones((days, 0)))
@@ -440,6 +496,21 @@ def size_compartments(points: gpd.GeoDataFrame, demand_per_day: np.ndarray, defa
         minimum = float(rule["min"]) if not isinstance(rule["min"], dict) else             points.kind.map(rule["min"]).fillna(min(rule["min"].values())).astype(float).to_numpy()
         default = np.clip(sized, np.maximum(minimum, float(rule.get("floor", 0))), float(rule["max"]))
     return np.where(np.isfinite(own) & (own > 0), own, default).round().astype(np.int64)
+
+
+def keep_compartments(points: gpd.GeoDataFrame, sized: np.ndarray, previous: np.ndarray, rule: dict | None = None) -> np.ndarray:
+    """Compartments that never shrink: points without an OSM capacity tag keep last year's size (*previous*, 0 = not
+    sized before) when this year's demand asks for less, at most the largest module (``rule["max"]``); tagged points
+    stay as mapped."""
+    sized = np.asarray(sized, dtype=np.int64)
+    previous = np.asarray(previous, dtype=np.int64)
+    if previous.shape != sized.shape:
+        raise ValueError("previous_compartments must hold one value per point")
+    own = (pd.to_numeric(points["compartments"], errors="coerce").to_numpy(float) if "compartments" in points
+           else np.full(len(points), np.nan))
+    untagged = ~(np.isfinite(own) & (own > 0))
+    grown = np.minimum(np.maximum(sized, previous), float(rule["max"]) if rule else np.inf)
+    return np.where(untagged, grown, sized).round().astype(np.int64)
 
 
 def point_compartments(points: gpd.GeoDataFrame, inputs: dict) -> np.ndarray:

@@ -25,6 +25,7 @@ from hagrid_demand.data import (build_business, build_residential, read_dhl, rea
 from .config import load_baseline_config
 from .out_of_home import (apply_plan, build_plan, load_points, point_compartments, point_stops, population_near,
                           resolve_out_of_home, shop_targets, synthesize_shops, synthetic_candidates)
+from .network_growth import capacity_inputs, carrier_ooh_demand, growth_years, plan_network
 from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
@@ -395,6 +396,7 @@ def _daily_code() -> dict:
             "shipping_draws": here.with_name("shipping_draws.py"), "annual": here.with_name("annual.py"),
             "temporal_inputs": here.with_name("data") / "temporal_inputs.json", "events": here.with_name("data") / "events.json",
             "out_of_home": here.with_name("out_of_home.py"), "out_of_home_inputs": here.with_name("data") / "out_of_home.json",
+            "network_growth": here.with_name("network_growth.py"), "series": here.with_name("series.py"),
             "matsim_export": here.parents[1] / "compatibility" / "matsim_export.py"}
 
 def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, plan, generation: dict, temporal: dict):
@@ -448,18 +450,38 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             raise ValueError("out_of_home requires the street anchor with stops")
         base_stops = gpd.read_parquet(run / "reference_stops.parquet")
         base_links = pd.read_parquet(run / "reference_site_stops.parquet")
-        points, status["out_of_home"] = _out_of_home_points(config, run, ooh, base_stops.crs)
+        site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
+        site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
+        # Network growth is a pre-pass: the stop register below holds every point of every simulated year.
+        points, status["out_of_home"] = _out_of_home_points(config, run, ooh, base_stops.crs, projection=projection,
+                                                            site_xy_of=site_xy_of, site_stop_of=site_stop_of)
         extra = point_stops(points, int(base_stops.stop_index.max()) + 1)
         export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
                         "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
-        extra = extra.assign(compartments=point_compartments(points, ooh))
+        extra = extra.assign(compartments=point_compartments(points, ooh), year_opened=points.year_opened.to_numpy(),
+                             poi_type=points.poi_type.to_numpy())
         extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic",
-                                                     "compartments", "plz", "geometry"]].to_parquet(output / "out_of_home_points.parquet", index=False)
-        site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
-        site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
+                                                     "compartments", "year_opened", "poi_type", "plz", "geometry"]] \
+            .to_parquet(output / "out_of_home_points.parquet", index=False)
         population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
         status["out_of_home"].update({"delivered": {}, "b2c_delivered": {}, "overflow_home": 0})
         occupancy_rows: list[pd.DataFrame] = []
+        # Per point: first year it takes parcels, compartments after its latest planned year (0 = not sized yet) and
+        # the value the points file shows; the network register gets one row per point and active year.
+        growth_cfg, growth_status = ooh["network_growth"], status["out_of_home"]["network_growth"]
+        opened = points.year_opened.to_numpy(dtype=np.int64)
+        reference_point = opened <= int(growth_cfg["reference_year"])
+        group_of = (points.kind.astype(str) + ":" + points.carriers.astype(str)).to_numpy()
+        sized_last = np.zeros(len(points), dtype=np.int64)
+        compartments_now = point_compartments(points, ooh)
+        wgs = points.geometry.to_crs(4326)
+        register = pd.DataFrame({"stop_index": extra.stop_index.to_numpy(), "point_id": extra.point_id.to_numpy(),
+                                 "kind": extra.stop_type.to_numpy(), "carriers": extra.carriers.to_numpy(), "brand": extra.brand.to_numpy(),
+                                 "context": extra.context.to_numpy(), "synthetic": extra.synthetic.to_numpy(), "year_opened": opened,
+                                 "poi_type": extra.poi_type.to_numpy(), "plz": extra.plz.to_numpy(), "lon": wgs.x.to_numpy(),
+                                 "lat": wgs.y.to_numpy()})
+        actives: dict[int, np.ndarray] = {}
+        network_rows: list[pd.DataFrame] = []
 
     writer = None
     if config.get("annual_store"):
@@ -483,18 +505,30 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             located = gpd.GeoSeries(site_xy_of.reindex(site_stop_of.reindex(ids).to_numpy()).to_numpy(), crs=site_xy_of.crs)
             site_xy = np.column_stack([located.x.to_numpy(), located.y.to_numpy()])
             shares = profiles.loc[profiles.year.eq(year) & profiles.segment.eq("private")].groupby("carrier").share.sum().to_dict()
-            plans[year] = build_plan(item.sites, item.carriers, site_xy, population_of.reindex(ids).fillna(0.).to_numpy(), points, ooh,
+            # Only the stations open in this year take parcels; with network growth they never shrink.
+            active = np.flatnonzero(opened <= year)
+            subset, previous = capacity_inputs(points, active, sized_last, reference_point, growth_cfg, bool(growth_status["growth_years"]))
+            plans[year] = build_plan(item.sites, item.carriers, site_xy, population_of.reindex(ids).fillna(0.).to_numpy(), subset, ooh,
                                      year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"),
-                                     carrier_shares=shares)
+                                     carrier_shares=shares, previous_compartments=previous)
+            actives[year] = active
+            sized_last[active] = plans[year].queue.compartments
+            compartments_now[active] = plans[year].queue.compartments
             sized = gpd.read_parquet(output / "out_of_home_points.parquet")
-            sized["compartments"] = plans[year].queue.compartments
+            sized["compartments"] = compartments_now
             sized.to_parquet(output / "out_of_home_points.parquet", index=False)
             if writer is not None:
                 shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
             status["out_of_home"]["target_share"] = {carrier: round(share, 5) for carrier, share in plans[year].shares.items()}
+            network_rows.append(register.iloc[active].assign(year=year, compartments=compartments_now[active])[_NETWORK_COLUMNS])
+            entries = growth_status["years"].setdefault(str(year), {})
+            for key, values in pd.Series(compartments_now[active]).groupby(group_of[active]):
+                entries.setdefault(str(key), {}).update(points=int(values.size), compartments=int(values.sum()))
         routed, per_carrier, overflow, occupancy = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
                                                                                                 date=date.date().isoformat(), channel="ooh-divert"))
-        occupancy_rows.append(occupancy.assign(date=date.normalize(), stop_index=extra.stop_index.to_numpy()[occupancy.stop_index.to_numpy()]))
+        # plan positions -> stable stop indices of the active stations
+        occupancy_rows.append(occupancy.assign(date=date.normalize(),
+                                               stop_index=extra.stop_index.to_numpy()[actives[year][occupancy.stop_index.to_numpy()]]))
         totals = status["out_of_home"]
         for carrier, parcels, delivered in zip(item.carriers, per_carrier, item.counts.sum(axis=0)):
             totals["delivered"][carrier] = totals["delivered"].get(carrier, 0) + int(parcels)
@@ -526,15 +560,31 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                     if ooh is not None and occupancy_rows:
                         pd.concat(occupancy_rows, ignore_index=True)[["date", "stop_index", "compartments", "occupied", "stored", "rejected", "occupied_next_morning"]] \
                             .to_parquet(writer.directory / "locker_occupancy.parquet", index=False)
+                    if ooh is not None and network_rows:
+                        _write_network_register(network_rows, output, writer.directory)
                     writer.close({"years": config["years"], "temporal": status})
                 else:
                     writer.abort()
+            elif completed and ooh is not None and network_rows:
+                _write_network_register(network_rows, output, None)
 
     return frames(), status, export_stops
 
 
-def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.GeoDataFrame, dict]:
-    """OSM pickup points plus synthetic shops, each with its PLZ."""
+_NETWORK_COLUMNS = ["year", "stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic", "year_opened", "poi_type",
+                    "plz", "compartments", "lon", "lat"]
+
+
+def _write_network_register(rows: list[pd.DataFrame], output: Path, store: Path | None) -> None:
+    """Pickup network register, one row per point and active year, in the daily stage and next to the annual store's occupancy."""
+    pd.concat(rows, ignore_index=True)[_NETWORK_COLUMNS].to_parquet(output / "out_of_home_network.parquet", index=False)
+    if store is not None:
+        shutil.copy2(output / "out_of_home_network.parquet", store / "out_of_home_network.parquet")
+
+
+def _out_of_home_points(config: dict, run: Path, ooh: dict, crs, *, projection=None, site_xy_of: gpd.GeoSeries | None = None,
+                        site_stop_of: pd.Series | None = None) -> tuple[gpd.GeoDataFrame, dict]:
+    """OSM pickup points plus synthetic shops, grown over the run's years (``year_opened``, ``poi_type``), each with its PLZ."""
     points = load_points(Path(config["osm_parcel_points"]), crs)
     postal = gpd.read_parquet(run / "sources" / "postal_support.parquet").to_crs(crs)
     status = {"osm_points": {str(kind): int(count) for kind, count in points.kind.value_counts().items()}, "synthetic_shops": 0,
@@ -578,9 +628,74 @@ def _out_of_home_points(config: dict, run: Path, ooh: dict, crs) -> tuple[gpd.Ge
                                       named_rng(int(config["seed"]), channel="ooh-synthetic-counters"), kind="counter")
         status["synthetic_lockers"] = int((points.synthetic & points.kind.isin(["locker", "shared_locker"])).sum())
         status["synthetic_counters"] = int((points.synthetic & points.kind.eq("counter")).sum())
+    points, status["network_growth"] = _grow_network(config, run, ooh, points, postal, projection, site_xy_of, site_stop_of)
     joined = gpd.sjoin_nearest(points[["point_id", "geometry"]], postal[["plz", "geometry"]], how="left")
     points["plz"] = joined.groupby(level=0).plz.first().reindex(points.index).astype(str).to_numpy()
     return points, status
+
+
+def _grow_network(config: dict, run: Path, ooh: dict, points: gpd.GeoDataFrame, postal: gpd.GeoDataFrame, projection,
+                  site_xy_of: gpd.GeoSeries | None, site_stop_of: pd.Series | None) -> tuple[gpd.GeoDataFrame, dict]:
+    """Pre-pass of the pickup network growth: out-of-home demand per year from the annual projection (the reference
+    year is projected on its own when the run does not simulate it), B2C demand at the sites' stops, candidate POIs
+    from ``osm_points`` inside the postal support."""
+    growth = ooh["network_growth"]
+    years = growth_years(config["years"], growth)
+    if not years:
+        return plan_network(points, config["years"], {}, None, {}, {}, growth, int(config["seed"]))
+    if not config.get("osm_points"):
+        raise ValueError("out_of_home.network_growth requires osm_points (the retail POIs new stations go to)")
+    if projection is None or site_xy_of is None or site_stop_of is None:
+        raise ValueError("out_of_home.network_growth requires the annual projection and the stop register")
+    reference_year = int(growth["reference_year"])
+    sites, profiles = projection.sites, projection.profiles
+    if missing := sorted({reference_year, *years} - {int(year) for year in sites.year.unique()}):
+        extra = _project_years(config, run, missing)
+        sites = pd.concat([sites, extra.sites], ignore_index=True)
+        profiles = pd.concat([profiles, extra.profiles], ignore_index=True)
+    demand = {year: carrier_ooh_demand(sites.loc[sites.year.eq(year)], profiles.loc[profiles.year.eq(year)], year, ooh)
+              for year in sorted({reference_year, *years})}
+    private = sites.loc[sites.segment.eq("private") & sites.year.isin(years)]
+    ids = private.site_id.astype(str).unique()
+    located = gpd.GeoSeries(site_xy_of.reindex(site_stop_of.reindex(ids).to_numpy()).to_numpy(), crs=site_xy_of.crs)
+    xy_of = pd.DataFrame({"x": located.x.to_numpy(), "y": located.y.to_numpy()}, index=ids)
+    demand_xy, demand_site = {}, {}
+    for year in years:
+        frame = private.loc[private.year.eq(year)]
+        xy = xy_of.reindex(frame.site_id.astype(str).to_numpy()).to_numpy(float)
+        valid = np.isfinite(xy).all(axis=1)
+        demand_xy[year], demand_site[year] = xy[valid], frame.annual_expected.to_numpy(float)[valid]
+    candidates = synthetic_candidates(gpd.read_parquet(config["osm_points"]).to_crs(points.crs), growth["candidate_types"])
+    candidates = candidates.loc[candidates.within(postal.union_all())].reset_index(drop=True)
+    return plan_network(points, config["years"], demand, candidates, demand_xy, demand_site, growth, int(config["seed"]))
+
+
+def _projection_inputs(config: dict, run: Path) -> tuple[dict, dict]:
+    """Frozen reference contract and projection settings of the daily stage."""
+    reference_sites = pd.read_parquet(run / "reference_sites.parquet")
+    reference = {"sites": reference_sites, "regional_annual": json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"],
+                 "scope_id": json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))["scope_id"],
+                 "geometry": gpd.read_parquet(run / "reference_geometry.parquet")}
+    projection_cfg = {"memory": {"fixed": 1}, "regional_level": config["regional_level"]}
+    if (run / "reference_anchor.json").is_file():
+        anchor = json.loads((run / "reference_anchor.json").read_text(encoding="utf-8"))
+        projection_cfg["dhl_b2b"] = {"q_2021": anchor["q_dhl"], "b_2021": anchor["b2b_by_year"][str(config["reference_year"])]}
+    return reference, projection_cfg
+
+
+def _project_years(config: dict, run: Path, years: list[int]):
+    """Annual projection of *years* the run's series do not cover (the network reference year of a run that does not
+    simulate it), with the same reference contract, series rules and volume scenario as the daily stage."""
+    if (config.get("regional_level") or {}).get("mode") == "external_annual_series":
+        raise ValueError("out_of_home.network_growth.reference_year must be one of years with an external_annual_series")
+    reference, projection_cfg = _projection_inputs(config, run)
+    scenario = config.get("volume_scenario")
+    # Year values of the series do not depend on the other requested years; the chain year anchors the scenario.
+    series_years = sorted({*years, config["reference_year"], *([scenario["chain_year"]] if scenario else [])})
+    series = build_series(packaged_series_inputs(), series_years, volume_fit_policy=config.get("volume_fit_policy", "observed_only"),
+                          volume_scenario=scenario)
+    return project_annual(reference, {name: series[name] for name in ("volume", "market", "b2b", "providers")}, sorted(years),
+                          projection_cfg)
 
 
 def _matsim_export_enabled(config: dict) -> bool:
@@ -592,15 +707,8 @@ def _matsim_export_enabled(config: dict) -> bool:
 
 def _write_daily(config: dict, run: Path, output: Path) -> None:
     """Project full calendar-year counts and stream only selected daily detail."""
-    reference_sites = pd.read_parquet(run / "reference_sites.parquet")
-    reference = {"sites": reference_sites, "regional_annual": json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"],
-                 "scope_id": json.loads((run / "reference_checks.json").read_text(encoding="utf-8"))["scope_id"],
-                 "geometry": gpd.read_parquet(run / "reference_geometry.parquet")}
+    reference, projection_cfg = _projection_inputs(config, run)
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
-    projection_cfg = {"memory": {"fixed": 1}, "regional_level": config["regional_level"]}
-    if (run / "reference_anchor.json").is_file():
-        anchor = json.loads((run / "reference_anchor.json").read_text(encoding="utf-8"))
-        projection_cfg["dhl_b2b"] = {"q_2021": anchor["q_dhl"], "b_2021": anchor["b2b_by_year"][str(config["reference_year"])]}
     projection = project_annual(reference, series, config["years"], projection_cfg)
     calendar, calendar_metadata = _daily_calendar(config, run)
     plan = resolve_spatial_plan(reference, projection, {"seed": config["seed"], "spatial": config["spatial"]}, 0, Path(config["cache_root"]))
@@ -830,6 +938,9 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
             daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
             if config.get("out_of_home") and config.get("osm_parcel_points"):
                 daily_dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
+            if config.get("out_of_home") and config.get("osm_points"):
+                # retail POIs of the synthetic points and of the network growth
+                daily_dependencies["osm_points"] = Path(config["osm_points"])
             daily_snapshot = dependency_snapshot(daily_dependencies)
             daily_fingerprint = stage_key("daily", daily_dependencies, config, _daily_code(),
                                           dependency_snapshot=daily_snapshot)
@@ -845,6 +956,8 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                 _copy_public(run, "daily", "delivery_calendar.parquet")
             if (run / "daily" / "out_of_home_points.parquet").is_file():
                 _copy_public(run, "daily", "out_of_home_points.parquet")
+            if (run / "daily" / "out_of_home_network.parquet").is_file():
+                _copy_public(run, "daily", "out_of_home_network.parquet")
             if (run / "daily" / "annual").is_dir():
                 if (run / "annual").exists():
                     shutil.rmtree(run / "annual")
