@@ -524,3 +524,23 @@ def test_baseline_help_has_no_experimental_model_imports():
     )
     assert "MODEL=False" in result.stdout
     assert "SKLEARN=False" in result.stdout
+
+
+def test_baseline_config_validates_volume_scenario(tmp_path):
+    """A volume_scenario block is normalised on load; invalid blocks are rejected."""
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    (tmp_path / "inputs").mkdir()
+    config = tmp_path / "baseline.json"
+    base = {"schema_version": 1, "rng_version": 1, "seed": 42, "input_dir": "inputs", "output_dir": "runs",
+            "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313, "output_scope": "daily",
+            "years": [2025, 2030], "volume_scenario": {"name": " boom ", "policy": "legacy_assumptions",
+                                                       "curve": "exponential", "chain_year": 2025}}
+    config.write_text(json.dumps(base), encoding="utf-8")
+    loaded = load_baseline_config(config)
+    assert loaded["volume_scenario"] == {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
+
+    base["volume_scenario"]["chain_year"] = 2027
+    config.write_text(json.dumps(base), encoding="utf-8")
+    with pytest.raises(ValueError, match="chain_year"):
+        load_baseline_config(config)
