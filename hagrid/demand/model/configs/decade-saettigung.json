@@ -64,22 +64,42 @@
   "assumptions": [
     "DHL tagesschni is treated as a documented reference anchor pending measurement-definition review.",
     "Hermes rows are inventory only and do not anchor the reference level.",
-    "Same eight simulation days as ParcelDemandScenarioGenerator (Fri/Sat of ISO week 19 and Mon-Sat of ISO week 20, 2025).",
     "DHL tagesschni is the mean per delivery day of 2021 under the configured calendar (Sundays and Lower Saxony holidays closed).",
-    "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL)."
+    "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL).",
+    "Exported days per year: Fri/Sat of ISO week 19 and Mon-Sat of ISO week 20 (the eight ParcelDemandScenarioGenerator days).",
+    "Szenario Saettigung: logistischer Fit unter den Notebook-Annahmen 2024-2028, am Niveau 2025 verkettet, 2035 = 5,26 Mrd.",
+    "Pickup network grows with out-of-home demand (elasticity 0.6) at retail and fuel-station POIs; see out_of_home.json network_growth."
   ],
   "years": [
-    2025
+    2025,
+    2026,
+    2027,
+    2028,
+    2029,
+    2030,
+    2031,
+    2032,
+    2033,
+    2034,
+    2035
   ],
   "dates": [
-    "2025-05-09",
-    "2025-05-10",
-    "2025-05-12",
-    "2025-05-13",
-    "2025-05-14",
-    "2025-05-15",
-    "2025-05-16",
-    "2025-05-17"
+    "2030-05-10",
+    "2030-05-11",
+    "2030-05-13",
+    "2030-05-14",
+    "2030-05-15",
+    "2030-05-16",
+    "2030-05-17",
+    "2030-05-18",
+    "2035-05-11",
+    "2035-05-12",
+    "2035-05-14",
+    "2035-05-15",
+    "2035-05-16",
+    "2035-05-17",
+    "2035-05-18",
+    "2035-05-19"
   ],
   "calendar": {
     "weekly_profile": "source",
@@ -160,5 +180,11 @@
     "section_length_m": 50
   },
   "notebook_output_dir": "../../input/hannover/notebook-output",
-  "annual_store": true
+  "annual_store": true,
+  "volume_scenario": {
+    "name": "saettigung",
+    "policy": "legacy_assumptions",
+    "curve": "logistic",
+    "chain_year": 2025
+  }
 }
