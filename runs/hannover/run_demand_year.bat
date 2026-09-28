@@ -24,7 +24,7 @@ if exist "%SRC%" (
   xcopy /Y /Q "%SRC%\*" "%DST%\" > nul
   echo MATSim demand: %DST%
 )
-echo Annual dashboard: hagrid\demand\runs\%RUN_ID%\annual_dashboard.html
+if exist "hagrid\demand\runs\%RUN_ID%\annual_dashboard.html" echo Annual dashboard: hagrid\demand\runs\%RUN_ID%\annual_dashboard.html
 echo Weitere Tage: python -m hagrid_demand baseline export-day --run hagrid\demand\runs\%RUN_ID% --date YYYY-MM-DD
 
 :end
