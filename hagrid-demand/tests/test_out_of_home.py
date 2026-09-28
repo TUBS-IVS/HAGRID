@@ -284,3 +284,47 @@ def test_locker_queue_uses_the_point_context():
     queue = locker_queue(points, inputs, np.random.default_rng(0))
     means = (queue.profiles * np.arange(1, queue.profiles.shape[1] + 1)).sum(axis=1)
     assert means[0] < means[2] < means[1] and np.allclose(queue.profiles[:, 0], .6)
+
+
+def test_run_adds_amazon_counters_at_retail_pois(tmp_path):
+    import json
+
+    from street_fixtures import write_street_fixture
+
+    from hagrid_demand.baseline.annual import export_day
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    config_path = write_street_fixture(tmp_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    gpd.GeoDataFrame({"point_id": ["osm:n1"], "kind": ["locker"], "carriers": ["Amazon"], "brand": ["Amazon Locker"], "synthetic": [False]},
+                     geometry=[Point(15, 15)], crs="EPSG:25832").to_parquet(tmp_path / "inputs" / "parcel_points.parquet", index=False)
+    gpd.GeoDataFrame({"osm_id": ["p1", "p2", "p3"], "addr_street": ["Alpha", "Gamma", "Beta"], "addr_housenumber": ["9", "9", "9"],
+                      "shop": [None, "supermarket", "bakery"], "amenity": ["fuel", None, None]},
+                     geometry=[Point(10, 30), Point(110, 30), Point(20, 40)], crs="EPSG:25832").to_parquet(tmp_path / "inputs" / "osm_points.parquet", index=False)
+    config.update({"output_scope": "daily", "years": [2025], "dates": ["2025-05-16"], "anchor": {"mode": "street", "min_streets": 99},
+                   "temporal": {"mode": "shipping_transit"}, "annual_store": True, "osm_parcel_points": "inputs/parcel_points.parquet",
+                   "out_of_home": {"shares_2025": {"Amazon": .3}, "synthetic_counters": {"Amazon": 2}}})
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    run = run_baseline(config_path, "street-ooh-counters")
+    points = gpd.read_parquet(run / "annual" / "out_of_home_points.parquet")
+    counters = points.loc[points.kind.eq("counter")]
+    assert len(counters) == 2 and counters.synthetic.all() and (counters.carriers == "Amazon").all() and (counters.compartments == 80).all()
+    assert set(counters.geometry.apply(lambda p: (p.x, p.y))) <= {(10., 30.), (110., 30.)}  # fuel station and supermarket, not the bakery
+    days = __import__("pandas").read_parquet(run / "annual" / "days.parquet")
+    ledger = export_day(run, "2025-05-16", run / "counter_export")
+    exported = gpd.read_file(run / "counter_export" / ledger["file"])
+    assert "counter" in set(exported.stop_type)
+
+
+def test_dashboard_payload_lists_lockers_with_daily_fill(ooh_run):
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data, write_annual_dashboard
+
+    data = build_annual_dashboard_data(ooh_run)
+    lockers = data["lockers"]
+    assert lockers["ids"] == ["osm:n1", "osm:n2"] and lockers["kind"] == ["locker", "shared_locker"]
+    assert lockers["compartments"] == [70, 40] and all(-180 < lon < 180 for lon in lockers["lon"]) and lockers["context"] == ["other", "other"]
+    n_days = len(data["days"]["date"])
+    assert len(lockers["fill"]) == len(lockers["stored"]) == len(lockers["rejected"]) == 2 * n_days
+    assert max(lockers["fill"]) <= 100 and sum(lockers["stored"]) == sum(data["days"]["out_of_home"])
+    page = write_annual_dashboard(ooh_run, ooh_run / "lockers.html").read_text(encoding="utf-8")
+    assert 'id="lockers"' in page and "renderLockers" in page

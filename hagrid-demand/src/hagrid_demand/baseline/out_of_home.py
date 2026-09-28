@@ -199,7 +199,7 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
     inputs = load_out_of_home_inputs()
     for key, value in cfg.items():
         if key in {"shares_2025", "shares_by_year", "compartments", "pickup_profile", "pickup_profile_by_carrier", "pickup_context_factor",
-                   "national_shops", "synthetic_lockers"} and isinstance(value, dict):
+                   "national_shops", "synthetic_lockers", "synthetic_counters"} and isinstance(value, dict):
             inputs[key] = {**inputs.get(key, {}), **value}
         elif key != "enabled":
             inputs[key] = value
@@ -207,9 +207,9 @@ def resolve_out_of_home(cfg: dict | None) -> dict | None:
         if not 0 <= float(share) < 1:
             raise ValueError(f"out_of_home.shares_2025.{carrier} must be a share in [0, 1)")
     inputs.setdefault("synthetic_shops", True)
-    kinds = inputs.setdefault("kinds", ["locker", "shared_locker"])
-    if not isinstance(kinds, list) or not set(kinds) <= {"locker", "shared_locker", "shop"}:
-        raise ValueError("out_of_home.kinds must list locker, shared_locker and/or shop")
+    kinds = inputs.setdefault("kinds", ["locker", "shared_locker", "counter"])
+    if not isinstance(kinds, list) or not set(kinds) <= {"locker", "shared_locker", "counter", "shop"}:
+        raise ValueError("out_of_home.kinds must list locker, shared_locker, counter and/or shop")
     return inputs
 
 
@@ -369,9 +369,11 @@ def build_plan(sites: pd.DataFrame, carriers: Sequence[str], site_xy: np.ndarray
         origin = np.where(valid[:, None], site_xy, 0.)
         reach = float(inputs["reach_m"])
         if inputs.get("prefer_lockers", True):
-            # Recipients who choose out-of-home delivery mostly pick a locker; shops take the rest and the overflow.
-            lockers = candidates[np.isin(kinds[candidates], ["locker", "shared_locker"])]
-            shops = candidates[~np.isin(kinds[candidates], ["locker", "shared_locker"])]
+            # Recipients who choose out-of-home delivery pick a locker, box or staffed counter by distance;
+            # pickup shops take the rest and the overflow.
+            chosen_kinds = ["locker", "shared_locker", "counter"]
+            lockers = candidates[np.isin(kinds[candidates], chosen_kinds)]
+            shops = candidates[~np.isin(kinds[candidates], chosen_kinds)]
             locker_d, locker_i = _nearest(point_xy, lockers, origin, 2)
             shop_d, shop_i = _nearest(point_xy, shops, origin, 2)
             use_locker = locker_d[:, 0] <= reach
@@ -461,7 +463,9 @@ def point_stops(points: gpd.GeoDataFrame, first_index: int) -> gpd.GeoDataFrame:
                              "stop_index": np.arange(len(points)) + int(first_index), "str_idx": -1, "section_id": "",
                              "plz": points.plz.astype(str).to_numpy(), "n_units": 0, "expected_daily": 0.,
                              "stop_type": points.kind.astype(str).to_numpy(), "point_id": points.point_id.astype(str).to_numpy(),
-                             "carriers": points.carriers.astype(str).to_numpy(), "synthetic": points.synthetic.astype(bool).to_numpy()},
+                             "carriers": points.carriers.astype(str).to_numpy(), "synthetic": points.synthetic.astype(bool).to_numpy(),
+                             "context": (points.context.astype(str).to_numpy() if "context" in points else np.full(len(points), "other")),
+                             "brand": (points.brand.astype(str).to_numpy() if "brand" in points else np.full(len(points), ""))},
                             geometry=points.geometry.to_numpy(), crs=points.crs)
 
 

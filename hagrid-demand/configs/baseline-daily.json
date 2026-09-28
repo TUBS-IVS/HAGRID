@@ -130,7 +130,7 @@
   "osm_buildings": "../../parcel-demand-estimation/input/osm/osm_buildings_region_hannover_2021.parquet",
   "osm_points": "../../parcel-demand-estimation/input/osm/osm_address_poi_region_hannover_2021.parquet",
   "osm_parcel_points": "../../parcel-demand-estimation/input/osm/osm_parcel_points_region_hannover.parquet",
-  "out_of_home": {"enabled": true, "synthetic_lockers": {"Amazon": 22}},
+  "out_of_home": {"enabled": true, "synthetic_counters": {"Amazon": 15}},
   "anchor": {
     "mode": "street",
     "level_correction": {

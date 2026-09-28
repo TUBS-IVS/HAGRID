@@ -296,9 +296,9 @@ public class DeliveryGenerator implements Runnable {
         }
 
         /**
-         * Delivery mode of a demand feature from its {@code stop_type} attribute: parcel lockers, shared boxes and
-         * pickup shops are out-of-home points, everything else (including demand files without the attribute) is a
-         * home delivery.
+         * Delivery mode of a demand feature from its {@code stop_type} attribute: parcel lockers, shared boxes,
+         * pickup counters and pickup shops are out-of-home points, everything else (including demand files without
+         * the attribute) is a home delivery.
          *
          * @param stopType value of the {@code stop_type} attribute or {@code null}.
          * @return the delivery mode.
@@ -306,7 +306,7 @@ public class DeliveryGenerator implements Runnable {
         static DeliveryMode deliveryModeOf(Object stopType) {
                 String type = stopType == null ? "home" : stopType.toString().trim().toLowerCase(java.util.Locale.ROOT);
                 return switch (type) {
-                        case "locker", "shared_locker", "shop" -> DeliveryMode.PARCEL_LOCKER_EXISTING;
+                        case "locker", "shared_locker", "counter", "shop" -> DeliveryMode.PARCEL_LOCKER_EXISTING;
                         default -> DeliveryMode.HOME;
                 };
         }

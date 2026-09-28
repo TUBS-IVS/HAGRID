@@ -194,17 +194,19 @@ Abholpunkte statt an die Haustür zu:
    (Myflexbox u. a., nutzbar für Hermes, DPD, GLS und UPS) und 192 Filialen/Shops. Fehlende Partner-Shops von DHL, Hermes,
    DPD, GLS und UPS werden bis zur hochgerechneten Netzdichte an Kiosken, Supermärkten, Bäckereien, Drogerien und
    Tankstellen ergänzt (`synthetic_shops`, gewichtet nach Einwohnern im Umkreis von 500 m).
-2. **Nur Automaten:** Vorerst nehmen nur Automaten und offene Boxen Pakete an (`kinds`, Standard `locker` und
-   `shared_locker`); die Shops bleiben in der Punktedatei und kommen mit der Modellierung der Fehlzustellung. Die
-   Automaten-Infrastruktur ist vollständig enthalten, auch Automaten ohne Pakete an einem Tag. Offene Boxen (Myflexbox,
-   Paketbox) bedienen Hermes, DPD, GLS, UPS und FedEx; DeinFach und inboxx zusätzlich DHL. Amazon-Locker und
-   Packstationen sind anbietereigen.
+2. **Automaten und Counter:** Pakete gehen an Automaten, offene Boxen und bediente Abholcounter (`kinds`, Standard
+   `locker`, `shared_locker`, `counter`); die Paketshops bleiben in der Punktedatei und kommen mit der Modellierung der
+   Fehlzustellung. Die Automaten-Infrastruktur ist vollständig enthalten, auch Automaten ohne Pakete an einem Tag.
+   Offene Boxen (Myflexbox, Paketbox) bedienen Hermes, DPD, GLS, UPS und FedEx; DeinFach und inboxx zusätzlich DHL.
+   Amazon-Locker und Packstationen sind anbietereigen. Amazon Counter (Tankstellen, Supermärkte, Kioske, Kaufhäuser)
+   fehlen in OSM; `synthetic_counters` setzt sie an solche POIs (Tageskonfiguration: 15 für Amazon, 80 Pakete Aufnahme).
+   Amazon-Pakete, die DHL zustellt, dürfen an Packstationen; sie zählen im Modell zum Anbieter DHL und stecken in
+   dessen Packstation-Anteil.
 3. **Anteil je Anbieter und Jahr:** begrenzte Sigmoid-Kurve wie in den Notebooks, an DHL angepasst (3 % 2019, 5 % 2021,
    10 % 2025); 2025 DHL 10, Amazon 5, Hermes/DPD/GLS/UPS/FedEx je 2 % der B2C-Pakete an Automaten (`shares_2025`, oder
    `shares_by_year` als Tabelle; die kleinen Netze begrenzen die Anteile zusätzlich). Täglich schwankt der Anteil je
-   Anbieter (log-SD 0,10, AR(1) ρ 0,6). `synthetic_lockers` ergänzt Szenario-Automaten je Anbieter an Kiosken,
-   Supermärkten und Tankstellen; die Tageskonfiguration setzt 22 zusätzliche Amazon-Locker (Annahme, damit Amazon die
-   5 % erreicht; das echte Netz hat 22).
+   Anbieter (log-SD 0,10, AR(1) ρ 0,6). `synthetic_lockers` und `synthetic_shared_lockers` ergänzen Szenario-Automaten an
+   Kiosken, Supermärkten und Tankstellen (in der Tageskonfiguration nicht gesetzt).
 4. **Wer abholt:** Wahrscheinlichkeit je Gebäude und Anbieter mit der Entfernung zum nächsten passenden Punkt
    (bis 1,5 km, Abfall über 600 m) und höher in Mehrfamilienhäusern, je Jahr so skaliert, dass der Anteil stimmt.
 5. **Fächer und Abholung:** Jeder Automat hat Fächer (OSM-Tag `capacity`, sonst 70 je Packstation/Locker, 40 je offene
@@ -225,9 +227,10 @@ Abholpunkte statt an die Haustür zu:
    von 25 Paketen je Packstation nicht mehr an (`hubs.fixedParcelLockerDemand`, Standard `false`), damit nichts doppelt
    zählt.
 
-Abnahmelauf 2025 (nur Automaten, Literaturprofil 60/20/20 mit Stationskontext): 4,7 % der B2C-Pakete gehen an Automaten
-(DHL 8,5 % von 10 % Ziel, Amazon 4,2 % von 5 % mit 22 Szenario-Lockern, Hermes/DPD/GLS/UPS je 0,7 % und FedEx 0,6 % von
-2 % über die 14 offenen Boxen). Die Netze begrenzen: 79 % der B2C-Nachfrage liegt innerhalb von 1,5 km einer Packstation
+Abnahmelauf 2025 (Automaten, Boxen und Counter, Literaturprofil 60/20/20 mit Stationskontext): 4,7 % der B2C-Pakete
+gehen an Abholpunkte (DHL 8,5 % von 10 % Ziel; Amazon 3,8 % von 5 % über 22 kartierte Locker und 15 synthetische
+Counter, die im Median 32 bzw. 50 Pakete je Liefertag aufnehmen; Hermes/DPD/GLS/UPS je 0,7 % und FedEx 0,6 % von 2 %
+über die 14 offenen Boxen). Die Netze begrenzen: 79 % der B2C-Nachfrage liegt innerhalb von 1,5 km einer Packstation
 (Amazon 40 %), und an Spitzentagen sind Stationen voll: 29 % der Stations-Liefertage voll, 1,08 Mio. Pakete abgewiesen,
 561 Tsd. davon an die Haustür. Füllgrad am Nachmittag im Mittel 60 % (Läden 52 %, Haltestellen 64 %, sonst 64 %);
 Packstation im Median 25 Pakete je Liefertag bei 70 Fächern, Amazon-Locker 38. Nur 14 Automaten haben in OSM eine
