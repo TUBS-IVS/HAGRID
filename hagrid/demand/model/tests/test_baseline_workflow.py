@@ -662,3 +662,13 @@ def test_network_growth_projects_an_unsimulated_reference_year(growth_run):
     assert points.loc[points.year_opened.eq(2026), "point_id"].tolist() == run_points.loc[run_points.year_opened.eq(2026), "point_id"].tolist()
     assert points.loc[points.year_opened.eq(2026)].geometry.reset_index(drop=True).geom_equals(
         run_points.loc[run_points.year_opened.eq(2026)].geometry.reset_index(drop=True)).all()
+
+
+def test_multi_year_run_writes_a_dashboard_page_per_year(growth_run):
+    """A run over several years writes annual_dashboard_<year>.html next to the last year's page."""
+    run = growth_run["run"] if isinstance(growth_run, dict) else growth_run
+    assert (run / "annual_dashboard.html").is_file()
+    for year in (2025, 2026):
+        page = run / f"annual_dashboard_{year}.html"
+        assert page.is_file(), page
+        assert f'"year":{year}' in page.read_text(encoding="utf-8")
