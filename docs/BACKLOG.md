@@ -127,6 +127,26 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
 - **Offen: PPC (Passenger-Parcel Compensation) prüfen** — vor der Evaluation entscheiden, ob der
   Mechanismus reinkommt → [METHODS-LOG](METHODS-LOG.md) §4.1. _(added 2026-07-15)_
 
+### `[H]` `ev_range_exceed_drt_*` teilt den 1d-Fahrzeugtag in zwei Fahrzeuge
+
+`extract_emissions.drt_arm` zieht die Frachtregime-km per `exclude_windows` ab und bucht sie unter
+`freight_modular`; `ev_range_exceed_drt_*` vergleicht danach die Reichweite gegen die reine
+Passagierstrecke. Ein 1d-Fahrzeug mit 200 km Pax + 200 km Kapsel gilt damit zweimal als fahrbar.
+Nur der 1d-Arm und nur die Tageskennzahl sind betroffen — `drive_block_*` läuft korrekt über beide
+Regime. Gemessen S3 f130: 51,8 % statt 55,6 % (METHODS-LOG §2.69).
+
+Bewusst **nicht** während der laufenden Kampagne gefixt: eine Änderung am KPI-Kanal macht alle
+bestehenden Boards unvergleichbar. Der Papierpfad rechnet es korrekt in
+`analysis/paper-figures/emissions-services/charging_feasibility.py`. Beim Fix: dessen
+`test_day_km_spans_both_regimes` ist die Fixture, die die beiden Lesarten trennt.
+
+### `[M]` 1c f130/f150 vom Sim holen, um den f138-Versatz der Ladezahlen zu messen
+
+§2.68 verortet den 1c-Iso-Service bei f≈138, gemessen ist die Ladeklammer bei f140 (§2.69). Die
+Richtung steht fest (weniger Fahrzeuge → mehr km je Fahrzeugtag → 43,1 % ist eine Untergrenze),
+die Größe nicht: 1c liegt lokal nur bei f140. Es reichen `output_events` + `output_network` der
+zwei f130-Seeds, dann `charging_feasibility.py --run-dir`. Kein Pull auf dem Sim nötig.
+
 ### `[H]` Multi-Run-Aggregation für km-basierte KPIs
 
 Der Rauschboden der jsprit-Heuristik auf der Fahrleistung ist **gemessen: 6,5 %** — km/Paket liegt
