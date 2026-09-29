@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-15",
+  "scope": "Planning document integrity and isolated synthetic arithmetic; not implementation tests or empirical calibration.",
+  "documents_checked": 6,
+  "python_examples_parse": 19,
+  "local_links_checked": 16,
+  "issues": [],
+  "checks": {
+    "carrier_reconciliation_residual": -5.551115123125783e-17,
+    "reference_k": 1.2280121379856417,
+    "regional_reference_mean": 166.66666666666663,
+    "reference_dhl_reproduced": true,
+    "half_life_blend": [
+      0.55,
+      0.44999999999999996
+    ],
+    "dirichlet_mean": [
+      0.5995302450435684,
+      0.20134154124241352,
+      0.19912821371401737,
+      0.0
+    ],
+    "dirichlet_mean_test_passed": true,
+    "morris_linear_effects_passed": true
+  },
+  "document_hashes": {
+    "docs\\superpowers\\plans\\2026-09-15-hagrid-01-baseline-core.md": "6b9695dbf3d37edc411eeb3ac91200751bf356c3246a40bab9d9601aa6f62141",
+    "docs\\superpowers\\plans\\2026-09-15-hagrid-02-daily-demand.md": "2a7b8d7b95e5861a9a2d82509072964b6ddafe3302557f6f296de963edda74a5",
+    "docs\\superpowers\\plans\\2026-09-15-hagrid-03-uncertainty.md": "b3e8e20f537f4bad45066cc3d16d9cda9f14e767bf1c2fd3c065f4471355ef97",
+    "docs\\superpowers\\plans\\2026-09-15-hagrid-plan-review.md": "ef4aa5cb8eb7dd1ab317e6f9f758a5fd8f50e169619fac676fe3000ccc18070e",
+    "docs\\superpowers\\plans\\2026-09-15-hagrid-roadmap.md": "fb5a6a9ee84f2f1d284431893a507a28086f336b446766c82a921922daae1144",
+    "docs\\superpowers\\specs\\2026-09-15-hagrid-baseline-design.md": "94c829e01c9bf0b7d459dc1283a746e451eff8ccec0abea5879d690f53cebc94"
+  },
+  "task_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "independent_review_status": {
+    "method": "previous material findings closed",
+    "technical": "previous material findings closed"
+  },
+  "latest_amendment": {
+    "topic": "Unified dashboard with run and stage navigation",
+    "review": "Primary-agent document consistency check; previous independent reviews predate this amendment.",
+    "implementation": "Planned, not implemented."
+  }
+}

@@ -1,0 +1,319 @@
+import hashlib
+import json
+
+import numpy as np
+import pandas as pd
+import pytest
+
+
+def test_source_classification_and_packaged_series_values():
+    """The published series preserves the historical anchors and labels projections."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    series = build_series(packaged_series_inputs(), list(range(2021, 2031)),
+                          volume_fit_policy="observed_only")
+    assert series["b2b"].set_index("year").loc[2021, "share"] == .23
+    volume = series["volume"].set_index("year")
+    assert volume.loc[2021, "value"] == 4.51e9
+    assert not volume.loc[volume.index.to_series().between(2024, 2028), "status"].eq("observed").any()
+    assert {"curve", "provenance"}.issubset(volume.columns)
+
+
+def test_volume_fit_policy_keeps_legacy_estimates_out_of_observed_only_primary_values():
+    """Only observed anchors may override the observed-only fitted primary series."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    inputs = packaged_series_inputs()
+    observed_only = build_series(inputs, list(range(2024, 2029)), volume_fit_policy="observed_only")["volume"]
+    legacy = build_series(inputs, list(range(2024, 2029)), volume_fit_policy="legacy_assumptions")["volume"]
+
+    assert observed_only["status"].eq("forecast").all()
+    assert not np.isclose(observed_only["value"], observed_only["legacy_value"]).any()
+    assert legacy["status"].eq("legacy_estimate").all()
+    assert np.allclose(legacy["value"], legacy["legacy_value"])
+
+
+def test_volume_logistic_matches_the_notebook_parameter_order():
+    """The candidate uses (maximum, growth_rate, midpoint), as notebook 02 does."""
+    from scipy.optimize import curve_fit
+
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    inputs = packaged_series_inputs()
+    anchors = pd.DataFrame(inputs["volume_inputs"]["anchors"])
+    observed = anchors.loc[anchors.status.eq("observed") & anchors.year.gt(2005)]
+    notebook_logistic = lambda x, maximum, growth_rate, midpoint: maximum / (1 + np.exp(-growth_rate * (x - midpoint)))
+    parameters = curve_fit(notebook_logistic, observed.year, observed.value,
+                           p0=[10e9, .1, 2015], maxfev=20_000)[0]
+    expected = notebook_logistic(np.array([2024, 2030]), *parameters)
+    volume = build_series(inputs, [2024, 2030], volume_fit_policy="observed_only")["volume"]
+
+    assert np.allclose(volume["logistic"].to_numpy(), expected)
+
+
+def test_b2b_interpolation_uses_the_relative_year_coordinate():
+    """Missing 2010 and 2011 lie between the 2009 and 2012 anchors."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    b2b = build_series(packaged_series_inputs(), [2010, 2011], volume_fit_policy="observed_only")["b2b"]
+    assert b2b["share"].tolist() == pytest.approx([.4566666667, .4433333333])
+    assert b2b["status"].eq("interpolated").all()
+
+
+def test_metadata_is_validated_and_anchor_rows_keep_their_specific_provenance():
+    """Constants either inherit valid metadata or retain their own source details."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    inputs = packaged_series_inputs()
+    series = build_series(inputs, [2021], volume_fit_policy="observed_only")
+    assert series["b2b"].loc[0, "source"] == "BIEK KEP-Studie 2022"
+    assert series["volume"].loc[0, "unit"] == "parcels/year"
+
+    del inputs["volume_inputs"]["source"]
+    with pytest.raises(ValueError, match="volume_inputs.*source"):
+        build_series(inputs, [2021], volume_fit_policy="observed_only")
+
+
+def test_market_series_is_a_nonnegative_simplex_each_year():
+    """The reconstructed carrier projection remains a usable probability distribution."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    market = build_series(packaged_series_inputs(), list(range(2014, 2031)),
+                          volume_fit_policy="observed_only")["market"]
+    assert (market["market_share"] >= 0).all()
+    assert np.allclose(market.groupby("year")["market_share"].sum().to_numpy(), 1.0)
+
+
+def test_market_projection_uses_normalized_semantics_and_carrier_specific_source_metadata():
+    """Market probabilities must not inherit raw percent/assumption labels as output facts."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    market = build_series(packaged_series_inputs(), [2024], volume_fit_policy="observed_only")["market"]
+    amazon = market.loc[market.carrier.eq("Amazon")].iloc[0]
+    carriers = market.loc[~market.carrier.eq("Amazon")]
+
+    assert amazon["unit"] == "share"
+    assert amazon["status"] == "derived_projection"
+    assert amazon["source_unit"] == "percent"
+    assert amazon["source_status"] == "estimated_midpoint_assumption"
+    assert amazon["source_reference"] == "Statista and Wirtschaftsdienst estimates cited in notebook 00 CELL 5"
+    assert carriers["unit"].eq("share").all()
+    assert carriers["status"].eq("derived_projection").all()
+    assert carriers["source_reference"].notna().all()
+    assert carriers["source_notebook_cell"].notna().all()
+    assert carriers["source_reference"].nunique() == 1
+
+
+def test_series_publishes_the_canonical_carrier_provider_and_weekly_contracts():
+    """Consumers receive named carrier fields and a complete weekly table, not positional aliases."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    series = build_series(packaged_series_inputs(), [2021, 2022], volume_fit_policy="observed_only")
+
+    assert {"year", "carrier", "market_share"}.issubset(series["market"].columns)
+    assert not {"provider", "share"}.intersection(series["market"].columns)
+    assert {"year", "carrier", "q_prior", "q_scale", "lower", "upper"}.issubset(
+        series["providers"].columns
+    )
+    assert series["providers"].duplicated(["year", "carrier"]).sum() == 0
+    assert series["weekly"].columns.tolist()[:2] == ["week", "weight"]
+    assert series["weekly"].week.tolist() == list(range(1, 53))
+    assert (series["weekly"].weight > 0).all()
+    assert series["weekly"].weight.mean() == pytest.approx(1.0)
+
+
+def test_raw_sources_normalize_all_52_iso_weeks_and_record_hash(tmp_path):
+    """Fresh source preparation derives the notebook profile without a historical output."""
+    from hagrid_demand.baseline.sources import prepare_sources
+
+    source = tmp_path / "Parcels19_20_21_inter.xlsx"
+    weekly = pd.DataFrame({
+        "week": list(range(1, 53)),
+        "2019": np.arange(1, 53),
+        "2020": np.arange(2, 54),
+        "2021": np.arange(3, 55),
+    })
+    weekly.to_excel(source, sheet_name="Tabelle1", index=False)
+    prepared = prepare_sources({"source_mode": "raw", "input_dir": str(tmp_path)}, tmp_path / "out")
+
+    profile = prepared["weekly_profile"]
+    assert profile["week"].tolist() == list(range(1, 53))
+    assert (profile["relative_volume"] > 0).all()
+    assert profile["relative_volume"].mean() == pytest.approx(1.0)
+    assert prepared["sources"]["weekly_source_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def test_missing_weekly_source_stops_fresh_run(tmp_path):
+    """Raw preparation never substitutes a stale weekly profile for a missing source."""
+    from hagrid_demand.baseline.sources import prepare_sources
+
+    with pytest.raises(FileNotFoundError, match="Parcels19_20_21_inter.xlsx"):
+        prepare_sources({"source_mode": "raw", "input_dir": str(tmp_path)}, tmp_path / "out")
+
+
+def test_foundation_reader_verifies_artifact_hashes_and_required_columns(tmp_path):
+    """Foundation mode reads a completed artifact, not an unverified path."""
+    from hagrid_demand.baseline.sources import read_foundation
+
+    sites = tmp_path / "sites.csv"
+    sites.write_text("site_id,recipient_type\na,private\n", encoding="utf-8")
+    manifest = {
+        "schema_version": 1, "status": "complete", "run_status": "complete",
+        "artifacts": {"sites.csv": {"relative_path": "sites.csv", "sha256": hashlib.sha256(sites.read_bytes()).hexdigest(),
+                                        "schema": ["site_id", "recipient_type"], "crs": None}},
+    }
+    (tmp_path / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (tmp_path / "run.json").write_text(json.dumps({
+        "run_id": "fixture", "status": "complete_with_calibration_blockers", "completed_stages": [
+            "ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard",
+        ],
+    }), encoding="utf-8")
+    manifest.update({"run_id": "fixture", "run_status": "complete_with_calibration_blockers"})
+    (tmp_path / "artifact_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    tables = read_foundation(tmp_path)
+    assert tables["sites.csv"].columns.tolist() == ["site_id", "recipient_type"]
+    run_state = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
+    run_state["completed_stages"] = ["ingest"]
+    (tmp_path / "run.json").write_text(json.dumps(run_state), encoding="utf-8")
+    with pytest.raises(ValueError, match="completed all expected producer stages"):
+        read_foundation(tmp_path)
+    run_state["completed_stages"] = ["ingest", "build_sites", "audit_observations", "link_candidates", "report", "dashboard"]
+    (tmp_path / "run.json").write_text(json.dumps(run_state), encoding="utf-8")
+    sites.write_text("site_id,recipient_type\nb,business\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="hash"):
+        read_foundation(tmp_path)
+
+
+def test_failed_volume_fit_is_explicit_instead_of_a_fallback_curve():
+    """Insufficient observed support must remain visible to callers."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    inputs = packaged_series_inputs()
+    inputs["volume_inputs"]["anchors"] = [{"year": 2023, "value": 4e9, "status": "observed"}]
+    volume = build_series(inputs, [2030], volume_fit_policy="observed_only")["volume"].iloc[0]
+    assert volume["status"] == "fit_failed"
+    assert np.isnan(volume["value"])
+    for model in ("linear", "logistic", "exponential"):
+        assert volume[f"{model}_fit_status"] == "failed"
+        assert volume[f"{model}_fit_error"] == "insufficient_support"
+
+
+def test_b2b_forecast_uses_the_notebook_relative_year_sigmoid():
+    """The bounded sigmoid keeps its 2009-relative independent variable."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    result = build_series(packaged_series_inputs(), [2024], volume_fit_policy="observed_only")["b2b"]
+    assert result.loc[0, "share"] == pytest.approx(0.2209639502)
+
+
+def test_market_normalizes_the_six_carriers_before_adding_amazon_like_notebook_00():
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    market = build_series(packaged_series_inputs(), [2021, 2025, 2030], volume_fit_policy="observed_only")["market"]
+    shares = market.set_index(["year", "carrier"]).market_share
+    # Values of parcel-demand-estimation/output/00_markedshare_with_amazon.csv (percent).
+    assert shares[(2021, "Amazon")] == pytest.approx(0.13900527, abs=2e-4)
+    assert shares[(2025, "Amazon")] == pytest.approx(0.18277914, abs=2e-4)
+    assert shares[(2030, "Amazon")] == pytest.approx(0.18334205, abs=2e-4)
+    assert shares[(2030, "DHL")] == pytest.approx(0.44195614, abs=2e-4)
+
+
+def test_provider_priors_follow_notebook_05_dynamic_bounds_and_hit_every_b2b_target():
+    from hagrid_demand.baseline.reference import reconcile_carriers
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = list(range(2021, 2051))
+    series = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only")
+    priors = series["providers"].set_index(["year", "carrier"])
+    # Notebook 05: lower_c(y) = round(base_lower_c * cur(y) / 0.45, 4); cur(2021) = 0.2667, cur(>=2025) = 0.20.
+    assert priors.loc[(2021, "DHL"), "lower"] == pytest.approx(0.1659)
+    assert priors.loc[(2021, "UPS"), "lower"] == pytest.approx(0.2963)
+    assert priors.loc[(2025, "DHL"), "lower"] == pytest.approx(0.1244)
+    assert priors.loc[(2030, "FedEx/TNT"), "lower"] == pytest.approx(0.3467)
+    assert priors.loc[(2021, "UPS"), "upper"] == pytest.approx(0.88)
+    # Corner priors reproduce the notebook 05 optimum (05_optimized_b2b_shares_by_year.csv).
+    assert priors.loc[(2021, "DHL"), "q_prior"] == pytest.approx(0.1659)
+    assert priors.loc[(2021, "FedEx/TNT"), "q_prior"] == pytest.approx(0.95)
+    assert priors.loc[(2021, "Amazon"), "q_prior"] == pytest.approx(0.01)
+    market = series["market"].set_index(["year", "carrier"]).market_share
+    assert priors.loc[(2021, "DHL"), "q_scale"] == pytest.approx(np.sqrt(0.1659 / market[(2021, "DHL")]))
+
+    for year in years:
+        rows = priors.loc[year]
+        m = market.loc[year].reindex(rows.index).to_numpy()
+        target = float(series["b2b"].set_index("year").share[year])
+        result = reconcile_carriers(m, rows.q_prior.to_numpy(), target, rows.lower.to_numpy(),
+                                    rows.upper.to_numpy(), rows.q_scale.to_numpy())
+        q = np.asarray(result["q"])
+        assert float(m @ q) == pytest.approx(target, abs=1e-9)
+        assert (q >= rows.lower.to_numpy() - 1e-12).all() and (q <= rows.upper.to_numpy() + 1e-12).all()
+
+
+def _scenario(policy="legacy_assumptions", curve="logistic", chain=2025, name="saettigung"):
+    return {"name": name, "policy": policy, "curve": curve, "chain_year": chain}
+
+
+def test_apply_volume_scenario_chains_at_basis_level():
+    """Scenario years follow the chosen fit curve relative to the basis level of the chain year."""
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = list(range(2021, 2036))
+    inputs = packaged_series_inputs()
+    basis = build_series(inputs, years, volume_fit_policy="observed_only")["volume"].set_index("year")
+    out = build_series(inputs, years, volume_fit_policy="observed_only", volume_scenario=_scenario())["volume"].set_index("year")
+    assert out.loc[2025, "value"] == pytest.approx(basis.loc[2025, "value"])
+    policy = build_series(inputs, years, volume_fit_policy="legacy_assumptions")["volume"].set_index("year")
+    expected = basis.loc[2025, "value"] * policy.loc[2035, "logistic"] / policy.loc[2025, "logistic"]
+    assert out.loc[2035, "value"] == pytest.approx(expected)
+    assert out.loc[2035, "status"] == "scenario_projection" and out.loc[2035, "curve"] == "legacy_assumptions/logistic"
+    assert out.loc[2024, "status"] == basis.loc[2024, "status"] and out.loc[2024, "value"] == basis.loc[2024, "value"]
+    assert (out.scenario == "saettigung").all()
+
+
+def test_build_series_without_scenario_is_unchanged():
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    years = [2021, 2025]
+    first = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only")["volume"]
+    second = build_series(packaged_series_inputs(), years, volume_fit_policy="observed_only", volume_scenario=None)["volume"]
+    pd.testing.assert_frame_equal(first, second)
+    assert "scenario" not in first.columns
+
+
+@pytest.mark.parametrize("bad", [
+    {"name": "x", "policy": "other", "curve": "linear", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "spline", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "linear", "chain_year": 2040},
+    {"name": "", "policy": "observed_only", "curve": "linear", "chain_year": 2025},
+    {"name": "x", "policy": "observed_only", "curve": "linear", "chain_year": 2025.0},
+])
+def test_apply_volume_scenario_rejects_bad_blocks(bad):
+    from hagrid_demand.baseline.series import build_series
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    with pytest.raises(ValueError):
+        build_series(packaged_series_inputs(), [2021, 2025, 2030], volume_fit_policy="observed_only", volume_scenario=bad)
+
+
+def test_apply_volume_scenario_rejects_nonfinite_curve():
+    from hagrid_demand.baseline.series import apply_volume_scenario
+
+    basis = pd.DataFrame({"year": [2021, 2025, 2030], "value": [4.5e9, 4.4e9, 5e9], "status": "observed_anchor", "curve": "linear"})
+    policy = basis.assign(logistic=[4e9, np.nan, 5e9])
+    with pytest.raises(ValueError, match="logistic"):
+        apply_volume_scenario(basis, policy, _scenario())
