@@ -420,12 +420,13 @@ def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_f
     def build(work):
         (work / "result.json").write_text('{"ok": true}', encoding="utf-8")
 
-    original_copy2 = stage_cache.shutil.copy2
+    original_copy2, original_link = stage_cache.shutil.copy2, stage_cache.os.link
 
     def broken_copy(*args, **kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr(stage_cache.shutil, "copy2", broken_copy)
+    monkeypatch.setattr(stage_cache.os, "link", broken_copy)  # no hard link either: the copy fallback must fail visibly
     with pytest.raises(OSError, match="disk full"):
         stage_cache.resolve_stage(run, "reference", "fingerprint", cache_root=cache_root,
                                   dependencies={"source": "abc"}, build=build, validate=lambda work: None)
@@ -433,6 +434,7 @@ def test_resolve_stage_copies_verified_artifacts_into_the_run_and_retries_copy_f
     assert not list(run.glob(".reference.run.tmp-*"))
 
     monkeypatch.setattr(stage_cache.shutil, "copy2", original_copy2)
+    monkeypatch.setattr(stage_cache.os, "link", original_link)
     stage = stage_cache.resolve_stage(run, "reference", "fingerprint", cache_root=cache_root,
                                       dependencies={"source": "abc"}, build=build, validate=lambda work: None)
     copied = run / "reference" / "result.json"
@@ -544,3 +546,14 @@ def test_baseline_config_validates_volume_scenario(tmp_path):
     config.write_text(json.dumps(base), encoding="utf-8")
     with pytest.raises(ValueError, match="chain_year"):
         load_baseline_config(config)
+
+
+def test_baseline_config_sorts_and_dedupes_years(tmp_path):
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    (tmp_path / "inputs").mkdir()
+    config = tmp_path / "baseline.json"
+    config.write_text(json.dumps({"schema_version": 1, "rng_version": 1, "seed": 42, "input_dir": "inputs", "output_dir": "runs",
+                                  "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313,
+                                  "output_scope": "daily", "years": [2030, 2025, 2030]}), encoding="utf-8")
+    assert load_baseline_config(config)["years"] == [2025, 2030]

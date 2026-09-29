@@ -236,7 +236,7 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
         <div class="fig-head"><div><h3>Out-of-home share of B2C parcels by carrier</h3><p class="sub">Solid: simulated · dashed: target trend</p></div></div>
         <div class="legend" id="lg-ooh"></div>
         <div class="chart" id="ch-ooh"></div>
-        <p class="cap">Exact for single-carrier points; parcels in shared boxes are split among their carriers in proportion to each carrier's target out-of-home volume.</p>
+        <p class="cap">Exact per carrier where the run stores its pickup-point rows per carrier (point_daily); older runs split shared boxes among their carriers in proportion to each carrier's target out-of-home volume.</p>
       </figure>
     </div>
     <details class="tv"><summary>Table: channels and out-of-home shares</summary><div id="tv-channels"></div></details>
@@ -471,6 +471,8 @@ function lines(box, o) {
   return F;
 }
 
+function clipLabel(text, max) { return text.length > max ? text.slice(0, max - 1).replace(/[\s·,-]+$/, '') + '…' : text; }
+
 /* Horizontal stacked bars from a zero line (negative parts to the left), value at the bar end. */
 function hbars(box, rows, o) {
   const W = Math.max(240, Math.floor(box.clientWidth)), narrow = W < 460, lab = narrow ? 118 : 172, row = 24, H = Math.max(60, rows.length * row + 30);
@@ -481,7 +483,7 @@ function hbars(box, rows, o) {
   s('line', {x1: zero, x2: zero, y1: 14, y2: H - 10, class: 'ax'}, v);
   rows.forEach((r, k) => {
     const cy = 20 + k * row, bh = 14; let up = 0, down = 0;
-    s('text', {x: lab - 4, y: cy + 4, 'text-anchor': 'end', class: r.on ? 'lbl-b' : 'lbl', text: r.label}, v);
+    s('text', {x: lab - 4, y: cy + 4, 'text-anchor': 'end', class: r.on ? 'lbl-b' : 'lbl', text: clipLabel(r.label, narrow ? 16 : 25)}, v);
     const shown = r.parts.filter(p => p.value > 0);
     r.parts.forEach(p => { if (!p.value) return; const a = p.value > 0 ? up : down + p.value, b = p.value > 0 ? up + p.value : down; if (p.value > 0) up += p.value; else down += p.value;
       const gap = p.value > 0 && shown.indexOf(p) > 0 ? 2 : 0, x1 = x(a) + gap, x2 = x(b);
@@ -581,7 +583,7 @@ function renderGrowth() {
   order.forEach(n => { const on = n === sel; s('path', {d: linePath(R, reg[n]), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, R.v);
     reg[n].forEach((v, i) => { if (ok(v) && (YEARS[i] === state.year || i === reg[n].length - 1)) s('circle', {cx: R.x(YEARS[i]), cy: R.y(v), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, R.v); }); });
   endLabels(R, NAMES.map(n => { const i = reg[n].map(ok).lastIndexOf(true), g = scenario(n).regional; if (i < 0) return null;
-    return {y: R.y(reg[n][i]), text: rnarrow ? short(reg[n][i]) : label(n) + ' · ' + short(reg[n][i]) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
+    return {y: R.y(reg[n][i]), text: rnarrow ? label(n) + ' ' + short(reg[n][i]) : label(n) + ' · ' + short(reg[n][i]) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
   crosshair(R, YEARS, (t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
   // finding and table
   const gs = SCEN.filter(item => item.national);

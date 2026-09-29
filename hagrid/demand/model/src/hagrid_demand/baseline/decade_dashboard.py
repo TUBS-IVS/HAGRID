@@ -123,14 +123,26 @@ def _occupancy(path: Path, days: pd.DataFrame) -> pd.DataFrame | None:
     return totals.join(service, how="left").reset_index()
 
 
-def _ooh_inputs(config: dict) -> dict | None:
-    """Resolved out-of-home inputs of the run (package defaults merged with its config block)."""
+def _ooh_inputs(path: Path, config: dict) -> dict | None:
+    """The out-of-home inputs the run used: its own ``out_of_home_inputs.json``; older runs fall back to the package
+    defaults merged with their config block (which drift when the packaged defaults change)."""
+    stored = _json_file(path / "out_of_home_inputs.json")
+    if isinstance(stored, dict) and stored:
+        return stored
     from .out_of_home import resolve_out_of_home
 
     try:
         return resolve_out_of_home(config.get("out_of_home"))
     except (ValueError, TypeError, KeyError):
         return None
+
+
+def _point_daily_by_carrier(frame: pd.DataFrame | None, year: int) -> dict[str, float] | None:
+    """Exact B2C parcels stored per carrier in *year* from the pickup-point rows of the stop store (None without them)."""
+    if frame is None or frame.empty:
+        return None
+    rows = frame.loc[pd.to_datetime(frame.date).dt.year.eq(int(year))]
+    return {carrier: float(rows[f"{short}_b2c"].sum()) for carrier, (_, short) in CARRIER_FIELDS.items() if f"{short}_b2c" in rows}
 
 
 def _events(config: dict, year: int) -> list[dict]:
@@ -171,7 +183,8 @@ def _load_run(path: Path) -> dict | None:
             "plz": _plz_sums(store / "plz_daily.parquet"), "register": register, "yearly": yearly,
             "occupancy": occupancy, "stored": stored,
             "profiles": _parquet(path / "carrier_profiles.parquet"), "projection": _parquet(path / "postal_projection.parquet"),
-            "volume": _parquet(path / "series" / "volume.parquet"), "ooh": _ooh_inputs(config)}
+            "volume": _parquet(path / "series" / "volume.parquet"), "ooh": _ooh_inputs(path, config),
+            "point_daily": _parquet(store / "point_daily.parquet") if (store / "point_daily.parquet").is_file() else None}
 
 
 # ---------------------------------------------------------------- small helpers
@@ -417,7 +430,9 @@ def _pickup_kpis(run: dict, year: int, block: dict, carriers: list[str], points:
     result["ooh_share"] = None
     if stored is not None and run["plz"] is not None:
         b2c = {carrier: block["carriers"][carrier]["b2c"] for carrier in carriers}
-        per_carrier = _carrier_ooh(stored, b2c, targets)
+        exact = _point_daily_by_carrier(run.get("point_daily"), year)
+        per_carrier = exact if exact is not None else _carrier_ooh(stored, b2c, targets)
+        result["ooh_share_exact"] = exact is not None
         result["ooh_share"] = {carrier: _ratio(per_carrier.get(carrier, 0.), b2c[carrier]) for carrier in carriers}
     result["network"] = None
     if points is not None:

@@ -42,3 +42,15 @@ def test_publish_run_artifacts_rejects_a_changed_cache_file(tmp_path):
     (cache / "matsim" / "day-0.bin").write_bytes(b"changed")
     with pytest.raises(ValueError, match="changed before copy"):
         _publish_run_artifacts(tmp_path / "run", stage_name="daily", cache_path=cache, artifacts=artifacts)
+
+
+def test_publish_run_artifacts_hard_links_the_cache_files(tmp_path):
+    import os
+
+    from hagrid_demand.common.cache import _publish_run_artifacts
+
+    cache, artifacts = _cache(tmp_path, files=3)
+    _publish_run_artifacts(tmp_path / "run", stage_name="daily", cache_path=cache, artifacts=artifacts)
+    published = tmp_path / "run" / "daily" / "matsim" / "day-1.bin"
+    assert published.read_bytes() == (cache / "matsim" / "day-1.bin").read_bytes()
+    assert os.path.samefile(published, cache / "matsim" / "day-1.bin")  # one copy on disk

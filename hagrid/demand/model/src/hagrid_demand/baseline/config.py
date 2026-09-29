@@ -160,7 +160,7 @@ def load_baseline_config(path: Path) -> dict:
     if "years" in config and (not isinstance(config["years"], list) or not config["years"]
                                or any(type(year) is not int or year < 2021 for year in config["years"])):
         raise ValueError("years must contain integer years from 2021")
-    config.setdefault("years", [config["reference_year"]])
+    config["years"] = sorted(set(config["years"])) if "years" in config else [config["reference_year"]]
     if "volume_scenario" in config:
         from hagrid_demand.baseline.series import validate_volume_scenario
 

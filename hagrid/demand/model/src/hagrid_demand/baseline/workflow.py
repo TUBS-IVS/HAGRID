@@ -15,7 +15,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from hagrid_demand.common.cache import dependency_snapshot, resolve_stage, stage_key
+from hagrid_demand.common.cache import _link_or_copy, dependency_snapshot, resolve_stage, stage_key
 from hagrid_demand.common.contracts import verified_scope_id
 from hagrid_demand.common.provenance import canonical_json, resource_hash
 from hagrid_demand.common.rng import named_rng
@@ -387,6 +387,21 @@ def _draw_indices(dates: pd.DatetimeIndex, selected: set | None, *, has_writer: 
     return np.flatnonzero(pd.DatetimeIndex(dates).normalize().isin(list(selected)))
 
 
+def _check_preconditions(config: dict) -> None:
+    """Fail before the expensive stages when a multi-year run with network growth cannot succeed."""
+    ooh = resolve_out_of_home(config.get("out_of_home"))
+    if ooh is None or len(config["years"]) < 2:
+        return
+    growth = ooh.get("network_growth") or {}
+    if not growth.get("enabled"):
+        return
+    if not config.get("osm_points"):
+        raise ValueError("network_growth requires osm_points (the retail POIs that host new stations)")
+    if int(growth.get("reference_year", 0)) not in config["years"] and \
+            (config.get("regional_level") or {}).get("mode") == "external_annual_series":
+        raise ValueError("network_growth with external_annual_series needs the reference year among the run years")
+
+
 def _daily_code() -> dict:
     """Code and packaged inputs whose content keys the daily stage cache."""
     here = Path(__file__)
@@ -465,7 +480,7 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             .to_parquet(output / "out_of_home_points.parquet", index=False)
         population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
         status["out_of_home"].update({"delivered": {}, "b2c_delivered": {}, "overflow_home": 0})
-        occupancy_rows: list[pd.DataFrame] = []
+        _json(output / "out_of_home_inputs.json", ooh)  # the resolved inputs the run used (dashboards read them back)
         # Per point: first year it takes parcels, compartments after its latest planned year (0 = not sized yet) and
         # the value the points file shows; the network register gets one row per point and active year.
         growth_cfg, growth_status = ooh["network_growth"], status["out_of_home"]["network_growth"]
@@ -494,7 +509,11 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         status["annual_store"] = True
         if export_stops is not None:
             shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
-    plans = {}
+    occupancy_out = None
+    if writer is not None and ooh is not None:
+        from .annual import ParquetAppender
+        occupancy_out = ParquetAppender(writer.directory / "locker_occupancy.parquet")  # one row group per day
+    plans, year_days, points_sized = {}, {}, []
 
     def route(year: int, day: int, date: pd.Timestamp, segment_days: dict, days: int) -> dict:
         item = segment_days.get("private")
@@ -512,13 +531,25 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                                      year, days, lambda carrier: named_rng(int(config["seed"]), year=year, carrier=carrier, channel="ooh-day"),
                                      carrier_shares=shares, previous_compartments=previous)
             actives[year] = active
+            previous_year = max((other for other in plans if other < year), default=None)
+            if previous_year is not None:
+                # the stations of the previous year come first in the register: their parcels stay inside over New Year
+                prefix = len(actives[previous_year])
+                if not np.array_equal(actives[previous_year], active[:prefix]):
+                    raise ValueError("pickup stations must keep their register order across years")
+                plans[year].queue.carry_from(plans[previous_year].queue, year_days[previous_year] - plans[previous_year].queue.day, prefix)
+                del plans[previous_year]  # one routing plan in memory at a time
+            year_days[year] = days
             sized_last[active] = plans[year].queue.compartments
             compartments_now[active] = plans[year].queue.compartments
-            sized = gpd.read_parquet(output / "out_of_home_points.parquet")
-            sized["compartments"] = compartments_now
-            sized.to_parquet(output / "out_of_home_points.parquet", index=False)
-            if writer is not None:
-                shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
+            if not points_sized:
+                # the points file keeps the sizes of the first simulated year; the network register has every year's
+                sized = gpd.read_parquet(output / "out_of_home_points.parquet")
+                sized["compartments"] = compartments_now
+                sized.to_parquet(output / "out_of_home_points.parquet", index=False)
+                if writer is not None:
+                    shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
+                points_sized.append(True)
             status["out_of_home"]["target_share"] = {carrier: round(share, 5) for carrier, share in plans[year].shares.items()}
             network_rows.append(register.iloc[active].assign(year=year, compartments=compartments_now[active])[_NETWORK_COLUMNS])
             entries = growth_status["years"].setdefault(str(year), {})
@@ -527,8 +558,10 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         routed, per_carrier, overflow, occupancy = apply_plan(item, plans[year], day, named_rng(int(config["seed"]), year=year,
                                                                                                 date=date.date().isoformat(), channel="ooh-divert"))
         # plan positions -> stable stop indices of the active stations
-        occupancy_rows.append(occupancy.assign(date=date.normalize(),
-                                               stop_index=extra.stop_index.to_numpy()[actives[year][occupancy.stop_index.to_numpy()]]))
+        if occupancy_out is not None:
+            occupancy_out.append(occupancy.assign(date=date.normalize(),
+                                                  stop_index=extra.stop_index.to_numpy()[actives[year][occupancy.stop_index.to_numpy()]])
+                                 [["date", "stop_index", "compartments", "occupied", "stored", "rejected", "occupied_next_morning"]])
         totals = status["out_of_home"]
         for carrier, parcels, delivered in zip(item.carriers, per_carrier, item.counts.sum(axis=0)):
             totals["delivered"][carrier] = totals["delivered"].get(carrier, 0) + int(parcels)
@@ -557,11 +590,10 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
                         yield delivery_frame(date, segment_days, expected, int(indices[position]), year, 0, 0)
             completed = True
         finally:
+            if occupancy_out is not None:
+                occupancy_out.close()
             if writer is not None:
                 if completed:
-                    if ooh is not None and occupancy_rows:
-                        pd.concat(occupancy_rows, ignore_index=True)[["date", "stop_index", "compartments", "occupied", "stored", "rejected", "occupied_next_morning"]] \
-                            .to_parquet(writer.directory / "locker_occupancy.parquet", index=False)
                     if ooh is not None and network_rows:
                         _write_network_register(network_rows, output, writer.directory)
                     writer.close({"years": config["years"], "temporal": status})
@@ -769,7 +801,7 @@ def _copy_public(run: Path, stage: str, name: str) -> None:
     source = run / stage / name
     target = run / name
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
-    shutil.copy2(source, temporary)
+    _link_or_copy(source, temporary)
     os.replace(temporary, target)
 
 
@@ -828,6 +860,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
     if not _RUN_ID.fullmatch(run_id):
         raise ValueError("Invalid run_id")
     config = load_baseline_config(Path(config_path))
+    _check_preconditions(config)
     if config["reference_year"] != 2021:
         raise ValueError("The reference milestone requires reference_year=2021")
     if config.get("dhl_exclude_above") != 1000:
@@ -960,15 +993,17 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                 _copy_public(run, "daily", "out_of_home_points.parquet")
             if (run / "daily" / "out_of_home_network.parquet").is_file():
                 _copy_public(run, "daily", "out_of_home_network.parquet")
+            if (run / "daily" / "out_of_home_inputs.json").is_file():
+                _copy_public(run, "daily", "out_of_home_inputs.json")
             if (run / "daily" / "annual").is_dir():
                 if (run / "annual").exists():
                     shutil.rmtree(run / "annual")
-                shutil.copytree(run / "daily" / "annual", run / "annual")
+                shutil.copytree(run / "daily" / "annual", run / "annual", copy_function=_link_or_copy)
             if _matsim_export_enabled(config):
                 target = run / "matsim"
                 if target.exists():
                     shutil.rmtree(target)
-                shutil.copytree(run / "daily" / "matsim", target)
+                shutil.copytree(run / "daily" / "matsim", target, copy_function=_link_or_copy)
             state["completed_stages"].extend(["calendar", "daily"])
         report_dependencies = {"reference": run / "reference", "run_id": run_id, "baseline_fingerprint": baseline_fingerprint}
         report_snapshot = dependency_snapshot(report_dependencies)

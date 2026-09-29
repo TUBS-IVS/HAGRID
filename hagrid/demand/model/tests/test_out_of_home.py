@@ -417,3 +417,20 @@ def test_single_year_run_keeps_the_reference_network(ooh_run):
     growth = json.loads((ooh_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]["network_growth"]
     assert growth["growth_years"] == [] and growth["reference_points"] == {"locker:DHL": 1, "shared_locker:DPD|GLS|Hermes|UPS": 1}
     assert growth["years"]["2025"]["locker:DHL"] == {"points": 1, "compartments": 76}
+
+
+def test_locker_queue_carries_parcels_across_years():
+    import numpy as np
+
+    from hagrid_demand.baseline.out_of_home import LockerQueue
+
+    profiles = np.array([[.6, .2, .2], [.6, .2, .2], [.6, .2, .2]])
+    previous = LockerQueue(np.array([10, 10, 10]), profiles)
+    previous.free(364)
+    previous.pending[:] = [[5, 3, 2], [0, 1, 0], [4, 4, 4]]
+    following = LockerQueue(np.array([10, 10, 10, 10]), np.vstack([profiles, profiles[:1]]))
+    following.carry_from(previous, gap_days=1, prefix=2)  # the third old station is not part of the new prefix
+    assert following.pending.tolist() == [[3, 2, 0], [1, 0, 0], [0, 0, 0], [0, 0, 0]]
+    assert following.free(0).tolist() == [5, 9, 10, 10]
+    following.free(3)
+    assert following.free(3).tolist() == [10, 10, 10, 10]
