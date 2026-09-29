@@ -754,6 +754,12 @@ def test_land_use_run_writes_its_registers(land_use_run):
     assert stops.stop_index.min() >= 1_000_000 and len(stops) == len(sites)
     status = json.loads((land_use_run / "daily_status.json").read_text(encoding="utf-8"))["land_use"]
     assert status["variant"] == "prognose" and status["new_sites"] == {"2026": len(sites)}
+    ages = pd.read_parquet(land_use_run / "land_use_ages.parquet")
+    assert list(ages.columns) == ["year", "band", "age_from", "persons", "propensity"] and set(ages.year) == {2025, 2026}
+    assert ages.loc[ages.year.eq(2025), "persons"].sum() == pytest.approx(4.)       # the four persons of the fixture
+    developments = pd.read_parquet(land_use_run / "land_use_developments.parquet")
+    assert list(developments.columns) == ["year", "name", "district_id", "residents_model"]
+    assert developments.set_index("year").residents_model[2025] == 0. and developments.set_index("year").residents_model[2026] > 0.
 
 
 def test_land_use_base_year_equals_the_run_without_land_use(land_use_run, growth_run):

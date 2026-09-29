@@ -271,6 +271,30 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
     <details class="tv"><summary>Table: all postcode areas</summary><div id="tv-hot"></div></details>
   </section>
 
+  <section class="section" id="structure" aria-labelledby="h-structure">
+    <h2 id="h-structure">Structural change</h2>
+    <p class="finding" id="f-structure"></p>
+    <div class="map-wrap">
+      <figure class="panel">
+        <div class="fig-head"><div><h3>Forecast districts</h3><p class="sub" id="s-structure"></p></div>
+          <div class="map-tools"><div class="seg small" id="ctl-structure" role="group" aria-label="District indicator"></div></div></div>
+        <div class="chart" id="ch-structure"></div>
+        <div class="scale" id="sc-structure"></div>
+        <p class="cap">Change against the first year. Persons follow the official population forecast 2025–2035 per forecast district (Region Hannover), propensity the age mix with the cohort effect, employees the branch growth. New homes (circles) and new firms (squares) appear in the year they open.</p>
+      </figure>
+      <aside class="card" id="district-card" aria-live="polite"></aside>
+    </div>
+    <div class="grid">
+      <figure class="panel s6"><div class="fig-head"><div><h3>Model against forecast</h3><p class="sub" id="s-structure-bars"></p></div></div>
+        <div class="legend" id="lg-structure-bars"></div><div class="chart" id="ch-structure-bars"></div>
+        <p class="cap">Model persons of each district (existing homes plus new residents) against the forecast, both relative to the first year; top 15 by change.</p></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Online propensity by age</h3><p class="sub" id="s-structure-age"></p></div></div>
+        <div class="legend" id="lg-structure-age"></div><div class="chart" id="ch-structure-age"></div>
+        <p class="cap">Share of persons who order online by age band (Destatis 2025, 75+ assumed); with the cohort effect people keep the propensity of their younger selves. Bars: persons per band.</p></figure>
+    </div>
+    <details class="tv"><summary>Table: development areas</summary><div id="tv-structure"></div></details>
+  </section>
+
   <section class="section" id="network" aria-labelledby="h-net">
     <h2 id="h-net">The pickup network</h2>
     <p class="finding" id="f-net"></p>
@@ -845,9 +869,88 @@ function renderMethod() {
   items.push(['Channels:', 'out-of-home parcels are the parcels stored at a point; home deliveries are all other parcels. On the map and in the hotspots they count at the point’s postcode. Per carrier the out-of-home share is exact for single-carrier points; shared boxes split their parcels by the carriers’ target out-of-home volume.']);
   items.push(['Busiest days:', 'a peak between 1 and 24 December falls in the pre-Christmas season' + (t.christmas_pull_forward_days ? ' (orders of 24–26 December ship in the ' + t.christmas_pull_forward_days + ' days before)' : '') + '; a peak up to a week after a public holiday carries the holiday’s orders, which ship over the next ' + (t.holiday_spread_days || 1) + ' shipping days; otherwise it reflects the season and the weekday pattern.']);
   if ((t.events || []).length) items.push(['Events:', t.events.map(e => e.name + ' (' + (e.carriers === 'all' ? 'all carriers' : e.carriers.join('/')) + ', orders ×' + dec(e.uplift, 2) + ')').join(', ') + '; the calendar marks their shipping days.']);
+  const L = ((D.structure || {})[state.scenario] || {}).meta;
+  if (L && L.sources) items.push(['Land use:', 'variant ' + L.variant + ', base year ' + L.base_year + ', cohort effect ' + dec(L.cohort_shift, 1) + ', new firms take ' + pct(L.new_firm_share, 0) + ' of the employment growth. Sources: ' + L.sources.population + '; ' + L.sources.propensity + '; ' + L.sources.firms + '; ' + L.sources.developments + '.' + ((L.clamped || []).length ? ' ' + L.clamped.length + ' district-years lost all existing homes to their development areas (clamped).' : '')]);
   if ((a.texts || []).length) items.push(['Run assumptions:', a.texts.join(' ')]);
   items.push(['Provenance:', SCEN.map(item => item.label + ' = run ' + item.run_id).join(', ') + '; generated ' + String(M.generated_at).replace('T', ' ').replace('+00:00', ' UTC') + '.']);
   $('method-list').replaceChildren(...items.map(it => h('li', null, h('b', {text: it[0]}), ' ' + it[1])));
+}
+
+/* ---------- #structure ---------- */
+const STRUCTMODE = {persons: 'Persons vs first year', propensity: 'Online propensity vs first year', employees: 'Employees vs first year'};
+state.structure = state.structure || 'persons';
+function structureValues(S, yr) {
+  const key = {persons: 'population_index', propensity: 'propensity_index', employees: 'employees_index'}[state.structure];
+  const V = S.districts[key] || {}; return V[yr] || null;
+}
+function districtCard(S, i, yr) {
+  const el = $('district-card'); el.replaceChildren();
+  const d = S.districts, pick = (key, y) => ((d[key] || {})[y] || [])[i];
+  if (i == null) { el.append(h('div', {class: 'code', text: 'Region'}), h('div', {class: 'name', text: d.ids.length + ' forecast districts · variant ' + (S.meta.variant || '–')}),
+    h('p', {class: 'note', text: 'Hover over a district for its profile.'})); return; }
+  el.append(h('div', {class: 'code', text: d.ids[i]}), h('div', {class: 'name', text: d.names[i] + ' · ' + (d.kinds[i] === 'city' ? 'city district' : 'municipality')}),
+    h('dl', null, [['Persons (model) ' + yr, int(pick('persons_model', yr))], ['Persons vs ' + Y0, signed(pick('population_index', yr) - 1)],
+      ['Forecast vs ' + Y0, signed(pick('forecast_index', yr) - 1)], ['Online propensity', signed(pick('propensity_index', yr) - 1)],
+      ['Employees vs ' + Y0, signed(pick('employees_index', yr) - 1)]].map(([k, v]) => h('div', null, h('dt', {text: k}), h('dd', {text: v})))));
+}
+function renderStructure() {
+  const n = state.scenario, yr = state.year, S = (D.structure || {})[n], box = $('ch-structure');
+  const ctl = $('ctl-structure');
+  if (!ctl.childElementCount) Object.entries(STRUCTMODE).forEach(([key, text]) => {
+    const b = h('button', {type: 'button', text: text.split(' ')[0] === 'Online' ? 'Propensity' : text.split(' ')[0], 'aria-pressed': String(state.structure === key)});
+    b.addEventListener('click', () => { state.structure = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderStructure(); }); ctl.appendChild(b); });
+  if (!S) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use dynamics (land_use switched off).'}));
+    ['ch-structure-bars', 'ch-structure-age', 'tv-structure', 'sc-structure', 'district-card'].forEach(id => $(id).replaceChildren()); $('f-structure').textContent = ''; return; }
+  const values = structureValues(S, yr) || [], feats = S.districts.geo ? S.districts.geo.features : [];
+  const W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Map of the forecast districts'); const changes = values.map(x => ok(x) ? x - 1 : null);
+  const pos = changes.filter(x => ok(x) && x > .002), br = breaks(pos, 4);
+  const color = x => !ok(x) ? 'var(--surface-3)' : x < -.02 ? 'var(--neg2)' : x < -.002 ? 'var(--neg1)' : x <= .002 ? 'var(--mid)' : 'var(--q' + (cls(x, br) + 3) + ')';
+  feats.forEach(f => { const i = S.districts.ids.indexOf(f.properties.id); if (i < 0) return; const x = changes[i];
+    const path = s('path', {d: pathOf(f.geometry, pr), class: 'plz', fill: color(x), tabindex: 0, 'aria-label': S.districts.names[i] + ': ' + signed(x)}, v);
+    hover(path, t => { t.append(...tH(S.districts.names[i], label(n) + ' · ' + yr)); t.appendChild(tR(signed(x), STRUCTMODE[state.structure])); });
+    path.addEventListener('pointerenter', () => districtCard(S, i, yr)); path.addEventListener('pointerleave', () => districtCard(S, null, yr)); });
+  const T = S.sites;
+  if (T) { const layer = s('g', {'aria-label': 'New sites'}, v);
+    T.ids.forEach((id, i) => { if (T.year_opened[i] > yr || !ok(T.lon[i])) return; const q = pr.f(T.lon[i], T.lat[i]), isNew = T.year_opened[i] === yr && yr > Y0;
+      const kind = T.segment[i] === 'business' ? 'shared_locker' : 'locker', r = T.segment[i] === 'business' ? 3.2 : 2.2;
+      if (isNew) { const g = s('g', {class: 'pulse'}, layer); pointShape(kind, q[0], q[1], r + 2, {fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5}, g); }
+      const mark = pointShape(kind, q[0], q[1], r, {class: 'pt', fill: T.segment[i] === 'business' ? 'var(--seg-b2b)' : 'var(--seg-b2c)', tabindex: 0,
+        'aria-label': (T.segment[i] === 'business' ? 'New firm' : 'New home, ' + (T.area[i] || '')) + ', opened ' + T.year_opened[i]}, layer);
+      hover(mark, t => { t.append(...tH(T.segment[i] === 'business' ? 'New firm' : 'New home · ' + (T.area[i] || ''), 'opened ' + T.year_opened[i]));
+        t.appendChild(tR(dec(T.size[i], 1), T.segment[i] === 'business' ? 'employees' : 'residents (model)')); }); }); }
+  binLegend($('sc-structure'), STRUCTMODE[state.structure] + ':', [{color: 'var(--neg2)', text: '< −2 %'}, {color: 'var(--neg1)', text: '−2 to 0 %'}, {color: 'var(--mid)', text: '± 0.2 %'}]
+    .concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? '> 0 %' : 'from ' + signed(b)}))));
+  const opened = T ? T.year_opened.filter(y => y <= yr).length : 0;
+  $('s-structure').textContent = label(n) + ' · ' + yr + ' · variant ' + (S.meta.variant || '–') + (T ? ' · ' + int(opened) + ' new sites' : '');
+  districtCard(S, null, yr);
+  // model against forecast
+  const P = S.districts.population_index[yr] || [], F = S.districts.forecast_index[yr] || [], pm = S.districts.persons_model[yr] || [], pm0 = S.districts.persons_model[Y0] || [];
+  const model = pm.map((x, i) => ok(x) && ok(pm0[i]) && pm0[i] > 0 ? x / pm0[i] - 1 : null);
+  const rows = S.districts.ids.map((id, i) => ({i, label: S.districts.names[i], model: model[i], forecast: ok(F[i]) ? F[i] - 1 : null})).filter(r => ok(r.model))
+    .sort((a, b) => Math.abs(b.model) - Math.abs(a.model)).slice(0, 15);
+  legend($('lg-structure-bars'), [{color: 'var(--seg-b2c)', label: 'model persons'}]);
+  $('s-structure-bars').textContent = label(n) + ' · ' + Y0 + '→' + yr;
+  hbars($('ch-structure-bars'), yr === Y0 ? [] : rows.map(r => ({r, label: r.label, on: false, text: signed(r.model) + ' (forecast ' + signed(r.forecast) + ')',
+    parts: [{value: r.model * 100, color: 'var(--seg-b2c)'}]})), {label: 'Districts by change in model persons', empty: 'Move the year slider past ' + Y0 + '.',
+    tip: (t, row) => { t.append(...tH(row.r.label, Y0 + '→' + yr)); t.appendChild(tR(signed(row.r.model), 'model persons')); t.appendChild(tR(signed(row.r.forecast), 'forecast')); }});
+  // propensity by age
+  const A = S.age, ab = $('ch-structure-age');
+  if (A) { const Wa = Math.max(260, ab.clientWidth), Ha = 240, m = {l: 44, r: 12, t: 12, b: 34}, nb = A.bands.length, va = root(ab, Wa, Ha, 'Online propensity and persons by age band');
+    const bx = k => m.l + (Wa - m.l - m.r) * (k + .5) / nb, bw = (Wa - m.l - m.r) / nb * .7, py = p => m.t + (Ha - m.t - m.b) * (1 - p);
+    const persons = A.persons[yr] || [], maxP = Math.max(1, ...(A.persons[Y0] || []), ...persons);
+    persons.forEach((x, k) => { const hh = (Ha - m.t - m.b) * x / maxP; s('rect', {x: bx(k) - bw / 2, y: Ha - m.b - hh, width: bw, height: hh, fill: 'var(--surface-3)'}, va); });
+    [0, .25, .5, .75, 1].forEach(t => { s('line', {x1: m.l, x2: Wa - m.r, y1: py(t), y2: py(t), class: t === 0 ? 'ax' : 'gl'}, va); s('text', {x: m.l - 6, y: py(t) + 4, 'text-anchor': 'end', class: 'tick', text: Math.round(t * 100) + ' %'}, va); });
+    A.bands.forEach((b, k) => { if (k % Math.max(1, Math.ceil(nb / 8)) === 0) s('text', {x: bx(k), y: Ha - 12, 'text-anchor': 'middle', class: 'tick', text: b}, va); });
+    const line = (vals, stroke, dash) => { let d = ''; vals.forEach((p, k) => { if (!ok(p)) return; d += (d ? 'L' : 'M') + bx(k).toFixed(1) + ',' + py(p).toFixed(1); }); s('path', {d, fill: 'none', stroke, 'stroke-width': 2, 'stroke-dasharray': dash || null}, va); };
+    line(A.propensity[Y0] || [], 'var(--muted)', '4 3'); if (yr !== Y0) line(A.propensity[yr] || [], 'var(--all)');
+    legend($('lg-structure-age'), [{color: 'var(--muted)', label: 'propensity ' + Y0, kind: 'line'}].concat(yr !== Y0 ? [{color: 'var(--all)', label: 'propensity ' + yr, kind: 'line'}] : []).concat([{color: 'var(--surface-3)', label: 'persons ' + yr}]));
+    $('s-structure-age').textContent = 'Region Hannover · cohort effect ' + dec(S.meta.cohort_shift, 1);
+  } else ab.replaceChildren(h('p', {class: 'empty', text: 'No age bands in this run.'}));
+  tableView($('tv-structure'), ['Area', 'District', 'Residents ' + yr + ' (model)', 'Expected parcels per delivery day ' + yr],
+    (S.developments || []).map(d => ({cells: [d.name, (S.districts.names[S.districts.ids.indexOf(d.district_id)] || d.district_id), dec(d.residents[yr], 0), dec(d.parcels_per_day[yr], 1)]})));
+  const top = rows[0];
+  $('f-structure').replaceChildren(...(yr > Y0 && top ? ['From ' + Y0 + ' to ' + yr + ' ', h('b', {text: top.label + ' changes most (' + signed(top.model) + ' model persons, forecast ' + signed(top.forecast) + ')'}),
+    '; ' + int(opened) + ' new homes and firms have opened. The regional volume stays that of the scenario; land use only moves it between areas.'] : ['Move the year slider to see how persons and firms shift between the ' + S.districts.ids.length + ' forecast districts.']));
 }
 
 /* ---------- entry point ---------- */
@@ -855,7 +958,7 @@ function render(name, yr) {
   state.scenario = NAMES.includes(name) ? name : M.primary;
   state.year = Math.max(Y0, Math.min(YN, yr));
   hide(); persist(); syncControls();
-  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderNetwork(); renderCalendar(); renderMethod();
+  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderStructure(); renderNetwork(); renderCalendar(); renderMethod();
 }
 function setYear(yr) { stop(); render(state.scenario, yr); }
 setStatic(); buildControls(); render(state.scenario, state.year);

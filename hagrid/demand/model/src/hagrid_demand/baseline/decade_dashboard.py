@@ -546,6 +546,94 @@ def _scenario_meta(name: str, run: dict | None, path: Path, years: list[int], pr
 # ---------------------------------------------------------------- payload and page
 
 
+def _district_geo(shapes: gpd.GeoDataFrame) -> dict:
+    """Forecast district polygons as a WGS84 FeatureCollection (``id`` property), coordinates rounded to 1e-5."""
+    import shapely
+
+    wgs = shapes.to_crs(4326)
+    geometries = shapely.remove_repeated_points(shapely.transform(wgs.geometry.values, lambda xy: np.round(xy, 5)))
+    features = [{"type": "Feature", "properties": {"id": str(district)}, "geometry": shapely.geometry.mapping(geometry)}
+                for district, geometry in zip(wgs.district_id.astype(str), geometries)]
+    return json.loads(json.dumps({"type": "FeatureCollection", "features": features}))
+
+
+def _structure_block(run: dict | None, years: list[int]) -> dict | None:
+    """Land-use registers of a run for the structural-change section; None when the run has no land use."""
+    if run is None or not (run["path"] / "land_use_districts.parquet").is_file():
+        return None
+    path = run["path"]
+    table = pd.read_parquet(path / "land_use_districts.parquet")
+    order = table.drop_duplicates("district_id")
+    ids = order.district_id.astype(str).tolist()
+    by_year = {int(year): frame.set_index(frame.district_id.astype(str)) for year, frame in table.groupby("year")}
+
+    def per_year(column: str, relative: bool = False) -> dict:
+        first = by_year.get(min(by_year)) if by_year else None
+        out = {}
+        for year in years:
+            frame = by_year.get(int(year))
+            if frame is None:
+                out[str(year)] = None
+                continue
+            values = frame[column].reindex(ids).to_numpy(float)
+            if relative:
+                base = first[column].reindex(ids).to_numpy(float)
+                values = np.divide(values, base, out=np.full(len(values), np.nan), where=base > 0)
+            out[str(year)] = [round(float(value), 5) if np.isfinite(value) else None for value in values]
+        return out
+
+    shapes_path = path / "land_use_district_shapes.parquet"
+    geo = _district_geo(gpd.read_parquet(shapes_path)) if shapes_path.is_file() else None
+    districts = {"ids": ids, "names": order.name.astype(str).tolist(), "kinds": order.kind.astype(str).tolist(), "geo": geo,
+                 "population_index": per_year("population_index"), "forecast_index": per_year("forecast_index"),
+                 "propensity_index": per_year("propensity_index"), "persons_model": per_year("persons_model"),
+                 "employees_index": per_year("employees_model", relative=True)}
+    sites = None
+    if (path / "land_use_sites.parquet").is_file():
+        frame = gpd.read_parquet(path / "land_use_sites.parquet")
+        wgs = frame.geometry.to_crs(4326)
+        size = frame.population.where(frame.segment.eq("private"), frame.employees).fillna(0.)
+        sites = {"ids": frame.site_id.astype(str).tolist(), "segment": frame.segment.astype(str).tolist(),
+                 "area": [value if isinstance(value, str) else None for value in frame["area"]],
+                 "year_opened": [int(value) for value in frame.year_opened], "lon": wgs.x.round(5).tolist(), "lat": wgs.y.round(5).tolist(),
+                 "size": [round(float(value), 3) for value in size]}
+    developments = []
+    if (path / "land_use_developments.parquet").is_file():
+        residents = pd.read_parquet(path / "land_use_developments.parquet")
+        projection = _parquet(path / "annual_projection.parquet", ["year", "site_id", "annual_expected"])
+        area_of = pd.Series(sites["area"], index=sites["ids"]) if sites else pd.Series(dtype=object)
+        expected = None
+        if projection is not None:
+            homes = projection.loc[projection.site_id.astype(str).isin(area_of.dropna().index)]
+            expected = homes.assign(area=homes.site_id.astype(str).map(area_of)).groupby(["year", "area"]).annual_expected.sum()
+        delivery_days = run["days"].loc[run["days"].delivery].groupby("year").size()
+        for name, group in residents.groupby("name", sort=False):
+            values = group.set_index("year").residents_model
+            per_day = {str(year): (round(float(expected.get((int(year), name), 0.)) / float(delivery_days.get(int(year), 1)), 2)
+                                   if expected is not None else None) for year in years}
+            developments.append({"name": str(name), "district_id": str(group.district_id.iloc[0]),
+                                 "residents": {str(year): round(float(values.get(int(year), 0.)), 1) for year in years},
+                                 "parcels_per_day": per_day})
+    age = None
+    if (path / "land_use_ages.parquet").is_file():
+        ages = pd.read_parquet(path / "land_use_ages.parquet").sort_values(["year", "age_from"])
+        bands = ages.drop_duplicates("age_from").band.astype(str).tolist()
+        age = {"bands": bands,
+               "persons": {str(int(year)): [round(float(value), 1) for value in frame.persons] for year, frame in ages.groupby("year")},
+               "propensity": {str(int(year)): [round(float(value), 4) for value in frame.propensity] for year, frame in ages.groupby("year")}}
+    meta = dict(run["status"].get("land_use") or {})
+    try:
+        from .land_use import load_land_use_inputs
+
+        inputs = load_land_use_inputs()
+        meta["sources"] = {"population": inputs["source"]["title"] + " (" + inputs["source"]["tables"] + ")",
+                           "propensity": inputs["propensity_curve"]["source"], "firms": inputs["firm_rates"]["source"],
+                           "developments": inputs["developments"]["source"]}
+    except (OSError, KeyError, ValueError):
+        pass
+    return {"districts": districts, "sites": sites, "developments": developments, "age": age, "meta": meta}
+
+
 def build_decade_dashboard_data(runs: dict[str, Path]) -> dict:
     """Payload of the decade dashboard over *runs* (scenario name -> run directory; the first is the primary)."""
     if not runs:
@@ -564,7 +652,7 @@ def build_decade_dashboard_data(runs: dict[str, Path]) -> dict:
     carriers = _carriers(loaded, names[0])
     persons = float(sum(region["persons"])) if region["persons"] else None
     national = _national(loaded)
-    annual, plz_values, calendar, network, weekday, scenarios = {}, {}, {}, {}, {}, []
+    annual, plz_values, calendar, network, weekday, structure, scenarios = {}, {}, {}, {}, {}, {}, []
     for name in names:
         run = loaded[name]
         present = sorted(set(run["days"].year) & set(years)) if run is not None else []
@@ -578,6 +666,7 @@ def build_decade_dashboard_data(runs: dict[str, Path]) -> dict:
         calendar[name] = per_year(lambda year: _calendar_block(run, year))
         weekday[name] = per_year(lambda year: _weekday_block(run, year))
         network[name] = _network_block(run, points) if run is not None else None
+        structure[name] = _structure_block(run, years)
         scenarios.append(_scenario_meta(name, run, paths[name], years, present, annual[name], national["scenarios"][name]))
     inputs, temporal = primary["ooh"], primary["status"].get("temporal", {})
     kinds: list[str] = []
@@ -594,7 +683,8 @@ def build_decade_dashboard_data(runs: dict[str, Path]) -> dict:
                             "texts": list(primary["config"].get("assumptions", []))},
             "attribution": "© OpenStreetMap contributors (ODbL)"}
     return _clean({"meta": meta, "years": years, "national": national, "annual": annual,
-                   "plz": {**region, "values": plz_values}, "calendar": calendar, "network": network, "weekday": weekday})
+                   "plz": {**region, "values": plz_values}, "calendar": calendar, "network": network, "weekday": weekday,
+                   "structure": structure})
 
 
 def write_decade_dashboard(runs: dict[str, Path], out_html: Path, standalone: bool = True) -> Path:

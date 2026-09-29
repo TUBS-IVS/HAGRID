@@ -219,3 +219,44 @@ def write_decade_run(root: Path, name: str, *, years=(2025, 2026), growth: float
                                    "counter:Amazon": {"target": 3, "added": 1, "candidates": 1, "shortfall": 1, "demand": 700.}}}}}
     _json(run / "daily_status.json", status)
     return run
+
+
+def write_land_use_files(run: Path, years=(2025, 2026)) -> None:
+    """The land-use registers of a run: two districts over the fixture cells, two development homes (opening in the
+    second year) and one new firm, the region's age bands and the status block."""
+    years = sorted(int(year) for year in years)
+    first, last = years[0], years[-1]
+    ids, names, kinds = ["A", "B"], ["Stadtbezirk", "Umlandgemeinde"], ["city", "umland"]
+    rows = []
+    for year in years:
+        step = year - first
+        for index, (district, name, kind) in enumerate(zip(ids, names, kinds)):
+            rows.append({"year": year, "district_id": district, "name": name, "kind": kind,
+                         "population_index": 1. + (0.02 if index == 0 else -0.01) * step, "propensity_index": 1. - 0.01 * step,
+                         "persons_model": 1000. * (1. + (0.02 if index == 0 else -0.01) * step), "employees_model": 500. * (1. + 0.01 * step),
+                         "forecast_index": 1. + (0.02 if index == 0 else -0.01) * step})
+    pd.DataFrame(rows).to_parquet(run / "land_use_districts.parquet", index=False)
+    gpd.GeoDataFrame({"district_id": ids, "name": names, "kind": kinds},
+                     geometry=[box(X0, Y0, X0 + 4000., Y0 + 4000.), box(X0 + 4000., Y0, X0 + 8000., Y0 + 4000.)], crs=CRS) \
+        .to_parquet(run / "land_use_district_shapes.parquet", index=False)
+    sites = gpd.GeoDataFrame({"site_id": ["lu:res:neubau:0", "lu:res:neubau:1", "lu:biz:Q:%d:0" % last],
+                              "segment": ["private", "private", "business"], "plz": [CODES[0]] * 3, "district_id": ["A", "A", "B"],
+                              "area": ["Neubau", "Neubau", None], "year_opened": [last, last, last], "population": [5., 5., np.nan],
+                              "employees": [np.nan, np.nan, 12.], "branch": [None, None, "Q"], "historical_share": [.001, .001, .002],
+                              "allocation_status": "located"},
+                             geometry=[Point(X0 + 500., Y0 + 500.), Point(X0 + 550., Y0 + 500.), Point(X0 + 4500., Y0 + 500.)], crs=CRS)
+    sites.to_parquet(run / "land_use_sites.parquet", index=False)
+    pd.DataFrame({"year": [year for year in years for _ in range(12)],
+                  "band": [f"{start}-{start + 4}" if start < 55 else "55+" for _ in years for start in range(0, 60, 5)],
+                  "age_from": [start for _ in years for start in range(0, 60, 5)],
+                  "persons": [10. + start for _ in years for start in range(0, 60, 5)],
+                  "propensity": [0. if start < 15 else .8 for _ in years for start in range(0, 60, 5)]}) \
+        .to_parquet(run / "land_use_ages.parquet", index=False)
+    pd.DataFrame({"year": years, "name": "Neubau", "district_id": "A", "residents_model": [0.] * (len(years) - 1) + [10.]}) \
+        .to_parquet(run / "land_use_developments.parquet", index=False)
+    pd.DataFrame({"year": [last, last], "site_id": ["lu:res:neubau:0", "lu:res:neubau:1"], "segment": "private",
+                  "annual_expected": [303., 303.]}).to_parquet(run / "annual_projection.parquet", index=False)
+    status = json.loads((run / "daily_status.json").read_text(encoding="utf-8"))
+    status["land_use"] = {"variant": "prognose", "base_year": first, "cohort_shift": 0.7, "new_firm_share": 0.3, "districts": 2,
+                          "clamped": [], "new_sites": {str(last): 3}, "development_sites": 2, "new_firms": 1, "developments": ["Neubau"]}
+    _json(run / "daily_status.json", status)
