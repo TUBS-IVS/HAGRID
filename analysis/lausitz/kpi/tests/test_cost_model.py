@@ -140,6 +140,27 @@ def test_integrated_arm_emits_no_per_unit_cost():
     assert "cost_per_ride" not in out
 
 
+def test_shareduse_arm_emits_no_per_unit_cost():
+    """1c is a one-fleet arm like 1d, so it gets no EUR/ride either.
+
+    The parcel rows come from the REAL 1c extractor, not from a typed-in
+    name: the gate used to look for parcels_handled / parcels_served only,
+    1c writes neither (it writes parcels_delivered), so a 1c run fell into
+    the passenger-only branch and published cost_total / drt_rides as
+    EUR/ride -- the freight operation charged to the passengers (measured
+    2026-09-28 on d1c_f140 s1337: 9.997 EUR/ride). The 1d test above could
+    not see it because it feeds parcels_served."""
+    import extract_shareduse
+    su_rows = extract_shareduse.extract(
+        Path(__file__).parent / "fixtures" / "shareduse", "SHAREDUSE_TEST")
+    out = {r["kpi_name"]: r for r in
+           econ(_rows() + su_rows, meta=_Meta(scenario="DRT_SHAREDUSE"))}
+    assert "cost_per_ride" not in out
+    assert "cost_per_parcel" not in out
+    assert "cost_per_unit_separable" in out
+    assert "cost_total" in out          # the system total itself is unaffected
+
+
 def test_disjoint_fleets_price_each_service_on_its_own_fleet():
     out = {r["kpi_name"]: r["value"] for r in
            econ(_rows(freight_vehicles=3, freight_tour_hours=20.0,

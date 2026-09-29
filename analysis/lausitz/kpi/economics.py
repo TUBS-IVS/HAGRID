@@ -221,6 +221,13 @@ def _direct_cost(all_rows, meta, pf, params):
         missed = _num(all_rows, "parcels_missed_overlay")
         if served is not None:
             parcels = served - (missed or 0.0)
+    if parcels is None:
+        # 1c (Shared-Use) writes neither of the two above, only
+        # parcels_delivered. Without this a 1c run looked passenger-only and
+        # got cost_total / drt_rides as EUR/ride, freight included. On a
+        # one-fleet arm the count is only the separability GATE below, never
+        # a denominator, so its net/gross basis does not matter here.
+        parcels = _num(all_rows, "parcels_delivered")
 
     if has_drt and has_vans:
         # Disjoint fleets (baseline): each service has its own numerator.
