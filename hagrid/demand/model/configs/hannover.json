@@ -1,0 +1,18 @@
+{
+  "input_dir": "../../input/hannover/raw",
+  "output_dir": "../../runs",
+  "target_crs": "EPSG:25832",
+  "persons_crs": "EPSG:25832",
+  "plz_crs": "EPSG:25832",
+  "crs_provenance": "Persons: companion SHP metadata checked. PLZ CSV: legacy working CRS; plausible bounds, original metadata still to confirm.",
+  "max_street_distance_m": 100.0,
+  "building_spread_tolerance_m": 5.0,
+  "observation_definitions_confirmed": false,
+  "sources": [
+    {"id": "H01", "file": "persons_total.csv", "adapter": "persons", "kind": "synthetic_or_derived_unconfirmed", "year": null, "unit": "person", "role": "structure"},
+    {"id": "H02", "file": "companies_Total_reduced.shp", "adapter": "companies", "kind": "unconfirmed", "year": null, "unit": "establishment", "role": "structure"},
+    {"id": "H03", "file": "dhl2streets_2021.shp", "adapter": "dhl", "kind": "reported_observation", "year": 2021, "unit": "unconfirmed_daily_mean", "role": "observation_candidate"},
+    {"id": "H04", "file": "Hermes_PLZ-Menge_2019-2021.csv", "adapter": "hermes", "kind": "reported_observation", "year": null, "unit": "unconfirmed", "role": "observation_candidate"},
+    {"id": "H06", "file": "plz_region_hannover.csv", "adapter": "plz", "kind": "geometry", "year": null, "unit": "postal_area", "role": "support"}
+  ]
+}

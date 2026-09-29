@@ -1,0 +1,27 @@
+name: Demand model tests
+
+on:
+  push:
+    paths:
+      - "hagrid/demand/model/**"
+      - ".github/workflows/python-tests.yml"
+  pull_request:
+    paths:
+      - "hagrid/demand/model/**"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hagrid/demand/model
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[test]"
+      - name: Test
+        run: python -m pytest -q -p no:cacheprovider

@@ -1,0 +1,23 @@
+{
+  "source": "BIEK KEP studies 2013-2024, transcribed from notebook 01",
+  "notebook_cell": "01_EstimateGlobalGermanB2BShares.py CELL 2",
+  "status": "observed",
+  "unit": "share",
+  "lower_bound": 0.20,
+  "initial_guess": [0.30, 6, -0.3],
+  "anchors": [
+    {"year": 2009, "share": 0.47, "source": "BIEK KEP-Studie 2013", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2012, "share": 0.43, "source": "BIEK KEP-Studie 2013", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2013, "share": 0.41, "source": "BIEK KEP-Studie 2014", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2014, "share": 0.39, "source": "BIEK KEP-Studie 2015", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2015, "share": 0.37, "source": "BIEK KEP-Studie 2016", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2016, "share": 0.35, "source": "BIEK KEP-Studie 2017", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2017, "share": 0.33, "source": "BIEK KEP-Studie 2018", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2018, "share": 0.32, "source": "BIEK KEP-Studie 2019", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2019, "share": 0.30, "source": "BIEK KEP-Studie 2020", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2020, "share": 0.25, "source": "BIEK KEP-Studie 2021", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2021, "share": 0.23, "source": "BIEK KEP-Studie 2022", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2022, "share": 0.24, "source": "BIEK KEP-Studie 2023", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"},
+    {"year": 2023, "share": 0.23, "source": "BIEK KEP-Studie 2024", "notebook_cell": "01 CELL 2", "status": "observed", "unit": "share"}
+  ]
+}
