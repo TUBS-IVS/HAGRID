@@ -14,20 +14,28 @@ set "RUNS="
 
 for %%S in (%SCENARIOS%) do (
   echo === Szenario %%S
-  python -m hagrid_demand baseline run --config "hagrid\demand\model\configs\decade-%%S.json" --run-id "decade-%%S"
-  if errorlevel 1 (
-    set "RC=1"
-    echo Szenario %%S fehlgeschlagen
-  ) else (
+  if exist "hagrid\demand\runs\decade-%%S\annual_dashboard.html" (
+    echo Lauf decade-%%S ist schon fertig, wird nicht neu gerechnet
     call set "RUNS=%%RUNS%% --run %%S=hagrid\demand\runs\decade-%%S"
+  ) else (
+    python -m hagrid_demand baseline run --config "hagrid\demand\model\configs\decade-%%S.json" --run-id "decade-%%S"
+    if errorlevel 1 (
+      set "RC=1"
+      echo Szenario %%S fehlgeschlagen
+    ) else (
+      call set "RUNS=%%RUNS%% --run %%S=hagrid\demand\runs\decade-%%S"
+    )
   )
 )
 
-if not "%RC%"=="0" goto :end
+rem Das Dashboard entsteht aus allen fertigen Szenarien, auch wenn eines fehlgeschlagen ist (RC bleibt dann 1).
 if "%RUNS%"=="" goto :end
 python -m hagrid_demand baseline decade-dashboard %RUNS% --out "hagrid\demand\runs\decade_dashboard.html"
-set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" echo Decade dashboard: hagrid\demand\runs\decade_dashboard.html
+if errorlevel 1 (
+  set "RC=1"
+) else (
+  echo Decade dashboard: hagrid\demand\runs\decade_dashboard.html
+)
 
 :end
 echo EXIT_CODE=%RC%

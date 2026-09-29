@@ -686,4 +686,14 @@ def test_annual_dashboard_out_of_home_block_is_per_year(growth_run):
     network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
     for year in (2025, 2026):
         assert blocks[year]["osm_points"] == {str(k): int(v) for k, v in network.loc[network.year.eq(year)].kind.value_counts().items()}
-        assert blocks[year]["overflow_home"] is None and blocks[year]["scope"] == f"year {year}"
+        assert blocks[year]["scope"] == f"year {year}"
+
+
+def test_run_status_records_overflow_per_year(growth_run):
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data
+
+    status = json.loads((growth_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]
+    by_year = status["overflow_home_by_year"]
+    assert set(by_year) == {"2025", "2026"} and sum(by_year.values()) == status["overflow_home"]
+    block = build_annual_dashboard_data(growth_run, 2026)["meta"]["temporal"]["out_of_home"]
+    assert block["overflow_home"] == by_year["2026"]

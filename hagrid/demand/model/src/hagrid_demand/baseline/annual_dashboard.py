@@ -101,7 +101,8 @@ def _out_of_home_year(store: Path, days: pd.DataFrame, plz: pd.DataFrame, year: 
             "b2c_delivered": {carrier: int(private.get(carrier, 0)) for carrier in CARRIER_FIELDS},
             "osm_points": {str(kind): int(count) for kind, count in kinds.items()},
             "synthetic_counters": int((points.kind.eq("counter") & synthetic).sum()), "synthetic_lockers": 0,
-            "overflow_home": status.get("overflow_home") if single_year else None, "scope": f"year {year}"}
+            "overflow_home": (status.get("overflow_home") if single_year
+                              else (status.get("overflow_home_by_year") or {}).get(str(year))), "scope": f"year {year}"}
 
 
 def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:

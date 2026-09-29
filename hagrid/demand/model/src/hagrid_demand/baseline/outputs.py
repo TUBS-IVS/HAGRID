@@ -67,17 +67,12 @@ def write_detail_draws(chunk: pd.DataFrame, selected_draws: set[tuple[int, int]]
 
 
 def _aggregate(chunk: pd.DataFrame, frames: list[pd.DataFrame]) -> None:
-    """Fold one daily chunk into the aggregate list, consolidating every 100 days to bound memory."""
+    """Fold one daily chunk into the aggregate list (one small frame per day; date is a group key)."""
     required = set(_GROUP_COLUMNS + ["baseline_expected", "conditional_expected", "count"])
     if missing := required.difference(chunk.columns):
         raise ValueError(f"daily aggregate missing columns: {sorted(missing)}")
     frames.append(chunk.groupby(_GROUP_COLUMNS, as_index=False, dropna=False).agg(
         baseline_expected=("baseline_expected", "sum"), conditional_expected=("conditional_expected", "sum"), count=("count", "sum")))
-    if len(frames) >= 100:
-        merged = pd.concat(frames, ignore_index=True).groupby(_GROUP_COLUMNS, as_index=False, dropna=False).agg(
-            baseline_expected=("baseline_expected", "sum"), conditional_expected=("conditional_expected", "sum"), count=("count", "sum"))
-        frames.clear()
-        frames.append(merged)
 
 
 def write_daily_aggregates(chunks: Iterator[pd.DataFrame], output: Path,
