@@ -1,0 +1,689 @@
+{
+ "source": {
+  "title": "Bevölkerungsprognose 2025 bis 2035 für die Region Hannover, die Landeshauptstadt Hannover und die Städte und Gemeinden des Umlands",
+  "publisher": "Landeshauptstadt Hannover, Sachgebiet Stadtentwicklung, und Region Hannover, Team Statistik",
+  "published": "2026-02",
+  "tables": "Tabelle 7 (30 Prognosebezirke der LH Hannover) und Tabelle 8 (20 Städte und Gemeinden), Seiten 49-50",
+  "base": "31.12.2024",
+  "horizon": "31.12.2034",
+  "url": "https://www.hannover.de/content/download/1059363/file/Bev%C3%B6lkerungsprognose_Region_Hannover_2025_2035.pdf",
+  "note": "4.1 Buchholz und 4.2 Roderbruch liegen beide im Stadtteil Groß-Buchholz und bilden eine Modelleinheit (Summe). Die gerundeten Bezirkswerte 2034 der LH Hannover summieren sich auf 566.836 (Tabellensumme 566.835)."
+ },
+ "districts": [
+  {
+   "id": "1.1",
+   "name": "Hannover-Mitte",
+   "kind": "city",
+   "pop_2024": 19448,
+   "pop_2034": 19976,
+   "stadtteile": [
+    "Mitte",
+    "Calenberger Neustadt"
+   ]
+  },
+  {
+   "id": "1.2",
+   "name": "Oststadt/Zoo",
+   "kind": "city",
+   "pop_2024": 19425,
+   "pop_2034": 19038,
+   "stadtteile": [
+    "Zoo",
+    "Oststadt"
+   ]
+  },
+  {
+   "id": "2.1",
+   "name": "Vahrenwald",
+   "kind": "city",
+   "pop_2024": 25467,
+   "pop_2034": 25379,
+   "stadtteile": [
+    "Vahrenwald"
+   ]
+  },
+  {
+   "id": "2.2",
+   "name": "List",
+   "kind": "city",
+   "pop_2024": 46797,
+   "pop_2034": 47102,
+   "stadtteile": [
+    "List"
+   ]
+  },
+  {
+   "id": "3.1",
+   "name": "Bothfeld",
+   "kind": "city",
+   "pop_2024": 26567,
+   "pop_2034": 26323,
+   "stadtteile": [
+    "Bothfeld",
+    "Lahe",
+    "Isernhagen-Süd"
+   ]
+  },
+  {
+   "id": "3.2",
+   "name": "Vahrenheide",
+   "kind": "city",
+   "pop_2024": 24400,
+   "pop_2034": 24947,
+   "stadtteile": [
+    "Vahrenheide",
+    "Sahlkamp"
+   ]
+  },
+  {
+   "id": "4.1+4.2",
+   "name": "Buchholz/Roderbruch",
+   "kind": "city",
+   "pop_2024": 34374,
+   "pop_2034": 35177,
+   "stadtteile": [
+    "Groß-Buchholz"
+   ],
+   "forecast_units": [
+    "4.1 Buchholz",
+    "4.2 Roderbruch"
+   ]
+  },
+  {
+   "id": "4.3",
+   "name": "Kleefeld",
+   "kind": "city",
+   "pop_2024": 14115,
+   "pop_2034": 14527,
+   "stadtteile": [
+    "Kleefeld",
+    "Heideviertel"
+   ]
+  },
+  {
+   "id": "5.1",
+   "name": "Misburg",
+   "kind": "city",
+   "pop_2024": 27042,
+   "pop_2034": 27682,
+   "stadtteile": [
+    "Misburg-Nord",
+    "Misburg-Süd"
+   ]
+  },
+  {
+   "id": "5.2",
+   "name": "Anderten",
+   "kind": "city",
+   "pop_2024": 8053,
+   "pop_2034": 8002,
+   "stadtteile": [
+    "Anderten"
+   ]
+  },
+  {
+   "id": "6.1",
+   "name": "Kirchrode",
+   "kind": "city",
+   "pop_2024": 12224,
+   "pop_2034": 12514,
+   "stadtteile": [
+    "Kirchrode"
+   ]
+  },
+  {
+   "id": "6.2",
+   "name": "Bemerode",
+   "kind": "city",
+   "pop_2024": 22965,
+   "pop_2034": 26640,
+   "stadtteile": [
+    "Bemerode",
+    "Wülferode"
+   ]
+  },
+  {
+   "id": "7.0",
+   "name": "Südstadt/Bult",
+   "kind": "city",
+   "pop_2024": 44674,
+   "pop_2034": 44615,
+   "stadtteile": [
+    "Südstadt",
+    "Bult"
+   ]
+  },
+  {
+   "id": "8.1",
+   "name": "Döhren/Wülfel",
+   "kind": "city",
+   "pop_2024": 25628,
+   "pop_2034": 25620,
+   "stadtteile": [
+    "Döhren",
+    "Seelhorst",
+    "Wülfel",
+    "Waldhausen",
+    "Waldheim"
+   ]
+  },
+  {
+   "id": "8.2",
+   "name": "Mittelfeld",
+   "kind": "city",
+   "pop_2024": 9679,
+   "pop_2034": 10193,
+   "stadtteile": [
+    "Mittelfeld"
+   ]
+  },
+  {
+   "id": "9.1",
+   "name": "Mühlenberg",
+   "kind": "city",
+   "pop_2024": 9006,
+   "pop_2034": 9098,
+   "stadtteile": [
+    "Mühlenberg",
+    "Bornum"
+   ]
+  },
+  {
+   "id": "9.2",
+   "name": "Oberricklingen",
+   "kind": "city",
+   "pop_2024": 11102,
+   "pop_2034": 11279,
+   "stadtteile": [
+    "Oberricklingen"
+   ]
+  },
+  {
+   "id": "9.3",
+   "name": "Ricklingen",
+   "kind": "city",
+   "pop_2024": 12873,
+   "pop_2034": 12858,
+   "stadtteile": [
+    "Ricklingen"
+   ]
+  },
+  {
+   "id": "9.4",
+   "name": "Wettbergen",
+   "kind": "city",
+   "pop_2024": 13075,
+   "pop_2034": 12734,
+   "stadtteile": [
+    "Wettbergen"
+   ]
+  },
+  {
+   "id": "10.1",
+   "name": "Linden-Nord",
+   "kind": "city",
+   "pop_2024": 16125,
+   "pop_2034": 15881,
+   "stadtteile": [
+    "Linden-Nord"
+   ]
+  },
+  {
+   "id": "10.2",
+   "name": "Linden-Mitte/Süd",
+   "kind": "city",
+   "pop_2024": 21712,
+   "pop_2034": 21424,
+   "stadtteile": [
+    "Linden-Mitte",
+    "Linden-Süd"
+   ]
+  },
+  {
+   "id": "10.3",
+   "name": "Limmer",
+   "kind": "city",
+   "pop_2024": 7403,
+   "pop_2034": 8787,
+   "stadtteile": [
+    "Limmer"
+   ]
+  },
+  {
+   "id": "11.1",
+   "name": "Ahlem",
+   "kind": "city",
+   "pop_2024": 11291,
+   "pop_2034": 11298,
+   "stadtteile": [
+    "Ahlem"
+   ]
+  },
+  {
+   "id": "11.2",
+   "name": "Badenstedt/Davenstedt",
+   "kind": "city",
+   "pop_2024": 23011,
+   "pop_2034": 22993,
+   "stadtteile": [
+    "Badenstedt",
+    "Davenstedt"
+   ]
+  },
+  {
+   "id": "12.1",
+   "name": "Herrenhausen/Stöcken",
+   "kind": "city",
+   "pop_2024": 35720,
+   "pop_2034": 36425,
+   "stadtteile": [
+    "Herrenhausen",
+    "Burg",
+    "Leinhausen",
+    "Ledeburg",
+    "Nordhafen",
+    "Stöcken"
+   ]
+  },
+  {
+   "id": "12.2",
+   "name": "Marienwerder",
+   "kind": "city",
+   "pop_2024": 2479,
+   "pop_2034": 2406,
+   "stadtteile": [
+    "Marienwerder"
+   ]
+  },
+  {
+   "id": "13.1",
+   "name": "Vinnhorst",
+   "kind": "city",
+   "pop_2024": 7354,
+   "pop_2034": 7241,
+   "stadtteile": [
+    "Vinnhorst",
+    "Brink-Hafen"
+   ]
+  },
+  {
+   "id": "13.2",
+   "name": "Hainholz",
+   "kind": "city",
+   "pop_2024": 8030,
+   "pop_2034": 8110,
+   "stadtteile": [
+    "Hainholz"
+   ]
+  },
+  {
+   "id": "13.3",
+   "name": "Nordstadt",
+   "kind": "city",
+   "pop_2024": 18012,
+   "pop_2034": 18567,
+   "stadtteile": [
+    "Nordstadt"
+   ]
+  },
+  {
+   "id": "31",
+   "name": "Barsinghausen",
+   "kind": "umland",
+   "pop_2024": 35697,
+   "pop_2034": 35938,
+   "municipality": "Barsinghausen"
+  },
+  {
+   "id": "32",
+   "name": "Burgdorf",
+   "kind": "umland",
+   "pop_2024": 31871,
+   "pop_2034": 31697,
+   "municipality": "Burgdorf"
+  },
+  {
+   "id": "33",
+   "name": "Burgwedel",
+   "kind": "umland",
+   "pop_2024": 21030,
+   "pop_2034": 20490,
+   "municipality": "Burgwedel"
+  },
+  {
+   "id": "34",
+   "name": "Garbsen",
+   "kind": "umland",
+   "pop_2024": 63657,
+   "pop_2034": 62856,
+   "municipality": "Garbsen"
+  },
+  {
+   "id": "35",
+   "name": "Gehrden",
+   "kind": "umland",
+   "pop_2024": 15911,
+   "pop_2034": 16083,
+   "municipality": "Gehrden"
+  },
+  {
+   "id": "36",
+   "name": "Hemmingen",
+   "kind": "umland",
+   "pop_2024": 19511,
+   "pop_2034": 19126,
+   "municipality": "Hemmingen"
+  },
+  {
+   "id": "37",
+   "name": "Isernhagen",
+   "kind": "umland",
+   "pop_2024": 24839,
+   "pop_2034": 24232,
+   "municipality": "Isernhagen"
+  },
+  {
+   "id": "38",
+   "name": "Laatzen",
+   "kind": "umland",
+   "pop_2024": 44250,
+   "pop_2034": 43861,
+   "municipality": "Laatzen"
+  },
+  {
+   "id": "39",
+   "name": "Langenhagen",
+   "kind": "umland",
+   "pop_2024": 57119,
+   "pop_2034": 57823,
+   "municipality": "Langenhagen"
+  },
+  {
+   "id": "40",
+   "name": "Lehrte",
+   "kind": "umland",
+   "pop_2024": 46165,
+   "pop_2034": 45956,
+   "municipality": "Lehrte"
+  },
+  {
+   "id": "41",
+   "name": "Neustadt a. Rbge.",
+   "kind": "umland",
+   "pop_2024": 46193,
+   "pop_2034": 45971,
+   "municipality": "Neustadt am Rübenberge"
+  },
+  {
+   "id": "42",
+   "name": "Pattensen",
+   "kind": "umland",
+   "pop_2024": 15100,
+   "pop_2034": 14774,
+   "municipality": "Pattensen"
+  },
+  {
+   "id": "43",
+   "name": "Ronnenberg",
+   "kind": "umland",
+   "pop_2024": 25005,
+   "pop_2034": 24871,
+   "municipality": "Ronnenberg"
+  },
+  {
+   "id": "44",
+   "name": "Seelze",
+   "kind": "umland",
+   "pop_2024": 35410,
+   "pop_2034": 36116,
+   "municipality": "Seelze"
+  },
+  {
+   "id": "45",
+   "name": "Sehnde",
+   "kind": "umland",
+   "pop_2024": 24557,
+   "pop_2034": 24395,
+   "municipality": "Sehnde"
+  },
+  {
+   "id": "46",
+   "name": "Springe",
+   "kind": "umland",
+   "pop_2024": 30241,
+   "pop_2034": 30364,
+   "municipality": "Springe"
+  },
+  {
+   "id": "47",
+   "name": "Uetze",
+   "kind": "umland",
+   "pop_2024": 20777,
+   "pop_2034": 20876,
+   "municipality": "Uetze"
+  },
+  {
+   "id": "48",
+   "name": "Wedemark",
+   "kind": "umland",
+   "pop_2024": 31053,
+   "pop_2034": 30767,
+   "municipality": "Wedemark"
+  },
+  {
+   "id": "49",
+   "name": "Wennigsen (Deister)",
+   "kind": "umland",
+   "pop_2024": 14651,
+   "pop_2034": 14440,
+   "municipality": "Wennigsen (Deister)"
+  },
+  {
+   "id": "50",
+   "name": "Wunstorf",
+   "kind": "umland",
+   "pop_2024": 42398,
+   "pop_2034": 41441,
+   "municipality": "Wunstorf"
+  }
+ ],
+ "propensity_curve": {
+  "source": "Destatis, IKT-Erhebung 2025: Online-Einkauf in den letzten 12 Monaten nach Alter; 75+ nicht erhoben (Annahme)",
+  "bands": [
+   {
+    "from": 0,
+    "to": 15,
+    "p": 0.0
+   },
+   {
+    "from": 16,
+    "to": 24,
+    "p": 0.84
+   },
+   {
+    "from": 25,
+    "to": 44,
+    "p": 0.91
+   },
+   {
+    "from": 45,
+    "to": 64,
+    "p": 0.8
+   },
+   {
+    "from": 65,
+    "to": 74,
+    "p": 0.61
+   },
+   {
+    "from": 75,
+    "to": 120,
+    "p": 0.4
+   }
+  ]
+ },
+ "firm_rates": {
+  "source": "Annahme nach Region Hannover, Trends und Fakten 2025: SV-Beschäftigte 2014-2024 +1,5 %/a, 2023-2024 +0,5 %; Gesundheitswirtschaft überdurchschnittlich, Automotive ohne Wachstum",
+  "rates": {
+   "Q": 0.015,
+   "J": 0.01,
+   "M": 0.01,
+   "N": 0.01,
+   "H": 0.01,
+   "G": 0.0,
+   "C": -0.005,
+   "default": 0.005
+  }
+ },
+ "developments": {
+  "source": "Neubaugebiete nach der Bevölkerungsprognose 2025-2035 (Kapitel Ergebnisse); Einwohnerzahlen und Zeitpunkte sind Annahmen",
+  "areas": [
+   {
+    "name": "Kronsberg-Süd",
+    "district_id": "6.2",
+    "residents": 3000,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "osm_landuse_name": "Kronsberg-Süd"
+    }
+   },
+   {
+    "name": "Wasserstadt Limmer",
+    "district_id": "10.3",
+    "residents": 1200,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      546256.0,
+      5803873.0
+     ],
+     "radius_m": 300
+    },
+    "note": "OSM landuse=brownfield 'Wasserstadt Limmer' (21.6 ha), centroid"
+   },
+   {
+    "name": "Seelze-Süd",
+    "district_id": "44",
+    "residents": 700,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      540354.0,
+      5804187.0
+     ],
+     "radius_m": 350
+    },
+    "note": "OSM landuse=residential 'Seelze-Süd' (40.1 ha), centroid; exact extent of the new area not mapped",
+    "approximate": true
+   },
+   {
+    "name": "Langenhagen-Mitte",
+    "district_id": "39",
+    "residents": 400,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      549282.0,
+      5810232.0
+     ],
+     "radius_m": 300
+    },
+    "note": "OSM 'Langenhagen Mitte' at the station",
+    "approximate": true
+   },
+   {
+    "name": "Godshorn",
+    "district_id": "39",
+    "residents": 400,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      548067.0,
+      5810010.0
+     ],
+     "radius_m": 400
+    },
+    "note": "OSM place=suburb 'Godshorn'",
+    "approximate": true
+   },
+   {
+    "name": "Kaltenweide",
+    "district_id": "39",
+    "residents": 400,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      549532.0,
+      5814101.0
+     ],
+     "radius_m": 400
+    },
+    "note": "OSM place=suburb 'Kaltenweide'",
+    "approximate": true
+   },
+   {
+    "name": "Berenbostel",
+    "district_id": "34",
+    "residents": 400,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      541572.0,
+      5809843.0
+     ],
+     "radius_m": 400
+    },
+    "note": "OSM place=suburb 'Berenbostel'",
+    "approximate": true
+   },
+   {
+    "name": "Garbsen-Mitte",
+    "district_id": "34",
+    "residents": 400,
+    "start_year": 2026,
+    "ramp_years": 4,
+    "geometry": {
+     "center": [
+      540487.0,
+      5808650.0
+     ],
+     "radius_m": 400
+    },
+    "note": "OSM 'Garbsen-Mitte'",
+    "approximate": true
+   }
+  ]
+ },
+ "variants": {
+  "prognose": {
+   "city": 0.0,
+   "umland": 0.0
+  },
+  "innenentwicklung": {
+   "city": 0.001,
+   "umland": -0.001
+  },
+  "suburbanisierung": {
+   "city": -0.001,
+   "umland": 0.001
+  }
+ },
+ "defaults": {
+  "enabled": true,
+  "base_year": 2025,
+  "variant": "prognose",
+  "cohort_shift": 0.7,
+  "new_firm_share": 0.3,
+  "grid_m": 50,
+  "persons": null,
+  "developments": "standard",
+  "firm_rates": "standard"
+ }
+}

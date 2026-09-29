@@ -557,3 +557,24 @@ def test_baseline_config_sorts_and_dedupes_years(tmp_path):
                                   "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313,
                                   "output_scope": "daily", "years": [2030, 2025, 2030]}), encoding="utf-8")
     assert load_baseline_config(config)["years"] == [2025, 2030]
+
+
+def test_baseline_config_accepts_land_use_and_boundaries(tmp_path):
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    (tmp_path / "inputs").mkdir()
+    (tmp_path / "osm").mkdir()
+    config = tmp_path / "baseline.json"
+    base = {"schema_version": 1, "rng_version": 1, "seed": 42, "input_dir": "inputs", "output_dir": "runs",
+            "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313, "output_scope": "daily",
+            "years": [2025, 2026], "osm_boundaries": "osm/boundaries.parquet",
+            "land_use": {"enabled": True, "variant": "suburbanisierung"}}
+    config.write_text(json.dumps(base), encoding="utf-8")
+    loaded = load_baseline_config(config)
+    assert loaded["osm_boundaries"] == str((tmp_path / "osm" / "boundaries.parquet").resolve())
+    assert loaded["land_use"]["variant"] == "suburbanisierung"
+
+    base["land_use"] = {"enabled": True, "cohort_shift": 2.0}
+    config.write_text(json.dumps(base), encoding="utf-8")
+    with pytest.raises(ValueError, match="cohort_shift"):
+        load_baseline_config(config)

@@ -48,6 +48,7 @@ def main(argv=None):
         ("decade-dashboard", "Render the decade dashboard over scenario runs (the first --run is the primary scenario)"),
         ("osm-parcel-points", "Download parcel lockers and pickup shops of the study region from OpenStreetMap"),
         ("osm-transit", "Extract railway stations, tram stops and bus terminals from a Geofabrik OSM extract"),
+        ("osm-boundaries", "Extract municipalities and city districts (admin levels 8 and 10) from a Geofabrik OSM extract"),
     ]:
         command = baseline_sub.add_parser(name, help=help_text)
         if name == "osm-clip":
@@ -68,7 +69,7 @@ def main(argv=None):
             command.add_argument("--pois", default=None, help="local OSM POI parquet for the retail context (else Overpass)")
             command.add_argument("--transit", default=None, help="local station parquet (baseline osm-transit) for the transit context")
             command.add_argument("--points", default=None, help="existing points parquet: only recompute the context, no download")
-        elif name == "osm-transit":
+        elif name in ("osm-transit", "osm-boundaries"):
             command.add_argument("--pbf", required=True)
             command.add_argument("--plz", required=True)
             command.add_argument("--out", required=True)
@@ -93,6 +94,13 @@ def main(argv=None):
             if args.baseline_command == "osm-clip":
                 from .baseline.osm import clip_osm_region
                 print(json.dumps(clip_osm_region(args.pbf, args.plz, args.out, args.buffer_m), indent=2, ensure_ascii=False))
+                return 0
+            if args.baseline_command == "osm-boundaries":
+                from .baseline.osm import extract_boundaries
+                out = extract_boundaries(args.pbf, args.plz, args.out, args.buffer_m)
+                import geopandas as gpd
+                levels = gpd.read_parquet(out).admin_level.value_counts().sort_index()
+                print(json.dumps({"out": str(out), "admin_levels": {str(k): int(v) for k, v in levels.items()}}, indent=2))
                 return 0
             if args.baseline_command == "osm-transit":
                 from .baseline.osm import extract_transit_stations
