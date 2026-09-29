@@ -7,7 +7,74 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-09-09._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-09-28._
+
+---
+
+## 2026-09-28
+
+- **Sammelblock Logging, Werkzeuge, Aufräumen — keine Wirkung auf Simulationsergebnisse.**
+  Jede Warnung ersetzt einen stillen Fallback, das Verhalten bleibt gleich; getestet über die neue
+  Testhilfe `hagrid.core.util.LogCapture` (Java) bzw. die PowerShell-Selbsttests. RED je Fall
+  gesehen, danach grün. Vollständiger Build 2026-09-29: `BUILD SUCCESS`, hagrid 681 Tests
+  (660 + 21 neue), Fork 272 (9 übersprungen), 0 Fehler; `check-run-scripts.ps1`: 60 Skripte,
+  0 Befunde.
+  - Laufzeit-Logzeile liest jetzt `hh:mm:ss` statt `{:02d}` (`SimulationRunnerUtils.logDuration`).
+  - `hagrid.log.dir`: ein explizites `-Dhagrid.log.dir` wird respektiert (`pointLogDirAt`), ohne
+    `-D` bleibt das Log je Lauf im Laufordner, auch beim zweiten Szenario derselben JVM.
+    ⚠️ **Folge:** Skripte, die `-Dhagrid.log.dir=hagrid-output/logs` setzen (u. a. `vmargs.txt`, die
+    Lausitz-`MAVEN_OPTS`-Skripte, die Hannover-v2dev-Skripte), schreiben `hagrid.log` jetzt dorthin
+    statt in `<Lauf>/logs`. Das war die Absicht der Flag und behebt den Windows-Abbruch vor
+    Iteration 0; kein Werkzeug liest das Log im Laufordner. Parallele JVMs teilen sich damit eine
+    Datei, wie mit `log4j2_runlocal.xml` schon heute.
+  - Warnungen statt Stille: vertippter `concept`; DRT-Komposition übersprungen, weil schon ein
+    DRT-Modus existiert; Depot außerhalb aller Rebalancing-Zonen (einmal je Depot, nicht je
+    Iteration); `shared/`-Kopie weicht von ihrer Quelle ab (wird weiter NICHT aufgefrischt);
+    Personen ohne Koordinate im Clip; Carrier-Services ohne `coord` (einmal je Carrier);
+    unbekannter LMD-Provider.
+  - `KpiDashboardTrigger.scriptFor` sucht die Repo-Wurzel über `build_kpis.py` als Marker, mit
+    Rückfall auf zwei Ebenen. Test (c) aus Spec 2026-09-21 §5.2 bewusst angepasst: er hielt unter
+    Surefire einen nicht existierenden Pfad fest.
+  - Fork: `NetworkBasedTransportCosts.matsimVehicles` → `ConcurrentHashMap`. Ein Race ist nicht
+    deterministisch rot testbar; ohne neuen Test, gedeckt durch die Freight-Tests des Forks. Noch
+    nicht im Submodul committet.
+  - Aufräumen: 11 redundante same-package Imports; `DashboardGenerator.java.bak`;
+    `tools/setup_hagrid_io.bat`; `@see` auf `HAGRID2MATSimPipelineRunner`; Doku „size_m/_l only“ an
+    beiden Stellen; `runs/lausitz/chosen_theta.txt` untrackt und ignoriert (die Kette löscht und
+    erzeugt sie selbst).
+  - `run_nightbc_wrap.bat` schreibt nach `hagrid\simulation\hagrid-matsim-output\logs` (relativ über
+    `%~dp0`, Ordner wird angelegt); Pfadauflösung per Probe-Kopie geprüft.
+  - `Test-CheckRunScripts.ps1` Fall 14: die Mutation deckte auf, dass nur die Unterordner-Regel
+    ungedeckt war, nicht beide; die Endet-auf-hagrid- und die `-pl`-Regel fingen die Fälle 11/13
+    bereits.
+  - `migrate-module-layout.ps1 -Reverse` bricht ohne altes Skelett (`hagrid\pom.xml`) ab, bevor
+    etwas angelegt wird, und löscht abgeleitete Artefakte am Quellort `hagrid\simulation\`. Fall 8
+    zeigte vorher, dass die Daten tatsächlich in ein leeres `hagrid\` wanderten.
+  - Bewusst NICHT gemacht: `vmargs_lausitz.txt` versionieren (legt die Threadzahl des Dev fest,
+    also eine Ergebnisentscheidung); Import-Reihenfolge; Parse-Assertions.
+- **1c schrieb ein falsches `cost_per_ride` — behoben.** `economics._direct_cost` kannte den
+  1c-Paketnamen `parcels_delivered` nicht und hielt 1c deshalb für einen reinen Pax-Lauf. Die
+  Folge war `cost_total / drt_rides` mit Fracht (9,997 €/Fahrt auf `d1c_f140…s1337`). Neuer Test
+  `test_shareduse_arm_emits_no_per_unit_cost` mit der echten `extract_shareduse`-Ausgabe; RED
+  gesehen, Mutante (Rückfall entfernt) fällt. Probe an 13 lokalen 1c/1d-Läufen: `cost_total`
+  gleich, 1d unverändert, 1c jetzt `cost_per_unit_separable`. Neubau der alten Outputs steht im
+  BACKLOG. → METHODS-LOG §2.6.
+- **LMD-Tab zeigte jsprit-€ neben C — behoben.** Vier Anzeigen (Kachel „Fixkosten", Diagramm
+  „Kosten je Provider", €-Spalten beider Provider-Tabellen) werden ausgeblendet, sobald
+  `cost_lmd_total` existiert (`render_lmd._has_unified_cost`). Hannover behält sie. Drei neue
+  Tests, beide Mutanten („immer" / „nie" ausblenden) werden gefangen. Probe: das echte
+  `b120rgs`-Board, in den Scratchpad gerendert, zeigt nur noch C. Suite: 493 grün.
+- **`[M]` DRT-Kosten-KPI im v2-Dashboard: erledigt, im Code nachgeprüft.** v2 hat die Kosten-KPIs
+  inzwischen. Für Lausitz steht `cost_total` samt Zerlegung aus `cost_model.py`/`economics.py`
+  auf einer Kachel („Direkte Betriebskosten", `render_drt.py:305-320`), für Hannover eine
+  Platzhalterkachel. Die drei widersprüchlichen Literaturwerte speisen keine KPI mehr: C ist
+  bottom-up, und Currie/Fournier sowie Sprinti stehen als Obergrenzen-Crosschecks in
+  `cost_parameters.csv`. Nachweis: die zwölf jüngsten lokalen Lausitz-Läufe tragen `cost_total`
+  und keine `*_placeholder`-Zeile, 120 Kosten- und Emissionstests grün. → METHODS-LOG §2.6.
+- **Kapsel-/Swap-Kapital und Handling abgebildet** (war Teil des Punkts „Beim Neubau
+  umzusetzen"). Das Kapital steckt im `modular_premium_factor`-Band 1,00–1,20 auf dem Fixsatz.
+  `c_swap_event`, `c_station_day` und `c_capsule_day` stehen als begründete Nullzeilen in
+  `cost_parameters.csv`, weil die Rüstzeit schon über VHT bepreist ist.
 
 ---
 
