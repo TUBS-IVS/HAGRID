@@ -1,6 +1,6 @@
 {
  "source": "HAGRID Java LMD dashboards (SUMMARY blob)",
- "extracted": "2026-08-25",
+ "extracted": "2026-09-29",
  "worktime_limit_h": 7.0,
  "capa_limit_frac": 0.9,
  "runs": [
@@ -24,6 +24,13 @@
     "both": 0,
     "neither": 334,
     "total_tours": 3206
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 36.94,
+    "stem_pct_provider_max": 41.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 3206,
@@ -51,6 +58,13 @@
     "neither": 279,
     "total_tours": 2463
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 34.96,
+    "stem_pct_provider_max": 40.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 2463,
     "providers": 7
@@ -76,6 +90,13 @@
     "both": 0,
     "neither": 277,
     "total_tours": 2002
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 33.37,
+    "stem_pct_provider_max": 38.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 2002,
@@ -103,6 +124,13 @@
     "neither": 288,
     "total_tours": 1687
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 32.18,
+    "stem_pct_provider_max": 38.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1687,
     "providers": 7
@@ -128,6 +156,13 @@
     "both": 0,
     "neither": 282,
     "total_tours": 1475
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.96,
+    "stem_pct_provider_max": 36.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1475,
@@ -155,6 +190,13 @@
     "neither": 256,
     "total_tours": 1294
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.0,
+    "stem_pct_provider_max": 35.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1294,
     "providers": 7
@@ -180,6 +222,13 @@
     "both": 0,
     "neither": 260,
     "total_tours": 1172
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 29.5,
+    "stem_pct_provider_max": 35.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1172,
@@ -207,6 +256,13 @@
     "neither": 243,
     "total_tours": 1065
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.67,
+    "stem_pct_provider_max": 34.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1065,
     "providers": 7
@@ -232,6 +288,13 @@
     "both": 1,
     "neither": 285,
     "total_tours": 996
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.65,
+    "stem_pct_provider_max": 33.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 996,
@@ -259,6 +322,13 @@
     "neither": 346,
     "total_tours": 982
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.87,
+    "stem_pct_provider_max": 33.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 982,
     "providers": 7
@@ -284,6 +354,13 @@
     "both": 57,
     "neither": 273,
     "total_tours": 879
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.28,
+    "stem_pct_provider_max": 31.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 879,
@@ -311,6 +388,13 @@
     "neither": 327,
     "total_tours": 856
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.39,
+    "stem_pct_provider_max": 32.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 856,
     "providers": 7
@@ -336,6 +420,13 @@
     "both": 144,
     "neither": 316,
     "total_tours": 809
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 26.44,
+    "stem_pct_provider_max": 31.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 809,
@@ -363,6 +454,13 @@
     "neither": 291,
     "total_tours": 766
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.89,
+    "stem_pct_provider_max": 31.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 766,
     "providers": 7
@@ -388,6 +486,13 @@
     "both": 212,
     "neither": 265,
     "total_tours": 725
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.57,
+    "stem_pct_provider_max": 30.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 725,
@@ -415,6 +520,13 @@
     "neither": 226,
     "total_tours": 695
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.1,
+    "stem_pct_provider_max": 29.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 695,
     "providers": 7
@@ -440,6 +552,13 @@
     "both": 195,
     "neither": 216,
     "total_tours": 672
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.83,
+    "stem_pct_provider_max": 28.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 672,
@@ -467,6 +586,13 @@
     "neither": 210,
     "total_tours": 674
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.52,
+    "stem_pct_provider_max": 28.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 674,
     "providers": 7
@@ -492,6 +618,13 @@
     "both": 106,
     "neither": 179,
     "total_tours": 652
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.39,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 652,
@@ -519,6 +652,13 @@
     "neither": 198,
     "total_tours": 653
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.64,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 653,
     "providers": 7
@@ -544,6 +684,13 @@
     "both": 52,
     "neither": 194,
     "total_tours": 650
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.32,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 650,
@@ -571,6 +718,13 @@
     "neither": 204,
     "total_tours": 654
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.56,
+    "stem_pct_provider_max": 28.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 654,
     "providers": 7
@@ -596,6 +750,13 @@
     "both": 42,
     "neither": 197,
     "total_tours": 652
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.28,
+    "stem_pct_provider_max": 27.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 652,
@@ -623,6 +784,13 @@
     "neither": 224,
     "total_tours": 681
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.71,
+    "stem_pct_provider_max": 27.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 681,
     "providers": 7
@@ -648,6 +816,13 @@
     "both": 30,
     "neither": 185,
     "total_tours": 647
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.0,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 647,
@@ -675,6 +850,13 @@
     "neither": 221,
     "total_tours": 672
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.14,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 672,
     "providers": 7
@@ -700,6 +882,13 @@
     "both": 14,
     "neither": 195,
     "total_tours": 652
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.28,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 652,
@@ -727,6 +916,13 @@
     "neither": 202,
     "total_tours": 662
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.43,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 662,
     "providers": 7
@@ -752,6 +948,13 @@
     "both": 2,
     "neither": 202,
     "total_tours": 673
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.43,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 673,
@@ -779,6 +982,13 @@
     "neither": 208,
     "total_tours": 673
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.6,
+    "stem_pct_provider_max": 27.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 673,
     "providers": 7
@@ -804,6 +1014,13 @@
     "both": 1,
     "neither": 188,
     "total_tours": 665
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.27,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 665,
@@ -831,6 +1048,13 @@
     "neither": 209,
     "total_tours": 674
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.46,
+    "stem_pct_provider_max": 28.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 674,
     "providers": 7
@@ -856,6 +1080,13 @@
     "both": 0,
     "neither": 209,
     "total_tours": 681
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.45,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 681,
@@ -883,6 +1114,13 @@
     "neither": 193,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.27,
+    "stem_pct_provider_max": 28.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -908,6 +1146,13 @@
     "both": 1,
     "neither": 189,
     "total_tours": 660
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.25,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 660,
@@ -935,6 +1180,13 @@
     "neither": 195,
     "total_tours": 665
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.4,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 665,
     "providers": 7
@@ -960,6 +1212,13 @@
     "both": 0,
     "neither": 194,
     "total_tours": 663
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.34,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 663,
@@ -987,6 +1246,13 @@
     "neither": 225,
     "total_tours": 681
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.39,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 681,
     "providers": 7
@@ -1012,6 +1278,13 @@
     "both": 13,
     "neither": 344,
     "total_tours": 961
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.28,
+    "stem_pct_provider_max": 33.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 961,
@@ -1039,6 +1312,13 @@
     "neither": 310,
     "total_tours": 3357
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 37.27,
+    "stem_pct_provider_max": 42.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 3357,
     "providers": 7
@@ -1064,6 +1344,13 @@
     "both": 0,
     "neither": 292,
     "total_tours": 2545
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 35.3,
+    "stem_pct_provider_max": 39.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 2545,
@@ -1091,6 +1378,13 @@
     "neither": 281,
     "total_tours": 2055
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 33.62,
+    "stem_pct_provider_max": 38.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 2055,
     "providers": 7
@@ -1116,6 +1410,13 @@
     "both": 0,
     "neither": 275,
     "total_tours": 1727
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 32.18,
+    "stem_pct_provider_max": 37.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1727,
@@ -1143,6 +1444,13 @@
     "neither": 263,
     "total_tours": 1499
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 31.22,
+    "stem_pct_provider_max": 36.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1499,
     "providers": 7
@@ -1168,6 +1476,13 @@
     "both": 0,
     "neither": 250,
     "total_tours": 1315
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.3,
+    "stem_pct_provider_max": 35.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1315,
@@ -1195,6 +1510,13 @@
     "neither": 259,
     "total_tours": 1191
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 29.5,
+    "stem_pct_provider_max": 35.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1191,
     "providers": 7
@@ -1220,6 +1542,13 @@
     "both": 0,
     "neither": 248,
     "total_tours": 1077
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.83,
+    "stem_pct_provider_max": 33.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1077,
@@ -1247,6 +1576,13 @@
     "neither": 307,
     "total_tours": 1025
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.81,
+    "stem_pct_provider_max": 33.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1025,
     "providers": 7
@@ -1272,6 +1608,13 @@
     "both": 13,
     "neither": 329,
     "total_tours": 973
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.85,
+    "stem_pct_provider_max": 33.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 973,
@@ -1299,6 +1642,13 @@
     "neither": 308,
     "total_tours": 906
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.88,
+    "stem_pct_provider_max": 32.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 906,
     "providers": 7
@@ -1324,6 +1674,13 @@
     "both": 101,
     "neither": 307,
     "total_tours": 851
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.18,
+    "stem_pct_provider_max": 30.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 851,
@@ -1351,6 +1708,13 @@
     "neither": 316,
     "total_tours": 806
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 26.61,
+    "stem_pct_provider_max": 31.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 806,
     "providers": 7
@@ -1376,6 +1740,13 @@
     "both": 164,
     "neither": 253,
     "total_tours": 738
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.65,
+    "stem_pct_provider_max": 31.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 738,
@@ -1403,6 +1774,13 @@
     "neither": 284,
     "total_tours": 741
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.77,
+    "stem_pct_provider_max": 30.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 741,
     "providers": 7
@@ -1428,6 +1806,13 @@
     "both": 235,
     "neither": 253,
     "total_tours": 708
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.18,
+    "stem_pct_provider_max": 29.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 708,
@@ -1455,6 +1840,13 @@
     "neither": 206,
     "total_tours": 671
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.69,
+    "stem_pct_provider_max": 28.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 671,
     "providers": 7
@@ -1480,6 +1872,13 @@
     "both": 140,
     "neither": 221,
     "total_tours": 686
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.63,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 686,
@@ -1507,6 +1906,13 @@
     "neither": 196,
     "total_tours": 655
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.43,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 655,
     "providers": 7
@@ -1532,6 +1938,13 @@
     "both": 79,
     "neither": 191,
     "total_tours": 661
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.55,
+    "stem_pct_provider_max": 28.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 661,
@@ -1559,6 +1972,13 @@
     "neither": 212,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.59,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -1584,6 +2004,13 @@
     "both": 45,
     "neither": 184,
     "total_tours": 644
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.31,
+    "stem_pct_provider_max": 28.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 644,
@@ -1611,6 +2038,13 @@
     "neither": 182,
     "total_tours": 642
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.15,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 642,
     "providers": 7
@@ -1636,6 +2070,13 @@
     "both": 24,
     "neither": 200,
     "total_tours": 654
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.26,
+    "stem_pct_provider_max": 27.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 654,
@@ -1663,6 +2104,13 @@
     "neither": 207,
     "total_tours": 654
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.31,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 654,
     "providers": 7
@@ -1688,6 +2136,13 @@
     "both": 28,
     "neither": 193,
     "total_tours": 652
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.27,
+    "stem_pct_provider_max": 27.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 652,
@@ -1715,6 +2170,13 @@
     "neither": 207,
     "total_tours": 661
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.26,
+    "stem_pct_provider_max": 27.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 661,
     "providers": 7
@@ -1740,6 +2202,13 @@
     "both": 12,
     "neither": 187,
     "total_tours": 653
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.03,
+    "stem_pct_provider_max": 27.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 653,
@@ -1767,6 +2236,13 @@
     "neither": 181,
     "total_tours": 650
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.07,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 650,
     "providers": 7
@@ -1792,6 +2268,13 @@
     "both": 7,
     "neither": 183,
     "total_tours": 650
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.03,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 650,
@@ -1819,6 +2302,13 @@
     "neither": 207,
     "total_tours": 671
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.66,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 671,
     "providers": 7
@@ -1844,6 +2334,13 @@
     "both": 1,
     "neither": 198,
     "total_tours": 663
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.36,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 663,
@@ -1871,6 +2368,13 @@
     "neither": 178,
     "total_tours": 656
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.13,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 656,
     "providers": 7
@@ -1896,6 +2400,13 @@
     "both": 0,
     "neither": 189,
     "total_tours": 657
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.22,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 657,
@@ -1923,6 +2434,13 @@
     "neither": 206,
     "total_tours": 666
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.19,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 666,
     "providers": 7
@@ -1948,6 +2466,13 @@
     "both": 1,
     "neither": 201,
     "total_tours": 667
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.71,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 667,
@@ -1975,6 +2500,13 @@
     "neither": 193,
     "total_tours": 661
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.24,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 661,
     "providers": 7
@@ -2000,6 +2532,13 @@
     "both": 0,
     "neither": 198,
     "total_tours": 670
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.57,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 670,
@@ -2027,6 +2566,13 @@
     "neither": 309,
     "total_tours": 3357
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 37.15,
+    "stem_pct_provider_max": 42.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 3357,
     "providers": 7
@@ -2052,6 +2598,13 @@
     "both": 0,
     "neither": 294,
     "total_tours": 2545
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 35.32,
+    "stem_pct_provider_max": 39.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 2545,
@@ -2079,6 +2632,13 @@
     "neither": 297,
     "total_tours": 2059
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 33.57,
+    "stem_pct_provider_max": 37.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 2059,
     "providers": 7
@@ -2104,6 +2664,13 @@
     "both": 0,
     "neither": 276,
     "total_tours": 1727
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 32.67,
+    "stem_pct_provider_max": 38.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1727,
@@ -2131,6 +2698,13 @@
     "neither": 283,
     "total_tours": 1503
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 31.41,
+    "stem_pct_provider_max": 36.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1503,
     "providers": 7
@@ -2156,6 +2730,13 @@
     "both": 0,
     "neither": 248,
     "total_tours": 1315
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.22,
+    "stem_pct_provider_max": 34.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1315,
@@ -2183,6 +2764,13 @@
     "neither": 270,
     "total_tours": 1191
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 29.68,
+    "stem_pct_provider_max": 35.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1191,
     "providers": 7
@@ -2208,6 +2796,13 @@
     "both": 0,
     "neither": 259,
     "total_tours": 1078
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 29.02,
+    "stem_pct_provider_max": 34.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1078,
@@ -2235,6 +2830,13 @@
     "neither": 276,
     "total_tours": 1009
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.84,
+    "stem_pct_provider_max": 33.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1009,
     "providers": 7
@@ -2260,6 +2862,13 @@
     "both": 13,
     "neither": 328,
     "total_tours": 968
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.56,
+    "stem_pct_provider_max": 33.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 968,
@@ -2287,6 +2896,13 @@
     "neither": 349,
     "total_tours": 919
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.3,
+    "stem_pct_provider_max": 31.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 919,
     "providers": 7
@@ -2312,6 +2928,13 @@
     "both": 104,
     "neither": 276,
     "total_tours": 823
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 26.85,
+    "stem_pct_provider_max": 31.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 823,
@@ -2339,6 +2962,13 @@
     "neither": 308,
     "total_tours": 809
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 26.31,
+    "stem_pct_provider_max": 30.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 809,
     "providers": 7
@@ -2364,6 +2994,13 @@
     "both": 183,
     "neither": 279,
     "total_tours": 761
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.78,
+    "stem_pct_provider_max": 30.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 761,
@@ -2391,6 +3028,13 @@
     "neither": 272,
     "total_tours": 735
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.52,
+    "stem_pct_provider_max": 30.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 735,
     "providers": 7
@@ -2416,6 +3060,13 @@
     "both": 230,
     "neither": 252,
     "total_tours": 711
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.1,
+    "stem_pct_provider_max": 29.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 711,
@@ -2443,6 +3094,13 @@
     "neither": 203,
     "total_tours": 673
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.81,
+    "stem_pct_provider_max": 29.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 673,
     "providers": 7
@@ -2468,6 +3126,13 @@
     "both": 143,
     "neither": 198,
     "total_tours": 662
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.63,
+    "stem_pct_provider_max": 28.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 662,
@@ -2495,6 +3160,13 @@
     "neither": 196,
     "total_tours": 662
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.86,
+    "stem_pct_provider_max": 28.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 662,
     "providers": 7
@@ -2520,6 +3192,13 @@
     "both": 83,
     "neither": 198,
     "total_tours": 657
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.5,
+    "stem_pct_provider_max": 28.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 657,
@@ -2547,6 +3226,13 @@
     "neither": 206,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.73,
+    "stem_pct_provider_max": 28.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -2572,6 +3258,13 @@
     "both": 36,
     "neither": 189,
     "total_tours": 655
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.64,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 655,
@@ -2599,6 +3292,13 @@
     "neither": 203,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.82,
+    "stem_pct_provider_max": 28.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -2624,6 +3324,13 @@
     "both": 38,
     "neither": 185,
     "total_tours": 642
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.03,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 642,
@@ -2651,6 +3358,13 @@
     "neither": 218,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.28,
+    "stem_pct_provider_max": 27.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -2676,6 +3390,13 @@
     "both": 19,
     "neither": 188,
     "total_tours": 644
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.04,
+    "stem_pct_provider_max": 26.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 644,
@@ -2703,6 +3424,13 @@
     "neither": 202,
     "total_tours": 655
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.57,
+    "stem_pct_provider_max": 27.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 655,
     "providers": 7
@@ -2728,6 +3456,13 @@
     "both": 11,
     "neither": 197,
     "total_tours": 658
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.22,
+    "stem_pct_provider_max": 27.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 658,
@@ -2755,6 +3490,13 @@
     "neither": 210,
     "total_tours": 674
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.62,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 674,
     "providers": 7
@@ -2780,6 +3522,13 @@
     "both": 7,
     "neither": 202,
     "total_tours": 666
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.26,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 666,
@@ -2807,6 +3556,13 @@
     "neither": 191,
     "total_tours": 658
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.18,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 658,
     "providers": 7
@@ -2832,6 +3588,13 @@
     "both": 1,
     "neither": 194,
     "total_tours": 666
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.23,
+    "stem_pct_provider_max": 28.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 666,
@@ -2859,6 +3622,13 @@
     "neither": 201,
     "total_tours": 660
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.43,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 660,
     "providers": 7
@@ -2884,6 +3654,13 @@
     "both": 0,
     "neither": 191,
     "total_tours": 661
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.17,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 661,
@@ -2911,6 +3688,13 @@
     "neither": 207,
     "total_tours": 675
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.51,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 675,
     "providers": 7
@@ -2936,6 +3720,13 @@
     "both": 1,
     "neither": 196,
     "total_tours": 666
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.35,
+    "stem_pct_provider_max": 27.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 666,
@@ -2963,6 +3754,13 @@
     "neither": 199,
     "total_tours": 665
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.27,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 665,
     "providers": 7
@@ -2988,6 +3786,13 @@
     "both": 1,
     "neither": 185,
     "total_tours": 657
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.14,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 657,
@@ -3015,6 +3820,13 @@
     "neither": 318,
     "total_tours": 3356
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 37.37,
+    "stem_pct_provider_max": 42.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 3356,
     "providers": 7
@@ -3040,6 +3852,13 @@
     "both": 0,
     "neither": 295,
     "total_tours": 2550
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 35.38,
+    "stem_pct_provider_max": 39.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 2550,
@@ -3067,6 +3886,13 @@
     "neither": 290,
     "total_tours": 2058
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 33.74,
+    "stem_pct_provider_max": 38.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 2058,
     "providers": 7
@@ -3092,6 +3918,13 @@
     "both": 0,
     "neither": 296,
     "total_tours": 1730
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 32.61,
+    "stem_pct_provider_max": 37.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1730,
@@ -3119,6 +3952,13 @@
     "neither": 273,
     "total_tours": 1503
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 31.47,
+    "stem_pct_provider_max": 36.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1503,
     "providers": 7
@@ -3144,6 +3984,13 @@
     "both": 0,
     "neither": 249,
     "total_tours": 1317
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.1,
+    "stem_pct_provider_max": 35.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1317,
@@ -3171,6 +4018,13 @@
     "neither": 280,
     "total_tours": 1206
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 30.0,
+    "stem_pct_provider_max": 35.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1206,
     "providers": 7
@@ -3196,6 +4050,13 @@
     "both": 0,
     "neither": 254,
     "total_tours": 1087
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.8,
+    "stem_pct_provider_max": 33.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 1087,
@@ -3223,6 +4084,13 @@
     "neither": 286,
     "total_tours": 1011
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 28.73,
+    "stem_pct_provider_max": 33.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 1011,
     "providers": 7
@@ -3248,6 +4116,13 @@
     "both": 16,
     "neither": 353,
     "total_tours": 993
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 29.08,
+    "stem_pct_provider_max": 33.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 993,
@@ -3275,6 +4150,13 @@
     "neither": 339,
     "total_tours": 933
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.97,
+    "stem_pct_provider_max": 31.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 933,
     "providers": 7
@@ -3300,6 +4182,13 @@
     "both": 95,
     "neither": 303,
     "total_tours": 836
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 26.98,
+    "stem_pct_provider_max": 31.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 836,
@@ -3327,6 +4216,13 @@
     "neither": 389,
     "total_tours": 865
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 27.24,
+    "stem_pct_provider_max": 31.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 865,
     "providers": 7
@@ -3352,6 +4248,13 @@
     "both": 171,
     "neither": 253,
     "total_tours": 745
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.7,
+    "stem_pct_provider_max": 30.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 745,
@@ -3379,6 +4282,13 @@
     "neither": 289,
     "total_tours": 736
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.75,
+    "stem_pct_provider_max": 30.5,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 736,
     "providers": 7
@@ -3404,6 +4314,13 @@
     "both": 240,
     "neither": 225,
     "total_tours": 693
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.03,
+    "stem_pct_provider_max": 30.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 693,
@@ -3431,6 +4348,13 @@
     "neither": 229,
     "total_tours": 682
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.98,
+    "stem_pct_provider_max": 29.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 682,
     "providers": 7
@@ -3456,6 +4380,13 @@
     "both": 135,
     "neither": 247,
     "total_tours": 705
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 25.07,
+    "stem_pct_provider_max": 28.6,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 705,
@@ -3483,6 +4414,13 @@
     "neither": 208,
     "total_tours": 666
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.53,
+    "stem_pct_provider_max": 28.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 666,
     "providers": 7
@@ -3508,6 +4446,13 @@
     "both": 91,
     "neither": 200,
     "total_tours": 663
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.5,
+    "stem_pct_provider_max": 28.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 663,
@@ -3535,6 +4480,13 @@
     "neither": 230,
     "total_tours": 681
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.83,
+    "stem_pct_provider_max": 28.7,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 681,
     "providers": 7
@@ -3560,6 +4512,13 @@
     "both": 51,
     "neither": 212,
     "total_tours": 666
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.57,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 666,
@@ -3587,6 +4546,13 @@
     "neither": 197,
     "total_tours": 648
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.21,
+    "stem_pct_provider_max": 27.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 648,
     "providers": 7
@@ -3612,6 +4578,13 @@
     "both": 28,
     "neither": 239,
     "total_tours": 687
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.95,
+    "stem_pct_provider_max": 27.3,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 687,
@@ -3639,6 +4612,13 @@
     "neither": 172,
     "total_tours": 633
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 23.77,
+    "stem_pct_provider_max": 26.4,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 633,
     "providers": 7
@@ -3664,6 +4644,13 @@
     "both": 24,
     "neither": 204,
     "total_tours": 653
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.14,
+    "stem_pct_provider_max": 27.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 653,
@@ -3691,6 +4678,13 @@
     "neither": 188,
     "total_tours": 656
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.39,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 656,
     "providers": 7
@@ -3716,6 +4710,13 @@
     "both": 14,
     "neither": 212,
     "total_tours": 677
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.51,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 677,
@@ -3743,6 +4744,13 @@
     "neither": 214,
     "total_tours": 676
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.61,
+    "stem_pct_provider_max": 28.1,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 676,
     "providers": 7
@@ -3768,6 +4776,13 @@
     "both": 6,
     "neither": 211,
     "total_tours": 665
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.32,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 665,
@@ -3795,6 +4810,13 @@
     "neither": 213,
     "total_tours": 675
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.71,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 675,
     "providers": 7
@@ -3820,6 +4842,13 @@
     "both": 4,
     "neither": 186,
     "total_tours": 655
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.19,
+    "stem_pct_provider_max": 28.0,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 655,
@@ -3847,6 +4876,13 @@
     "neither": 187,
     "total_tours": 652
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.12,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 652,
     "providers": 7
@@ -3872,6 +4908,13 @@
     "both": 0,
     "neither": 216,
     "total_tours": 678
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.87,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 678,
@@ -3899,6 +4942,13 @@
     "neither": 243,
     "total_tours": 701
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.82,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 701,
     "providers": 7
@@ -3924,6 +4974,13 @@
     "both": 1,
     "neither": 191,
     "total_tours": 660
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.22,
+    "stem_pct_provider_max": 27.8,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 660,
@@ -3951,6 +5008,13 @@
     "neither": 206,
     "total_tours": 663
    },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.47,
+    "stem_pct_provider_max": 27.9,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
+   },
    "meta": {
     "carrier_detail_tours": 663,
     "providers": 7
@@ -3976,6 +5040,13 @@
     "both": 1,
     "neither": 201,
     "total_tours": 666
+   },
+   "stem": {
+    "stem_def": "outbound_only",
+    "stem_pct_network": 24.22,
+    "stem_pct_provider_max": 28.2,
+    "stem_in_pct_network": null,
+    "stem_out_pct_network": null
    },
    "meta": {
     "carrier_detail_tours": 666,
