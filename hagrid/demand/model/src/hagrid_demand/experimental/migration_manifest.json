@@ -1,0 +1,9 @@
+{
+  "moved": [
+    "model.py", "workflow.py", "forecast.py", "carriers.py", "model_search.py", "logit_experiment.py",
+    "topdown.py", "landuse.py", "person_features.py", "diagnostics.py", "street_reconstruct.py",
+    "reconstruct.py", "logistics_osm.py", "size_experiment.py", "households.py", "continuation_report.py",
+    "spatial.py", "model.html", "spatial.html"
+  ],
+  "compatibility": "Legacy module paths re-export experimental implementations."
+}

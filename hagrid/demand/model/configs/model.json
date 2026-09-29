@@ -1,0 +1,97 @@
+{
+  "foundation_run": "../../runs/hannover-foundation-dashboard-20260909",
+  "output_dir": "../../runs",
+  "legacy_output": "../../input/hannover/notebook-output",
+  "reference_year": 2021,
+  "reference_operating_days": 313,
+  "seed": 42,
+  "holdout_fraction": 0.2,
+  "validation_fraction": 0.2,
+  "branch_log_sd": 0.6,
+  "carrier_log_sd": 0.5,
+  "market_share_sd": 0.05,
+  "b2b_share_sd": 0.07,
+  "hermes_shape_weight": 0.2,
+  "max_fit_evaluations": 500,
+  "dates": [
+    "2026-09-14",
+    "2026-09-15",
+    "2030-09-16"
+  ],
+  "realizations": 2,
+  "volume_curve": "linear",
+  "weekday_weights": {
+    "private": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.8,
+      0
+    ],
+    "business": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.15,
+      0
+    ]
+  },
+  "monthly_weights": [
+    0.85,
+    0.85,
+    0.95,
+    0.95,
+    0.95,
+    0.95,
+    0.9,
+    0.9,
+    1,
+    1.05,
+    1.25,
+    1.4
+  ],
+  "holiday_dates": [],
+  "holiday_factor": 0,
+  "field_anchor_date": "2021-01-01",
+  "fourier_features": 64,
+  "spatial": {
+    "private": {
+      "log_sigma": 0.3,
+      "length_scale_m": 3000,
+      "temporal_rho": 0.7
+    },
+    "business": {
+      "log_sigma": 0.45,
+      "length_scale_m": 2000,
+      "temporal_rho": 0.65
+    }
+  },
+  "common_day_log_sd": 0.1,
+  "segment_day_log_sd": 0.05,
+  "persistent_site_log_sd": 0,
+  "stock_updates": null,
+  "export_geopackage": true,
+  "delivery_mapping": null,
+  "network_file": null,
+  "network_modes": [
+    "car"
+  ],
+  "network_max_distance_m": 100,
+  "assumptions": [
+    "DHL tagesschni is treated as mean parcels per operating day, following existing HAGRID/PANDA usage; measurement definition unconfirmed.",
+    "DHL rows are additive within PLZ, following PANDA; repeated street records remain a flagged uncertainty.",
+    "Hermes is used only for within-training spatial shape, not absolute units.",
+    "Historical source population and firms are used as reference-year proxies; their actual vintages remain unconfirmed.",
+    "313 reference operating days, calendar weights, spatial and daily noise parameters are explicit assumptions.",
+    "Legacy market/B2B/volume series are inherited priors and projection paths, not new independent observations.",
+    "National relative volume growth is provisionally transferred to the region. No building-level future stock changes are invented.",
+    "An empty holiday list means weekday/month seasonality only; no official holiday calendar has been supplied.",
+    "No exact PANDA reproduction: original OSM/Zensus caches are unavailable in the review clone.",
+    "User-defined CEP scope: exclude entire DHL street observations above 1000 before aggregation; this does not establish the observed transport mode."
+  ],
+  "dhl_exclude_above": 1000
+}
