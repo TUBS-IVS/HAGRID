@@ -221,6 +221,8 @@ def test_plan_network_is_deterministic_and_monotone():
             assert count == status["years"][str(year)][key]["target"]
     other, _ = _plan(years, demand, seed=12)
     assert len(other) == len(first)
+    assert other.iloc[5:].point_id.tolist() == first.iloc[5:].point_id.tolist()  # ids follow group and year, not the seed
+    assert not other.iloc[5:].geometry.geom_equals(first.iloc[5:].geometry).all()  # another seed opens other sites
 
 
 def test_capacity_inputs_select_open_stations_and_keep_their_sizes():
@@ -256,3 +258,16 @@ def test_grow_network_disabled_adds_nothing():
     # years before the reference year use the reference network from the first simulated year on
     early, status = _plan([2021, 2022], {})
     assert len(early) == 5 and (early.year_opened == 2021).all() and status["growth_years"] == []
+
+
+def test_growth_ranking_is_shared_between_scenarios():
+    """A scenario that needs one station more opens the same sites plus one: the ranking is shared."""
+    xy, weights = _demand()
+    uniforms = {("locker", "DHL"): np.random.default_rng(3).random(30)}
+    small, _ = grow_network(_points(), {("locker", "DHL"): 3}, _candidates(), xy, weights, 2026, _cfg(),
+                            np.random.default_rng(1), uniforms=uniforms)
+    large, _ = grow_network(_points(), {("locker", "DHL"): 5}, _candidates(), xy, weights * 1.3, 2026, _cfg(),
+                            np.random.default_rng(2), uniforms=uniforms)
+    small_sites = {(point.x, point.y) for point in small.iloc[5:].geometry}
+    large_sites = {(point.x, point.y) for point in large.iloc[5:].geometry}
+    assert len(small_sites) == 3 and len(large_sites) == 5 and small_sites <= large_sites

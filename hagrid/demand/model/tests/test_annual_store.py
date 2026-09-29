@@ -151,3 +151,17 @@ def test_export_day_excludes_points_opened_later(tmp_path):
     broken = _point_store(tmp_path / "broken", extra_rows=[(datetime.date(2025, 5, 16), 3, 1)])
     with pytest.raises(ValueError, match="not open"):
         export_day(broken, "2025-05-16", tmp_path / "broken-export")
+
+
+def test_store_streams_plz_rows_and_point_rows(annual_run):
+    import numpy as np
+    import pyarrow.parquet as pq
+
+    store = annual_run / "annual"
+    plz = pd.read_parquet(store / "plz_daily.parquet")
+    days = pd.read_parquet(store / "days.parquet")
+    assert plz.parcels.dtype == np.int32 and str(plz.date.dtype).startswith("datetime64")
+    assert int(plz.parcels.sum()) == int(days.parcels.sum())
+    assert pq.ParquetFile(store / "plz_daily.parquet").metadata.num_row_groups >= 2  # one row group per day, not one table
+    points = pd.read_parquet(store / "point_daily.parquet")
+    assert len(points) == 0 or points.stop.min() > pd.read_parquet(annual_run / "reference_stops.parquet").stop_index.max()

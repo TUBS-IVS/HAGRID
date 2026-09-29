@@ -379,6 +379,14 @@ class LockerQueue:
         """Parcels inside after today's pickups (occupied compartments tomorrow morning)."""
         return self.pending[:, 1:].sum(axis=1) if self.pending.shape[1] > 1 else np.zeros(len(self.compartments), dtype=np.int64)
 
+    def carry_from(self, previous: "LockerQueue", gap_days: int, prefix: int) -> None:
+        """Take over the parcels still inside the first *prefix* points of *previous* (the stations that already existed),
+        *gap_days* after its last day, so the compartments do not empty at the turn of the year."""
+        previous._advance(previous.day + int(gap_days))
+        width = min(self.pending.shape[1], previous.pending.shape[1])
+        prefix = min(int(prefix), len(self.compartments), len(previous.compartments))
+        self.pending[:prefix, :width] = previous.pending[:prefix, :width]
+
 
 @dataclass
 class OutOfHomePlan:

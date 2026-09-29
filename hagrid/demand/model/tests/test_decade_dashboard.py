@@ -257,3 +257,17 @@ def test_template_script_is_valid_javascript(tmp_path):
     source.write_text("\n".join(scripts), encoding="utf-8")
     result = subprocess.run(["node", "--check", str(source)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_point_daily_by_carrier_sums_the_year():
+    import datetime as dt
+
+    import pandas as pd
+
+    from hagrid_demand.baseline.decade_dashboard import _point_daily_by_carrier
+
+    frame = pd.DataFrame({"date": [dt.date(2025, 3, 1), dt.date(2025, 3, 2), dt.date(2026, 3, 1)], "stop": [7, 8, 7],
+                          "dhl_b2c": [3, 4, 9], "dhl_b2b": [0, 0, 0], "ama_b2c": [1, 0, 2]})
+    assert _point_daily_by_carrier(frame, 2025) == {"DHL": 7., "Amazon": 1.}
+    assert _point_daily_by_carrier(frame, 2027) == {"DHL": 0., "Amazon": 0.}
+    assert _point_daily_by_carrier(None, 2025) is None

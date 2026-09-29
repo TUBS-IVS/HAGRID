@@ -143,14 +143,17 @@ def candidate_weights(candidates: gpd.GeoDataFrame, existing_xy: np.ndarray, dem
 
 def grow_network(points: gpd.GeoDataFrame, additions: dict[Group, int], candidates: gpd.GeoDataFrame, demand_xy: np.ndarray,
                  demand: np.ndarray, year: int, cfg: dict, rng: np.random.Generator, *, used: np.ndarray | None = None,
-                 labels: np.ndarray | None = None) -> tuple[gpd.GeoDataFrame, dict[Group, dict]]:
+                 labels: np.ndarray | None = None, uniforms: dict[Group, np.ndarray] | None = None) -> tuple[gpd.GeoDataFrame, dict[Group, dict]]:
     """Append ``additions[group]`` synthetic stations per group for *year* at candidate POIs.
 
-    Per group (sorted) the POIs are drawn one by one without replacement with probability ~ ``candidate_weights``;
-    the weights (coverage gap to the group's stations before this year's draw) are computed once per group and year,
-    only POIs closer than ``min_spacing_m`` to a station drawn earlier in the year drop out. Each POI hosts at most
-    one new station: *used* marks the POIs taken earlier in the run and is updated in place. Returns the network and
-    per group ``{"target_added", "added", "candidates", "shortfall"}``.
+    Per group (sorted) the POIs are sampled without replacement with probability ~ ``candidate_weights`` by an
+    exponential race (Efraimidis & Spirakis): every POI keeps one uniform per group for the whole run
+    (*uniforms*, else drawn from *rng*), ranked by ``-log(u) / weight``. Scenarios with similar demand therefore open
+    the same sites in the same order and differ only in how far down the ranking they get. The weights (coverage gap
+    to the group's stations before this year's draw) are computed once per group and year; POIs closer than
+    ``min_spacing_m`` to a station drawn earlier in the year drop out. Each POI hosts at most one new station: *used*
+    marks the POIs taken earlier in the run and is updated in place. Returns the network and per group
+    ``{"target_added", "added", "candidates", "shortfall"}``.
     """
     used = np.zeros(len(candidates), dtype=bool) if used is None else used
     labels = poi_types(candidates, cfg["candidate_types"]) if labels is None else labels
@@ -165,13 +168,16 @@ def grow_network(points: gpd.GeoDataFrame, additions: dict[Group, int], candidat
         weights = candidate_weights(candidates, point_xy[(kinds == kind) & (served == carriers)], demand_xy, demand, kind, cfg, near=near)
         weights[used] = 0.
         available = int((weights > 0).sum())
+        uniform = uniforms[group] if uniforms is not None and group in uniforms else rng.random(len(candidates))
+        positive = weights > 0
+        keys = np.where(positive, -np.log(np.clip(uniform, 1e-300, 1.)) / np.where(positive, weights, 1.), np.inf)
         chosen = []
-        while len(chosen) < wanted:
-            pool = np.flatnonzero(weights > 0)
-            if not len(pool):
+        for pick in np.argsort(keys, kind="stable"):
+            if len(chosen) >= wanted or not np.isfinite(keys[pick]):
                 break
-            pick = int(rng.choice(pool, p=weights[pool] / weights[pool].sum()))
-            chosen.append(pick)
+            if weights[pick] <= 0:
+                continue  # within min_spacing_m of a station drawn earlier this year
+            chosen.append(int(pick))
             # the new station covers its surroundings for the rest of the year's draw (and itself)
             weights[np.hypot(xy[:, 0] - xy[pick, 0], xy[:, 1] - xy[pick, 1]) < float(cfg["min_spacing_m"])] = 0.
         chosen = np.sort(np.asarray(chosen, dtype=np.int64))
@@ -215,8 +221,9 @@ def plan_network(points: gpd.GeoDataFrame, years: Iterable[int], demand_by_year:
     Reference stations keep their order with ``year_opened`` = the reference year (the first simulated year when that is
     earlier: the reference network then serves the earlier years unchanged) and ``poi_type`` None; the additions of each
     growth year follow in year order. Reference counts and demand come from the reference network and the reference
-    year's demand (*demand_by_year* must hold it), never from a simulated year. Each growth year draws with
-    ``named_rng(seed, year=year, channel="ooh-network-growth")``.
+    year's demand (*demand_by_year* must hold it), never from a simulated year. The ranking uniforms come from
+    ``named_rng(seed, group=..., channel="ooh-network-keys")``; ``named_rng(seed, year=year, channel="ooh-network-growth")``
+    only serves groups that are not in the reference network.
     """
     years = [int(year) for year in years]
     reference_year = int(cfg["reference_year"])
@@ -239,6 +246,9 @@ def plan_network(points: gpd.GeoDataFrame, years: Iterable[int], demand_by_year:
     status["candidate_pois"] = int(len(candidates))
     labels = poi_types(candidates, cfg["candidate_types"])
     used = np.zeros(len(candidates), dtype=bool)
+    # one uniform per POI and group for the whole run: the ranking that all scenarios share
+    uniforms = {group: named_rng(int(seed), group=group_key(group), channel="ooh-network-keys").random(len(candidates))
+                for group in network_groups(points)}
     previous = dict(reference_counts)
     for year in grow:
         if year not in demand_by_year:
@@ -249,7 +259,7 @@ def plan_network(points: gpd.GeoDataFrame, years: Iterable[int], demand_by_year:
         have = {group: int(((kinds == group[0]) & (served == group[1])).sum()) for group in groups}
         network, grown = grow_network(network, {group: max(0, targets[group] - have[group]) for group in groups}, candidates,
                                       demand_xy_by_year[year], demand_by_site_year[year], year, cfg,
-                                      named_rng(int(seed), year=year, channel="ooh-network-growth"), used=used, labels=labels)
+                                      named_rng(int(seed), year=year, channel="ooh-network-growth"), used=used, labels=labels, uniforms=uniforms)
         status["years"][str(year)] = {group_key(group): {"target": int(targets[group]), "added": grown[group]["added"],
                                                          "candidates": grown[group]["candidates"],
                                                          "shortfall": int(targets[group] - have[group] - grown[group]["added"]),

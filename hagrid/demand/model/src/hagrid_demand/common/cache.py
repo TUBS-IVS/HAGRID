@@ -31,6 +31,16 @@ def runtime_identity() -> dict:
             ("numpy", "scipy", "pandas", "geopandas", "shapely", "pyarrow")}}
 
 
+def _link_or_copy(source: Path, destination: Path) -> bool:
+    """Hard-link *source* to *destination* (the same bytes without extra disk space); copy where links are refused."""
+    try:
+        os.link(source, destination)
+        return True
+    except OSError:
+        shutil.copy2(source, destination)
+        return False
+
+
 def _semantic(value: Any, *, resource_tree: bool = False) -> Any:
     if isinstance(value, Path):
         return resource_hash(value, resources_only=resource_tree)
@@ -292,7 +302,7 @@ def _discard_invalid_stage(cache_path: Path) -> None:
 
 def _publish_run_artifacts(run_dir: Path, *, stage_name: str, cache_path: Path,
                            artifacts: dict[str, str]) -> dict[str, str]:
-    """Atomically publish a verified, run-local copy of immutable cache artifacts."""
+    """Atomically publish a verified, run-local copy of immutable cache artifacts (hard links where possible)."""
     target = run_dir / stage_name
     expected = {f"{stage_name}/{relative}": digest for relative, digest in artifacts.items()}
     if target.exists() and _artifact_hashes(target) == artifacts:
@@ -307,14 +317,16 @@ def _publish_run_artifacts(run_dir: Path, *, stage_name: str, cache_path: Path,
         # Hash the cache tree once: hashing it again for every artifact made the publish step quadratic
         # (a multi-year daily stage has hundreds of files and several GB).
         current = _artifact_hashes(cache_path)
+        linked = True
         for relative, digest in artifacts.items():
             source = cache_path / relative
             destination = work / relative
             if not source.is_file() or current.get(relative) != digest:
                 raise ValueError(f"Cache artifact changed before copy: {relative}")
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-        if _artifact_hashes(work) != artifacts:
+            linked &= _link_or_copy(source, destination)
+        # linked files are the verified cache bytes themselves; only real copies are hashed again
+        if not linked and _artifact_hashes(work) != artifacts:
             raise ValueError("Copied run artifacts did not match verified cache hashes")
         try:
             os.rename(work, target)

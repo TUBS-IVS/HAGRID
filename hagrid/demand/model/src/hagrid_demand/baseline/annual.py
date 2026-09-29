@@ -23,6 +23,37 @@ def store_columns() -> list[str]:
     return [f"{short}_{suffix}" for _, short in CARRIER_FIELDS.values() for suffix in ("b2c", "b2b")]
 
 
+class ParquetAppender:
+    """Append DataFrames to one Parquet file as row groups (schema of the first frame) instead of holding them all."""
+
+    def __init__(self, path: Path, *, empty: pd.DataFrame | None = None):
+        self.path, self.empty, self.writer, self.schema = Path(path), empty, None, None
+
+    def append(self, frame: pd.DataFrame) -> None:
+        if frame.empty:
+            return
+        table = pa.Table.from_pandas(frame, preserve_index=False)
+        if self.writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.schema = table.schema
+            self.writer = pq.ParquetWriter(self.path, self.schema, compression="zstd")
+        else:
+            table = table.cast(self.schema)
+        self.writer.write_table(table)
+
+    def close(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
+        elif self.empty is not None and not self.path.exists():
+            self.empty.to_parquet(self.path, index=False)
+
+
+def _empty_plz() -> pd.DataFrame:
+    return pd.DataFrame({"date": pd.Series(dtype="datetime64[ns]"), "plz": pd.Series(dtype=object), "segment": pd.Series(dtype=object),
+                         "carrier": pd.Series(dtype=object), "parcels": pd.Series(dtype=np.int32)})
+
+
 class AnnualStoreWriter:
     """Aggregate every simulated day to stops and PLZ and append it to the annual store."""
 
@@ -38,7 +69,11 @@ class AnnualStoreWriter:
         self.schema = pa.schema([("date", pa.date32()), ("stop", pa.int32())] + [(name, pa.uint16()) for name in self.columns])
         self.writer = pq.ParquetWriter(self.directory / "stop_daily.parquet", self.schema, compression="zstd")
         self.cache: dict[int, tuple] = {}
-        self.plz_rows: list[tuple] = []
+        self.is_point = (info.stop_type.astype(str).ne("home").to_numpy() if "stop_type" in info
+                         else np.zeros(len(info), dtype=bool))
+        self.plz = ParquetAppender(self.directory / "plz_daily.parquet", empty=_empty_plz())
+        # the pickup-point rows of every day, small enough to read whole (exact per-carrier pickup volumes)
+        self.point_writer = pq.ParquetWriter(self.directory / "point_daily.parquet", self.schema, compression="zstd")
         self.day_rows: list[dict] = []
         self.weekday: dict[tuple[str, str], np.ndarray] = {}
         self.started = time.perf_counter()
@@ -56,6 +91,8 @@ class AnnualStoreWriter:
                 raise ValueError("site stop mapping refers to unknown stops")
             codes, index = np.unique(sites.plz.astype(str).to_numpy(), return_inverse=True)
             cached = (sites, positions.to_numpy(dtype=np.int64), codes, index, ids.str.startswith("ooh:").to_numpy())
+            if len(self.cache) >= 8:
+                self.cache.clear()  # the site tables of earlier years are not needed again
             self.cache[id(sites)] = cached
         return cached[1], cached[2], cached[3]
 
@@ -68,6 +105,7 @@ class AnnualStoreWriter:
         matrix = np.zeros((len(self.stop_index), len(self.columns)), dtype=np.int64)
         row = {"date": date, "weekday": int(date.dayofweek), "holiday": date.date().isoformat() in self.holidays,
                "b2c": 0, "b2b": 0, "sites_active": 0, "out_of_home": 0}
+        plz_parts: list[pd.DataFrame] = []
         for segment, item in segment_days.items():
             positions, codes, index = self._positions(item.sites)
             row["sites_active"] += int((item.counts.sum(axis=1) > 0).sum())
@@ -85,7 +123,10 @@ class AnnualStoreWriter:
                 column = self.columns.index(f"{CARRIER_FIELDS[carrier][1]}_{_SUFFIX[segment]}")
                 matrix[:, column] += np.bincount(positions, weights=values, minlength=len(self.stop_index)).astype(np.int64)
                 by_plz = np.bincount(index, weights=values, minlength=len(codes)).astype(np.int64)
-                self.plz_rows.extend((date, code, segment, carrier, int(parcels)) for code, parcels in zip(codes, by_plz) if parcels)
+                nonzero = by_plz > 0
+                if nonzero.any():
+                    plz_parts.append(pd.DataFrame({"date": date, "plz": codes[nonzero], "segment": segment, "carrier": carrier,
+                                                   "parcels": by_plz[nonzero].astype(np.int32)}))
         per_stop = matrix.sum(axis=1)
         active = per_stop > 0
         if active.any():
@@ -96,6 +137,15 @@ class AnnualStoreWriter:
             columns.update({name: pa.array(matrix[active, position].astype(np.uint16), type=pa.uint16())
                             for position, name in enumerate(self.columns)})
             self.writer.write_table(pa.table(columns, schema=self.schema))
+        if plz_parts:
+            self.plz.append(pd.concat(plz_parts, ignore_index=True))
+        point_rows = active & self.is_point
+        if point_rows.any():
+            columns = {"date": pa.array([date.date()] * int(point_rows.sum()), type=pa.date32()),
+                       "stop": pa.array(self.stop_index[point_rows], type=pa.int32())}
+            columns.update({name: pa.array(matrix[point_rows, position].astype(np.uint16), type=pa.uint16())
+                            for position, name in enumerate(self.columns)})
+            self.point_writer.write_table(pa.table(columns, schema=self.schema))
         served = per_stop[active]
         row.update({"parcels": int(per_stop.sum()), "stops_active": int(active.sum()),
                     "parcels_per_stop_mean": float(served.mean()) if len(served) else 0.,
@@ -107,14 +157,15 @@ class AnnualStoreWriter:
 
     def abort(self) -> None:
         """Close the open Parquet file after a failure so the stage directory can be cleaned up."""
-        if self.writer.is_open:
-            self.writer.close()
+        for writer in (self.writer, self.point_writer):
+            if writer.is_open:
+                writer.close()
+        self.plz.close()
 
     def close(self, extra: dict | None = None) -> dict:
         self.writer.close()
-        plz = pd.DataFrame(self.plz_rows, columns=["date", "plz", "segment", "carrier", "parcels"])
-        plz["parcels"] = plz.parcels.astype(np.int32)
-        plz.to_parquet(self.directory / "plz_daily.parquet", index=False)
+        self.point_writer.close()
+        self.plz.close()
         days = pd.DataFrame(self.day_rows).fillna(0)
         for carrier in CARRIER_FIELDS:
             if carrier in days:
