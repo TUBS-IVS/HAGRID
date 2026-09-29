@@ -266,3 +266,194 @@ def firm_factor(branch: pd.Series, years, base_year: int, rates: dict, new_firm_
                             "factor": 1. + (1. - float(new_firm_share)) * ((1. + rate.to_numpy()) ** (int(year) - int(base_year)) - 1.)})
               for year in sorted({*[int(value) for value in years], int(base_year)})]
     return pd.concat(frames, ignore_index=True)
+
+
+def site_firm_factor(companies: pd.DataFrame, years, base_year: int, rates: dict, new_firm_share: float) -> pd.DataFrame:
+    """Factor of every existing business site (building): the employee-weighted mean of its companies' branch growth
+    (``firm_factor``); a site whose companies report no employees weights them equally."""
+    companies = companies.reset_index(drop=True)
+    keys = pd.Series(companies.branch.to_numpy(), index=companies.index.astype(str))
+    table = firm_factor(keys, years, base_year, rates, new_firm_share)
+    position = table.site_id.astype(int).to_numpy()
+    weights = companies.employees.fillna(0.).clip(lower=0.).to_numpy(float)[position]
+    sites = companies.site_id.astype(str).to_numpy()[position]
+    frame = pd.DataFrame({"year": table.year.to_numpy(), "site_id": sites, "factor": table.factor.to_numpy(), "weight": weights})
+    frame["weighted"] = frame.factor * frame.weight
+    grouped = frame.groupby(["year", "site_id"], sort=True).agg(weighted=("weighted", "sum"), weight=("weight", "sum"),
+                                                                 plain=("factor", "mean")).reset_index()
+    grouped["factor"] = np.where(grouped.weight > 0, grouped.weighted / grouped.weight.where(grouped.weight > 0, 1.), grouped.plain)
+    return grouped[["year", "site_id", "factor"]]
+
+
+# --- new sites ------------------------------------------------------------------------------------------------------
+
+def _slug(name: str) -> str:
+    import re
+    import unicodedata
+
+    ascii_name = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+
+
+def development_geometry(area: dict, landuse: gpd.GeoDataFrame):
+    """Polygon of a development area: the OSM land-use polygons with exactly its name, else a circle around its centre."""
+    from shapely.geometry import Point
+
+    geometry = area["geometry"]
+    name = geometry.get("osm_landuse_name")
+    if name:
+        matches = landuse.loc[landuse.name.eq(name)]
+        if matches.empty:
+            raise ValueError(f"no OSM land-use polygon named {name!r} for development {area['name']!r}")
+        return matches.union_all()
+    return Point(float(geometry["center"][0]), float(geometry["center"][1])).buffer(float(geometry["radius_m"]), 64)
+
+
+def _postal_codes(points: gpd.GeoSeries, postal: gpd.GeoDataFrame) -> np.ndarray:
+    frame = gpd.GeoDataFrame(geometry=points.reset_index(drop=True), crs=points.crs)
+    joined = gpd.sjoin(frame, postal[["plz", "geometry"]].to_crs(frame.crs), how="left", predicate="within")
+    codes = joined.loc[~joined.index.duplicated(keep="first"), "plz"].reindex(frame.index)
+    missing = codes.isna().to_numpy()
+    if missing.any():
+        nearest = gpd.sjoin_nearest(frame.loc[missing], postal[["plz", "geometry"]].to_crs(frame.crs), how="left")
+        codes.loc[missing] = nearest.loc[~nearest.index.duplicated(keep="first"), "plz"].reindex(frame.index[missing]).to_numpy()
+    return codes.astype(str).to_numpy()
+
+
+def _grid_points(polygon, grid_m: float, minimum: int = 5) -> list:
+    from shapely.geometry import Point
+
+    spacing = float(grid_m)
+    minx, miny, maxx, maxy = polygon.bounds
+    while True:
+        points = [Point(x, y) for y in np.arange(miny + spacing / 2., maxy, spacing) for x in np.arange(minx + spacing / 2., maxx, spacing)]
+        points = [point for point in points if polygon.contains(point)]
+        if len(points) >= minimum or spacing <= 1.:
+            return points or [polygon.representative_point()]
+        spacing /= 2.
+
+
+def development_sites(areas: list[dict], landuse: gpd.GeoDataFrame, residents: pd.DataFrame, share_per_person: pd.Series,
+                      grid_m: float, postal: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """New residential sites on a regular grid inside each development area; the area's full model residents are split
+    evenly and each site gets ``population x`` the district's reference share per person."""
+    full = residents.groupby("name").residents_model.max() if len(residents) else pd.Series(dtype=float)
+    frames = []
+    for area in areas:
+        points = _grid_points(development_geometry(area, landuse), grid_m)
+        people = float(full.get(area["name"], 0.)) / len(points)
+        share = float(share_per_person.get(area["district_id"], 0.))
+        frames.append(pd.DataFrame({"site_id": [f"lu:res:{_slug(area['name'])}:{index}" for index in range(len(points))],
+                                    "segment": "private", "district_id": area["district_id"], "area": area["name"],
+                                    "year_opened": int(area["start_year"]), "population": people, "employees": np.nan,
+                                    "branch": None, "historical_share": people * share, "allocation_status": "located",
+                                    "geometry": points}))
+    columns = ["site_id", "segment", "plz", "district_id", "area", "year_opened", "population", "employees", "branch",
+               "historical_share", "allocation_status", "geometry"]
+    if not frames:
+        return gpd.GeoDataFrame({name: [] for name in columns if name != "geometry"}, geometry=gpd.GeoSeries([], crs=landuse.crs), crs=landuse.crs)
+    sites = gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), geometry="geometry", crs=landuse.crs)
+    sites["plz"] = _postal_codes(sites.geometry, postal)
+    return sites[columns]
+
+
+COMMERCIAL_LANDUSE = ("commercial", "industrial")
+
+
+def _random_point(polygon, rng: np.random.Generator):
+    from shapely.geometry import Point
+
+    minx, miny, maxx, maxy = polygon.bounds
+    for _ in range(100):
+        point = Point(rng.uniform(minx, maxx), rng.uniform(miny, maxy))
+        if polygon.contains(point):
+            return point
+    return polygon.representative_point()
+
+
+def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_year: int, rates: dict, new_firm_share: float,
+              parcels: gpd.GeoDataFrame, postal: gpd.GeoDataFrame, rng_for_year) -> gpd.GeoDataFrame:
+    """New business sites: each year ``new_firm_share`` of a branch's employment growth opens firms of the branch's mean
+    size in OSM commercial and industrial areas (drawn by area); branches that do not grow open none."""
+    areas = parcels.loc[parcels.fclass.isin(COMMERCIAL_LANDUSE)].reset_index(drop=True)
+    weights = areas.geometry.area.to_numpy(float)
+    groups = companies.assign(branch=companies.branch.where(companies.branch.notna(), "other").astype(str))
+    totals = groups.groupby("branch").employees.agg(["sum", "count"])
+    rows = []
+    span = sorted(int(value) for value in years if int(value) > int(base_year))
+    for year in span:
+        rng = rng_for_year(year)
+        for branch in sorted(totals.index):
+            employees, count = float(totals.at[branch, "sum"]), int(totals.at[branch, "count"])
+            rate = float(rates.get(branch, rates["default"]))
+            growth = employees * ((1. + rate) ** (year - base_year) - (1. + rate) ** (year - 1 - base_year))
+            size = max(1., employees / count) if count else 1.
+            firms = int(np.floor(float(new_firm_share) * growth / size + 0.5)) if growth > 0 else 0
+            if firms <= 0 or not len(areas):
+                continue
+            chosen = rng.choice(len(areas), size=firms, p=weights / weights.sum())
+            for index, polygon in enumerate(areas.geometry.iloc[chosen]):
+                rows.append({"site_id": f"lu:biz:{branch}:{year}:{index}", "segment": "business", "district_id": None, "area": None,
+                             "year_opened": year, "population": np.nan, "employees": size, "branch": branch,
+                             "historical_share": size * float(share_per_employee), "allocation_status": "located",
+                             "geometry": _random_point(polygon, rng)})
+    columns = ["site_id", "segment", "plz", "district_id", "area", "year_opened", "population", "employees", "branch",
+               "historical_share", "allocation_status", "geometry"]
+    if not rows:
+        return gpd.GeoDataFrame({name: [] for name in columns if name != "geometry"}, geometry=gpd.GeoSeries([], crs=parcels.crs), crs=parcels.crs)
+    sites = gpd.GeoDataFrame(rows, geometry="geometry", crs=parcels.crs)
+    sites["plz"] = _postal_codes(sites.geometry, postal)
+    return sites[columns]
+
+
+def land_use_stops(sites: gpd.GeoDataFrame, first_index: int) -> tuple[gpd.GeoDataFrame, pd.DataFrame]:
+    """One stop per new site, numbered from *first_index* in opening order; every development area forms one street
+    group (``str_idx = -(1 + area code)``) and every new firm its own (``-(1000 + i)``)."""
+    order = sites.assign(_year=pd.to_numeric(sites.year_opened, errors="coerce")).sort_values(["_year", "site_id"], kind="stable")
+    order = order.reset_index(drop=True)
+    codes = {name: code for code, name in enumerate(sorted(order["area"].dropna().unique()))}
+    firm = order["area"].isna().to_numpy()
+    firm_rank = np.cumsum(firm) - 1
+    str_idx = np.where(firm, -(1000 + firm_rank), [-(1 + codes.get(name, 0)) for name in order["area"].fillna("")])
+    stops = gpd.GeoDataFrame({"stop_id": order.site_id.to_numpy(), "stop_index": np.arange(len(order), dtype=np.int64) + int(first_index),
+                              "str_idx": str_idx.astype(np.int64), "part": np.nan, "side": None, "section_id": "",
+                              "plz": order.plz.astype(str).to_numpy(), "n_units": 1, "expected_daily": 0.,
+                              "year_opened": order._year.to_numpy()}, geometry=order.geometry.to_numpy(), crs=sites.crs)
+    return stops, pd.DataFrame({"site_id": order.site_id.to_numpy(), "stop_id": order.site_id.to_numpy()})
+
+
+def site_factors(sites: pd.DataFrame, years, base_year: int, existing: pd.DataFrame, propensity: pd.DataFrame, firms: pd.DataFrame,
+                 residents: pd.DataFrame) -> pd.DataFrame:
+    """Weight factor of every site and year: existing homes = existing-stock factor x propensity index of the district,
+    existing firms = their branch growth, development sites = ramp x propensity index, new firms = 1 from their opening
+    year on. All existing sites have factor 1 in *base_year*."""
+    opened = pd.to_numeric(sites.year_opened, errors="coerce").to_numpy(float)
+    area = sites["area"].to_numpy(object)  # a GeoDataFrame's .area is the geometric area
+    segment = sites.segment.astype(str).to_numpy()
+    development = pd.notna(area)
+    new_firm = (segment == "business") & ~np.isnan(opened) & ~development
+    existing_home = (segment == "private") & ~development
+    existing_firm = (segment == "business") & np.isnan(opened)
+    stock = existing.set_index(["year", "district_id"]).existing_factor
+    mean = propensity.set_index(["year", "district_id"]).propensity_index
+    growth = firms.set_index(["year", "site_id"]).factor
+    full = residents.groupby("name").residents_model.max() if len(residents) else pd.Series(dtype=float)
+    moved = residents.set_index(["year", "name"]).residents_model if len(residents) else pd.Series(dtype=float)
+    ids = sites.site_id.astype(str).to_numpy()
+    districts_of = sites.district_id.to_numpy(object)
+    frames = []
+    for year in sorted({*[int(value) for value in years], int(base_year)}):
+        keys = list(zip([year] * len(ids), districts_of))
+        index = mean.reindex(pd.MultiIndex.from_tuples(keys)).to_numpy(float) if len(keys) else np.zeros(0)
+        index = np.where(np.isnan(index), 1., index)
+        factor = np.ones(len(ids))
+        stock_values = stock.reindex(pd.MultiIndex.from_tuples(keys)).to_numpy(float) if len(keys) else np.zeros(0)
+        factor[existing_home] = np.where(np.isnan(stock_values), 1., stock_values)[existing_home] * index[existing_home]
+        firm_values = growth.reindex(pd.MultiIndex.from_tuples(list(zip([year] * len(ids), ids)))).to_numpy(float) if len(ids) else np.zeros(0)
+        factor[existing_firm] = np.where(np.isnan(firm_values), 1., firm_values)[existing_firm]
+        ramp = np.array([float(moved.get((year, name), 0.)) / float(full.get(name, 0.)) if full.get(name, 0.) else 0.
+                         for name in area[development]])
+        factor[development] = ramp * index[development]
+        factor[new_firm] = (year >= opened[new_firm]).astype(float)
+        frames.append(pd.DataFrame({"year": year, "site_id": ids, "factor": factor}))
+    return pd.concat(frames, ignore_index=True)
