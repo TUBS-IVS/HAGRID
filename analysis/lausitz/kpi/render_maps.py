@@ -182,7 +182,9 @@ _DRT_JS = """
     });
     if (withStops)
       (v.stops || []).forEach(function(s){
-        L.marker([s.lat, s.lon], {icon: stopBadge(s.n, s.kind)}).addTo(tours);
+        var m = L.marker([s.lat, s.lon], {icon: stopBadge(s.n, s.kind)}).addTo(tours);
+        if (s.person)
+          m.bindTooltip((s.kind === 'pu' ? 'Einstieg ' : 'Ausstieg ') + s.n + ': ' + s.person);
       });
   }
   function renderTours(sel){
