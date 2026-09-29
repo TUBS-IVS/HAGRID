@@ -10,9 +10,9 @@ import pytest
 from decade_fixtures import CODES, write_decade_run
 
 BOOM = {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
-KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday"}
+KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure"}
 PAYLOAD = re.compile(r'<script id="hagrid-decade" type="application/json">(.*?)</script>', re.S)
-SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "network", "calendar", "method"]
+SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "structure", "network", "calendar", "method"]
 
 
 @pytest.fixture(scope="module")
@@ -271,3 +271,31 @@ def test_point_daily_by_carrier_sums_the_year():
     assert _point_daily_by_carrier(frame, 2025) == {"DHL": 7., "Amazon": 1.}
     assert _point_daily_by_carrier(frame, 2027) == {"DHL": 0., "Amazon": 0.}
     assert _point_daily_by_carrier(None, 2025) is None
+
+
+
+def test_structure_payload_from_land_use_files(tmp_path):
+    from decade_fixtures import write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_land_use_files(run)
+    block = build_decade_dashboard_data({"trend": run})["structure"]["trend"]
+    districts = block["districts"]
+    assert districts["ids"] == ["A", "B"] and districts["kinds"] == ["city", "umland"]
+    assert districts["population_index"]["2026"] == pytest.approx([1.02, 0.99]) and districts["population_index"]["2025"] == [1.0, 1.0]
+    assert districts["employees_index"]["2026"] == pytest.approx([1.01, 1.01]) and len(districts["geo"]["features"]) == 2
+    assert districts["forecast_index"]["2026"] == pytest.approx([1.02, 0.99])
+    sites = block["sites"]
+    assert sites["ids"] == ["lu:res:neubau:0", "lu:res:neubau:1", "lu:biz:Q:2026:0"] and sites["year_opened"] == [2026] * 3
+    assert sites["segment"] == ["private", "private", "business"] and sites["size"] == pytest.approx([5., 5., 12.])
+    [development] = block["developments"]
+    assert (development["name"], development["district_id"], development["residents"]) == ("Neubau", "A", {"2025": 0.0, "2026": 10.0})
+    assert development["parcels_per_day"]["2025"] == 0.0 and development["parcels_per_day"]["2026"] > 1.   # expected demand
+    assert block["age"]["bands"][0] == "0-4" and block["age"]["persons"]["2025"][0] == pytest.approx(10.)
+    assert block["meta"]["variant"] == "prognose"
+
+
+def test_structure_payload_is_null_without_land_use(payload):
+    assert payload["structure"] == {"trend": None, "boom": None}

@@ -498,6 +498,8 @@ class LandUsePlan:
     districts: gpd.GeoDataFrame    # forecast district polygons
     table: pd.DataFrame            # DISTRICT_COLUMNS per year and district
     status: dict
+    ages: pd.DataFrame | None = None          # region: persons and propensity per 5-year age band and year
+    developments: pd.DataFrame | None = None  # model residents per development area and year
 
 
 def read_persons(path: Path) -> pd.DataFrame:
@@ -579,7 +581,22 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
               "new_sites": {str(int(year)): int(count) for year, count in new_sites.groupby("year_opened").size().items()},
               "development_sites": int(len(homes)), "new_firms": int(len(firms)),
               "developments": [area["name"] for area in cfg["developments"]]}
-    return LandUsePlan(extended, factors, new_sites, new_stops, new_links, frame, table, status)
+    return LandUsePlan(extended, factors, new_sites, new_stops, new_links, frame, table, status,
+                       age_bands(histograms, curve, cfg["cohort_shift"], base), residents)
+
+
+def age_bands(histograms: pd.DataFrame, curve: list[dict], cohort_shift: float, base_year: int, width: int = 5) -> pd.DataFrame:
+    """Region-wide persons and mean online propensity per age band (``width`` years, the last band open) and year."""
+    rows = []
+    for year, group in histograms.groupby("year"):
+        weights = propensity(group.age.to_numpy(), int(year), base_year, curve, cohort_shift)
+        frame = group.assign(start=np.minimum(group.age.to_numpy() // width * width, 90), weighted=group.persons.to_numpy() * weights)
+        bands = frame.groupby("start")[["persons", "weighted"]].sum()
+        for start, row in bands.iterrows():
+            rows.append({"year": int(year), "band": f"{int(start)}+" if start >= 90 else f"{int(start)}-{int(start) + width - 1}",
+                         "age_from": int(start), "persons": float(row.persons),
+                         "propensity": float(row.weighted / row.persons) if row.persons > 0 else 0.})
+    return pd.DataFrame(rows, columns=["year", "band", "age_from", "persons", "propensity"])
 
 
 def _district_table(frame, population, propensity_table, existing, residents, model_persons, business, firm_table, firms, span) -> pd.DataFrame:
