@@ -411,7 +411,9 @@ Tagesschleife legt für jedes Jahr nach dem Referenzjahr neue Punkte an, damit d
   Kandidatenknappheit; der Vorpass dauert ≈ 5 s.
 
 **Ausgaben je Lauf:** `out_of_home_network.parquet` (eine Zeile je Punkt und aktivem Jahr: Fächer, PLZ, Koordinaten,
-Eröffnungsjahr, POI-Typ; `out_of_home_points.parquet` führt dagegen alle Punkte mit den Fächern des letzten Jahres), `daily_status.json` → `temporal.out_of_home.network_growth` (Ziel, Zusätze, Kandidaten,
+Eröffnungsjahr, POI-Typ; `out_of_home_points.parquet` führt dagegen alle Punkte mit den Fächern des ersten simulierten Jahres),
+`out_of_home_inputs.json` (die aufgelösten OOH-Eingaben des Laufs, die die Dashboards zurücklesen), im Jahresspeicher
+`annual/point_daily.parquet` (die Abholpunkt-Zeilen je Tag und Anbieter, klein genug, um sie ganz zu lesen), `daily_status.json` → `temporal.out_of_home.network_growth` (Ziel, Zusätze, Kandidaten,
 Fehlbestand je Jahr und Gruppe), `annual_dashboard.html` (letztes Jahr) plus `annual_dashboard_<jahr>.html` je Jahr.
 
 **Dekaden-Dashboard.** `python -m hagrid_demand baseline decade-dashboard --run trend=<lauf> --run saettigung=<lauf>
@@ -419,6 +421,13 @@ Fehlbestand je Jahr und Gruppe), `annual_dashboard.html` (letztes Jahr) plus `an
 eigenständig ohne CDN) zeigt Volumenfächer, Anbieter- und Kanalverschiebung, PLZ-Karte mit Jahresregler, Wachstums-
 Hotspots, Netzwachstum und Auslastung, Kalenderteppich und die Annahmen. Der erste `--run` ist das Basisszenario und muss
 vollständig sein; fehlende Jahre der Nebenszenarien werden markiert.
+
+**Speicher:** Jahresspeicher (`stop_daily`, `plz_daily`, `point_daily`, `locker_occupancy`) und Detaildateien werden Tag für Tag
+als Parquet-Zeilengruppen geschrieben, nie im Speicher gesammelt; je Jahr liegt nur ein Routingplan im RAM, dessen Fächer-Warteschlange
+ihre Sendungen über den Jahreswechsel behält. Veröffentlichte Stufen und die öffentlichen Kopien (`daily/`, `annual/`, `matsim/`) sind
+Hardlinks auf den Stage-Cache (eine Kopie auf der Platte; ein Dekadenlauf ≈ 7 GB statt 20). Die Standortwahl neuer Punkte nutzt je POI
+und Netzgruppe eine feste Zufallszahl (Exponential-Race-Sampling), sodass Szenarien dieselbe Rangfolge teilen und sich nur darin
+unterscheiden, wie weit sie in ihr kommen.
 
 **Lauf:** `runs\hannover\run_demand_decade.bat [trend saettigung boom]` rechnet die Szenarien nacheinander
 (≈ 1,5 h je Szenario, ≈ 0,5 GB Details je Jahr plus ≈ 45 MB je exportiertem Tag) und schreibt danach
