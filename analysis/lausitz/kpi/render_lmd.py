@@ -26,6 +26,16 @@ import pandas as pd
 _SUPPLY_VTYPES = ["TRUCK", "TRUCK_LIGHT", "SUPPLY_VAN"]
 
 
+def _has_unified_cost(kpis):
+    """True when the run carries the unified cost model's van-fleet total C
+    (Lausitz). Then every jsprit-rate euro figure from kpis_provider.csv --
+    tile 18, chart 4, the EUR columns of both provider tables -- is hidden:
+    the two cost bases are not interchangeable (see tile 17) and C has no
+    per-provider split to put in their place. Without C (Hannover) the
+    jsprit figures are the only cost there is and stay."""
+    return _kpi(kpis, "cost_lmd_total") is not None
+
+
 # ---------------------------------------------------------------------------
 # Provider-CSV accessors (row-key convention: see task-7-brief.md / verified
 # vs extract_freight_provider.py). Reused by Tasks 8-9 -- keep the shapes
@@ -253,8 +263,9 @@ def _tiles(data):
                             tip="Gesamtkosten (Distanz + Zeit + Fixkosten + Ueberstunden) "
                                 "ueber alle Carrier, nach Low-Util-Umverteilung."))
 
-    # 18. Fixkosten = sum over real providers of provider cost_fixed
-    fixed = _pv_sum(pv, "cost_fixed")
+    # 18. Fixkosten = sum over real providers of provider cost_fixed (jsprit
+    # rates -- hidden next to C, see _has_unified_cost)
+    fixed = None if _has_unified_cost(kpis) else _pv_sum(pv, "cost_fixed")
     if fixed is not None:
         t.append(_tile(_fmt_de(fixed) + " EUR", "Fixkosten",
                         tip="Summe der Fixkosten (Fahrzeugvorhaltung) ueber alle "
@@ -762,11 +773,12 @@ def _cell(v, digits=0):
     return _fmt_de(float(v), digits)
 
 
-def _table_vrp(pv):
+def _table_vrp(pv, with_cost=True):
     """Table 1: VRP-Effizienz je Provider -- one row per real provider
     (parcels_total-desc order, matching the Provider-Analytik charts' own
     `_prov_order`), a footnote row, "-" for absent/zero-guarded cells. Empty
-    string when `pv` has no real-provider rows."""
+    string when `pv` has no real-provider rows. `with_cost=False` drops the
+    jsprit-rate €/Paket column (see _has_unified_cost)."""
     if pv is None or pv.empty:
         return ""
     order = _prov_order(pv)
@@ -782,17 +794,21 @@ def _table_vrp(pv):
             _cell(pv.loc[p, "stops_per_h"] if "stops_per_h" in pv.columns else None, 1),
             _cell(pv.loc[p, "stops_per_km"] if "stops_per_km" in pv.columns else None, 2),
             _cell(pv.loc[p, "parcels_per_km"] if "parcels_per_km" in pv.columns else None, 2),
-            _cell(pv.loc[p, "cost_per_parcel"] if "cost_per_parcel" in pv.columns else None, 2),
         ]
+        if with_cost:
+            cells.append(_cell(pv.loc[p, "cost_per_parcel"]
+                               if "cost_per_parcel" in pv.columns else None, 2))
         rows.append("<tr><td>" + p + "</td><td>" + "</td><td>".join(cells) + "</td></tr>")
     header = ("<tr><th>Provider</th><th>Touren</th><th>km</th><th>km/Tour</th>"
-               "<th>Stopps/h</th><th>Stopps/km</th><th>Pakete/km</th><th>€/Paket</th></tr>")
-    footnote = '<tr><td colspan="8">stem% folgt in Plan D</td></tr>'
+               "<th>Stopps/h</th><th>Stopps/km</th><th>Pakete/km</th>"
+               + ("<th>€/Paket</th>" if with_cost else "") + "</tr>")
+    footnote = ('<tr><td colspan="' + ("8" if with_cost else "7")
+                + '">stem% folgt in Plan D</td></tr>')
     return ('<h2>VRP-Effizienz je Provider</h2><div class="panel tablewrap">'
             '<table class="kpis">' + header + "".join(rows) + footnote + "</table></div>")
 
 
-def _table_provider_drilldown(pv, vehicles):
+def _table_provider_drilldown(pv, vehicles, with_cost=True):
     """Table 2: Provider-Übersicht mit Fahrzeug-Drilldown -- a clickable
     summary row per real provider (`toggleVeh('p<i>')`, ▸ marker) followed
     immediately by its hidden `tr.vehrow` rows (`data-drill="p<i>"`) built
@@ -801,7 +817,8 @@ def _table_provider_drilldown(pv, vehicles):
     between a summary row and its vehrows, by construction. Vehrows are
     simply absent (summary row still renders) when `vehicles` carries no
     matching rows for a provider. Empty string when `pv` has no real-
-    provider rows."""
+    provider rows. `with_cost=False` drops the jsprit-rate Kosten column
+    (see _has_unified_cost)."""
     if pv is None or pv.empty:
         return ""
     order = _prov_order(pv)
@@ -816,11 +833,12 @@ def _table_provider_drilldown(pv, vehicles):
         cost_total = pv.loc[p, "cost_total"] if "cost_total" in pv.columns else None
         avg_lf = pv.loc[p, "avg_load_factor"] if "avg_load_factor" in pv.columns else None
         cost_cell = (_cell(cost_total) + " EUR") if cost_total is not None else "-"
+        cost_td = ("<td>" + cost_cell + "</td>") if with_cost else ""
         lf_cell = _fmt_pct(float(avg_lf)) if avg_lf is not None and not pd.isna(avg_lf) else "-"
         rows.append(
             '<tr onclick="toggleVeh(\'' + key + '\')" style="cursor:pointer">'
             "<td>▸ " + p + "</td><td>" + _cell(vehicles_n) + "</td><td>" + _cell(parcels_total)
-            + "</td><td>" + _cell(parcels_missed) + "</td><td>" + cost_cell + "</td><td>"
+            + "</td><td>" + _cell(parcels_missed) + "</td>" + cost_td + "<td>"
             + lf_cell + "</td></tr>")
         if has_veh:
             sub = vehicles[(vehicles["role"] == "freight") & (vehicles["provider"] == p)]
@@ -838,7 +856,7 @@ def _table_provider_drilldown(pv, vehicles):
                     + _cell(vr.get("parcels")) + "</td><td>" + _cell(vr.get("stops"))
                     + "</td><td>" + lf_v + "</td><td>" + excl_mark + "</td></tr>")
     header = ("<tr><th>Provider</th><th>Fahrzeuge</th><th>Pakete</th><th>verpasst</th>"
-               "<th>Kosten</th><th>Ø Auslastung</th></tr>")
+               + ("<th>Kosten</th>" if with_cost else "") + "<th>Ø Auslastung</th></tr>")
     return ('<h2>Provider-Übersicht mit Fahrzeug-Drilldown</h2>'
             '<div class="panel tablewrap"><table class="kpis">' + header + "".join(rows)
             + "</table></div>")
@@ -896,7 +914,9 @@ def build_tab(data, uid, compact=False, map_block=None):
     if not compact:
         prov_charts.append(_prov_bar(pv, "avg_load_factor", "Auslastung je Provider",
                                       "c_p_util_" + uid, pct=True))
-    prov_charts.append(_cost_stack(pv, "c_p_cost_" + uid))
+    unified = _has_unified_cost(data.kpis)
+    if not unified:
+        prov_charts.append(_cost_stack(pv, "c_p_cost_" + uid))
     if not compact:
         pvd = _pv_derived(pv)
         prov_charts += [
@@ -918,7 +938,8 @@ def build_tab(data, uid, compact=False, map_block=None):
         # mit Fahrzeug-Drilldown" (+ VRP-Effizienz) render near the top.
         # Render ORDER only -- the toggleVeh keys / tr.vehrow rows / JS/CSS
         # are unchanged (defined globally, not here).
-        tables_html = (_table_vrp(pv) + _table_provider_drilldown(pv, vehicles)
+        tables_html = (_table_vrp(pv, with_cost=not unified)
+                       + _table_provider_drilldown(pv, vehicles, with_cost=not unified)
                        + _low_util_notice(pv))
         if tables_html:
             groups_html.append(tables_html)
