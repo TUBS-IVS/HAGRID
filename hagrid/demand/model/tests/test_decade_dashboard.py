@@ -1,5 +1,7 @@
 import json
 import re
+import shutil
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -10,6 +12,7 @@ from decade_fixtures import CODES, write_decade_run
 BOOM = {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
 KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday"}
 PAYLOAD = re.compile(r'<script id="hagrid-decade" type="application/json">(.*?)</script>', re.S)
+SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "network", "calendar", "method"]
 
 
 @pytest.fixture(scope="module")
@@ -235,3 +238,22 @@ def test_template_has_no_external_scripts(runs, tmp_path):
     for text in (TEMPLATE.read_text(encoding="utf-8"), write_decade_dashboard(runs, tmp_path / "d.html").read_text(encoding="utf-8")):
         assert not re.search(r"<script[^>]*\ssrc\s*=", text, re.I) and not re.search(r"<link\b", text, re.I)
         assert not re.search(r"@import|url\(\s*['\"]?https?:", text, re.I)
+
+
+def test_template_sections_present(runs, tmp_path):
+    from hagrid_demand.baseline.decade_dashboard import write_decade_dashboard
+
+    text = write_decade_dashboard(runs, tmp_path / "sections.html").read_text(encoding="utf-8")
+    assert re.findall(r'<section\b[^>]*\bid="([a-z]+)"', text) == SECTIONS
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js for the syntax check")
+def test_template_script_is_valid_javascript(tmp_path):
+    from hagrid_demand.baseline.decade_dashboard import TEMPLATE
+
+    scripts = re.findall(r"<script>(.*?)</script>", TEMPLATE.read_text(encoding="utf-8"), re.S)
+    assert scripts
+    source = tmp_path / "page.js"
+    source.write_text("\n".join(scripts), encoding="utf-8")
+    result = subprocess.run(["node", "--check", str(source)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
