@@ -615,7 +615,8 @@ def _percentile(sorted_vals, q):
 #: caveat has to travel with the row rather than live in a doc -- a reader of
 #: kpis_long.csv never sees the doc.
 _RANGE_SRC = {
-    "drt": ("per VEHICLE-DAY km vs ev_range_km_* (emep_supplement.csv). NOT "
+    "drt": ("per VEHICLE-DAY km (on 1d: pax + capsule km of the same vehicle) vs "
+            "ev_range_km_* (emep_supplement.csv). NOT "
             "an electrification verdict: a vehicle-day is not a continuous "
             "shift -- it contains STAY phases in which charging is possible. "
             "Use drive_block_max_km_* instead, which measures the longest "
@@ -649,8 +650,19 @@ def _range_rows(detail, sup):
     rows = []
     for fleet, label in (("drt", "drt"), ("freight", "freight_tour"),
                          ("freight_modular", "freight_modular")):
-        kms = sorted(d["km"] for d in detail
-                     if d["fleet"] == fleet and d["powertrain"] == "diesel")
+        diesel = [d for d in detail if d["powertrain"] == "diesel"]
+        if fleet == "drt":
+            # The battery has no regime: a 1d vehicle-day is its pax km PLUS its capsule km
+            # (same entity = same vehicle). Comparing the pax half alone let a 200+200 km day
+            # pass a 300 km battery (METHODS-LOG 2.69).
+            day = {}
+            for d in diesel:
+                if d["fleet"] in ("drt", "freight_modular"):
+                    day[d["entity"]] = day.get(d["entity"], 0.0) + d["km"]
+            has_pax = any(d["fleet"] == "drt" for d in diesel)
+            kms = sorted(day.values()) if has_pax else []
+        else:
+            kms = sorted(d["km"] for d in diesel if d["fleet"] == fleet)
         if not kms:
             continue
         src = _RANGE_SRC[fleet]
