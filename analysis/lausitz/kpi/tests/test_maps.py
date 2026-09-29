@@ -135,6 +135,18 @@ def test_per_vehicle_stops_numbered_in_departure_order(tmp_path):
     assert all(isinstance(s["lat"], float) and isinstance(s["lon"], float) for s in stops)
 
 
+def test_per_vehicle_stops_carry_the_passenger_id(tmp_path):
+    """The hover on a numbered badge names who boarded/alighted there (legacy parity)."""
+    run = _make_run(tmp_path)
+    veh_path, link_geo = _aligned_inputs()
+
+    data = maps.build_map_data(run, "MINI", veh_path=veh_path, link_geo=link_geo)
+
+    stops = data["drt"]["vehicles"]["drt_veh_1"]["stops"]
+    assert [s["person"] for s in stops if s["kind"] == "pu"] == ["p1", "p2", "p3"]
+    assert [s["person"] for s in stops if s["kind"] == "do"] == ["p1", "p2", "p3"]
+
+
 def test_missing_optional_layers_are_absent_without_raising(tmp_path):
     # tmp_path has no input/hagrid-output siblings -> shp/depots are
     # absent. Must not raise, and the keys must be omitted.
