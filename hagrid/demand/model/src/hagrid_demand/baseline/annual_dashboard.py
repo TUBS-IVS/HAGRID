@@ -9,6 +9,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import shapely
 
 from hagrid_demand.compatibility.matsim_export import CARRIER_FIELDS
@@ -73,6 +74,36 @@ def _lockers_payload(store: Path, days: pd.DataFrame) -> dict:
             "fill": fill.tolist(), "stored": stored.tolist(), "rejected": rejected.tolist()}
 
 
+def _out_of_home_year(store: Path, days: pd.DataFrame, plz: pd.DataFrame, year: int, status: dict, *,
+                      single_year: bool) -> dict:
+    """The out-of-home status of one year: parcels stored at the points open in *year* per carrier (exact, from
+    the stop store), the B2C parcels per carrier and the network of that year. The run status cumulates all
+    simulated years, which misreports every year of a multi-year run; the overflow is only tracked per run."""
+    points_path = store / "out_of_home_points.parquet"
+    if days.empty or not points_path.is_file() or not (store / "stop_daily.parquet").is_file():
+        return status
+    points = gpd.read_parquet(points_path)
+    if "year_opened" in points:
+        points = points.loc[pd.to_numeric(points.year_opened, errors="coerce").fillna(-np.inf).le(year).to_numpy()]
+    if points.empty:
+        return status
+    stops = points.stop_index.astype(int).to_numpy()
+    columns = ["stop", *[f"{short}_b2c" for _, short in CARRIER_FIELDS.values()]]
+    table = pq.read_table(store / "stop_daily.parquet", columns=columns,
+                          filters=[("date", ">=", days.date.min().date()), ("date", "<=", days.date.max().date()),
+                                   ("stop", ">=", int(stops.min()))]).to_pandas()
+    table = table.loc[table.stop.isin(stops)]
+    private = plz.loc[plz.segment.eq("private")].groupby("carrier").parcels.sum() if len(plz) else pd.Series(dtype=float)
+    kinds = points.kind.astype(str).value_counts()
+    synthetic = points.synthetic.astype(bool) if "synthetic" in points else pd.Series(False, index=points.index)
+    return {**status,
+            "delivered": {carrier: int(table[f"{short}_b2c"].sum()) for carrier, (_, short) in CARRIER_FIELDS.items()},
+            "b2c_delivered": {carrier: int(private.get(carrier, 0)) for carrier in CARRIER_FIELDS},
+            "osm_points": {str(kind): int(count) for kind, count in kinds.items()},
+            "synthetic_counters": int((points.kind.eq("counter") & synthetic).sum()), "synthetic_lockers": 0,
+            "overflow_home": status.get("overflow_home") if single_year else None, "scope": f"year {year}"}
+
+
 def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
     """Collect one simulated year of a run's annual store into the dashboard payload."""
     run_dir = Path(run_dir)
@@ -80,6 +111,7 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
     days = pd.read_parquet(store / "days.parquet")
     days["date"] = pd.to_datetime(days.date).dt.normalize()
     year = int(days.date.dt.year.max()) if year is None else int(year)
+    store_years = sorted(int(value) for value in days.date.dt.year.unique())
     days = days.loc[days.date.dt.year.eq(year)].sort_values("date").reset_index(drop=True)
     if days.empty:
         raise ValueError(f"the annual store has no days for {year}")
@@ -138,6 +170,9 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
                   "full_share": by_day.full.round(4).tolist(), "stored": by_day.stored.astype(int).tolist()}
     status_path = run_dir / "daily_status.json"
     temporal = json.loads(status_path.read_text(encoding="utf-8")).get("temporal", {}) if status_path.is_file() else {}
+    if isinstance(temporal.get("out_of_home"), dict) and temporal["out_of_home"].get("delivered"):
+        temporal = {**temporal, "out_of_home": _out_of_home_year(store, days, plz, year, temporal["out_of_home"],
+                                                                 single_year=len(store_years) == 1)}
     return {
         "meta": {"run_id": run_dir.name, "year": year, "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  "persons": float(persons.sum()), "firms": float(firms.sum()), "stops_total": int(stops.stop_id.nunique()),
