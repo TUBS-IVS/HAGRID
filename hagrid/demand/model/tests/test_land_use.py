@@ -201,3 +201,146 @@ def test_propensity_cohort_shift_never_lowers_young_ages():
 
     curve = load_land_use_inputs()["propensity_curve"]["bands"]
     assert propensity(np.array([20., 30., 50.]), 2035, 2025, curve, 1.) == pytest.approx([0.84, 0.91, 0.91])
+
+
+# --- Task 3: new sites ----------------------------------------------------------------------------------------------
+
+def _landuse():
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame({"name": ["Testgebiet", None, None], "fclass": ["residential", "commercial", "industrial"]},
+                            geometry=[box(0, 0, 200, 100), box(1000, 0, 1100, 100), box(2000, 0, 2300, 100)], crs=25832)
+
+
+def _postal():
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame({"plz": ["30001", "30002"]}, geometry=[box(-1000, -1000, 500, 1000), box(500, -1000, 5000, 1000)], crs=25832)
+
+
+def _area(name="Testgebiet", **geometry):
+    return {"name": name, "district_id": "A", "residents": 100, "start_year": 2026, "ramp_years": 2,
+            "geometry": geometry or {"osm_landuse_name": "Testgebiet"}}
+
+
+def test_development_geometry_prefers_osm_name():
+    import math
+
+    from hagrid_demand.baseline.land_use import development_geometry
+
+    assert development_geometry(_area(), _landuse()).area == pytest.approx(200 * 100)
+    circle = development_geometry(_area(center=[5000., 5000.], radius_m=100.), _landuse())
+    assert circle.area == pytest.approx(math.pi * 100 ** 2, rel=0.01) and circle.centroid.x == pytest.approx(5000.)
+    with pytest.raises(ValueError, match="Nirgendwo"):
+        development_geometry(_area(osm_landuse_name="Nirgendwo"), _landuse())
+
+
+def test_development_sites_fill_the_polygon_and_split_residents():
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import development_geometry, development_sites
+
+    residents = pd.DataFrame({"year": [2025, 2026, 2027], "name": "Testgebiet", "district_id": "A", "residents_model": [0., 50., 100.]})
+    sites = development_sites([_area()], _landuse(), residents, pd.Series({"A": 0.001}), 50., _postal())
+    polygon = development_geometry(_area(), _landuse())
+    assert len(sites) == 8 and sites.within(polygon.buffer(1e-6)).all()          # 4 x 2 grid points of 50 m
+    assert sites.population.sum() == pytest.approx(100.) and sites.population.nunique() == 1
+    assert sites.historical_share.sum() == pytest.approx(100. * 0.001)
+    assert set(sites.segment) == {"private"} and set(sites.plz) == {"30001"} and set(sites.year_opened) == {2026}
+    assert sites.site_id.tolist()[:2] == ["lu:res:testgebiet:0", "lu:res:testgebiet:1"]
+    small = development_sites([_area(center=[100., 50.], radius_m=20.)], _landuse(), residents, pd.Series({"A": 0.001}), 50., _postal())
+    assert len(small) >= 5 and small.population.sum() == pytest.approx(100.)
+
+
+def test_new_firms_follow_growth_and_are_deterministic():
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import new_firms
+
+    companies = pd.DataFrame({"branch": ["Q"] * 50 + ["G"] * 10 + ["C"] * 10, "employees": [2.] * 50 + [5.] * 20})
+    rates = {"Q": 0.12, "G": 0.0, "C": -0.01, "default": 0.0}
+
+    def run(seed):
+        return new_firms(companies, 0.002, [2025, 2026, 2027], 2025, rates, 0.5, _landuse(), _postal(),
+                         lambda year: np.random.default_rng([seed, year]))
+
+    firms = run(1)
+    assert set(firms.branch) == {"Q"} and firms.groupby("year_opened").size().to_dict() == {2026: 3, 2027: 3}
+    assert firms.employees.sum() == pytest.approx(12.) and abs(firms.employees.sum() - 0.5 * (100 * 1.12 ** 2 - 100)) <= 2.
+    assert firms.historical_share.tolist() == pytest.approx([2. * 0.002] * 6)
+    commercial = _landuse().loc[lambda frame: frame.fclass.isin(["commercial", "industrial"])].union_all()
+    assert firms.within(commercial).all() and set(firms.segment) == {"business"} and set(firms.plz) == {"30002"}
+    assert firms.site_id.tolist()[0] == "lu:biz:Q:2026:0"
+    again, other = run(1), run(2)
+    assert firms.geometry.geom_equals(again.geometry).all() and not firms.geometry.geom_equals(other.geometry).all()
+
+
+def test_land_use_stops_are_contiguous_and_grouped_per_area():
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from hagrid_demand.baseline.land_use import land_use_stops
+
+    sites = gpd.GeoDataFrame({"site_id": ["lu:res:b:0", "lu:res:a:0", "lu:res:a:1", "lu:biz:Q:2027:0", "lu:biz:Q:2026:0"],
+                              "segment": ["private"] * 3 + ["business"] * 2, "plz": "30001",
+                              "area": ["B", "A", "A", None, None], "year_opened": [2027, 2026, 2026, 2027, 2026]},
+                             geometry=[Point(index, 0) for index in range(5)], crs=25832)
+    stops, links = land_use_stops(sites, 100)
+    assert stops.stop_index.tolist() == [100, 101, 102, 103, 104]
+    assert stops.stop_id.tolist() == ["lu:biz:Q:2026:0", "lu:res:a:0", "lu:res:a:1", "lu:biz:Q:2027:0", "lu:res:b:0"]
+    by_id = stops.set_index("stop_id").str_idx
+    assert by_id["lu:res:a:0"] == by_id["lu:res:a:1"] < 0 and by_id["lu:res:b:0"] not in (by_id["lu:res:a:0"],)
+    assert by_id["lu:biz:Q:2026:0"] != by_id["lu:biz:Q:2027:0"] and by_id["lu:biz:Q:2026:0"] <= -1000
+    assert links.set_index("site_id").stop_id.to_dict() == {site: site for site in sites.site_id}
+    assert {"stop_id", "stop_index", "str_idx", "part", "side", "section_id", "plz", "n_units", "expected_daily", "year_opened"} <= set(stops.columns)
+
+
+def test_site_factors_combine_stock_propensity_and_openings():
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import site_factors
+
+    sites = pd.DataFrame({"site_id": ["s1", "b1", "lu:res:t:0", "lu:biz:Q:2027:0"], "segment": ["private", "business", "private", "business"],
+                          "district_id": ["A", "A", "A", None], "year_opened": [None, None, 2026, 2027], "area": [None, None, "Testgebiet", None]})
+    existing = pd.DataFrame({"year": [2025, 2026, 2027], "district_id": "A", "existing_factor": [1., 1.01, 1.02]})
+    propensity = pd.DataFrame({"year": [2025, 2026, 2027], "district_id": "A", "propensity_index": [1., .99, .98]})
+    firms = pd.DataFrame({"year": [2025, 2026, 2027], "site_id": "b1", "factor": [1., 1.01, 1.03]})
+    residents = pd.DataFrame({"year": [2025, 2026, 2027], "name": "Testgebiet", "district_id": "A", "residents_model": [0., 50., 100.]})
+    table = site_factors(sites, [2025, 2026, 2027], 2025, existing, propensity, firms, residents).set_index(["year", "site_id"]).factor
+    assert [table.loc[(2025, site)] for site in sites.site_id] == pytest.approx([1., 1., 0., 0.])
+    assert table.loc[(2027, "s1")] == pytest.approx(1.02 * .98) and table.loc[(2027, "b1")] == pytest.approx(1.03)
+    assert table.loc[(2026, "lu:res:t:0")] == pytest.approx(.5 * .99) and table.loc[(2027, "lu:res:t:0")] == pytest.approx(.98)
+    assert table.loc[(2026, "lu:biz:Q:2027:0")] == 0. and table.loc[(2027, "lu:biz:Q:2027:0")] == 1.
+
+
+def test_site_firm_factor_weights_branches_by_employees():
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import site_firm_factor
+
+    companies = pd.DataFrame({"site_id": ["b1", "b1", "b2"], "branch": ["Q", "G", None], "employees": [30., 10., 0.]})
+    table = site_firm_factor(companies, [2025, 2035], 2025, {"Q": 0.015, "G": 0.0, "default": 0.005}, 0.3).set_index(["year", "site_id"]).factor
+    q = 1 + 0.7 * (1.015 ** 10 - 1)
+    assert table.loc[(2035, "b1")] == pytest.approx((30 * q + 10 * 1.0) / 40)
+    assert table.loc[(2035, "b2")] == pytest.approx(1 + 0.7 * (1.005 ** 10 - 1)) and table.loc[(2025, "b1")] == pytest.approx(1.)
+
+
+def test_site_factors_accept_a_geodataframe():
+    """GeoDataFrame.area is the geometric area, not the 'area' column: development sites must still be recognised."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from hagrid_demand.baseline.land_use import site_factors
+
+    sites = gpd.GeoDataFrame({"site_id": ["lu:res:t:0"], "segment": ["private"], "district_id": ["A"], "year_opened": [2026],
+                              "area": ["Testgebiet"]}, geometry=[Point(0, 0)], crs=25832)
+    residents = pd.DataFrame({"year": [2025, 2026], "name": "Testgebiet", "district_id": "A", "residents_model": [0., 100.]})
+    empty = pd.DataFrame({"year": [], "district_id": [], "existing_factor": []})
+    table = site_factors(sites, [2025, 2026], 2025, empty, pd.DataFrame({"year": [], "district_id": [], "propensity_index": []}),
+                         pd.DataFrame({"year": [], "site_id": [], "factor": []}), residents).set_index(["year", "site_id"]).factor
+    assert table.loc[(2025, "lu:res:t:0")] == 0. and table.loc[(2026, "lu:res:t:0")] == 1.
