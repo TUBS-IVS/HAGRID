@@ -304,10 +304,13 @@ def _publish_run_artifacts(run_dir: Path, *, stage_name: str, cache_path: Path,
     target.parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f".{target.name}.run.tmp-", dir=target.parent))
     try:
+        # Hash the cache tree once: hashing it again for every artifact made the publish step quadratic
+        # (a multi-year daily stage has hundreds of files and several GB).
+        current = _artifact_hashes(cache_path)
         for relative, digest in artifacts.items():
             source = cache_path / relative
             destination = work / relative
-            if not source.is_file() or _artifact_hashes(cache_path).get(relative) != digest:
+            if not source.is_file() or current.get(relative) != digest:
                 raise ValueError(f"Cache artifact changed before copy: {relative}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
