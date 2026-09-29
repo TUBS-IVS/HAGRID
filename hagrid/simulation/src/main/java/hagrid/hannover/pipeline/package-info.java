@@ -62,6 +62,6 @@
  * </ul>
  * 
  * @author HAGRID Team
- * @see hagrid.HAGRID2MATSimPipelineRunner_old
+ * @see hagrid.hannover.HAGRID2MATSimPipelineRunner
  */
 package hagrid.hannover.pipeline;

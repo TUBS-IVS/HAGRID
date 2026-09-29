@@ -1101,7 +1101,7 @@ public class HAGRIDSimulationConfig {
         return paths.lmdDemandShapefile();
     }
 
-    /** Lausitz freight van vehicle-types (ct_cep_size_m / _l only). */
+    /** Lausitz freight van vehicle-types: ct_cep_size_s / _m / _l, all three offered to jsprit. */
     public String getLmdVehicleTypes() {
         return paths.lmdVehicleTypes();
     }

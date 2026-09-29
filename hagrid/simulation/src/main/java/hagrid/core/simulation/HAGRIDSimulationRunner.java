@@ -1,7 +1,5 @@
 package hagrid.core.simulation;
 
-import hagrid.core.simulation.HAGRIDSimulationConfig;
-import hagrid.core.simulation.SimulationRunnerUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 

@@ -29,6 +29,9 @@ import java.util.Optional;
  */
 public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule {
 
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger(ReturnToDepotRebalancingModule.class);
+
     private final List<Coord> depotCoords;
     private final double returnStart;
     private final double perDepotCapacity;
@@ -102,6 +105,17 @@ public final class ReturnToDepotRebalancingModule extends AbstractDvrpModeModule
             double d = CoordUtils.calcEuclideanDistance(c, z.getCentroid());
             if (d < best) { best = d; nearest = z; }
         }
+        // Behaviour kept: the evening pull still goes to the nearest zone. But an in-area depot
+        // landing here means the zone grid does not cover it, which moves the return target.
+        // The calculator is rebuilt in every QSim, so warn once per depot and zone, not per iteration.
+        if (nearest != null && WARNED_FALLBACKS.add(c.getX() + "," + c.getY() + "->" + nearest.getId())) {
+            LOG.warn("Depot at ({}, {}) lies outside every rebalancing zone - assigned to the nearest"
+                            + " centroid zone {} ({} m away)",
+                    c.getX(), c.getY(), nearest.getId(), Math.round(best));
+        }
         return Optional.ofNullable(nearest);
     }
+
+    private static final java.util.Set<String> WARNED_FALLBACKS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 }

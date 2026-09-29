@@ -48,4 +48,48 @@ class PopulationClipperTest {
         assertThat(clipped.getPersons()).containsKey(Id.createPersonId("inside"));
         assertThat(clipped.getPersons()).doesNotContainKey(Id.createPersonId("outside"));
     }
+
+    private Person personWithoutAnyCoord(String id) {
+        Population pop = PopulationUtils.createPopulation(
+                org.matsim.core.config.ConfigUtils.createConfig());
+        PopulationFactory pf = pop.getFactory();
+        Person p = pf.createPerson(Id.createPersonId(id));
+        Plan plan = pf.createPlan();
+        plan.addActivity(pf.createActivityFromLinkId("home", Id.createLinkId("l1")));
+        p.addPlan(plan);
+        p.setSelectedPlan(plan);
+        return p;
+    }
+
+    @Test
+    @DisplayName("persons without any activity coordinate are still dropped, but counted in a warning")
+    void coordlessPersonsAreCountedNotSilentlyLost() {
+        Population full = PopulationUtils.createPopulation(
+                org.matsim.core.config.ConfigUtils.createConfig());
+        full.addPerson(personWithHome("inside", 500, 500));
+        full.addPerson(personWithHome("outside", 9000, 9000));
+        full.addPerson(personWithoutAnyCoord("nocoord"));
+
+        try (LogCapture log = LogCapture.of(PopulationClipper.class)) {
+            Population clipped = PopulationClipper.clip(full, square());
+            // behaviour unchanged: only the inside person survives
+            assertThat(clipped.getPersons()).containsOnlyKeys(Id.createPersonId("inside"));
+            // 'outside' is a normal clip, 'nocoord' is a data defect -- only the latter warns
+            assertThat(log.warnings()).singleElement().satisfies(m ->
+                    assertThat(m).contains("1 of 3").containsIgnoringCase("no coordinate"));
+        }
+    }
+
+    @Test
+    @DisplayName("a population where every person has a coordinate clips without a warning")
+    void completePopulationIsQuiet() {
+        Population full = PopulationUtils.createPopulation(
+                org.matsim.core.config.ConfigUtils.createConfig());
+        full.addPerson(personWithHome("inside", 500, 500));
+        full.addPerson(personWithHome("outside", 9000, 9000));
+        try (LogCapture log = LogCapture.of(PopulationClipper.class)) {
+            PopulationClipper.clip(full, square());
+            assertThat(log.warnings()).isEmpty();
+        }
+    }
 }

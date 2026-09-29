@@ -31,8 +31,6 @@ import org.matsim.core.utils.geometry.transformations.TransformationFactory;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierService;
 
-import hagrid.core.util.Delivery;
-import hagrid.core.util.Hub;
 
 /**
  * Utility class for coordinate transformations.
@@ -40,6 +38,7 @@ import hagrid.core.util.Hub;
 public class GeoUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(GeoUtils.class);
+    private static final Set<String> WARNED_NO_COORD = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // Define the postal codes for each region
     private static final Map<Region, Set<String>> regionPostalCodes = new HashMap<>();
@@ -379,6 +378,13 @@ public class GeoUtils {
         }
 
         if (xCoords.isEmpty() || yCoords.isEmpty()) {
+            // Behaviour kept ((0,0) is what the callers have always received), but a carrier WITH
+            // services and none of them carrying "coord" is a data defect, not an empty carrier.
+            // Called in merge loops, hence once per carrier.
+            if (WARNED_NO_COORD.add(String.valueOf(carrier.getId()))) {
+                LOGGER.warn("Carrier {} has {} services but none carries a 'coord' attribute - median"
+                        + " coordinate falls back to (0,0)", carrier.getId(), services.size());
+            }
             return new Coord(0, 0);
         }
 
