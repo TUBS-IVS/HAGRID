@@ -1,16 +1,866 @@
 <title>Hannover Parcel Decade</title>
 <style>
-:root{color-scheme:light;--bg:#f3f5f8;--ink:#0f1623;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0b0f16;--ink:#f2f5f9}}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+:root{
+  color-scheme:light;
+  --bg:#f3f5f8;--surface:#fcfcfd;--surface-2:#eef1f5;--surface-3:#e3e7ee;
+  --ink:#0f1623;--ink-2:#465063;--muted:#6c7688;--grid:#e2e6ec;--axis:#c3c9d3;
+  --line:rgba(15,22,35,.10);--line-strong:rgba(15,22,35,.22);--band:rgba(30,64,175,.08);--band-strong:rgba(30,64,175,.15);
+  --focus:#1e40af;--closed:#e7eaef;--other-line:#a3abb8;--obs:#465063;
+  --c-amazon:#eb6834;--c-hermes:#1baf7a;--c-dhl:#eda100;--c-ups:#e87ba4;--c-gls:#008300;--c-fedex:#4a3aa7;--c-dpd:#e34948;--all:#2a78d6;
+  --q1:#b7d3f6;--q2:#86b6ef;--q3:#5598e7;--q4:#2a78d6;--q5:#1c5cab;--q6:#104281;
+  --neg1:#f3aeac;--neg2:#c93c3a;--mid:#e6e4df;
+  --ch-home:#a3abb8;--ch-locker:#104281;--ch-shared_locker:#2a78d6;--ch-counter:#86b6ef;--ch-shop:#cde2fb;--ch-ooh:#5598e7;
+  --seg-b2c:#2a78d6;--seg-b2b:#86b6ef;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;--bg:#0b0f16;--surface:#141a24;--surface-2:#1b2230;--surface-3:#252e3e;
+  --ink:#f2f5f9;--ink-2:#c3cad5;--muted:#8f99a8;--grid:#232b38;--axis:#3a4453;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--band:rgba(96,140,230,.12);--band-strong:rgba(96,140,230,.2);
+  --focus:#7aa2f7;--closed:#1d2431;--other-line:#5b6678;--obs:#c3cad5;
+  --c-amazon:#d95926;--c-hermes:#199e70;--c-dhl:#c98500;--c-ups:#d55181;--c-gls:#008300;--c-fedex:#9085e9;--c-dpd:#e66767;--all:#3987e5;
+  --q1:#104281;--q2:#1c5cab;--q3:#2a78d6;--q4:#5598e7;--q5:#86b6ef;--q6:#b7d3f6;
+  --neg1:#7a2e2d;--neg2:#f07f78;--mid:#383835;
+  --ch-home:#4b5566;--ch-locker:#b7d3f6;--ch-shared_locker:#5598e7;--ch-counter:#1c5cab;--ch-shop:#104281;--ch-ooh:#86b6ef;
+  --seg-b2c:#5598e7;--seg-b2b:#1c5cab;}}
+:root[data-theme="dark"]{
+  color-scheme:dark;--bg:#0b0f16;--surface:#141a24;--surface-2:#1b2230;--surface-3:#252e3e;
+  --ink:#f2f5f9;--ink-2:#c3cad5;--muted:#8f99a8;--grid:#232b38;--axis:#3a4453;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--band:rgba(96,140,230,.12);--band-strong:rgba(96,140,230,.2);
+  --focus:#7aa2f7;--closed:#1d2431;--other-line:#5b6678;--obs:#c3cad5;
+  --c-amazon:#d95926;--c-hermes:#199e70;--c-dhl:#c98500;--c-ups:#d55181;--c-gls:#008300;--c-fedex:#9085e9;--c-dpd:#e66767;--all:#3987e5;
+  --q1:#104281;--q2:#1c5cab;--q3:#2a78d6;--q4:#5598e7;--q5:#86b6ef;--q6:#b7d3f6;
+  --neg1:#7a2e2d;--neg2:#f07f78;--mid:#383835;
+  --ch-home:#4b5566;--ch-locker:#b7d3f6;--ch-shared_locker:#5598e7;--ch-counter:#1c5cab;--ch-shop:#104281;--ch-ooh:#86b6ef;
+  --seg-b2c:#5598e7;--seg-b2b:#1c5cab;}
+*{box-sizing:border-box}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.page{max-width:1400px;margin:0 auto;padding-inline:clamp(16px,3vw,36px);padding-block:24px 56px}
+.num,td,.tick{font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.mast{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px 36px;align-items:end;padding-bottom:20px}
+.eyebrow{font:500 12px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px}
+h1{font:700 clamp(32px,4.6vw,56px)/1.02 var(--sans);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.lede{max-width:66ch;color:var(--ink-2);font-size:16.5px;margin:14px 0 0;text-wrap:pretty}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0}
+.facts div{background:var(--surface);padding:10px 14px;min-width:0}
+.facts dt{font:500 11px/1.3 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 2px}
+.facts dd{margin:0;font-size:19px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.controls{margin-inline:calc(-1*clamp(16px,3vw,36px));padding:10px clamp(16px,3vw,36px);background:var(--bg);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-block:1px solid var(--line);z-index:30}
+.controls.docked{position:fixed;top:0;left:0;right:0;margin:0;box-shadow:0 10px 24px -20px rgba(0,0,0,.6)}
+.controls .in{max-width:1328px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+.ctl{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;margin:0;padding:0;border:0}
+.ctl-l{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0;float:left;margin-right:8px}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px;overflow-x:auto;max-width:100%}
+.seg label,.seg button{position:relative;border:0;background:transparent;display:inline-flex;align-items:center;padding:8px 12px;min-height:36px;border-radius:6px;cursor:pointer;font-size:13.5px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.seg input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.seg label.on,.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.08)}
+.seg label:focus-within{outline:2px solid var(--focus);outline-offset:1px}
+.seg.small button{padding:5px 10px;min-height:30px;font-size:12.5px}
+.year{flex:1 1 340px}
+.year input[type=range]{flex:1 1 auto;min-width:110px;accent-color:var(--all);height:28px;margin:0}
+.year-out{font:700 24px/1 var(--sans);min-width:2.6em;text-align:right}
+.icon{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:36px;height:36px;display:grid;place-items:center;cursor:pointer;flex:none;padding:0}
+.icon:hover{border-color:var(--line-strong)}
+.icon svg{width:16px;height:16px;fill:currentColor}
+.ctl-note{margin:0;font-size:12.5px;color:var(--ink-2)}
+.ctl-note:empty{display:none}
+.kpis{display:grid;grid-template-columns:1.6fr repeat(6,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:18px}
+.kpi{background:var(--surface);padding:14px 16px;min-width:0}
+.kpi p{margin:0 0 4px;font-size:12.5px;color:var(--ink-2)}
+.kpi .v{font-size:24px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v small{font-size:13px;color:var(--ink-2);font-weight:500;margin-left:3px}
+.kpi .d{font-size:12.5px;color:var(--muted);margin-top:3px}
+.kpi.hero .v{font-size:clamp(40px,4.4vw,56px);font-weight:700;line-height:1.05}
+@media (max-width:1180px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi.hero{grid-column:span 3}}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi.hero{grid-column:span 2}.mast{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}.year{flex-basis:100%}}
+.section{padding-top:40px;scroll-margin-top:110px}
+h2{font:700 clamp(22px,2.4vw,28px)/1.15 var(--sans);letter-spacing:-.01em;margin:0 0 6px}
+.finding{margin:0 0 14px;max-width:84ch;color:var(--ink-2)}
+.finding b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s7{grid-column:span 7}.s6{grid-column:span 6}.s5{grid-column:span 5}.s4{grid-column:span 4}
+@media (max-width:1060px){.grid>*{grid-column:span 12!important}}
+.panel{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.fig-head{display:flex;justify-content:space-between;gap:8px 12px;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap}
+h3{font-size:15.5px;font-weight:600;margin:0}
+.sub{margin:2px 0 0;color:var(--muted);font-size:13px}
+.cap{color:var(--muted);font-size:12.5px;margin:8px 0 0;max-width:100ch}
+.chart svg{display:block;overflow:visible;max-width:100%}
+svg text{font-family:var(--sans);fill:var(--muted);font-size:11.5px}
+svg .tick{font-size:10.5px}
+svg .lbl{fill:var(--ink-2);font-size:12px}
+svg .lbl-b{fill:var(--ink);font-size:12px;font-weight:600}
+svg .gl{stroke:var(--grid);stroke-width:1}
+svg .ax{stroke:var(--axis);stroke-width:1}
+svg .hit{fill:transparent;cursor:crosshair}
+svg .col-hit{fill:transparent;cursor:pointer}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+.legend .li{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.lk{display:inline-block;width:16px;height:0;border-top:2px solid;flex:none}
+.lk.dash{border-top-style:dashed}
+.dot-k{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.scale{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;color:var(--ink-2);margin-top:6px}
+.bins{display:flex;flex-wrap:wrap;gap:2px}.bins span{display:flex;flex-direction:column;gap:3px;min-width:44px;font:10.5px var(--sans);color:var(--muted)}.bins i{height:9px;border-radius:2px;display:block}
+.map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:1060px){.map-wrap{grid-template-columns:1fr}}
+.map-tools{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer;min-height:36px}
+.check input{width:16px;height:16px;accent-color:var(--all);margin:0}
+#map-svg path.plz{stroke:var(--surface);stroke-width:1;cursor:pointer}
+#map-svg path.plz:hover,#map-svg path.plz.on{stroke:var(--ink);stroke-width:1.8}
+.pt{stroke:var(--ink);stroke-width:1.2;cursor:pointer}
+.pt.new{fill:var(--ink);stroke:var(--surface);stroke-width:1.5}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-out infinite;pointer-events:none}
+@keyframes pulse{0%{transform:scale(1);opacity:.95}100%{transform:scale(3.2);opacity:0}}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px;min-width:0}
+.card .code{font:600 28px/1 var(--sans)}.card .name{color:var(--ink-2);margin-top:4px}
+.card dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:12px 0}.card dt{font-size:11.5px;color:var(--muted);margin:0}.card dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.note{font-size:12.5px;color:var(--ink-2);background:var(--surface-2);border-radius:7px;padding:8px 10px;margin:8px 0 0}
+.empty{font-size:13.5px;color:var(--ink-2);background:var(--surface-2);border-radius:9px;padding:14px 16px;margin:0}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:1060px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){.cards{grid-template-columns:1fr}}
+.ncard .v{font-size:24px;font-weight:600;letter-spacing:-.01em;margin:4px 0 0}
+.ncard .d{font-size:12.5px;color:var(--muted);margin:2px 0 6px}
+.carpet{position:relative}
+.carpet canvas{display:block;max-width:100%;cursor:crosshair;touch-action:pan-y}
+details.tv{margin-top:10px}
+details.tv summary{cursor:pointer;color:var(--ink-2);font-size:13px;width:max-content;max-width:100%}
+.tbl{overflow:auto;border:1px solid var(--line);border-radius:9px;max-height:440px;margin-top:8px}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+th{position:sticky;top:0;background:var(--surface-2);text-align:right;font-weight:600;color:var(--ink-2);padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--line);font-size:12px}
+td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-size:12.5px}
+th.l,td.l{text-align:left}
+td.wrap{white-space:normal;min-width:18ch}
+tr.on td{background:var(--band-strong)}
+.list{margin:6px 0 0;padding-left:20px;color:var(--ink-2);line-height:1.6}.list li{margin:0 0 6px}.list b{color:var(--ink)}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.tip{position:fixed;z-index:60;left:0;top:0;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);box-shadow:0 14px 34px -14px rgba(0,0,0,.45);border-radius:9px;padding:9px 11px;font-size:12.5px;min-width:180px;max-width:320px}
+.tip strong{display:block;font-size:13px}.tip .s{color:var(--muted);font-size:11.5px;margin-bottom:5px;display:block}
+.tr{display:grid;grid-template-columns:16px minmax(52px,auto) 1fr;gap:0 8px;align-items:center;line-height:1.6}
+.tr b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}.tr span{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr i{width:14px;height:0;border-top:2px solid;display:block}.tr i.dash{border-top-style:dashed}
 </style>
 
 <script id="hagrid-decade" type="application/json">__DECADE_DATA__</script>
 
-<div class="page" id="app"></div>
+<div class="page">
+  <section class="section hero" id="hero" aria-labelledby="h-hero" style="padding-top:0">
+    <header class="mast">
+      <div>
+        <p class="eyebrow">HAGRID parcel demand · decade projection · <span id="eyebrow-runs"></span></p>
+        <h1 id="h-hero">Hannover Parcel Decade</h1>
+        <p class="lede" id="lede"></p>
+      </div>
+      <dl class="facts" id="facts"></dl>
+    </header>
+    <div id="dock-sentinel"></div><div id="dock-space"></div>
+    <div class="controls" id="controls" role="toolbar" aria-label="Scenario and year for all views">
+      <div class="in">
+        <fieldset class="ctl"><legend class="ctl-l">Scenario</legend><div class="seg" id="ctl-scenario"></div></fieldset>
+        <div class="ctl year">
+          <label class="ctl-l" for="ctl-year">Year</label>
+          <button class="icon" id="play" type="button" aria-pressed="false" aria-label="Play the years"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M4 2.5v11l9-5.5z"/></svg></button>
+          <input type="range" id="ctl-year" step="1">
+          <output class="year-out" id="year-out" for="ctl-year"></output>
+        </div>
+        <p class="ctl-note" id="scen-note" aria-live="polite"></p>
+      </div>
+    </div>
+    <div class="kpis" id="kpis" aria-live="polite"></div>
+  </section>
+
+  <section class="section" id="growth" aria-labelledby="h-growth">
+    <h2 id="h-growth">How fast the parcel volume grows</h2>
+    <p class="finding" id="f-growth"></p>
+    <div class="grid">
+      <figure class="panel s7">
+        <div class="fig-head"><div><h3>Germany, billion parcels per year</h3><p class="sub">Observed volumes and the three scenario paths</p></div></div>
+        <div class="legend" id="lg-national"></div>
+        <div class="chart" id="ch-national"></div>
+        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02). Lines: scenario paths from the first simulated year, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
+      </figure>
+      <figure class="panel s5">
+        <div class="fig-head"><div><h3>Region Hannover, simulated parcels</h3><p class="sub">Sum of all simulated days per year</p></div></div>
+        <div class="chart" id="ch-regional"></div>
+        <p class="cap">The regional volume follows the national path of each scenario (2021 reference scaled by the national ratio), then carriers, days and addresses are drawn.</p>
+      </figure>
+    </div>
+    <details class="tv"><summary>Table: national and regional volume per scenario</summary><div id="tv-growth"></div></details>
+  </section>
+
+  <section class="section" id="mix" aria-labelledby="h-mix">
+    <h2 id="h-mix">Carriers and recipients</h2>
+    <p class="finding" id="f-mix"></p>
+    <div class="grid">
+      <figure class="panel s8">
+        <div class="fig-head"><div><h3>Parcels by carrier</h3><p class="sub" id="s-carriers"></p></div><div class="seg small" id="ctl-mix" role="group" aria-label="Parcels or share"></div></div>
+        <div class="legend" id="lg-carriers"></div>
+        <div class="chart" id="ch-carriers"></div>
+      </figure>
+      <figure class="panel s4">
+        <div class="fig-head"><div><h3>B2C and B2B</h3><p class="sub" id="s-segments"></p></div></div>
+        <div class="legend" id="lg-segments"></div>
+        <div class="chart" id="ch-segments"></div>
+      </figure>
+      <figure class="panel s6">
+        <div class="fig-head"><div><h3>Parcels per resident and year</h3><p class="sub" id="s-resident"></p></div></div>
+        <div class="chart" id="ch-resident"></div>
+      </figure>
+      <figure class="panel s6">
+        <div class="fig-head"><div><h3>Mean and peak per delivery day</h3><p class="sub" id="s-days"></p></div></div>
+        <div class="legend" id="lg-days"></div>
+        <div class="chart" id="ch-days"></div>
+      </figure>
+    </div>
+    <details class="tv"><summary>Table: parcels by carrier and segment</summary><div id="tv-mix"></div></details>
+  </section>
+
+  <section class="section" id="channels" aria-labelledby="h-channels">
+    <h2 id="h-channels">From the doorstep to the pickup point</h2>
+    <p class="finding" id="f-channels"></p>
+    <div class="grid">
+      <figure class="panel s7">
+        <div class="fig-head"><div><h3>Parcels by delivery channel</h3><p class="sub" id="s-channels"></p></div><div class="seg small" id="ctl-channel" role="group" aria-label="Parcels or share"></div></div>
+        <div class="legend" id="lg-channels"></div>
+        <div class="chart" id="ch-channels"></div>
+        <p class="cap">Home deliveries include the parcels that did not fit a full pickup point. Pickup kinds are shades of one blue.</p>
+      </figure>
+      <figure class="panel s5">
+        <div class="fig-head"><div><h3>Out-of-home share of B2C parcels by carrier</h3><p class="sub">Solid: simulated · dashed: target trend</p></div></div>
+        <div class="legend" id="lg-ooh"></div>
+        <div class="chart" id="ch-ooh"></div>
+        <p class="cap">Exact for single-carrier points; parcels in shared boxes are split among their carriers in proportion to each carrier's target out-of-home volume.</p>
+      </figure>
+    </div>
+    <details class="tv"><summary>Table: channels and out-of-home shares</summary><div id="tv-channels"></div></details>
+  </section>
+
+  <section class="section" id="map" aria-labelledby="h-map">
+    <h2 id="h-map">Where the parcels arrive</h2>
+    <p class="finding" id="f-map"></p>
+    <div class="map-wrap">
+      <figure class="panel">
+        <div class="fig-head"><div><h3 id="t-map">Postcode areas</h3><p class="sub" id="s-map"></p></div>
+          <div class="map-tools"><div class="seg small" id="ctl-map" role="group" aria-label="Map indicator"></div>
+            <label class="check"><input type="checkbox" id="ctl-points"> Pickup points</label></div></div>
+        <div class="chart" id="ch-map"></div>
+        <div class="scale" id="sc-map"></div>
+        <p class="cap">Out-of-home parcels count at the pickup point's postcode. Points appear in the year they open; the ones opened in the selected year pulse (circle: locker, square: shared box, diamond: counter; size: compartments). Postcode areas © OpenStreetMap contributors (ODbL).</p>
+      </figure>
+      <aside class="card" id="plz-card" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <section class="section" id="hotspots" aria-labelledby="h-hot">
+    <h2 id="h-hot">Growth hotspots</h2>
+    <p class="finding" id="f-hot"></p>
+    <div class="grid">
+      <figure class="panel s6"><div class="fig-head"><div><h3>Largest growth in parcels</h3><p class="sub" id="s-hot-abs"></p></div></div>
+        <div class="legend" id="lg-hot"></div><div class="chart" id="ch-hot-abs"></div></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Largest relative growth</h3><p class="sub" id="s-hot-rel"></p></div></div>
+        <div class="chart" id="ch-hot-rel"></div>
+        <p class="cap">Postcodes with less than a tenth of the median volume in the first year are left out of the relative ranking.</p></figure>
+    </div>
+    <details class="tv"><summary>Table: all postcode areas</summary><div id="tv-hot"></div></details>
+  </section>
+
+  <section class="section" id="network" aria-labelledby="h-net">
+    <h2 id="h-net">The pickup network</h2>
+    <p class="finding" id="f-net"></p>
+    <div class="cards" id="net-cards"></div>
+    <details class="tv"><summary>Table: network per year</summary><div id="tv-net"></div></details>
+  </section>
+
+  <section class="section" id="calendar" aria-labelledby="h-cal">
+    <h2 id="h-cal">Every day of the decade</h2>
+    <p class="finding" id="f-cal"></p>
+    <figure class="panel">
+      <div class="fig-head"><div><h3>Parcels per day</h3><p class="sub" id="s-cal"></p></div></div>
+      <div class="carpet" id="ch-carpet"></div>
+      <div class="scale" id="sc-cal"></div>
+      <p class="cap">One row per year, one column per day (per ISO week on narrow screens). Grey: Sundays and public holidays; the outlined cell is the busiest day of the year; ticks under a row mark the shipping days of carrier events. Click a row to select the year.</p>
+    </figure>
+    <div class="grid" style="margin-top:16px">
+      <figure class="panel s8"><div class="fig-head"><div><h3>Busiest day per year</h3><p class="sub" id="s-peaks"></p></div></div><div id="tb-peaks"></div></figure>
+      <figure class="panel s4"><div class="fig-head"><div><h3>Weekday profile</h3><p class="sub" id="s-weekday"></p></div></div>
+        <div class="legend" id="lg-weekday"></div><div class="chart" id="ch-weekday"></div></figure>
+    </div>
+  </section>
+
+  <section class="section" id="method" aria-labelledby="h-method">
+    <h2 id="h-method">How the decade is generated</h2>
+    <figure class="panel"><ol class="list" id="method-list"></ol></figure>
+  </section>
+
+  <footer><span id="foot"></span><span>Maps © OpenStreetMap contributors (ODbL) · calibrated to DHL street volumes 2021</span></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 
 <script>
 'use strict';
 const D = JSON.parse(document.getElementById('hagrid-decade').textContent);
-document.getElementById('app').textContent = 'Hannover Parcel Decade · ' + D.years[0] + '–' + D.years[D.years.length - 1];
+(function () {
+/* ---------- payload ---------- */
+const M = D.meta, YEARS = D.years, Y0 = YEARS[0], YN = YEARS[YEARS.length - 1];
+const SCEN = M.scenarios, NAMES = SCEN.map(item => item.name), P = D.plz, NP = P.codes.length;
+const KEY = {'Amazon': 'amazon', 'DHL': 'dhl', 'DPD': 'dpd', 'FedEx/TNT': 'fedex', 'GLS': 'gls', 'Hermes': 'hermes', 'UPS': 'ups'};
+const STACK = ['Amazon', 'Hermes', 'DHL', 'UPS', 'GLS', 'FedEx/TNT', 'DPD'].filter(c => M.carriers.includes(c));
+const CARS = STACK.concat(M.carriers.filter(c => !STACK.includes(c)));
+const CHANNEL = {home: 'Home delivery', locker: 'Lockers', shared_locker: 'Shared boxes', counter: 'Counters', shop: 'Pickup shops', ooh: 'Pickup points'};
+const KIND = {locker: 'Locker', shared_locker: 'Shared box', counter: 'Counter', shop: 'Pickup shop'};
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WDL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const scenario = name => SCEN.find(item => item.name === name) || SCEN[0];
+const label = name => scenario(name).label;
+const yd = (name, yr) => (D.annual[name] || {})[yr] || null;
+const plzOf = (name, yr) => ((P.values || {})[name] || {})[yr] || null;
+const calOf = (name, yr) => (D.calendar[name] || {})[yr] || null;
+/* One value per year of D.years; null where the scenario lacks the year or the value. */
+function series(name, pick) { return YEARS.map(yr => { const A = yd(name, yr); const v = A ? pick(A, yr) : null; return v == null || !isFinite(v) ? null : v; }); }
+const carColor = c => KEY[c] ? 'var(--c-' + KEY[c] + ')' : 'var(--muted)';
+const chColor = k => 'var(--ch-' + k + ')';
+
+/* ---------- formatting ---------- */
+const NF = [0, 1, 2, 3].map(d => new Intl.NumberFormat('en-US', {minimumFractionDigits: d, maximumFractionDigits: d}));
+const ok = x => x != null && isFinite(x);
+const int = x => ok(x) ? NF[0].format(Math.round(x)) : '–';
+const dec = (x, d = 1) => ok(x) ? NF[d].format(x) : '–';
+const pct = (x, d = 1) => ok(x) ? NF[d].format(x * 100) + ' %' : '–';
+const signed = (x, d = 1) => ok(x) ? (x > 0 ? '+' : x < 0 ? '−' : '±') + NF[d].format(Math.abs(x * 100)) + ' %' : '–';
+const pp = (x, d = 1) => ok(x) ? (x > 0 ? '+' : x < 0 ? '−' : '±') + NF[d].format(Math.abs(x * 100)) + ' pp' : '–';
+function short(n) { if (!ok(n)) return '–'; const a = Math.abs(n); if (a >= 1e9) return NF[2].format(n / 1e9) + 'B'; if (a >= 1e6) return NF[a >= 1e8 ? 0 : a >= 1e7 ? 1 : 2].format(n / 1e6) + 'M'; if (a >= 1e4) return NF[0].format(n / 1e3) + 'k'; return NF[0].format(n); }
+const sum = a => a.reduce((acc, v) => acc + (v || 0), 0);
+function dateOf(start, index) { const d = new Date(start + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + index); return d; }
+function dlong(d) { if (typeof d === 'string') d = new Date(d + 'T12:00:00Z'); return WDL[(d.getUTCDay() + 6) % 7] + ', ' + d.getUTCDate() + ' ' + MON[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); }
+function dshort(iso) { const d = new Date(iso + 'T12:00:00Z'); return d.getUTCDate() + ' ' + MON[d.getUTCMonth()]; }
+function poiLabel(type) { const v = String(type || 'other').split('=').pop().replace(/_/g, ' '); return v === 'fuel' ? 'Fuel station' : v.charAt(0).toUpperCase() + v.slice(1); }
+function years(list) { if (!list.length) return ''; const runs = []; let a = list[0], b = list[0]; for (let i = 1; i <= list.length; i++) { if (list[i] === b + 1) { b = list[i]; continue; } runs.push(a === b ? String(a) : a + '–' + b); a = b = list[i]; } return runs.join(', '); }
+
+/* ---------- DOM and SVG helpers ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+function s(tag, a, p) { const e = document.createElementNS(NS, tag); if (a) for (const k in a) { const v = a[k]; if (v == null) continue; if (k === 'text') e.textContent = v; else if (k === 'fill' || k === 'stroke' || k === 'opacity') e.style[k] = v; else e.setAttribute(k, v); } if (p) p.appendChild(e); return e; }
+function h(tag, a, ...kids) { const e = document.createElement(tag); if (a) for (const k in a) { const v = a[k]; if (v == null || v === false) continue; if (k === 'text') e.textContent = v; else if (k === 'class') e.className = v; else e.setAttribute(k, v === true ? '' : v); }
+  kids.flat().forEach(x => { if (x != null) e.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); }); return e; }
+const $ = id => document.getElementById(id);
+function root(box, W, H, text) { const v = s('svg', {width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': text}); box.replaceChildren(v); return v; }
+function niceMax(v) { if (!(v > 0)) return 1; const e = Math.pow(10, Math.floor(Math.log10(v))), m = v / e; return [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(x => m <= x) * e; }
+function ticks(max, n) { const st = niceMax(max / n), o = []; for (let v = 0; v <= max + st * 1e-6; v += st) o.push(v); return o; }
+function runs(flags) { const o = []; let a = -1; flags.forEach((f, i) => { if (f && a < 0) a = i; if (!f && a >= 0) { o.push([a, i - 1]); a = -1; } }); if (a >= 0) o.push([a, flags.length - 1]); return o; }
+function barPath(x, y, w, hgt, r) { if (!(hgt > 0)) return ''; r = Math.min(r, w / 2, hgt); return 'M' + x + ',' + (y + hgt) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + hgt) + 'Z'; }
+function legend(host, items) { host.replaceChildren(...items.map(it => h('span', {class: 'li'}, h('i', {class: it.kind === 'line' ? 'lk' + (it.dash ? ' dash' : '') : it.kind === 'dot' ? 'dot-k' : 'sw', style: (it.kind === 'line' ? 'border-color:' : 'background:') + it.color}), it.label))); }
+function tableView(host, head, rows, opt = {}) {
+  const body = rows.map(r => h('tr', {class: opt.on && opt.on(r) ? 'on' : null}, r.cells.map((c, i) => h('td', {class: i < (opt.left || 1) ? 'l' : (opt.wrap === i ? 'wrap l' : null)}, c))));
+  host.replaceChildren(h('div', {class: 'tbl'}, h('table', null, h('thead', null, h('tr', null, head.map((t, i) => h('th', {class: i < (opt.left || 1) || opt.wrap === i ? 'l' : null}, t)))), h('tbody', null, body))));
+}
+
+/* ---------- tooltip ---------- */
+const tip = $('tip');
+function place(ev) { let x, y; if (ev && ev.clientX != null) { x = ev.clientX; y = ev.clientY; } else { const r = ev.target.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top; }
+  const w = tip.offsetWidth, hh = tip.offsetHeight; let L = x + 14, T = y + 14; if (L + w > innerWidth - 8) L = x - 14 - w; if (T + hh > innerHeight - 8) T = y - 14 - hh; tip.style.transform = 'translate(' + Math.max(8, L) + 'px,' + Math.max(8, T) + 'px)'; }
+function show(ev, build) { tip.replaceChildren(); build(tip); tip.hidden = false; place(ev); }
+function hide() { tip.hidden = true; }
+function hover(node, build, click) { node.addEventListener('pointermove', e => show(e, build)); node.addEventListener('pointerleave', hide); node.addEventListener('focus', e => show(e, build)); node.addEventListener('blur', hide); if (click) { node.addEventListener('click', click); node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(e); } }); } }
+function tH(t, sub) { return [h('strong', {text: t}), sub ? h('span', {class: 's', text: sub}) : null].filter(Boolean); }
+function tR(v, l, c, dash) { return h('div', {class: 'tr'}, h('i', {class: dash ? 'dash' : null, style: c ? 'border-color:' + c : 'border-color:transparent'}), h('b', {text: v}), h('span', {text: l})); }
+
+/* ---------- state ---------- */
+const state = {scenario: M.primary, year: YN, mix: 'abs', channel: 'abs', map: 'perday', points: true, pin: null};
+try { const saved = JSON.parse(localStorage.getItem('hagrid-parcel-decade') || 'null');
+  if (saved) { if (NAMES.includes(saved.scenario)) state.scenario = saved.scenario; if (YEARS.includes(saved.year)) state.year = saved.year;
+    if (['abs', 'share'].includes(saved.mix)) state.mix = saved.mix; if (['abs', 'share'].includes(saved.channel)) state.channel = saved.channel;
+    if (['perday', 'growth', 'share'].includes(saved.map)) state.map = saved.map; if (typeof saved.points === 'boolean') state.points = saved.points; } } catch (e) {}
+function persist() { try { localStorage.setItem('hagrid-parcel-decade', JSON.stringify({scenario: state.scenario, year: state.year, mix: state.mix, channel: state.channel, map: state.map, points: state.points})); } catch (e) {} }
+
+/* ---------- chart frame: axes, year marker, crosshair, end labels ---------- */
+function xStep(width, span) { const fit = Math.max(1, Math.floor(width / 46)); return [1, 2, 5, 10, 20].find(k => span / k <= fit) || 20; }
+function frame(box, o) {
+  const W = Math.max(240, Math.floor(box.clientWidth)), H = o.height || 240;
+  const m = Object.assign({t: 14, r: 14, b: 26, l: 52}, o.margin || {});
+  const v = root(box, W, H, o.label);
+  const x0 = o.x0 != null ? o.x0 : Y0, x1 = o.x1 != null ? o.x1 : YN, slots = x1 - x0 + 1, inner = W - m.l - m.r;
+  const x = o.band ? yr => m.l + inner * ((yr - x0) + .5) / slots : yr => m.l + inner * (x1 === x0 ? .5 : (yr - x0) / (x1 - x0));
+  const yMax = o.yMax != null ? o.yMax : niceMax((o.max || 0) * 1.06), y = val => m.t + (H - m.t - m.b) * (1 - val / yMax);
+  const fmt = o.fmt || short;
+  ticks(yMax, o.ticks || 4).forEach(t => { s('line', {x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: t === 0 ? 'ax' : 'gl'}, v); s('text', {x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'tick', text: fmt(t)}, v); });
+  const step = o.xStep || xStep(inner, x1 - x0);
+  // year labels every `step` years; the last year is always labelled, dropping a neighbour that would crowd it
+  const labelled = []; for (let yr = x0; yr <= x1; yr += step) labelled.push(yr);
+  if (labelled[labelled.length - 1] !== x1) { if (x1 - labelled[labelled.length - 1] < step / 2) labelled.pop(); labelled.push(x1); }
+  labelled.forEach(yr => s('text', {x: x(yr), y: H - 8, 'text-anchor': 'middle', class: 'tick', text: String(yr)}, v));
+  return {v, W, H, m, x, y, yMax, x0, x1, slot: inner / Math.max(1, o.band ? slots : slots - 1)};
+}
+function marker(F, yr) { if (yr < F.x0 || yr > F.x1) return; const w = Math.max(10, Math.min(22, F.slot * .8)); s('rect', {x: F.x(yr) - w / 2, y: F.m.t, width: w, height: F.H - F.m.t - F.m.b, rx: 3, fill: 'var(--band-strong)'}, F.v); }
+function linePath(F, values, yrs) { let d = '', pen = false; (yrs || YEARS).forEach((yr, i) => { const val = values[i]; if (!ok(val)) { pen = false; return; } d += (pen ? 'L' : 'M') + F.x(yr).toFixed(1) + ',' + F.y(val).toFixed(1); pen = true; }); return d; }
+function crosshair(F, yrs, build) {
+  const cross = s('line', {x1: 0, x2: 0, y1: F.m.t, y2: F.H - F.m.b, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none'}, F.v);
+  const hit = s('rect', {x: F.m.l, y: F.m.t, width: Math.max(0, F.W - F.m.l - F.m.r), height: Math.max(0, F.H - F.m.t - F.m.b), class: 'hit'}, F.v);
+  const near = e => { const r = F.v.getBoundingClientRect(), px = (e.clientX - r.left) * F.W / r.width; return yrs.reduce((best, yr) => Math.abs(F.x(yr) - px) < Math.abs(F.x(best) - px) ? yr : best, yrs[0]); };
+  hit.addEventListener('pointermove', e => { const yr = near(e); cross.setAttribute('x1', F.x(yr)); cross.setAttribute('x2', F.x(yr)); cross.style.opacity = .45; show(e, t => build(t, yr)); });
+  hit.addEventListener('pointerleave', () => { hide(); cross.style.opacity = 0; });
+  hit.addEventListener('click', e => { const yr = near(e); if (YEARS.includes(yr)) setYear(yr); });
+}
+/* Direct labels at the right edge: the most important first; a label too close to a placed one is left to the legend. */
+function endLabels(F, items) { const placed = []; items.filter(Boolean).sort((a, b) => b.priority - a.priority).forEach(it => { if (placed.some(y => Math.abs(y - it.y) < 13)) return; placed.push(it.y); s('text', {x: F.W - F.m.r + 6, y: it.y + 4, class: it.strong ? 'lbl-b' : 'lbl', text: it.text}, F.v); }); }
+const pctTick = t => NF[0].format(t * 100) + '%';
+
+/* Stacked area over the years; share=true normalises every year to 100 %. Bands are a light wash with a 2px edge. */
+function stackArea(box, o) {
+  const present = YEARS.map((_, i) => o.layers.some(L => L.values[i] != null));
+  const totals = YEARS.map((_, i) => sum(o.layers.map(L => L.values[i])));
+  const val = (L, i) => o.share ? (totals[i] ? (L.values[i] || 0) / totals[i] : 0) : (L.values[i] || 0);
+  const narrow = box.clientWidth < 540;
+  const F = frame(box, {max: o.share ? 1 : Math.max(1, ...totals.filter((_, i) => present[i])), yMax: o.share ? 1 : null, height: o.height || 280,
+                        margin: {r: narrow ? 14 : 112}, fmt: o.share ? pctTick : short, label: o.label});
+  marker(F, state.year);
+  let base = YEARS.map(() => 0); const bands = [];
+  o.layers.forEach(L => {
+    const top = YEARS.map((_, i) => base[i] + val(L, i));
+    runs(present).forEach(([a, b]) => {
+      let edge = ''; for (let i = a; i <= b; i++) edge += (i === a ? 'M' : 'L') + F.x(YEARS[i]).toFixed(1) + ',' + F.y(top[i]).toFixed(1);
+      let back = ''; for (let i = b; i >= a; i--) back += 'L' + F.x(YEARS[i]).toFixed(1) + ',' + F.y(base[i]).toFixed(1);
+      s('path', {d: edge + back + 'Z', fill: L.color, 'fill-opacity': .24}, F.v);
+      s('path', {d: edge, fill: 'none', stroke: L.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, F.v);
+    });
+    bands.push({L, top, base}); base = top;
+  });
+  const last = present.lastIndexOf(true);
+  if (!narrow && last >= 0) endLabels(F, bands.map(b => { const hgt = F.y(b.base[last]) - F.y(b.top[last]); return hgt >= 12 ? {y: (F.y(b.top[last]) + F.y(b.base[last])) / 2, text: b.L.label, priority: hgt} : null; }));
+  crosshair(F, YEARS, (t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), o.title));
+    if (!present[i]) { t.appendChild(h('span', {class: 's', text: 'not simulated in this scenario'})); return; }
+    o.layers.slice().reverse().forEach(L => t.appendChild(tR(o.share ? pct(val(L, i)) : int(L.values[i]), L.label + (o.share ? '' : ' · ' + pct(totals[i] ? (L.values[i] || 0) / totals[i] : null)), L.color)));
+    t.appendChild(tR(int(totals[i]), 'total')); });
+}
+
+/* Stacked columns per year with a 2px gap between segments and a rounded data end. */
+function columns(box, o) {
+  const totals = YEARS.map((_, i) => sum(o.layers.map(L => Math.max(0, L.values[i] || 0))));
+  const F = frame(box, {max: Math.max(o.minMax || 1, ...totals), height: o.height || 220, margin: o.margin || {l: 46, r: 8}, fmt: o.fmt || short, label: o.label, band: true});
+  marker(F, state.year);
+  const bw = Math.max(4, Math.min(24, F.slot * .6));
+  YEARS.forEach((yr, i) => {
+    let acc = 0; const cx = F.x(yr), parts = o.layers.filter(L => (L.values[i] || 0) > 0);
+    parts.forEach((L, k) => { const y1 = F.y(acc), y2 = F.y(acc + L.values[i]); acc += L.values[i];
+      s('path', {d: barPath(cx - bw / 2, y2, bw, y1 - y2 - (k ? 2 : 0), k === parts.length - 1 ? 4 : 0), fill: L.color}, F.v); });
+    if (yr === state.year && ok(totals[i]) && o.valueLabel !== false) s('text', {x: cx, y: F.y(totals[i]) - 6, 'text-anchor': 'middle', class: 'lbl-b', text: (o.fmt || short)(totals[i])}, F.v);
+    const any = o.layers.some(L => L.values[i] != null);
+    const hit = s('rect', {x: cx - F.slot / 2, y: F.m.t, width: F.slot, height: F.H - F.m.t - F.m.b, class: 'col-hit'}, F.v);
+    hover(hit, t => { t.append(...tH(String(yr), o.title)); if (!any) { t.appendChild(h('span', {class: 's', text: 'not simulated in this scenario'})); return; }
+      o.layers.slice().reverse().forEach(L => t.appendChild(tR((o.fmt || int)(L.values[i]), L.label, L.color))); if (o.layers.length > 1) t.appendChild(tR((o.fmt || int)(totals[i]), 'total')); }, () => setYear(yr));
+  });
+  return F;
+}
+
+/* Lines over the years (one axis); dotted markers where asked. */
+function lines(box, o) {
+  const vals = o.series.flatMap(S => S.values.filter(ok));
+  const F = frame(box, {max: o.max != null ? o.max : Math.max(1e-9, ...vals), yMax: o.yMax, height: o.height || 220, margin: o.margin, fmt: o.fmt, label: o.label});
+  marker(F, state.year);
+  o.series.forEach(S => { s('path', {d: linePath(F, S.values), fill: 'none', stroke: S.color, 'stroke-width': S.width || 2, 'stroke-dasharray': S.dash || null, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: S.opacity != null ? S.opacity : null}, F.v);
+    if (S.dots) S.values.forEach((v, i) => { if (ok(v)) s('circle', {cx: F.x(YEARS[i]), cy: F.y(v), r: YEARS[i] === state.year ? 5 : 4, fill: S.color, stroke: 'var(--surface)', 'stroke-width': 2}, F.v); }); });
+  if (o.labels) { endLabels(F, o.series.filter(S => S.label && ok(S.values[S.values.length - 1])).map(S => ({y: F.y(S.values[S.values.length - 1]), text: S.label, priority: S.priority || 0, strong: S.strong}))); }
+  crosshair(F, YEARS, o.tip || ((t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), o.title)); o.series.filter(S => !S.hidden).forEach(S => t.appendChild(tR((o.vfmt || int)(S.values[i]), S.name || S.label, S.color, !!S.dash))); }));
+  return F;
+}
+
+/* Horizontal stacked bars from a zero line (negative parts to the left), value at the bar end. */
+function hbars(box, rows, o) {
+  const W = Math.max(240, Math.floor(box.clientWidth)), narrow = W < 460, lab = narrow ? 118 : 172, row = 24, H = Math.max(60, rows.length * row + 30);
+  const v = root(box, W, H, o.label);
+  if (!rows.length) { box.replaceChildren(h('p', {class: 'empty', text: o.empty})); return; }
+  const neg = Math.min(0, ...rows.map(r => sum(r.parts.map(p => Math.min(0, p.value))))), pos = Math.max(0, ...rows.map(r => sum(r.parts.map(p => Math.max(0, p.value)))));
+  const span = (pos - neg) || 1, left = lab + 4, right = W - (narrow ? 58 : 74), x = val => left + (right - left) * (val - neg) / span, zero = x(0);
+  s('line', {x1: zero, x2: zero, y1: 14, y2: H - 10, class: 'ax'}, v);
+  rows.forEach((r, k) => {
+    const cy = 20 + k * row, bh = 14; let up = 0, down = 0;
+    s('text', {x: lab - 4, y: cy + 4, 'text-anchor': 'end', class: r.on ? 'lbl-b' : 'lbl', text: r.label}, v);
+    const shown = r.parts.filter(p => p.value > 0);
+    r.parts.forEach(p => { if (!p.value) return; const a = p.value > 0 ? up : down + p.value, b = p.value > 0 ? up + p.value : down; if (p.value > 0) up += p.value; else down += p.value;
+      const gap = p.value > 0 && shown.indexOf(p) > 0 ? 2 : 0, x1 = x(a) + gap, x2 = x(b);
+      s('rect', {x: Math.min(x1, x2), y: cy - bh / 2, width: Math.max(1, Math.abs(x2 - x1)), height: bh, rx: 3, fill: p.color}, v); });
+    s('text', {x: (up > 0 ? x(up) : zero) + 6, y: cy + 4, class: 'lbl', text: r.text}, v);
+    const hit = s('rect', {x: 0, y: cy - row / 2, width: W, height: row, class: 'col-hit', tabindex: 0, 'aria-label': r.label + ' ' + r.text}, v);
+    hover(hit, t => o.tip(t, r), o.click ? () => o.click(r) : null);
+  });
+}
+
+/* ---------- controls ---------- */
+function buildControls() {
+  const sc = $('ctl-scenario');
+  SCEN.forEach(item => { const input = h('input', {type: 'radio', name: 'scenario', value: item.name}); input.addEventListener('change', () => { if (input.checked) render(item.name, state.year); });
+    sc.appendChild(h('label', {'data-v': item.name, title: item.definition ? item.definition.policy + ' / ' + item.definition.curve : null}, input, item.label)); });
+  const range = $('ctl-year'); range.min = Y0; range.max = YN; range.addEventListener('input', () => { stop(); render(state.scenario, +range.value); });
+  $('play').addEventListener('click', () => (timer ? stop() : play()));
+  function seg(id, options, key) { const host = $(id); options.forEach(([value, text]) => { const b = h('button', {type: 'button', 'data-v': value}, text); b.addEventListener('click', () => { state[key] = value; render(state.scenario, state.year); }); host.appendChild(b); }); }
+  seg('ctl-mix', [['abs', 'Parcels'], ['share', 'Share']], 'mix');
+  seg('ctl-channel', [['abs', 'Parcels'], ['share', 'Share']], 'channel');
+  seg('ctl-map', [['perday', 'Per delivery day'], ['growth', 'Growth vs ' + Y0], ['share', 'Out-of-home share']], 'map');
+  $('ctl-points').addEventListener('change', e => { state.points = e.target.checked; render(state.scenario, state.year); });
+  dock();
+}
+function syncControls() {
+  document.querySelectorAll('#ctl-scenario label').forEach(l => { const on = l.getAttribute('data-v') === state.scenario; l.classList.toggle('on', on); l.querySelector('input').checked = on; });
+  [['ctl-mix', 'mix'], ['ctl-channel', 'channel'], ['ctl-map', 'map']].forEach(([id, key]) => $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === state[key]))));
+  $('ctl-year').value = state.year; $('year-out').textContent = state.year; $('ctl-points').checked = state.points;
+  const missing = scenario(state.scenario).missing_years || [];
+  $('scen-note').textContent = missing.length ? label(state.scenario) + ': ' + years(missing) + ' not simulated' : '';
+}
+/* The control bar docks to the top of the window once the page scrolls past it (it stays part of #hero). */
+function dock() {
+  if (!('IntersectionObserver' in window)) return;
+  const bar = $('controls'), space = $('dock-space');
+  new IntersectionObserver(([entry]) => { const docked = entry.boundingClientRect.top < 0; space.style.height = docked ? bar.offsetHeight + 'px' : '0px'; bar.classList.toggle('docked', docked); }).observe($('dock-sentinel'));
+}
+let timer = null;
+function play() { if (state.year >= YN) render(state.scenario, Y0); $('play').setAttribute('aria-pressed', 'true'); $('play').setAttribute('aria-label', 'Pause');
+  $('play-icon').setAttribute('d', 'M4 2.5h3v11H4zM9 2.5h3v11H9z');
+  // with reduced motion the years still step (the reader asked for it), just slower and without transitions or pulses
+  timer = setInterval(() => { if (state.year >= YN) { stop(); return; } render(state.scenario, state.year + 1); }, REDUCED ? 1500 : 700); }
+function stop() { if (!timer) return; clearInterval(timer); timer = null; $('play').setAttribute('aria-pressed', 'false'); $('play').setAttribute('aria-label', 'Play the years'); $('play-icon').setAttribute('d', 'M4 2.5v11l9-5.5z'); }
+
+/* ---------- #hero ---------- */
+function setStatic() {
+  $('eyebrow-runs').textContent = SCEN.map(item => item.run_id).join(' · ');
+  const ends = SCEN.map(item => ({item, A: yd(item.name, YN)})).filter(x => x.A);
+  const base = yd(M.primary, Y0);
+  $('lede').textContent = 'Every day of ' + Y0 + '–' + YN + ' in Region Hannover, simulated in ' + SCEN.length + ' volume scenario' + (SCEN.length === 1 ? '' : 's') + ': from ' + short(base ? base.parcels : null) + ' parcels in ' + Y0 +
+    (ends.length ? ' to ' + ends.map(x => short(x.A.parcels) + ' (' + x.item.label + ')').join(', ').replace(/, ([^,]*)$/, ' or $1') + ' in ' + YN : '') + '. Carriers, days, addresses and a pickup network that grows with the demand are drawn for each year.';
+  const pts = year => { const n = yd(M.primary, year); return n && n.network ? sum(Object.values(n.network.points)) : null; };
+  const facts = [['Residents', int(M.region.persons)], ['Postcode areas', int(M.region.plz)], ['Scenarios', String(SCEN.length)], ['Years', Y0 + '–' + YN], ['Pickup points', pts(Y0) != null ? int(pts(Y0)) + ' → ' + int(pts(YN)) : '–'], ['Carriers', String(CARS.length)]];
+  $('facts').replaceChildren(...facts.map(f => h('div', null, h('dt', {text: f[0]}), h('dd', {text: f[1]}))));
+  $('foot').textContent = 'HAGRID · runs ' + SCEN.map(item => item.run_id).join(', ') + ' · generated ' + String(M.generated_at).slice(0, 10);
+}
+function renderHero() {
+  const A = yd(state.scenario, state.year), B = yd(state.scenario, Y0), box = $('kpis'), yr = state.year;
+  box.replaceChildren();
+  function tile(l, v, u, d, cls) { box.appendChild(h('div', {class: 'kpi' + (cls ? ' ' + cls : '')}, h('p', {text: l}), h('div', {class: 'v'}, v, u ? h('small', {text: u}) : null), d ? h('div', {class: 'd', text: d}) : null)); }
+  const vs = (a, b) => yr === Y0 || !ok(a) || !ok(b) || !b ? (yr === Y0 ? 'first year' : '') : signed(a / b - 1) + ' vs ' + Y0;
+  if (!A) { tile('Parcels in ' + yr + ' · ' + label(state.scenario), '–', null, 'not simulated in this scenario', 'hero'); return; }
+  const count = A.network ? sum(Object.values(A.network.points)) : null;
+  tile('Parcels in ' + yr + ' · ' + label(state.scenario), short(A.parcels), null, vs(A.parcels, B && B.parcels), 'hero');
+  tile('Per delivery day', int(A.per_delivery_day), null, int(A.delivery_days) + ' delivery days');
+  tile('Per resident', dec(A.per_resident, 1), '/ year', vs(A.per_resident, B && B.per_resident));
+  tile('B2B share', pct(A.parcels ? A.b2b / A.parcels : null), null, short(A.b2b) + ' to firms');
+  tile('Out of home', pct(A.ooh_b2c_share), null, 'of B2C parcels' + (B && ok(B.ooh_b2c_share) && yr !== Y0 ? ' · ' + pp(A.ooh_b2c_share - B.ooh_b2c_share) : ''));
+  tile('Pickup points', count != null ? int(count) : '–', null, A.network ? int(A.network.compartments) + ' compartments' : 'no pickup network');
+  tile('Busiest day', dshort(A.peak.date), null, int(A.peak.parcels) + ' parcels · ' + dec(A.peak.ratio, 2) + '× the mean');
+}
+
+/* ---------- #growth ---------- */
+function renderGrowth() {
+  const nat = D.national, sel = state.scenario, order = NAMES.filter(n => n !== sel).concat([sel]);
+  const color = n => n === sel ? 'var(--all)' : 'var(--other-line)';
+  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}, {kind: 'line', color: 'var(--all)', label: label(sel)}].concat(NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
+  // national fan: observed anchors and every scenario from the first simulated year on
+  const box = $('ch-national'), narrow = box.clientWidth < 540, x0 = Math.min(nat.observed.years[0] || Y0, Y0);
+  const paths = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : []; });
+  const max = Math.max(1, ...nat.observed.values, ...NAMES.flatMap(n => paths[n].map(p => p[1])));
+  const F = frame(box, {x0, x1: YN, max, height: 290, margin: {r: narrow ? 50 : 150}, fmt: t => dec(t, 1), label: 'National parcel volume in billions'});
+  marker(F, state.year);
+  nat.observed.years.forEach((yr, i) => s('circle', {cx: F.x(yr), cy: F.y(nat.observed.values[i]), r: 4, fill: 'var(--obs)', stroke: 'var(--surface)', 'stroke-width': 2}, F.v));
+  order.forEach(n => { const pts = paths[n]; if (!pts.length) return; const on = n === sel;
+    s('path', {d: pts.map((p, i) => (i ? 'L' : 'M') + F.x(p[0]).toFixed(1) + ',' + F.y(p[1]).toFixed(1)).join(''), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, F.v);
+    const last = pts[pts.length - 1]; s('circle', {cx: F.x(last[0]), cy: F.y(last[1]), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, F.v); });
+  endLabels(F, NAMES.map(n => { const pts = paths[n], g = scenario(n).national; if (!pts.length) return null; const last = pts[pts.length - 1];
+    return {y: F.y(last[1]), text: narrow ? dec(last[1], 2) : label(n) + ' · ' + dec(last[1], 2) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
+  const span = []; for (let yr = x0; yr <= YN; yr++) span.push(yr);
+  crosshair(F, span, (t, yr) => { t.append(...tH(String(yr), 'billion parcels in Germany')); const o = nat.observed.years.indexOf(yr); if (o >= 0) t.appendChild(tR(dec(nat.observed.values[o], 3), 'observed', 'var(--obs)'));
+    NAMES.forEach(n => { const p = paths[n].find(q => q[0] === yr); if (p) t.appendChild(tR(dec(p[1], 3), label(n), color(n))); }); });
+  // regional fan: simulated parcels per scenario
+  const rb = $('ch-regional'), rnarrow = rb.clientWidth < 540, reg = {}; NAMES.forEach(n => { reg[n] = series(n, A => A.parcels); });
+  const R = frame(rb, {max: Math.max(1, ...NAMES.flatMap(n => reg[n].filter(ok))), height: 290, margin: {r: rnarrow ? 50 : 132}, fmt: short, label: 'Simulated parcels in Region Hannover'});
+  marker(R, state.year);
+  order.forEach(n => { const on = n === sel; s('path', {d: linePath(R, reg[n]), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, R.v);
+    reg[n].forEach((v, i) => { if (ok(v) && (YEARS[i] === state.year || i === reg[n].length - 1)) s('circle', {cx: R.x(YEARS[i]), cy: R.y(v), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, R.v); }); });
+  endLabels(R, NAMES.map(n => { const i = reg[n].map(ok).lastIndexOf(true), g = scenario(n).regional; if (i < 0) return null;
+    return {y: R.y(reg[n][i]), text: rnarrow ? short(reg[n][i]) : label(n) + ' · ' + short(reg[n][i]) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
+  crosshair(R, YEARS, (t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
+  // finding and table
+  const gs = SCEN.filter(item => item.national);
+  $('f-growth').replaceChildren('Nationally the scenarios reach ', h('b', {text: gs.map(item => dec(item.national.to, 2) + ' billion (' + item.label + ')').join(', ').replace(/, ([^,]*)$/, ' and $1')}), ' parcels in ' + YN + ', ' +
+    gs.map(item => signed(item.national.cagr) + ' a year').join(' / ') + ' from ' + (gs[0] ? gs[0].national.from_year : Y0) + '. In the region the ' + label(sel) + ' scenario grows from ' + short(reg[sel][0]) + ' to ' + short(reg[sel][reg[sel].length - 1]) + ' parcels.');
+  const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(YEARS))).sort((a, b) => a - b);
+  tableView($('tv-growth'), ['Year', 'Observed (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
+    allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3)].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
+    {on: r => r.yr === state.year});
+}
+
+/* ---------- #mix ---------- */
+function renderMix() {
+  const n = state.scenario, share = state.mix === 'share';
+  const layers = STACK.map(c => ({key: c, label: c, color: carColor(c), values: series(n, A => A.carriers && A.carriers[c] ? A.carriers[c].total : null)}));
+  legend($('lg-carriers'), layers.map(L => ({color: L.color, label: L.label})));
+  stackArea($('ch-carriers'), {layers, share, label: 'Parcels by carrier per year', title: share ? 'share of parcels' : 'parcels'});
+  $('s-carriers').textContent = label(n) + ' · ' + (share ? 'share of all parcels' : 'parcels per year');
+  const seg = [{key: 'b2c', label: 'B2C', color: 'var(--seg-b2c)', values: series(n, A => A.b2c)}, {key: 'b2b', label: 'B2B', color: 'var(--seg-b2b)', values: series(n, A => A.b2b)}];
+  legend($('lg-segments'), seg.map(L => ({color: L.color, label: L.label + (L.key === 'b2c' ? ' (private)' : ' (firms)')})));
+  columns($('ch-segments'), {layers: seg, height: 240, label: 'B2C and B2B parcels per year', title: 'parcels', fmt: short});
+  const A = yd(n, state.year);
+  $('s-segments').textContent = A ? 'B2B share ' + state.year + ': ' + pct(A.b2b / A.parcels) : 'not simulated';
+  lines($('ch-resident'), {series: [{label: label(n), name: 'parcels per resident', color: 'var(--all)', values: series(n, A => A.per_resident), dots: true, width: 2.5}], height: 200, fmt: t => dec(t, 0), vfmt: v => dec(v, 1), label: 'Parcels per resident and year', title: label(n)});
+  $('s-resident').textContent = label(n) + (M.region.persons ? ' · ' + int(M.region.persons) + ' residents (2021 reference)' : '');
+  const days = [{label: 'peak', name: 'busiest day', color: 'var(--q6)', values: series(n, A => A.peak.parcels), dots: true}, {label: 'mean', name: 'mean per delivery day', color: 'var(--q3)', values: series(n, A => A.per_delivery_day), dots: true}];
+  legend($('lg-days'), [{kind: 'line', color: 'var(--q6)', label: 'busiest day'}, {kind: 'line', color: 'var(--q3)', label: 'mean per delivery day'}]);
+  lines($('ch-days'), {series: days, height: 200, fmt: short, label: 'Mean and peak parcels per delivery day', title: label(n)});
+  $('s-days').textContent = A ? 'Peak/mean ' + state.year + ': ' + dec(A.peak.ratio, 2) + '×' : '';
+  const first = yd(n, Y0), top = A && A.carriers ? CARS.slice().sort((a, b) => (A.carriers[b] ? A.carriers[b].total : 0) - (A.carriers[a] ? A.carriers[a].total : 0)) : [];
+  $('f-mix').replaceChildren(...(A && first ? [h('b', {text: top[0] + ' carries ' + pct(A.carriers[top[0]].total / A.parcels) + ' of the parcels in ' + state.year}), ' (' + Y0 + ': ' + pct(first.carriers[top[0]] ? first.carriers[top[0]].total / first.parcels : null) + '). The B2B share moves from ' + pct(first.b2b / first.parcels) + ' to ' + pct(A.b2b / A.parcels) + '; each resident receives ' + dec(A.per_resident, 1) + ' parcels a year (' + Y0 + ': ' + dec(first.per_resident, 1) + ').'] : ['Not simulated in this scenario.']));
+  tableView($('tv-mix'), ['Year'].concat(CARS, ['B2C', 'B2B', 'Per resident']), YEARS.map((yr, i) => { const Y = yd(n, yr); return {yr, cells: [String(yr)].concat(CARS.map(c => Y && Y.carriers[c] ? int(Y.carriers[c].total) : '–'), [int(Y && Y.b2c), int(Y && Y.b2b), dec(Y && Y.per_resident, 1)])}; }), {on: r => r.yr === state.year});
+}
+
+/* ---------- #channels ---------- */
+function channelKeys(n) { const keys = new Set(); YEARS.forEach(yr => { const A = yd(n, yr); if (A && A.channels) Object.keys(A.channels).forEach(k => keys.add(k)); }); return ['home', 'locker', 'shared_locker', 'counter', 'shop', 'ooh'].filter(k => keys.has(k)); }
+function renderChannels() {
+  const n = state.scenario, share = state.channel === 'share', keys = channelKeys(n);
+  const layers = keys.map(k => ({key: k, label: CHANNEL[k] || k, color: chColor(k), values: series(n, A => A.channels ? A.channels[k] : null)}));
+  legend($('lg-channels'), layers.map(L => ({color: L.color, label: L.label})));
+  stackArea($('ch-channels'), {layers, share, label: 'Parcels by delivery channel', title: share ? 'share of parcels' : 'parcels'});
+  $('s-channels').textContent = label(n) + ' · ' + (share ? 'share of all parcels' : 'parcels per year');
+  const withShares = CARS.filter(c => YEARS.some(yr => { const A = yd(n, yr); return A && A.ooh_share && ok(A.ooh_share[c]); }));
+  const box = $('ch-ooh');
+  if (!withShares.length) { box.replaceChildren(h('p', {class: 'empty', text: 'No out-of-home delivery in this run.'})); $('lg-ooh').replaceChildren(); }
+  else {
+    const S = []; withShares.forEach(c => { S.push({label: c, name: c + ' simulated', color: carColor(c), values: series(n, A => A.ooh_share ? A.ooh_share[c] : null), width: 2, priority: 1});
+      S.push({name: c + ' target', color: carColor(c), values: series(n, A => A.ooh_target ? A.ooh_target[c] : null), width: 1.5, dash: '4 3', opacity: .8}); });
+    legend($('lg-ooh'), withShares.map(c => ({kind: 'line', color: carColor(c), label: c})).concat([{kind: 'line', dash: true, color: 'var(--muted)', label: 'target'}]));
+    const narrow = box.clientWidth < 540;
+    lines(box, {series: S.map(x => Object.assign(x, {priority: x.label ? (x.values[x.values.length - 1] || 0) : 0})), height: 280, margin: {r: narrow ? 14 : 78}, fmt: pctTick, vfmt: v => pct(v, 1), labels: !narrow, label: 'Out-of-home share of B2C parcels per carrier', title: label(n)});
+  }
+  const A = yd(n, state.year), B = yd(n, Y0);
+  const kinds = keys.filter(k => k !== 'home');
+  $('f-channels').replaceChildren(...(A ? ['In ' + state.year + ' ', h('b', {text: pct(A.ooh_b2c_share) + ' of the B2C parcels'}), ' go to ' + (kinds.map(k => (CHANNEL[k] || k).toLowerCase()).join(', ').replace(/, ([^,]*)$/, ' and $1') || 'pickup points') +
+    (B && state.year !== Y0 ? ' (' + Y0 + ': ' + pct(B.ooh_b2c_share) + ')' : '') + '.' + (A.ooh_share ? ' ' + withShares.filter(c => ok(A.ooh_share[c])).sort((a, b) => A.ooh_share[b] - A.ooh_share[a]).slice(0, 3).map(c => c + ' ' + pct(A.ooh_share[c])).join(', ') + '.' : '')] : ['Not simulated in this scenario.']));
+  tableView($('tv-channels'), ['Year'].concat(keys.map(k => CHANNEL[k] || k), ['Out of home (B2C)'], withShares.map(c => c + ' OOH'), withShares.map(c => c + ' target')),
+    YEARS.map(yr => { const Y = yd(n, yr); return {yr, cells: [String(yr)].concat(keys.map(k => Y && Y.channels ? int(Y.channels[k]) : '–'), [pct(Y && Y.ooh_b2c_share)], withShares.map(c => pct(Y && Y.ooh_share ? Y.ooh_share[c] : null)), withShares.map(c => pct(Y && Y.ooh_target ? Y.ooh_target[c] : null)))}; }), {on: r => r.yr === state.year});
+}
+
+/* ---------- #map ---------- */
+const GEO = P.geo ? P.geo.features : [], B = {x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9}, PI = {};
+GEO.forEach(f => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates).forEach(poly => poly.forEach(ring => ring.forEach(p => { B.x0 = Math.min(B.x0, p[0]); B.x1 = Math.max(B.x1, p[0]); B.y0 = Math.min(B.y0, p[1]); B.y1 = Math.max(B.y1, p[1]); }))));
+const KX = Math.cos((B.y0 + B.y1) / 2 * Math.PI / 180); P.codes.forEach((c, i) => { PI[c] = i; });
+function proj(W) { const pad = 8; let sc = (W - 2 * pad) / ((B.x1 - B.x0) * KX), H = (B.y1 - B.y0) * sc + 2 * pad; const mh = Math.max(320, Math.min(640, innerHeight * .72)); if (H > mh) { sc = (mh - 2 * pad) / (B.y1 - B.y0); H = mh; } const ox = (W - (B.x1 - B.x0) * KX * sc) / 2; return {H, f: (lo, la) => [ox + (lo - B.x0) * KX * sc, pad + (B.y1 - la) * sc]}; }
+function pathOf(g, pr) { let d = ''; (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).forEach(poly => poly.forEach(ring => { ring.forEach((p, i) => { const q = pr.f(p[0], p[1]); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }); d += 'Z'; })); return d; }
+function breaks(vals, n) { const v = vals.filter(x => x > 0).sort((a, b) => a - b), o = []; for (let i = 1; i < n; i++) { const q = v[Math.min(v.length - 1, Math.floor(i * v.length / n))]; if (q == null) continue; const e = Math.pow(10, Math.floor(Math.log10(q || 1)) - 1), r = Math.round(q / e) * e; if (!o.length || r > o[o.length - 1]) o.push(r); } return o; }
+function cls(v, br) { let k = 0; while (k < br.length && v >= br[k]) k++; return k; }
+function binLegend(el, title, bins) { el.replaceChildren(h('span', {text: title}), h('span', {class: 'bins'}, bins.map(b => h('span', null, h('i', {style: 'background:' + b.color}), h('span', {text: b.text}))))); }
+function plzRows(n, yr) {
+  const V = plzOf(n, yr), Z = plzOf(n, Y0), A = yd(n, yr);
+  return P.codes.map((code, i) => { const r = {code, i, name: P.names[i] || '', persons: P.persons ? P.persons[i] : null};
+    if (!V) return r;
+    r.b2c = V.home_b2c[i] + V.ooh[i]; r.b2b = V.home_b2b[i]; r.ooh = V.ooh[i]; r.total = r.b2c + r.b2b;
+    r.perDay = A && A.delivery_days ? r.total / A.delivery_days : null; r.share = r.b2c ? r.ooh / r.b2c : null;
+    if (Z) { r.baseB2c = Z.home_b2c[i] + Z.ooh[i]; r.baseB2b = Z.home_b2b[i]; r.base = r.baseB2c + r.baseB2b; r.growth = r.base ? r.total / r.base - 1 : null; }
+    return r; });
+}
+const MAPMODE = {perday: 'Parcels per delivery day', growth: 'Growth vs ' + Y0, share: 'Out-of-home share of B2C parcels'};
+function mapScale(rows) {
+  if (state.map === 'growth') {
+    const pos = rows.map(r => r.growth).filter(v => ok(v) && v > .005), br = breaks(pos, 4);
+    const color = v => !ok(v) ? 'var(--surface-3)' : v < -.05 ? 'var(--neg2)' : v < -.005 ? 'var(--neg1)' : v <= .005 ? 'var(--mid)' : 'var(--q' + (cls(v, br) + 3) + ')';
+    const bins = [{color: 'var(--neg2)', text: '< −5 %'}, {color: 'var(--neg1)', text: '−5 to 0 %'}, {color: 'var(--mid)', text: '± 0.5 %'}].concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? '> 0 %' : 'from ' + signed(b, 0)})));
+    return {value: r => r.growth, color, bins, fmt: v => signed(v)};
+  }
+  const value = state.map === 'share' ? r => r.share : r => r.perDay, fmt = state.map === 'share' ? v => pct(v) : v => int(v);
+  const br = breaks(rows.map(value).filter(ok), 6);
+  return {value, fmt, color: v => ok(v) ? 'var(--q' + (cls(v, br) + 1) + ')' : 'var(--surface-3)',
+          bins: [0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 1) + ')', text: k === 0 ? '< ' + fmt(br[0]) : 'from ' + fmt(b)}))};
+}
+function pointShape(kind, x, y, r, attrs, parent) {
+  if (kind === 'shared_locker') return s('rect', Object.assign({x: x - r * .9, y: y - r * .9, width: r * 1.8, height: r * 1.8, rx: 1.5}, attrs), parent);
+  if (kind === 'counter' || kind === 'shop') return s('path', Object.assign({d: 'M' + x + ',' + (y - r * 1.2) + 'L' + (x + r * 1.2) + ',' + y + 'L' + x + ',' + (y + r * 1.2) + 'L' + (x - r * 1.2) + ',' + y + 'Z'}, attrs), parent);
+  return s('circle', Object.assign({cx: x, cy: y, r}, attrs), parent);
+}
+function renderMap() {
+  const n = state.scenario, yr = state.year, box = $('ch-map');
+  if (!GEO.length) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no postcode polygons.'})); $('plz-card').replaceChildren(); return; }
+  const rows = plzRows(n, yr), sc = mapScale(rows), W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Map of Region Hannover by postcode'); v.id = 'map-svg';
+  GEO.forEach(f => { const code = f.properties.plz, r = rows[PI[code]]; if (!r) return; const val = sc.value(r);
+    const path = s('path', {d: pathOf(f.geometry, pr), class: 'plz' + (state.pin === code ? ' on' : ''), fill: sc.color(val), tabindex: 0, 'aria-label': code + ' ' + r.name + ': ' + sc.fmt(val)}, v);
+    hover(path, t => { t.append(...tH(code + ' ' + r.name, label(n) + ' · ' + yr)); t.appendChild(tR(sc.fmt(val), MAPMODE[state.map])); t.appendChild(tR(int(r.total), 'parcels')); t.appendChild(tR(pct(r.share), 'out of home (B2C)')); },
+          () => { state.pin = state.pin === code ? null : code; render(n, yr); });
+    path.addEventListener('pointerenter', () => card(r)); path.addEventListener('pointerleave', () => card(state.pin ? rows[PI[state.pin]] : null)); });
+  const N = D.network[n], yi = YEARS.indexOf(yr);
+  if (state.points && N) {
+    const layer = s('g', {'aria-label': 'Pickup points'}, v);
+    const idx = N.ids.map((_, i) => i).filter(i => N.compartments[i][yi] != null && ok(N.lon[i])).sort((a, b) => (N.compartments[b][yi] || 0) - (N.compartments[a][yi] || 0));
+    idx.forEach(i => { const q = pr.f(N.lon[i], N.lat[i]), comp = N.compartments[i][yi] || 0, r = 2.6 + Math.sqrt(comp / 80) * 2.2, isNew = N.year_opened[i] === yr && yr > Y0;
+      if (isNew) { const g = s('g', {class: 'pulse'}, layer); pointShape(N.kind[i], q[0], q[1], r + 2, {fill: 'none', stroke: 'var(--surface)', 'stroke-width': 4}, g); pointShape(N.kind[i], q[0], q[1], r + 2, {fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.6}, g); }
+      const mark = pointShape(N.kind[i], q[0], q[1], r, {class: 'pt' + (isNew ? ' new' : ''), fill: isNew ? null : 'var(--surface)', tabindex: 0, 'aria-label': (KIND[N.kind[i]] || N.kind[i]) + ' ' + N.carriers[i] + ', ' + int(comp) + ' compartments'}, layer);
+      hover(mark, t => { t.append(...tH((N.brand[i] && N.brand[i] !== 'synthetic' ? N.brand[i] : (KIND[N.kind[i]] || N.kind[i]) + (N.synthetic[i] ? ' (synthetic)' : '')) + ' · ' + N.carriers[i].split('|').join(', '), N.plz[i] + ' · opened ' + (N.year_opened[i] <= Y0 ? 'by ' + Y0 : N.year_opened[i]) + (N.poi_type[i] ? ' · ' + poiLabel(N.poi_type[i]) : '')));
+        t.appendChild(tR(int(comp), 'compartments in ' + yr)); t.appendChild(tR(N.fill[i][yi] != null ? N.fill[i][yi] + ' %' : '–', 'mean fill on delivery days')); }); });
+  }
+  binLegend($('sc-map'), MAPMODE[state.map] + ':', sc.bins);
+  $('s-map').textContent = label(n) + ' · ' + yr + (state.points && N ? ' · ' + int(N.compartments.filter(c => c[yi] != null).length) + ' pickup points' : '');
+  card(state.pin ? rows[PI[state.pin]] : null);
+  const ranked = rows.filter(r => ok(r.total)).sort((a, b) => b.total - a.total), grow = rows.filter(r => ok(r.growth)).sort((a, b) => b.growth - a.growth);
+  $('f-map').replaceChildren(...(ranked.length ? ['In ' + yr + ' ', h('b', {text: ranked[0].code + ' ' + ranked[0].name + ' receives the most parcels (' + int(ranked[0].perDay) + ' per delivery day)'}), yr > Y0 && grow.length ? '; the fastest growth since ' + Y0 + ' is in ' + grow[0].code + ' ' + grow[0].name + ' (' + signed(grow[0].growth) + ').' : '.'] : ['Not simulated in this scenario.']));
+}
+function spark(values, w, hgt) { const sv = s('svg', {width: w, height: hgt, viewBox: '0 0 ' + w + ' ' + hgt, role: 'img', 'aria-label': 'Parcels per year'}), mx = Math.max(1, ...values.filter(ok)); let d = '';
+  values.forEach((v, i) => { if (!ok(v)) return; const x = 4 + (w - 8) * (YEARS.length === 1 ? .5 : i / (YEARS.length - 1)), y = hgt - 4 - (hgt - 10) * v / mx; d += (d ? 'L' : 'M') + x.toFixed(1) + ',' + y.toFixed(1); if (YEARS[i] === state.year) s('circle', {cx: x, cy: y, r: 4, fill: 'var(--all)', stroke: 'var(--surface)', 'stroke-width': 2}, sv); });
+  sv.insertBefore(s('path', {d, fill: 'none', stroke: 'var(--all)', 'stroke-width': 2, 'stroke-linejoin': 'round'}), sv.firstChild); return sv; }
+function card(r) {
+  const el = $('plz-card'), n = state.scenario; el.replaceChildren();
+  if (!r) { const A = yd(n, state.year); el.append(h('div', {class: 'code', text: 'Region'}), h('div', {class: 'name', text: 'Region Hannover · ' + NP + ' postcode areas'}),
+    h('dl', null, h('div', null, h('dt', {text: 'Parcels ' + state.year}), h('dd', {text: int(A && A.parcels)})), h('div', null, h('dt', {text: 'Residents'}), h('dd', {text: int(M.region.persons)}))), h('p', {class: 'note', text: 'Hover over a postcode area for its profile; click to pin it.'})); return; }
+  const N = D.network[n], yi = YEARS.indexOf(state.year), pts = N ? N.plz.filter((p, i) => p === r.code && N.compartments[i][yi] != null).length : null;
+  el.append(h('div', {class: 'code', text: r.code}), h('div', {class: 'name', text: (r.name || 'Postcode area') + (state.pin === r.code ? ' · pinned' : '')}),
+    h('dl', null, [['Parcels ' + state.year, int(r.total)], ['Per delivery day', int(r.perDay)], ['Growth vs ' + Y0, signed(r.growth)], ['Out of home', pct(r.share)], ['B2B share', pct(r.total ? r.b2b / r.total : null)], ['Residents', int(r.persons)], ['Pickup points', pts == null ? '–' : int(pts)], ['Picked up here', int(r.ooh)]].map(x => h('div', null, h('dt', {text: x[0]}), h('dd', {text: x[1]})))));
+  const hist = YEARS.map(yr => { const V = plzOf(n, yr); return V ? V.home_b2c[r.i] + V.home_b2b[r.i] + V.ooh[r.i] : null; });
+  el.appendChild(spark(hist, Math.max(200, el.clientWidth - 34), 56)); el.appendChild(h('p', {class: 'note', text: 'Parcels per year ' + Y0 + '–' + YN + ' (' + label(n) + '); the dot marks ' + state.year + '.'}));
+}
+
+/* ---------- #hotspots ---------- */
+function renderHotspots() {
+  const n = state.scenario, yr = state.year, rows = plzRows(n, yr).filter(r => ok(r.total) && ok(r.base));
+  const sub = label(n) + ' · ' + Y0 + '→' + yr + ' · top 15';
+  $('s-hot-abs').textContent = sub; $('s-hot-rel').textContent = sub;
+  legend($('lg-hot'), [{color: 'var(--seg-b2c)', label: 'B2C (private, incl. pickup)'}, {color: 'var(--seg-b2b)', label: 'B2B (firms)'}]);
+  const make = (r, scale, text) => ({r, label: r.code + (r.name ? ' ' + r.name : ''), on: state.pin === r.code, text,
+    parts: [{value: (r.b2c - r.baseB2c) / scale, color: 'var(--seg-b2c)'}, {value: (r.b2b - r.baseB2b) / scale, color: 'var(--seg-b2b)'}]});
+  const tipOf = (t, row) => { const r = row.r; t.append(...tH(r.code + ' ' + r.name, Y0 + '→' + yr)); t.appendChild(tR((r.total - r.base >= 0 ? '+' : '') + int(r.total - r.base), 'parcels (' + signed(r.growth) + ')')); t.appendChild(tR((r.b2c - r.baseB2c >= 0 ? '+' : '') + int(r.b2c - r.baseB2c), 'B2C', 'var(--seg-b2c)')); t.appendChild(tR((r.b2b - r.baseB2b >= 0 ? '+' : '') + int(r.b2b - r.baseB2b), 'B2B', 'var(--seg-b2b)')); t.appendChild(tR(int(r.base) + ' → ' + int(r.total), 'parcels per year')); };
+  const pick = row => { state.pin = state.pin === row.r.code ? null : row.r.code; render(n, yr); };
+  const empty = yr === Y0 ? 'Move the year slider past ' + Y0 + ' to see where parcels grow.' : 'Not simulated in this scenario.';
+  const absolute = rows.slice().sort((a, b) => (b.total - b.base) - (a.total - a.base)).slice(0, 15);
+  hbars($('ch-hot-abs'), yr === Y0 ? [] : absolute.map(r => make(r, 1, (r.total - r.base >= 0 ? '+' : '') + short(r.total - r.base))), {label: 'Postcodes with the largest growth in parcels', empty, tip: tipOf, click: pick});
+  const bases = rows.map(r => r.base).sort((a, b) => a - b), median = bases.length ? bases[Math.floor(bases.length / 2)] : 0;
+  const relative = rows.filter(r => r.base >= .1 * median && r.base > 0).sort((a, b) => b.growth - a.growth).slice(0, 15);
+  hbars($('ch-hot-rel'), yr === Y0 ? [] : relative.map(r => make(r, r.base / 100, signed(r.growth))), {label: 'Postcodes with the largest relative growth', empty, tip: tipOf, click: pick});
+  const top = absolute[0], shareTop5 = absolute.slice(0, 5).reduce((acc, r) => acc + r.total - r.base, 0) / Math.max(1, rows.reduce((acc, r) => acc + r.total - r.base, 0));
+  $('f-hot').replaceChildren(...(yr > Y0 && top ? ['From ' + Y0 + ' to ' + yr + ' ', h('b', {text: top.code + ' ' + top.name + ' adds the most parcels (+' + int(top.total - top.base) + ')'}), '; the five largest gains make up ' + pct(shareTop5, 0) + ' of the regional growth.' + (relative[0] ? ' Fastest relative growth: ' + relative[0].code + ' ' + relative[0].name + ' (' + signed(relative[0].growth) + ').' : '')] : [empty]));
+  const all = plzRows(n, yr);
+  tableView($('tv-hot'), ['Postcode', 'Area', 'Residents', 'Parcels ' + Y0, 'Parcels ' + yr, 'Change', 'Change %', 'B2B share', 'Out of home'],
+    all.map(r => ({code: r.code, cells: [r.code, r.name, int(r.persons), int(r.base), int(r.total), ok(r.total) && ok(r.base) ? (r.total - r.base >= 0 ? '+' : '') + int(r.total - r.base) : '–', signed(r.growth), pct(r.total ? r.b2b / r.total : null), pct(r.share)]})), {left: 2, on: r => r.code === state.pin});
+}
+
+/* ---------- #network ---------- */
+function renderNetwork() {
+  const n = state.scenario, yr = state.year, A = yd(n, yr), host = $('net-cards'), N = D.network[n];
+  host.replaceChildren();
+  if (!N) { host.appendChild(h('p', {class: 'empty', text: 'This run has no pickup network.'})); $('f-net').textContent = ''; $('tv-net').replaceChildren(); return; }
+  const kinds = M.kinds.filter(k => YEARS.some(y => { const Y = yd(n, y); return Y && Y.network && Y.network.points[k]; }));
+  const first = yd(n, Y0);
+  function ncard(title, value, delta, draw) { const chart = h('div', {class: 'chart'}); const el = h('figure', {class: 'panel ncard'}, h('h3', {text: title}), h('div', {class: 'v', text: value}), h('div', {class: 'd', text: delta || ' '}), chart); host.appendChild(el); draw(chart); }
+  const change = (a, b, f) => yr === Y0 || !ok(a) || !ok(b) ? (yr === Y0 ? 'first year' : '') : (a - b >= 0 ? '+' : '−') + f(Math.abs(a - b)) + ' vs ' + Y0;
+  const count = Y => Y && Y.network ? sum(Object.values(Y.network.points)) : null;
+  ncard('Pickup points', int(count(A)), change(count(A), count(first), int), el => { legend(el.parentNode.insertBefore(h('div', {class: 'legend'}), el), kinds.map(k => ({color: chColor(k), label: CHANNEL[k]})));
+    columns(el, {layers: kinds.map(k => ({key: k, label: CHANNEL[k], color: chColor(k), values: series(n, Y => Y.network ? Y.network.points[k] || 0 : null)})), height: 170, fmt: int, label: 'Pickup points by kind', title: 'points'}); });
+  ncard('Compartments', int(A && A.network && A.network.compartments), change(A && A.network && A.network.compartments, first && first.network && first.network.compartments, int), el =>
+    columns(el, {layers: [{key: 'c', label: 'compartments', color: 'var(--q4)', values: series(n, Y => Y.network ? Y.network.compartments : null)}], height: 170, fmt: short, label: 'Compartments per year', title: 'compartments'}));
+  const util = (Y, k) => Y && Y.utilisation ? Y.utilisation[k] : null;
+  ncard('Mean fill on delivery days', pct(util(A, 'fill')), yr === Y0 ? 'occupied compartments in the afternoon' : pp(util(A, 'fill') - util(first, 'fill')) + ' vs ' + Y0, el =>
+    lines(el, {series: [{name: 'mean fill', color: 'var(--q5)', values: series(n, Y => util(Y, 'fill')), dots: true}], height: 170, fmt: pctTick, vfmt: v => pct(v), label: 'Mean fill per year', title: label(n), margin: {l: 44}}));
+  ncard('Point-days full', pct(util(A, 'full_share')), yr === Y0 ? 'share of point-delivery-days without a free compartment' : pp(util(A, 'full_share') - util(first, 'full_share')) + ' vs ' + Y0, el =>
+    lines(el, {series: [{name: 'point-days full', color: 'var(--q5)', values: series(n, Y => util(Y, 'full_share')), dots: true}], height: 170, fmt: pctTick, vfmt: v => pct(v), label: 'Share of full point-days per year', title: label(n), margin: {l: 44}}));
+  ncard('Parcels turned away', int(util(A, 'rejected')), A && A.utilisation ? pct(util(A, 'rejected') / Math.max(1, util(A, 'rejected') + util(A, 'stored'))) + ' of the parcels that wanted a point' : '', el =>
+    columns(el, {layers: [{key: 'r', label: 'turned away', color: 'var(--q4)', values: series(n, Y => util(Y, 'rejected'))}], height: 170, fmt: short, label: 'Parcels turned away per year', title: 'parcels'}));
+  const opened = {}; let added = 0; YEARS.filter(y => y <= yr).forEach(y => { const Y = yd(n, y); if (Y && Y.network) Object.entries(Y.network.new_sites || {}).forEach(([k, c]) => { opened[k] = (opened[k] || 0) + c; added += c; }); });
+  ncard('New sites since ' + Y0, int(added), yr === Y0 ? 'reference network' : 'by location type, cumulated to ' + yr, el => {
+    const rows = Object.entries(opened).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, c]) => ({label: poiLabel(k), text: int(c), parts: [{value: c, color: 'var(--q4)'}], k, c}));
+    hbars(el, rows, {label: 'New pickup sites by location type', empty: yr === Y0 ? 'No new sites in the first year.' : 'No new sites up to ' + yr + '.', tip: (t, r) => { t.append(...tH(r.label, 'new pickup sites ' + (Y0 + 1) + '–' + yr)); t.appendChild(tR(int(r.c), 'sites')); }}); });
+  const status = scenario(n);
+  $('f-net').replaceChildren(...(A && A.network ? ['In ' + yr + ' the network has ', h('b', {text: int(count(A)) + ' pickup points with ' + int(A.network.compartments) + ' compartments'}), ' (' + kinds.map(k => int(A.network.points[k] || 0) + ' ' + (CHANNEL[k] || k).toLowerCase()).join(', ') + ')' +
+    (added ? '; ' + int(added) + ' sites opened since ' + Y0 : '') + '. On delivery days they are ' + pct(util(A, 'fill')) + ' full on average and ' + int(util(A, 'rejected')) + ' parcels did not fit.' + (status.shortfall ? ' ' + int(status.shortfall) + ' planned sites found no suitable location.' : '')] : ['Not simulated in this scenario.']));
+  tableView($('tv-net'), ['Year'].concat(kinds.map(k => CHANNEL[k]), ['Compartments', 'Mean fill', 'Point-days full', 'Turned away', 'Stored', 'New sites']),
+    YEARS.map(y => { const Y = yd(n, y); return {yr: y, cells: [String(y)].concat(kinds.map(k => Y && Y.network ? int(Y.network.points[k] || 0) : '–'), [int(Y && Y.network && Y.network.compartments), pct(util(Y, 'fill')), pct(util(Y, 'full_share')), int(util(Y, 'rejected')), int(util(Y, 'stored')), Y && Y.network ? int(sum(Object.values(Y.network.new_sites || {}))) : '–'])}; }), {on: r => r.yr === yr});
+}
+
+/* ---------- #calendar ---------- */
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#999'; }
+function renderCalendar() {
+  const n = state.scenario, box = $('ch-carpet'), W = Math.max(260, Math.floor(box.clientWidth)), lab = 40, top = 16, avail = W - lab - 4;
+  const byWeek = Math.floor(avail / 366) < 2, cols = byWeek ? 53 : 366, cw = byWeek ? Math.max(4, Math.floor(avail / 53)) : Math.floor(avail / 366), rh = 18, gap = 6, rowH = rh + gap;
+  const H = top + YEARS.length * rowH + 4, dpr = window.devicePixelRatio || 1;
+  const cells = YEARS.map(yr => { const C = calOf(n, yr); if (!C) return null; const vals = C.parcels;
+    if (!byWeek) return vals.map((v, d) => ({v, d0: d, d1: d, open: ok(v) && v > 0}));
+    const out = []; for (let w = 0; w < 53; w++) { const d0 = w * 7, d1 = Math.min(vals.length - 1, d0 + 6); if (d0 >= vals.length) break; const part = vals.slice(d0, d1 + 1).filter(x => ok(x) && x > 0); out.push({v: part.length ? sum(part) / part.length : 0, d0, d1, open: part.length > 0}); } return out; });
+  const br = breaks(cells.flatMap(r => r ? r.filter(c => c.open).map(c => c.v) : []), 6), colors = [1, 2, 3, 4, 5, 6].map(k => cssVar('--q' + k)), closed = cssVar('--closed'), ink = cssVar('--ink'), muted = cssVar('--muted');
+  const canvas = h('canvas', {width: Math.round(W * dpr), height: Math.round(H * dpr), style: 'width:' + W + 'px;height:' + H + 'px', role: 'img', tabindex: 0, 'aria-label': 'Parcels per day, one row per year'});
+  box.replaceChildren(canvas); const g = canvas.getContext('2d'); g.scale(dpr, dpr); g.font = '10.5px ' + cssVar('--sans'); g.textBaseline = 'middle';
+  g.fillStyle = muted; MON.forEach((m, k) => { const d = Math.round(k * 30.44); g.fillText(m, lab + (byWeek ? d / 7 : d) * cw, 8); });
+  YEARS.forEach((yr, r) => { const y = top + r * rowH, row = cells[r], C = calOf(n, yr), A = yd(n, yr);
+    g.fillStyle = yr === state.year ? ink : muted; g.font = (yr === state.year ? '600 ' : '') + '11px ' + cssVar('--sans'); g.fillText(String(yr), 2, y + rh / 2);
+    if (!row) { g.fillStyle = closed; g.fillRect(lab, y, cols * cw, rh); g.fillStyle = muted; g.fillText('not simulated', lab + 8, y + rh / 2); return; }
+    row.forEach((c, k) => { g.fillStyle = c.open ? colors[cls(c.v, br)] : closed; g.fillRect(lab + k * cw, y, Math.max(1, cw - (cw > 2 ? 1 : 0)), rh); });
+    (C.events || []).forEach(e => { g.fillStyle = muted; const a = byWeek ? Math.floor(e.from / 7) : e.from, b = byWeek ? Math.floor(e.to / 7) : e.to; g.fillRect(lab + a * cw, y + rh + 1, (b - a + 1) * cw, 2); });
+    if (A && A.peak) { const d = Math.round((Date.parse(A.peak.date + 'T12:00:00Z') - Date.parse(C.start + 'T12:00:00Z')) / 864e5), k = byWeek ? Math.floor(d / 7) : d;
+      g.strokeStyle = ink; g.lineWidth = 1.5; g.strokeRect(lab + k * cw - 1, y - 1, Math.max(3, cw) + 1, rh + 2); }
+    if (yr === state.year) { g.strokeStyle = ink; g.lineWidth = 1; g.strokeRect(lab - .5, y - 2.5, row.length * cw + 1, rh + 5); } });
+  const at = e => { const rect = canvas.getBoundingClientRect(), px = (e.clientX - rect.left) * W / rect.width, py = (e.clientY - rect.top) * H / rect.height, r = Math.floor((py - top) / rowH), k = Math.floor((px - lab) / cw);
+    return r >= 0 && r < YEARS.length && k >= 0 && cells[r] && k < cells[r].length ? {r, k} : (r >= 0 && r < YEARS.length ? {r, k: -1} : null); };
+  canvas.addEventListener('pointermove', e => { const p = at(e); if (!p || p.k < 0) { hide(); return; } const yr = YEARS[p.r], c = cells[p.r][p.k], C = calOf(n, yr), day = dateOf(C.start, c.d0);
+    show(e, t => { t.append(...tH(byWeek ? 'Week from ' + dlong(day) : dlong(day), label(n)));
+      t.appendChild(tR(c.open ? int(c.v) : '–', byWeek ? 'parcels per delivery day (mean)' : c.open ? 'parcels' : (C.holidays.includes(c.d0) ? 'public holiday' : 'no deliveries')));
+      (C.events || []).filter(ev => c.d1 >= ev.from && c.d0 <= ev.to).forEach(ev => t.appendChild(h('span', {class: 's', text: ev.name + ' shipping (' + (ev.carriers === 'all' ? 'all carriers' : ev.carriers.join(', ')) + ', orders ×' + dec(ev.uplift, 2) + ')'})));
+      const A = yd(n, yr); if (A && A.peak && A.peak.date === day.toISOString().slice(0, 10)) t.appendChild(h('span', {class: 's', text: 'Busiest day of ' + yr})); }); });
+  canvas.addEventListener('pointerleave', hide);
+  canvas.addEventListener('click', e => { const p = at(e); if (p && YEARS[p.r] !== state.year) setYear(YEARS[p.r]); });
+  canvas.addEventListener('keydown', e => { const d = {ArrowUp: -1, ArrowDown: 1}[e.key]; if (d) { e.preventDefault(); setYear(state.year + d); $('ch-carpet').querySelector('canvas').focus(); } });
+  binLegend($('sc-cal'), (byWeek ? 'Mean parcels per delivery day and week:' : 'Parcels per day:'), [{color: 'var(--closed)', text: 'closed'}].concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 1) + ')', text: k === 0 ? '< ' + short(br[0]) : 'from ' + short(b)}))));
+  $('s-cal').textContent = label(n) + ' · ' + (byWeek ? 'weekly means' : 'daily') + ' · one colour scale for all years';
+  // busiest day per year
+  const peaks = YEARS.map(yr => ({yr, A: yd(n, yr)}));
+  tableView($('tb-peaks'), ['Year', 'Busiest day', 'Parcels', '× mean', 'Why'], peaks.map(p => ({yr: p.yr, cells: [String(p.yr), p.A ? dlong(p.A.peak.date) : '–', p.A ? int(p.A.peak.parcels) : '–', p.A ? dec(p.A.peak.ratio, 2) : '–', p.A ? p.A.peak.reason : 'not simulated']})), {on: r => r.yr === state.year, wrap: 4});
+  $('s-peaks').textContent = label(n);
+  const A = yd(n, state.year);
+  $('f-cal').replaceChildren(...(A ? ['The busiest day of ' + state.year + ' is ', h('b', {text: dlong(A.peak.date) + ' with ' + int(A.peak.parcels) + ' parcels'}), ', ' + dec(A.peak.ratio, 2) + ' times the mean delivery day. ' + A.peak.reason] : ['Not simulated in this scenario.']));
+  // weekday profile: selected year against the first year
+  const W1 = (D.weekday[n] || {})[state.year], W0 = (D.weekday[n] || {})[Y0], wb = $('ch-weekday');
+  legend($('lg-weekday'), [{kind: 'line', color: 'var(--all)', label: String(state.year)}].concat(state.year !== Y0 ? [{kind: 'line', color: 'var(--other-line)', label: String(Y0)}] : []));
+  if (!W1) { wb.replaceChildren(h('p', {class: 'empty', text: 'Not simulated in this scenario.'})); } else {
+    const Wd = Math.max(220, wb.clientWidth), Hd = 200, m = {t: 10, r: 10, b: 26, l: 40}, v = root(wb, Wd, Hd, 'Share of parcels per weekday');
+    const yM = niceMax(Math.max(...W1.all, ...(W0 ? W0.all : [0])) * 1.08), x = k => m.l + (Wd - m.l - m.r) * k / 5, y = val => m.t + (Hd - m.t - m.b) * (1 - val / yM);
+    ticks(yM, 4).forEach(t => { s('line', {x1: m.l, x2: Wd - m.r, y1: y(t), y2: y(t), class: t === 0 ? 'ax' : 'gl'}, v); s('text', {x: m.l - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'tick', text: NF[0].format(t * 100) + '%'}, v); });
+    WD.slice(0, 6).forEach((l, k) => s('text', {x: x(k), y: Hd - 8, 'text-anchor': 'middle', class: 'tick', text: l}, v));
+    [[W0, 'var(--other-line)', state.year !== Y0], [W1, 'var(--all)', true]].forEach(([Wp, color, draw]) => { if (!Wp || !draw) return;
+      s('polyline', {points: Wp.all.slice(0, 6).map((val, k) => x(k).toFixed(1) + ',' + y(val).toFixed(1)).join(' '), fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round'}, v);
+      Wp.all.slice(0, 6).forEach((val, k) => { const c = s('circle', {cx: x(k), cy: y(val), r: 4, fill: color, stroke: 'var(--surface)', 'stroke-width': 2}, v); hover(c, t => { t.append(...tH(WDL[k], label(n))); t.appendChild(tR(pct(W1.all[k]), String(state.year), 'var(--all)')); if (W0) t.appendChild(tR(pct(W0.all[k]), String(Y0), 'var(--other-line)')); }); }); });
+  }
+  $('s-weekday').textContent = 'Share of the year’s parcels · ' + label(n);
+}
+
+/* ---------- #method ---------- */
+function renderMethod() {
+  const a = M.assumptions || {}, o = a.out_of_home, g = a.network_growth, t = a.temporal || {}, items = [];
+  const curve = {linear: 'linear', logistic: 'logistic', exponential: 'exponential'}, policy = {observed_only: 'the observed volumes 2000–2023', legacy_assumptions: 'the observed volumes plus the notebook estimates 2024–2028'};
+  items.push(['Scenarios:', SCEN.map(item => { const d = item.definition, nat = item.national;
+    return item.label + ' – ' + (d ? (curve[d.curve] || d.curve) + ' fit of ' + (policy[d.policy] || d.policy) + (d.chained ? ', chained to the level of ' + d.chain_year : '') : 'no scenario definition in the run') +
+      (nat ? ': ' + dec(nat.from, 2) + ' billion parcels in ' + nat.from_year + ', ' + dec(nat.to, 2) + ' in ' + nat.to_year + ' (' + signed(nat.cagr) + ' a year)' : '') + (item.missing_years.length ? '; ' + years(item.missing_years) + ' not simulated' : ''); }).join('; ') + '.']);
+  items.push(['Region:', 'the annual volume of the region is the 2021 reference (DHL street volumes, all carriers) scaled by the national volume of each year; carriers get their market share of the year, recipients their B2B share, and every day is drawn from the shipping calendar.']);
+  if (o && o.trend) items.push(['Out of home:', 'the share of each carrier’s B2C parcels that goes to lockers, boxes and counters follows a logistic trend (growth ' + dec(o.trend.growth, 3) + ' a year, midpoint ' + dec(o.trend.midpoint, 1) + ') from its ' + o.trend.reference_year + ' level (' +
+    Object.entries(o.shares_2025 || {}).map(([c, v]) => c + ' ' + pct(v, 0)).join(', ') + '); recipients choose among the ' + (o.choice_k || 1) + ' nearest points within ' + int(o.reach_m) + ' m, closer ones more often.']);
+  if (g) items.push(['Network growth:', g.enabled === false ? 'switched off: the reference network serves every year.' : 'per group of kind and carriers the number of points follows N(y) = max(N(y−1), round(N(' + g.reference_year + ') × (D(y) / D(' + g.reference_year + '))^' + dec(g.elasticity, 1) + ')), D = the group’s out-of-home B2C parcels; the rest of the growth goes into larger stations. New sites go to retail and fuel-station POIs, weighted by B2C demand within ' + int(g.demand_radius_m) + ' m × coverage gap (1 − exp(−d / ' + int(g.gap_scale_m) + ' m)) × kind preference (' + dec(g.off_preference_weight, 2) + ' otherwise), never within ' + int(g.min_spacing_m) + ' m of a point of the same group.' +
+    (SCEN.some(item => item.shortfall) ? ' Sites that found no candidate: ' + SCEN.filter(item => item.shortfall).map(item => item.label + ' ' + int(item.shortfall)).join(', ') + '.' : '')]);
+  if (o && o.compartments_by_demand) { const c = o.compartments_by_demand; items.push(['Compartments:', 'points without an OSM capacity tag are sized to demand: ' + dec(c.days_factor, 1) + ' × ' + dec(c.safety, 2) + ' × expected parcels per delivery day, rounded up to ' + int(c.step) + ', at least the standard size of the kind and at most ' + int(c.max) + '; ' + (g && g.resize_existing === false ? 'the reference points keep their first size.' : 'a point never shrinks from one year to the next.')]); }
+  items.push(['Fill and turned away:', 'mean fill = occupied compartments in the afternoon ÷ compartments over all point-delivery-days; a point-day is full when no compartment is free; parcels that do not fit go to the next point or home and count as turned away' + (o && o.pickup_profile && o.pickup_profile.locker ? '; each parcel is picked up on the delivery day or one of the next two days (' + o.pickup_profile.locker.map(v => pct(v, 0)).join(' / ') + ')' : '') + '.']);
+  items.push(['Channels:', 'out-of-home parcels are the parcels stored at a point; home deliveries are all other parcels. On the map and in the hotspots they count at the point’s postcode. Per carrier the out-of-home share is exact for single-carrier points; shared boxes split their parcels by the carriers’ target out-of-home volume.']);
+  items.push(['Busiest days:', 'a peak between 1 and 24 December falls in the pre-Christmas season' + (t.christmas_pull_forward_days ? ' (orders of 24–26 December ship in the ' + t.christmas_pull_forward_days + ' days before)' : '') + '; a peak up to a week after a public holiday carries the holiday’s orders, which ship over the next ' + (t.holiday_spread_days || 1) + ' shipping days; otherwise it reflects the season and the weekday pattern.']);
+  if ((t.events || []).length) items.push(['Events:', t.events.map(e => e.name + ' (' + (e.carriers === 'all' ? 'all carriers' : e.carriers.join('/')) + ', orders ×' + dec(e.uplift, 2) + ')').join(', ') + '; the calendar marks their shipping days.']);
+  if ((a.texts || []).length) items.push(['Run assumptions:', a.texts.join(' ')]);
+  items.push(['Provenance:', SCEN.map(item => item.label + ' = run ' + item.run_id).join(', ') + '; generated ' + String(M.generated_at).replace('T', ' ').replace('+00:00', ' UTC') + '.']);
+  $('method-list').replaceChildren(...items.map(it => h('li', null, h('b', {text: it[0]}), ' ' + it[1])));
+}
+
+/* ---------- entry point ---------- */
+function render(name, yr) {
+  state.scenario = NAMES.includes(name) ? name : M.primary;
+  state.year = Math.max(Y0, Math.min(YN, yr));
+  hide(); persist(); syncControls();
+  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderNetwork(); renderCalendar(); renderMethod();
+}
+function setYear(yr) { stop(); render(state.scenario, yr); }
+setStatic(); buildControls(); render(state.scenario, state.year);
+let lastW = document.documentElement.clientWidth, rt = null;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { const w = document.documentElement.clientWidth; if (w !== lastW) { lastW = w; render(state.scenario, state.year); } }, 150); });
+const scheme = matchMedia('(prefers-color-scheme: dark)'), repaint = () => renderCalendar();  // the canvas reads the colour tokens once
+if (scheme.addEventListener) scheme.addEventListener('change', repaint); else if (scheme.addListener) scheme.addListener(repaint);
+document.addEventListener('scroll', hide, {passive: true});
+})();
 </script>
