@@ -32,6 +32,11 @@ Abholnetz (neue Packstationen, Boxen und Counter an Supermärkten, Tankstellen u
 Jahres-Dashboard sowie ein gemeinsames Dekaden-Dashboard. Details und Annahmen: [`model/README.md`](model/README.md),
 Abschnitt „Mehrjahresprojektion 2025–2035“.
 
+Mit `land_use` verteilen sich Personen und Firmen zusätzlich nach der amtlichen Bevölkerungsprognose 2025–2035 je
+Prognosebezirk, nach Alterung (Online-Neigung mit Kohorteneffekt) und Branchenwachstum neu; Neubaugebiete (Kronsberg-Süd,
+Wasserstadt Limmer, …) und neue Betriebe werden eigene Standorte. Details: [`model/README.md`](model/README.md),
+Abschnitt „Landnutzungsdynamik 2025–2035“.
+
 ## Datenfluss zu MATSim
 
 `baseline run` schreibt je konfiguriertem Tag `hagrid_parcel_demand_<Datum>_(<Wochentag>).shp` mit Stopps (`stop_type`
