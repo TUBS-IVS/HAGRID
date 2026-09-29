@@ -174,3 +174,30 @@ def test_projection_fixes_dhl_b2b_proportional_to_the_national_trend():
     market = series["market"].query("year == 2030").set_index("carrier").market_share
     mixed = ((1 - target) * shares.private + target * shares.business).reindex(market.index)
     assert mixed.to_numpy() == pytest.approx(market.to_numpy())
+
+
+def test_project_annual_with_factors_keeps_balances():
+    """Site factors re-weight the historical shares per segment and year; totals stay exact."""
+    from hagrid_demand.baseline.projection import project_annual
+
+    reference = _reference()
+    reference["sites"] = pd.concat([reference["sites"], pd.DataFrame({
+        "site_id": ["new"], "plz": ["2"], "segment": ["private"], "historical_share": [.5], "allocation_status": ["located"]})],
+        ignore_index=True)
+    plain = project_annual(_reference(), _series(), [2022], {"memory": {"fixed": 1}})
+    ones = pd.DataFrame({"year": 2022, "site_id": ["p1", "p2", "b1"], "segment": ["private", "private", "business"], "factor": 1.})
+    same = project_annual(_reference(), _series(), [2022], {"memory": {"fixed": 1}}, site_factors=ones)
+    pd.testing.assert_frame_equal(plain.sites, same.sites)
+
+    factors = pd.DataFrame({"year": 2022, "site_id": ["p1", "p2", "b1", "new"], "segment": ["private", "private", "business", "private"],
+                            "factor": [2., 1., 3., 0.]})
+    result = project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=factors)
+    by_site = result.sites.set_index("site_id").annual_expected
+    assert result.sites.groupby("segment").annual_expected.sum().to_dict() == pytest.approx({"private": 840., "business": 360.})
+    assert "new" not in by_site.index   # a closed site (factor 0) is not part of that year's table
+    assert by_site["p1"] == pytest.approx(840. * (.25 * 2.) / (.25 * 2. + .75 * 1.))   # weight = historical share x factor
+    opened = factors.assign(factor=[2., 1., 3., 1.])
+    result = project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=opened)
+    assert result.sites.set_index("site_id").annual_expected["new"] == pytest.approx(840. * .5 / (.5 + .75 + .5))
+    with pytest.raises(ValueError, match="site_factors"):
+        project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=factors.assign(factor=-1.))

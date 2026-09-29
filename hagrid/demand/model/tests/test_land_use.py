@@ -344,3 +344,21 @@ def test_site_factors_accept_a_geodataframe():
     table = site_factors(sites, [2025, 2026], 2025, empty, pd.DataFrame({"year": [], "district_id": [], "propensity_index": []}),
                          pd.DataFrame({"year": [], "site_id": [], "factor": []}), residents).set_index(["year", "site_id"]).factor
     assert table.loc[(2025, "lu:res:t:0")] == 0. and table.loc[(2026, "lu:res:t:0")] == 1.
+
+
+def test_site_factors_key_sites_by_segment():
+    """A building can be a home and a firm at once; each row of the pair gets its own factor."""
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import site_factors
+
+    sites = pd.DataFrame({"site_id": ["x", "x"], "segment": ["private", "business"], "district_id": ["A", "A"],
+                          "year_opened": [None, None], "area": [None, None]})
+    existing = pd.DataFrame({"year": [2025, 2030], "district_id": "A", "existing_factor": [1., 1.1]})
+    propensity = pd.DataFrame({"year": [2025, 2030], "district_id": "A", "propensity_index": [1., 1.]})
+    firms = pd.DataFrame({"year": [2025, 2030], "site_id": "x", "factor": [1., 0.9]})
+    residents = pd.DataFrame(columns=["year", "name", "district_id", "residents_model"])
+    table = site_factors(sites, [2025, 2030], 2025, existing, propensity, firms, residents)
+    assert list(table.columns) == ["year", "site_id", "segment", "factor"]
+    factor = table.set_index(["year", "site_id", "segment"]).factor
+    assert factor.loc[(2030, "x", "private")] == pytest.approx(1.1) and factor.loc[(2030, "x", "business")] == pytest.approx(0.9)
