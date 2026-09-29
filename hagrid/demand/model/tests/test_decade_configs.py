@@ -46,3 +46,23 @@ def test_decade_configs_load_and_export_the_comparison_days(name, export_years, 
 def test_baseline_daily_config_writes_the_annual_store():
     """The default year run must feed the annual dashboard (README section 5)."""
     assert json.loads((CONFIGS / "baseline-daily.json").read_text(encoding="utf-8"))["annual_store"] is True
+
+
+@pytest.mark.parametrize("name, variant, export_years, scenario", [
+    ("trend", "prognose", list(range(2025, 2036)), None),
+    ("saettigung", "prognose", [2030, 2035], "saettigung"),
+    ("boom", "prognose", [2030, 2035], "boom"),
+    ("trend-innen", "innenentwicklung", [2030, 2035], None),
+    ("trend-suburban", "suburbanisierung", [2030, 2035], None),
+])
+def test_decade_configs_enable_land_use(name, variant, export_years, scenario):
+    from hagrid_demand.baseline.comparison_days import comparison_days
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    path = CONFIGS / f"decade-{name}.json"
+    loaded = load_baseline_config(path)
+    assert loaded["land_use"]["enabled"] is True and loaded["land_use"]["variant"] == variant
+    assert Path(loaded["osm_boundaries"]) == (CONFIGS / "../../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet").resolve()
+    assert (loaded.get("volume_scenario") or {}).get("name") == scenario
+    assert loaded["dates"] == [day for year in export_years for day in comparison_days(year)]
+    assert loaded["years"] == list(range(2025, 2036))

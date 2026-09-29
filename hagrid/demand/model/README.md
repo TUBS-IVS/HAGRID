@@ -433,6 +433,74 @@ unterscheiden, wie weit sie in ihr kommen.
 (≈ 1,5 h je Szenario, ≈ 0,5 GB Details je Jahr plus ≈ 45 MB je exportiertem Tag) und schreibt danach
 `hagrid\demand\runs\decade_dashboard.html`.
 
+## Landnutzungsdynamik 2025–2035
+
+Spezifikation: [`docs/demand/specs/2026-09-29-land-use-dynamics-design.md`](../../../docs/demand/specs/2026-09-29-land-use-dynamics-design.md),
+Plan: [`docs/demand/plans/2026-09-29-land-use-dynamics.md`](../../../docs/demand/plans/2026-09-29-land-use-dynamics.md).
+Ohne `land_use`-Block bleibt jeder Lauf unverändert. Mit dem Block verteilt sich die Menge des Volumenszenarios
+jedes Jahr neu auf die Standorte: wo Menschen wohnen, wie viel sie bestellen und wo Firmen wachsen. Die Regions- und
+Segmentsummen ändern sich dabei nicht, und das Bezugsjahr 2025 bleibt bitgleich zu einem Lauf ohne Landnutzung.
+
+**Quellen** (`src/hagrid_demand/baseline/data/land_use.json`):
+
+| Baustein | Quelle |
+|---|---|
+| Personen je Bezirk | Landeshauptstadt und Region Hannover, *Bevölkerungsprognose 2025 bis 2035* (Feb. 2026), Tabelle 7 (30 Prognosebezirke der LHH) und Tabelle 8 (20 Städte und Gemeinden), Bevölkerung 31.12.2024 und 31.12.2034. 4.1 Buchholz und 4.2 Roderbruch liegen beide im Stadtteil Groß-Buchholz und bilden eine Modelleinheit, also 49 Einheiten. |
+| Neubaugebiete | dieselbe Prognose: Kronsberg (Bemerode +3.675 Personen), Wasserstadt Limmer (+1.384), Langenhagen-Mitte/Godshorn/Kaltenweide, Berenbostel/Garbsen-Mitte, Seelze-Süd. Einwohner je Gebiet und Zeitpunkte sind Annahmen. Die Lage stammt aus OSM (Kronsberg-Süd als Landnutzungspolygon, sonst Zentrum und Radius). |
+| Online-Neigung | Destatis, IKT-Erhebung 2025, Online-Einkauf in den letzten 12 Monaten: 16–24 Jahre 84 %, 25–44 Jahre 91 %, 45–64 Jahre 80 %, 65–74 Jahre 61 %; 75+ nicht erhoben (Annahme 40 %). |
+| Firmen | Annahme nach Region Hannover, *Trends und Fakten* 2025 (SV-Beschäftigte 2014–2024 +1,5 %/a, zuletzt +0,5 %): Q +1,5 %/a, J/M/N/H +1,0 %/a, G ±0, C −0,5 %/a, sonst +0,5 %/a. |
+| Gebiete | OSM-Verwaltungsgrenzen (`admin_level` 8 und 10), mit `baseline osm-boundaries` aus dem Geofabrik-PBF 2021 erzeugt. |
+
+**Rechnung** (`land_use.py`), Bezugsjahr `base_year = 2025`:
+
+- **Bezirksindex:** linear zwischen 2024 und 2034, danach mit der mittleren Jahresrate; die Varianten
+  `innenentwicklung`/`suburbanisierung` verschieben das Jahreswachstum von Stadt und Umland um ±0,1 Prozentpunkte
+  und werden jedes Jahr auf die Regionssumme der Prognose zurückskaliert.
+- **Bestand:** `E_d(y) = max(0, P_d · Index_d(y) − R_d(y)) / P_d`. `P_d` sind die Modellpersonen des Bezirks,
+  `R_d(y)` die bezogenen Neubaueinwohner in Modellpersonen (Prognoseeinwohner × Modell/Prognose im Bezugsjahr).
+  Werte unter 0 werden auf 0 gesetzt und im Status unter `clamped` gemeldet.
+- **Alter und Neigung:** Die Altersverteilung je Bezirk (synthetische Bevölkerung) altert um ein Jahr pro Jahr.
+  Die Neigung ist `p_y(a) = max(p(a), p(a − s))` mit `s = cohort_shift · (y − 2025)`, Standard 0,7: Eine Kohorte
+  behält die Neigung ihres jüngeren Ichs, und junge Erwachsene bestellen wie junge Erwachsene. Der Neigungsindex
+  eines Bezirks ist die mittlere Neigung je Person relativ zu 2025.
+- **Standortfaktor:** Wohnstandort = `E_d · Neigungsindex_d`. Firmenstandort = beschäftigtengewichtetes
+  Branchenwachstum seiner Betriebe, `1 + (1 − new_firm_share) · ((1 + r)^(y − 2025) − 1)`.
+  `project_annual` gewichtet `historical_share` mit dem Faktor je Standort und Segment und normiert je Segment.
+  Zeilen mit Faktor 0 fehlen im jeweiligen Jahr.
+- **Neue Standorte:** Neubaugebiete bekommen ein 50-m-Raster im Gebiet (mindestens 5 Punkte) und öffnen mit linearem
+  Hochlauf. `new_firm_share` (Standard 0,3) des Beschäftigtenzuwachses je Branche entsteht als neue Betriebe mittlerer
+  Branchengröße in OSM-Gewerbe- und Industrieflächen (Ziehung ∝ Fläche, `named_rng(..., channel="land-use-firms")`).
+  Jeder neue Standort hat einen eigenen Stopp, die Indizes beginnen bei 1.000.000 hinter den Abholpunkten. Jedes
+  Neubaugebiet bildet eine eigene Straßengruppe für die Häufung, jeder Betrieb ebenfalls.
+
+**Ausgaben je Lauf:**
+
+- `land_use_districts.parquet`: je Jahr und Bezirk Index, Neigungsindex, Modellpersonen, Beschäftigte, Prognoseindex
+- `land_use_factors.parquet`
+- `land_use_sites.parquet` und `land_use_stops.parquet` (neue Standorte)
+- `land_use_district_shapes.parquet` (vereinfachte Bezirksgrenzen)
+- `daily_status.json` → `land_use` (Variante, Parameter, gekappte Bezirke, neue Standorte je Jahr)
+
+**Konfiguration:**
+
+```json
+"osm_boundaries": "../../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet",
+"land_use": {"enabled": true, "variant": "prognose", "cohort_shift": 0.7, "new_firm_share": 0.3}
+```
+
+Weitere Schlüssel: `base_year`, `grid_m`, `persons`/`landuse` (Dateinamen relativ zu `input_dir`), `developments`,
+`firm_rates` und `districts` (jeweils `"standard"` oder eigene Liste).
+
+Die Grenzdatei wird einmalig erzeugt:
+
+```
+python -m hagrid_demand baseline osm-boundaries --pbf ../input/hannover/osm/niedersachsen-210101.osm.pbf \
+    --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet
+```
+
+Die Dekadenläufe `decade-{trend,saettigung,boom}` nutzen die Variante `prognose`. `decade-trend-innen` und
+`decade-trend-suburban` rechnen das Trendvolumen mit den beiden Varianten; ihre MATSim-Tage sind nur 2030 und 2035.
+
 ## Tests ausführen
 
 ```powershell
