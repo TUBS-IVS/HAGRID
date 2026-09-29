@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- DEV-ONLY log4j2 config, used via -Dlog4j2.configurationFile in vmargs_dev.txt.
-     The packaged config resolves ${sys:hagrid.log.dir}, which SimulationRunnerUtils:288
-     repoints INTO the run output directory at runtime. The MATSim controler then wipes
+     The packaged config resolves ${sys:hagrid.log.dir}, which SimulationRunnerUtils repointed
+     INTO the run output directory at runtime (since 2026-09-28 only when no explicit
+     D-flag is set, see pointLogDirAt). The MATSim controler then wipes
      that same directory (LausitzDrtConfigurator:143, deleteDirectoryIfExists) and collides
      with the still-open hagrid.log. Pinning the log path outside the run directory removes
      the race without touching any simulation semantics. -->

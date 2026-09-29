@@ -12,5 +12,5 @@ alle Unterordner sind git-ignoriert und werden lokal befüllt.
 Migration von einem Checkout vor dem 2026-09-17: `tools/migrate-input-layout.ps1`
 (danach `mvn -q clean install`). Ein leerer Baum wird nicht per Skript erzeugt: die
 Ordner entstehen beim Migrieren bzw. beim Ablegen der Daten aus den Quellen oben.
-`tools/setup_hagrid_io.bat` ist zurückgezogen — es beschrieb ein Layout, das es nicht
-mehr gibt; siehe BACKLOG.
+Das frühere `tools/setup_hagrid_io.bat` beschrieb ein Layout, das es nicht mehr gibt, und ist
+seit 2026-09-28 gelöscht.

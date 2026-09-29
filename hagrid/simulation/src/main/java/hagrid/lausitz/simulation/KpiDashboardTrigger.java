@@ -31,11 +31,22 @@ public final class KpiDashboardTrigger {
         return List.of("python", "-u", script.toString(), "--run-dir", runDir.toString());
     }
 
+    private static final Path SCRIPT_REL = Path.of("analysis", "lausitz", "kpi", "build_kpis.py");
+
     /** The KPI builder lives at repo level: {@code <repo>/analysis/lausitz/kpi/build_kpis.py}.
-     *  Since 2026-09-21 the module is {@code <repo>/hagrid/simulation}, i.e. TWO levels below the repo root. */
+     *  The repo root is the nearest ancestor of the module that really holds that script (the
+     *  script is its own marker), so the module can sit at any depth. Without a hit the historical
+     *  guess -- TWO levels up, the {@code <repo>/hagrid/simulation} layout since 2026-09-21 -- is
+     *  returned, so the caller's "script not found" message still names a sensible path. */
     static Path scriptFor(Path pipelineRoot) {
-        Path repoRoot = pipelineRoot.toAbsolutePath().normalize().getParent().getParent();
-        return repoRoot.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        Path start = pipelineRoot.toAbsolutePath().normalize();
+        for (Path dir = start; dir != null; dir = dir.getParent()) {
+            Path candidate = dir.resolve(SCRIPT_REL);
+            if (java.nio.file.Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        return start.getParent().getParent().resolve(SCRIPT_REL);
     }
 
     public static boolean runProcess(List<String> command, Path workDir, long timeoutMinutes) {

@@ -351,4 +351,28 @@ class LmdCarrierBuilderTest {
                 .as("the analysis layer needs the real provider split - a district mixes providers")
                 .isEqualTo("dhl=100;gls=20");
     }
+
+    @Test
+    @DisplayName("an unknown provider still gets the default delivery rate, but that is warned once")
+    void unknownProviderFallsBackAndWarns() {
+        try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(LmdCarrierBuilder.class)) {
+            Carrier carrier = LmdCarrierBuilder.build(
+                    "acme", List.of(deliveryAt(100, 0, "acme", 5, Delivery.ParcelType.B2C)),
+                    DEPOT_LINK, net(), vanTypes(), 2, 15, List.of(8, 14), new Random(42));
+            assertThat(carrier.getServices()).hasSize(1);          // behaviour unchanged
+            assertThat(log.warnings()).singleElement().satisfies(m ->
+                    assertThat(m).contains("acme").contains("90"));
+        }
+    }
+
+    @Test
+    @DisplayName("a known provider builds without a fallback warning")
+    void knownProviderIsQuiet() {
+        try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(LmdCarrierBuilder.class)) {
+            LmdCarrierBuilder.build(
+                    "dhl", List.of(deliveryAt(100, 0, "dhl", 5, Delivery.ParcelType.B2C)),
+                    DEPOT_LINK, net(), vanTypes(), 2, 15, List.of(8, 14), new Random(42));
+            assertThat(log.warnings()).isEmpty();
+        }
+    }
 }

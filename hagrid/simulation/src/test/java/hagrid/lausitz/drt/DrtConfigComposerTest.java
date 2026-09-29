@@ -98,4 +98,38 @@ class DrtConfigComposerTest {
         assertThat(((org.matsim.contrib.common.zones.systems.grid.square.SquareGridZoneSystemParams)
                 rebal.get().getZoneSystemParams()).getCellSize()).isEqualTo(2000.0);
     }
+
+    @Test
+    @DisplayName("a config that already carries a DRT mode is kept as is, and the skip is logged")
+    void preexistingDrtModeIsKeptAndWarned() {
+        Config config = ConfigUtils.createConfig();
+        MultiModeDrtConfigGroup multi = ConfigUtils.addOrGetModule(config, MultiModeDrtConfigGroup.class);
+        DrtConfigGroup pre = new DrtConfigGroup();
+        pre.setMode(TransportMode.drt);
+        pre.setStopDuration(30.0);
+        pre.addOrGetDrtOptimizationConstraintsParams();
+        multi.addParameterSet(pre);
+
+        try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(DrtConfigComposer.class)) {
+            DrtConfigComposer.composeConfig(config, "a.shp", "f.xml");
+            // the whole HAGRID composition (service area, fleet file, maxWaitTime,
+            // rebalancing) is skipped here -- that must be visible in the log
+            assertThat(log.warnings()).anyMatch(m -> m.contains("SKIPPED") && m.contains("drt"));
+        }
+        // behaviour unchanged: the pre-existing group is used, nothing of ours is written into it
+        assertThat(multi.getModalElements()).hasSize(1);
+        DrtConfigGroup drt = multi.getModalElements().iterator().next();
+        assertThat(drt.getStopDuration()).isEqualTo(30.0);
+        assertThat(drt.getVehiclesFile()).isNull();
+    }
+
+    @Test
+    @DisplayName("the normal path (no DRT mode yet) composes without that warning")
+    void normalPathIsQuiet() {
+        Config config = ConfigUtils.createConfig();
+        try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(DrtConfigComposer.class)) {
+            DrtConfigComposer.composeConfig(config, "a.shp", "f.xml");
+            assertThat(log.warnings()).noneMatch(m -> m.contains("SKIPPED"));
+        }
+    }
 }

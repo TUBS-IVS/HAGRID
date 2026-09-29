@@ -79,7 +79,10 @@ $fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
 Remove-Item "$new\pom.xml", "$new\input\README.md"; Get-ChildItem $new -Recurse -Force -Filter '.gitkeep' | Remove-Item
 foreach ($d in 'input\common\emissions','input\hannover\config','input\lausitz\drt','hagrid-output','hagrid-matsim-output') { New-Item -ItemType Directory -Force (Join-Path $old $d) | Out-Null; Set-Content (Join-Path $old "$d\.gitkeep") '' }
 Set-Content (Join-Path $old 'input\README.md') 'marker'; Set-Content (Join-Path $old 'pom.xml') '<project/>'
+# ein Build am neuen Ort hat target/ hinterlassen; vorwaerts wird hagrid\target geloescht, rueckwaerts hagrid\simulation\target
+New-Item -ItemType Directory -Force "$new\target\classes" | Out-Null; Set-Content "$new\target\classes\B.class" 'b'
 & $script -RepoRoot $tmp -Reverse
+Assert (-not (Test-Path "$new\target"))                      'Reverse loescht die Build-Artefakte am neuen Ort (Spiegel des Vorwaertslaufs)'
 Assert (Test-Path "$old\input\hannover\config\probe.txt")   'input zurueck, ins Skelett gemischt'
 Assert (Test-Path "$old\input\hannover\config\.gitkeep")    'Skelett bleibt'
 Assert (Test-Path "$old\hagrid-matsim-output\RUN1\ITERS\it.0\e.xml") 'Laufordner zurueck'
@@ -108,6 +111,17 @@ try { & $script -RepoRoot . } finally { Pop-Location }
 Assert (Test-Path "$new\input\hannover\config\probe.txt")   'relativer RepoRoot migriert wie der absolute'
 $logs7 = Get-ChildItem "$new\logs" -Filter 'migrate-module-layout-*.log'
 Assert (($logs7.Count -eq 1) -and ((Get-Content $logs7[0].FullName -Raw) -match 'result=OK')) 'Protokoll meldet OK (RepoRoot wurde aufgeloest)'
+
+Write-Host 'Fall 8: -Reverse OHNE vorheriges git checkout <alt> bricht ab, bevor etwas wandert'
+$fx = New-Fixture; $tmp = $fx.Tmp; $old = $fx.Old; $new = $fx.New
+& $script -RepoRoot $tmp
+# kein Skelett am alten Ort: hagrid\pom.xml fehlt, die Daten liegen komplett unter hagrid\simulation
+$threw = $false
+try { & $script -RepoRoot $tmp -Reverse } catch { $threw = $true; $msg8 = $_.Exception.Message }
+Assert $threw                                               'Abbruch'
+Assert ($msg8 -like '*pom.xml*')                            'Meldung nennt das fehlende Skelett (hagrid\pom.xml)'
+Assert (Test-Path "$new\input\hannover\config\probe.txt")   'Daten bleiben am neuen Ort'
+Assert (-not (Test-Path "$old\input"))                      'nichts wandert in ein leeres hagrid\'
 
 # Remove-Item scheitert am > 260 Zeichen langen Pfad aus Fall 6 und -ErrorAction SilentlyContinue
 # verschluckt genau das; rd /s /q der cmd-Shell raeumt ihn weg. Danach wird nachgesehen.
