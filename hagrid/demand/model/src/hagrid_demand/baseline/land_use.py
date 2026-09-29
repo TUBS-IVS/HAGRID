@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import geopandas as gpd
@@ -17,7 +18,9 @@ import numpy as np
 import pandas as pd
 
 _DATA = Path(__file__).with_name("data") / "land_use.json"
-_KEYS = {"enabled", "base_year", "variant", "cohort_shift", "new_firm_share", "grid_m", "persons", "developments", "firm_rates"}
+_KEYS = {"enabled", "base_year", "variant", "cohort_shift", "new_firm_share", "grid_m", "persons", "landuse", "developments",
+         "firm_rates", "districts"}
+_DISTRICT_KEYS = {"id", "name", "kind", "pop_2024", "pop_2034"}
 _AREA_KEYS = {"name", "district_id", "residents", "start_year", "ramp_years", "geometry"}
 
 
@@ -45,7 +48,7 @@ def resolve_land_use(cfg: dict | None) -> dict | None:
     if unknown := sorted(set(cfg) - _KEYS):
         raise ValueError(f"unknown land_use keys: {', '.join(unknown)}")
     inputs = load_land_use_inputs()
-    resolved = {**inputs["defaults"], **copy.deepcopy(cfg)}
+    resolved = {"districts": "standard", "landuse": None, **inputs["defaults"], **copy.deepcopy(cfg)}
     if not resolved.get("enabled", True):
         return None
     if type(resolved["base_year"]) is not int or resolved["base_year"] < 2025:
@@ -66,7 +69,22 @@ def resolve_land_use(cfg: dict | None) -> dict | None:
         resolved["firm_rates"] = dict(inputs["firm_rates"]["rates"])
     if not isinstance(resolved["firm_rates"], dict) or "default" not in resolved["firm_rates"]:
         raise ValueError("land_use.firm_rates must map WZ sections to annual rates and include 'default'")
-    district_ids = {unit["id"] for unit in inputs["districts"]}
+    if resolved["districts"] == "standard":
+        resolved["districts"] = copy.deepcopy(inputs["districts"])
+    if not isinstance(resolved["districts"], list) or not resolved["districts"]:
+        raise ValueError("land_use.districts must be 'standard' or a list of forecast districts")
+    for unit in resolved["districts"]:
+        if not isinstance(unit, dict) or _DISTRICT_KEYS - set(unit) or unit["kind"] not in ("city", "umland"):
+            raise ValueError(f"land_use districts need {sorted(_DISTRICT_KEYS)} and kind city or umland")
+        if not (isinstance(unit["pop_2024"], (int, float)) and unit["pop_2024"] > 0 and isinstance(unit["pop_2034"], (int, float))
+                and unit["pop_2034"] > 0):
+            raise ValueError(f"land_use district {unit['id']!r} needs positive pop_2024 and pop_2034")
+        if unit["kind"] == "city" and not unit.get("stadtteile") or unit["kind"] == "umland" and not unit.get("municipality"):
+            raise ValueError(f"land_use district {unit['id']!r} needs stadtteile (city) or municipality (umland)")
+    for key in ("persons", "landuse"):
+        if resolved[key] is not None and not (isinstance(resolved[key], str) and resolved[key].strip()):
+            raise ValueError(f"land_use.{key} must be a file name relative to input_dir")
+    district_ids = {unit["id"] for unit in resolved["districts"]}
     if not isinstance(resolved["developments"], list):
         raise ValueError("land_use.developments must be 'standard' or a list of areas")
     for area in resolved["developments"]:
@@ -424,7 +442,7 @@ def land_use_stops(sites: gpd.GeoDataFrame, first_index: int) -> tuple[gpd.GeoDa
 
 def site_factors(sites: pd.DataFrame, years, base_year: int, existing: pd.DataFrame, propensity: pd.DataFrame, firms: pd.DataFrame,
                  residents: pd.DataFrame) -> pd.DataFrame:
-    """Weight factor of every site and year: existing homes = existing-stock factor x propensity index of the district,
+    """Weight factor of every site row (``site_id``, ``segment``: a building can be a home and a firm) and year: existing homes = existing-stock factor x propensity index of the district,
     existing firms = their branch growth, development sites = ramp x propensity index, new firms = 1 from their opening
     year on. All existing sites have factor 1 in *base_year*."""
     opened = pd.to_numeric(sites.year_opened, errors="coerce").to_numpy(float)
@@ -455,5 +473,130 @@ def site_factors(sites: pd.DataFrame, years, base_year: int, existing: pd.DataFr
                          for name in area[development]])
         factor[development] = ramp * index[development]
         factor[new_firm] = (year >= opened[new_firm]).astype(float)
-        frames.append(pd.DataFrame({"year": year, "site_id": ids, "factor": factor}))
+        frames.append(pd.DataFrame({"year": year, "site_id": ids, "segment": segment, "factor": factor}))
     return pd.concat(frames, ignore_index=True)
+
+
+# --- the land-use plan of a run --------------------------------------------------------------------------------------
+
+LAND_USE_STOP_BASE = 1_000_000  # land-use stops follow the pickup points, so those keep the indices of a run without land use
+REFERENCE_SITE_COLUMNS = ["site_id", "plz", "segment", "population", "employees", "branch", "weight", "historical_share",
+                          "structural_share", "reference_annual", "allocation_status"]
+DISTRICT_COLUMNS = ["year", "district_id", "name", "kind", "population_index", "propensity_index", "persons_model",
+                    "employees_model", "forecast_index"]
+
+
+@dataclass
+class LandUsePlan:
+    """Everything the daily stage needs from the land-use dynamics of one run."""
+
+    sites: pd.DataFrame            # reference sites plus the new sites (reference columns)
+    factors: pd.DataFrame          # year, site_id, segment, factor
+    new_sites: gpd.GeoDataFrame    # development homes and new firms with district, area, year_opened
+    stops: gpd.GeoDataFrame        # one stop per new site
+    site_stops: pd.DataFrame       # site_id -> stop_id of the new sites
+    districts: gpd.GeoDataFrame    # forecast district polygons
+    table: pd.DataFrame            # DISTRICT_COLUMNS per year and district
+    status: dict
+
+
+def read_persons(path: Path) -> pd.DataFrame:
+    """Age and position (x, y) of every synthetic person (``POINT (x y)`` in the geometry column)."""
+    persons = pd.read_csv(path, usecols=["age", "geometry"])
+    coordinates = persons.geometry.str.extract(r"POINT\s*\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s*\)").astype(float)
+    return pd.DataFrame({"age": pd.to_numeric(persons.age, errors="coerce").fillna(0.).to_numpy(),
+                         "x": coordinates[0].to_numpy(), "y": coordinates[1].to_numpy()}).dropna()
+
+
+def read_landuse(path: Path, crs) -> gpd.GeoDataFrame:
+    """OSM land-use polygons (``fclass``, ``name`` and a WKT geometry, EPSG:25832)."""
+    from shapely import wkt
+
+    frame = pd.read_csv(path, encoding="utf-8", encoding_errors="replace")
+    frame["name"] = frame["name"].where(frame["name"].notna(), None) if "name" in frame else None
+    return gpd.GeoDataFrame(frame[["fclass", "name"]], geometry=frame.geometry.map(wkt.loads), crs=crs)
+
+
+def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFrame, stops: gpd.GeoDataFrame, site_stops: pd.DataFrame,
+                        postal: gpd.GeoDataFrame, boundaries: gpd.GeoDataFrame, persons: pd.DataFrame, companies: pd.DataFrame,
+                        landuse: gpd.GeoDataFrame) -> LandUsePlan:
+    """Districts, factors and new sites of all simulated *years* (``cfg`` = ``resolve_land_use`` output).
+
+    *companies* are the located source firms with their building (``site_id``), ``branch`` and ``employees``;
+    *persons* carries ``age``, ``x`` and ``y``.
+    """
+    from hagrid_demand.common.rng import named_rng
+
+    base = int(cfg["base_year"])
+    span = sorted({*[int(year) for year in years], base})
+    inputs = load_land_use_inputs()
+    units = {"districts": cfg["districts"], "variants": inputs["variants"]}
+    frame = districts(boundaries.to_crs(stops.crs), units)
+    # every reference site sits at its stop; sites without a stop take their postal area's centre
+    stop_xy = stops.drop_duplicates("stop_id").set_index("stop_id").geometry
+    stop_of = site_stops.drop_duplicates("site_id").set_index("site_id").stop_id
+    ids = reference_sites.site_id.astype(str).drop_duplicates().to_numpy()
+    located = gpd.GeoSeries(stop_xy.reindex(stop_of.reindex(ids).to_numpy()).to_numpy(), crs=stops.crs)
+    fallback = postal.set_index(postal.plz.astype(str)).representative_point().to_crs(stops.crs)
+    plz_of = reference_sites.drop_duplicates("site_id").set_index("site_id").plz.astype(str)
+    missing = located.isna().to_numpy()
+    if missing.any():
+        located[missing] = fallback.reindex(plz_of.reindex(ids[missing]).to_numpy()).to_numpy()
+    district_of = pd.Series(assign_districts(np.column_stack([located.x.to_numpy(), located.y.to_numpy()]), frame), index=ids)
+    sites = reference_sites.assign(district_id=district_of.reindex(reference_sites.site_id.astype(str)).to_numpy())
+    private, business = sites.loc[sites.segment.eq("private")], sites.loc[sites.segment.eq("business")]
+    model_persons = private.groupby("district_id").population.sum()
+    population = district_population(units, span, base, cfg["variant"])
+    forecast_base = population.loc[population.year.eq(base)].set_index("district_id").population
+    ratio = (model_persons / forecast_base.reindex(model_persons.index)).fillna(1.)
+    residents = development_residents(cfg["developments"], span, ratio)
+    existing, warnings = existing_factor(model_persons, population, residents)
+    ages = persons.assign(district_id=assign_districts(persons[["x", "y"]].to_numpy(float), frame), persons=1.)
+    histograms = aged_histograms(ages[["district_id", "age", "persons"]], span, base, population)
+    curve = inputs["propensity_curve"]["bands"]
+    propensity_table = propensity_index(histograms, curve, cfg["cohort_shift"], base)
+    firm_table = site_firm_factor(companies, span, base, cfg["firm_rates"], cfg["new_firm_share"])
+    share_per_person = (private.groupby("district_id").historical_share.sum() / model_persons).replace([np.inf, -np.inf], np.nan).fillna(0.)
+    employees = float(business.employees.fillna(0.).sum())
+    share_per_employee = float(business.historical_share.sum()) / employees if employees > 0 else 0.
+    homes = development_sites(cfg["developments"], landuse, residents, share_per_person, cfg["grid_m"], postal)
+    firms = new_firms(companies[["branch", "employees"]], share_per_employee, span, base, cfg["firm_rates"], cfg["new_firm_share"],
+                      landuse, postal, lambda year: named_rng(int(seed), year=int(year), channel="land-use-firms"))
+    if len(firms):
+        firms["district_id"] = assign_districts(np.column_stack([firms.geometry.x, firms.geometry.y]), frame)
+    new_sites = gpd.GeoDataFrame(pd.concat([homes, firms], ignore_index=True), geometry="geometry", crs=stops.crs)
+    first = max(LAND_USE_STOP_BASE, int(stops.stop_index.max()) + 1)
+    new_stops, new_links = land_use_stops(new_sites, first)
+    everything = pd.concat([sites[["site_id", "segment", "district_id"]].assign(year_opened=np.nan, area=None),
+                            new_sites[["site_id", "segment", "district_id", "year_opened", "area"]]], ignore_index=True)
+    factors = site_factors(everything, span, base, existing, propensity_table, firm_table, residents)
+    added = new_sites.assign(weight=new_sites.population.fillna(new_sites.employees).fillna(0.), structural_share=0.,
+                             reference_annual=0.)
+    extended = pd.concat([reference_sites, pd.DataFrame(added[REFERENCE_SITE_COLUMNS])], ignore_index=True)
+    table = _district_table(frame, population, propensity_table, existing, residents, model_persons, business, firm_table, firms, span)
+    status = {"variant": cfg["variant"], "base_year": base, "cohort_shift": cfg["cohort_shift"], "new_firm_share": cfg["new_firm_share"],
+              "districts": int(len(frame)), "clamped": warnings,
+              "new_sites": {str(int(year)): int(count) for year, count in new_sites.groupby("year_opened").size().items()},
+              "development_sites": int(len(homes)), "new_firms": int(len(firms)),
+              "developments": [area["name"] for area in cfg["developments"]]}
+    return LandUsePlan(extended, factors, new_sites, new_stops, new_links, frame, table, status)
+
+
+def _district_table(frame, population, propensity_table, existing, residents, model_persons, business, firm_table, firms, span) -> pd.DataFrame:
+    """Model persons and employees per district and year next to the forecast indices (register and dashboard)."""
+    table = population.merge(propensity_table, on=["year", "district_id"], how="left").merge(existing, on=["year", "district_id"], how="left")
+    table = table.merge(frame[["district_id", "name"]], on="district_id", how="left")
+    moved = residents.groupby(["year", "district_id"]).residents_model.sum() if len(residents) else pd.Series(dtype=float)
+    persons = model_persons.reindex(table.district_id).fillna(0.).to_numpy()
+    table["persons_model"] = persons * table.existing_factor.fillna(1.).to_numpy() + np.array(
+        [float(moved.get((int(year), district), 0.)) for year, district in zip(table.year, table.district_id)])
+    staff = business.assign(site_id=business.site_id.astype(str))[["site_id", "district_id", "employees"]]
+    grown = staff.merge(firm_table, on="site_id", how="left")
+    grown["employees_now"] = grown.employees.fillna(0.) * grown.factor.fillna(1.)
+    employees = grown.groupby(["year", "district_id"]).employees_now.sum()
+    opened = firms.assign(year_opened=firms.year_opened.astype(int)) if len(firms) else None
+    extra = [float(opened.loc[(opened.district_id == district) & (opened.year_opened <= int(year)), "employees"].sum()) if opened is not None else 0.
+             for year, district in zip(table.year, table.district_id)]
+    table["employees_model"] = np.array([float(employees.get((int(year), district), 0.)) for year, district in zip(table.year, table.district_id)]) + extra
+    table["propensity_index"] = table.propensity_index.fillna(1.)
+    return table.loc[table.year.isin(span), DISTRICT_COLUMNS].sort_values(["year", "district_id"]).reset_index(drop=True)
