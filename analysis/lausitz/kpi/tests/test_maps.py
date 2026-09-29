@@ -27,7 +27,7 @@ MINI_NETWORK = FIXTURES / "MINI.output_network.xml.gz"
 MINI_EVENTS = FIXTURES / "MINI.output_events.xml.gz"
 CARRIERS_FIXTURE = (Path(__file__).parent / "fixtures" / "mini_lmd"
                     / "MINI.output_carriers.xml.gz")
-FREIGHT_VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0"
+FREIGHT_VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1"
 
 # Coordinates are EPSG:25832, near Hoyerswerda (same order of magnitude as
 # the MINI network fixture's n1/n2/n3). departureTime is already ascending

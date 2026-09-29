@@ -33,9 +33,14 @@ class TourDef:
     vehicle_id: str
     tour_id: str
     service_ids: list[str] = field(default_factory=list)
+    #: 1-based position among the selected plan's tours of this carrier
+    position: int = 1
 
     def event_vehicle_id(self, carrier_id):
-        return "freight_" + carrier_id + "_veh_" + self.vehicle_id + "_" + self.tour_id
+        # MATSim CarrierAgent.createDriverId: "freight_<carrier>_veh_<vehicle>_<n>", n counting
+        # 1, 2, ... over the selected plan's scheduled tours. NOT the jsprit tourId -- the two
+        # only coincide while the tourIds happen to be in plan order.
+        return "freight_" + carrier_id + "_veh_" + self.vehicle_id + "_" + str(self.position)
 
 
 @dataclass
@@ -163,7 +168,8 @@ def _carrier_tours(carrier_el):
                 sid = act.get("serviceId")
                 if sid is not None:
                     service_ids.append(sid)
-        tours.append(TourDef(vehicle_id=vehicle_id, tour_id=tour_id, service_ids=service_ids))
+        tours.append(TourDef(vehicle_id=vehicle_id, tour_id=tour_id, service_ids=service_ids,
+                             position=idx + 1))
     return tours
 
 
