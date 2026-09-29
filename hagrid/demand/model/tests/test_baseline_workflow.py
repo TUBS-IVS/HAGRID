@@ -672,3 +672,18 @@ def test_multi_year_run_writes_a_dashboard_page_per_year(growth_run):
         page = run / f"annual_dashboard_{year}.html"
         assert page.is_file(), page
         assert f'"year":{year}' in page.read_text(encoding="utf-8")
+
+
+def test_annual_dashboard_out_of_home_block_is_per_year(growth_run):
+    """Each year's page reports the parcels stored at its own network, not the run's cumulated status."""
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data
+
+    status = json.loads((growth_run / "daily_status.json").read_text(encoding="utf-8"))["temporal"]["out_of_home"]
+    blocks = {year: build_annual_dashboard_data(growth_run, year)["meta"]["temporal"]["out_of_home"] for year in (2025, 2026)}
+    for carrier, total in status["delivered"].items():
+        assert blocks[2025]["delivered"][carrier] + blocks[2026]["delivered"][carrier] == total
+    assert sum(blocks[2026]["delivered"].values()) > 0
+    network = pd.read_parquet(growth_run / "out_of_home_network.parquet")
+    for year in (2025, 2026):
+        assert blocks[year]["osm_points"] == {str(k): int(v) for k, v in network.loc[network.year.eq(year)].kind.value_counts().items()}
+        assert blocks[year]["overflow_home"] is None and blocks[year]["scope"] == f"year {year}"
