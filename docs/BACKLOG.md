@@ -35,11 +35,11 @@ Strukturschaden repariert, drei neue Defekte aufgenommen → Nachweis in
 
 ### `[M]` Stem-KPI: Neuzahlen fahren und in den Sweep ziehen
 
-Die Definition ist seit 2026-08-28 korrigiert (METHODS-LOG §2.49), Zahlen dazu gibt es noch keine.
-Offen: (1) ein Hannover-Board mit dem neuen Code erzeugen und den Zuwachs durch das Rückleg
-messen; (2) `extract_sweep.py` um `ROUT_EFF` erweitern (`stem_pct_network`,
-`stem_pct_provider_max`), damit die Zahl nicht wieder von Hand aus einer CSV-Zeile abgelesen wird;
-(3) `stemInPct` als Vintage-Weiche einbauen, sonst mischt der Extractor beide Definitionen.
+Gemessen 2026-09-29 an 14 lokal neu erzeugten v2-Boards (Cap 160–290): der Rückweg verdoppelt die
+Kennzahl fast, 24,2–25,8 % → 47,2–51,0 % (METHODS-LOG §2.49). `extract_sweep.py` liest `ROUT_EFF`
+und verweigert Serien mit gemischter Definition. Offen nur noch: die übrigen Caps (v. a. c=30,
+die Paperzahl) mit `HAGRIDAnalysisRunner` neu erzeugen — die Laufordner liegen auf dem Sim.
+Neue Boards unter `Desktop\Sim_Results\0726\Run1\Dashboards_newstem`, als eigene Serie einziehen.
 
 ### `[H]` Shared-Use / Cargo-Hitching (Szenario 1c)
 
@@ -68,7 +68,8 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   2026-09-10** (§2.66): das Not-at-home-Overlay ist aus `parcels_handled`,
   `parcels_per_vehicle_km` und dem Kostennenner gestrichen, alle drei Arme stehen brutto.
   ⚠️ Bereits vorhandene `kpis_long.csv` tragen noch die alte Basis und müssen für den
-  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`). 9 neue Läufe unter
+  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`) — lokal 2026-09-29
+  erledigt, auf den Rechenmaschinen offen. 9 neue Läufe unter
   Wiederverwendung von b120rgs@120 (n=5) und 1c f140@140 (n=5), ~4 Tage. **Noch nicht
   freigegeben.** _(added 2026-09-09)_
 - **`[H]` ~~Baseline-Seed-Fächer bei 250 Iterationen~~ ERLEDIGT 2026-09-09** — 1c
@@ -88,17 +89,10 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   Ergebnisentscheidung, keine Hygiene** (geprüft 2026-09-28): kein getracktes Skript liest die
   Datei, und auf dem Dev fehlt sie. Wer sie einführt, legt die Threadzahl des Dev neu fest.
   _(added 2026-09-06)_
-- **`[H]` Paarvergleiche mit vollem Config-Diff absichern, nicht nur mit dem POPHASH** — der
-  POPHASH-Check prüft die Eingangspopulation; bei basew21 waren die Populationen byteidentisch
-  und der Defekt saß trotzdem in der Config (§3.14). Ein Diff über alle 310 Config-Pfade hätte
-  ihn sofort gezeigt. Werkzeug liegt jetzt unter `analysis/lausitz/kpi/config_diff.py` (selbstgetestet
-  am basew21-Paar: 1 substanzielle Abweichung; Negativkontrolle gegen sich selbst: 0). Offen
-  ist nur noch, es in die Auswertung fest einzuhängen. _(added 2026-09-06)_
-- **`[H]` Walk-Fallback abstellen oder ausweisen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
-  der Routensuche ab, MATSim setzt ein Walk-Leg, das Paket zählt als zugestellt, und **nichts wird
-  geloggt** (§2.50). 41 der 91 laufen 2,3–6,7 km. Flotten- und χ-invariant, also nicht durch
-  Kapazität oder χ zu beheben. Entweder Ursache am Ort beheben oder als eigener Kanal im
-  Dashboard ausweisen — aber nicht stillschweigend mitzählen. _(added 2026-09-03)_
+- **`[M]` Walk-Fallback an der Ursache abstellen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
+  der Routensuche ab, MATSim setzt ein Walk-Leg (§2.50). 41 der 91 laufen 2,3–6,7 km. Seit
+  2026-09-29 ausgewiesen (Paket-Bilanz im 1c-Board, WARN im Log mit Personen-IDs); offen ist nur die
+  Ursache, und deren Behebung ändert Ergebnisse. _(added 2026-09-03)_
 - **`[M]` Hoftor-Verwurf beheben — 15 Pakete (0,25 %)** — zwei gepoolte Stopps schnappen auf ihren
   eigenen Depot-Link, `from == to` ist keine gültige DVRP-Anfrage, im Preprocessing verworfen
   (§2.50). Auf eine Nachbarkante snappen statt verwerfen; die Baseline kennt die Schranke nicht,
@@ -107,7 +101,11 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   [METHODS-LOG](METHODS-LOG.md) §2.46 (Ausfälle je Segmentgröße) stammt aus einem Skript, dessen
   Paketsummen sich nicht mit der KPI-Schicht verrechnen ließen — die Totale sind dort auf 395/268
   korrigiert, die Verteilung ist noch nicht nachgerechnet. Bis dahin **nicht zitierbar**. Reines
-  Postprocessing, 0 Runs. _(added 2026-09-02)_
+  Postprocessing, 0 Runs. Basis geklärt 2026-09-29: `<run>.shareduse_detour_min.csv` (Segment,
+  Pakete, Ergebnis) geht exakt auf die Kanal-Statistik auf, ihre Größenverteilung trifft die
+  n-Spalte. Gebraucht werden nur diese Datei + `shareduse_channel_stats.csv` der beiden χ=600-Läufe
+  (`d1c_dep7_f140_chi600[_evensplit]`, nur auf dem Sim); „nicht zugestellt“ = `parcels_undelivered`
+  (inkl. verspätet), sonst geht die Summe nicht auf 268 auf. _(added 2026-09-02)_
 - **`[M]` Paketausfälle nie aus einem Einzellauf berichten** — der Fächer zeigt für
   `parcels_undelivered` einen Variationskoeffizienten von **19,3 %** (258–399 bei n=5), gegen 1,1 %
   bei der Quote und 1,4 % bei den Pax-Fahrten (§2.52). Aussagen der Form „χ kostet N Pakete“
@@ -129,19 +127,6 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   nur einen zusätzlichen Punkt.
 - **Offen: PPC (Passenger-Parcel Compensation) prüfen** — vor der Evaluation entscheiden, ob der
   Mechanismus reinkommt → [METHODS-LOG](METHODS-LOG.md) §4.1. _(added 2026-07-15)_
-
-### `[H]` `ev_range_exceed_drt_*` teilt den 1d-Fahrzeugtag in zwei Fahrzeuge
-
-`extract_emissions.drt_arm` zieht die Frachtregime-km per `exclude_windows` ab und bucht sie unter
-`freight_modular`; `ev_range_exceed_drt_*` vergleicht danach die Reichweite gegen die reine
-Passagierstrecke. Ein 1d-Fahrzeug mit 200 km Pax + 200 km Kapsel gilt damit zweimal als fahrbar.
-Nur der 1d-Arm und nur die Tageskennzahl sind betroffen — `drive_block_*` läuft korrekt über beide
-Regime. Gemessen S3 f130: 51,8 % statt 55,6 % (METHODS-LOG §2.69).
-
-Bewusst **nicht** während der laufenden Kampagne gefixt: eine Änderung am KPI-Kanal macht alle
-bestehenden Boards unvergleichbar. Der Papierpfad rechnet es korrekt in
-`analysis/paper-figures/emissions-services/charging_feasibility.py`. Beim Fix: dessen
-`test_day_km_spans_both_regimes` ist die Fixture, die die beiden Lesarten trennt.
 
 ### `[M]` 1c f130/f150 vom Sim holen, um den f138-Versatz der Ladezahlen zu messen
 
@@ -314,19 +299,21 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   bzw. Tageszeitauflösung, die `economics.extract` an seiner Stelle in `build_kpis` nicht hat.
   Headline unberührt (`overtime_factor` = 0), die 0,30-Sensitivität wäre aber ~16 % des
   Personalkanals. Als `cost_*_instrumented`-Flags sichtbar. _(added 2026-08-28)_
-- **`[M]` `kpi_vehicles.csv` trägt die Frachtseite nicht** — nur **10 von 41** Frachtzeilen haben
-  `distance_km`/`duration_h`, Summe 585 km gegen 2.702 km aus `kpis_long`. C rechnet deshalb auf
-  Flotten-Aggregaten; als Basis wäre die Datei still um Faktor 4,6 falsch gewesen. _(added 2026-08-28)_
 - **`[H]` Kostenmodell-Sektion im METHODS-LOG anlegen** — die Herleitung (Lohn-Vollkosten,
   Overhead-Kürzungsalgebra, M11-Zurechnung) lebt derzeit **nur** im CSV-Kopf. Das ist
   paper-facing Methodik und gehört ins METHODS-LOG, bevor daraus ein Methods-Kapitel wird.
   _(added 2026-08-17)_
-- **`[M]` Bestehende Outputs nach den Kostenfixes vom 2026-09-28 neu bauen** — die 1c-CSVs
-  führen noch das falsche `cost_per_ride`, und die Baseline-Dashboards zeigen im LMD-Tab noch
-  jsprit-€ neben C (beides im Code behoben). Betroffen sind lokal `d1c_f140…s1337` sowie alle
-  1c-Läufe auf den Rechenmaschinen, die dort mit altem Code gebaut wurden. Ein Neubau zieht auch
-  alle anderen KPI-Zeilen auf den aktuellen Codestand, deshalb nicht nebenbei machen.
-  → [METHODS-LOG](METHODS-LOG.md) §2.6. _(added 2026-09-28)_
+- **`[M]` KPI-Outputs auf den Rechenmaschinen neu bauen** — lokal am 2026-09-29 erledigt (alle
+  vollständigen Laufordner, `build_kpis.py --run-dir`). Offen: jeder Lauf, der auf Sim, IVS100 oder
+  VM mit älterem Code gebaut wurde, und die acht **lokal beschnittenen** Kopien ohne `output_trips`
+  (`b120rgs_s1338…s1341`, `d1c_f140_c900_i250_s1338…s1341` — die n=5-Fächer), die nur dort
+  gebaut werden können. Was der Neubau ändert: 1c ohne `cost_per_ride`, LMD-Tab ohne jsprit-€
+  (§2.6), LMD-Touren vollständig (§2.76), 1d-Reichweite über beide Regime (§2.69), ctrl1d ohne
+  Falschmarker, DRT-Karte mit Passagier-ID. Lokal gemessen (63 Läufe): in den Paperläufen S1
+  `b120rgs`, S2 `d1c_f140…s1337`, S3 `d1d_f130_d30` ×3 ändert sich in `kpis_long` nur die
+  1d-Reichweite; 34 ältere Diagnoseläufe waren auf altem Code gebaut und tragen jetzt dessen
+  Nachfolger (BEV-CO₂e +32 % = Nebenverbraucher §2.63, `parcels_handled` 5.665 → 6.052 = §2.66,
+  Schwellen 150/200/250 → 245/301/396). _(added 2026-09-28, umformuliert 2026-09-29)_
 - **`[M]` M11-Zurechnung für Ein-Flotten-Arme in die Pipeline** — `economics.py` gibt für 1c/1d
   bewusst kein €/Fahrt und kein €/Paket aus (`cost_per_unit_separable`). Die M11-Zahlen in
   [METHODS-LOG](METHODS-LOG.md) §2.38 sind außerhalb der Pipeline gerechnet. Die Aufspaltung des
@@ -583,14 +570,12 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
 
 ## Low
 
-- **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
-  nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
-  die dort ein-/ausgestiegen sind (wie im Legacy-Dashboard per Passagier-ID). Aktuell tragen die
-  Stop-Records nur `lat/lon/t/n/kind` (`maps._attach_stops`, [maps.py:132](../analysis/lausitz/kpi/maps.py#L132))
-  und der Badge-Marker hat gar kein Popup ([render_maps.py:128](../analysis/lausitz/kpi/render_maps.py#L128)).
-  Machbar: die Personen-ID steht in der Quelle (`*.output_drt_legs_drt.csv` hat `personId`,
-  `geometry.py` parst `person=` bereits) — nur bis in den Stop-Record + `bindPopup`/`bindTooltip`
-  durchreichen. User-Wunsch 2026-07-20. _(added 2026-07-20)_
+- **`[L]` Gitignorte Paper-Skripte auf alte Laufwurzeln prüfen** — `fig2_spatial_complementarity.py`,
+  `fig_abstract_spatial_complementarity.py`, `spatial_correlation_stats.py`,
+  `emissions-sos/scripts/{runpipe,zones}.py` zeigen noch auf `parcel-demand-2-matsim-pipeline/
+  hagrid-matsim-output` (Layout vor Teil 1). Der Umbau-Check sieht `paper-figures/` nicht, weil
+  gitignored. `charging_feasibility.py` und `spatial_emissions.py` sind 2026-09-29 korrigiert.
+  _(added 2026-09-29)_
 
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
   / `hagrid-lausitz`. Reiner Move-Refactor; `HagridPaths`-Root-Detection pro Szenario neu bauen.
@@ -617,12 +602,6 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
   dieser Dateien ohnehin substanziell geändert wird. Punkt 3 ist der heikelste, obwohl `[L]`: eine
   Vertauschung korrumpiert den Stolperdraht, und der ist (Design D7) die **einzige** Absicherung
   der Fracht-Buchhaltung. _(added 2026-07-29)_
-
-- **`[L]` ctrl1d-Dashboard: Modular-Badges ohne `*_pax`-Companion-Zeilen** — im
-  Kontrollarm-Sonderfall (θ=1,0, null Exkursionen) erzeugt `freight_h<=0` planmäßig keine
-  `*_pax`-Zeilen, die szenario-gegateten Badges erscheinen aber trotzdem → kosmetische
-  Inkonsistenz „Badge ohne Frachtanteil" nur auf ctrl1d. Befund der Dashboard-Verifikation
-  2026-07-30 (Fixwave-Ledger); alle anderen Runs unauffällig. _(added 2026-07-31)_
 
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 

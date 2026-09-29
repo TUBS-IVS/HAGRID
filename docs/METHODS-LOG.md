@@ -2935,9 +2935,24 @@ Die im Paperentwurf zitierten **35,0 % / 40,0 %** sind damit zurückgezogen: sie
 Zeile **c = 40** des alten Provider-Exports (dort netzwerkweit 34,96 %, amazon 40,0 %), nicht aus
 dem niedrigsten Cap. Wer die Zahl als Anfahrtsanteil zitiert, nimmt die Tabelle oben.
 
-**Noch nicht gemessen:** wie viel der Rückweg hinzufügt. Der Wert der neuen Definition liegt
-zwangsläufig höher, um wie viel, sagt erst ein Lauf mit dem neuen Code — die vorhandenen Boards
-tragen das Rückleg nirgends, es ist aus ihnen nicht rekonstruierbar.
+**Gemessen 2026-09-29, ohne neue Simulation.** `HAGRIDAnalysisRunner` baut das Board aus Events,
+Carriers und Netz eines fertigen Laufs neu. Die 14 v2-Läufe Cap 160–290 liegen auf dem Dev
+vollständig vor; neues und altes Board desselben Laufs haben identische km und Fahrzeugzahlen
+(Kontrolle), der Unterschied ist allein die Definition (Σ stem km / Σ km, netzwerkweit):
+
+| | alt (nur Hinweg, Plan/Event) | neu: Hinweg | neu: Rückweg | neu: gesamt |
+|---|---|---|---|---|
+| Spanne über 14 Caps | 24,2–25,8 % | 25,3–27,0 % | 21,9–24,1 % | **47,2–51,0 %** |
+| Mittel | 24,7 % | 25,8 % | 22,6 % | 48,4 % |
+
+Zwei Effekte, getrennt messbar: die gemeinsame Event-Basis hebt den Hinweg um **+1,1 bis +1,3 pp**
+(das ist die Plan/Ausführungs-Lücke aus §2.33), und der Rückweg bringt noch einmal fast so viel
+wie der Hinweg — sein Anteil an der Gesamtzahl liegt bei 46–47 % in jedem Cap. Das
+Provider-Maximum verdoppelt sich ebenso (27–31 % → 55–64 %). ⚠️ **Nicht extrapolieren:** gemessen
+ist nur v2 bei 160–290; die Paperzahl c=30 (37,3 % alt) ist unter der neuen Definition nicht
+gemessen, die Läufe liegen auf dem Sim. Neue Boards unter
+`Desktop\Sim_Results\0726\Run1\Dashboards_newstem`; `extract_sweep.py` weist die Definition je
+Board aus (`stem_def`) und bricht bei einer Serie ab, die beide mischt.
 
 
 
@@ -2975,6 +2990,13 @@ null Paketzeilen), die Pakete zählen als zugestellt, und ohne die gezielte Gege
 (gleiche Konvention wie die Baseline, §2.21). Die Lücke zu 1,0 sind genau die 15 Hoftor-Pakete —
 ein 1c-only-Artefakt, keine Zustellschwäche: die Baseline routet Pakete als jsprit-`CarrierService`
 und kennt die `from == to`-Schranke nicht.
+
+**Nachtrag 2026-09-29 — ausgewiesen, nicht behoben.** Die KPI-Schicht führt beide Kanäle seit
+2026-08-26 (`parcels_walked`, gegen `output_trips` bestätigt; `parcels_dropped_at_depot_link`).
+Jetzt zeigt das 1c-Board sie auch: „Pakete zugestellt“ steht auf demselben Zähler wie die Quote
+(vorher 5.946 neben 99,75 % = 6.037/6.052), dazu eine Paket-Bilanz Nachfrage = DRT + zu Fuß +
+Hoftor + nicht zugestellt mit Warnung, wenn sie nicht aufgeht. `SharedUseKpiHandler` loggt den
+Kanal als WARN mit bis zu fünf Personen-IDs. Die Ursache im Router bleibt offen (BACKLOG).
 
 Verwandt: §2.46 (die Segmentaufteilung als eigentliche Ausfallursache), §2.31 (warum ein nicht
 eingefügtes Paket ohne Event verschwindet).
@@ -4261,7 +4283,11 @@ gehen in den Vergleich nicht ein. Die Batterie kennt kein Regime. Gemessen bei S
 **51,8 % → 55,6 %** (+3,8 pp). Betroffen ist ausschließlich der 1d-Arm und ausschließlich die
 Tageskennzahl — `drive_block_*` läuft laut `_blocks_from_seq` bewusst über beide Regime und ist
 korrekt. Der KPI-Kanal wurde **nicht** angefasst (laufende Kampagne); der Papierpfad rechnet die
-Summe, siehe BACKLOG.
+Summe. **Behoben 2026-09-29:** `_range_rows` summiert je Fahrzeug Pax- und Kapsel-km, die
+Quellenangabe der Zeile sagt das („pax + capsule km of the same vehicle“) und ist zugleich der
+Vintage-Stempel. `--verify` liest ihn und prüft neue Dateien gegen den Tageswert, alte weiter
+gegen die Regime-Trennung. Die lokal neu gebauten 1d-Läufe tragen damit dieselbe Zahl wie dieses
+Modul; Läufe auf den Rechenmaschinen erst nach ihrem Neubau.
 
 **Instrumentenfehler 2 — zwei Vintages im selben Tabellensatz.** Die zehn S1/S2-Läufe sind auf dem
 Sim-PC KPI-gebaut, der für den Hannover-Sweep auf altem HEAD steht: sie tragen die Schwellen
@@ -4875,6 +4901,39 @@ Belege (Worktree `HAGRID-r3`, Commit `73a8324`):
 - Residuum: der Carriers-Writer (`…lmd_carriers_routed.xml`) hat keinen Nach-Umzug-Hash (P2 nicht gelaufen), nur den Golden-Test der Suite; sein Codepfad enthält kein geändertes Pfadliteral.
 
 Ausroll-Regel je Maschine: `git pull` → `migrate-input-layout.ps1` (No-op) → `migrate-module-layout.ps1` (Protokoll: fünf `EQUAL`, `result=OK`) → `mvn -q clean install` → P1-Probe; Rückweg `git checkout <alt>` → `migrate-module-layout.ps1 -Reverse` → `mvn -q clean install`. Nur zwischen Läufen.
+
+### 2.76 Die Auswertung fand drei Viertel der LMD-Touren in den Events nicht — falscher Fahrzeug-Schlüssel
+
+`trägt` · entdeckt und behoben 2026-09-29. **Defekt der Auswertung, nicht der Simulation.** Betrifft
+Board-Grafiken der Baseline, keine Paperzahl.
+
+MATSim benennt einen Carrier-Fahrer `freight_<carrier>_veh_<vehicle>_<n>`, wobei `n` die Touren des
+gewählten Plans je Carrier mit 1, 2, … durchzählt (`CarrierAgent.createDriverId`). Die Python-Seite
+(`carriers_parse.TourDef.event_vehicle_id`) setzte dort die jsprit-`tourId` ein. Die beiden fallen
+nur zusammen, solange die `tourId`s zufällig in Planreihenfolge stehen.
+
+| Lauf | Touren | Treffer `tourId` | Treffer Position |
+|---|---|---|---|
+| `base10c` (150 it.) | 63 | 63 | 63 |
+| `basew21` | 52 | **6** | 52 |
+| `b120rgs`, `b140rgs` | 41 | **10** | 41 |
+
+Weil jedes Fahrzeug nur eine Tour fährt, führte der falsche Schlüssel nie zu einer falschen
+Zuordnung, immer nur zu „nicht gefunden“. Still fehlten daher: die Tourdaten in `kpi_vehicles.csv`
+(b120rgs 585 statt 2.701,5 km), die km je Fahrzeugtyp (`vtype:*`, dieselben 585 km), die
+Stundenreihen Pakete und aktive Fahrzeuge je Provider (1.389 statt 6.052 Pakete), die LMD-Touren
+und -Stopps der Karte, und der Ausschluss schwach ausgelasteter Touren, soweit es welche gab.
+
+**Nicht betroffen:** Kosten C (Flottenaggregate und Typmix aus den Carriers), die Emissionen (lesen
+Fahrzeug und Typ direkt aus `TimeDistance_perVehicle.tsv`), jede Zeile in `kpis_long.csv` — beim
+Neubau von b120rgs änderte sich dort kein einziger Wert. Die Test-Fixtures trugen dieselbe falsche
+Konvention (0-basiert, aus der Tour-Position), deshalb war die Suite grün; sie sind auf MATSims
+Zählung umgestellt, und ein Test mit ungeordneten `tourId`s pinnt den Fall.
+
+Seit wann die `tourId`s ungeordnet sind, ist nicht an REGRET_INSERTION (§2.34) gebunden: `basew21`
+mit 52 Touren liegt vor dem Wechsel und trifft trotzdem nur 6. Nicht weiter eingegrenzt.
+
+Verwandt: §2.6 (Kosten), §2.33 (Plan- gegen Ausführungsdistanz).
 
 ---
 
