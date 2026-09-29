@@ -135,6 +135,45 @@ def classify(veh):
     return "neither"
 
 
+def _weighted_stem(rout, key):
+    """Network stem share exactly like the board's TOTAL line:
+    sum(pct/100 * avgKm * tours) / sum(avgKm * tours), in percent."""
+    km = sum(r["avgKm"] * r["tours"] for r in rout)
+    if km <= 0:
+        return None
+    return round(100 * sum(r[key] / 100 * r["avgKm"] * r["tours"] for r in rout) / km, 2)
+
+
+def extract_stem(text):
+    """Stem KPIs from the ROUT_EFF blob, or None when the board has none.
+
+    Two definitions share the key stemPct (METHODS-LOG 2.49): boards from 2026-08-28 on count
+    BOTH depot legs on one event basis and additionally carry stemInPct/stemOutPct; older
+    boards count only the outbound leg (planned km over driven km). stem_def says which."""
+    if "ROUT_EFF=[" not in text:
+        return None
+    rout = slice_json_array(text, "ROUT_EFF")
+    new = bool(rout) and all("stemInPct" in r for r in rout)
+    return {
+        "stem_def": "in_plus_out" if new else "outbound_only",
+        "stem_pct_network": _weighted_stem(rout, "stemPct"),
+        "stem_pct_provider_max": max((r["stemPct"] for r in rout), default=None),
+        "stem_in_pct_network": _weighted_stem(rout, "stemInPct") if new else None,
+        "stem_out_pct_network": _weighted_stem(rout, "stemOutPct") if new else None,
+    }
+
+
+def check_stem_vintage(runs):
+    """One stem definition per series, otherwise a curve silently joins two KPIs."""
+    defs = {}
+    for r in runs:
+        if r.get("stem"):
+            defs.setdefault(r["series"], set()).add(r["stem"]["stem_def"])
+    mixed = {s: sorted(d) for s, d in defs.items() if len(d) > 1}
+    if mixed:
+        raise ValueError(f"series mix both stem definitions (METHODS-LOG 2.49): {mixed}")
+
+
 def extract_run(series, cap, rep, path):
     text = path.read_text(encoding="utf-8")
     summary = slice_json_array(text, "SUMMARY")
@@ -176,6 +215,7 @@ def extract_run(series, cap, rep, path):
             "utilization": round(sum(v["parcels"] for v in vehs) / cap_sum, 4),
         },
         "limits": {**limits, "total_tours": len(vehs)},
+        "stem": extract_stem(text),
         "meta": {"carrier_detail_tours": n_tours, "providers": len(summary)},
     }
 
@@ -201,6 +241,7 @@ def validate(runs):
     unknown = {r["series"] for r in runs} - set(EXPECTED_RUNS)
     if unknown:
         raise ValueError(f"runs present for undeclared series: {sorted(unknown)}")
+    check_stem_vintage(runs)
 
 
 def main():
@@ -240,13 +281,17 @@ def main():
     cols = ["series", "cap", "replicate", "tour_km", "tour_h", "cost_eur", "vehicles",
             "parcels", "parcels_per_vehicle", "utilization",
             "worktime_only", "capa_only", "both", "neither", "total_tours"]
+    stem_cols = ["stem_def", "stem_pct_network", "stem_pct_provider_max",
+                 "stem_in_pct_network", "stem_out_pct_network"]
     with open(HERE / "sweep_kpis.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(cols)
+        w.writerow(cols + stem_cols)
         for r in runs:
+            stem = r["stem"] or {}
             w.writerow([r["series"], r["cap"], r["replicate"] or ""]
                        + [r["kpis"][c] for c in cols[3:10]]
-                       + [r["limits"][c] for c in cols[10:]])
+                       + [r["limits"][c] for c in cols[10:15]]
+                       + ["" if stem.get(c) is None else stem[c] for c in stem_cols])
     print(f"\nOK: {len(runs)} runs -> sweep_data.json + sweep_kpis.csv")
 
 
