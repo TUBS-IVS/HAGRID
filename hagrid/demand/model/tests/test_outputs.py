@@ -43,7 +43,7 @@ def test_detail_draws_replace_a_leftover_file_and_keep_the_first_schema(tmp_path
     assert len(details) == 4 and str(details["count"].dtype) == "int64"
 
 
-def test_aggregates_consolidate_periodically(tmp_path):
+def test_aggregates_sum_many_chunks_per_day(tmp_path):
     from hagrid_demand.baseline.outputs import write_daily_aggregates
 
     chunks = (_chunk(f"2025-01-{day:02d}", 2) for day in range(1, 32) for _ in range(4))

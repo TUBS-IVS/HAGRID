@@ -383,11 +383,16 @@ aufgebaut, der Jahresspeicher führt alle Jahre. Drei Lauf-Configs decken 2025�
 | `configs/decade-saettigung.json` | `legacy_assumptions` / `logistic` | 5,26 | 1,20 (≈ 1,9 %/a) | 2030 und 2035 |
 | `configs/decade-boom.json` | `legacy_assumptions` / `exponential` | 6,45 | 1,48 (≈ 4,0 %/a) | 2030 und 2035 |
 
+`configs/baseline-daily.json` schreibt den Jahresspeicher (`annual_store: true`, wie die abgenommenen Jahresläufe): der Jahreslauf
+simuliert dann jeden Tag, die Abholpunkte füllen sich ab Januar, und ein einzelner exportierter Tag weicht minimal von einem Lauf ohne
+Jahresspeicher ab (2025-05-09: sieben Stopps).
+
 **Volumenszenarien.** `series.py::apply_volume_scenario` verkettet eine der drei Fit-Kurven der Notebook-Volumenreihe
 (`linear`, `logistic`, `exponential`, jeweils unter `observed_only` oder `legacy_assumptions`) am Niveau des `chain_year`:
 `V(y) = V_basis(2025) · C(y) / C(2025)` für `y > 2025`. Alle Szenarien teilen damit das abgenommene Niveau 2025 und
 unterscheiden sich nur in der Steigung; ohne den Block bleibt jeder Lauf bitidentisch. Die Vergleichstage sind Fr/Sa der
-ISO-Woche 19 und Mo–Sa der ISO-Woche 20 (`tests/test_decade_configs.py` prüft die Regel).
+ISO-Woche 19 und Mo–Sa der ISO-Woche 20; fällt ein Tag auf einen Feiertag (Christi Himmelfahrt, Pfingstmontag), rückt er
+auf denselben Wochentag eine Woche später (`comparison_days.py`, geprüft in `tests/test_decade_configs.py`).
 
 **Wachsendes Abholnetz** (`network_growth.py`, Defaults in `data/out_of_home.json::network_growth`). Ein Vorpass vor der
 Tagesschleife legt für jedes Jahr nach dem Referenzjahr neue Punkte an, damit das Stop-Register vollständig ist:
@@ -406,7 +411,7 @@ Tagesschleife legt für jedes Jahr nach dem Referenzjahr neue Punkte an, damit d
   Kandidatenknappheit; der Vorpass dauert ≈ 5 s.
 
 **Ausgaben je Lauf:** `out_of_home_network.parquet` (eine Zeile je Punkt und aktivem Jahr: Fächer, PLZ, Koordinaten,
-Eröffnungsjahr, POI-Typ), `daily_status.json` → `temporal.out_of_home.network_growth` (Ziel, Zusätze, Kandidaten,
+Eröffnungsjahr, POI-Typ; `out_of_home_points.parquet` führt dagegen alle Punkte mit den Fächern des letzten Jahres), `daily_status.json` → `temporal.out_of_home.network_growth` (Ziel, Zusätze, Kandidaten,
 Fehlbestand je Jahr und Gruppe), `annual_dashboard.html` (letztes Jahr) plus `annual_dashboard_<jahr>.html` je Jahr.
 
 **Dekaden-Dashboard.** `python -m hagrid_demand baseline decade-dashboard --run trend=<lauf> --run saettigung=<lauf>

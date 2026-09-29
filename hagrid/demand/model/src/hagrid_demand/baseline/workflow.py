@@ -534,6 +534,8 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             totals["delivered"][carrier] = totals["delivered"].get(carrier, 0) + int(parcels)
             totals["b2c_delivered"][carrier] = totals["b2c_delivered"].get(carrier, 0) + int(delivered)
         totals["overflow_home"] += int(overflow)
+        by_year = totals.setdefault("overflow_home_by_year", {})
+        by_year[str(year)] = by_year.get(str(year), 0) + int(overflow)
         return {**segment_days, "private": routed}
 
     def frames():

@@ -178,8 +178,7 @@ The notebooks themselves are then opened from `hagrid/demand/archive/notebooks/e
 
 ## 6. Demand model and notebook workflow
 
-The demand model lives in `hagrid/demand/model/` (package `hagrid_demand`): `python -m pip install -e ".[test]"` there, `python -m pytest -q` for the tests, `runs\hannover
-un_demand_year.bat <run-id>` for a full year with dashboard and MATSim demand. Method, assumptions and sources: `hagrid/demand/README.md` and `hagrid/demand/model/README.md`. The notebook workflow below is the archived predecessor.
+The demand model lives in `hagrid/demand/model/` (package `hagrid_demand`): `python -m pip install -e ".[test]"` there, `python -m pytest -q` for the tests, `runs\hannoverun_demand_year.bat <run-id>` for a full year with dashboard and MATSim demand. Method, assumptions and sources: `hagrid/demand/README.md` and `hagrid/demand/model/README.md`. The notebook workflow below is the archived predecessor.
 
 Multi-year runs: `runs\hannover\run_demand_decade.bat` simulates 2025–2035 in three national volume scenarios (trend,
 saturation, boom) with a demand-driven growing pickup network and renders `hagrid/demand/runs/decade_dashboard.html`
