@@ -66,8 +66,13 @@ public class DeliveryGenerator implements Runnable {
 
                                 Map<String, ArrayList<Delivery>> deliveries = processCarrierDemand(carrierDemand, totalParcels);
 
-                                // Add parcel lockers to deliveries
-                                addParcelLockerServices(deliveries, parcelLockerList);
+                                // Out-of-home parcels arrive as stops with stop_type locker/shop in the demand files;
+                                // the fixed extra demand per Packstation is only for older demand files.
+                                if (hagridConfig.isFixedParcelLockerDemand()) {
+                                        addParcelLockerServices(deliveries, parcelLockerList);
+                                } else {
+                                        LOGGER.info("Parcel lockers and shops come from the demand files (stop_type).");
+                                }
 
                                 // Log parcel statistics
                                 ParcelStatisticsLogger logger = new ParcelStatisticsLogger(scenario, false); // Set to true for
@@ -268,7 +273,7 @@ public class DeliveryGenerator implements Runnable {
                                                                                         deliveries.add(createDelivery(
                                                                                                         feature,
                                                                                                         provider,
-                                                                                                        DeliveryMode.HOME,
+                                                                                                        deliveryModeOf(feature.getAttribute("stop_type")),
                                                                                                         ParcelType.B2B,
                                                                                                         b2b));
                                                                                 }
@@ -278,7 +283,7 @@ public class DeliveryGenerator implements Runnable {
                                                                                         deliveries.add(createDelivery(
                                                                                                         feature,
                                                                                                         provider,
-                                                                                                        DeliveryMode.HOME,
+                                                                                                        deliveryModeOf(feature.getAttribute("stop_type")),
                                                                                                         ParcelType.B2C,
                                                                                                         b2c));
                                                                                 }
@@ -288,6 +293,22 @@ public class DeliveryGenerator implements Runnable {
                                                                         .collect(Collectors
                                                                                         .toCollection(ArrayList::new));
                                                 }));
+        }
+
+        /**
+         * Delivery mode of a demand feature from its {@code stop_type} attribute: parcel lockers, shared boxes,
+         * pickup counters and pickup shops are out-of-home points, everything else (including demand files without
+         * the attribute) is a home delivery.
+         *
+         * @param stopType value of the {@code stop_type} attribute or {@code null}.
+         * @return the delivery mode.
+         */
+        static DeliveryMode deliveryModeOf(Object stopType) {
+                String type = stopType == null ? "home" : stopType.toString().trim().toLowerCase(java.util.Locale.ROOT);
+                return switch (type) {
+                        case "locker", "shared_locker", "counter", "shop" -> DeliveryMode.PARCEL_LOCKER_EXISTING;
+                        default -> DeliveryMode.HOME;
+                };
         }
 
         /**

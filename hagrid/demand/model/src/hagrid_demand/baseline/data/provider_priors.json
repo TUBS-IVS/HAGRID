@@ -1,0 +1,22 @@
+{
+  "source": "Carrier B2B bounds and optimum of notebook 05 (base_bounds, adjust_bounds_by_year, 05_optimized_b2b_shares_by_year)",
+  "notebook_cell": "05_EstimateLocalMarketShares.py CELL 4 and CELL 8",
+  "status": "assumption",
+  "unit": "share",
+  "bound_scaling": {
+    "method": "linear", "year_start": 2010, "year_end": 2025, "b2b_start": 0.45, "b2b_end": 0.20, "round": 4,
+    "rule": "lower_c(y) = round(base_lower_c * cur(y) / b2b_start, 4); cur(y) linear from b2b_start to b2b_end on clamp(y, year_start, year_end); upper unchanged",
+    "source": "notebook 05 adjust_bounds_by_year (method='linear')", "notebook_cell": "05 CELL 4 and CELL 9"
+  },
+  "prior_rule": "q_prior = the bound named by prior_corner (optionally floored by prior_floor); this reproduces the corner optimum of the notebook 05 genetic algorithm in its support years",
+  "scale_rule": "q_scale = sqrt(q_prior / market_share); the bounded least-squares reconciliation then reduces to the generator's uniform B2B scaling alpha*q when no bound is active",
+  "providers": {
+    "DHL": {"legacy_bounds": [0.28, 0.40], "prior_corner": "lower", "b2b_preference": 0.34, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "Hermes": {"legacy_bounds": [0.10, 0.50], "prior_corner": "lower", "b2b_preference": 0.30, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "UPS": {"legacy_bounds": [0.50, 0.88], "prior_corner": "upper", "b2b_preference": 0.69, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "Amazon": {"legacy_bounds": [0.01, 0.10], "prior_corner": "lower", "prior_floor": 0.01, "b2b_preference": 0.055, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "DPD": {"legacy_bounds": [0.49, 0.65], "prior_corner": "lower", "b2b_preference": 0.57, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "GLS": {"legacy_bounds": [0.28, 0.50], "prior_corner": "lower", "b2b_preference": 0.39, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"},
+    "FedEx/TNT": {"legacy_bounds": [0.78, 0.95], "prior_corner": "upper", "b2b_preference": 0.865, "source": "notebook 05 base_bounds", "notebook_cell": "05 CELL 8", "status": "assumption", "unit": "share"}
+  }
+}
