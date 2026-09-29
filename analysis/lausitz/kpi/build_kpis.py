@@ -97,7 +97,10 @@ def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     # signal extract_drt needs to emit its marker/`*_pax` rows independent of
     # whether events were reconstructed for THIS build (drt_cache/recon can be
     # None on a --no-events build even though the run itself is a 1d Modular run).
-    modular = extract_modular.has_modular_stats(run_dir, meta)
+    # A control arm (tours_dispatched == 0) is excluded: its vehicles never carried freight.
+    # Unreadable counts (None) keep the marker -- the conservative side.
+    modular = (extract_modular.has_modular_stats(run_dir, meta)
+               and extract_modular.dispatched_tours(run_dir, meta) != 0)
 
     rows = []
     if is_drt:
