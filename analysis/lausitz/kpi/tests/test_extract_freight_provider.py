@@ -19,10 +19,10 @@ def test_low_util_exclusion_marks_1parcel_tour():
     pf = efp.parse_run(FIX, "MINI")
     # dhl_..._v1 carries 1 parcel into a cap-100 van -> lf 0.01 < 0.05 -> excluded
     excl = pf.excluded
-    assert "freight_dhl_veh_dhl_ct_cep_size_s_h8_v1_1" in excl
-    assert "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0" not in excl
+    assert "freight_dhl_veh_dhl_ct_cep_size_s_h8_v1_2" in excl
+    assert "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1" not in excl
     # supply vehicles are never excluded even at high load (only delivery considered)
-    assert "freight_amazon_supply_veh_amazon_Supply_Vehicle_v0_0" not in excl
+    assert "freight_amazon_supply_veh_amazon_Supply_Vehicle_v0_1" not in excl
 
 
 def test_provider_cost_reallocation():

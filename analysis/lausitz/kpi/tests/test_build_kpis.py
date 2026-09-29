@@ -110,7 +110,7 @@ def test_build_writes_kpi_vehicles_csv_with_freight(tmp_path):
         "run_id;role;vehicle_id;provider;vehicle_type;distance_km;duration_h;"
         "travel_h;parcels;stops;load_factor;excluded;occupied_h;active_h;"
         "shift_h;ratio_active")
-    assert ";freight;freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0;dhl;" in veh_txt
+    assert ";freight;freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1;dhl;" in veh_txt
     assert not any(";drt;" in line for line in lines[1:])
 
 
