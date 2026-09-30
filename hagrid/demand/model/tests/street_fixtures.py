@@ -1,4 +1,4 @@
-"""Tiny street/building world: two DHL streets, four buildings, persons and firms (EPSG:25832)."""
+"""Tiny street/building world: two LSP streets, four buildings, persons and firms (EPSG:25832)."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def write_street_fixture(root):
     config_path = write_fixture(Path(root))
     inputs = Path(root) / "inputs"
     dhl = gpd.read_file(inputs / "dhl.shp")
-    dhl["tagesschni"] = [30, 10, 30, 10]  # residential Alpha/Gamma, firm streets Beta/Delta: DHL B2B share 0.25
+    dhl["tagesschni"] = [30, 10, 30, 10]  # residential Alpha/Gamma, firm streets Beta/Delta: LSP B2B share 0.25
     dhl.to_file(inputs / "dhl.shp")
     gpd.GeoDataFrame({
         "osm_way_id": ["1", "2", "3", "4"], "osm_id": [None] * 4,

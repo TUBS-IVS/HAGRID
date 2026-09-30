@@ -16,7 +16,7 @@ def _sites():
 
 
 def _profiles():
-    # The validated DHL label, rather than carrier position, makes eta identifiable.
+    # The validated LSP label, rather than carrier position, makes eta identifiable.
     return {"conditional": np.array([[.6, .4], [.2, .8]]), "carriers": ["DHL", "Other"]}
 
 
@@ -139,7 +139,7 @@ def test_historical_q75_identity_and_nonnegative_mean_labels():
                             "target": .5 * persons + 2 * companies})
     fitted = fit_nonnegative_mean(support)
     assert fitted["model"] == "nonnegative_mean"
-    assert fitted["coefficient_semantics"] == "DHL-response rates"
+    assert fitted["coefficient_semantics"] == "LSP-response rates"
     assert fitted["rates"]["persons"] == pytest.approx(.5)
     assert fitted["rates"]["companies"] == pytest.approx(2.)
     with pytest.raises(ValueError, match="all-zero response"):
@@ -331,13 +331,13 @@ def test_reference_can_reconcile_raw_provider_priors_before_solving_eta():
 
 
 def test_reference_resolves_dhl_by_validated_label_instead_of_carrier_column_order():
-    """Reordering carrier columns cannot turn Amazon's share into the DHL divisor."""
+    """Reordering carrier columns cannot turn Amazon's share into the LSP divisor."""
     from hagrid_demand.baseline.potentials import build_potentials
     from hagrid_demand.baseline.reference import solve_reference
 
     dhl = pd.DataFrame({"observation_id": ["a", "b"], "plz": ["10000", "20000"],
                         "value": [10., 20.], "value_status": ["observed", "observed"]})
-    # DHL is deliberately column one.  Its market share is .32, while Amazon's is .68.
+    # LSP is deliberately column one.  Its market share is .32, while Amazon's is .68.
     profiles = {"conditional": np.array([[.8, .2], [.2, .8]]), "carriers": ["Amazon", "DHL"]}
     result = solve_reference(build_potentials(_sites()), dhl, profiles, b=.2, operating_days=313)
 
@@ -421,7 +421,7 @@ def test_reference_rejects_invalid_and_unidentified_inputs():
     good = pd.DataFrame({"observation_id": ["a"], "plz": ["10000"], "value": [5.], "value_status": ["observed"]})
     with pytest.raises(ValueError, match="missing|negative"):
         solve_reference(potentials, good.assign(value=-1.), _profiles(), b=.2, operating_days=313)
-    with pytest.raises(ValueError, match="positive DHL.*share"):
+    with pytest.raises(ValueError, match="positive LSP.*share"):
         solve_reference(potentials, good, {"conditional": np.array([[0., 1.], [0., 1.]]), "dhl_index": 0}, b=.2, operating_days=313)
     with pytest.raises(ValueError, match="empty|support"):
         solve_reference(potentials.iloc[0:0], good, _profiles(), b=.2, operating_days=313)

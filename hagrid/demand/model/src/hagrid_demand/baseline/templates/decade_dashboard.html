@@ -348,7 +348,7 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
     <figure class="panel"><ol class="list" id="method-list"></ol></figure>
   </section>
 
-  <footer><span id="foot"></span><span>Maps © OpenStreetMap contributors (ODbL) · calibrated to DHL street volumes 2021</span></footer>
+  <footer><span id="foot"></span><span>Maps © OpenStreetMap contributors (ODbL) · calibrated to LSP street volumes 2021</span></footer>
 </div>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 
@@ -890,7 +890,7 @@ function renderMethod() {
   items.push(['Scenarios:', SCEN.map(item => { const d = item.definition, nat = item.national;
     return item.label + ' – ' + (d ? (curve[d.curve] || d.curve) + ' fit of ' + (policy[d.policy] || d.policy) + (d.chained ? ', chained to the level of ' + d.chain_year : '') : 'no scenario definition in the run') +
       (nat ? ': ' + dec(nat.from, 2) + ' billion parcels in ' + nat.from_year + ', ' + dec(nat.to, 2) + ' in ' + nat.to_year + ' (' + signed(nat.cagr) + ' a year)' : '') + (item.missing_years.length ? '; ' + years(item.missing_years) + ' not simulated' : ''); }).join('; ') + '.']);
-  items.push(['Region:', 'the annual volume of the region is the 2021 reference (DHL street volumes, all carriers) scaled by the national volume of each year; carriers get their market share of the year, recipients their B2B share, and every day is drawn from the shipping calendar.']);
+  items.push(['Region:', 'the annual volume of the region is the 2021 reference (LSP street volumes, all carriers) scaled by the national volume of each year; carriers get their market share of the year, recipients their B2B share, and every day is drawn from the shipping calendar.']);
   if (o && o.trend) items.push(['Out of home:', 'the share of each carrier’s B2C parcels that goes to lockers, boxes and counters follows a logistic trend (growth ' + dec(o.trend.growth, 3) + ' a year, midpoint ' + dec(o.trend.midpoint, 1) + ') from its ' + o.trend.reference_year + ' level (' +
     Object.entries(o.shares_2025 || {}).map(([c, v]) => c + ' ' + pct(v, 0)).join(', ') + '); recipients choose among the ' + (o.choice_k || 1) + ' nearest points within ' + int(o.reach_m) + ' m, closer ones more often.']);
   if (g) items.push(['Network growth:', g.enabled === false ? 'switched off: the reference network serves every year.' : 'per group of kind and carriers the number of points follows N(y) = max(N(y−1), round(N(' + g.reference_year + ') × (D(y) / D(' + g.reference_year + '))^' + dec(g.elasticity, 1) + ')), D = the group’s out-of-home B2C parcels; the rest of the growth goes into larger stations. New sites go to retail and fuel-station POIs, weighted by B2C demand within ' + int(g.demand_radius_m) + ' m × coverage gap (1 − exp(−d / ' + int(g.gap_scale_m) + ' m)) × kind preference (' + dec(g.off_preference_weight, 2) + ' otherwise), never within ' + int(g.min_spacing_m) + ' m of a point of the same group.' +

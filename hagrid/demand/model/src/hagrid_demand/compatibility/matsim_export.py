@@ -230,7 +230,7 @@ def write_matsim_manifest(ledgers: list[dict], output_dir: Path, crs: str | None
               "<short>_b2c/<short>_b2b": "notebook aliases", "total = total_sim = wl_tag": "all parcels", "postal_cod": "PLZ"}
     if stop_mode:
         fields.update({"id": "stop_index * 100 + split row (Long)", "stop_id": "stable delivery stop",
-                       "str_idx": "DHL street index (-1 off street)", "section_id": "50 m DHL street section",
+                       "str_idx": "LSP street index (-1 off street)", "section_id": "50 m LSP street section",
                        "stop_type": "home | locker | shared_locker | counter | shop (out-of-home points; Java maps them to PARCEL_LOCKER_EXISTING)"})
     else:
         fields.update({"id": "running row index (Long)", "site_id": "baseline demand site"})

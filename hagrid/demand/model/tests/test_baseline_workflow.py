@@ -269,7 +269,7 @@ def test_cli_baseline_run_prints_the_path_returned_by_the_custom_dashboard_rende
 
 
 def test_reference_run_publishes_the_frozen_consumer_contract_and_dhl_identity(fixture_config):
-    """A reference run has all semantic artifacts, with DHL stored only at postal grain."""
+    """A reference run has all semantic artifacts, with LSP stored only at postal grain."""
     import geopandas as gpd
     import pandas as pd
 
@@ -326,7 +326,7 @@ def test_renderer_rejects_tampered_semantic_reference_artifact(fixture_config):
 
 
 def test_workflow_excludes_out_of_scope_dhl_before_anchor_support_and_ledgers_it(fixture_config):
-    """DHL rows outside verified postal support cannot create an anchor or a missing-potential error."""
+    """LSP rows outside verified postal support cannot create an anchor or a missing-potential error."""
     import geopandas as gpd
     import pandas as pd
     from shapely.geometry import LineString

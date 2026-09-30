@@ -78,7 +78,7 @@ def _national_total(reference: dict, volume: pd.DataFrame, year: int) -> tuple[f
 
 
 def _profile(series: dict, year: int, dhl_fixed: dict | None = None) -> tuple[pd.DataFrame, float]:
-    """Carrier profiles of *year*; ``dhl_fixed`` pins DHL's B2B share to q_2021 * b(y) / b_2021."""
+    """Carrier profiles of *year*; ``dhl_fixed`` pins the LSP's B2B share to q_2021 * b(y) / b_2021."""
     market = _year_row(_table(series.get("market"), "series.market"), year,
                        {"year", "carrier", "market_share"}, "market")
     providers = _year_row(_table(series.get("providers"), "series.providers"), year,

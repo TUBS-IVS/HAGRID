@@ -1,4 +1,4 @@
-"""Street anchor: DHL street observations -> B2C/B2B demand per street and building (spec 5.5-5.10)."""
+"""Street anchor: LSP street observations -> B2C/B2B demand per street and building (spec 5.5-5.10)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class AnchorConfig:
 
 
 def street_table(buildings: pd.DataFrame, streets: pd.DataFrame, cfg: AnchorConfig) -> pd.DataFrame:
-    """One row per DHL street with the persons, firms and buildings assigned to it."""
+    """One row per LSP street with the persons, firms and buildings assigned to it."""
     assigned = buildings[buildings.sid >= 0]
     structure = assigned.groupby("sid").agg(persons=("population", "sum"), companies=("companies", "sum"),
                                             buildings=("building_key", "size"))
@@ -44,7 +44,7 @@ def street_table(buildings: pd.DataFrame, streets: pd.DataFrame, cfg: AnchorConf
 
 
 def level_correction(table: pd.DataFrame, cfg: AnchorConfig) -> pd.DataFrame:
-    """Variant D: postal DHL level from residential streets; extreme postal areas are rescaled."""
+    """Variant D: postal LSP level from residential streets; extreme postal areas are rescaled."""
     observed = table[~table.excluded]
     residential = observed[(observed.persons >= cfg.min_persons) & (observed.companies == 0)]
     per = residential.groupby("plz").agg(residential_streets=("sid", "size"), dhl=("value", "sum"), persons=("persons", "sum"))
@@ -66,16 +66,16 @@ def apply_correction(table: pd.DataFrame, corrections: pd.DataFrame) -> pd.DataF
 
 
 def fit_dhl_rates(table: pd.DataFrame) -> dict:
-    """Regional DHL parcels per person and per firm and day (non-negative, no intercept, positive streets)."""
+    """Regional LSP parcels per person and per firm and day (non-negative, no intercept, positive streets)."""
     observed = table[~table.excluded & (table.dhl_corrected > 0)]
     coefficients, _ = nnls(observed[["persons", "companies"]].to_numpy(float), observed.dhl_corrected.to_numpy(float))
     if not (coefficients > 0).all():
-        raise ValueError(f"DHL street rates must be positive for persons and companies: {coefficients.tolist()}")
+        raise ValueError(f"LSP street rates must be positive for persons and companies: {coefficients.tolist()}")
     return {"person": float(coefficients[0]), "company": float(coefficients[1])}
 
 
 def decompose(table: pd.DataFrame, rates: dict, cfg: AnchorConfig) -> pd.DataFrame:
-    """Split each DHL street into B2C/B2B in proportion to its structural expectation (spec 5.6, 5.9)."""
+    """Split each LSP street into B2C/B2B in proportion to its structural expectation (spec 5.6, 5.9)."""
     t = table.copy()
     t["expected_private"] = rates["person"] * t.persons
     t["expected_business"] = rates["company"] * t.companies
@@ -98,7 +98,7 @@ def decompose(table: pd.DataFrame, rates: dict, cfg: AnchorConfig) -> pd.DataFra
 
 
 def observed_b2b_share(decomposed: pd.DataFrame) -> float:
-    """q_DHL: business share of the observed DHL volume."""
+    """q_LSP: business share of the observed LSP volume."""
     observed = decomposed[decomposed.anchor_status.isin(["observed", "observed_unstructured"])]
     return float(observed.dhl_business.sum() / (observed.dhl_private + observed.dhl_business).sum())
 
@@ -163,7 +163,7 @@ _UNIT_COLUMNS = ["building_key", "footprint", "building_type", "area_m2", "plz",
 
 
 def _synthetic_units(t: pd.DataFrame, streets: gpd.GeoDataFrame, section_length_m: float) -> gpd.GeoDataFrame:
-    """One point per 50 m section of DHL streets that carry volume but no assigned building (spec 5.6)."""
+    """One point per 50 m section of LSP streets that carry volume but no assigned building (spec 5.6)."""
     rows = []
     geometry = streets.set_index("sid").geometry
     for row in t[t.anchor_status.eq("observed_unstructured")].itertuples():

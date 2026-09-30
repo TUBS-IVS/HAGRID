@@ -37,7 +37,7 @@ def run_diagnostics(config_path, run_id, special_path):
     if cfg.get('dhl_exclude_above') is not None:
         raise ValueError('Legacy raw/core comparison: use model_search for the configured CEP scope')
     if cfg['reference_year'] != 2021:
-        raise ValueError('This diagnosis requires the confirmed DHL reference year 2021')
+        raise ValueError('This diagnosis requires the confirmed LSP reference year 2021')
     source = Path(cfg['foundation_run'])
     output = Path(cfg['output_dir']) / run_id
     output.mkdir(parents=True, exist_ok=False)
@@ -84,9 +84,9 @@ def run_diagnostics(config_path, run_id, special_path):
                   legacy_growth_not_used=growth, special_offset=float(offset.sum()),
                   raw_total=float(raw.sum()), metrics=scores,
                   limitations=['Exploratory repeated five-fold postal CV after the old test was inspected; no untouched test claim.',
-                  'Special-customer offsets come from PANDA and the same DHL observations. Conditional core errors do not validate prediction of these customers.',
+                  'Special-customer offsets come from PANDA and the same LSP observations. Conditional core errors do not validate prediction of these customers.',
                   'PANDA confirmed flag is automatically prefilled by its detector; independent manual confirmation is not established.',
-                  'DHL daily-mean denominator and population/company vintages remain unconfirmed.',
+                  'LSP daily-mean denominator and population/company vintages remain unconfirmed.',
                   'No growth, 313-day conversion, calendar weights, random fluctuations or MATSim run in this diagnostic.'])
     write_json(output/'result.json',result)
     paths=[Path(config_path),Path(special_path),*[source/n for n in ['sites.parquet','site_postal_candidates.parquet','dhl_observations.parquet','hermes_observations.parquet']]]
@@ -94,9 +94,9 @@ def run_diagnostics(config_path, run_id, special_path):
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},
         'code':{p.relative_to(Path(__file__).parents[1]).as_posix():digest(p) for p in [*Path(__file__).parent.glob('*.py'),*Path(__file__).parents[1].glob('*.py')]}})
     summary=table.groupby(['mode','model'])[['wMAPE','bias']].agg(['mean','min','max'])
-    content='<h1>DHL 2021: reproduction and error diagnosis</h1><p>No scale-up, no simulated daily fluctuations. Errors on the respective held-out PLZ.</p>'
+    content='<h1>LSP 2021: reproduction and error diagnosis</h1><p>No scale-up, no simulated daily fluctuations. Errors on the respective held-out PLZ.</p>'
     content+=summary.to_html(float_format=lambda x:f'{x:.1%}')
     content+='<h2>Validation limits</h2><ul>'+''.join('<li>'+html.escape(x)+'</li>' for x in result['limitations'])+'</ul>'
     content+=f'<p>Raw volume: {raw.sum():,.0f}; separately assumed large-customer volume: {offset.sum():,.1f}.</p>'
-    (output/'dashboard.html').write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>DHL 2021 diagnosis</title><style>body{font:17px system-ui;max-width:1200px;margin:40px auto;padding:20px}td,th{padding:10px;text-align:right}li{margin:12px}</style>'+content+'</html>',encoding='utf-8')
+    (output/'dashboard.html').write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>LSP 2021 diagnosis</title><style>body{font:17px system-ui;max-width:1200px;margin:40px auto;padding:20px}td,th{padding:10px;text-align:right}li{margin:12px}</style>'+content+'</html>',encoding='utf-8')
     return output

@@ -60,7 +60,7 @@ def _source_specs(config: dict) -> dict[str, Path]:
             raise ValueError("each raw source requires adapter and file")
         result[spec["adapter"]] = Path(config["input_dir"]) / spec["file"]
         if spec["adapter"] == "dhl" and spec.get("year") != 2021:
-            raise ValueError("DHL source metadata must declare year 2021")
+            raise ValueError("LSP source metadata must declare year 2021")
     required = {"persons", "companies", "dhl", "hermes", "plz"}
     if missing := required.difference(result):
         raise ValueError(f"raw source mode is missing adapters: {sorted(missing)}")
@@ -149,9 +149,9 @@ def _write_sources(config: dict, output: Path) -> None:
             sites, "sites", {"site_id", "recipient_type", "population", "employees", "location_status", "geometry"}
         )
         dhl_table = tables["dhl_observations.parquet"]
-        _require_foundation_columns(dhl_table, "DHL observations", {"year"})
+        _require_foundation_columns(dhl_table, "LSP observations", {"year"})
         if not dhl_table.year.eq(2021).all():
-            raise ValueError("foundation DHL data must contain only year 2021")
+            raise ValueError("foundation LSP data must contain only year 2021")
         membership = tables.get("site_postal_candidates.parquet")
         if membership is None:
             raise ValueError("foundation run requires site_postal_candidates.parquet")
@@ -188,7 +188,7 @@ def _write_sources(config: dict, output: Path) -> None:
     sites["segment"] = sites.recipient_type
     dhl = read_dhl(paths["dhl"], config["target_crs"])
     if not dhl.year.eq(2021).all():
-        raise ValueError("raw DHL data must contain only year 2021")
+        raise ValueError("raw LSP data must contain only year 2021")
     hermes = read_hermes(paths["hermes"])
     sites.to_parquet(output / "sites.parquet", index=False)
     dhl.to_parquet(output / "dhl_observations.parquet", index=False)
