@@ -464,14 +464,19 @@ Segmentsummen ändern sich dabei nicht, und das Bezugsjahr 2025 bleibt bitgleich
   behält die Neigung ihres jüngeren Ichs, und junge Erwachsene bestellen wie junge Erwachsene. Der Neigungsindex
   eines Bezirks ist die mittlere Neigung je Person relativ zu 2025.
 - **Standortfaktor:** Wohnstandort = `E_d · Neigungsindex_d`. Firmenstandort = beschäftigtengewichtetes
-  Branchenwachstum seiner Betriebe, `1 + (1 − new_firm_share) · ((1 + r)^(y − 2025) − 1)`.
+  Branchenwachstum seiner Betriebe: bei wachsender Branche `1 + (1 − new_firm_share) · ((1 + r)^(y − 2025) − 1)`,
+  bei schrumpfender Branche der volle Rückgang `(1 + r)^(y − 2025)`, denn dort entstehen keine neuen Betriebe.
   `project_annual` gewichtet `historical_share` mit dem Faktor je Standort und Segment und normiert je Segment.
   Zeilen mit Faktor 0 fehlen im jeweiligen Jahr.
 - **Neue Standorte:** Neubaugebiete bekommen ein 50-m-Raster im Gebiet (mindestens 5 Punkte) und öffnen mit linearem
   Hochlauf. `new_firm_share` (Standard 0,3) des Beschäftigtenzuwachses je Branche entsteht als neue Betriebe mittlerer
-  Branchengröße in OSM-Gewerbe- und Industrieflächen (Ziehung ∝ Fläche, `named_rng(..., channel="land-use-firms")`).
-  Jeder neue Standort hat einen eigenen Stopp, die Indizes beginnen bei 1.000.000 hinter den Abholpunkten. Jedes
-  Neubaugebiet bildet eine eigene Straßengruppe für die Häufung, jeder Betrieb ebenfalls.
+  Branchengröße in OSM-Gewerbe- und Industrieflächen. Die Ziehung ist ∝ Fläche und ohne Zurücklegen je Jahr:
+  Jede Fläche bekommt höchstens einen neuen Betrieb, bis alle einen haben (`named_rng(..., channel="land-use-firms")`).
+  Jeder neue Standort hat einen eigenen Stopp, die Indizes beginnen bei 1.000.000 hinter den Abholpunkten. Würden sich
+  die Bereiche berühren, bricht der Lauf ab. Jedes Neubaugebiet bildet eine eigene Straßengruppe für die Häufung,
+  jeder Betrieb ebenfalls.
+- **Prüfungen beim Laden:** Neubaugebiete beginnen nach dem Bezugsjahr, kein simuliertes Jahr liegt davor, und
+  Gebietsnamen sind eindeutig, auch als Kürzel in den Standort-IDs.
 
 **Ausgaben je Lauf:**
 

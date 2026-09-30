@@ -355,6 +355,12 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
 <script>
 'use strict';
 const D = JSON.parse(document.getElementById('hagrid-decade').textContent);
+// district shapes and new sites that several scenarios share are stored once (structure_pool)
+Object.values(D.structure || {}).forEach(S => {
+  if (!S || !D.structure_pool) return;
+  if (typeof S.districts.geo === 'string') S.districts.geo = D.structure_pool.geo[S.districts.geo];
+  if (typeof S.sites === 'string') S.sites = D.structure_pool.sites[S.sites];
+});
 (function () {
 /* ---------- payload ---------- */
 const M = D.meta, YEARS = D.years, Y0 = YEARS[0], YN = YEARS[YEARS.length - 1];

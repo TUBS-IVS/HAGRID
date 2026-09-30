@@ -163,9 +163,10 @@ def load_baseline_config(path: Path) -> dict:
         raise ValueError("years must contain integer years from 2021")
     config["years"] = sorted(set(config["years"])) if "years" in config else [config["reference_year"]]
     if "land_use" in config:
-        from hagrid_demand.baseline.land_use import resolve_land_use
+        from hagrid_demand.baseline.land_use import resolve_land_use, validate_land_use_years
 
-        resolve_land_use(config["land_use"])  # fail on load; the daily stage resolves the block again
+        # fail on load; the daily stage resolves the block again
+        validate_land_use_years(resolve_land_use(config["land_use"]), config["years"])
     if "volume_scenario" in config:
         from hagrid_demand.baseline.series import validate_volume_scenario
 

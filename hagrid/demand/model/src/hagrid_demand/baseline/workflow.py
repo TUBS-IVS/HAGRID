@@ -26,6 +26,7 @@ from .config import load_baseline_config
 from .out_of_home import (apply_plan, build_plan, load_points, point_compartments, point_stops, population_near,
                           resolve_out_of_home, shop_targets, synthesize_shops, synthetic_candidates)
 from .network_growth import capacity_inputs, carrier_ooh_demand, growth_years, plan_network
+from .land_use import check_stop_ranges
 from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
@@ -454,6 +455,40 @@ def _land_use_plan(config: dict, run: Path, output: Path, reference: dict):
     return plan
 
 
+def _with_land_use(reference: dict, plan) -> dict:
+    """The reference contract with the new land-use sites: their rows join the sites and their points the geometry, so
+    every consumer of ``reference['geometry']`` (correlated allocation, MATSim export without stops) locates them."""
+    geometry = reference["geometry"]
+    added = plan.new_sites[["site_id", "geometry"]]
+    if len(added):
+        added = added.to_crs(geometry.crs)
+        geometry = gpd.GeoDataFrame(pd.concat([geometry, added], ignore_index=True), geometry="geometry", crs=geometry.crs)
+    return {**reference, "sites": plan.sites, "geometry": geometry}
+
+
+def _daily_dependencies(config: dict, run: Path) -> dict:
+    """Inputs whose content keys the daily stage cache."""
+    from .land_use import resolve_land_use
+
+    dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
+    if config.get("out_of_home") and config.get("osm_parcel_points"):
+        dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
+    if config.get("out_of_home") and config.get("osm_points"):
+        # retail POIs of the synthetic points and of the network growth
+        dependencies["osm_points"] = Path(config["osm_points"])
+    land_use = resolve_land_use(config.get("land_use"))   # an empty block enables land use with the defaults
+    if land_use is not None:
+        input_dir = Path(config["input_dir"])
+        if config.get("osm_boundaries"):
+            dependencies["osm_boundaries"] = Path(config["osm_boundaries"])
+        dependencies["persons"] = input_dir / (land_use["persons"] or "persons_total.csv")
+        dependencies["landuse"] = input_dir / (land_use["landuse"] or "osm_landuse_region_hannover.csv")
+        # branch, employees and building of every source firm (firm growth and new firms)
+        dependencies["source_sites"] = run / "sources" / "sites.parquet"
+        dependencies["site_buildings"] = run / "buildings" / "site_buildings.parquet"
+    return dependencies
+
+
 def _daily_code() -> dict:
     """Code and packaged inputs whose content keys the daily stage cache."""
     here = Path(__file__)
@@ -523,8 +558,10 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         points, status["out_of_home"] = _out_of_home_points(config, run, ooh, base_stops.crs, projection=projection,
                                                             site_xy_of=site_xy_of, site_stop_of=site_stop_of)
         # pickup points follow the reference stops; land-use stops have their own range above (LAND_USE_STOP_BASE)
-        reference_last = int(base_stops.loc[~base_stops.stop_id.astype(str).str.startswith("lu:"), "stop_index"].max())
+        land_use_stop = base_stops.stop_id.astype(str).str.startswith("lu:")
+        reference_last = int(base_stops.loc[~land_use_stop, "stop_index"].max())
         extra = point_stops(points, reference_last + 1)
+        check_stop_ranges(reference_last, len(extra), int(base_stops.loc[land_use_stop, "stop_index"].min()) if land_use_stop.any() else None)
         export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
                         "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
         extra = extra.assign(compartments=point_compartments(points, ooh), year_opened=points.year_opened.to_numpy(),
@@ -802,7 +839,7 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
     land = _land_use_plan(config, run, output, reference)
     if land is not None:
-        reference["sites"] = land.sites
+        reference = _with_land_use(reference, land)
     projection = project_annual(reference, series, config["years"], projection_cfg,
                                 site_factors=land.factors if land is not None else None)
     calendar, calendar_metadata = _daily_calendar(config, run)
@@ -1031,18 +1068,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["regional_annual"] = json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"]
         _json(run / "run.json", state)
         if config["output_scope"] == "daily":
-            daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
-            if config.get("out_of_home") and config.get("osm_parcel_points"):
-                daily_dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
-            if config.get("out_of_home") and config.get("osm_points"):
-                # retail POIs of the synthetic points and of the network growth
-                daily_dependencies["osm_points"] = Path(config["osm_points"])
-            if config.get("land_use") and config["land_use"].get("enabled", True):
-                land_use = config["land_use"]
-                daily_dependencies["osm_boundaries"] = Path(config["osm_boundaries"]) if config.get("osm_boundaries") else None
-                daily_dependencies["persons"] = Path(config["input_dir"]) / (land_use.get("persons") or "persons_total.csv")
-                daily_dependencies["landuse"] = Path(config["input_dir"]) / (land_use.get("landuse") or "osm_landuse_region_hannover.csv")
-                daily_dependencies = {key: value for key, value in daily_dependencies.items() if value is not None}
+            daily_dependencies = _daily_dependencies(config, run)
             daily_snapshot = dependency_snapshot(daily_dependencies)
             daily_fingerprint = stage_key("daily", daily_dependencies, config, _daily_code(),
                                           dependency_snapshot=daily_snapshot)
