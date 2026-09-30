@@ -1,4 +1,4 @@
-# DHL 2021: neue Fehlerdiagnose
+# LSP 2021: neue Fehlerdiagnose
 
 Die Rohdaten sind laut Nutzer von 2021. Das bisherige Modell verwendete bereits dieses Referenzjahr. Der vorherige Testfehler von 27,7 % ist ein räumlicher Fehler im Referenzjahr; Wachstum und simulierte Tagesfaktoren verursachen diesen Fehler nicht.
 
@@ -7,7 +7,7 @@ Die alte lineare Mengentabelle liefert 2021 4,51, 2026 4,42 und 2030 4,929619704
 ## Reproduzierbarer Aufruf
 
 ```powershell
-python -m hagrid_demand diagnose-2021 --config hagrid-demand/configs/model.json --special-customers C:/Users/bienzeisler/.codex/tmp/panda-demand-review/grosskunden_final.csv --run-id dhl-2021-diagnosis-20260909
+python -m hagrid_demand diagnose-2021 --config hagrid-demand/configs/model.json --special-customers C:/Users/bienzeisler/.codex/tmp/panda-demand-review/grosskunden_final.csv --run-id lsp-2021-diagnosis-20260909
 ```
 
 Für erneute Läufe eine neue Run-ID verwenden. Jeder Lauf schreibt Roh-/Restmengen, zurückgehaltene Vorhersagen, Kennzahlen, die verwendete Großkundendatei, Eingabe-/Codehashes und ein HTML-Dashboard. 20 Tests bestanden nach dieser Erweiterung.
@@ -26,7 +26,7 @@ Das ist eine explorative Modellprüfung, kein neuer unberührter Test. Die bishe
 
 PANDA enthält zwei separate Großkundenannahmen: Am Berkhopsfeld (30938), 7.356 Pakete/Tag Exzess, und Stockholmer Allee (30539), 4.595,8. Die Rohwerte 7.361 und 4.606 stimmen jeweils eindeutig mit unseren Straßenbeobachtungen überein. Zusammen werden 11.951,8 von 97.906 Paketen als bekannte Sondermenge behandelt. Alle Mengen bleiben dokumentiert; nichts wird als falscher Datensatz gelöscht.
 
-Die Restnachfrage-Auswertung ist **bedingt auf diese bereits aus DHL abgeleiteten Sondermengen**. Sie validiert weder ihre Vorhersage noch eine automatische Großkundenerkennung. PANDA setzt das Bestätigungsfeld automatisch vor; eine unabhängige manuelle Prüfung ist nicht belegt. Wir übernehmen auch keine automatische Gleichsetzung mit B2B oder entsprechende Sondermengen anderer Anbieter.
+Die Restnachfrage-Auswertung ist **bedingt auf diese bereits aus LSP abgeleiteten Sondermengen**. Sie validiert weder ihre Vorhersage noch eine automatische Großkundenerkennung. PANDA setzt das Bestätigungsfeld automatisch vor; eine unabhängige manuelle Prüfung ist nicht belegt. Wir übernehmen auch keine automatische Gleichsetzung mit B2B oder entsprechende Sondermengen anderer Anbieter.
 
 Größter verbleibender Fehler: PLZ 30855, beobachtet 5.660, im einfachen Restnachfragemodell durchschnittlich 1.665 vorhergesagt. Danach 30419: 2.424 beobachtet, 3.481 vorhergesagt. Das rechtfertigt eine Untersuchung der Standort-/Nutzungsmerkmale; zusätzliche freie Anbieterparameter helfen bislang nicht.
 
@@ -34,4 +34,4 @@ Größter verbleibender Fehler: PLZ 30855, beobachtet 5.660, im einfachen Restna
 
 Zuerst allgemeine Standortnachfrage und dokumentierte Sonderstandorte getrennt reproduzieren. Anbieterprofile weiter explizit modellieren, ihre räumlich nicht identifizierbaren Parameter aber nicht als gelernt darstellen. Das einfache Modell bleibt Vergleichsmaßstab. OSM-Gebäude-/Nutzungsmerkmale anhand derselben Aufteilungen prüfen; Datenstand und mögliche zeitliche Informationsleckage gegenüber 2021 ausweisen. Aktuelle OSM-Daten sind kein historisch unabhängiger Nachweis für 2021. Erst danach Jahreswachstum und Tagesvariabilität kalibrieren.
 
-Für die Wachstumsüberarbeitung müssen Marktdefinitionen geprüft werden: nationale Paketmengen sind nicht automatisch identisch mit KEP-Mengen oder regionaler DHL-Zustellnachfrage. Offizielle Ausgangsquelle: [Bundesnetzagentur, Paket-Sendungsmengen](https://www.bundesnetzagentur.de/DE/Fachthemen/Datenportal/3_Post/_svg_Post/Paket/P_Paketmarkt_Mengen/P_Paketmarkt_Mengen.html). In diesem Diagnoselauf wurde keine neue Wachstumskurve eingesetzt und kein MATSim gestartet.
+Für die Wachstumsüberarbeitung müssen Marktdefinitionen geprüft werden: nationale Paketmengen sind nicht automatisch identisch mit KEP-Mengen oder regionaler LSP-Zustellnachfrage. Offizielle Ausgangsquelle: [Bundesnetzagentur, Paket-Sendungsmengen](https://www.bundesnetzagentur.de/DE/Fachthemen/Datenportal/3_Post/_svg_Post/Paket/P_Paketmarkt_Mengen/P_Paketmarkt_Mengen.html). In diesem Diagnoselauf wurde keine neue Wachstumskurve eingesetzt und kein MATSim gestartet.

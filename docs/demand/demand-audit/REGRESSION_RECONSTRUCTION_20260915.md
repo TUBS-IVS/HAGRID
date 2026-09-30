@@ -17,7 +17,7 @@ Numerischer Abgleich mit `parcel-demand-estimation/input/final_grid_250_region_r
 ## Methodische Korrekturen
 
 1. Das 75%-Quantil ist kein bedingter Mittelwert. Seine Koeffizienten dürfen nicht als gemessene durchschnittliche Bestellraten ausgegeben werden. Den alten Fit als Vergleich rekonstruieren, für erwartete Nachfrage ein Mittelwertmodell prüfen.
-2. Aus DHL-Gesamtmengen allein sind lokale B2B-Anteile und alle Anbieterprofile nicht unabhängig identifizierbar. Markt-/Segmentannahmen explizit festhalten; DHL-Vorhersage und B2B-Plausibilität getrennt beurteilen.
+2. Aus LSP-Gesamtmengen allein sind lokale B2B-Anteile und alle Anbieterprofile nicht unabhängig identifizierbar. Markt-/Segmentannahmen explizit festhalten; LSP-Vorhersage und B2B-Plausibilität getrennt beurteilen.
 3. Zufällige GA-Lösungen sind keine empirisch begründeten Tagesverläufe. Referenzkalibrierung deterministisch; Tagesprozess und Parameterunsicherheit separat entsprechend bestehender Planung.
 4. Die Paperformel für PLZ-Mengen auf S. 15 verwendet den Anteil der Zellen an allen Zellen. Das ist keine geeignete Nachfragegewichtung. Mengen nach Nachfragebasis verteilen und Bilanz erhalten.
 5. Das bisher geplante Potenzial `1 + 0.1*employees` ist eine nachgelagerte Gewichtungsheuristik, keine Rekonstruktion der ursprünglichen Regression. Dieser Teil der Baseline-Spezifikation ist bis zum Vergleich vorläufig.
@@ -26,7 +26,7 @@ Numerischer Abgleich mit `parcel-demand-estimation/input/final_grid_250_region_r
 
 A. Historischer Vergleich: ursprünglicher q=.75-Fit auf altem Raster, soweit aus Quellen rekonstruierbar. Unbekannte Regeln ausdrücklich markieren, keine erfundene exakte Reproduktion.
 
-B. Bevorzugter einfacher Kandidat: nichtnegative additive Mittelwertschätzung `mu = beta_person*persons + beta_company*companies`, zunächst ohne freien Intercept. Unternehmensgröße als separater Erweiterungskandidat; mehrere Branchen erst bei ausreichender Unterstützung und mit Regularisierung. Die Koeffizienten sind aggregierte Modellraten, keine kausalen individuellen Bestellraten. Bei DHL als Ziel gilt eine explizite Beobachtungsgleichung mit DHL-Anteilen je Segment, statt DHL-Koeffizienten direkt zu Marktkoeffizienten umzudeuten.
+B. Bevorzugter einfacher Kandidat: nichtnegative additive Mittelwertschätzung `mu = beta_person*persons + beta_company*companies`, zunächst ohne freien Intercept. Unternehmensgröße als separater Erweiterungskandidat; mehrere Branchen erst bei ausreichender Unterstützung und mit Regularisierung. Die Koeffizienten sind aggregierte Modellraten, keine kausalen individuellen Bestellraten. Bei LSP als Ziel gilt eine explizite Beobachtungsgleichung mit LSP-Anteilen je Segment, statt LSP-Koeffizienten direkt zu Marktkoeffizienten umzudeuten.
 
 C. Erweiterung bei belegtem Mehrwert: additive positive Beiträge mit regional teilweise gemeinsam geschätzten Parametern; bei kleinen Stichproben starke Rückbindung an gemeinsame Raten. Nichtlinearer Mittelwertvergleich optional, ohne dessen Merkmalsbeiträge automatisch als B2B-Zerlegung zu interpretieren. Tagesmittel nicht als unabhängige ganzzahlige Poisson-Beobachtungen behandeln.
 
@@ -34,7 +34,7 @@ C. Erweiterung bei belegtem Mehrwert: additive positive Beiträge mit regional t
 
 - Ganze beobachtete Straßen bzw. fachlich geklärte Beobachtungsgruppen als kleinste Kalibriereinheit. Keine künstlichen Trainingsfälle durch Aufteilung derselben beobachteten Menge.
 - Als Alternative innerhalb jeder PLZ benachbarte Straßen zu zusammenhängenden Gruppen bündeln. Gruppierung aus Geometrie und vorhandenen Personen-/Betriebsdaten, mit Mindestunterstützung und begrenzter räumlicher Ausdehnung; keine neue OSM-Pflicht.
-- DHL-Mengen nicht gleichzeitig zur Konstruktion von Clustern und als unabhängig behauptete Testziele verwenden. Ein mengenbasiertes Clustering wäre ein gesonderter, nur auf Trainingszielen aufgebauter Vergleich.
+- LSP-Mengen nicht gleichzeitig zur Konstruktion von Clustern und als unabhängig behauptete Testziele verwenden. Ein mengenbasiertes Clustering wäre ein gesonderter, nur auf Trainingszielen aufgebauter Vergleich.
 - Zuerst ohne Clustering testen; dann mehrere Struktur-/Größenschwellen. Clustering ist ein Stabilisierungsversuch, keine garantierte Verbesserung. Gebäude und Betriebsstandorte bleiben Nachfrageorte; Gruppen dienen der Schätzung.
 - Alle Kandidaten auf identischen zurückgehaltenen Beobachtungseinheiten und räumlichen Folds vergleichen. Kein scheinbarer Gewinn durch gröbere Testaggregation. Regularisierung und Gruppenparameter nur im Training wählen.
 
@@ -42,6 +42,6 @@ C. Erweiterung bei belegtem Mehrwert: additive positive Beiträge mit regional t
 
 Vor finaler Umsetzung der Referenzmathematik in Aufgabe 3: Trainingsziel, Nullwerte, räumliche Zuordnung und historische B2B-Regel dokumentieren; alte Regression gegen einfache Mittelwertkandidaten vergleichen. Der Ausschluss ganzer Beobachtungen über 1000 Paketen bleibt konfiguriert und dokumentiert. Auswahl anhand räumlich zurückgehaltener wMAPE/MAE, Bias, Größenklassen, Koeffizientenstabilität und Bilanzen. Eine auf dieselben 2021-Ziele kalibrierte Rekonstruktion separat von Testgüte ausweisen. Keine garantierte Fehlerschwelle vor Ergebnissen nennen.
 
-Jahresfortschreibung, konfigurierbarer DHL-Einfluss, Kalender, räumlich wechselnde Tagesnachfrage, Monte Carlo und ein gemeinsames Stage-Dashboard bleiben bestehen. Die zusätzliche Stage „Strukturmodell“ zeigt Herkunft, Kandidatenvergleich, räumliche Unterstützung und Unsicherheit. Noch keine Implementierung dieser Varianten erfolgt.
+Jahresfortschreibung, konfigurierbarer LSP-Einfluss, Kalender, räumlich wechselnde Tagesnachfrage, Monte Carlo und ein gemeinsames Stage-Dashboard bleiben bestehen. Die zusätzliche Stage „Strukturmodell“ zeigt Herkunft, Kandidatenvergleich, räumliche Unterstützung und Unsicherheit. Noch keine Implementierung dieser Varianten erfolgt.
 
 Methodenquellen: https://www.statsmodels.org/stable/examples/notebooks/generated/quantile_regression.html ; https://pysal.org/spopt/notebooks/maxp.html ; https://pysal.org/spopt/notebooks/skater.html

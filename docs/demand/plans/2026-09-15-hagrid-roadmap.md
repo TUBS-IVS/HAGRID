@@ -8,7 +8,7 @@ Stand: 15. September 2026. Status: Planungsunterlagen erstellt, technische und m
 
 Der [konsolidierte Entwurf](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/specs/2026-09-15-hagrid-baseline-design.md) ist die aktuelle fachliche Umsetzungsgrundlage. Er baut auf der [verifizierten Notebook-/Baseline-Planung](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/BASELINE_PLAN_REVIEW_20260915.md) auf. Die neu ergänzten Regeln zur zukünftigen räumlichen Mischung ersetzen eine feste Fortschreibung jeder PLZ.
 
-Der DHL-Einfluss ist räumlich konfigurierbar: fest, je Jahr oder mit Halbwertszeit. Er verändert nicht zusätzlich die Gesamtmenge. Monte Carlo unterscheidet unsichere Zukunftspfade und zufällige Tagesverläufe. Eine globale Sensitivitätsanalyse zeigt, welche angenommenen Parameter die Ergebnisse besonders beeinflussen. Die alte HAGRID-Grundlogik bleibt erkennbar; freie Fits, OSM-Erweiterungen und exakte Straßenrekonstruktion bleiben experimentell.
+Der LSP-Einfluss ist räumlich konfigurierbar: fest, je Jahr oder mit Halbwertszeit. Er verändert nicht zusätzlich die Gesamtmenge. Monte Carlo unterscheidet unsichere Zukunftspfade und zufällige Tagesverläufe. Eine globale Sensitivitätsanalyse zeigt, welche angenommenen Parameter die Ergebnisse besonders beeinflussen. Die alte HAGRID-Grundlogik bleibt erkennbar; freie Fits, OSM-Erweiterungen und exakte Straßenrekonstruktion bleiben experimentell.
 
 **Ergänzter Dashboard-Auftrag:** Ein gemeinsames Dashboard pro Output-Arbeitsbereich mit Run-Auswahl und Stage-Navigation führt alle Auswertungen zusammen. Markt/B2B, Referenz, Zukunft, Kalender, Tagesnachfrage, Anbieter, Monte Carlo und Sensitivität sind Ansichten derselben Oberfläche. Analyse-Runs werden ihrer Referenz zugeordnet; neue Stages öffnen keine weiteren Dashboardseiten oder Tabs. Details und Abnahmetests stehen in Spec 5a und Aufgaben 8/11/12.
 
@@ -18,7 +18,7 @@ Der DHL-Einfluss ist räumlich konfigurierbar: fest, je Jahr oder mit Halbwertsz
 |---|---|---|---|
 | [01 – Basismodell](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-01-baseline-core.md) | 1–4 | Frischer deterministischer Referenzlauf aus vorhandenen Inputs, Markt-/B2B-Reihen und abgestimmten Anbieterprofilen; Experimente abgegrenzt | Referenzniveau, Quellen, Unterstützung, Bilanzen und Importgrenze geprüft |
 | [02 – Tagesnachfrage](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-02-daily-demand.md) | 5–8 | Jahres-/Kalenderentwicklung, Mengen-/Ortsschwankungen, Ganzzahlpakete, kompatible Exporte und Dashboard | Kalender-/Countbilanzen, Reproduzierbarkeit, räumliche Mittelwerte und alte Verbraucher geprüft |
-| [03 – Unsicherheitsanalyse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-03-uncertainty.md) | 9–12 | Steuerbarer DHL-Einfluss, Monte-Carlo-Ensembles, getrennte Intervalle, Morris-Screening | Endpunkte, Pfade, Designs, Gewichtung, Konvergenz und Sensitivitätsgegenbeispiele geprüft |
+| [03 – Unsicherheitsanalyse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-03-uncertainty.md) | 9–12 | Steuerbarer LSP-Einfluss, Monte-Carlo-Ensembles, getrennte Intervalle, Morris-Screening | Endpunkte, Pfade, Designs, Gewichtung, Konvergenz und Sensitivitätsgegenbeispiele geprüft |
 
 Alle zwölf Aufgaben enthalten Dateien, Schnittstellen, konkrete Testfälle, Implementierungsschritte und einen Review-Abschluss. Optionale spätere Sobol-Analysen, zusätzliche Datenbeschaffung und neue Prognosemodellfamilien sind kein versteckter Bestandteil dieser Lieferung.
 
@@ -28,7 +28,7 @@ Alle zwölf Aufgaben enthalten Dateien, Schnittstellen, konkrete Testfälle, Imp
 |---|---|
 | HAGRID-Grundgedanken behalten, Fehler glätten | Aufgaben 2,3,5,6 |
 | Neues experimentell abgrenzen | Aufgaben 1,4 |
-| Regionalniveau aus DHL 2021 und Zukunftsjahre | Aufgaben 3,5 |
+| Regionalniveau aus LSP 2021 und Zukunftsjahre | Aufgaben 3,5 |
 | Anbieter über B2B unterscheiden | Aufgaben 2,3,5,6 |
 | Einfluss alter Daten konfigurierbar | Aufgabe 9 |
 | Menge UND Ort täglich variabel | Aufgaben 6,7 |

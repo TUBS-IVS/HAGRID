@@ -4,7 +4,7 @@
 
 **Status: Spezifikation für den Neubau, noch keine implementierte Demand-Pipeline.** Der Entwurf verwendet die vorhandenen Inputs als Ausgangspunkt. Zusätzliche Daten verbessern Kalibrierung und Aktualität, sind aber keine Voraussetzung für eine erste transparente Szenarioversion.
 
-**Präzisierung nach PANDA-Review:** Der [gemeinsame Hybridansatz](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/PANDA_HAGRID_CONCEPT.md) konkretisiert die Modellwahl. Bevölkerung plus Wohnstruktur wird zuerst als Referenz reproduziert; der Haushaltsansatz unten ist eine zu prüfende Erweiterung. Anbieterprofile und DHL-Beobachtungsmodell werden gemeinsam kalibriert, nicht nur nachträglich auf eine vermeintlich bekannte Gesamtverteilung angewandt.
+**Präzisierung nach PANDA-Review:** Der [gemeinsame Hybridansatz](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/PANDA_HAGRID_CONCEPT.md) konkretisiert die Modellwahl. Bevölkerung plus Wohnstruktur wird zuerst als Referenz reproduziert; der Haushaltsansatz unten ist eine zu prüfende Erweiterung. Anbieterprofile und LSP-Beobachtungsmodell werden gemeinsam kalibriert, nicht nur nachträglich auf eine vermeintlich bekannte Gesamtverteilung angewandt.
 
 ## 1. Ziel und fachliche Grenze
 
@@ -14,7 +14,7 @@ Das System liefert drei unterschiedliche Produkte:
 
 | Produkt | Zweck | Ergebnis |
 |---|---|---|
-| Baseline-Rekonstruktion | Modell und Raumverteilung am historischen Referenzstand prüfen | Erwartete Mengen für den genau definierten DHL-/Hermes-Beobachtungszeitraum |
+| Baseline-Rekonstruktion | Modell und Raumverteilung am historischen Referenzstand prüfen | Erwartete Mengen für den genau definierten LSP-/Hermes-Beobachtungszeitraum |
 | Aktuelle Schätzung | Strukturstand und Intensitäten auf 2026 fortschreiben | Tages-/Jahreserwartung und Bandbreiten mit ausgewiesenem Datenalter |
 | Zukunftsszenarien | Entwicklung etwa bis 2030/2035 und optional 2050 untersuchen | Mehrere gemeinsame Pfade für Bevölkerung, B2B, B2C, Anbieter und Logistikpolitik |
 
@@ -32,7 +32,7 @@ flowchart LR
     C[Firmen und Beschäftigte] --> B[Betriebliche Nachfrage an Standorten]
     R --> D[Erwartete Nachfrage und simulierte Mengen]
     B --> D
-    O[Beobachtungen DHL und Hermes] --> K[Kalibrierung]
+    O[Beobachtungen LSP und Hermes] --> K[Kalibrierung]
     K --> D
     D --> A[Anbieter und Zustellpolitik]
     A --> Z[Zustellorte und Netzzugänge]
@@ -50,7 +50,7 @@ Jede Einheit erhält genau einen primären Standort. Für unsichere räumliche Z
 | Straßensegmente mit eindeutigen Einzugsgebieten | Rückfalloption, wenn Standortqualität zu schwach ist | Ergebnis hängt an Straßennetz und Segmentierung |
 | 250-m-, 100-m- oder Hexagonraster | Karten, Berichte, Vergleich zum Altmodell, gegebenenfalls räumliche Glättung | Auflösungswechsel erzeugt keine neuen Informationen |
 
-Vor allem müssen Gebiete mit alten Nullmengen und heutigen Einwohnern/Firmen eine positive Erwartung erhalten können. Ein fehlender DHL-Wert ist kein Beweis für fehlende Gesamtmarktnachfrage.
+Vor allem müssen Gebiete mit alten Nullmengen und heutigen Einwohnern/Firmen eine positive Erwartung erhalten können. Ein fehlender LSP-Wert ist kein Beweis für fehlende Gesamtmarktnachfrage.
 
 ## 3. B2C aus privaten Nachfrageeinheiten
 
@@ -105,7 +105,7 @@ b_{r,y} = \frac{\sum_{j\in r}\lambda^B_{j,y}}
 
 Damit kann der Anteil sinken, obwohl die absolute B2B-Menge wächst, wenn B2C schneller wächst. Eine vorgegebene 20-%-Untergrenze ist nicht mehr Bestandteil der Modellstruktur. Unterschiedliche Branchen können über die Jahre wachsen, stagnieren oder schrumpfen.
 
-**Identifikationsgrenze:** DHL-Gesamtmengen allein trennen Firmen- und Privatkundenintensitäten nicht eindeutig. Unterschiedliche B2B-/B2C-Kombinationen können dieselben Straßenmengen erklären. Nationale Anteile, Anbieterwissen und Legacy-Zellen können als unsichere Priors helfen; sie ersetzen keine unabhängigen lokalen B2B-Messungen. Ein höher aufgelöstes Modell soll diese Ungewissheit abbilden, nicht durch viele Dezimalstellen verdecken.
+**Identifikationsgrenze:** LSP-Gesamtmengen allein trennen Firmen- und Privatkundenintensitäten nicht eindeutig. Unterschiedliche B2B-/B2C-Kombinationen können dieselben Straßenmengen erklären. Nationale Anteile, Anbieterwissen und Legacy-Zellen können als unsichere Priors helfen; sie ersetzen keine unabhängigen lokalen B2B-Messungen. Ein höher aufgelöstes Modell soll diese Ungewissheit abbilden, nicht durch viele Dezimalstellen verdecken.
 
 ## 5. Gesamtvolumen, Anbieter und Beobachtungen gemeinsam richtig behandeln
 
@@ -114,11 +114,11 @@ Damit kann der Anteil sinken, obwohl die absolute B2B-Menge wächst, wenn B2C sc
 Für einen einfachen Übergangsfall kann das regionale Basisvolumen aus Beobachtung und Basisjahranteil entstehen:
 
 \[
-V_{r,y_0} \approx D_{r,y_0}/s^{DHL}_{r,y_0},\qquad
+V_{r,y_0} \approx D_{r,y_0}/s^{LSP}_{r,y_0},\qquad
 V_{r,y}=V_{r,y_0}G_{r,y}.
 \]
 
-Erst danach wird `s_DHL(r,y)` auf `V(r,y)` angewandt. Eine Änderung des Anbieteranteils verändert die Verteilung auf Anbieter, nicht zusätzlich das zuvor festgelegte Gesamtvolumen. Weil der Basisanteil unsicher ist, muss seine Unsicherheit bereits in `V(r,y0)` eingehen.
+Erst danach wird `s_LSP(r,y)` auf `V(r,y)` angewandt. Eine Änderung des Anbieteranteils verändert die Verteilung auf Anbieter, nicht zusätzlich das zuvor festgelegte Gesamtvolumen. Weil der Basisanteil unsicher ist, muss seine Unsicherheit bereits in `V(r,y0)` eingehen.
 
 Für das bessere Modell werden räumliche Intensitäten und wenige Anbieterparameter gemeinsam gegen Beobachtungsaggregate angepasst. Für Beobachtung o gilt sinngemäß:
 
@@ -144,7 +144,7 @@ Harte Randbedingungen betreffen echte Bilanzen und Zulässigkeit: Nichtnegativit
 
 ### 5.3 Anbieterzuordnung
 
-Anbieterwahrscheinlichkeiten können als regularisierte Softmax-Funktion von Empfängertyp, Branche und Region beschrieben werden. In einer ersten Version genügen wenige Gruppen. Die nationale Anbieterstruktur wirkt als Prior; vorhandene DHL-/Hermes-Beobachtungen aktualisieren sie lokal. Anbieter ohne Beobachtungen bleiben stärker priorgetrieben.
+Anbieterwahrscheinlichkeiten können als regularisierte Softmax-Funktion von Empfängertyp, Branche und Region beschrieben werden. In einer ersten Version genügen wenige Gruppen. Die nationale Anbieterstruktur wirkt als Prior; vorhandene LSP-/Hermes-Beobachtungen aktualisieren sie lokal. Anbieter ohne Beobachtungen bleiben stärker priorgetrieben.
 
 Einheitliche Carrier-IDs, aktive Anbieter je Jahr und gegebenenfalls eine explizite Restkategorie verhindern willkürliches Entfernen kleiner Anteile. Firmen erhalten in mehreren Tagen nicht zwingend unabhängig neu gezogene Anbieter: Ein beständiger Standort-/Vertragsanteil kann mit einer variablen Sendungskomponente kombiniert werden. Auch diese Beständigkeit ist ohne Messdaten zunächst eine Szenarioannahme.
 
@@ -169,7 +169,7 @@ Nachfrageentstehung kann am Sonntag positiv sein, während ein Zustellkalender a
 
 | Ebene | Beispiel | Ziehung und Wirkung |
 |---|---|---|
-| Parameter-/Datenunsicherheit | Branchenintensität, fehlende Haushalte, lokaler DHL-Anteil | Pro Ensemblemitglied; über dessen gesamten Pfad konsistent |
+| Parameter-/Datenunsicherheit | Branchenintensität, fehlende Haushalte, lokaler LSP-Anteil | Pro Ensemblemitglied; über dessen gesamten Pfad konsistent |
 | Struktur-/Szenariounsicherheit | Bevölkerung, Branchenbeschäftigung, Onlinekaufintensität | Gemeinsam definierter Jahrespfad; keine unabhängigen Zufallswerte je Gebiet/Jahr |
 | Prozessschwankung | Gemeinsamer Peak, Betriebsaktivität, individuelle Paketzahl | Tages-/Wochenprozess mit räumlichen und zeitlichen Zusammenhängen |
 
@@ -238,7 +238,7 @@ Ein einzelner `run` führt alle notwendigen Stages in Abhängigkeitsreihenfolge 
 |---|---|---|---|
 | 00 `ingest` | Vorhandene Rohinputs und Metadaten | Eingabenmanifest, harmonisierte Tabellen | Pflichtfelder, Einheiten, Datumsstand, CRS und IDs bekannt |
 | 01 `spatial_support` | Personen, Haushalte, Firmen und Geometrien | Standorte, private Einheiten, Betriebe, Zuordnungstabellen | Keine stillen Verluste oder Mehrfachgewichte; Imputation markiert |
-| 02 `observations` | DHL, Hermes, nationale Daten, schwache Legacy-Priors | Beobachtungstabelle mit Gebiet und Messfenster | Beobachtung/Schätzung getrennt; Denominator nachvollziehbar |
+| 02 `observations` | LSP, Hermes, nationale Daten, schwache Legacy-Priors | Beobachtungstabelle mit Gebiet und Messfenster | Beobachtung/Schätzung getrennt; Denominator nachvollziehbar |
 | 03 `fit_baseline` | Merkmale und Trainingsbeobachtungen | Modellparameter, Diagnostik, Kalibrierungsstand | Konvergenz, Zulässigkeit, Identifikations-/Sensitivitätsdiagnose |
 | 04 `project` | Baseline, Szenario und Zieljahre | Jährliche Standort-/Segmentintensitäten und Parameterpfade | Bestands- und Intensitätswachstum nicht doppelt gezählt |
 | 05 `calendar` | Kalenderregeln und Jahresintensitäten | Tageserwartungen bzw. sparsame Faktoren | Jahresbilanz, Feiertage, Schaltjahr, ISO-Grenzen |
@@ -294,7 +294,7 @@ Technische Korrektheit und empirische Prognosegüte werden separat bewertet.
 
 Die Entscheidung über B0/B1/B2 erfolgt anhand identischer Testdaten und mehrerer Seeds. Eine Verbesserung muss gegen eine transparente Baseline belegt werden. Keine frei erfundene Zielquote wie „20 % genauer“ ohne vorangegangenen Benchmark.
 
-Unabhängige Tests dürfen die zurückgehaltenen Mengen auch nicht indirekt über Legacy-`total_coun`, DHL-Boosts oder vorab berechnete B2B-Zellen verwenden. Die Trennung erfolgt vor Feature-/Prior-Erzeugung. Methodischer Bezug für zeitliche Splits: [Time series cross-validation](https://otexts.com/fpp3/tscv.html).
+Unabhängige Tests dürfen die zurückgehaltenen Mengen auch nicht indirekt über Legacy-`total_coun`, LSP-Boosts oder vorab berechnete B2B-Zellen verwenden. Die Trennung erfolgt vor Feature-/Prior-Erzeugung. Methodischer Bezug für zeitliche Splits: [Time series cross-validation](https://otexts.com/fpp3/tscv.html).
 
 ## 10. Konkrete Umsetzungsreihenfolge
 
@@ -306,7 +306,7 @@ Package, Konfiguration, Runner, Schemas und Manifest anlegen. Vorhandene Inputs 
 
 ### Inkrement B — B2B/B2C fachlich neu kalibrieren
 
-Branchen-/Beschäftigtenmodell und privaten Gebäude-/Haushaltsansatz implementieren. Beobachtungsfenster für DHL und Hermes klären, Baseline-Zielniveau und Anbieteranteile gemeinsam nachvollziehbar kalibrieren. Räumliche Tests und Vergleich mit einfachen Modellen durchführen. Legacy-B2B-Zellen nur als separate Sensitivitätsvariante aufnehmen.
+Branchen-/Beschäftigtenmodell und privaten Gebäude-/Haushaltsansatz implementieren. Beobachtungsfenster für LSP und Hermes klären, Baseline-Zielniveau und Anbieteranteile gemeinsam nachvollziehbar kalibrieren. Räumliche Tests und Vergleich mit einfachen Modellen durchführen. Legacy-B2B-Zellen nur als separate Sensitivitätsvariante aufnehmen.
 
 **Fertig, wenn:** Aktuelle Schätzungen erklären, welche Inputs und Annahmen die Mengen bestimmen; die B2B-Zerlegung besitzt einen dokumentierten Unsicherheitsbereich und keinen unberechtigten Genauigkeitsanspruch.
 
@@ -326,7 +326,7 @@ Queue-basierte Bündelung, Anbieter-/Standortbeständigkeit, Zustellkalender und
 
 Diese Punkte blockieren weder Packageaufbau noch Datenprofiling, müssen aber vor einer fachlich belastbaren Schätzung entschieden und im Manifest erfasst werden:
 
-1. Welchen genauen Zeitraum und welche Liefertage repräsentiert DHL `tagesschni`? Sind das Pakete, Stopps oder eine andere Zählung?
+1. Welchen genauen Zeitraum und welche Liefertage repräsentiert LSP `tagesschni`? Sind das Pakete, Stopps oder eine andere Zählung?
 2. Welche Einheit und Messfenster haben die Hermes-Jahresspalten? Woher stammt der bisherige Divisor 26?
 3. Auf welche Bezugsjahre gehen Personen, Firmen und Beschäftigte zurück? Welche Skalierung und synthetischen Ergänzungen enthalten sie?
 4. Wie wurde das alte Raster einschließlich `b2b_ratio`, `fit`, `masked_data` und `total_coun` ursprünglich erzeugt? Die verantwortliche Ursprungsschätzung ist in den geprüften Demand-Stages nicht enthalten.

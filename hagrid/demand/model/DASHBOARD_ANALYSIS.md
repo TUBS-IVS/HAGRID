@@ -2,7 +2,7 @@
 
 Run: `hannover-foundation-dashboard-20260909`, 9. September 2026. [Dashboard öffnen](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/runs/hannover-foundation-dashboard-20260909/dashboard.html).
 
-Die folgenden Befunde beschreiben Standort- und Zuordnungsqualität. Es wurde noch keine Paketnachfrage geschätzt. „Offen“ bedeutet: kein eindeutiger geometrischer DHL-Kandidat unter der aktuellen Regel (eindeutige PLZ, nächstgelegene DHL-Linie, höchstens 100 m). Auch eindeutige Kandidaten sind fachlich noch unbestätigt.
+Die folgenden Befunde beschreiben Standort- und Zuordnungsqualität. Es wurde noch keine Paketnachfrage geschätzt. „Offen“ bedeutet: kein eindeutiger geometrischer LSP-Kandidat unter der aktuellen Regel (eindeutige PLZ, nächstgelegene LSP-Linie, höchstens 100 m). Auch eindeutige Kandidaten sind fachlich noch unbestätigt.
 
 ## 1. Die Gesamtquote verdeckt die B2B-Lücke
 
@@ -14,13 +14,13 @@ Die folgenden Befunde beschreiben Standort- und Zuordnungsqualität. Es wurde no
 
 An offenen Standorten liegen **10.516 Einwohner (0,9 % des Personenbestands)** und **85.380 Beschäftigte (13,1 % des Beschäftigtenbestands)**. Der Gesamtwert von 96,8 % eindeutigen Kandidaten ist deshalb kein ausreichendes Qualitätsurteil für ein B2B-Modell. Beschäftigte sind eine strukturelle Größe, keine direkte Schätzung fehlender Pakete.
 
-Priorität: Betriebsstandorte und deren Adress-/Netzzuordnung prüfen, bevor aus der DHL-Passung auf B2B-Intensitäten geschlossen wird. Größere Firmenareale und abweichende Zufahrten sind mögliche Erklärungen; sie sind durch diese Auswertung noch nicht nachgewiesen.
+Priorität: Betriebsstandorte und deren Adress-/Netzzuordnung prüfen, bevor aus der LSP-Passung auf B2B-Intensitäten geschlossen wird. Größere Firmenareale und abweichende Zufahrten sind mögliche Erklärungen; sie sind durch diese Auswertung noch nicht nachgewiesen.
 
 ## 2. Unterschiedliche Problemtypen je PLZ
 
 | PLZ | Befund | Nächste Prüfung |
 |---|---|---|
-| 30938 | 1.945 offene Standorte von 8.507 (22,9 %); darunter 1.711 mit gleich nahen Kandidaten | Überlagerungen und Semantik der DHL-Linien prüfen; eine größere Entfernungsschwelle löst Gleichstände nicht |
+| 30938 | 1.945 offene Standorte von 8.507 (22,9 %); darunter 1.711 mit gleich nahen Kandidaten | Überlagerungen und Semantik der LSP-Linien prüfen; eine größere Entfernungsschwelle löst Gleichstände nicht |
 | 30855 | 507 von 1.606 Betrieben offen (31,6 %); 6.749 Beschäftigte an diesen Standorten | Gewerbestandorte und tatsächliche Straßen-/Adresszuordnung gezielt abgleichen |
 | 30419 | 281 von 1.156 Betrieben offen (24,3 %); 22.761 Beschäftigte betroffen | Hohe Priorität nach Beschäftigtengewicht, auch wenn die absolute Standortzahl kleiner ist |
 | 30669 | 17 Standorte, alle offen | Sonderfall mit kleiner Fallzahl; 100 % nicht mit großflächiger Datenlücke verwechseln |
@@ -29,7 +29,7 @@ Priorität: Betriebsstandorte und deren Adress-/Netzzuordnung prüfen, bevor aus
 
 ## 3. Wiederholte Straßennamen nicht pauschal zusammenführen
 
-75 DHL-Zeilen gehören zu 33 wiederholten PLZ-/Straßenschlüsseln. Von den insgesamt 2.253 Standorten mit gleich nahen Kandidaten betreffen **1.701 denselben Straßennamen**. Bei **1.597 dieser Standorte unterscheiden sich die gemeldeten Werte**; bei 104 sind Namen und Werte gleich.
+75 LSP-Zeilen gehören zu 33 wiederholten PLZ-/Straßenschlüsseln. Von den insgesamt 2.253 Standorten mit gleich nahen Kandidaten betreffen **1.701 denselben Straßennamen**. Bei **1.597 dieser Standorte unterscheiden sich die gemeldeten Werte**; bei 104 sind Namen und Werte gleich.
 
 Das zeigt einen konkreten Prüfbedarf an der Beobachtungsdefinition. Gleicher Straßenname reicht weder zum Summieren noch zum Löschen einer Zeile. Auch gleicher Name und Wert beweist keine Dublette. Erst Originaldaten bzw. Metadaten können klären, ob Fragmente, Richtungen, Teilgebiete oder mehrfach übernommene Beobachtungen vorliegen.
 
@@ -45,4 +45,4 @@ Das Dashboard wird als eigene Stage bei jedem erfolgreichen Foundation-Lauf gesc
 
 Neun Python-Tests bestanden, einschließlich Prüfungen gegen Doppelzählung bei Gleichständen/PLZ-Grenzen und gegen unvollständige Statusdaten. Ein vollständiger Real-Lauf hat die automatische Dashboard-Stage erfolgreich ausgeführt. Im Browser wurden Darstellung, Betriebsfilter, PLZ-Suche und Kartenmetrik geprüft.
 
-Empfohlene Arbeitsreihenfolge: DHL-Straßensemantik insbesondere für 30938 klären; danach Betriebszuordnungen in 30855 und 30419 priorisieren; erst anschließend die Kalibrierungsbasis freigeben. Die vorhandenen zentralen Summen sind erhalten, aber noch keine nachgewiesen richtigen lokalen Messzuordnungen.
+Empfohlene Arbeitsreihenfolge: LSP-Straßensemantik insbesondere für 30938 klären; danach Betriebszuordnungen in 30855 und 30419 priorisieren; erst anschließend die Kalibrierungsbasis freigeben. Die vorhandenen zentralen Summen sind erhalten, aber noch keine nachgewiesen richtigen lokalen Messzuordnungen.

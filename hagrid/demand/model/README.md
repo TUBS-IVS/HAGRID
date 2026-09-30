@@ -50,12 +50,12 @@ With `osm_buildings` and `osm_points`, the reference runs in street mode (`ancho
 [`2026-09-24-hagrid-street-anchor-buildings-design.md`](../../../docs/demand/specs/2026-09-24-hagrid-street-anchor-buildings-design.md)):
 
 1. **Buildings** (`<run>/buildings/`): person building points go to OSM buildings (state of 1 January 2021), firms to
-   matching buildings within their 100 m census cell (area × industry fit). Every building gets its DHL street (street name
+   matching buildings within their 100 m census cell (area × industry fit). Every building gets its street from the LSP data (street name
    and postcode, else the nearest street within 100 m, then within 250 m), its 50 m section and its street side.
 2. **Anchor** (`reference_anchor.json`, `reference_streets.parquet`): a level correction per postcode via residential
-   streets (only for postcodes with an extreme DHL level; 2021: 30855), DHL rates per resident and per firm, the split of
-   every DHL street into B2C and B2B, the DHL B2B share from these data and the extrapolation to all carriers. Streets with
-   DHL volume but no building get synthetic points; buildings without a street and DHL gaps get the structural model.
+   streets (only for postcodes with an extreme LSP level; 2021: 30855), LSP rates per resident and per firm, the split of
+   every LSP street into B2C and B2B, the B2B share of the LSP from these data and the extrapolation to all carriers. Streets with
+   LSP volume but no building get synthetic points; buildings without a street and LSP gaps get the structural model.
 3. **Stops** (`reference_stops.parquet`): buildings on the same street side within 2 × 40 m form one stop, large receivers
    (≥ 15 parcels a day) a stop of their own. The MATSim export writes one row per stop (`id`, `stop_id`, `str_idx`,
    `section_id`) and splits rows above 400 parcels. With `notebook_output_dir`, the run compares every day with the file of
@@ -67,8 +67,8 @@ The OSM files are built once from the Geofabrik extract (© OpenStreetMap contri
 python -m hagrid_demand baseline osm-clip --pbf ../input/hannover/osm/niedersachsen-210101.osm.pbf --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/osm
 ```
 
-Acceptance run of 24 September 2026 (the eight days of the notebook generator, 6 min): q_DHL 0.254; regional volume 2021
-of 60.3 million parcels on 306 delivery days; 99.5 % of the persons in buildings; 98 % of the volume directly from DHL
+Acceptance run of 24 September 2026 (the eight days of the notebook generator, 6 min): q_LSP 0.254; regional volume 2021
+of 60.3 million parcels on 306 delivery days; 99.5 % of the persons in buildings; 98 % of the volume directly from LSP
 streets, 0.6 % structural fallback; a median of 51 parcels per resident and year; daily volumes 4–5 % below the notebook
 (level correction of 30855); postcode correlation without 30855 0.97–0.98; 44,000–51,000 stops per day with a median of
 2–3 parcels.
@@ -92,7 +92,7 @@ The annual volume is distributed once over the whole year; `dates` only selects 
   calendar (2021: 306).
 - **B2B per carrier:** bounds, start values and scaling as in notebook 05 (`data/provider_priors.json`); the national B2B
   target is met exactly every year without leaving the bounds.
-- **Business weight:** 1 per firm; in the DHL street check the number of employees explains nothing.
+- **Business weight:** 1 per firm; in the LSP street check the number of employees explains nothing.
   `business_potential.model: company_plus_employees` (1 + 0.1 × employees, as in notebook 06) remains optional.
 - **Spatial daily variation:** Dirichlet between postcodes (`between`, notebook 50,000) and within postcodes
   (`within_per_site` × number of sites).
@@ -135,10 +135,10 @@ the daily course follows from shipping day and transit time instead of a fixed d
    expected course stays the same. The annual volume per carrier is preserved.
 6. **Space:** carrier strongholds emerge from the B2B/B2C mix. B2B parcels go to firm sites and B2C parcels to homes, each
    with the carrier shares of its segment. Where there is much business, UPS and FedEx are strong, in residential areas
-   Amazon and Hermes; DHL follows its measured street volumes. Frequent receivers (`spatial.site_frailty_cv` 0.5: a gamma
+   Amazon and Hermes; the anchor LSP follows its measured street volumes. Frequent receivers (`spatial.site_frailty_cv` 0.5: a gamma
    factor per site and year, normalised per street and postcode so the street anchor and the postcode volumes hold) are
    large on many days. Optionally, `spatial.carrier_plz_log_sd` draws additional random strongholds per carrier and postcode
-   (default 0; IPF keeps the postcode and carrier volumes, but DHL then moves as well). Both are assumptions without data
+   (default 0; IPF keeps the postcode and carrier volumes, but the anchor LSP then moves as well). Both are assumptions without data
    and apply only in shipping mode.
 
 ### Parcel Lockers, Parcel Shops and Shared Boxes
@@ -416,8 +416,8 @@ After installation, `hagrid-demand foundation --config configs/hannover.json` wo
 
 1. `ingest`: SHA-256 of the consumed files including shapefile components; inventory of further local files.
 2. `build_sites`: private building units and single business sites; the population stock is preserved.
-3. `audit_observations`: DHL streets and Hermes postcode/year values in their original semantics, with quality flags.
-4. `link_candidates`: unique postcode membership and the nearest DHL line within a configurable distance.
+3. `audit_observations`: LSP streets and Hermes postcode/year values in their original semantics, with quality flags.
+4. `link_candidates`: unique postcode membership and the nearest LSP line within a configurable distance.
 5. `report`: volume balances, assignment status and open prerequisites for the calibration.
 6. `dashboard`: a standalone HTML dashboard with postcode map, filters, tables and automatically computed findings.
 
@@ -449,7 +449,7 @@ without rewriting their original code version. [The evaluation of the first dash
 
 The fit must not use the candidates as confirmed assignments. Without addresses, proximity and postcode are only
 indications. Equidistant lines, boundary points, missing geometries and contradictory building IDs stay visible. Repeated
-DHL street keys are neither summed nor deduplicated automatically. No parcel volumes are distributed to sites and no
+LSP street keys are neither summed nor deduplicated automatically. No parcel volumes are distributed to sites and no
 network links are invented. A run can be technically complete and still report `calibration_ready: false`; this version
 always does, because the definition of `tagesschni`, the Hermes units, the temporal origin and the actual assignment must
 be confirmed before a calibration. The distance of 100 m and the building tolerance of 5 m are configurable working
@@ -466,7 +466,7 @@ python -m hagrid_demand street-reference --model-run hagrid/demand/runs/kep-refe
 python -m hagrid_demand logistics-audit --foundation hagrid/demand/runs/hannover-foundation-dashboard-20260909 --output hagrid/demand/runs/my-osm-audit --regional
 ```
 
-The street reconstruction keeps every cleaned DHL observation of 2021 individually. Unique but spatially unconfirmed
+The street reconstruction keeps every cleaned LSP observation of 2021 individually. Unique but spatially unconfirmed
 candidates provide model weights. Volumes that cannot be assigned stay separate in `unallocated_street_demand.parquet` with
 their original street geometry. `street_checks.csv` and `postal_checks.csv` each check the site volume plus the open volume.
 Exact sums are a data binding here, not an independent measure of predictive quality. Other carriers keep their model
@@ -488,7 +488,7 @@ python -m hagrid_demand.model_search --config hagrid/demand/model/configs/local-
 The comparison needs a complete regional OSM audit. Missing postcodes are not filled with zero features, and there is
 neither a manual Langenhagen constant nor any new exclusion of target values. `--logistics-snapshot current` explicitly
 runs a retrospective comparison with current map features; the dashboard marks it as a temporally mismatched proxy attempt
-for DHL 2021, and no model release is derived from it. The default stays `2021`.
+for the LSP data of 2021, and no model release is derived from it. The default stays `2021`.
 
 The continuation of 14 September 2026 produced a street anchor with 85,113 assigned and 826 open volume units, a current
 regional OSM audit and four additional logistics candidates; the complete historical query stayed blocked by server errors.

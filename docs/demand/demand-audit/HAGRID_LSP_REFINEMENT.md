@@ -43,14 +43,14 @@ Die vorhandenen HAGRID-Werte bilden Startwerte q0. Eine erste klar überprüfbar
 
 Harte historische Anbietergrenzen werden zunächst auf gemeinsame Machbarkeit geprüft: `sum m_c lower_c <= b <= sum m_c upper_c`. Bei Konflikten wird die Unvereinbarkeit berichtet und die unsicherere Vorgabe begründet gelockert. Stilles Clipping oder automatisches Verschieben nach Jahreszahl verdeckt den Konflikt.
 
-Danach kann die gemeinsame Schätzung der B_i/C_i und DHL-Segmentanteile zusätzlich die tatsächlichen DHL-Beobachtungen berücksichtigen. Für Beobachtung o lautet die erwartete DHL-Menge `sum_i A_oi (B_i a_DHL + C_i d_DHL)`. Dieses größere Problem ist nicht automatisch eindeutig oder konvex. Die Fremdanbieterprofile bleiben durch die HAGRID-Annahmen mitbestimmt.
+Danach kann die gemeinsame Schätzung der B_i/C_i und LSP-Segmentanteile zusätzlich die tatsächlichen LSP-Beobachtungen berücksichtigen. Für Beobachtung o lautet die erwartete LSP-Menge `sum_i A_oi (B_i a_LSP + C_i d_LSP)`. Dieses größere Problem ist nicht automatisch eindeutig oder konvex. Die Fremdanbieterprofile bleiben durch die HAGRID-Annahmen mitbestimmt.
 
 ## Priorisierte Änderungen
 
 1. HAGRIDs Anbieterorientierungen als dokumentierte Ausgangswerte übernehmen und mit den Segment-/Gesamtmengen konsistent abstimmen.
 2. Die heuristische lokale Marktanteilsverschiebung durch die obige Mengenzerlegung ersetzen. Keine universelle Mindestpräsenz von 1 % je Anbieter und Standort erzwingen.
 3. Lokale B2B-Mengen aus Betrieben, Branchen und Beschäftigten ableiten; private Mengen aus Bevölkerung und Wohnstruktur. Standorte ersetzen Raster als Recheneinheiten.
-4. DHL-Beobachtungen auf ihrem ursprünglichen räumlichen Support in die Kalibrierung aufnehmen. Lokale DHL-Abweichungen nicht unverändert auf alle übrigen Anbieter übertragen.
+4. LSP-Beobachtungen auf ihrem ursprünglichen räumlichen Support in die Kalibrierung aufnehmen. Lokale LSP-Abweichungen nicht unverändert auf alle übrigen Anbieter übertragen.
 5. Eine identische Vorhersagefunktion für Optimierung, Validierung und Export verwenden. Die bereits im Audit beschriebenen Unterschiede in Stärke, Clipping und Zielfunktion entfernen.
 6. Anbieterprofile über die Zeit stabilisieren. Eine Veränderung der weltweiten B2B-Gesamtquote erzwingt nicht bei jedem Anbieter dieselbe Veränderung seiner B2B-Quote.
 
