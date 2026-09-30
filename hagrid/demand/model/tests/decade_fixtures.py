@@ -260,3 +260,31 @@ def write_land_use_files(run: Path, years=(2025, 2026)) -> None:
     status["land_use"] = {"variant": "prognose", "base_year": first, "cohort_shift": 0.7, "new_firm_share": 0.3, "districts": 2,
                           "clamped": [], "new_sites": {str(last): 3}, "development_sites": 2, "new_firms": 1, "developments": ["Neubau"]}
     _json(run / "daily_status.json", status)
+
+
+def write_change_files(run: Path, years=(2025, 2026)) -> None:
+    """Site positions and an annual projection for the change section: two homes in one hexagon of the 800 m grid,
+    a home and a firm in another; the last-year demand of the first home is doubled by land use."""
+    years = sorted(int(year) for year in years)
+    first, last = years[0], years[-1]
+    sites = pd.DataFrame({"site_id": ["h1", "h2", "h3", "f1"], "segment": ["private", "private", "private", "business"],
+                          "historical_share": [.25, .25, .5, 1.]})
+    sites.to_parquet(run / "reference_sites.parquet", index=False)
+    size = 800.                                    # pointy-top hexagons of the dashboard, anchored at (0, 0)
+    row = round(Y0 / (1.5 * size))
+    column = round(X0 / (size * 3 ** .5) - row / 2)
+    west = (size * 3 ** .5 * (column + row / 2), 1.5 * size * row)
+    east = (west[0] + 3 * size * 3 ** .5, west[1])
+    gpd.GeoDataFrame({"stop_id": ["s1", "s2", "s3", "s4"], "stop_index": [0, 1, 2, 3], "str_idx": [1, 1, 2, 3]},
+                     geometry=[Point(west[0] - 100., west[1]), Point(west[0] + 100., west[1] + 50.), Point(east[0], east[1] - 80.),
+                               Point(east[0] + 60., east[1] + 60.)], crs=CRS).to_parquet(run / "reference_stops.parquet", index=False)
+    pd.DataFrame({"site_id": ["h1", "h2", "h3", "f1"], "stop_id": ["s1", "s2", "s3", "s4"]}).to_parquet(run / "reference_site_stops.parquet", index=False)
+    rows = []
+    for year in years:
+        boost = 2. if year == last and year != first else 1.
+        private = {"h1": 250. * boost, "h2": 250., "h3": 500.}
+        scale = 1000. * (1.1 if year == last else 1.) / sum(private.values())
+        for site, value in private.items():
+            rows.append({"year": year, "site_id": site, "segment": "private", "annual_expected": value * scale})
+        rows.append({"year": year, "site_id": "f1", "segment": "business", "annual_expected": 400. * (1.1 if year == last else 1.)})
+    pd.DataFrame(rows).to_parquet(run / "annual_projection.parquet", index=False)

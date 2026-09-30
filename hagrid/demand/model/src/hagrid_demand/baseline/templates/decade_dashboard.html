@@ -115,6 +115,8 @@ svg .col-hit{fill:transparent;cursor:pointer}
 #map-svg path.plz{stroke:var(--surface);stroke-width:1;cursor:pointer}
 #map-svg path.plz:hover,#map-svg path.plz.on{stroke:var(--ink);stroke-width:1.8}
 .pt{stroke:var(--ink);stroke-width:1.2;cursor:pointer}
+.hex{stroke:var(--surface);stroke-width:.6;cursor:pointer;transition:fill .35s ease}.hex:hover,.hex:focus{stroke:var(--ink);stroke-width:1.4;outline:none}
+@media (prefers-reduced-motion:reduce){.hex{transition:none}}
 .pt.new{fill:var(--ink);stroke:var(--surface);stroke-width:1.5}
 .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-out infinite;pointer-events:none}
 @keyframes pulse{0%{transform:scale(1);opacity:.95}100%{transform:scale(3.2);opacity:0}}
@@ -293,6 +295,29 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
         <p class="cap">Share of persons who order online by age band (Destatis 2025, 75+ assumed); with the cohort effect people keep the propensity of their younger selves. Bars: persons per band.</p></figure>
     </div>
     <details class="tv"><summary>Table: development areas</summary><div id="tv-structure"></div></details>
+  </section>
+
+  <section class="section" id="change" aria-labelledby="h-change">
+    <h2 id="h-change">Change over time</h2>
+    <p class="finding" id="f-change"></p>
+    <figure class="panel">
+      <div class="fig-head"><div><h3>Hexagon map of the expected demand</h3><p class="sub" id="s-change"></p></div>
+        <div class="map-tools"><div class="seg small" id="ctl-change" role="group" aria-label="Hexagon indicator"></div></div></div>
+      <div class="chart" id="ch-change"></div>
+      <div class="scale" id="sc-change"></div>
+      <p class="cap">Hexagons of about 1.4 km across (1.7 km²); expected parcels per delivery day from the annual projection of every address. <b>vs region</b>: growth of the hexagon against the growth of the whole region (blue grows faster, red slower). <b>Land-use effect</b>: demand with land use minus the demand the reference shares would give in the same year (persons moving, new homes and firms, ageing). Press play to watch the decade.</p>
+    </figure>
+    <div class="grid">
+      <figure class="panel s6"><div class="fig-head"><div><h3>Growth from year to year</h3><p class="sub">regional parcels, change against the previous year</p></div></div>
+        <div class="legend" id="lg-change-yoy"></div><div class="chart" id="ch-change-yoy"></div></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Share of the city of Hannover</h3><p class="sub">parcels in the 29 city districts, per scenario</p></div></div>
+        <div class="legend" id="lg-change-city"></div><div class="chart" id="ch-change-city"></div></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>What drives the change</h3><p class="sub" id="s-change-drivers"></p></div></div>
+        <div class="legend" id="lg-change-drivers"></div><div class="chart" id="ch-change-drivers"></div>
+        <p class="cap">Change in parcels per delivery day since the first year, split into more parcels overall (volume) and demand moved by land use.</p></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Milestones</h3><p class="sub" id="s-change-miles"></p></div></div>
+        <div id="tv-change-miles"></div></figure>
+    </div>
   </section>
 
   <section class="section" id="network" aria-labelledby="h-net">
@@ -953,12 +978,85 @@ function renderStructure() {
     '; ' + int(opened) + ' new homes and firms have opened. The regional volume stays that of the scenario; land use only moves it between areas.'] : ['Move the year slider to see how persons and firms shift between the ' + S.districts.ids.length + ' forecast districts.']));
 }
 
+/* ---------- #change ---------- */
+const CHANGEMODE = {region: 'Growth against the region', rel: 'Change vs first year', abs: 'Change in parcels per day', density: 'Parcels per day and km²', landuse: 'Land-use effect (parcels per day)'};
+state.change = state.change || 'region';
+function hexPath(ring, pr) { let d = ''; ring.forEach((p, i) => { const q = pr.f(p[0], p[1]); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }); return d + 'Z'; }
+function renderChange() {
+  const C = D.change, n = state.scenario, yr = state.year, box = $('ch-change'), ctl = $('ctl-change');
+  if (!ctl.childElementCount) Object.entries(CHANGEMODE).forEach(([key, text]) => {
+    const b = h('button', {type: 'button', text: {region: 'vs region', rel: 'Change %', abs: 'Change', density: 'Density', landuse: 'Land use'}[key], 'aria-pressed': String(state.change === key)});
+    b.addEventListener('click', () => { state.change = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderChange(); }); ctl.appendChild(b); });
+  if (!C || !C.values[n]) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no annual projection per address.'})); ['sc-change', 'ch-change-drivers', 'tv-change-miles'].forEach(id => $(id).replaceChildren()); }
+  else {
+    const V = C.values[n], now = V[yr] || {}, base = V[Y0] || {}, total = now.total || [], first = base.total || [], plain = now.plain || [];
+    const growth = sum(first) > 0 ? sum(total) / sum(first) : 1;
+    const value = i => { const a = total[i], b = first[i];
+      if (state.change === 'region') return ok(a) && ok(b) && b > .5 ? a / b / growth - 1 : null;
+      if (state.change === 'rel') return ok(a) && ok(b) && b > .5 ? a / b - 1 : null;
+      if (state.change === 'abs') return ok(a) && ok(b) ? a - b : null;
+      if (state.change === 'density') return ok(a) ? a / C.hex.km2[i] : null;
+      return ok(a) && ok(plain[i]) ? a - plain[i] : null; };
+    const vals = C.hex.ids.map((_, i) => value(i)), W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Hexagon map of Region Hannover');
+    let color, bins;
+    if (state.change === 'density') { const br = breaks(vals.filter(ok), 6); color = x => ok(x) && x > 0 ? 'var(--q' + (cls(x, br) + 1) + ')' : 'var(--surface-3)';
+      bins = [0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 1) + ')', text: k === 0 ? '< ' + dec(br[0], 0) : 'from ' + dec(b, 0)})); }
+    else { const relative = state.change === 'rel' || state.change === 'region', scale = relative ? .005 : .5, pos = vals.filter(x => ok(x) && x > scale), br = breaks(pos, 4), neg = vals.filter(x => ok(x) && x < -scale).sort((a, b) => a - b), cut = neg.length ? neg[Math.floor(neg.length / 2)] : -scale * 4;
+      const f = relative ? x => signed(x) : x => (x >= 0 ? '+' : '−') + dec(Math.abs(x), 1);
+      color = x => !ok(x) ? 'var(--surface-3)' : x < cut ? 'var(--neg2)' : x < -scale ? 'var(--neg1)' : x <= scale ? 'var(--mid)' : 'var(--q' + (cls(x, br) + 3) + ')';
+      bins = [{color: 'var(--neg2)', text: '< ' + f(cut)}, {color: 'var(--neg1)', text: 'down'}, {color: 'var(--mid)', text: 'about the same'}].concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? 'up' : 'from ' + f(b)}))); }
+    C.hex.geo.features.forEach((feature, i) => { if (!ok(total[i]) && !ok(first[i])) return; if ((total[i] || 0) < .05 && (first[i] || 0) < .05) return;
+      const x = vals[i], path = s('path', {d: hexPath(feature.geometry.coordinates[0], pr), class: 'hex', fill: color(x), tabindex: 0, 'aria-label': 'Hexagon ' + (i + 1) + ': ' + (ok(total[i]) ? dec(total[i], 0) : '–') + ' parcels per day'}, v);
+      hover(path, t => { t.append(...tH('Hexagon ' + C.hex.ids[i], label(n) + ' · ' + Y0 + '→' + yr)); t.appendChild(tR(dec(first[i], 1) + ' → ' + dec(total[i], 1), 'parcels per delivery day'));
+        t.appendChild(tR(ok(first[i]) && first[i] > .5 && ok(total[i]) ? signed(total[i] / first[i] - 1) : '–', 'change'));
+        if (ok(plain[i])) t.appendChild(tR((total[i] - plain[i] >= 0 ? '+' : '−') + dec(Math.abs(total[i] - plain[i]), 1), 'land-use effect')); }); });
+    binLegend($('sc-change'), CHANGEMODE[state.change] + ':', bins);
+    $('s-change').textContent = label(n) + ' · ' + (state.change === 'density' ? yr : Y0 + '→' + yr) + ' · ' + C.hex.ids.length + ' hexagons';
+    // drivers by district
+    const B = (C.districts || {})[n];
+    if (B && B[yr] && B[Y0]) { const rows = B.ids.map((id, i) => { const t = B[yr].total[i], p = B[yr].plain[i], t0 = B[Y0].total[i]; return {i, label: B.names[i], volume: p - t0, land: t - p, total: t - t0}; })
+        .filter(r => ok(r.total)).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)).slice(0, 15);
+      legend($('lg-change-drivers'), [{color: 'var(--q4)', label: 'more parcels overall'}, {color: 'var(--seg-b2c)', label: 'moved by land use'}]);
+      $('s-change-drivers').textContent = label(n) + ' · ' + Y0 + '→' + yr + ' · top 15 districts';
+      hbars($('ch-change-drivers'), yr === Y0 ? [] : rows.map(r => ({r, label: r.label, on: false, text: (r.total >= 0 ? '+' : '−') + dec(Math.abs(r.total), 0) + '/day',
+        parts: [{value: r.volume, color: 'var(--q4)'}, {value: r.land, color: 'var(--seg-b2c)'}]})), {label: 'Districts by change in parcels per day', empty: 'Move the year slider past ' + Y0 + '.',
+        tip: (t, row) => { t.append(...tH(row.r.label, Y0 + '→' + yr)); t.appendChild(tR(dec(row.r.volume, 1), 'more parcels overall')); t.appendChild(tR(dec(row.r.land, 1), 'moved by land use')); }}); }
+    else $('ch-change-drivers').replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use districts.'}));
+    const up = C.hex.ids.map((_, i) => ({i, d: ok(total[i]) && ok(first[i]) ? total[i] - first[i] : null})).filter(r => ok(r.d)).sort((a, b) => b.d - a.d);
+    const moved = C.hex.ids.map((_, i) => ok(total[i]) && ok(plain[i]) ? Math.abs(total[i] - plain[i]) : 0).reduce((a, b) => a + b, 0) / 2;
+    $('f-change').replaceChildren(...(yr > Y0 ? ['From ' + Y0 + ' to ' + yr + ' the ' + label(n) + ' scenario adds ', h('b', {text: int(sum(total) - sum(first)) + ' parcels per delivery day'}),
+      up.length ? '; the fastest-growing hexagon gains ' + dec(up[0].d, 0) + ' a day' : '', moved > 0 ? ', and land use moves about ' + int(moved) + ' parcels a day between hexagons.' : '.'] :
+      ['Move the year slider or press play to watch where the demand grows.']));
+  }
+  // year-on-year growth and city share for all scenarios (selected scenario blue, the others grey with end labels)
+  const scol = name => name === n ? 'var(--all)' : 'var(--other-line)';
+  const yoy = SCEN.map(item => { const vals = series(item.name, A => A.parcels); return {name: item.name, label: item.label, color: scol(item.name), width: item.name === n ? 2.6 : 1.6, priority: item.name === n ? 2 : 1, strong: item.name === n,
+    values: vals.map((x, i) => i && ok(x) && ok(vals[i - 1]) && vals[i - 1] > 0 ? x / vals[i - 1] - 1 : null), dots: item.name === n}; });
+  legend($('lg-change-yoy'), yoy.map(S => ({color: S.color, label: S.label, kind: 'line'})));
+  lines($('ch-change-yoy'), {series: yoy, height: 220, labels: true, margin: {r: 120}, fmt: x => dec(x * 100, 1) + ' %', vfmt: x => signed(x), label: 'Year-on-year growth of the regional parcels', title: 'change against the previous year',
+    max: Math.max(.001, ...yoy.flatMap(S => S.values.filter(ok)))});
+  const shares = C ? SCEN.map(item => { const S = (C.city_share || {})[item.name]; return S ? {name: item.name, label: item.label, color: scol(item.name), width: item.name === n ? 2.6 : 1.6, priority: item.name === n ? 2 : 1, strong: item.name === n, values: YEARS.map(y => S[y]), dots: item.name === n} : null; }).filter(Boolean) : [];
+  if (shares.length) { legend($('lg-change-city'), shares.map(S => ({color: S.color, label: S.label, kind: 'line'})));
+    const all = shares.flatMap(S => S.values.filter(ok)), lo = Math.min(...all), hi = Math.max(...all);
+    lines($('ch-change-city'), {series: shares.map(S => ({...S, values: S.values.map(x => ok(x) ? x - Math.floor(lo * 100 - 1) / 100 : null)})), height: 220, labels: true, margin: {r: 120},
+      fmt: x => dec((x + Math.floor(lo * 100 - 1) / 100) * 100, 1) + ' %', vfmt: x => pct(x + Math.floor(lo * 100 - 1) / 100, 2), label: 'Share of the city of Hannover in the regional parcels', title: 'city share',
+      max: hi - Math.floor(lo * 100 - 1) / 100}); }
+  else $('ch-change-city').replaceChildren(h('p', {class: 'empty', text: 'No land-use districts in these runs.'}));
+  // milestones
+  const miles = [['70 million parcels a year', A => A.parcels >= 7e7], ['80 million parcels a year', A => A.parcels >= 8e7], ['10 % of B2C parcels out of home', A => ok(A.ooh_b2c_share) && A.ooh_b2c_share >= .1],
+    ['15 % of B2C parcels out of home', A => ok(A.ooh_b2c_share) && A.ooh_b2c_share >= .15], ['400 pickup points', A => A.network && sum(Object.values(A.network.points)) >= 400],
+    ['500 pickup points', A => A.network && sum(Object.values(A.network.points)) >= 500], ['busiest day above 700,000 parcels', A => A.peak && A.peak.parcels >= 7e5]];
+  const first = test => SCEN.map(item => { const hit = YEARS.find(y => { const A = yd(item.name, y); return A && test(A); }); return hit ? String(hit) : '–'; });
+  $('s-change-miles').textContent = 'first year each threshold is reached';
+  tableView($('tv-change-miles'), ['Milestone'].concat(SCEN.map(item => item.label)), miles.map(([text, test]) => ({cells: [text].concat(first(test))})));
+}
+
 /* ---------- entry point ---------- */
 function render(name, yr) {
   state.scenario = NAMES.includes(name) ? name : M.primary;
   state.year = Math.max(Y0, Math.min(YN, yr));
   hide(); persist(); syncControls();
-  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderStructure(); renderNetwork(); renderCalendar(); renderMethod();
+  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderStructure(); renderChange(); renderNetwork(); renderCalendar(); renderMethod();
 }
 function setYear(yr) { stop(); render(state.scenario, yr); }
 setStatic(); buildControls(); render(state.scenario, state.year);

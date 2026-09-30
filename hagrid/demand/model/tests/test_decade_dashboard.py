@@ -10,9 +10,9 @@ import pytest
 from decade_fixtures import CODES, write_decade_run
 
 BOOM = {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
-KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure"}
+KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure", "change"}
 PAYLOAD = re.compile(r'<script id="hagrid-decade" type="application/json">(.*?)</script>', re.S)
-SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "structure", "network", "calendar", "method"]
+SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "structure", "change", "network", "calendar", "method"]
 
 
 @pytest.fixture(scope="module")
@@ -299,3 +299,32 @@ def test_structure_payload_from_land_use_files(tmp_path):
 
 def test_structure_payload_is_null_without_land_use(payload):
     assert payload["structure"] == {"trend": None, "boom": None}
+
+
+
+def test_change_payload_aggregates_sites_to_hexagons(tmp_path):
+    from decade_fixtures import write_change_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_change_files(run)
+    change = build_decade_dashboard_data({"trend": run})["change"]
+    hexes = change["hex"]
+    assert len(hexes["ids"]) == 2 and len(hexes["geo"]["features"]) == 2 and hexes["km2"][0] == pytest.approx(1.663, abs=.01)
+    days = pd.read_parquet(run / "annual" / "days.parquet")
+    days["date"] = pd.to_datetime(days.date)
+    delivery = days.loc[days.date.dt.dayofweek.lt(6) & ~days.holiday.astype(bool)].groupby(days.date.dt.year).size()
+    values = change["values"]["trend"]
+    west = hexes["ids"].index(min(hexes["ids"], key=lambda key: hexes["centre"][hexes["ids"].index(key)][0]))
+    assert values["2025"]["total"][west] == pytest.approx(500. / delivery[2025], abs=.05)       # h1 + h2 in the western hexagon
+    total_2026 = 1100. * (500. / 1250.) + 1100. * (250. / 1250.)
+    assert values["2026"]["total"][west] == pytest.approx(total_2026 / delivery[2026], abs=.05)
+    assert values["2026"]["plain"][west] == pytest.approx(1100. * .5 / delivery[2026], abs=.05)  # without land use: shares of 2025
+    east = 1 - west
+    assert sum(values["2026"]["total"]) == pytest.approx((1100. + 440.) / delivery[2026], abs=.1)
+    assert values["2026"]["total"][east] + values["2026"]["total"][west] == pytest.approx(sum(values["2026"]["total"]))
+
+
+def test_change_payload_is_null_without_projection(payload):
+    assert payload["change"] is None
