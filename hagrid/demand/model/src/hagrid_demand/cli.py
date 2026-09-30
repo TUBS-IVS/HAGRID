@@ -32,7 +32,7 @@ def main(argv=None):
     logistics.add_argument("--output", required=True)
     logistics.add_argument("--regional", action="store_true")
     logistics.add_argument("--snapshots", nargs="+", choices=["2021", "current"],default=["current","2021"])
-    street = sub.add_parser("street-reference", help="Reconstruct DHL 2021 at streets with an explicit unallocated ledger")
+    street = sub.add_parser("street-reference", help="Reconstruct LSP 2021 at streets with an explicit unallocated ledger")
     street.add_argument("--model-run", required=True)
     street.add_argument("--output", required=True)
     baseline = sub.add_parser("baseline", help="Deterministic demand baseline commands")

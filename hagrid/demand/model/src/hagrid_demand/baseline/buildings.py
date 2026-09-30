@@ -1,4 +1,4 @@
-"""Demand locations on OSM buildings: persons, firms, addresses, DHL streets and street sections."""
+"""Demand locations on OSM buildings: persons, firms, addresses, LSP streets and street sections."""
 
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ def normalize_street(value) -> str | None:
 
 
 def street_parts(streets: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """One row per LineString part of each DHL street (``part`` follows the explode order)."""
+    """One row per LineString part of each LSP street (``part`` follows the explode order)."""
     parts = streets[["sid", "geometry"]].explode(index_parts=True)
     parts = parts.reset_index(level=1).rename(columns={"level_1": "part"}).reset_index(drop=True)
     parts["part"] = parts.part.astype("int64")
@@ -156,10 +156,10 @@ def street_parts(streets: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 def match_streets(points: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, max_distance_m: float = 100.,
                   name_max_distance_m: float = 500., extended_distance_m: float | None = None) -> pd.DataFrame:
-    """Building -> DHL street: same normalised name and PLZ first, else the nearest street.
+    """Building -> LSP street: same normalised name and PLZ first, else the nearest street.
 
     ``extended_distance_m`` adds a last stage (``nearest_far``) for sites behind internal access roads
-    (industrial estates, hospitals) whose parcels DHL records on the nearest public street.
+    (industrial estates, hospitals) whose parcels LSP records on the nearest public street.
     """
     frame = pd.DataFrame({"building_key": points.building_key.to_numpy(), "plz": points.plz.astype(str).to_numpy(),
                           "street_norm": points.street_norm.to_numpy(), "pgeom": points.geometry.to_numpy()})
@@ -195,7 +195,7 @@ def match_streets(points: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, max_dista
 
 
 def project_on_streets(points: gpd.GeoDataFrame, parts: gpd.GeoDataFrame, section_length_m: float = 50.) -> pd.DataFrame:
-    """Project buildings onto the nearest part of their DHL street: position, section and street side."""
+    """Project buildings onto the nearest part of their LSP street: position, section and street side."""
     frame = pd.DataFrame({"building_key": points.building_key.to_numpy(), "sid": points.sid.to_numpy(),
                           "pgeom": points.geometry.to_numpy()})
     pairs = frame.merge(pd.DataFrame({"sid": parts.sid.to_numpy(), "part": parts.part.to_numpy(),
@@ -245,7 +245,7 @@ def _with_point_attributes(buildings: gpd.GeoDataFrame, points: gpd.GeoDataFrame
 
 def build_buildings(sites: gpd.GeoDataFrame, osm_buildings: gpd.GeoDataFrame, osm_points: gpd.GeoDataFrame,
                     streets: gpd.GeoDataFrame, postal: gpd.GeoDataFrame, cfg: dict | None, seed: int):
-    """Demand buildings with persons, firms, PLZ, DHL street, section and side (spec 5.1-5.4, 5.11)."""
+    """Demand buildings with persons, firms, PLZ, LSP street, section and side (spec 5.1-5.4, 5.11)."""
     cfg = cfg or {}
     buildings = load_buildings(osm_buildings, tuple(cfg.get("exclude_types", EXCLUDED_TYPES)))
     buildings = _with_point_attributes(buildings, osm_points)

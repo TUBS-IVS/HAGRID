@@ -23,7 +23,7 @@ _STAGES = (
     ("data_quality", "Data/quality"),
     ("market_b2b", "Market and B2B"),
     ("regional_reference", "Regional reference"),
-    ("future", "Future/DHL weight"),
+    ("future", "Future/LSP weight"),
     ("calendar", "Calendar"),
     ("daily", "Daily volumes and locations"),
     ("carriers", "Carriers"),
@@ -64,7 +64,7 @@ def _report_markdown(report: dict) -> str:
         rates = anchor["rates_dhl_per_day"]
         text += (
             "\n## Street anchor\n\n"
-            f"DHL B2B share from the street data: {anchor['q_dhl']:.3f}. DHL rates per day: {rates['person']:.4f} per resident, "
+            f"LSP B2B share from the street data: {anchor['q_dhl']:.3f}. LSP rates per day: {rates['person']:.4f} per resident, "
             f"{rates['company']:.3f} per firm.\n\n"
             f"B2B share: observed part {report['b2b_adjustment']['b2b_achieved']:.4f} (target "
             f"{report['b2b_adjustment']['b2b_target']:.4f}); including fallback {anchor.get('b2b_incl_fallback') or 0.:.4f}.\n\n"
@@ -76,7 +76,7 @@ def _report_markdown(report: dict) -> str:
         )
         zero = anchor.get("zero_street_units")
         if zero:
-            text += (f"\nDHL streets with value 0 and no data gap: {zero['streets']} streets with {zero['persons']:,.0f} residents "
+            text += (f"\nLSP streets with value 0 and no data gap: {zero['streets']} streets with {zero['persons']:,.0f} residents "
                      f"and {zero['firms']:,.0f} firms receive no demand.\n")
     stops = report.get("views", {}).get("stops")
     if stops and stops.get("days"):

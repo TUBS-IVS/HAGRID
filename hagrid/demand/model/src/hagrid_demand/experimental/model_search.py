@@ -233,7 +233,7 @@ def main():
         offset=special_offsets(pd.read_parquet(source/'dhl_observations.parquet'),pd.read_csv(args.special_customers,dtype={'plz':str}),data['plz'])
     protocol={'candidates':CANDIDATES,'random_seeds':[42,73,101],'outer_folds':5,'spatial':'5 KMeans clusters of postal polygon centroids, seed 42; no buffer',
               'selection':'3-fold inner CV for random outer splits; leave-one-remaining-spatial-cluster-out for spatial outer splits. Pooled absolute error determines selection.',
-              'limits':'53 PLZ; exploratory reused data. Direct regression candidates predict DHL only, not identified total market or other carriers. Conditional core uses previously known special amounts; not a blind special-customer test. No post-fit local corrections.'}
+              'limits':'53 PLZ; exploratory reused data. Direct regression candidates predict LSP only, not identified total market or other carriers. Conditional core uses previously known special amounts; not a blind special-customer test. No post-fit local corrections.'}
     write_json(output/'protocol.json',protocol)
     if args.logistics_run:
         protocol['osm_snapshot']=args.logistics_snapshot
@@ -241,7 +241,7 @@ def main():
         protocol['osm_information']+='Footprints are unioned and clipped. Mapping completeness remains uncertain. No hand-coded Langenhagen effect or target-based exclusions.'
         write_json(output/'protocol.json',protocol)
     if args.crosscarrier_only:
-        protocol['additional_test_information']='Known Hermes 2021 value at test PLZ is an input. Test DHL remains excluded. This is cross-carrier estimation, not forecasting without Hermes data.'
+        protocol['additional_test_information']='Known Hermes 2021 value at test PLZ is an input. Test LSP remains excluded. This is cross-carrier estimation, not forecasting without Hermes data.'
         write_json(output/'protocol.json',protocol)
     spatial=KMeans(n_clusters=5,random_state=42,n_init=10).fit_predict(coords)
     layouts={f'random_{seed}':np.array_split(np.random.default_rng(seed).permutation(len(x)),5) for seed in [42,73,101]}

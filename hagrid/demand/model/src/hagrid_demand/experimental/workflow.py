@@ -215,7 +215,7 @@ def run_model(path,run_id,frozen_run=None):
 
                   'Exact PANDA OSM/Zensus reproduction needs missing raw files; these are alternative HAGRID-feature candidates.',
 
-                  'No independent B2B or non-DHL absolute accuracy established; Hermes is shape-only.',
+                  'No independent B2B or non-LSP absolute accuracy established; Hermes is shape-only.',
 
                   'Spatial/day-noise and future paths are assumptions, not calibrated confidence intervals.',
 
@@ -280,7 +280,7 @@ def render(output,result):
 
     report=f"# Joint demand model: {result['run_id']}\n\nStatus: provisional calibration under documented assumptions.\n\nSelected: {result['selected']}\n\n"
 
-    if test: report+=f"DHL test wMAPE: {test['wMAPE']:.2%}; bias: {test['bias']:.2%}; {test['groups']} test PLZ.\n\n"
+    if test: report+=f"LSP test wMAPE: {test['wMAPE']:.2%}; bias: {test['bias']:.2%}; {test['groups']} test PLZ.\n\n"
 
     report+='## Assumptions\n\n'+'\n'.join('- '+x for x in result['assumptions'])
 

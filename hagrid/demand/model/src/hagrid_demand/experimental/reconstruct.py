@@ -18,7 +18,7 @@ def _code_hashes(package_root=None):
 def constrain(frame,targets):
     result=frame.copy();before=result.groupby('plz').DHL.sum()
     for plz,target in targets.items():
-        if not np.isfinite(target) or target<0: raise ValueError('Invalid DHL target')
+        if not np.isfinite(target) or target<0: raise ValueError('Invalid LSP target')
         mask=result.plz.eq(plz)
         if not mask.any() or (before.get(plz,0)<=0 and target>0):
             raise ValueError(f'No positive allocation support for observed PLZ {plz}')
@@ -53,14 +53,14 @@ def main():
     check=pd.DataFrame({'observed_DHL':targets,'before_DHL':prior.DHL.reindex(targets.index),'reconstructed_DHL':after.DHL.reindex(targets.index)})
     check['factor']=check.reconstructed_DHL/check.before_DHL
     check['difference']=check.reconstructed_DHL-check.observed_DHL
-    if not np.allclose(check.difference,0,atol=1e-7): raise AssertionError('DHL reconstruction mismatch')
+    if not np.allclose(check.difference,0,atol=1e-7): raise AssertionError('LSP reconstruction mismatch')
     np.testing.assert_allclose(result[PROVIDERS[1:]].to_numpy(),frame[PROVIDERS[1:]].to_numpy())
     check.to_csv(output/'postal_checks.csv',index_label='plz')
     after.to_csv(output/'carrier_postal_reference.csv',index_label='plz')
     note={'status':'observation_constrained_reconstruction_not_validation','reference_year':2021,
           'observed_DHL_total':float(targets.sum()),'reconstructed_DHL_total_on_observed_PLZ':float(check.reconstructed_DHL.sum()),
           'max_absolute_PLZ_difference':float(check.difference.abs().max()),'source_model':str(source.resolve()),
-          'limitations':['Exact fit is imposed from the same observed DHL PLZ totals, not a prediction score.',
+          'limitations':['Exact fit is imposed from the same observed LSP PLZ totals, not a prediction score.',
           'Within-PLZ allocation and B2B/B2C split remain modeled. Raw street observations are not individually reproduced.',
           'Configured observation exclusions apply before aggregation; remaining within-PLZ allocation is unverified.',
           'Other-carrier amounts remain prior model estimates, not observations; regional total and shares consequently change.',
@@ -69,7 +69,7 @@ def main():
     write_json(output/'result.json',note)
     paths=[source/'baseline_sites.parquet',source/'carrier_site_profiles.parquet',source/'config.resolved.json',dhl_path]
     write_json(output/'provenance.json',{'inputs':{str(p.resolve()):digest(p) for p in paths},'code':_code_hashes()})
-    page='<!doctype html><meta charset="utf-8"><title>Reconstruction 2021</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:8px}</style><h1>DHL 2021: observation-constrained reconstruction</h1><p>All observed PLZ volumes are matched exactly. This is an imposed data constraint, not independent predictive accuracy.</p><ul>'+''.join('<li>'+s+'</li>' for s in note['limitations'])+'</ul>'
+    page='<!doctype html><meta charset="utf-8"><title>Reconstruction 2021</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:8px}</style><h1>LSP 2021: observation-constrained reconstruction</h1><p>All observed PLZ volumes are matched exactly. This is an imposed data constraint, not independent predictive accuracy.</p><ul>'+''.join('<li>'+s+'</li>' for s in note['limitations'])+'</ul>'
     (output/'dashboard.html').write_text(page+check.to_html(float_format=lambda x:f'{x:,.3f}'),encoding='utf-8')
     print(json.dumps(note,indent=2))
 
