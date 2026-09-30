@@ -435,6 +435,7 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
     previous_year = int(base_year)
     for year in span:
         rng = rng_for_year(year)
+        planned = []
         for branch in sorted(totals.index):
             employees, count = float(totals.at[branch, "sum"]), int(totals.at[branch, "count"])
             rate = float(rates.get(branch, rates["default"]))
@@ -442,15 +443,20 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
             growth = employees * ((1. + rate) ** (year - base_year) - (1. + rate) ** (previous_year - base_year))
             size = max(1., employees / count) if count else 1.
             firms = int(np.floor(float(new_firm_share) * growth / size + 0.5)) if growth > 0 else 0
-            if firms <= 0 or not len(areas):
-                continue
-            chosen = _draw_areas(weights, firms, rng)
-            for index, polygon in enumerate(areas.geometry.iloc[chosen]):
+            if firms > 0:
+                planned.append((branch, firms, size))
+        previous_year = year
+        total = sum(firms for _, firms, _ in planned)
+        if not total or not len(areas):
+            continue
+        # one draw for all new firms of the year, so an area takes a second firm only once every area has one
+        chosen = iter(areas.geometry.iloc[_draw_areas(weights, total, rng)])
+        for branch, firms, size in planned:
+            for index in range(firms):
                 rows.append({"site_id": f"lu:biz:{branch}:{year}:{index}", "segment": "business", "district_id": None, "area": None,
                              "year_opened": year, "population": np.nan, "employees": size, "branch": branch,
                              "historical_share": size * float(share_per_employee), "allocation_status": "located",
-                             "geometry": _random_point(polygon, rng)})
-        previous_year = year
+                             "geometry": _random_point(next(chosen), rng)})
     columns = ["site_id", "segment", "plz", "district_id", "area", "year_opened", "population", "employees", "branch",
                "historical_share", "allocation_status", "geometry"]
     if not rows:
