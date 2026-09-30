@@ -466,3 +466,18 @@ def test_stop_ranges_must_not_overlap():
     check_stop_ranges(reference_last=999_000, points=999, land_use_first=1_000_000)
     with pytest.raises(ValueError, match="overlap"):
         check_stop_ranges(reference_last=999_500, points=600, land_use_first=1_000_000)
+
+
+def test_new_firms_spread_over_the_areas_across_branches():
+    """Without replacement holds for all new firms of a year, not only within one branch."""
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import new_firms
+
+    companies = pd.DataFrame({"branch": ["Q"] * 20 + ["J"] * 20, "employees": [2.] * 40})
+    for seed in range(20):
+        firms = new_firms(companies, 0.002, [2025, 2026], 2025, {"Q": 0.05, "J": 0.05, "default": 0.0}, 1.0, _landuse(), _postal(),
+                          lambda year, seed=seed: np.random.default_rng([seed, year]))
+        area = np.where(firms.geometry.x < 1500., "commercial", "industrial")
+        assert sorted(firms.branch) == ["J", "Q"] and sorted(area) == ["commercial", "industrial"]
