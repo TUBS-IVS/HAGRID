@@ -26,7 +26,6 @@ import com.graphhopper.jsprit.core.problem.solution.route.activity.TourActivity;
 import com.graphhopper.jsprit.core.problem.solution.route.state.RouteAndActivityStateGetter;
 import com.graphhopper.jsprit.core.util.CalculationUtils;
 
-import hagrid.core.routing.StateIds;
 
 
 /**

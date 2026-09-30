@@ -27,7 +27,7 @@ MINI_NETWORK = FIXTURES / "MINI.output_network.xml.gz"
 MINI_EVENTS = FIXTURES / "MINI.output_events.xml.gz"
 CARRIERS_FIXTURE = (Path(__file__).parent / "fixtures" / "mini_lmd"
                     / "MINI.output_carriers.xml.gz")
-FREIGHT_VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0"
+FREIGHT_VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1"
 
 # Coordinates are EPSG:25832, near Hoyerswerda (same order of magnitude as
 # the MINI network fixture's n1/n2/n3). departureTime is already ascending
@@ -133,6 +133,18 @@ def test_per_vehicle_stops_numbered_in_departure_order(tmp_path):
     assert stops[0]["kind"] == "pu"
     assert stops[0]["t"] == 28800
     assert all(isinstance(s["lat"], float) and isinstance(s["lon"], float) for s in stops)
+
+
+def test_per_vehicle_stops_carry_the_passenger_id(tmp_path):
+    """The hover on a numbered badge names who boarded/alighted there (legacy parity)."""
+    run = _make_run(tmp_path)
+    veh_path, link_geo = _aligned_inputs()
+
+    data = maps.build_map_data(run, "MINI", veh_path=veh_path, link_geo=link_geo)
+
+    stops = data["drt"]["vehicles"]["drt_veh_1"]["stops"]
+    assert [s["person"] for s in stops if s["kind"] == "pu"] == ["p1", "p2", "p3"]
+    assert [s["person"] for s in stops if s["kind"] == "do"] == ["p1", "p2", "p3"]
 
 
 def test_missing_optional_layers_are_absent_without_raising(tmp_path):

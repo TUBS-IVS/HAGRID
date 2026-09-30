@@ -469,6 +469,29 @@ def test_extract_sweep_resolves_at_the_low_threshold(tmp_path, monkeypatch):
     assert by["ev_range_exceed_freight_" + str(high)]["value"] == 0.0
 
 
+def test_drt_range_day_spans_both_1d_regimes():
+    """A 1d vehicle drives 200 km as a bus and 200 km as a capsule carrier. The battery has
+    no regime: the vehicle-day is 400 km. Until 2026-09-29 ev_range_*_drt compared only the
+    pax half, so the vehicle counted as feasible at every threshold above 200 km (METHODS-LOG
+    2.69: S3 f130 51.8 % instead of 55.6 %). Same fixture as the paper path's
+    test_day_km_spans_both_regimes."""
+    import extract_emissions as ee
+    detail = [
+        {"fleet": "drt", "entity": "v1", "km": 200.0, "powertrain": "diesel"},
+        {"fleet": "freight_modular", "entity": "v1", "km": 200.0, "powertrain": "diesel"},
+        {"fleet": "drt", "entity": "v2", "km": 100.0, "powertrain": "diesel"},
+        {"fleet": "drt", "entity": "v1", "km": 200.0, "powertrain": "bev"},   # ignored
+    ]
+    sup = {"ev_range_km_low": 150.0, "ev_range_km_mid": 250.0, "ev_range_km_high": 350.0}
+    by = {r["kpi_name"]: r["value"] for r in ee._range_rows(detail, sup)}
+    assert by["ev_range_max_km_drt"] == pytest.approx(400.0)
+    assert by["ev_range_exceed_drt_350"] == pytest.approx(0.5)     # v1 strands, v2 does not
+    assert by["ev_range_exceed_drt_150"] == pytest.approx(0.5)
+    # the freight component keeps its own, component-only reading
+    assert by["ev_range_max_km_freight_modular"] == pytest.approx(200.0)
+    assert by["ev_range_exceed_freight_modular_350"] == 0.0
+
+
 def test_extract_mixed_fleet_reports_segment_shares(tmp_path):
     """base10c-Situation im Kleinen: gemischte Flotte -> die km-Anteile je
     Segment muessen im KPI-Kanal auftauchen, sonst ist ein CO2-Delta nicht

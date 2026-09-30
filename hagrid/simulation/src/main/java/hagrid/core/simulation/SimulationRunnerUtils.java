@@ -65,15 +65,30 @@ public final class SimulationRunnerUtils {
      * {@code static} initializer in the main class).
      */
     public static void initLogging() {
-        if (System.getProperty("hagrid.log.dir") == null) {
+        if (System.getProperty(LOG_DIR_PROPERTY) == null) {
             try {
                 Path logDir = Path.of("hagrid-matsim-output", "logs");
                 Files.createDirectories(logDir);
-                System.setProperty("hagrid.log.dir", logDir.toAbsolutePath().toString());
+                setOwnLogDir(logDir);
             } catch (Exception ignored) {
-                // fallback: let log4j2.xml default handle it
+                // fallback: let log4j2.xml default handle it (no logger usable yet here)
             }
         }
+    }
+
+    private static final String LOG_DIR_PROPERTY = "hagrid.log.dir";
+
+    /**
+     * The last value THIS class wrote into {@code hagrid.log.dir}. Anything else found in the
+     * property was set from outside (a {@code -D} flag) and is respected. Tracking our own
+     * value, instead of a one-shot "was it set at startup" flag, keeps the second scenario of
+     * a multi-scenario JVM from mistaking the first run's directory for an explicit choice.
+     */
+    private static volatile String ownLogDir;
+
+    private static void setOwnLogDir(Path logDir) {
+        ownLogDir = logDir.toAbsolutePath().toString();
+        System.setProperty(LOG_DIR_PROPERTY, ownLogDir);
     }
 
     // ====================================================================
@@ -275,6 +290,10 @@ public final class SimulationRunnerUtils {
         try {
             requiresLausitz = hagrid.core.HagridConfig.Scenario.valueOf(concept.toUpperCase()).requiresLausitz();
         } catch (IllegalArgumentException ex) {
+            // Every legitimate concept, Hannover's included, is a Scenario constant, so this
+            // branch means a typo. Behaviour kept (treated as non-Lausitz), but not silently.
+            LOG.warn("Unknown concept '{}' (not a HagridConfig.Scenario) - treated as a non-Lausitz"
+                    + " concept; check the spelling", concept);
             requiresLausitz = false;
         }
         if (requiresLausitz) {
@@ -373,14 +392,35 @@ public final class SimulationRunnerUtils {
     }
 
     /**
+     * Points {@code hagrid.log.dir} at this run's {@code logs/} directory -- unless it was set
+     * explicitly with {@code -Dhagrid.log.dir}. Before 2026-09-28 the explicit value was
+     * overwritten unconditionally; on Windows the MATSim controler then clears the run
+     * directory while hagrid.log is open inside it, and the run dies before iteration 0
+     * (the reason logging/log4j2_runlocal.xml exists). With the explicit value kept, a
+     * {@code -Dhagrid.log.dir} outside the run directory is enough. Logging destination only.
+     */
+    static void pointLogDirAt(Path logDir) {
+        String current = System.getProperty(LOG_DIR_PROPERTY);
+        if (current != null && !current.equals(ownLogDir)) {
+            LOG.info("hagrid.log.dir set explicitly ({}) - kept, not repointed into the run directory",
+                    current);
+            return;
+        }
+        try {
+            Files.createDirectories(logDir);
+        } catch (IOException e) {
+            LOG.warn("Could not create run log directory {}: {}", logDir, e.toString());
+        }
+        setOwnLogDir(logDir);
+    }
+
+    /**
      * Runs a single HAGRID MATSim simulation.
      */
     public static void runSimulation(HAGRIDSimulationConfig cfg) throws Exception {
         Instant t0 = Instant.now();
 
-        Path logDir = cfg.getOutputDirectory().resolve("logs");
-        try { Files.createDirectories(logDir); } catch (IOException ignored) {}
-        System.setProperty("hagrid.log.dir", logDir.toAbsolutePath().toString());
+        pointLogDirAt(cfg.getOutputDirectory().resolve("logs"));
 
         LOG.info("─── Simulation '{}' ───", cfg.getRunId());
 
@@ -892,8 +932,12 @@ public final class SimulationRunnerUtils {
     }
 
     private static void logDuration(String label, Instant start) {
-        Duration d = Duration.between(start, Instant.now());
-        LOG.info("{} completed in {:02d}:{:02d}:{:02d}",
-                label, d.toHours(), d.toMinutesPart(), d.toSecondsPart());
+        logDuration(label, Duration.between(start, Instant.now()));
+    }
+
+    static void logDuration(String label, Duration d) {
+        // log4j only knows {} - the former {:02d} placeholders were printed literally
+        LOG.info("{} completed in {}", label, String.format("%02d:%02d:%02d",
+                d.toHours(), d.toMinutesPart(), d.toSecondsPart()));
     }
 }

@@ -13,7 +13,7 @@ from freight_events import (FreightEvents, hourly_series,
 MINI_FIXTURE = Path(__file__).parent / "fixtures" / "mini_events" / "MINI.output_events.xml.gz"
 CARRIERS_FIXTURE = (Path(__file__).parent / "fixtures" / "mini_lmd"
                     / "MINI.output_carriers.xml.gz")
-VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0"
+VEH = "freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1"
 
 
 def _mini_freight_cache(tmp_path):

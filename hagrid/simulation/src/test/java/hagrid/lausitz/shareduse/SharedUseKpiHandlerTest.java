@@ -1,5 +1,6 @@
 package hagrid.lausitz.shareduse;
 
+import hagrid.core.util.LogCapture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -276,6 +277,38 @@ class SharedUseKpiHandlerTest {
         // ... while delivery_rate_total is the only rate the walk fallback cannot shrink: 3 of 9.
         assertThat(Double.parseDouble(m.get("delivery_rate_total")))
                 .isCloseTo(3.0 / 9.0, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("walk fallback is logged: count, parcels and the affected person, not only a CSV row")
+    void walkFallbackIsWarnedAboutAtWriteTime() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person deliveredP = person(population, "parcel_dhl_1_B2C", 3, "DOOR");
+        person(population, "parcel_dhl_3_B2C", 4, "DOOR");   // never submits: walk fallback
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), deliveredP.getId()));
+        handler.handleEvent(droppedOff(2000.0, Id.create("d", Request.class), deliveredP.getId()));
+
+        try (LogCapture log = LogCapture.of(SharedUseKpiHandler.class)) {
+            handler.writeCsv(Path.of(utils.getOutputDirectory()).resolve("out.csv"));
+            assertThat(log.warnings()).singleElement().satisfies(w -> assertThat(w)
+                    .contains("1 parcel segment").contains("4 parcels")
+                    .contains("parcel_dhl_3_B2C").contains("walk"));
+        }
+    }
+
+    @Test
+    @DisplayName("no walk-fallback warning when every injected segment was submitted")
+    void noWarningWithoutWalkFallback() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person p = person(population, "parcel_dhl_1_B2C", 3, "DOOR");
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), p.getId()));
+
+        try (LogCapture log = LogCapture.of(SharedUseKpiHandler.class)) {
+            handler.writeCsv(Path.of(utils.getOutputDirectory()).resolve("out.csv"));
+            assertThat(log.warnings()).isEmpty();
+        }
     }
 
     @Test

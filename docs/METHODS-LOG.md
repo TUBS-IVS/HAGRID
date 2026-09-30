@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-25._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-28._
 
 ---
 
@@ -73,10 +73,15 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-25._
   Fahrzeug würde auf dem Autobahn-Link nur kriechen, der Router könnte ihn weiter wählen — dazu die
   Konnektivitätsprüfung, dass Zone und alle Depots ohne Autobahn erreichbar bleiben);
   Roboter-Dwell wirkt in der jsprit-Tourplanung **und** der DRT-Stop-Dauer; die Labour-Abschaltung
-  sitzt vollständig in `analysis/kpi/economics.py` und fällt damit mit dem Neubau der
+  sitzt vollständig in `analysis/lausitz/kpi/economics.py` und fällt damit mit dem Neubau der
   Kostenfunktion zusammen (§2.6). Für die Zahlen: bis der Switch gebaut ist, sind **alle** Läufe
   konventionell — `RunMetadataWriter` schreibt `operation_mode="conventional"` hart, und das ist
   korrekt, kein stiller Fallback. Ein Autonomie-Ergebnis ist bislang **nicht** berichtet worden.
+  **Nachtrag 2026-09-28 (am Code geprüft):** der Neubau ist für Lausitz erfolgt (§2.6), die
+  Labour-Abschaltung wurde dabei nicht mitgebaut. `economics.py` und `cost_model.py` kennen keinen
+  Autonomie-Pfad. Die Parameter stehen nur in `cost_parameters.csv` unter dem Arm
+  `autonomy_sensitivity`, den kein Arm-Filter der Headline greift; `autonomy_supervision_ratio`
+  ist dort noch `TODO`.
 
 - **χ-Gate ist Detour-only** — `trägt` · 2026-07-27 (Review-Fund F1, kritisch)
   `ChiGateInsertionCostCalculator` zieht die **stoppeigene Dwell-Zeit** vor dem χ-Vergleich ab;
@@ -550,10 +555,76 @@ optimistisch. Einstieg für die Ursachensuche:
 `CarrierGenerator.adjustDeliveryRatesConsideringB2B:252`, `determineMissedParcels:1049`,
 Sollwerte `HagridConfig.java:190-196`.
 
-### 2.6 Kostenfunktion ist ein Platzhalter
+### 2.6 Kostenfunktion: Platzhalter nur noch in Hannover — Lausitz rechnet direkte Betriebskosten
 
-`vorläufig` · Alle €-KPIs stehen unter diesem Vorbehalt. `analysis/kpi/economics.py` rechnet mit
-25 €/Fahrzeug-Schicht-h (20 Arbeit + 5 Fahrzeug); das DRT-Dashboard trägt zwei
+**Stand 2026-09-28, am Code geprüft. Der frühere Titel „Kostenfunktion ist ein Platzhalter"
+gilt nur noch für Hannover.** Welches Modell läuft, entscheidet
+`economics.extract` am `study_area` des Laufs
+([economics.py:300-304](../analysis/lausitz/kpi/economics.py#L300-L304)):
+
+- **Lausitz → direkte Betriebskosten C** aus
+  [cost_model.py](../analysis/lausitz/kpi/cost_model.py), parametrisiert durch
+  [cost_parameters.csv](../analysis/lausitz/kpi/cost_parameters.csv) v0.7-draft. C hat vier Terme:
+  Personal `c_time × durH` (Arbeitgeber-Vollkosten je *produktiver* Stunde: 28,99 €/h LMD,
+  33,45 €/h DRT), Fahrzeugkapital je Betriebstag (Vans 14,80 / 16,60 / 18,80 €, DRT-Fahrzeug
+  22,74 €; 1d zusätzlich mit dem `modular_premium_factor`-Band 1,00–1,20), Verschleiß
+  0,11 €/km und Energie aus den `*_energy_final`-Zeilen des Emissionskanals (Diesel netto
+  1,5546 €/l, Band 1,18–1,85 €/l als `cost_total_diesel_low/high`). Overhead = 0 per Beschluss.
+  Damit bepreist C die Zeit, die dem Platzhalter und dem jsprit-Satz fehlte (§2.33 Punkt 1).
+  `cost_model.selftest()` reproduziert bei **jedem** Build die sechs im CSV dokumentierten Sätze
+  und bricht sonst ab; die zwölf jüngsten lokalen Lausitz-Läufe tragen alle `cost_total`, keine
+  `*_placeholder`-Zeile und kein `cost_model_failed`. Auf dem Dashboard trägt die Gesamtkachel C
+  („Direkte Betriebskosten" im DRT-Tab, „Kosten Van-Flotte" im LMD-Tab). **Behoben 2026-09-28:**
+  bis dahin standen im LMD-Tab daneben noch vier Anzeigen mit jsprit-Sätzen: die Kachel
+  „Fixkosten", das Diagramm „Kosten je Provider" und die €-Spalten beider Provider-Tabellen. Das
+  widersprach der eigenen Regel „never both". Sobald `cost_lmd_total` existiert, blendet
+  `render_lmd._has_unified_cost` sie jetzt aus; in Hannover bleiben sie stehen, weil es dort keine
+  andere Kostenzahl gibt. Eine Aufteilung von C nach Provider existiert nicht, deshalb gibt es in
+  Lausitz vorerst keine €-Zahl je Provider. Bereits gebaute `kpi_dashboard.html` zeigen den alten
+  Stand, bis sie neu gebaut werden.
+- **Hannover → weiterhin der Platzhalter** unten (`_legacy`, 25 €/Fzg-Schicht-h, jede Zeile mit
+  `_placeholder`-Suffix), User-Entscheidung 2026-08-28. Die €-Zahlen des Hannover-Sweeps kommen
+  ohnehin aus einem dritten Pfad, dem Java-Legacy-Board mit den jsprit-Sätzen (§2.33).
+- **Was in beiden Gebieten auf dem alten Stand bleibt:** C ist rein post-hoc. Gegen die Kosten
+  **geplant** (jsprit) und **gescort** (MATSim) wird unverändert mit den Legacy-Sätzen aus
+  `lmd-vehicle-types.xml` (154,41 / 171,78 / 189,15 € je Tour, `costsPerSecond = 0`); §2.20 und
+  §2.33 gelten also für die Tourenbildung weiter. Diese Legacy-Beträge stehen auch in den
+  Lausitz-CSVs noch als `freight_fixed_costs`, `freight_var_costs_*`, `freight_total_costs`
+  ([extract_freight.py:91-96](../analysis/lausitz/kpi/extract_freight.py#L91-L96)). Das sind
+  jsprit-Planungskosten, nicht C, und sie werden nie neben `cost_total` zitiert.
+- **Was an C noch vorläufig ist (unvollständig, aber kein Platzhalter):** der Kopf der
+  Parameterdatei sagt weiter „v0.7-draft … do not cite", Zitierfreigabe steht aus.
+  Überstunden- und Abendzuschlag sind nicht instrumentiert (als `cost_*_instrumented = 0`
+  ausgewiesen). Die durH-Basis ist eine Setzung mit Vorzeichenwirkung
+  ([economics.py:12-30](../analysis/lausitz/kpi/economics.py#L12-L30)). Freier Fahrerwechsel ist
+  unterstellt (`cost_drivers_per_vehicle_min`), Deflationierung findet nicht statt. Für
+  Ein-Flotten-Arme gibt es **keine** €/Fahrt oder €/Paket, weil die M11-Zurechnung nicht in der
+  Pipeline steckt; die M11-Zahlen in §2.38 sind außerhalb von `economics.py` gerechnet. **Defekt
+  gefunden und behoben 2026-09-28:** das Tor erkannte 1c nicht als Ein-Flotten-Arm. 1c schreibt
+  nur `parcels_delivered`, `economics._direct_cost` suchte aber nur `parcels_handled` und
+  `parcels_served`. 1c fiel dadurch in den Zweig „reiner Pax-Lauf" und schrieb
+  `cost_per_ride = cost_total / drt_rides`, also die **gesamten** Verbundkosten einschließlich
+  Fracht auf die Fahrgäste (gemessen `d1c_f140…s1337`: 9,997 €/Fahrt aus 91.802 €). Der alte
+  Test prüfte nur 1d (`parcels_served`). Jetzt ist `parcels_delivered` der dritte Rückfall
+  ([economics.py:218-230](../analysis/lausitz/kpi/economics.py#L218-L230)), und
+  `test_shareduse_arm_emits_no_per_unit_cost` speist die echte Ausgabe von `extract_shareduse`
+  ein. Probe an den gespeicherten Eingangszeilen aller 13 lokalen 1c/1d-Läufe mit Kostenzeilen:
+  `cost_total` bleibt gleich (±0,1 € CSV-Rundung), 1d bleibt unverändert, und 1c trägt statt
+  `cost_per_ride` das Flag `cost_per_unit_separable`. **Bereits geschriebene 1c-CSVs führen die
+  falsche Zeile weiter**, lokal wie auf den Rechenmaschinen, bis sie mit dem Fix neu gebaut
+  sind. Eine 1c-€/Fahrt-Zahl aus ihnen nie verwenden.
+
+**Status:** Hannover `vorläufig` wie unten. Lausitz: alle Parameter, die in C eingehen, stehen im
+CSV auf `SET` oder begründet auf `OPTIONAL`. `REVIEW` tragen nur Crosscheck-Zeilen und
+`max_daily_working_hours_legal`, das nur die Fahrerzahl-Zeile speist und nicht C. `TODO` ist
+allein `autonomy_supervision_ratio`, und die liegt außerhalb des Scopes. Trotzdem bleibt der Stand
+`vorläufig`, bis die Parameterdatei zum Zitieren freigegeben ist.
+
+**Ursprünglicher Eintrag (2026-07, gilt so nur noch für Hannover):**
+
+`vorläufig` · Alle €-KPIs stehen unter diesem Vorbehalt.
+[`analysis/lausitz/kpi/economics.py`](../analysis/lausitz/kpi/economics.py) (damals
+`analysis/kpi/`) rechnet mit 25 €/Fahrzeug-Schicht-h (20 Arbeit + 5 Fahrzeug); das DRT-Dashboard trägt zwei
 Platzhalter-Karten (Bottom-up 25 € / Literatur-Benchmark 68 €). Widersprüchliche Literaturwerte
 noch unaufgelöst (150.000 € pauschal mit Verweis Currie/Fournier vs. 408.000 € Benchmark /
 35,25 € pro Fahrt). Betrifft auch die Elastizitäts-Aussage aus §1.3, die über Fixkosten läuft —
@@ -597,6 +668,14 @@ unter Vorbehalt, nicht nur die DRT-seitigen.
   ausweisen.
 - **Idle-/Kaltstart-Parameter sind bislang unbelegte Setzungen** (±15 %-Spannen synthetisch via
   `_build_minmax`) → belegen, sonst Scope auf CO₂e + Energie begrenzen.
+  **Nachtrag 2026-09-28 (am Code geprüft): gilt nur für das eingefrorene Kollegenmodul, nicht für
+  den Lausitz-Kanal.** Die unbelegten Idle-/Kaltstart-Sätze stehen in
+  `hagrid/simulation/src/hagrid_output_analysis/config.py` (ab Z. 236), und die ±15 %-Spannen
+  von `_build_minmax` betreffen dort CH4 und N2O (Z. 206-207), nicht Idle/Kaltstart. Der
+  Lausitz-Kanal (`analysis/lausitz/kpi/emissions_emep.py`) rechnet den Kaltstart nach EMEP/EEA
+  Gl. (10) mit EPA-Abkühlschwelle (§2.29). Idle ist dort gar nicht modelliert
+  (Motor-aus-Annahme an Stopps, als Limitation im `vehicle_emissions`-Docstring). Eine
+  synthetische Spanne gibt es dort nicht.
 
 ### 2.8 Räumliche Platzierung unterhalb ~300 m
 
@@ -1051,7 +1130,10 @@ Sensitivität, BACKLOG.)
    `parcels_per_vehicle_km` bleiben bewusst netto, weil `parcels_handled` der Nenner von
    `economics.freight_cost_per_parcel` ist und die €-Kennzahl sich nicht still mitverschieben
    soll (die Kostenfunktion wird separat überarbeitet → BACKLOG `[H]`; nach der Umstellung
-   fällt sie von 2,06 auf ~1,92 €/Paket).
+   fällt sie von 2,06 auf ~1,92 €/Paket). _Nachtrag 2026-09-28:_ `freight_cost_per_parcel` gibt
+   es nur noch im Hannover-Platzhalter. Lausitz führt stattdessen `cost_per_parcel` aus C, und
+   zwar nur dort, wo die Van-Flotte getrennt ist. Der Nenner ist ebenfalls `parcels_handled`
+   (§2.6).
    **Mit-behobener Geschwisterdefekt:** `extract_freight_provider.py` rechnete `delivery_rate`
    ebenfalls netto — eine Provider-Tabelle auf anderer Basis als ihre eigene Headline. Lehre
    (vgl. [[feedback-test-discrimination]]): wer eine Quote auf falscher Basis findet, sucht im
@@ -1929,6 +2011,16 @@ allesamt **Zeit**, und Zeit hat in dieser Kostenfunktion den Preis null. §2.20 
 Abrechnung* sie nicht sichtbar machen könnte. Eine Kostenaussage über 1c/1d ist damit vor dem
 Neubau der Kostenfunktion strukturell nicht möglich — unabhängig davon, dass beide Arme heute
 ohnehin **gar keine** Fracht-€-KPI exportieren (nur die Baseline hat ein `analysis/freight/`).
+
+> **Nachtrag 2026-09-28 (am Code geprüft):** die *nachträgliche Abrechnung* ist für Lausitz neu
+> gebaut (§2.6). C bepreist Zeit über `c_time × durH`, und χ-Umweg, Rüstzeit und Deadhead landen
+> damit in `drt_tour_hours_total`. Seitdem haben 1c und 1d eine Kostenzahl (`cost_total`), und
+> der Armvergleich läuft darüber. Unverändert gilt der Abschnitt für alles, was *in* der
+> Simulation mit Kosten rechnet. `lmd-vehicle-types.xml` trägt weiter die Tagespauschalen und
+> `costsPerSecond = 0`, jsprit plant also gegen die alte Funktion (§2.20). Der Overtime-Defekt aus
+> Punkt 4 steht noch im Code: `isExceedingWorkTime` wird deklariert und gelesen, aber nirgends
+> gesetzt (`ScoringFunctions:146,184`). Beides wirkt auf die Legacy-Zeilen `freight_*_costs` und
+> das Hannover-Board, nicht auf C.
 
 **Beschlossene Korrekturregel für den Hannover-Sweep** (Entscheidungen 2026-08-11, hierher
 verschoben aus dem BACKLOG 2026-08-17, weil es Festlegungen sind und keine offene Arbeit):
@@ -2843,9 +2935,24 @@ Die im Paperentwurf zitierten **35,0 % / 40,0 %** sind damit zurückgezogen: sie
 Zeile **c = 40** des alten Provider-Exports (dort netzwerkweit 34,96 %, amazon 40,0 %), nicht aus
 dem niedrigsten Cap. Wer die Zahl als Anfahrtsanteil zitiert, nimmt die Tabelle oben.
 
-**Noch nicht gemessen:** wie viel der Rückweg hinzufügt. Der Wert der neuen Definition liegt
-zwangsläufig höher, um wie viel, sagt erst ein Lauf mit dem neuen Code — die vorhandenen Boards
-tragen das Rückleg nirgends, es ist aus ihnen nicht rekonstruierbar.
+**Gemessen 2026-09-29, ohne neue Simulation.** `HAGRIDAnalysisRunner` baut das Board aus Events,
+Carriers und Netz eines fertigen Laufs neu. Die 14 v2-Läufe Cap 160–290 liegen auf dem Dev
+vollständig vor; neues und altes Board desselben Laufs haben identische km und Fahrzeugzahlen
+(Kontrolle), der Unterschied ist allein die Definition (Σ stem km / Σ km, netzwerkweit):
+
+| | alt (nur Hinweg, Plan/Event) | neu: Hinweg | neu: Rückweg | neu: gesamt |
+|---|---|---|---|---|
+| Spanne über 14 Caps | 24,2–25,8 % | 25,3–27,0 % | 21,9–24,1 % | **47,2–51,0 %** |
+| Mittel | 24,7 % | 25,8 % | 22,6 % | 48,4 % |
+
+Zwei Effekte, getrennt messbar: die gemeinsame Event-Basis hebt den Hinweg um **+1,1 bis +1,3 pp**
+(das ist die Plan/Ausführungs-Lücke aus §2.33), und der Rückweg bringt noch einmal fast so viel
+wie der Hinweg — sein Anteil an der Gesamtzahl liegt bei 46–47 % in jedem Cap. Das
+Provider-Maximum verdoppelt sich ebenso (27–31 % → 55–64 %). ⚠️ **Nicht extrapolieren:** gemessen
+ist nur v2 bei 160–290; die Paperzahl c=30 (37,3 % alt) ist unter der neuen Definition nicht
+gemessen, die Läufe liegen auf dem Sim. Neue Boards unter
+`Desktop\Sim_Results\0726\Run1\Dashboards_newstem`; `extract_sweep.py` weist die Definition je
+Board aus (`stem_def`) und bricht bei einer Serie ab, die beide mischt.
 
 
 
@@ -2883,6 +2990,13 @@ null Paketzeilen), die Pakete zählen als zugestellt, und ohne die gezielte Gege
 (gleiche Konvention wie die Baseline, §2.21). Die Lücke zu 1,0 sind genau die 15 Hoftor-Pakete —
 ein 1c-only-Artefakt, keine Zustellschwäche: die Baseline routet Pakete als jsprit-`CarrierService`
 und kennt die `from == to`-Schranke nicht.
+
+**Nachtrag 2026-09-29 — ausgewiesen, nicht behoben.** Die KPI-Schicht führt beide Kanäle seit
+2026-08-26 (`parcels_walked`, gegen `output_trips` bestätigt; `parcels_dropped_at_depot_link`).
+Jetzt zeigt das 1c-Board sie auch: „Pakete zugestellt“ steht auf demselben Zähler wie die Quote
+(vorher 5.946 neben 99,75 % = 6.037/6.052), dazu eine Paket-Bilanz Nachfrage = DRT + zu Fuß +
+Hoftor + nicht zugestellt mit Warnung, wenn sie nicht aufgeht. `SharedUseKpiHandler` loggt den
+Kanal als WARN mit bis zu fünf Personen-IDs. Die Ursache im Router bleibt offen (BACKLOG).
 
 Verwandt: §2.46 (die Segmentaufteilung als eigentliche Ausfallursache), §2.31 (warum ein nicht
 eingefügtes Paket ohne Event verschwindet).
@@ -4169,7 +4283,11 @@ gehen in den Vergleich nicht ein. Die Batterie kennt kein Regime. Gemessen bei S
 **51,8 % → 55,6 %** (+3,8 pp). Betroffen ist ausschließlich der 1d-Arm und ausschließlich die
 Tageskennzahl — `drive_block_*` läuft laut `_blocks_from_seq` bewusst über beide Regime und ist
 korrekt. Der KPI-Kanal wurde **nicht** angefasst (laufende Kampagne); der Papierpfad rechnet die
-Summe, siehe BACKLOG.
+Summe. **Behoben 2026-09-29:** `_range_rows` summiert je Fahrzeug Pax- und Kapsel-km, die
+Quellenangabe der Zeile sagt das („pax + capsule km of the same vehicle“) und ist zugleich der
+Vintage-Stempel. `--verify` liest ihn und prüft neue Dateien gegen den Tageswert, alte weiter
+gegen die Regime-Trennung. Die lokal neu gebauten 1d-Läufe tragen damit dieselbe Zahl wie dieses
+Modul; Läufe auf den Rechenmaschinen erst nach ihrem Neubau.
 
 **Instrumentenfehler 2 — zwei Vintages im selben Tabellensatz.** Die zehn S1/S2-Läufe sind auf dem
 Sim-PC KPI-gebaut, der für den Hannover-Sweep auf altem HEAD steht: sie tragen die Schwellen
@@ -4783,6 +4901,39 @@ Belege (Worktree `HAGRID-r3`, Commit `73a8324`):
 - Residuum: der Carriers-Writer (`…lmd_carriers_routed.xml`) hat keinen Nach-Umzug-Hash (P2 nicht gelaufen), nur den Golden-Test der Suite; sein Codepfad enthält kein geändertes Pfadliteral.
 
 Ausroll-Regel je Maschine: `git pull` → `migrate-input-layout.ps1` (No-op) → `migrate-module-layout.ps1` (Protokoll: fünf `EQUAL`, `result=OK`) → `mvn -q clean install` → P1-Probe; Rückweg `git checkout <alt>` → `migrate-module-layout.ps1 -Reverse` → `mvn -q clean install`. Nur zwischen Läufen.
+
+### 2.76 Die Auswertung fand drei Viertel der LMD-Touren in den Events nicht — falscher Fahrzeug-Schlüssel
+
+`trägt` · entdeckt und behoben 2026-09-29. **Defekt der Auswertung, nicht der Simulation.** Betrifft
+Board-Grafiken der Baseline, keine Paperzahl.
+
+MATSim benennt einen Carrier-Fahrer `freight_<carrier>_veh_<vehicle>_<n>`, wobei `n` die Touren des
+gewählten Plans je Carrier mit 1, 2, … durchzählt (`CarrierAgent.createDriverId`). Die Python-Seite
+(`carriers_parse.TourDef.event_vehicle_id`) setzte dort die jsprit-`tourId` ein. Die beiden fallen
+nur zusammen, solange die `tourId`s zufällig in Planreihenfolge stehen.
+
+| Lauf | Touren | Treffer `tourId` | Treffer Position |
+|---|---|---|---|
+| `base10c` (150 it.) | 63 | 63 | 63 |
+| `basew21` | 52 | **6** | 52 |
+| `b120rgs`, `b140rgs` | 41 | **10** | 41 |
+
+Weil jedes Fahrzeug nur eine Tour fährt, führte der falsche Schlüssel nie zu einer falschen
+Zuordnung, immer nur zu „nicht gefunden“. Still fehlten daher: die Tourdaten in `kpi_vehicles.csv`
+(b120rgs 585 statt 2.701,5 km), die km je Fahrzeugtyp (`vtype:*`, dieselben 585 km), die
+Stundenreihen Pakete und aktive Fahrzeuge je Provider (1.389 statt 6.052 Pakete), die LMD-Touren
+und -Stopps der Karte, und der Ausschluss schwach ausgelasteter Touren, soweit es welche gab.
+
+**Nicht betroffen:** Kosten C (Flottenaggregate und Typmix aus den Carriers), die Emissionen (lesen
+Fahrzeug und Typ direkt aus `TimeDistance_perVehicle.tsv`), jede Zeile in `kpis_long.csv` — beim
+Neubau von b120rgs änderte sich dort kein einziger Wert. Die Test-Fixtures trugen dieselbe falsche
+Konvention (0-basiert, aus der Tour-Position), deshalb war die Suite grün; sie sind auf MATSims
+Zählung umgestellt, und ein Test mit ungeordneten `tourId`s pinnt den Fall.
+
+Seit wann die `tourId`s ungeordnet sind, ist nicht an REGRET_INSERTION (§2.34) gebunden: `basew21`
+mit 52 Touren liegt vor dem Wechsel und trifft trotzdem nur 6. Nicht weiter eingegrenzt.
+
+Verwandt: §2.6 (Kosten), §2.33 (Plan- gegen Ausführungsdistanz).
 
 ---
 

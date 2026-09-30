@@ -424,4 +424,43 @@ class HagridPathsTest {
             assertThat(Files.exists(tempDir.resolve(detected).resolve("input").resolve("README.md"))).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("copyIfMissing (shared/ inputs)")
+    class CopyIfMissing {
+
+        @Test
+        @DisplayName("copies the source when the destination is missing")
+        void copiesWhenMissing(@TempDir Path tmp) throws IOException {
+            Path src = Files.writeString(tmp.resolve("src.xml"), "new");
+            Path dst = tmp.resolve("dst.xml");
+            HagridPaths.copyIfMissing(src, dst, "sim-config.xml");
+            assertThat(dst).hasContent("new");
+        }
+
+        @Test
+        @DisplayName("a destination that differs from its source is KEPT (no refresh), but warned about")
+        void staleDestinationIsKeptAndWarned(@TempDir Path tmp) throws IOException {
+            Path src = Files.writeString(tmp.resolve("src.xml"), "new");
+            Path dst = Files.writeString(tmp.resolve("dst.xml"), "old");
+            try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(HagridPaths.class)) {
+                HagridPaths.copyIfMissing(src, dst, "sim-config.xml");
+                assertThat(log.warnings()).singleElement().satisfies(m ->
+                        assertThat(m).contains("sim-config.xml").containsIgnoringCase("differs"));
+            }
+            // refreshing would change which input a run reads -- deliberately not done here
+            assertThat(dst).hasContent("old");
+        }
+
+        @Test
+        @DisplayName("an identical destination is skipped silently")
+        void identicalDestinationIsQuiet(@TempDir Path tmp) throws IOException {
+            Path src = Files.writeString(tmp.resolve("src.xml"), "same");
+            Path dst = Files.writeString(tmp.resolve("dst.xml"), "same");
+            try (hagrid.core.util.LogCapture log = hagrid.core.util.LogCapture.of(HagridPaths.class)) {
+                HagridPaths.copyIfMissing(src, dst, "sim-config.xml");
+                assertThat(log.warnings()).isEmpty();
+            }
+        }
+    }
 }

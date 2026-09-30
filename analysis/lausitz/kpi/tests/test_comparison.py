@@ -62,3 +62,47 @@ def test_comparison_page_defines_all_chart_plugins(tmp_path):
     assert "vlinePlugin" in html          # VLINE_JS
     assert "mkToggle" in html             # TOGGLE_JS
     assert "toggleVeh" in html            # DRILL_JS
+
+
+_CONFIG = ('<?xml version="1.0" ?><config>'
+           '<module name="controller"><param name="outputDirectory" value="C:/Users/x/out" />'
+           '</module><module name="multiModeDrt"><parameterset type="drt">'
+           '<param name="numberOfThreads" value="{threads}" /></parameterset></module></config>')
+
+
+def _write_config(run_dir, threads):
+    rid = run_dir.name.rsplit("_iter", 1)[0]
+    (run_dir / (rid + ".output_config.xml")).write_text(_CONFIG.format(threads=threads),
+                                                         encoding="utf-8")
+
+
+def test_comparison_page_shows_the_config_diff(tmp_path):
+    """basew21 (METHODS-LOG 3.14): byte-identical populations, but numberOfThreads 14 vs 12,
+    worth ~103 rides. The comparison page shows every substantive config difference of each
+    run against the first, so a pair that differs in more than the parameter under test is
+    visible where the figures are read -- not only when someone runs config_diff.py by hand."""
+    a = _fake_run(tmp_path, "DRT_TEST_A_iter1_jsprit1")
+    b = _fake_run(tmp_path, "DRT_TEST_B_iter1_jsprit1")
+    _write_config(a, 14)
+    _write_config(b, 12)
+    out = tmp_path / "cmp.html"
+    build_comparison([a, b], out_file=out)
+    html = out.read_text(encoding="utf-8")
+    assert "Konfigurations-Abgleich" in html
+    assert "multiModeDrt/drt/numberOfThreads" in html
+    assert "14" in html and "12" in html
+    assert "1 substanzielle Abweichung" in html
+    assert "controller/outputDirectory" not in html     # bookkeeping path, not shown
+
+
+def test_comparison_page_reports_identical_configs_and_missing_ones(tmp_path):
+    a = _fake_run(tmp_path, "DRT_TEST_A_iter1_jsprit1")
+    b = _fake_run(tmp_path, "DRT_TEST_B_iter1_jsprit1")
+    c = _fake_run(tmp_path, "DRT_TEST_C_iter1_jsprit1")
+    _write_config(a, 12)
+    _write_config(b, 12)                                # c has none
+    out = tmp_path / "cmp.html"
+    build_comparison([a, b, c], out_file=out)
+    html = out.read_text(encoding="utf-8")
+    assert "identisch" in html
+    assert "output_config.xml fehlt" in html

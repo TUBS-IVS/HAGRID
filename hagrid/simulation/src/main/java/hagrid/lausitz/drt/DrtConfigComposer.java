@@ -110,6 +110,15 @@ public final class DrtConfigComposer {
             drt.addParameterSet(rebalancing);
 
             multi.addParameterSet(drt);
+        } else {
+            // Not reached by any HAGRID run today (the native Lausitz config carries no DRT
+            // group). If it ever is, the pre-existing group is used as is -- which silently
+            // drops everything above, so say so.
+            LOG.warn("MultiModeDrtConfigGroup already holds {} DRT mode(s) {} - HAGRID DRT composition"
+                            + " SKIPPED (service area, fleet file, maxWaitTime, rebalancing are NOT set"
+                            + " from HAGRID; the pre-existing group is used as is)",
+                    multi.getModalElements().size(),
+                    multi.getModalElements().stream().map(DrtConfigGroup::getMode).toList());
         }
 
         // DynAgents need only the start time.

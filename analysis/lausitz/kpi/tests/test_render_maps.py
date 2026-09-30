@@ -65,6 +65,12 @@ def test_drt_block_js_creates_leaflet_map():
     assert "MAP_DATA_m0" in js
 
 
+def test_drt_stop_badge_hover_names_the_passenger():
+    js = render_maps.build_blocks(_map_data(), uid="m0")["drt"]["js"]
+    assert "bindTooltip(" in js
+    assert "s.person" in js
+
+
 def test_lmd_block_html_has_map_div_and_mode_radio():
     blocks = render_maps.build_blocks(_map_data(), uid="m0")
     html = blocks["lmd"]["html"]

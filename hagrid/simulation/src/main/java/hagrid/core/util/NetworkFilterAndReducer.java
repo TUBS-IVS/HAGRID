@@ -31,7 +31,6 @@ import org.matsim.core.network.turnRestrictions.DisallowedNextLinks;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.utils.objectattributes.attributable.AttributesUtils;
 
-import hagrid.core.util.GeoUtils;
 
 /**
  * This class filters and reduces a MATSim network based on specific criteria.

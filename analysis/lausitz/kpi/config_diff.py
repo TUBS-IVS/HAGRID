@@ -19,6 +19,9 @@ import sys
 BS = chr(92)
 TAG_RE = re.compile(r'DRT_(?:BASELINE|SHAREDUSE|MODULAR)_\d+_[A-Za-z0-9_]+')
 HOME_RE = re.compile(r'(?i)[a-z]:/Users/[^/]+')
+# the checkout location of the repo itself: C:/Users/<u>/Documents/GitHub/HAGRID/ on Windows,
+# /home/<u>/HAGRID/ on the Lausitz VM -- same files, not a parameter difference
+REPO_RE = re.compile(r'[^;,"]*?/HAGRID/')   # spaces allowed: "C:/Users/Hendrik Bimmermann/..."
 NODE_RE = re.compile(
     r'<(module|parameterset)\s+(?:name|type)="([^"]+)"'
     r'|</(?:module|parameterset)>'
@@ -43,10 +46,21 @@ def params(path):
             key = "/".join(stack) + "/" + m.group(3)
             val = m.group(4).replace(BS, '/')
             val = TAG_RE.sub('<RUN>', val)
+            val = REPO_RE.sub('<REPO>/', val)
             val = HOME_RE.sub('<HOME>', val)
             val = val.replace('/./', '/')
             out.setdefault(key, []).append(val)
     return out
+
+
+def diff(a_path, b_path):
+    """{"compared": n paths, "diffs": [(path, a_vals, b_vals)], "real": the diffs minus the
+    bookkeeping paths}. Library entry point for build_comparison.py."""
+    A, B = params(a_path), params(b_path)
+    keys = sorted(set(A) | set(B))
+    diffs = [(k, A.get(k), B.get(k)) for k in keys if A.get(k) != B.get(k)]
+    real = [d for d in diffs if not d[0].startswith(COSMETIC)]
+    return {"compared": len(keys), "diffs": diffs, "real": real}
 
 
 def main():
@@ -57,10 +71,8 @@ def main():
     args = ap.parse_args()
     la, lb = args.labels if args.labels else ('A', 'B')
 
-    A, B = params(args.a), params(args.b)
-    keys = sorted(set(A) | set(B))
-    diffs = [(k, A.get(k), B.get(k)) for k in keys if A.get(k) != B.get(k)]
-    real = [d for d in diffs if not d[0].startswith(COSMETIC)]
+    d = diff(args.a, args.b)
+    keys, diffs, real = range(d["compared"]), d["diffs"], d["real"]
 
     print("%d parameter paths compared; %d differ (%d after dropping bookkeeping paths)"
           % (len(keys), len(diffs), len(real)))

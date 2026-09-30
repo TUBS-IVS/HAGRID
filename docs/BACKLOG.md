@@ -35,11 +35,11 @@ Strukturschaden repariert, drei neue Defekte aufgenommen → Nachweis in
 
 ### `[M]` Stem-KPI: Neuzahlen fahren und in den Sweep ziehen
 
-Die Definition ist seit 2026-08-28 korrigiert (METHODS-LOG §2.49), Zahlen dazu gibt es noch keine.
-Offen: (1) ein Hannover-Board mit dem neuen Code erzeugen und den Zuwachs durch das Rückleg
-messen; (2) `extract_sweep.py` um `ROUT_EFF` erweitern (`stem_pct_network`,
-`stem_pct_provider_max`), damit die Zahl nicht wieder von Hand aus einer CSV-Zeile abgelesen wird;
-(3) `stemInPct` als Vintage-Weiche einbauen, sonst mischt der Extractor beide Definitionen.
+Gemessen 2026-09-29 an 14 lokal neu erzeugten v2-Boards (Cap 160–290): der Rückweg verdoppelt die
+Kennzahl fast, 24,2–25,8 % → 47,2–51,0 % (METHODS-LOG §2.49). `extract_sweep.py` liest `ROUT_EFF`
+und verweigert Serien mit gemischter Definition. Offen nur noch: die übrigen Caps (v. a. c=30,
+die Paperzahl) mit `HAGRIDAnalysisRunner` neu erzeugen — die Laufordner liegen auf dem Sim.
+Neue Boards unter `Desktop\Sim_Results\0726\Run1\Dashboards_newstem`, als eigene Serie einziehen.
 
 ### `[H]` Shared-Use / Cargo-Hitching (Szenario 1c)
 
@@ -68,7 +68,8 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   2026-09-10** (§2.66): das Not-at-home-Overlay ist aus `parcels_handled`,
   `parcels_per_vehicle_km` und dem Kostennenner gestrichen, alle drei Arme stehen brutto.
   ⚠️ Bereits vorhandene `kpis_long.csv` tragen noch die alte Basis und müssen für den
-  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`). 9 neue Läufe unter
+  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`) — lokal 2026-09-29
+  erledigt, auf den Rechenmaschinen offen. 9 neue Läufe unter
   Wiederverwendung von b120rgs@120 (n=5) und 1c f140@140 (n=5), ~4 Tage. **Noch nicht
   freigegeben.** _(added 2026-09-09)_
 - **`[H]` ~~Baseline-Seed-Fächer bei 250 Iterationen~~ ERLEDIGT 2026-09-09** — 1c
@@ -84,18 +85,14 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   `numberOfThreads`. Die Threadzahl ist NICHT ergebnisneutral: 12 gegen 14 sind −103 Fahrten
   bei sonst identischer Config (§2.59). Die Datei ist ungetrackt und auf dem **Dev gar nicht
   vorhanden** — genau so ist basew21 auf 14 gerutscht. Entweder in die Versionskontrolle oder
-  den Wert explizit in die Config schreiben, wo er sichtbar ist. _(added 2026-09-06)_
-- **`[H]` Paarvergleiche mit vollem Config-Diff absichern, nicht nur mit dem POPHASH** — der
-  POPHASH-Check prüft die Eingangspopulation; bei basew21 waren die Populationen byteidentisch
-  und der Defekt saß trotzdem in der Config (§3.14). Ein Diff über alle 310 Config-Pfade hätte
-  ihn sofort gezeigt. Werkzeug liegt jetzt unter `analysis/lausitz/kpi/config_diff.py` (selbstgetestet
-  am basew21-Paar: 1 substanzielle Abweichung; Negativkontrolle gegen sich selbst: 0). Offen
-  ist nur noch, es in die Auswertung fest einzuhängen. _(added 2026-09-06)_
-- **`[H]` Walk-Fallback abstellen oder ausweisen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
-  der Routensuche ab, MATSim setzt ein Walk-Leg, das Paket zählt als zugestellt, und **nichts wird
-  geloggt** (§2.50). 41 der 91 laufen 2,3–6,7 km. Flotten- und χ-invariant, also nicht durch
-  Kapazität oder χ zu beheben. Entweder Ursache am Ort beheben oder als eigener Kanal im
-  Dashboard ausweisen — aber nicht stillschweigend mitzählen. _(added 2026-09-03)_
+  den Wert explizit in die Config schreiben, wo er sichtbar ist. ⚠️ **Beides ist eine
+  Ergebnisentscheidung, keine Hygiene** (geprüft 2026-09-28): kein getracktes Skript liest die
+  Datei, und auf dem Dev fehlt sie. Wer sie einführt, legt die Threadzahl des Dev neu fest.
+  _(added 2026-09-06)_
+- **`[M]` Walk-Fallback an der Ursache abstellen — 91 Pakete (1,5 %)** — der DRT-Router lehnt bei
+  der Routensuche ab, MATSim setzt ein Walk-Leg (§2.50). 41 der 91 laufen 2,3–6,7 km. Seit
+  2026-09-29 ausgewiesen (Paket-Bilanz im 1c-Board, WARN im Log mit Personen-IDs); offen ist nur die
+  Ursache, und deren Behebung ändert Ergebnisse. _(added 2026-09-03)_
 - **`[M]` Hoftor-Verwurf beheben — 15 Pakete (0,25 %)** — zwei gepoolte Stopps schnappen auf ihren
   eigenen Depot-Link, `from == to` ist keine gültige DVRP-Anfrage, im Preprocessing verworfen
   (§2.50). Auf eine Nachbarkante snappen statt verwerfen; die Baseline kennt die Schranke nicht,
@@ -104,7 +101,11 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   [METHODS-LOG](METHODS-LOG.md) §2.46 (Ausfälle je Segmentgröße) stammt aus einem Skript, dessen
   Paketsummen sich nicht mit der KPI-Schicht verrechnen ließen — die Totale sind dort auf 395/268
   korrigiert, die Verteilung ist noch nicht nachgerechnet. Bis dahin **nicht zitierbar**. Reines
-  Postprocessing, 0 Runs. _(added 2026-09-02)_
+  Postprocessing, 0 Runs. Basis geklärt 2026-09-29: `<run>.shareduse_detour_min.csv` (Segment,
+  Pakete, Ergebnis) geht exakt auf die Kanal-Statistik auf, ihre Größenverteilung trifft die
+  n-Spalte. Gebraucht werden nur diese Datei + `shareduse_channel_stats.csv` der beiden χ=600-Läufe
+  (`d1c_dep7_f140_chi600[_evensplit]`, nur auf dem Sim); „nicht zugestellt“ = `parcels_undelivered`
+  (inkl. verspätet), sonst geht die Summe nicht auf 268 auf. _(added 2026-09-02)_
 - **`[M]` Paketausfälle nie aus einem Einzellauf berichten** — der Fächer zeigt für
   `parcels_undelivered` einen Variationskoeffizienten von **19,3 %** (258–399 bei n=5), gegen 1,1 %
   bei der Quote und 1,4 % bei den Pax-Fahrten (§2.52). Aussagen der Form „χ kostet N Pakete“
@@ -126,19 +127,6 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   nur einen zusätzlichen Punkt.
 - **Offen: PPC (Passenger-Parcel Compensation) prüfen** — vor der Evaluation entscheiden, ob der
   Mechanismus reinkommt → [METHODS-LOG](METHODS-LOG.md) §4.1. _(added 2026-07-15)_
-
-### `[H]` `ev_range_exceed_drt_*` teilt den 1d-Fahrzeugtag in zwei Fahrzeuge
-
-`extract_emissions.drt_arm` zieht die Frachtregime-km per `exclude_windows` ab und bucht sie unter
-`freight_modular`; `ev_range_exceed_drt_*` vergleicht danach die Reichweite gegen die reine
-Passagierstrecke. Ein 1d-Fahrzeug mit 200 km Pax + 200 km Kapsel gilt damit zweimal als fahrbar.
-Nur der 1d-Arm und nur die Tageskennzahl sind betroffen — `drive_block_*` läuft korrekt über beide
-Regime. Gemessen S3 f130: 51,8 % statt 55,6 % (METHODS-LOG §2.69).
-
-Bewusst **nicht** während der laufenden Kampagne gefixt: eine Änderung am KPI-Kanal macht alle
-bestehenden Boards unvergleichbar. Der Papierpfad rechnet es korrekt in
-`analysis/paper-figures/emissions-services/charging_feasibility.py`. Beim Fix: dessen
-`test_day_km_spans_both_regimes` ist die Fixture, die die beiden Lesarten trennt.
 
 ### `[M]` 1c f130/f150 vom Sim holen, um den f138-Versatz der Ladezahlen zu messen
 
@@ -311,22 +299,25 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   bzw. Tageszeitauflösung, die `economics.extract` an seiner Stelle in `build_kpis` nicht hat.
   Headline unberührt (`overtime_factor` = 0), die 0,30-Sensitivität wäre aber ~16 % des
   Personalkanals. Als `cost_*_instrumented`-Flags sichtbar. _(added 2026-08-28)_
-- **`[M]` `kpi_vehicles.csv` trägt die Frachtseite nicht** — nur **10 von 41** Frachtzeilen haben
-  `distance_km`/`duration_h`, Summe 585 km gegen 2.702 km aus `kpis_long`. C rechnet deshalb auf
-  Flotten-Aggregaten; als Basis wäre die Datei still um Faktor 4,6 falsch gewesen. _(added 2026-08-28)_
 - **`[H]` Kostenmodell-Sektion im METHODS-LOG anlegen** — die Herleitung (Lohn-Vollkosten,
   Overhead-Kürzungsalgebra, M11-Zurechnung) lebt derzeit **nur** im CSV-Kopf. Das ist
   paper-facing Methodik und gehört ins METHODS-LOG, bevor daraus ein Methods-Kapitel wird.
   _(added 2026-08-17)_
-- **Beim Neubau umzusetzen:** M11-Marginalzurechnung (Fracht zahlt eigene Fahrzeugstunden + km,
-  Pax den Rest samt Fixblock) statt `drt_cost_per_ride_placeholder`, das heute 100 % der
-  Flottenkosten den Pax auflädt · Aufspaltung des LMD-Fixsatzes in Fahrzeug-Tag + Fahrer-Stunde
-  (heute `costsPerSecond = 0`, Tagessatz je *Tour* — [METHODS-LOG](METHODS-LOG.md) §2.33), das ist
-  zugleich Voraussetzung für den Autonomie-Switch · Kapsel-/Swap-Station-Kapital und Handling
-  fehlen ganz (post-hoc als `modular_premium_factor`-Band 1,00–1,20 abgebildet).
-- **`[M]` DRT-Kosten-KPI im v2-Dashboard klären** — v2 hat **null** DRT-Kosten-KPIs; drei
-  widersprüchliche Literaturwerte sind aufzulösen (150.000 € Currie/Fournier vs. 408.000 € /
-  35,25 € je Fahrt aus Legacy-Python vs. die 68 €/25 €-Platzhalterkarten). _(added 2026-07-17)_
+- **`[M]` KPI-Outputs auf den Rechenmaschinen neu bauen** — lokal am 2026-09-29 erledigt (alle
+  vollständigen Laufordner, `build_kpis.py --run-dir`). Offen: jeder Lauf, der auf Sim, IVS100 oder
+  VM mit älterem Code gebaut wurde, und die acht **lokal beschnittenen** Kopien ohne `output_trips`
+  (`b120rgs_s1338…s1341`, `d1c_f140_c900_i250_s1338…s1341` — die n=5-Fächer), die nur dort
+  gebaut werden können. Was der Neubau ändert: 1c ohne `cost_per_ride`, LMD-Tab ohne jsprit-€
+  (§2.6), LMD-Touren vollständig (§2.76), 1d-Reichweite über beide Regime (§2.69), ctrl1d ohne
+  Falschmarker, DRT-Karte mit Passagier-ID. Lokal gemessen (63 Läufe): in den Paperläufen S1
+  `b120rgs`, S2 `d1c_f140…s1337`, S3 `d1d_f130_d30` ×3 ändert sich in `kpis_long` nur die
+  1d-Reichweite; 34 ältere Diagnoseläufe waren auf altem Code gebaut und tragen jetzt dessen
+  Nachfolger (BEV-CO₂e +32 % = Nebenverbraucher §2.63, `parcels_handled` 5.665 → 6.052 = §2.66,
+  Schwellen 150/200/250 → 245/301/396). _(added 2026-09-28, umformuliert 2026-09-29)_
+- **`[M]` M11-Zurechnung für Ein-Flotten-Arme in die Pipeline** — `economics.py` gibt für 1c/1d
+  bewusst kein €/Fahrt und kein €/Paket aus (`cost_per_unit_separable`). Die M11-Zahlen in
+  [METHODS-LOG](METHODS-LOG.md) §2.38 sind außerhalb der Pipeline gerechnet. Die Aufspaltung des
+  jsprit-Fixsatzes in `lmd-vehicle-types.xml` steht im Blockiert-Block oben. _(umformuliert 2026-09-28)_
 
 ### `[H]` Hannover-Sweep: Kostenkorrektur im Postprocessing
 
@@ -420,16 +411,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   und Ausschlüsse → [METHODS-LOG](METHODS-LOG.md) §2.33 Punkt 5. Blockiert die Kostenkorrektur
   **nicht**. _(added 2026-08-11)_
 
-- **`[M]` `hagrid.log.dir` wird unbedingt überschrieben — jede neue Maschine fällt einmal rein**
-  — `SimulationRunnerUtils.runSimulation` setzt `hagrid.log.dir` auf `<runDir>/logs`, auch wenn ein
-  `-Dhagrid.log.dir` explizit gesetzt wurde. Der MATSim-Controler leert dann dieses Verzeichnis und
-  kollidiert mit der offenen `hagrid.log`; der Lauf stirbt in der Guice-Injektion vor Iteration 0.
-  Workaround ist ein eigener log4j-Config außerhalb des Run-Verzeichnisses — seit 2026-08-25
-  getrackt als `logging/log4j2_runlocal.xml` (vorher nur als ungetracktes `devlog/log4j2_dev.xml`,
-  weshalb der Sim-PC am 2026-08-25 beim ersten 1c-Arm genau hier abgebrochen ist). Echter Fix: das
-  `setProperty` respektiert eine explizit gesetzte Property, dann wird die Config-Datei unnötig.
-  Reine Logging-Semantik, keine Simulationswirkung. _(added 2026-08-25)_
-
 - **`[M]` KPI-Landschaft konsolidieren** — ein Konzept für Kontaminations-Marker,
   `*_pax`-Zusatzzeilen, `pax_only`-Overrides und Meta-Rows, bevor weitere Szenarien dazukommen
   (User 2026-07-29: „damit wir nicht irgendwann in den Dashboards ein KPI-Chaos haben").
@@ -473,12 +454,10 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   design. Lohnt für die Latenz *eines* Laufs — für den Seed-Fächer ist Prozess-Parallelität besser.
   _(added 2026-07-30)_
 
-- **`[M]` Race in unserem matsim-Fork mitfixen: `NetworkBasedTransportCosts:514` `matsimVehicles`
-  ist eine plain `HashMap`**, lazy beschrieben im Kostenpfad (`:796` get / `:801` put),
-  unsynchronisiert. Werte sind idempotent aus `typeId` abgeleitet (also keine falschen Distanzen),
-  aber ein gleichzeitiger Resize kann Einträge verlieren oder werfen. **Heute nicht scharf** (alles
-  single-threaded), wird es mit dem Punkt darüber. Einzeiler `HashMap`→`ConcurrentHashMap`, upstream
-  melden. _(added 2026-07-30, herausgelöst 2026-08-17)_
+- **`[S]` Fork-Race: Submodul-Commit und Upstream-Meldung** — `HashMap`→`ConcurrentHashMap` in
+  `NetworkBasedTransportCosts` ist seit 2026-09-28 im Arbeitsbaum von `external/matsim-libs`, aber
+  noch **nicht** im Fork committet und gepusht. Upstream melden steht noch aus. _(added 2026-07-30,
+  umformuliert 2026-09-28)_
 
 - **`[L]` jsprit-Upgrade 1.8 → 2.x — stark abgekühlt, nur noch ein Regler offen.** Der
   Hauptnutzen ist **schon in 1.8 geholt** (`REGRET_INSERTION`, −21 % Touren → §2.34), und
@@ -524,24 +503,21 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 - **`[S]` `SimulationBatGenerator` umbiegen**, damit er `runs/hannover/run_hagrid_sim.bat` mit der
   `%~dp0..\..\hagrid\simulation`-cd-Form schreibt (heute schreibt er das git-ignorierte
   `hagrid/simulation/run_hagrid_sim.bat`). _(added 2026-09-18)_
-- **`[S]` `tools/setup_hagrid_io.bat` löschen oder neu schreiben** — seit 2026-09-18 stillgelegt
-  (`exit /b 1` in Zeile 2), weil Quelle und Ziel beide unter `hagrid/simulation/input/` liegen; offen ist nur
-  noch, ob die Datei ganz verschwindet. _(added 2026-09-18)_
-- **`[S]` `XMLParcelTypeFixer` hat nie funktioniert** — `String.replaceAll` liest das `$P` in
-  `hagrid.core.util.Delivery$ParcelType` als Gruppenreferenz (`Illegal group reference`), und das
-  Muster sucht ohnehin nur den Wert `Mixed`, nicht den veralteten Klassennamen. _(added 2026-09-18)_
-- **`[S]` `DashboardGenerator.java.bak` löschen und toten `@see`-Verweis fixen** —
-  `hagrid/simulation/src/main/java/hagrid/hannover/analysis/DashboardGenerator.java.bak` löschen; in
-  `hannover/pipeline/package-info.java` hängt `@see hagrid.HAGRID2MATSimPipelineRunner_old` ins Leere. _(added 2026-09-18)_
+- **`[S]` `XMLParcelTypeFixer`: Aufruf entfernen oder Absicht klären** — der Fixer läuft bei
+  **jedem** Hannover-Lauf (`HAGRIDScenarioBuilder:218-219`, Delivery- und Supply-Carrier) und ist
+  nur deshalb harmlos, weil sein Muster nichts findet: `String.replaceAll` läse das `$P` in
+  `Delivery$ParcelType` erst bei einem Treffer als Gruppenreferenz und würfe dann. Es sucht nur den
+  Wert `Mixed`, nicht den veralteten Klassennamen. Den Fixer „reparieren“ würde Carrier-Dateien
+  ändern, also womöglich Hannover-Ergebnisse. Aufruf entfernen ist heute ein No-op. _(added
+  2026-09-18, korrigiert 2026-09-28: war als „nie benutzt“ gelesen)_
 - **`[M]` `GeoUtils`/`HagridConfig` regionsneutral machen**, damit `Region` nach `hagrid.hannover`
   ziehen kann. _(added 2026-09-18)_
-- **`[S]` Import-Hygiene nach dem Paket-Umzug** — 11 redundante same-package Imports,
-  nicht-alphabetische Import-Blöcke. _(added 2026-09-18)_
+- **`[S]` Import-Blöcke alphabetisch sortieren** — die 11 redundanten same-package Imports sind
+  seit 2026-09-28 weg; offen ist nur noch die Reihenfolge. Berührt viele Dateien ohne Wirkung,
+  deshalb erst zusammen mit einer ohnehin anstehenden Änderung. _(added 2026-09-18)_
 - **`[S]` `docs/legacy/hagrid/PIPELINE_DOCUMENTATION.md` und `docs/legacy/hagrid/SETUP_TUTORIAL.md` neu schreiben** — beide
   beschreiben noch das Layout vor dem Restructure vom 2026-09-17 und sogar vor dem
   `hagrid-input`-Common/Hannover/Lausitz-Split; tragen bis dahin nur einen Stale-Hinweis. _(added 2026-09-18)_
-- **`[S]` Markerbasierte Repo-Wurzel-Erkennung** statt `getParent().getParent()` in
-  `KpiDashboardTrigger` (Spec §5.2). _(added 2026-09-25)_
 - **`[M]` `LongPathsEnabled=1` auf Dev, Sim und Lausitz-VM setzen** (Admin); auf IVS100 (kein
   Admin) die Werkzeugkette gegen den längsten Pfad prüfen. Python 3.13 scheitert heute bei 273
   Zeichen, Pfade > 260 existieren seit dem `CRASHED_…`-Lauf. _(added 2026-09-25)_
@@ -549,20 +525,8 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Karenz löschen (Entscheidung C). _(added 2026-09-25)_
 - **`[S]` `runs/lausitz/campaigns/run_r3smoke.bat` nach dem Ausrollen** auf allen Maschinen
   entfernen oder als Dauer-Smoke behalten. _(added 2026-09-25)_
-- **`[S]` `runs/lausitz/chosen_theta.txt` ist ein getracktes Laufergebnis**; untracken +
-  ignorieren, damit die Wochenendkette nie einen alten Wert lesen kann. _(added 2026-09-25)_
 - **`[S]` Allowlist von `tools/check-run-scripts.ps1` je Datei und Muster** statt pauschal je Datei.
   _(added 2026-09-25)_
-- **`[S]` `runs/lausitz/run_nightbc_wrap.bat:2` leitet ins Leere** — die Konsolenausgabe geht nach
-  `…\HAGRID\hagrid-output\logs\nightbc.console.log`, einen Ordner, den es in keinem Layout gab (weder
-  vor noch nach dem Umbau). Vorbestehend, nicht durch den Umbau entstanden. _(added 2026-09-25)_
-- **`[S]` Selbsttest des Prüfskripts diskriminiert die zwei neuen Alt-String-Regeln nicht** —
-  Mutation: eine der beiden Regeln aus `tools/check-run-scripts.ps1` entfernen, `Test-CheckRunScripts.ps1`
-  bleibt grün. Je ein Positivfall fehlt. _(added 2026-09-25)_
-- **`[S]` `tools/migrate-module-layout.ps1 -Reverse` ist ungesichert** — es prüft nicht, dass
-  `git checkout <alter Commit>` vorher lief (ohne wiederhergestelltes Skelett wandern die Daten in ein
-  leeres `hagrid/`), und es räumt `hagrid/simulation/target/` nicht ab, obwohl der Vorwärtslauf
-  `hagrid/target/` löscht. _(added 2026-09-25)_
 
 - **`[M]` Autonomie-Switch-Plan** — Labour aus / Roboter-Dwell / Speed-Cap / Autobahn-Ausschluss,
   orthogonal über beide integrierten Szenarien. **User-Entscheidung 2026-07-30: nicht von
@@ -590,60 +554,28 @@ verbleibenden. Positiv-Befund am Rande: im gesamten `integrated`-Baum wirft **je
 weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenommen:** M8
 (Kostenbasis-Provenance in `extract_freight.py`) — sitzt in `economics.py`, das ohnehin ersetzt wird.
 
-- **`[M]` Mechanischer Restblock, in einem Rutsch erledigbar:** Kompositions-Zweig in
-  `DrtConfigComposer:66` loggen (`if (multi.getModalElements().isEmpty())` überspringt sonst
-  **stumm** die komplette HAGRID-Komposition — ServiceArea, Fleet-File, maxWaitTime, Rebalancing;
-  feuert heute nicht) · Depot-Zonen-Fallback in `ReturnToDepotRebalancingModule:94-106` loggen ·
-  `HagridPaths.copyIfMissing` gegen veraltete `shared/`-Inputs absichern · den Low-Tier-Sammelposten
-  unten · Parse-Assertions für Shapefile/CSV. _(added 2026-07-27)_
+- **`[M]` Parse-Assertions für Shapefile/CSV** — der letzte Rest des mechanischen Blocks (die
+  Log-Punkte sind seit 2026-09-28 erledigt → [BACKLOG-DONE](BACKLOG-DONE.md)). Die Stellen stehen
+  im Low-Tier-Punkt unten. Eine Assertion kann einen heute durchlaufenden Lauf abbrechen, deshalb
+  nicht nebenbei. _(added 2026-07-27, gekürzt 2026-09-28)_
 
-- **`[M]` `ct_cep_size_s` im LMD-Flottenmix — nur noch Doku nachziehen.** Alle drei Van-Typen
-  stehen jsprit zur Verfügung, `HagridPaths.java:336` dokumentiert aber „ct_cep_size_m / _l only".
-  Gemessen trägt `_s` rund ein Drittel der Touren, ist also kein Randartefakt → **Doku korrigieren,
-  `_s` bleibt.** Nebeneffekt: `LmdCarrierBuilder.jitterSigmaMinutes:217` gibt `_s` per Durchfall die
-  15-Min-Sigma des „m"-Zweigs. Der Mix ist außerdem **seed-instabil bei konstanter Tourenzahl** →
-  zusätzlicher Rauschkanal für die größenklassenabhängigen Emissionsfaktoren,
-  [METHODS-LOG](METHODS-LOG.md) §2.1. _(added 2026-07-27, gemessen 2026-07-30)_
-
-- **`[M]` Windows: Läufe sterben am eigenen offenen Logfile — Fix ist eine Zeile.**
-  `initLogging()` legt `hagrid.log.dir` korrekt außerhalb des Output-Baums ab
-  ([SimulationRunnerUtils.java:64-72](../hagrid/simulation/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L64)),
-  `runSimulation` biegt es 220 Zeilen später wieder **hinein**
-  ([:286-288](../hagrid/simulation/src/main/java/hagrid/core/simulation/SimulationRunnerUtils.java#L286)),
-  wo `deleteDirectoryIfExists` die offene Datei nicht löschen kann. **Fix = die zweite Zuweisung
-  entfernen oder gaten.** Nicht LMD-spezifisch (riss einen `DRT_MODULAR`-Lauf nach 19 min);
-  Hannover-`BASECASE` empirisch nicht betroffen. Workaround erprobt und im Repo
-  (`devlog/log4j2_dev.xml` + `vmargs_dev.txt`) → [BACKLOG-DONE](BACKLOG-DONE.md) 2026-08-17,
-  deshalb `[M]`: nichts ist blockiert, aber jeder ohne Workaround läuft hinein.
-  _(added 2026-07-30, Ursache lokalisiert 2026-08-16)_
-
-- **`[M]` Depot-Zonenzuordnung ohne Warnung** — `ReturnToDepotRebalancingModule.java:94-106`:
-  ein Depot außerhalb aller Rebalancing-Zonen hängt sich still an die nächstgelegene
-  Zentroid-Zone. Zusammen mit `ReturnToDepotTargetCalculator.java:38` (`getOrDefault(zone, 0.0)`)
-  zieht das die Abend-Flotte in die falsche Gitterzelle. Vorschlag: Fallback pro Depot loggen,
-  Containment für In-Area-Depots assertieren. _(added 2026-07-27)_
-
-- **`[M]` Analyse-Provenance: stiller Kostenbasis-Tausch + nie aufgefrischte `shared/`-Inputs** —
-  (a) `extract_freight.py:~40-53`: jede Exception im Provider-Parse tauscht die Kostenbasis still
-  auf die TSV-Spalten — andere Zahlen unter gleichem KPI-Namen; Vorschlag: `cost_basis`-
-  Provenance-Zeile (analog zu den `meta`-Rows) und im Dashboard zeigen.
-  (b) `HagridPaths.java:459-489` `copyIfMissing` aktualisiert nie und warnt bei fehlender Quelle
-  nur — ein veraltetes `hagrid-output/shared/sim-config.xml` oder Zonen-Shapefile überlebt
-  beliebig lange Input-Änderungen. Vorschlag: Hash/Mtime vergleichen, laut warnen.
-  _(added 2026-07-27)_
+- **`[M]` `LmdCarrierBuilder.jitterSigmaMinutes` gibt `ct_cep_size_s` per Durchfall die 15-Min-Sigma
+  des „m“-Zweigs** — Ergebnisentscheidung (ändert Abfahrtszeiten und damit Touren), deshalb nicht
+  mit der Doku mitgezogen; die Doku-Kommentare stehen seit 2026-09-28 richtig. Der Van-Mix ist
+  außerdem **seed-instabil bei konstanter Tourenzahl** → zusätzlicher Rauschkanal für die
+  größenklassenabhängigen Emissionsfaktoren, [METHODS-LOG](METHODS-LOG.md) §2.1. _(added 2026-07-27,
+  gekürzt 2026-09-28)_
 
 ---
 
 ## Low
 
-- **`[L]` DRT-Ein-/Ausstiegs-Punkte: Passagier-ID im Hover/Popup** — beim Hovern über den
-  nummerierten Pickup/Dropoff-Stops eines ausgewählten DRT-Fahrzeugs die Person(en) anzeigen,
-  die dort ein-/ausgestiegen sind (wie im Legacy-Dashboard per Passagier-ID). Aktuell tragen die
-  Stop-Records nur `lat/lon/t/n/kind` (`maps._attach_stops`, [maps.py:132](../analysis/lausitz/kpi/maps.py#L132))
-  und der Badge-Marker hat gar kein Popup ([render_maps.py:128](../analysis/lausitz/kpi/render_maps.py#L128)).
-  Machbar: die Personen-ID steht in der Quelle (`*.output_drt_legs_drt.csv` hat `personId`,
-  `geometry.py` parst `person=` bereits) — nur bis in den Stop-Record + `bindPopup`/`bindTooltip`
-  durchreichen. User-Wunsch 2026-07-20. _(added 2026-07-20)_
+- **`[L]` Gitignorte Paper-Skripte auf alte Laufwurzeln prüfen** — `fig2_spatial_complementarity.py`,
+  `fig_abstract_spatial_complementarity.py`, `spatial_correlation_stats.py`,
+  `emissions-sos/scripts/{runpipe,zones}.py` zeigen noch auf `parcel-demand-2-matsim-pipeline/
+  hagrid-matsim-output` (Layout vor Teil 1). Der Umbau-Check sieht `paper-figures/` nicht, weil
+  gitignored. `charging_feasibility.py` und `spatial_emissions.py` sind 2026-09-29 korrigiert.
+  _(added 2026-09-29)_
 
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
   / `hagrid-lausitz`. Reiner Move-Refactor; `HagridPaths`-Root-Detection pro Szenario neu bauen.
@@ -671,20 +603,6 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
   Vertauschung korrumpiert den Stolperdraht, und der ist (Design D7) die **einzige** Absicherung
   der Fracht-Buchhaltung. _(added 2026-07-29)_
 
-- **`[L]` Laufzeit-Logzeile ist unlesbar — Python-Formatstring in einem SLF4J-Logger.**
-  `SimulationRunnerUtils.java:712` schreibt `LOG.info("{} completed in {:02d}:{:02d}:{:02d}", …)`;
-  SLF4J kennt nur `{}`, also warnt log4j („found 1 argument placeholders, but provided 4") und die
-  Zeile erscheint wörtlich als `completed in {:02d}:{:02d}:{:02d}`. **Jeder** Lauf verliert damit
-  seine Laufzeitangabe im Log — genau die Zahl, die man beim Planen von Ketten braucht (diese
-  Session musste sie aus den Dateizeitstempeln rekonstruieren). Fix: vier `{}` und die Werte
-  vorformatieren. _(added 2026-08-17)_
-
-- **`[L]` ctrl1d-Dashboard: Modular-Badges ohne `*_pax`-Companion-Zeilen** — im
-  Kontrollarm-Sonderfall (θ=1,0, null Exkursionen) erzeugt `freight_h<=0` planmäßig keine
-  `*_pax`-Zeilen, die szenario-gegateten Badges erscheinen aber trotzdem → kosmetische
-  Inkonsistenz „Badge ohne Frachtanteil" nur auf ctrl1d. Befund der Dashboard-Verifikation
-  2026-07-30 (Fixwave-Ledger); alle anderen Runs unauffällig. _(added 2026-07-31)_
-
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 
 - **`[L]` Shapefile-/CSV-Parsing: „still zu 0/1"-Fallbacks absichern** — Stellen, an denen ein
@@ -696,19 +614,15 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
   `freight_events.py:102` / `maps.py:292` / `extract_freight_provider.py:136`.
   **Fix:** Spaltenexistenz beim Parsen assertieren + Provider-Summen loggen. _(added 2026-07-27)_
 
-- **`[L]` Kleine stille Defaults & irreführender toter Code** — Sammelposten, Anker 2026-08-17
-  gegen den Code nachgezogen:
-  - `PopulationClipper.java:27,36` — der „Home-Anker" ist faktisch „erste Aktivität *mit*
-    Koordinate"; Personen ohne Koordinaten fallen unbemerkt aus dem Clip → Drops zählen/loggen.
-  - `LmdCarrierBuilder.java:68,77` — `DEFAULT_DISPATCH_HOURS`/`DEFAULT_DELIVERY_RATE` sind
-    unerreichbar (alle 7 Provider stehen in der Map), lesen sich aber wie aktive Konfiguration.
-  - `SimulationRunnerUtils.java:68-70` und `:287` — die einzigen echten Exception-Swallows im
-    Projekt; `:287` ist zugleich die Ursache der Log-Selbstblockade oben.
-  - `SimulationRunnerUtils.java:184-190` — ein vertipptes `concept` fällt in
-    `requiresLausitz=false` statt am Tippfehler zu scheitern.
-  - `GeoUtils.java:367,383` — `Coord(0,0)`, wenn kein Service ein `coord`-Attribut hat.
-  - `DrtNetworkPreparer.java` ist **toter Code** (kein Aufrufer); real läuft
-    `PrepareNetwork.prepareDrtNetwork` (`LausitzDrtPreprocessor.java:80`) mit anderer Semantik.
-    Nur `SimulationRunnerUtils.java:604` zitiert die Klasse irreführend als *Erzeuger*; die
-    beiden Stellen in `LausitzFreightPreprocessor` (`:56`, `:239`) sind bloße Analogien.
-  _(added 2026-07-27, Referenzen korrigiert 2026-08-17)_
+- **`[L]` Kleine stille Defaults & irreführender Code** — Rest des Sammelpostens; Clipper-Drops,
+  unerreichbare `LmdCarrierBuilder`-Defaults, Konzept-Tippfehler, `GeoUtils`-`Coord(0,0)` und der
+  Log-Verzeichnis-Swallow sind seit 2026-09-28 sichtbar → [BACKLOG-DONE](BACKLOG-DONE.md). Offen:
+  - `SimulationRunnerUtils.initLogging` verschluckt eine Exception beim Anlegen des Log-Ordners.
+    Das bleibt vorerst so, weil dort noch kein Logger benutzbar ist.
+  - **`DrtNetworkPreparer` ist KEIN toter Code** (korrigiert 2026-09-28): in Produktion ruft ihn
+    niemand, aber vier Testklassen bauen damit ihr DRT-Netz (`DrtBaselineIntegrationTest`,
+    `SharedUseDispatchTest`, `SharedUseRebalTest`, `DrtNetworkPreparerTest`). Produktiv läuft
+    `PrepareNetwork.prepareDrtNetwork` (`LausitzDrtPreprocessor`) mit anderer Semantik. Die Tests
+    prüfen also auf einem anderen Netz als die Läufe. Löschen bräche vier Tests; der eigentliche
+    Punkt ist, sie auf den Produktionspfad umzustellen.
+  _(added 2026-07-27, Referenzen korrigiert 2026-08-17, Rest 2026-09-28)_

@@ -11,9 +11,9 @@ FIX = Path(__file__).parent / "fixtures" / "mini_lmd"
 def test_freight_rows_join_tsv():
     rows = ev.extract(FIX, "MINI")
     frt = {r["vehicle_id"]: r for r in rows if r["role"] == "freight"}
-    v1 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v1_1"]
+    v1 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v1_2"]
     assert v1["distance_km"] == 40.0 and v1["excluded"] == 1
-    v0 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0"]
+    v0 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1"]
     assert v0["provider"] == "dhl" and v0["parcels"] == 90 and v0["stops"] == 2
     assert v0["travel_h"] == 5.0 and v0["excluded"] == 0
 
@@ -24,9 +24,9 @@ def test_freight_vehicle_type_is_raw_type_id():
     # so the Task-9 drilldown "Typ" column shows s/m/l granularity.
     rows = ev.extract(FIX, "MINI")
     frt = {r["vehicle_id"]: r for r in rows if r["role"] == "freight"}
-    v0 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0"]
+    v0 = frt["freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1"]
     assert v0["vehicle_type"] == "ct_cep_size_s"
-    hermes = frt["freight_hermes_veh_hermes_cargoBike_v0_0"]
+    hermes = frt["freight_hermes_veh_hermes_cargoBike_v0_1"]
     assert hermes["vehicle_type"] == "cargoBike_t"
 
 

@@ -7,7 +7,111 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-09-09._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-09-29._
+
+---
+
+## 2026-09-29
+
+- **Block C, Auswertung — keine Simulation neu, alle Fixes test-first (RED gesehen).** Suiten:
+  Python KPI 506, Sweep 6, Paper-Pfad 17; voller Maven-Build `BUILD SUCCESS` (1:57 h), hagrid 683
+  (681 + 2 neue), Fork 272 (9 übersprungen), 0 Fehler.
+  - **LMD-Fahrzeugschlüssel** (METHODS-LOG §2.76): `carriers_parse.TourDef.event_vehicle_id` zählt
+    jetzt wie MATSims `CarrierAgent` (Position im Plan, 1-basiert) statt über die jsprit-`tourId`.
+    Treffer gegen die Event-IDs: b120rgs/b140rgs 41/41 statt 10, basew21 52/52 statt 6. Das war
+    die Ursache des Backlog-Punkts „`kpi_vehicles.csv` trägt die Frachtseite nicht“: nach dem
+    Neubau 41/41 Frachtzeilen mit km, Summe 2.701,5 km = `kpis_long`; Pakete je Stunde
+    1.389 → 6.052. Mini-Fixtures auf die echte Zählung umgestellt.
+  - **`ev_range_*_drt` summiert den 1d-Fahrzeugtag** über Pax- und Kapsel-km (§2.69);
+    `charging_feasibility.py --verify` erkennt die Vintage an der Quellenangabe.
+  - **ctrl1d:** keine Frachtanteil-Badges mehr, wenn `tours_dispatched == 0`; entschieden aus der
+    CSV, die C1-Garantie (Marker auch ohne Events) bleibt für echte 1d-Läufe.
+  - **Walk-Fallback ausgewiesen** (§2.50): 1c-Kachel auf dem Zähler der Quote, Paket-Bilanz mit
+    Warnung bei Nicht-Aufgehen, WARN in `SharedUseKpiHandler` mit bis zu fünf Personen-IDs.
+  - **DRT-Karte:** Stop-Badges zeigen im Tooltip die Passagier-ID (`personId` aus den Legs).
+  - **Config-Abgleich im Vergleichs-Dashboard:** `build_comparison.py` diffed jede
+    `output_config.xml` gegen den ersten Lauf und zeigt das Ergebnis oben auf der Seite.
+    `config_diff.py` rechnet dabei den Checkout-Ort heraus (`…/HAGRID/` → `<REPO>/`); ohne das
+    meldete Dev gegen Lausitz-VM neun Scheinabweichungen. Kontrolle: Seed-Paar b120rgs → genau
+    `global/randomSeed`; b120rgs gegen b140rgs → 0 von 310 (die Flotte steht in der Flottendatei,
+    darauf weist die Seite hin).
+  - **Stem-KPI** (§2.49): 14 Hannover-Boards (v2, Cap 160–290) offline neu erzeugt,
+    Rückweg gemessen (24,2–25,8 % → 47,2–51,0 %). `extract_sweep.py` liest `ROUT_EFF`, schreibt
+    `stem_*` nach `sweep_kpis.csv` und bricht bei Mischserien ab; Gegenprobe gegen die Handtabelle
+    in §2.49: c=30 37,15/37,27/37,37 %, Maximum 42,0–42,2 %.
+  - **Lokaler Neubau** aller 63 vollständigen Laufordner (62 + b120rgs vorab, 0 Fehler, je
+    25–80 s). Alt/neu-Vergleich je `kpis_long`-Zeile: in den Paperläufen S1/S2 kein bestehender
+    Wert geändert, S3 nur `ev_range_exceed_drt_*` — Mittel 51,8 → **55,6 %** [52,3–61,5], exakt die
+    Zahl des Papierpfads (§2.69), `charging_feasibility --verify` 16/16 am neu gebauten Lauf.
+    ctrl1d ohne Marker, 1c ohne `cost_per_ride`, 1c-Board mit Paket-Bilanz, b120rgs-Karte mit
+    41 statt 10 LMD-Touren. Nebenbei: `charging_feasibility.py`/`spatial_emissions.py` (gitignored)
+    zeigten seit dem Modul-Umzug auf einen toten Laufordner, `--verify` meldete trotzdem
+    „passed“ — Pfad korrigiert, Erfolg zählt jetzt nur geprüfte Läufe.
+
+## 2026-09-28
+
+- **Sammelblock Logging, Werkzeuge, Aufräumen — keine Wirkung auf Simulationsergebnisse.**
+  Jede Warnung ersetzt einen stillen Fallback, das Verhalten bleibt gleich; getestet über die neue
+  Testhilfe `hagrid.core.util.LogCapture` (Java) bzw. die PowerShell-Selbsttests. RED je Fall
+  gesehen, danach grün. Vollständiger Build 2026-09-29: `BUILD SUCCESS`, hagrid 681 Tests
+  (660 + 21 neue), Fork 272 (9 übersprungen), 0 Fehler; `check-run-scripts.ps1`: 60 Skripte,
+  0 Befunde.
+  - Laufzeit-Logzeile liest jetzt `hh:mm:ss` statt `{:02d}` (`SimulationRunnerUtils.logDuration`).
+  - `hagrid.log.dir`: ein explizites `-Dhagrid.log.dir` wird respektiert (`pointLogDirAt`), ohne
+    `-D` bleibt das Log je Lauf im Laufordner, auch beim zweiten Szenario derselben JVM.
+    ⚠️ **Folge:** Skripte, die `-Dhagrid.log.dir=hagrid-output/logs` setzen (u. a. `vmargs.txt`, die
+    Lausitz-`MAVEN_OPTS`-Skripte, die Hannover-v2dev-Skripte), schreiben `hagrid.log` jetzt dorthin
+    statt in `<Lauf>/logs`. Das war die Absicht der Flag und behebt den Windows-Abbruch vor
+    Iteration 0; kein Werkzeug liest das Log im Laufordner. Parallele JVMs teilen sich damit eine
+    Datei, wie mit `log4j2_runlocal.xml` schon heute.
+  - Warnungen statt Stille: vertippter `concept`; DRT-Komposition übersprungen, weil schon ein
+    DRT-Modus existiert; Depot außerhalb aller Rebalancing-Zonen (einmal je Depot, nicht je
+    Iteration); `shared/`-Kopie weicht von ihrer Quelle ab (wird weiter NICHT aufgefrischt);
+    Personen ohne Koordinate im Clip; Carrier-Services ohne `coord` (einmal je Carrier);
+    unbekannter LMD-Provider.
+  - `KpiDashboardTrigger.scriptFor` sucht die Repo-Wurzel über `build_kpis.py` als Marker, mit
+    Rückfall auf zwei Ebenen. Test (c) aus Spec 2026-09-21 §5.2 bewusst angepasst: er hielt unter
+    Surefire einen nicht existierenden Pfad fest.
+  - Fork: `NetworkBasedTransportCosts.matsimVehicles` → `ConcurrentHashMap`. Ein Race ist nicht
+    deterministisch rot testbar; ohne neuen Test, gedeckt durch die Freight-Tests des Forks. Im
+    Submodul committet als `2db6789b6c3` (vor dem Parent-`master` zu pushen).
+  - Aufräumen: 11 redundante same-package Imports; `DashboardGenerator.java.bak`;
+    `tools/setup_hagrid_io.bat`; `@see` auf `HAGRID2MATSimPipelineRunner`; Doku „size_m/_l only“ an
+    beiden Stellen; `runs/lausitz/chosen_theta.txt` untrackt und ignoriert (die Kette löscht und
+    erzeugt sie selbst).
+  - `run_nightbc_wrap.bat` schreibt nach `hagrid\simulation\hagrid-matsim-output\logs` (relativ über
+    `%~dp0`, Ordner wird angelegt); Pfadauflösung per Probe-Kopie geprüft.
+  - `Test-CheckRunScripts.ps1` Fall 14: die Mutation deckte auf, dass nur die Unterordner-Regel
+    ungedeckt war, nicht beide; die Endet-auf-hagrid- und die `-pl`-Regel fingen die Fälle 11/13
+    bereits.
+  - `migrate-module-layout.ps1 -Reverse` bricht ohne altes Skelett (`hagrid\pom.xml`) ab, bevor
+    etwas angelegt wird, und löscht abgeleitete Artefakte am Quellort `hagrid\simulation\`. Fall 8
+    zeigte vorher, dass die Daten tatsächlich in ein leeres `hagrid\` wanderten.
+  - Bewusst NICHT gemacht: `vmargs_lausitz.txt` versionieren (legt die Threadzahl des Dev fest,
+    also eine Ergebnisentscheidung); Import-Reihenfolge; Parse-Assertions.
+- **1c schrieb ein falsches `cost_per_ride` — behoben.** `economics._direct_cost` kannte den
+  1c-Paketnamen `parcels_delivered` nicht und hielt 1c deshalb für einen reinen Pax-Lauf. Die
+  Folge war `cost_total / drt_rides` mit Fracht (9,997 €/Fahrt auf `d1c_f140…s1337`). Neuer Test
+  `test_shareduse_arm_emits_no_per_unit_cost` mit der echten `extract_shareduse`-Ausgabe; RED
+  gesehen, Mutante (Rückfall entfernt) fällt. Probe an 13 lokalen 1c/1d-Läufen: `cost_total`
+  gleich, 1d unverändert, 1c jetzt `cost_per_unit_separable`. Neubau der alten Outputs steht im
+  BACKLOG. → METHODS-LOG §2.6.
+- **LMD-Tab zeigte jsprit-€ neben C — behoben.** Vier Anzeigen (Kachel „Fixkosten", Diagramm
+  „Kosten je Provider", €-Spalten beider Provider-Tabellen) werden ausgeblendet, sobald
+  `cost_lmd_total` existiert (`render_lmd._has_unified_cost`). Hannover behält sie. Drei neue
+  Tests, beide Mutanten („immer" / „nie" ausblenden) werden gefangen. Probe: das echte
+  `b120rgs`-Board, in den Scratchpad gerendert, zeigt nur noch C. Suite: 493 grün.
+- **`[M]` DRT-Kosten-KPI im v2-Dashboard: erledigt, im Code nachgeprüft.** v2 hat die Kosten-KPIs
+  inzwischen. Für Lausitz steht `cost_total` samt Zerlegung aus `cost_model.py`/`economics.py`
+  auf einer Kachel („Direkte Betriebskosten", `render_drt.py:305-320`), für Hannover eine
+  Platzhalterkachel. Die drei widersprüchlichen Literaturwerte speisen keine KPI mehr: C ist
+  bottom-up, und Currie/Fournier sowie Sprinti stehen als Obergrenzen-Crosschecks in
+  `cost_parameters.csv`. Nachweis: die zwölf jüngsten lokalen Lausitz-Läufe tragen `cost_total`
+  und keine `*_placeholder`-Zeile, 120 Kosten- und Emissionstests grün. → METHODS-LOG §2.6.
+- **Kapsel-/Swap-Kapital und Handling abgebildet** (war Teil des Punkts „Beim Neubau
+  umzusetzen"). Das Kapital steckt im `modular_premium_factor`-Band 1,00–1,20 auf dem Fixsatz.
+  `c_swap_event`, `c_station_day` und `c_capsule_day` stehen als begründete Nullzeilen in
+  `cost_parameters.csv`, weil die Rüstzeit schon über VHT bepreist ist.
 
 ---
 

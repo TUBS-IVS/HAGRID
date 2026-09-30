@@ -48,6 +48,9 @@ public final class LmdCarrierBuilder {
      * comparison against the Baseline (the arm the integrated scenarios are measured against).
      * <b>All Baseline runs produced before that change are comparison-invalid</b> (METHODS-LOG §1.2).
      */
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger(LmdCarrierBuilder.class);
+
     private static final double DAY_START = hagrid.lausitz.DeliveryDay.START_S;
     private static final double DAY_END = hagrid.lausitz.DeliveryDay.END_S;
 
@@ -63,8 +66,10 @@ public final class LmdCarrierBuilder {
     static final int VEHICLES_PER_TYPE_PER_WAVE = 4;
 
     /**
-     * Default dispatch waves when no explicit list is supplied (mirrors HAGRID CEP
-     * {@code VehicleSchedule.SIMPLE_STAGGERED}: morning + afternoon wave).
+     * Fallback dispatch waves when no explicit list is supplied (mirrors HAGRID CEP
+     * {@code VehicleSchedule.SIMPLE_STAGGERED}: morning + afternoon wave). NOT the active
+     * configuration: the only production caller ({@code LausitzFreightPreprocessor}) passes
+     * its own {@code DISPATCH_HOURS} explicitly, so this is reached from tests only.
      */
     static final List<Integer> DEFAULT_DISPATCH_HOURS = List.of(8, 14);
 
@@ -75,6 +80,8 @@ public final class LmdCarrierBuilder {
     private static final Map<String, Double> DELIVERY_RATES = Map.of(
             "dhl", 94.0, "gls", 91.0, "hermes", 91.0, "dpd", 89.0,
             "ups", 89.0, "amazon", 93.0, "fedex", 89.0);
+    /** Fallback only: all seven Lausitz providers are in {@link #DELIVERY_RATES}, so reaching
+     *  it means an unknown provider id -- logged as a warning, see {@code buildCore}. */
     private static final double DEFAULT_DELIVERY_RATE = 90.0;
     private static final double B2B_DELIVERY_RATE = 99.0;
     /** Effective B2C rate is capped here (100% is never realistic), matching the legacy clamp. */
@@ -266,6 +273,10 @@ public final class LmdCarrierBuilder {
         carrier.getAttributes().putAttribute("provider", provider);
 
         // Per-provider base rate + a daily bias sampled once per carrier (mirrors CarrierGenerator).
+        if (!DELIVERY_RATES.containsKey(provider)) {
+            LOG.warn("Unknown provider '{}' - no delivery rate in LmdCarrierBuilder.DELIVERY_RATES,"
+                    + " falling back to DEFAULT_DELIVERY_RATE = {} %", provider, DEFAULT_DELIVERY_RATE);
+        }
         double baseRate = DELIVERY_RATES.getOrDefault(provider, DEFAULT_DELIVERY_RATE);
         double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
         double dailyBias = random.nextGaussian() * sigmaPercent;

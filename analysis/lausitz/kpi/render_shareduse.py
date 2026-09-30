@@ -206,7 +206,15 @@ def _tiles(data):
                            "bewertet hat. Konkurrenz-Indikator, kein Erfolgsmaß."))
 
     v = _kpi(k, "parcels_delivered")
-    if v is not None:
+    walked = _kpi(k, "parcels_walked")
+    if v is not None and walked is not None:
+        # Same numerator as delivery_rate (extract_shareduse), so the two tiles agree.
+        t.append(_tile(_fmt_de(_kpi(k, "parcels_drt_borne", v) + walked), "Pakete zugestellt",
+                       "davon " + _fmt_de(walked) + " zu Fuß (Walk-Fallback)",
+                       tip="parcels_drt_borne + parcels_walked: der Router lehnt einige Stopps "
+                           "ab, MATSim setzt ein Walk-Leg, das Paket kommt ohne Fahrzeug an "
+                           "(METHODS-LOG §2.50)."))
+    elif v is not None:
         late = _kpi(k, "parcels_delivered_late")
         sub = (_fmt_de(late) + " davon verspätet") if late is not None else ""
         t.append(_tile(_fmt_de(v), "Pakete zugestellt", sub, tip="parcels_delivered."))
@@ -223,8 +231,33 @@ def _tiles(data):
 # Chart groups
 # ---------------------------------------------------------------------------
 
+_BALANCE_PARTS = [("per DRT", "parcels_drt_borne"), ("zu Fuß", "parcels_walked"),
+                  ("Hoftor-Verwurf", "parcels_dropped_at_depot_link"),
+                  ("nicht zugestellt", "parcels_undelivered")]
+
+
+def _parcel_balance(k, uid):
+    """Demand and the four channels it splits into (METHODS-LOG §2.50). Rendered only when
+    the walk channel is confirmed -- without it the parts cannot add up."""
+    if _kpi(k, "parcels_walked") is None or _kpi(k, "parcels_in_demand") is None:
+        return None
+    return _bar("Paket-Bilanz", "c_s_parcels_" + uid,
+                [("Nachfrage", _kpi(k, "parcels_in_demand"))]
+                + [(lab, _kpi(k, name)) for lab, name in _BALANCE_PARTS], horizontal=True)
+
+
+def _balance_warning(k):
+    demand = _kpi(k, "parcels_in_demand")
+    parts = [_kpi(k, name) for _, name in _BALANCE_PARTS]
+    if demand is None or any(p is None for p in parts) or sum(parts) == demand:
+        return ""
+    return ('<p class="warnbanner">Paketbilanz geht nicht auf: Nachfrage ' + _fmt_de(demand)
+            + ", Summe der Kanäle " + _fmt_de(sum(parts)) + ".</p>")
+
+
 def _channel_charts(k, uid):
     return [
+        _parcel_balance(k, uid),
         _bar("Segment-Bilanz", "c_s_funnel_" + uid, [
             ("injiziert", _kpi(k, "segments_injected")),
             ("eingereicht", _kpi(k, "segments_submitted")),
@@ -292,6 +325,8 @@ def build_tab(data, uid, compact=False, map_block=None):
         if h:
             if title.startswith("χ-Gate"):
                 h = h.replace("</h2>", "</h2>" + _caveats(k, dist), 1)
+            elif title == "Kanal-Bilanz":
+                h = h.replace("</h2>", "</h2>" + _balance_warning(k), 1)
             groups_html.append(h)
             groups_js.append(j)
 

@@ -632,7 +632,48 @@ def _meta_notes_for_runs(runs):
     return _meta_notes(pd.concat(frames, ignore_index=True))
 
 
-def render_comparison_page(runs, title):
+def _config_block(checks):
+    """"Konfigurations-Abgleich": every run's substantive config differences against the
+    first run (build_comparison.config_checks). "" when there is nothing to compare."""
+    if not checks:
+        return ""
+    parts = []
+    for c in checks:
+        pair = html.escape(c["other"]) + " gegen " + html.escape(c["base"])
+        if c["missing"]:
+            parts.append("<p>" + pair + ": output_config.xml fehlt ("
+                         + html.escape(", ".join(c["missing"])) + ") &ndash; nicht geprüft.</p>")
+            continue
+        res = c["result"]
+        real = res["real"]
+        if not real:
+            parts.append("<p>" + pair + ": identisch in allen " + str(res["compared"])
+                         + " Parametern.</p>")
+            continue
+        n = len(real)
+        parts.append('<p class="warnbanner">' + pair + ": " + str(n) + " substanzielle "
+                     + ("Abweichung" if n == 1 else "Abweichungen") + " von " + str(res["compared"])
+                     + " Parametern. Der Vergleich trägt nur, wenn genau diese der "
+                     "untersuchte Unterschied sind (METHODS-LOG §3.14).</p>")
+        rows = "".join(
+            "<tr><td>" + html.escape(k) + "</td><td>" + html.escape(_one(a)) + "</td><td>"
+            + html.escape(_one(b)) + "</td></tr>" for k, a, b in real)
+        parts.append('<div class="panel tablewrap"><table class="kpis"><tr><th>Parameter</th><th>'
+                     + html.escape(c["base"]) + "</th><th>" + html.escape(c["other"])
+                     + "</th></tr>" + rows + "</table></div>")
+    scope = ("<p>Geprüft wird output_config.xml gegen den ersten Lauf; Checkout-Pfade und Run-Tags "
+             "sind herausgerechnet. Nicht enthalten ist der Inhalt der Eingabedateien: die "
+             "Flottengröße steht in der Flottendatei, die Nachfrage in der Population (POPHASH).</p>")
+    return "<h2>Konfigurations-Abgleich</h2>" + scope + "".join(parts)
+
+
+def _one(vals):
+    if vals is None:
+        return "(fehlt)"
+    return vals[0] if len(vals) == 1 else " | ".join(vals)
+
+
+def render_comparison_page(runs, title, config_checks=None):
     """runs: list of dicts {label, scenario, data (RunData)}.
 
     Tab 0 (comparison: headline grouped bars + timeseries overlays + full
@@ -728,7 +769,8 @@ def render_comparison_page(runs, title):
     # per-run tab a reader may never open.
     notes = _meta_notes_for_runs(runs)
 
-    cmp_tab = '<div class="grid2">' + "".join(charts) + "</div>" + table + notes
+    cmp_tab = (_config_block(config_checks) + '<div class="grid2">' + "".join(charts) + "</div>"
+               + table + notes)
 
     # per-run tabs: real compact DRT/LMD tab builders, gated by presence
     # exactly like render_run_page's has_drt/has_freight_tab.

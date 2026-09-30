@@ -1,6 +1,8 @@
 package hagrid.lausitz.shareduse;
 
 import com.google.inject.Inject;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Population;
@@ -116,6 +118,8 @@ public final class SharedUseKpiHandler implements
         PassengerDroppedOffEventHandler,
         IterationEndsListener,
         ShutdownListener {
+
+    private static final Logger LOG = LogManager.getLogger(SharedUseKpiHandler.class);
 
     static final String FILE_NAME = "shareduse_channel_stats.csv";
     static final String ITERATIONS_FILE_NAME = "shareduse_channel_stats_iterations.csv";
@@ -296,6 +300,20 @@ public final class SharedUseKpiHandler implements
         }
     }
 
+    /**
+     * The walk fallback is otherwise silent: no rejection event, the parcels arrive on foot and
+     * count as delivered (METHODS-LOG 2.50). Every submitted segment has an outcome, so the
+     * never-submitted ones are the injected persons without one.
+     */
+    private void warnWalkFallback(Totals t, int segments, int parcels) {
+        List<String> examples = loadByPerson.keySet().stream()
+                .filter(p -> !t.outcomeByPerson.containsKey(p))
+                .map(Id::toString).sorted().limit(5).toList();
+        LOG.warn("{} parcel segment(s) with {} parcels never submitted a DRT request - the router "
+                + "fell back to a walk leg, so they arrive on foot and count as delivered "
+                + "(e.g. {})", segments, parcels, String.join(", ", examples));
+    }
+
     /** Package-visible so the unit test can drive it without a real Controler shutdown. */
     void writeCsv(Path path) {
         Totals t = computeTotals();
@@ -307,6 +325,9 @@ public final class SharedUseKpiHandler implements
         int parcelsNeverSubmitted = parcelsInjected - t.parcelsSubmitted;
         int segmentsPendingEod = t.segmentsSubmitted - t.segmentsDelivered
                 - t.segmentsDeliveredLate - t.segmentsRejectedFinal;
+        if (segmentsNeverSubmitted > 0) {
+            warnWalkFallback(t, segmentsNeverSubmitted, parcelsNeverSubmitted);
+        }
 
         // δ (I1/F4): delivered means IN-WINDOW; late deliveries count as NOT within-window.
         int parcelsUndelivered = t.parcelsSubmitted - t.parcelsDelivered;
