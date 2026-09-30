@@ -14,10 +14,6 @@ import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
 import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
 
 import hagrid.core.HagridPaths;
-import hagrid.core.routing.MaxRouteDurationConstraint;
-import hagrid.core.routing.OpenRouteStateVerifier;
-import hagrid.core.routing.RouteRealStartTimeMemorizer;
-import hagrid.core.routing.TimeWindowConstraintWithDriverTime;
 
 import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
 

@@ -110,7 +110,7 @@ def test_build_writes_kpi_vehicles_csv_with_freight(tmp_path):
         "run_id;role;vehicle_id;provider;vehicle_type;distance_km;duration_h;"
         "travel_h;parcels;stops;load_factor;excluded;occupied_h;active_h;"
         "shift_h;ratio_active")
-    assert ";freight;freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_0;dhl;" in veh_txt
+    assert ";freight;freight_dhl_veh_dhl_ct_cep_size_s_h8_v0_1;dhl;" in veh_txt
     assert not any(";drt;" in line for line in lines[1:])
 
 
@@ -270,6 +270,35 @@ def test_no_events_build_still_carries_the_modular_contamination_marker(tmp_path
     assert ";meta;modular_secondary_contaminated;" in long_txt
     # events never ran -- the *_pax rows need recon and must stay absent
     assert "_pax;" not in long_txt
+
+
+def test_control_arm_without_a_dispatched_tour_carries_no_contamination_marker(tmp_path):
+    """ctrl1d (theta=1.0): modular_tour_stats.csv exists, but not a single excursion left
+    the depot. The passenger vehicles never carried freight, so a "contains freight share"
+    badge on six tiles is a false warning -- and it stood there without any *_pax companion
+    row, because there was no freight window to subtract. Decided from the CSV alone, so the
+    C1 guarantee above (marker independent of the event path) still holds for real 1d runs."""
+    d = tmp_path / "drtrun_ctrl_arm"
+    shutil.copytree(FIX, d)
+    lines = ["metric;value",
+             "tours_planned;10", "tours_expired_pending;10", "tours_dispatched;0",
+             "tours_completed;0", "tours_dispatched_incomplete;0", "tours_pending_eod;0",
+             "parcels_planned;500", "parcels_expired_pending;500", "parcels_dispatched;0",
+             "parcels_served;0", "parcels_dispatched_unserved;0", "parcels_pending_eod;0",
+             "delta_parcels;500", "swaps_completed;0", "retooling_hours;0.0",
+             "deadhead_km_planned;0.0", "service_km_planned;0.0",
+             "freight_vehicle_hours;0.0",
+             "tours_completed_late;0", "parcels_served_late;0",
+             "tours_rejected_at_splice;0"]
+    (d / "DRT_TEST.modular_tour_stats.csv").write_text("\n".join(lines))
+
+    out = build(d, no_events=True, out_dir=tmp_path / "out")
+
+    long_txt = (out / "kpis_long.csv").read_text(encoding="utf-8")
+    assert ";meta;modular_contaminated_kpis;" not in long_txt
+    assert ";meta;modular_secondary_contaminated;" not in long_txt
+    # still a modular run: its own freight rows are published as before
+    assert ";freight;tours_dispatched;0" in long_txt
 
 
 def _fleet_xml(tmp_path):

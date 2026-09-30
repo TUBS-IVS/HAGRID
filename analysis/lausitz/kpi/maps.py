@@ -199,8 +199,12 @@ def _attach_stops(vehicles, legs):
                 sub = sub.reset_index(drop=True)
                 for n, row in enumerate(sub.itertuples(), start=1):
                     t = int(getattr(row, col)) if col is not None else 0
-                    stops.append({"lat": row.pu_lat, "lon": row.pu_lon, "t": t, "n": n, "kind": "pu"})
-                    stops.append({"lat": row.do_lat, "lon": row.do_lon, "t": t, "n": n, "kind": "do"})
+                    # personId feeds the badge hover (who boarded / alighted here)
+                    person = str(getattr(row, "personId", ""))
+                    stops.append({"lat": row.pu_lat, "lon": row.pu_lon, "t": t, "n": n,
+                                  "kind": "pu", "person": person})
+                    stops.append({"lat": row.do_lat, "lon": row.do_lon, "t": t, "n": n,
+                                  "kind": "do", "person": person})
         entry["stops"] = stops
 
 

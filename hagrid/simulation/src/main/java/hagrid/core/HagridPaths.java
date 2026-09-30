@@ -352,7 +352,7 @@ public class HagridPaths {
                 .resolve("hagrid_parcel_demand_2025-05-13_(Tuesday).shp").toString();
     }
 
-    /** Lausitz freight van vehicle-types (ct_cep_size_m / _l only). */
+    /** Lausitz freight van vehicle-types: ct_cep_size_s / _m / _l, all three offered to jsprit. */
     public String lmdVehicleTypes() {
         return inputBase.resolve("vehicles").resolve("lmd-vehicle-types.xml").toString();
     }
@@ -504,10 +504,20 @@ public class HagridPaths {
         LOGGER.info("Shared simulation inputs ready at: {}", sharedDir().toAbsolutePath());
     }
 
-    /** Copy a file only if the destination does not yet exist. */
-    private void copyIfMissing(Path source, Path destination, String label) throws IOException {
+    /**
+     * Copy a file only if the destination does not yet exist. An existing copy is never
+     * refreshed -- refreshing would change which input a run reads -- but a copy whose content
+     * differs from its source is now reported instead of silently outliving the input change.
+     */
+    static void copyIfMissing(Path source, Path destination, String label) throws IOException {
         if (Files.exists(destination)) {
-            LOGGER.debug("[shared] {} already exists, skipping", label);
+            if (Files.exists(source) && Files.mismatch(source, destination) != -1L) {
+                LOGGER.warn("[shared] {} differs from its source {} - the existing copy {} is KEPT"
+                                + " (shared/ inputs are never refreshed); delete it to pick up the source",
+                        label, source, destination.toAbsolutePath());
+            } else {
+                LOGGER.debug("[shared] {} already exists, skipping", label);
+            }
             return;
         }
         if (!Files.exists(source)) {

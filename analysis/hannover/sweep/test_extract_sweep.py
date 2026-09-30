@@ -34,6 +34,58 @@ def test_extract_run(tmp_path):
     assert r["meta"]["carrier_detail_tours"] == 4
 
 
+OLD_ROUT = ('var ROUT_EFF=[{"provider":"dhl","tours":3,"avgKm":40.0,"stemPct":30.0},'
+            '{"provider":"gls","tours":1,"avgKm":20.0,"stemPct":50.0}];')
+NEW_ROUT = ('var ROUT_EFF=[{"provider":"dhl","tours":3,"avgKm":40.0,"stemPct":60.0,'
+            '"stemInPct":32.0,"stemOutPct":28.0},'
+            '{"provider":"gls","tours":1,"avgKm":20.0,"stemPct":80.0,'
+            '"stemInPct":50.0,"stemOutPct":30.0}];')
+
+
+def _board(tmp_path, rout):
+    f = tmp_path / "board.html"
+    f.write_text(FIXTURE.replace("</script>", rout + "</script>"), encoding="utf-8")
+    return f
+
+
+def test_stem_is_km_weighted_like_the_board_total_line(tmp_path):
+    """Board TOTAL line: sum(stemPct/100 * avgKm * tours) / sum(avgKm * tours). The
+    network value is NOT the mean of the provider percentages."""
+    s = ex.extract_run("v1", 100, None, _board(tmp_path, OLD_ROUT))["stem"]
+    # (0.30*120 + 0.50*20) / 140 = 46 / 140
+    assert s["stem_pct_network"] == round(100 * 46 / 140, 2)
+    assert s["stem_pct_provider_max"] == 50.0
+    assert s["stem_def"] == "outbound_only"
+    assert s["stem_in_pct_network"] is None
+
+
+def test_stem_definition_is_read_off_the_board(tmp_path):
+    """METHODS-LOG 2.49: boards since 2026-08-28 count both depot legs and carry
+    stemInPct/stemOutPct; older ones only the outbound leg. Same key, two definitions."""
+    s = ex.extract_run("v1", 100, None, _board(tmp_path, NEW_ROUT))["stem"]
+    assert s["stem_def"] == "in_plus_out"
+    assert s["stem_in_pct_network"] == round(100 * (0.32 * 120 + 0.50 * 20) / 140, 2)
+    assert s["stem_out_pct_network"] == round(100 * (0.28 * 120 + 0.30 * 20) / 140, 2)
+
+
+def test_board_without_rout_eff_has_no_stem(tmp_path):
+    f = tmp_path / "board.html"
+    f.write_text(FIXTURE, encoding="utf-8")
+    assert ex.extract_run("v1", 100, None, f)["stem"] is None
+
+
+def test_series_mixing_both_stem_definitions_fails(tmp_path):
+    old = ex.extract_run("v2", 30, None, _board(tmp_path, OLD_ROUT))
+    (tmp_path / "n").mkdir()
+    new = ex.extract_run("v2", 40, None, _board(tmp_path / "n", NEW_ROUT))
+    try:
+        ex.check_stem_vintage([old, new])
+        raise AssertionError("expected ValueError on mixed stem definitions")
+    except ValueError as e:
+        assert "v2" in str(e)
+    ex.check_stem_vintage([old, old])        # one definition per series is fine
+
+
 def test_marker_must_be_unique(tmp_path):
     f = tmp_path / "board.html"
     f.write_text(FIXTURE + 'SUMMARY=[{"x":1}]', encoding="utf-8")

@@ -115,5 +115,14 @@ $out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
 Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match "alter String '-pl")) 'Exit 1 mit alter-String-Befund fuer Array-Form'
 Remove-Item "$tmp\runs\lausitz\plarr.ps1"; Remove-Item "$tmp\hagrid\pom.xml"
 
+Write-Host 'Fall 14: alter Modul-Unterordner (hagrid\target statt hagrid\simulation\target) ist ein Befund'
+# Diskriminierend: kein Anfuehrungszeichen hinter hagrid (die Endet-auf-hagrid-Regel schweigt), kein -pl,
+# kein cd ins Modul - nur die Regel hagrid[\/](?!simulation|...) kann melden. Bis 2026-09-28 blieb der
+# Selbsttest gruen, wenn man genau diese Regel aus check-run-scripts.ps1 entfernte.
+Write-Script "$tmp\runs\lausitz\oldsub.bat" "@echo off`r`necho log goes to ..\..\hagrid\target\run.log`r`n"
+$out = & $check -RepoRoot $tmp -Scripts "$tmp\runs"
+Assert (($LASTEXITCODE -ne 0) -and (($out -join "`n") -match "alter String '\(\?-i\)hagrid\[")) 'Exit 1 mit Befund der Unterordner-Regel'
+Remove-Item "$tmp\runs\lausitz\oldsub.bat"
+
 Remove-Item -Recurse -Force $tmp
 if ($fails -gt 0) { exit 1 } else { Write-Host 'alle Pruefungen bestanden'; exit 0 }

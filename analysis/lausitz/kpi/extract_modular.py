@@ -120,6 +120,18 @@ def has_modular_stats(run_dir, meta):
     return (Path(run_dir) / (meta.prefix + ".modular_tour_stats.csv")).exists()
 
 
+def dispatched_tours(run_dir, meta):
+    """tours_dispatched from modular_tour_stats.csv, or None when the file is missing or
+    unreadable. 0 is the theta=1.0 control arm: no excursion ever left the depot, so the
+    passenger vehicles carried no freight and nothing is contaminated."""
+    try:
+        stats = dict(pd.read_csv(Path(run_dir) / (meta.prefix + ".modular_tour_stats.csv"),
+                                 sep=";").values)
+        return int(stats["tours_dispatched"])
+    except (OSError, pd.errors.EmptyDataError, KeyError, ValueError):
+        return None
+
+
 #: The 13 counters an extraction cannot proceed without (the ones identities 1-5 are built
 #: from). Present in every modular_tour_stats.csv since Task 9 -- old 21-metric format and
 #: the new 26-metric one alike -- so a lookup failure here means the file itself is

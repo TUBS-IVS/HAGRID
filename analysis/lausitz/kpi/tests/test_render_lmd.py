@@ -404,6 +404,49 @@ def test_provider_tables_render_before_vtype_section():
     assert drilldown_i < vtype_section_i
 
 
+def _unified_kpis():
+    """_full_kpis plus the unified cost model's van-fleet rows, i.e. a Lausitz
+    baseline. The provider frame keeps its jsprit cost_* rows, exactly as
+    extract_freight_provider writes them on a real Lausitz run."""
+    return _full_kpis() + _kpi_rows([("cost_lmd_total", 9000.0), ("cost_per_parcel", 1.43)],
+                                    group="economic")
+
+
+def test_unified_cost_hides_every_jsprit_euro_figure():
+    """'Never both' (tile 17): once C exists, no jsprit-rate euro figure may
+    sit beside it -- the legacy rate overstates distance by ~70 % and
+    understates the daily total by ~15 %. Until 2026-09-28 four did on every
+    Lausitz baseline: the Fixkosten tile, the cost-components chart and the
+    EUR columns of both provider tables."""
+    data = _data(_unified_kpis(), _full_provider(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert '<div class="l">Kosten Van-Flotte</div>' in html      # C itself is shown
+    assert '<div class="l">Fixkosten</div>' not in html           # tile 18
+    assert "c_p_cost_lmd" not in html + js                        # chart 4
+    assert "<th>€/Paket</th>" not in html                         # VRP table column
+    assert "<th>Kosten</th>" not in html                          # drilldown column
+    assert "1.250 EUR" not in html                                # dhl jsprit cost_total
+    # the tables themselves stay -- only their euro columns go
+    assert "VRP-Effizienz je Provider" in html and "<th>Pakete/km</th>" in html
+    assert "Provider-Übersicht mit Fahrzeug-Drilldown" in html and "<th>verpasst</th>" in html
+
+
+def test_unified_cost_hides_the_cost_chart_in_compact_mode_too():
+    data = _data(_unified_kpis(), _full_provider())
+    html, js = render_lmd.build_tab(data, uid="lmd", compact=True)
+    assert "c_p_cost_lmd" not in html + js
+    assert "c_p_parcels_lmd" in html      # the rest of the compact set survives
+
+
+def test_without_unified_cost_the_jsprit_figures_stay():
+    """Hannover has no C, so the jsprit figures are the only cost there and
+    must stay -- this is what makes a blanket 'always hide' fail."""
+    data = _data(_full_kpis(), _full_provider(), vehicles=_full_vehicles())
+    html, js = render_lmd.build_tab(data, uid="lmd")
+    assert "<th>Kosten</th>" in html and "1.250 EUR" in html
+    assert "<th>€/Paket</th>" in html
+
+
 def test_table_vrp_efficiency_absent_when_no_provider_data():
     data = _data(_full_kpis())   # no provider rows at all
     html, js = render_lmd.build_tab(data, uid="lmd")

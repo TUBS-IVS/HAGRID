@@ -58,11 +58,28 @@ class KpiDashboardTriggerTest {
     }
 
     @Test
-    @DisplayName("scriptFor: relative root 'hagrid/simulation' resolves against the CWD (IDE case)")
+    @DisplayName("scriptFor: relative root 'hagrid/simulation' resolves against the CWD and finds the real repo by its marker")
     void scriptForRelativeRootFromRepo() {
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid", "simulation")))
-                .isEqualTo(cwd.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py"));
+        // Until 2026-09-28 this test expected cwd/analysis/... -- the bare two-levels-up
+        // arithmetic, which under Surefire (CWD = module dir) is a path that does not exist.
+        // The marker walk now climbs on to the directory that really holds build_kpis.py. In
+        // the IDE case it was written for (CWD = repo root) old and new answer are identical.
+        Path moduleDir = Path.of("").toAbsolutePath().normalize();
+        Path expected = moduleDir.getParent().getParent()
+                .resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        assertThat(KpiDashboardTrigger.scriptFor(Path.of("hagrid", "simulation"))).isEqualTo(expected);
+        assertThat(java.nio.file.Files.exists(expected)).isTrue();
+    }
+
+    @Test
+    @DisplayName("scriptFor: a module THREE levels below the repo is found by the marker, not by counting levels")
+    void scriptForFindsRepoByMarkerAtAnyDepth(@org.junit.jupiter.api.io.TempDir Path repo)
+            throws java.io.IOException {
+        Path script = repo.resolve("analysis").resolve("lausitz").resolve("kpi").resolve("build_kpis.py");
+        java.nio.file.Files.createDirectories(script.getParent());
+        java.nio.file.Files.writeString(script, "# marker");
+        Path module = repo.resolve("studies").resolve("hagrid").resolve("simulation");
+        assertThat(KpiDashboardTrigger.scriptFor(module)).isEqualTo(script);
     }
 
     @Test

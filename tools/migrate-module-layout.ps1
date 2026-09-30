@@ -16,6 +16,9 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $old = Join-Path $RepoRoot 'hagrid'
 $new = Join-Path $RepoRoot 'hagrid\simulation'
 if (-not $Reverse -and -not (Test-Path -LiteralPath (Join-Path $new 'pom.xml'))) { throw "Zielmodul fehlt: $new\pom.xml (erst git pull / checkout auf den Umbau-Stand)" }
+# Spiegel fuer -Reverse: erst `git checkout <Commit vor dem Umbau>` legt das alte Skelett (hagrid\pom.xml) zurueck.
+# Ohne den Checkout wanderten die Daten in ein leeres hagrid\ - abbrechen, bevor irgendetwas angelegt wird.
+if ($Reverse -and -not (Test-Path -LiteralPath (Join-Path $old 'pom.xml'))) { throw "Altes Modul-Skelett fehlt: $old\pom.xml (erst git checkout <Commit vor dem Umbau>, dann -Reverse)" }
 # -Reverse laeuft NACH `git checkout <alter Commit>`: git hat die getrackten Dateien dann schon zurueckgelegt,
 # hier wandern nur noch die ignorierten Daten in das von git wiederhergestellte Skelett.
 $names = 'input', 'hagrid-output', 'hagrid-matsim-output', 'routerCache', 'logs'
@@ -54,11 +57,11 @@ $ok = $true
 try {
     # ---------- Phase 2: Verschieben ----------
     foreach ($n in $names) { Merge-Into (Join-Path $from $n) (Join-Path $to $n) $log }
-    if (-not $Reverse) {
-        foreach ($d in $derived) {
-            $p = Join-Path $old $d
-            if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force; $log.Add("DELETE derived $p") }
-        }
+    # Abgeleitete Artefakte werden nie migriert, sondern am QUELLort geloescht: vorwaerts unter hagrid\,
+    # rueckwaerts unter hagrid\simulation\ (sonst bliebe dort das target\ des neuen Layouts liegen).
+    foreach ($d in $derived) {
+        $p = Join-Path $from $d
+        if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force; $log.Add("DELETE derived $p") }
     }
 
     # ---------- Phase 3: Inventar nachher, Summen vergleichen ----------

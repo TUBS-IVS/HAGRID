@@ -34,8 +34,10 @@
     2. hagrid-output/logs/run_hagrid.log exists and grows during the run
     3. the run output directory contains NO logs/hagrid.log
 
-  The underlying defect, an unconditional System.setProperty that overrides an explicit
-  D-flag, is recorded in the BACKLOG. Fixing it there would make this file unnecessary.
+  The underlying defect, an unconditional System.setProperty that overrode an explicit
+  D-flag, is fixed since 2026-09-28 (SimulationRunnerUtils.pointLogDirAt keeps an explicit
+  hagrid.log.dir). A D-flag pointing outside the run directory now suffices with the packaged
+  config. This file stays valid and harmless for the machines that already use it.
 -->
 <Configuration status="WARN">
     <Properties>
