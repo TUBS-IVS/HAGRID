@@ -211,13 +211,6 @@ public class HAGRIDScenarioBuilder {
      */
     private static void mergeCarriers(CarrierVehicleTypes types, HAGRIDSimulationConfig simConfig) throws Exception {
         Instant start = Instant.now();
-        // Fix legacy <attribute name="type">Mixed</attribute> in XMLs before reading
-        // Not nice, but quick workaround until upstream MATSim issue is fixed
-
-        LOGGER.info("Fixing mixed type attributes in XML files");
-        XMLParcelTypeFixer.fixMixedTypeInFile(simConfig.getDeliveryCarrierPath().toString());
-        XMLParcelTypeFixer.fixMixedTypeInFile(simConfig.getSupplyCarrierPath().toString());
-        LOGGER.info("Finished fixing mixed type attributes in XML files");
 
         Carriers delivery = new Carriers();
         new CarrierPlanXmlReader(delivery, types).readFile(simConfig.getDeliveryCarrierPath().toString());
