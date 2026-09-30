@@ -99,7 +99,8 @@ Reine Funktionen, jede einzeln getestet:
   `E_d(y) = max(0, P_d(base) · population_index_d(y) − R_d(y)) / P_d(base)`, `P_d(base)` = Summe `population` der
   Bestandsstandorte des Bezirks, `R_d(y)` = Einwohner der in `y` bezogenen Neubaugebiete des Bezirks (5.3; ein
   Wert unter 0 wird auf 0 gesetzt und im Status gemeldet); gewerblich = Bestandsanteil des Branchenwachstums
-  `1 + (1 − new_firm_share) · ((1 + r_branch)^(y − base) − 1)`. Faktor im Bezugsjahr exakt 1.
+  `1 + (1 − new_firm_share) · ((1 + r_branch)^(y − base) − 1)`, bei schrumpfender Branche (`r_branch < 0`) der volle
+  Rückgang `(1 + r_branch)^(y − base)` (Nachtrag 2026-09-30, siehe 9). Faktor im Bezugsjahr exakt 1.
 
 ### 5.3 Neue Standorte (`land_use.py`, Anbindung in `workflow.py`)
 
@@ -183,3 +184,20 @@ Nachfrage) → Tagesschleife → Jahresspeicher, Register (`land_use_*`) → Jah
 ## 8. Nicht-Ziele
 
 Mikrosimulation, Haushalte, Einkommen, Wohnungsbestand, Pendeln, Kalibrierung an Zensus 2022, Java-Änderungen.
+
+## 9. Nachtrag 2026-09-30 (Befunde aus dem Abschluss-Review)
+
+- Schrumpfende Branchen tragen den vollen Rückgang im Bestand. Neue Betriebe entstehen nur bei Wachstum, und kein
+  Betrieb schließt. Mit dem Faktor aus 5.2 ginge sonst ein Teil des Rückgangs verloren, und die Branche schrumpfte
+  langsamer als ihre Rate.
+- Neue Betriebe werden je Jahr ohne Zurücklegen auf die Flächen gezogen, wie in 5.3 vorgesehen. Sind alle Flächen
+  belegt, beginnt eine neue Runde.
+- Beim Laden wird geprüft: `start_year` jedes Neubaugebiets liegt nach `base_year`, kein simuliertes Jahr liegt vor
+  `base_year`, Gebietsnamen und ihre Kürzel sind eindeutig.
+- Abholpunkte und Landnutzungsstopps behalten getrennte Indexbereiche. Berühren sie sich, bricht der Lauf ab.
+- Die neuen Standorte stehen auch in `reference["geometry"]`, damit die korrelierte räumliche Verteilung sie findet.
+- Der Cache-Schlüssel der Tagesstufe enthält alle Landnutzungseingaben, auch `sources/sites.parquet` und
+  `buildings/site_buildings.parquet`. Ein leerer `land_use`-Block zählt als eingeschaltet.
+- Das Jahres-Dashboard zählt die bis zu seinem Jahr eröffneten Landnutzungsstopps mit.
+- Das Dekaden-Dashboard speichert gleiche Bezirksformen und Standortlisten nur einmal (`structure_pool`) und liest
+  die Standortprojektion Lauf für Lauf.

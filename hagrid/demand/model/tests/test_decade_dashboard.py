@@ -10,7 +10,7 @@ import pytest
 from decade_fixtures import CODES, write_decade_run
 
 BOOM = {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
-KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure", "change"}
+KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure", "structure_pool", "change"}
 PAYLOAD = re.compile(r'<script id="hagrid-decade" type="application/json">(.*?)</script>', re.S)
 SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "structure", "change", "network", "calendar", "method"]
 
@@ -281,8 +281,10 @@ def test_structure_payload_from_land_use_files(tmp_path):
 
     run = write_decade_run(tmp_path, "decade-trend")
     write_land_use_files(run)
-    block = build_decade_dashboard_data({"trend": run})["structure"]["trend"]
+    payload = build_decade_dashboard_data({"trend": run})
+    block, pool = payload["structure"]["trend"], payload["structure_pool"]
     districts = block["districts"]
+    districts["geo"], block["sites"] = pool["geo"][districts["geo"]], pool["sites"][block["sites"]]
     assert districts["ids"] == ["A", "B"] and districts["kinds"] == ["city", "umland"]
     assert districts["population_index"]["2026"] == pytest.approx([1.02, 0.99]) and districts["population_index"]["2025"] == [1.0, 1.0]
     assert districts["employees_index"]["2026"] == pytest.approx([1.01, 1.01]) and len(districts["geo"]["features"]) == 2
@@ -298,7 +300,7 @@ def test_structure_payload_from_land_use_files(tmp_path):
 
 
 def test_structure_payload_is_null_without_land_use(payload):
-    assert payload["structure"] == {"trend": None, "boom": None}
+    assert payload["structure"] == {"trend": None, "boom": None} and payload["structure_pool"] == {"geo": {}, "sites": {}}
 
 
 
@@ -345,3 +347,21 @@ def test_change_drivers_use_the_model_districts_of_the_sites(tmp_path):
     model = build_decade_dashboard_data({"trend": run})["change"]["districts"]["trend"]
     assert model["2026"]["total"][model["ids"].index("A")] == 0.0 and model["2026"]["total"][model["ids"].index("B")] > 0.
     assert geometric["2026"]["total"] != model["2026"]["total"]
+
+
+def test_structure_payload_shares_identical_shapes_and_sites(tmp_path):
+    """District shapes and new sites that are identical across scenarios are stored once in the structure pool."""
+    from decade_fixtures import write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    first = write_decade_run(tmp_path, "decade-trend")
+    second = write_decade_run(tmp_path, "decade-boom", growth=1.08, scenario=BOOM, seed=11)
+    write_land_use_files(first)
+    write_land_use_files(second)
+    payload = build_decade_dashboard_data({"trend": first, "boom": second})
+    pool = payload["structure_pool"]
+    assert len(pool["geo"]) == 1 and len(pool["sites"]) == 1
+    keys = {name: (block["districts"]["geo"], block["sites"]) for name, block in payload["structure"].items()}
+    assert keys["trend"] == keys["boom"] and all(isinstance(key, str) for pair in keys.values() for key in pair)
+    assert len(pool["geo"][keys["trend"][0]]["features"]) == 2 and pool["sites"][keys["trend"][1]]["year_opened"] == [2026] * 3

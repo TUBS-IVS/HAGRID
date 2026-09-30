@@ -578,3 +578,15 @@ def test_baseline_config_accepts_land_use_and_boundaries(tmp_path):
     config.write_text(json.dumps(base), encoding="utf-8")
     with pytest.raises(ValueError, match="cohort_shift"):
         load_baseline_config(config)
+
+
+def test_baseline_config_rejects_land_use_years_before_the_base_year(tmp_path):
+    from hagrid_demand.baseline.config import load_baseline_config
+
+    (tmp_path / "inputs").mkdir()
+    config = tmp_path / "baseline.json"
+    config.write_text(json.dumps({"schema_version": 1, "rng_version": 1, "seed": 42, "input_dir": "inputs", "output_dir": "runs",
+                                  "source_mode": "raw", "reference_year": 2021, "reference_operating_days": 313,
+                                  "output_scope": "daily", "years": [2024, 2025], "land_use": {"enabled": True}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="base_year"):
+        load_baseline_config(config)

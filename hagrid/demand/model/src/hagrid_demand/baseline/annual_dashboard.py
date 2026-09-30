@@ -141,7 +141,12 @@ def build_annual_dashboard_data(run_dir: Path, year: int | None = None) -> dict:
     units["plz"] = units.plz.astype(str)
     persons = units.groupby("plz").population.sum().reindex(codes, fill_value=0.)
     firms = units.groupby("plz").companies.sum().reindex(codes, fill_value=0.)
-    stops = gpd.read_parquet(run_dir / "reference_stops.parquet")
+    stops = gpd.read_parquet(run_dir / "reference_stops.parquet")[["stop_id", "plz"]]
+    if (run_dir / "land_use_stops.parquet").is_file():
+        # stops of new land-use sites (development homes, new firms) count from their opening year on
+        added = pd.read_parquet(run_dir / "land_use_stops.parquet", columns=["stop_id", "plz", "year_opened"])
+        added = added.loc[pd.to_numeric(added.year_opened, errors="coerce").le(year), ["stop_id", "plz"]]
+        stops = pd.concat([stops, added], ignore_index=True)
     stops_per_plz = stops.plz.astype(str).value_counts().reindex(codes, fill_value=0)
     weekday = []
     calendar_path = run_dir / "delivery_calendar.parquet"

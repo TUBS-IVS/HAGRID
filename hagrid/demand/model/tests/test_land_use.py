@@ -392,3 +392,77 @@ def test_land_use_stops_never_share_the_reference_off_street_group():
     stops, _ = land_use_stops(sites, 1_000_000)
     homes = stops.loc[stops.stop_id.str.startswith("lu:res:")].str_idx
     assert (homes <= -100).all() and homes.nunique() == 2 and -1 not in set(stops.str_idx)
+
+
+# --- review findings ----------------------------------------------------------------------------------------------
+
+def test_resolve_land_use_rejects_developments_before_the_base_year():
+    """Development residents move in from start_year on; in the base year they would change the reference shares."""
+    from hagrid_demand.baseline.land_use import resolve_land_use
+
+    area = {"name": "Früh", "district_id": "6.2", "residents": 10, "start_year": 2025, "ramp_years": 2,
+            "geometry": {"center": [550000.0, 5800000.0], "radius_m": 100}}
+    with pytest.raises(ValueError, match="start_year"):
+        resolve_land_use({"enabled": True, "developments": [area]})
+    with pytest.raises(ValueError, match="start_year"):
+        resolve_land_use({"enabled": True, "base_year": 2027})           # the standard areas start in 2026
+
+
+def test_land_use_years_must_not_precede_the_base_year():
+    from hagrid_demand.baseline.land_use import resolve_land_use, validate_land_use_years
+
+    cfg = resolve_land_use({"enabled": True})
+    validate_land_use_years(cfg, [2025, 2030])
+    with pytest.raises(ValueError, match="base_year"):
+        validate_land_use_years(cfg, [2024, 2025])
+
+
+def test_resolve_land_use_rejects_duplicate_area_names_and_slugs():
+    """Site ids of development homes carry the slug of the area name; two areas must never share one."""
+    from hagrid_demand.baseline.land_use import resolve_land_use
+
+    def area(name):
+        return {"name": name, "district_id": "44", "residents": 10, "start_year": 2026, "ramp_years": 2,
+                "geometry": {"center": [540000.0, 5804000.0], "radius_m": 100}}
+
+    for names in (["Seelze-Süd", "Seelze-Süd"], ["Seelze-Süd", "Seelze Sud"]):
+        with pytest.raises(ValueError, match="unique"):
+            resolve_land_use({"enabled": True, "developments": [area(name) for name in names]})
+
+
+def test_firm_factor_applies_the_full_decline_of_shrinking_branches():
+    """No firms close in the model and none open in a shrinking branch, so its existing firms carry the whole decline."""
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import firm_factor
+
+    table = firm_factor(pd.Series({"c": "C", "q": "Q"}), [2025, 2035], 2025, {"C": -0.005, "Q": 0.015, "default": 0.0}, 0.3)
+    factor = table.set_index(["year", "site_id"]).factor
+    assert factor.loc[(2035, "c")] == pytest.approx(0.995 ** 10)
+    assert factor.loc[(2035, "q")] == pytest.approx(1. + 0.7 * (1.015 ** 10 - 1.))   # growth: 30 % goes to new firms
+
+
+def test_new_firms_spread_over_the_areas_within_a_year():
+    """Within one year every commercial area takes a new firm before any area takes a second one."""
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import new_firms
+
+    companies = pd.DataFrame({"branch": ["Q"] * 50, "employees": [2.] * 50})
+    for seed in range(20):
+        firms = new_firms(companies, 0.002, [2025, 2026], 2025, {"Q": 0.12, "default": 0.0}, 0.5, _landuse(), _postal(),
+                          lambda year, seed=seed: np.random.default_rng([seed, year]))
+        area = np.where(firms.geometry.x < 1500., "commercial", "industrial")
+        assert len(firms) == 3 and sorted(area[:2]) == ["commercial", "industrial"]
+
+
+def test_stop_ranges_must_not_overlap():
+    """Pickup points follow the reference stops, land-use stops start at LAND_USE_STOP_BASE; the ranges must not meet."""
+    from hagrid_demand.baseline.land_use import check_stop_ranges
+
+    check_stop_ranges(reference_last=67332, points=600, land_use_first=1_000_000)
+    check_stop_ranges(reference_last=67332, points=600, land_use_first=None)
+    check_stop_ranges(reference_last=999_000, points=999, land_use_first=1_000_000)
+    with pytest.raises(ValueError, match="overlap"):
+        check_stop_ranges(reference_last=999_500, points=600, land_use_first=1_000_000)

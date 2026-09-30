@@ -9,6 +9,7 @@ is required.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from datetime import datetime, timezone
@@ -634,6 +635,26 @@ def _structure_block(run: dict | None, years: list[int]) -> dict | None:
     return {"districts": districts, "sites": sites, "developments": developments, "age": age, "meta": meta}
 
 
+def _pool_structure(structure: dict[str, dict | None]) -> tuple[dict, dict]:
+    """Store the district shapes and new sites that several scenarios share once: each block keeps a key into the pool."""
+    pool: dict[str, dict] = {"geo": {}, "sites": {}}
+    pooled: dict[str, dict | None] = {}
+    for name, block in structure.items():
+        if block is None:
+            pooled[name] = None
+            continue
+        block = {**block, "districts": dict(block["districts"])}
+        for kind, holder, field in (("geo", block["districts"], "geo"), ("sites", block, "sites")):
+            value = holder.get(field)
+            if value is None:
+                continue
+            key = hashlib.sha1(json.dumps(_clean(value), sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]
+            pool[kind].setdefault(key, value)
+            holder[field] = key
+        pooled[name] = block
+    return pooled, pool
+
+
 # --- change over time: hexagon grid, land-use decomposition, city share ------------------------------------------------
 
 HEX_SIZE_M = 800.   # centre-to-vertex of the pointy-top hexagons (about 1.4 km across, 1.66 km2)
@@ -680,12 +701,16 @@ def _site_positions(path: Path) -> pd.DataFrame | None:
     return frame.dropna()
 
 
-def _change_run(run: dict) -> dict | None:
+def _projection_rows(path: Path) -> int:
+    file = path / "annual_projection.parquet"
+    return int(pq.ParquetFile(file).metadata.num_rows) if file.is_file() else 0
+
+
+def _change_run(run: dict, positions: pd.DataFrame) -> dict | None:
     """Expected demand per site and year with land use (``total``) and with the reference shares (``plain``)."""
     path = run["path"]
     projection = _parquet(path / "annual_projection.parquet", ["year", "site_id", "segment", "annual_expected"])
-    positions = _site_positions(path)
-    if projection is None or positions is None or projection.empty:
+    if projection is None or projection.empty:
         return None
     projection = projection.assign(site_id=projection.site_id.astype(str))
     plain = projection
@@ -699,16 +724,70 @@ def _change_run(run: dict) -> dict | None:
     return {"total": projection, "plain": plain, "positions": positions}
 
 
+def _change_values(run: dict, positions: pd.DataFrame, cell_of: pd.Series, cells: int, years: list[int]) -> tuple | None:
+    """Hexagon values, district decomposition and city share of one run; its site projection is released on return."""
+    frames = _change_run(run, positions)
+    if frames is None:
+        return None
+    delivery = run["days"].loc[run["days"].delivery].groupby("year").size()
+    values = {}
+    for key in ("total", "plain"):
+        frame = frames[key]
+        cell = frame.site_id.map(cell_of)
+        grouped = frame.assign(cell=cell).dropna(subset=["cell"]).groupby(["year", "cell"]).annual_expected.sum()
+        for year in years:
+            entry = values.setdefault(str(year), {})
+            days = float(delivery.get(int(year), 0))
+            if days <= 0 or int(year) not in grouped.index.get_level_values(0):
+                entry[key] = None
+                continue
+            series = grouped.loc[int(year)]
+            series.index = series.index.astype(int)
+            entry[key] = [round(float(value), 2) for value in (series.reindex(range(cells), fill_value=0.) / days).to_numpy()]
+    shapes_path = run["path"] / "land_use_district_shapes.parquet"
+    if not shapes_path.is_file():
+        return values, None, None
+    from .land_use import assign_districts
+
+    shapes = gpd.read_parquet(shapes_path).to_crs(25832)
+    kinds = shapes.set_index(shapes.district_id.astype(str)).kind.astype(str)
+    register = _parquet(run["path"] / "land_use_site_districts.parquet")
+    if register is not None:  # the model's district of every site (full polygons, configured areas)
+        district_of = pd.Series(register.district_id.astype(str).to_numpy(), index=register.site_id.astype(str).to_numpy())
+    else:
+        district_of = pd.Series(assign_districts(positions[["x", "y"]].to_numpy(float), shapes), index=positions.index)
+    block = {"ids": shapes.district_id.astype(str).tolist(), "names": shapes.name.astype(str).tolist(), "kinds": shapes.kind.astype(str).tolist()}
+    sums = {key: frames[key].assign(district_id=frames[key].site_id.map(district_of)).groupby(["year", "district_id"]).annual_expected.sum()
+            for key in ("total", "plain")}
+    for year in years:
+        days = float(delivery.get(int(year), 0))
+        block[str(year)] = None if days <= 0 or int(year) not in sums["total"].index.get_level_values(0) else {
+            key: [round(float(sums[key].get((int(year), district), 0.)) / days, 2) for district in block["ids"]] for key in sums}
+    total = sums["total"].groupby(level=0).sum()
+    city_mask = np.array([kinds.get(str(district)) == "city" for _, district in sums["total"].index])
+    city = sums["total"].loc[city_mask].groupby(level=0).sum()
+    share = {str(year): (round(float(city.get(int(year), 0.)) / float(total[int(year)]), 5)
+                         if int(year) in total.index and total[int(year)] > 0 else None) for year in years}
+    return values, block, share
+
+
 def _change_block(loaded: dict[str, dict | None], names: list[str], years: list[int]) -> dict | None:
-    """Hexagon map values, land-use decomposition by forecast district and the city share of every scenario."""
-    per_run = {name: _change_run(loaded[name]) for name in names if loaded.get(name) is not None}
-    per_run = {name: frames for name, frames in per_run.items() if frames is not None}
-    if not per_run:
+    """Hexagon map values, land-use decomposition by forecast district and the city share of every scenario.
+
+    Two passes keep one run's site projection in memory at a time: the site positions of all runs fix the hexagon
+    cells first, then every run's projection is aggregated and released."""
+    positions = {}
+    for name in names:
+        run = loaded.get(name)
+        frame = _site_positions(run["path"]) if run is not None and _projection_rows(run["path"]) else None
+        if frame is not None:
+            positions[name] = frame
+    if not positions:
         return None
     site_keys = {}
-    for name, frames in per_run.items():
-        q, r = _hex_cells(frames["positions"].x.to_numpy(), frames["positions"].y.to_numpy())
-        site_keys[name] = pd.Series(q * _HEX_KEY + r, index=frames["positions"].index)
+    for name, frame in positions.items():
+        q, r = _hex_cells(frame.x.to_numpy(), frame.y.to_numpy())
+        site_keys[name] = pd.Series(q * _HEX_KEY + r, index=frame.index)
     keys = np.unique(np.concatenate([series.to_numpy() for series in site_keys.values()]))
     cells = [(int(key // _HEX_KEY), int(key % _HEX_KEY)) for key in keys]
     polygons = gpd.GeoSeries([_hex_polygon(q, r) for q, r in cells], crs=25832)
@@ -722,52 +801,13 @@ def _change_block(loaded: dict[str, dict | None], names: list[str], years: list[
              "centre": [[round(point.x, 5), round(point.y, 5)] for point in centres], "size_m": HEX_SIZE_M}
     values, districts, city_share = {}, {}, {}
     for name in names:
-        run, frames = loaded.get(name), per_run.get(name)
         values[name] = districts[name] = city_share[name] = None
-        if frames is None:
+        if name not in positions:
             continue
-        delivery = run["days"].loc[run["days"].delivery].groupby("year").size()
         cell_of = pd.Series(np.searchsorted(keys, site_keys[name].to_numpy()), index=site_keys[name].index)
-        values[name] = {}
-        for key in ("total", "plain"):
-            frame = frames[key]
-            cell = frame.site_id.map(cell_of)
-            grouped = frame.assign(cell=cell).dropna(subset=["cell"]).groupby(["year", "cell"]).annual_expected.sum()
-            for year in years:
-                entry = values[name].setdefault(str(year), {})
-                days = float(delivery.get(int(year), 0))
-                if days <= 0 or int(year) not in grouped.index.get_level_values(0):
-                    entry[key] = None
-                    continue
-                series = grouped.loc[int(year)]
-                series.index = series.index.astype(int)
-                entry[key] = [round(float(value), 2) for value in (series.reindex(range(len(cells)), fill_value=0.) / days).to_numpy()]
-        shapes_path = run["path"] / "land_use_district_shapes.parquet"
-        if not shapes_path.is_file():
-            continue
-        from .land_use import assign_districts
-
-        shapes = gpd.read_parquet(shapes_path).to_crs(25832)
-        kinds = shapes.set_index(shapes.district_id.astype(str)).kind.astype(str)
-        positions = frames["positions"]
-        register = _parquet(run["path"] / "land_use_site_districts.parquet")
-        if register is not None:  # the model's district of every site (full polygons, configured areas)
-            district_of = pd.Series(register.district_id.astype(str).to_numpy(), index=register.site_id.astype(str).to_numpy())
-        else:
-            district_of = pd.Series(assign_districts(positions[["x", "y"]].to_numpy(float), shapes), index=positions.index)
-        block = {"ids": shapes.district_id.astype(str).tolist(), "names": shapes.name.astype(str).tolist(), "kinds": shapes.kind.astype(str).tolist()}
-        sums = {key: frames[key].assign(district_id=frames[key].site_id.map(district_of)).groupby(["year", "district_id"]).annual_expected.sum()
-                for key in ("total", "plain")}
-        for year in years:
-            days = float(delivery.get(int(year), 0))
-            block[str(year)] = None if days <= 0 or int(year) not in sums["total"].index.get_level_values(0) else {
-                key: [round(float(sums[key].get((int(year), district), 0.)) / days, 2) for district in block["ids"]] for key in sums}
-        districts[name] = block
-        total = sums["total"].groupby(level=0).sum()
-        city_mask = np.array([kinds.get(str(district)) == "city" for _, district in sums["total"].index])
-        city = sums["total"].loc[city_mask].groupby(level=0).sum()
-        city_share[name] = {str(year): (round(float(city.get(int(year), 0.)) / float(total[int(year)]), 5)
-                                        if int(year) in total.index and total[int(year)] > 0 else None) for year in years}
+        result = _change_values(loaded[name], positions[name], cell_of, len(cells), years)
+        if result is not None:
+            values[name], districts[name], city_share[name] = result
     return {"hex": hexes, "values": values, "districts": districts, "city_share": city_share}
 
 
@@ -819,9 +859,10 @@ def build_decade_dashboard_data(runs: dict[str, Path]) -> dict:
                             "temporal": {key: temporal[key] for key in TEMPORAL_ASSUMPTIONS if key in temporal},
                             "texts": list(primary["config"].get("assumptions", []))},
             "attribution": "© OpenStreetMap contributors (ODbL)"}
+    structure, structure_pool = _pool_structure(structure)
     return _clean({"meta": meta, "years": years, "national": national, "annual": annual,
                    "plz": {**region, "values": plz_values}, "calendar": calendar, "network": network, "weekday": weekday,
-                   "structure": structure, "change": _change_block(loaded, names, years)})
+                   "structure": structure, "structure_pool": structure_pool, "change": _change_block(loaded, names, years)})
 
 
 def write_decade_dashboard(runs: dict[str, Path], out_html: Path, standalone: bool = True) -> Path:

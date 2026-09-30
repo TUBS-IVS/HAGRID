@@ -97,7 +97,24 @@ def resolve_land_use(cfg: dict | None) -> dict | None:
         if (not isinstance(area["residents"], (int, float)) or area["residents"] < 0 or type(area["start_year"]) is not int
                 or type(area["ramp_years"]) is not int or area["ramp_years"] < 1):
             raise ValueError(f"land_use development {area['name']!r} needs residents >= 0, integer start_year and ramp_years >= 1")
+        if area["start_year"] <= resolved["base_year"]:
+            # residents move in from start_year on; in the base year they would change the reference shares
+            raise ValueError(f"land_use development {area['name']!r} needs a start_year after base_year {resolved['base_year']}")
+    names = [str(area["name"]) for area in resolved["developments"]]
+    slugs = [_slug(name) for name in names]
+    if len(set(names)) < len(names) or len(set(slugs)) < len(slugs):
+        raise ValueError("land_use development names must be unique, also as site-id slugs (lower case ASCII, e.g. 'seelze-sud')")
     return resolved
+
+
+def validate_land_use_years(cfg: dict | None, years) -> None:
+    """Land use projects forward from its base year, so no simulated year may precede it."""
+    if cfg is None:
+        return
+    early = sorted(int(year) for year in years if int(year) < int(cfg["base_year"]))
+    if early:
+        raise ValueError(f"land_use.base_year {cfg['base_year']} lies after the simulated years {early}; "
+                         "start the land use at the first simulated year")
 
 
 # --- districts ------------------------------------------------------------------------------------------------------
@@ -278,11 +295,14 @@ def existing_factor(model_persons: pd.Series, population_index: pd.DataFrame,
 
 def firm_factor(branch: pd.Series, years, base_year: int, rates: dict, new_firm_share: float) -> pd.DataFrame:
     """Factor of every existing firm: its branch grows at ``rates[branch]`` (else ``rates['default']``) and keeps
-    ``1 - new_firm_share`` of that growth; the rest goes to new firms."""
+    ``1 - new_firm_share`` of that growth; the rest goes to new firms. A shrinking branch opens no firms and none
+    closes, so its existing firms carry the whole decline."""
     rate = branch.map(lambda value: rates.get(value, rates["default"]) if isinstance(value, str) else rates["default"]).astype(float)
-    frames = [pd.DataFrame({"year": int(year), "site_id": branch.index.astype(str),
-                            "factor": 1. + (1. - float(new_firm_share)) * ((1. + rate.to_numpy()) ** (int(year) - int(base_year)) - 1.)})
-              for year in sorted({*[int(value) for value in years], int(base_year)})]
+    frames = []
+    for year in sorted({*[int(value) for value in years], int(base_year)}):
+        change = (1. + rate.to_numpy()) ** (year - int(base_year)) - 1.
+        kept = np.where(change > 0., (1. - float(new_firm_share)) * change, change)
+        frames.append(pd.DataFrame({"year": year, "site_id": branch.index.astype(str), "factor": 1. + kept}))
     return pd.concat(frames, ignore_index=True)
 
 
@@ -389,10 +409,23 @@ def _random_point(polygon, rng: np.random.Generator):
     return polygon.representative_point()
 
 
+def _draw_areas(weights: np.ndarray, count: int, rng: np.random.Generator) -> np.ndarray:
+    """*count* area indices drawn by size without replacement; once every area has a firm, the next round starts."""
+    positive = np.flatnonzero(weights > 0.)
+    if not positive.size:
+        raise ValueError("new firms need commercial or industrial areas with a positive size")
+    chosen: list[int] = []
+    while len(chosen) < count:
+        take = min(count - len(chosen), positive.size)
+        chosen.extend(positive[rng.choice(positive.size, size=take, replace=False, p=weights[positive] / weights[positive].sum())].tolist())
+    return np.asarray(chosen, dtype=np.int64)
+
+
 def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_year: int, rates: dict, new_firm_share: float,
               parcels: gpd.GeoDataFrame, postal: gpd.GeoDataFrame, rng_for_year) -> gpd.GeoDataFrame:
     """New business sites: each year ``new_firm_share`` of a branch's employment growth opens firms of the branch's mean
-    size in OSM commercial and industrial areas (drawn by area); branches that do not grow open none."""
+    size in OSM commercial and industrial areas (drawn by size, at most one firm per area and year until every area has
+    one); branches that do not grow open none."""
     areas = parcels.loc[parcels.fclass.isin(COMMERCIAL_LANDUSE)].reset_index(drop=True)
     weights = areas.geometry.area.to_numpy(float)
     groups = companies.assign(branch=companies.branch.where(companies.branch.notna(), "other").astype(str))
@@ -411,7 +444,7 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
             firms = int(np.floor(float(new_firm_share) * growth / size + 0.5)) if growth > 0 else 0
             if firms <= 0 or not len(areas):
                 continue
-            chosen = rng.choice(len(areas), size=firms, p=weights / weights.sum())
+            chosen = _draw_areas(weights, firms, rng)
             for index, polygon in enumerate(areas.geometry.iloc[chosen]):
                 rows.append({"site_id": f"lu:biz:{branch}:{year}:{index}", "segment": "business", "district_id": None, "area": None,
                              "year_opened": year, "population": np.nan, "employees": size, "branch": branch,
@@ -492,6 +525,17 @@ DISTRICT_COLUMNS = ["year", "district_id", "name", "kind", "population_index", "
                     "employees_model", "forecast_index"]
 
 
+def check_stop_ranges(reference_last: int, points: int, land_use_first: int | None) -> None:
+    """Pickup points take the indices after the last reference stop, land-use stops start at *land_use_first*
+    (``LAND_USE_STOP_BASE`` or above); fail when the two ranges would meet."""
+    if land_use_first is None or int(points) <= 0:
+        return
+    last_point = int(reference_last) + int(points)
+    if last_point >= int(land_use_first):
+        raise ValueError(f"stop index ranges overlap: pickup points reach {last_point}, land-use stops start at {land_use_first}; "
+                         "raise LAND_USE_STOP_BASE")
+
+
 @dataclass
 class LandUsePlan:
     """Everything the daily stage needs from the land-use dynamics of one run."""
@@ -551,6 +595,7 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
     """
     from hagrid_demand.common.rng import named_rng
 
+    validate_land_use_years(cfg, years)
     base = int(cfg["base_year"])
     span = sorted({*[int(year) for year in years], base})
     inputs = load_land_use_inputs()
