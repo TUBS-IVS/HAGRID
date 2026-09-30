@@ -22,12 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-08-26. Durchsicht + Kürzung **838 → 495 Zeilen**: das Dokument hatte
-seine eigene Abgrenzungsregel verletzt (35 Bullets mit ≥8 Zeilen = 59 % der Datei, überwiegend
-Findings-Narrative). Erledigtes entfernt, Befundtexte nach METHODS-LOG verschoben oder gestrichen,
-wo sie dort schon standen; **30 `file:line`-Referenzen geprüft, 20 waren verschoben**; ein
-Strukturschaden repariert, drei neue Defekte aufgenommen → Nachweis in
-[BACKLOG-DONE](BACKLOG-DONE.md) 2026-08-17._
+_Zuletzt aktualisiert: 2026-09-30._
 
 ---
 
@@ -43,42 +38,15 @@ Neue Boards unter `Desktop\Sim_Results\0726\Run1\Dashboards_newstem`, als eigene
 
 ### `[H]` Shared-Use / Cargo-Hitching (Szenario 1c)
 
-Minibus mit 2D-Kapazität (Sitze + Pakete), Online-DVRP-Insertion.
-**Status: implementiert, Betriebspunkt in Messung** (2026-09-01). Implementierung, Reviews und
-χ→0-Validierung → [BACKLOG-DONE](BACKLOG-DONE.md); Architektur- und Parameter-Entscheidungen
-→ [METHODS-LOG](METHODS-LOG.md) §1.1/§1.2.
+Minibus mit 2D-Kapazität (Sitze + Pakete), Online-DVRP-Insertion. **Status: implementiert,
+Betriebspunkt χ=900** ([METHODS-LOG](METHODS-LOG.md) §2.57), Flottenkurven über alle drei
+Szenarien gemessen (§2.68, §2.72, §2.74). Entscheidungen → §1.1/§1.2, Nachweise →
+[BACKLOG-DONE](BACKLOG-DONE.md).
 → [1c-Plan](superpowers/plans/2026-07-06-1c-shareduse-cargo-hitching.md) ·
 [Spike](superpowers/notes/2026-07-06-shareduse-dvrp-insertion-spike.md) _(added 2026-07-14)_
 
-Stand: χ-Raster (150/300/450/600/900 bei f140) und Iso-Service-Punkt f140 sind gemessen, durch die
-Segmentaufteilung `2ff5dbb` überholt und für χ = 600/900/∞ nachgemessen
-(→ [METHODS-LOG](METHODS-LOG.md) §2.46). **χ=900 ist der Betriebspunkt** (→ [METHODS-LOG](METHODS-LOG.md) §2.57): dort wird jedes
-Paket zugestellt, das eine gültige Anfrage wurde, und zwar seed-unabhängig (n=5, sd null auf der
-Frachtseite), während χ=600 im Mittel 331 ± 64 Pakete liegen lässt. Der Pax-Preis ist mit n=5
-gegen n=5 nicht messbar (−84 Fahrten, t=1,06).
+Offen:
 
-Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen Kanälen:
-
-- **`[H]` Flotten-Sweep über alle drei Szenarien statt kalibrierter Einzelpunkte** — der
-  Baseline-Fächer (§2.65) hat gezeigt, dass f140 bei 250 Iterationen um 166 Fahrten
-  überversorgt ist; die ganze Szenarienaussage hängt damit an einer Kalibrierung, die im
-  falschen Iterationsregime gemacht wurde. Kurvenvergleich statt Punktvergleich macht das
-  robust. **Rasterweite mindestens 10 Fahrzeuge** — 5 Fahrzeuge sind 326 kg = 2,0 sd des
-  Laufrauschens und bei n=1 unsichtbar. ~~Vorbedingung: die Paketbasis vereinheitlichen~~ — **erledigt
-  2026-09-10** (§2.66): das Not-at-home-Overlay ist aus `parcels_handled`,
-  `parcels_per_vehicle_km` und dem Kostennenner gestrichen, alle drei Arme stehen brutto.
-  ⚠️ Bereits vorhandene `kpis_long.csv` tragen noch die alte Basis und müssen für den
-  Kurvenvergleich neu gerechnet werden (`build_kpis.py --run-dir ...`) — lokal 2026-09-29
-  erledigt, auf den Rechenmaschinen offen. 9 neue Läufe unter
-  Wiederverwendung von b120rgs@120 (n=5) und 1c f140@140 (n=5), ~4 Tage. **Noch nicht
-  freigegeben.** _(added 2026-09-09)_
-- **`[H]` ~~Baseline-Seed-Fächer bei 250 Iterationen~~ ERLEDIGT 2026-09-09** — 1c
-  liegt bei 250 Iterationen 79,6 Fahrten über der Baseline. Gegen den Baseline-Wert als
-  Konstante ist das grenzwertig trennbar (t=2,86 gegen 2,78); unter **jeder** plausiblen
-  Baseline-Streuung nicht mehr (t=1,05–2,03). Der Baseline-Wert bei 250 ist n=1, ihre
-  Seed-Streuung ist nie gemessen worden — das Urteil hängt also an einer Zahl, die fehlt
-  (§2.62). Drei zusätzliche Seeds `b120rgs` bei 250, ~10,75 h je Lauf, rund 32 h. Bis dahin
-  ist **weder** „iso-service bei 250“ **noch** das Gegenteil belegt. _(added 2026-09-07)_
 - **`[H]` `vmargs_lausitz.txt` versionieren — eine ungetrackte Datei bestimmt ein
   ergebnisänderndes Modellparameter** — `-XX:ActiveProcessorCount=12` darin deckelt
   `Runtime.availableProcessors()`, und daraus zieht `DrtConfigGroup` seinen Default für
@@ -115,11 +83,6 @@ Damit besteht die restliche Lücke zu 100 % nur noch aus zwei χ-unabhängigen K
   exakt auf der letzten funktionierenden Länge; ein Zeichen mehr und ein fertiger Lauf stirbt still
   im Shutdown, nach voller Rechenzeit (→ [METHODS-LOG](METHODS-LOG.md) §2.51). Betrifft 1c, 1d und
   Hannover gleichermaßen. Der Fix gehört an den Pfad, nicht an die Tags. _(added 2026-09-01)_
-- **`[M]` 250-Iterationen-Kontrollpunkt für 1c** — vertagt (Nutzerentscheidung 2026-09-01). Für 1c
-  ist der Iterationseffekt nie gemessen; die −219 stammen aus 1d (§2.47). Ein Lauf f140/χ=600 mit
-  `maxIter=250` gegen den vorhandenen 150er wäre dasselbe Versuchsdesign wie die 1d-Messung.
-  Solange er fehlt, steht der Betriebspunkt auf einer Basis, die nicht die publizierte ist.
-  _(added 2026-09-01)_
 - **`[M]` Laufzeit-Regression 7,0 h → 11,9 h klären** — identische 1c-Config, gleicher Rechner,
   **+70 %**. Diskriminator: zwei 5-Iterations-Läufe mit/ohne `recordEvaluation`, ~1 h.
   Kandidatenliste → [METHODS-LOG](METHODS-LOG.md) §2.35. _(added 2026-08-13)_
@@ -170,38 +133,10 @@ Gewinner-θ = 0,15, bester zulässiger Punkt `f150t015`). POC läuft auf dem akt
 [Spike](superpowers/notes/2026-07-27-modular-capsule-swap-dvrp-spike.md)
 _(added 2026-07-14, aktualisiert 2026-08-17)_
 
-- **✅ 7,0-h-Kontrollarm gefahren (2026-08-18)** — `f150d70` liefert **exakt 41 Touren**, die Zahl
-  der Baseline: die Cap-Asymmetrie erklärt die Tourenzahl vollständig. Der Frachtaufschlag je Paket
-  fällt von +33,9 % auf +12,6 %, die **Pax-Seite verbessert sich nicht** (+4,5–7,4 % je Fahrt über
-  alle Caps). Ergebnis und M11-Zerlegung → [METHODS-LOG](METHODS-LOG.md) §2.38.
-- **✅ Flottenkalibrierung auf der Depotstufe abgeschlossen (2026-08-27)** — neue Baseline
-  `basew21_it250` = 9.183 Fahrten (Plateau 226–249); 1d trifft sie bei **135 Fahrzeugen**
-  (9.214, +31 = unter dem Seed-Abstand 48). Gemessene Steigung 48,2 Fahrten/Fahrzeug, exakter
-  Treffpunkt 134,4. 150 Iterationen sind unkonvergiert, 250 ist Standard → METHODS-LOG §2.47;
-  `basew21`@150 als Anker zurückgezogen → §2.48. _(added 2026-08-27)_
-- **✅ θ ist kein Feinregler, sondern ein harter Riegel VOR dem Budget (2026-09-08)** —
-  `idleThreshold` ist eine Konjunktion der `while`-Bedingung in `ModularTourDispatcher` und steht
-  vor dem Budget-Gate: faellt der Leerlaufanteil darunter, wird der Schleifenkoerper nie betreten
-  und Rampe wie Verfall-Override sind unerreichbar. θ=0,15 und `budgetHeadroom`=0,15 reservieren
-  dieselben 19,5 Fahrzeuge doppelt. Mit θ=0,02 faellt der Verfall von 2.167 auf 207 (kumuliert bis
-  it.182) und der Arm stellt alle 6.052 Pakete zu → [METHODS-LOG](METHODS-LOG.md) §2.61, §2.64.
-  _(added 2026-09-08)_
-
-- **`[H]` θ-Sensitivität auf der Depotstufe — LÄUFT seit 2026-08-27** — θ=0,15 wurde unbesehen aus
-  der alten Kampagne übernommen, das Gate bindet auf der neuen Stufe anders (46/46 Touren
-  disponiert, aber nur 15 um 07:16, Rest bis 11:45). Kette `run_theta1d_chain.bat`: θ=0,20 dann
-  θ=0,10 bei f135/iter250. Auswerten gegen 9.214. _(added 2026-08-27)_
-- **`[H]` Seed-Faecher 1d NEU AUFSETZEN — Lauf am 09.09. gestorben** — `d1d_f130_d30_s2337`
-  starb bei it.170/250 ohne Spur (kein Reboot, keine `hs_err`, kein OOM, kein Kernel-Power-Ereignis;
-  ganzer Prozessbaum inkl. `cmd.exe` weg). `s3337` startete deshalb nie. **MATSim hat hier keinen
-  Wiederaufsetzpunkt** — `setFirstIteration(0)` steht hart in `LausitzDrtConfigurator:141` und
-  `HAGRIDScenarioBuilder:145`, `output_plans` wird erst am Ende geschrieben. Neu starten mit
-  `run_seedfan1d.bat`. ⚠️ **Vorher KEIN `mvn package`**: der Faecher muss denselben JAR benutzen wie
-  `th02` (06.09. 13:55), sonst ist es ein Codevergleich statt eines Seed-Faechers.
-  ⚠️ **Auch die Emissionsseite haengt daran** (2026-09-10): das Diesel-Delta 1d gegen
-  Baseline ist 329,5 kg, die Baseline-Seedspanne 328,7 kg — Verhaeltnis 1,002, und 1c ueberlappt
-  die Baseline ohnehin. Ohne Faecher ist keine der beiden Emissionsdifferenzen zitierfaehig,
-  siehe [METHODS-LOG](METHODS-LOG.md) §2.67. _(added 2026-09-09)_
+- **`[H]` θ-Sensitivität auf der Depotstufe auswerten** — θ=0,15 ist unbesehen aus der alten
+  Kampagne übernommen. Die Läufe `d1d_dep7_f135_t010` und `…_t020` (iter250) sind gefahren und
+  liegen lokal mit KPIs; offen sind der Vergleich gegen `f135` (9.214 Fahrten) und der
+  METHODS-LOG-Eintrag. _(added 2026-08-27, umformuliert 2026-09-30)_
 
 - **`[H]` Ankerlauf auf dem AKTUELLEN JAR** — der Anker `d1d_dep7_f130_it250` stammt vom 25.08.
   und damit von einem aelteren Codestand als `th02`. Die Pax-Differenz in
@@ -232,17 +167,12 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
 
 ### `[H]` Nachhaltigkeitsparameter einbauen
 
-Emissions-/CO₂-/Energie-KPIs und -Parameter ins Modell + Dashboard. Berührt Autonomie-Switch
-(E-Antrieb) und die Kostenfunktion. **Status: Plan 2026-07-28 AUSGEFÜHRT (Tasks 1–9), 2026-07-31;
-Kaltstart-Zuschlag + STAY-Ladefenster-Analyse AUSGEFÜHRT, 2026-08-26.**
-→ [Plan 2026-07-28](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md),
-[Design 2026-08-26](superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md). Ergebnis: KPI-Gruppe
-`environment` in `build_kpis` (drei Arme freight / freight_modular / drt, Diesel + BEV,
-Non-Exhaust segmentdifferenziert, EV-Reichweiten-Sweep, `kpi_emissions_vehicles.csv`), plus
-Kaltstart-Zuschlag und `drive_block_max_km_*`. Methodenwahl, Klassenmapping, Systemgrenze und
-Caveats: [METHODS-LOG](METHODS-LOG.md) §1.4/§2.7/§2.26–§2.29; Faktor-Provenance und
-Limitations-Rohtext: `analysis/lausitz/kpi/data/README.md`. Nachweis: [BACKLOG-DONE](BACKLOG-DONE.md).
-_(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
+Der Emissionskanal steht (KPI-Gruppe `environment` in `build_kpis`, Kaltstart, STAY-Ladefenster;
+[Plan 2026-07-28](superpowers/plans/2026-07-28-emissions-emep-eea-tier3.md) ·
+[Design 2026-08-26](superpowers/specs/2026-08-26-coldstart-stay-analysis-design.md)). Methodik →
+[METHODS-LOG](METHODS-LOG.md) §1.4/§2.7/§2.26–§2.29, Faktor-Provenance →
+`analysis/lausitz/kpi/data/README.md`, Nachweise → [BACKLOG-DONE](BACKLOG-DONE.md).
+_(added 2026-07-14)_ Offen:
 
 - **`[H]` Energetisches Lademodell für die DRT-Flotte (Ladeleistung, Batteriekapazität,
   SoC-Verlauf)** — Nachfolger von „Ladefenster-Analyse" (BACKLOG-DONE 2026-08-26).
@@ -269,21 +199,12 @@ _(added 2026-07-14, abgeschlossen 2026-07-31, erweitert 2026-08-26)_
 
 ### `[H]` Kostenfunktion reviewen
 
-**✅ Für LAUSITZ umgesetzt (2026-08-28).** `analysis/lausitz/kpi/cost_model.py` leitet die `DERIVED`-Sätze
-aus `cost_parameters.csv` ab (Selbsttest gegen die im CSV dokumentierten 28,99 / 33,45 / 14,80 /
-16,60 / 18,80 / 22,74 €), `economics.py` wertet C auf Flotten-Aggregaten aus und ist ins Dashboard
-verdrahtet (`render_drt`/`render_lmd`/`render`). **Hannover bleibt bewusst auf dem Platzhalter**
-(User-Entscheidung 2026-08-28) — die Umschaltung hängt an `study_area`. Gegenproben: 220,9 €/Tour
-gegen die im CSV vermerkten „ca. 221 € für 7 h", 1,60 €/Paket im Literaturband. Tests
-`tests/test_cost_model.py` (17). Gemessen am gematchten Paar: Baseline 88.942 € gegen 1d 87.950 €,
-also **−1,1 %**, auf allen vier Kanälen kleiner. `*_placeholder`-Vorbehalt → §2.6 gilt nur noch
-für Hannover.
-
-**⚠️ Blockiert, nicht offen (User-Entscheidung 2026-08-16/17):** die Original-Kostenfunktion wird
-**nicht angefasst**, eine neue Klasse kommt erst **nach dem hendrik→master-Merge (~Oktober) und
-nach den Hannover-Läufen**; bis dahin läuft die Bewertung rein post-hoc in Python,
-`lmd-vehicle-types.xml` bleibt unberührt. Was fehlt, ist der Merge, nicht die Entscheidung.
-_(added 2026-07-14, aktualisiert 2026-08-17)_
+Lausitz rechnet direkte Betriebskosten C post-hoc in Python (Herleitung →
+[METHODS-LOG](METHODS-LOG.md) §1.6, Stand → §2.6), Hannover bewusst weiter den Platzhalter
+(User-Entscheidung 2026-08-28). **Blockiert** (User-Entscheidung 2026-08-16/17): die
+Original-Kostenfunktion und `lmd-vehicle-types.xml` bleiben unberührt, eine neue Java-Klasse kommt
+erst nach den Hannover-Läufen (der hendrik→master-Merge ist seit 2026-09-28 durch).
+_(added 2026-07-14, aktualisiert 2026-09-30)_
 
 - **`[H]` durH-Basis ist eine Setzung mit Vorzeichenwirkung** — Personal = `c_time × durH`, durH =
   `drt_tour_hours_total` (aktive Spanne, Nutzerentscheidung 2026-08-28). `shift_h` (24 h) drehte den
@@ -299,10 +220,6 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   bzw. Tageszeitauflösung, die `economics.extract` an seiner Stelle in `build_kpis` nicht hat.
   Headline unberührt (`overtime_factor` = 0), die 0,30-Sensitivität wäre aber ~16 % des
   Personalkanals. Als `cost_*_instrumented`-Flags sichtbar. _(added 2026-08-28)_
-- **`[H]` Kostenmodell-Sektion im METHODS-LOG anlegen** — die Herleitung (Lohn-Vollkosten,
-  Overhead-Kürzungsalgebra, M11-Zurechnung) lebt derzeit **nur** im CSV-Kopf. Das ist
-  paper-facing Methodik und gehört ins METHODS-LOG, bevor daraus ein Methods-Kapitel wird.
-  _(added 2026-08-17)_
 - **`[M]` KPI-Outputs auf den Rechenmaschinen neu bauen** — lokal am 2026-09-29 erledigt (alle
   vollständigen Laufordner, `build_kpis.py --run-dir`). Offen: jeder Lauf, der auf Sim, IVS100 oder
   VM mit älterem Code gebaut wurde, und die acht **lokal beschnittenen** Kopien ohne `output_trips`
@@ -314,10 +231,11 @@ _(added 2026-07-14, aktualisiert 2026-08-17)_
   1d-Reichweite; 34 ältere Diagnoseläufe waren auf altem Code gebaut und tragen jetzt dessen
   Nachfolger (BEV-CO₂e +32 % = Nebenverbraucher §2.63, `parcels_handled` 5.665 → 6.052 = §2.66,
   Schwellen 150/200/250 → 245/301/396). _(added 2026-09-28, umformuliert 2026-09-29)_
-- **`[M]` M11-Zurechnung für Ein-Flotten-Arme in die Pipeline** — `economics.py` gibt für 1c/1d
-  bewusst kein €/Fahrt und kein €/Paket aus (`cost_per_unit_separable`). Die M11-Zahlen in
-  [METHODS-LOG](METHODS-LOG.md) §2.38 sind außerhalb der Pipeline gerechnet. Die Aufspaltung des
-  jsprit-Fixsatzes in `lmd-vehicle-types.xml` steht im Blockiert-Block oben. _(umformuliert 2026-09-28)_
+- **`[M]` Kostenaufteilung der Ein-Flotten-Arme in die Pipeline** — Regel entschieden
+  ([METHODS-LOG](METHODS-LOG.md) §1.6): 1c als Spanne M11 gegen Massenzurechnung, 1d physisch über
+  die Kapsel-Exkursionen. Für 1d fehlt die km-Summe der Exkursionen, offen sind die Konventionen zu
+  Umrüstzeit, Hof-Anfahrt und Driveboard-Kapital. Heute gibt `economics.py` für beide kein
+  €/Fahrt/€/Paket aus. _(umformuliert 2026-09-30)_
 
 ### `[H]` Hannover-Sweep: Kostenkorrektur im Postprocessing
 
@@ -331,8 +249,6 @@ Python-Nachrechnung über vorhandene Artefakte (der `SUMMARY`-Blob trägt je Tou
 sollen auf derselben Kostenversion stehen.
 
 **Zu tun:**
-- `V4_CAPS` in `analysis/hannover/sweep/extract_sweep.py:31-43` anlegen (`EXPECTED_RUNS` in
-  derselben Edit mitwachsen lassen, by design) — heute nur `V1`/`V2`/`V3`.
 - Korrekturfunktion nach §2.33 implementieren, `sweep_kpis.csv` (`cost_eur`) und das React-Board
   (`board/`, neue Serie oder Toggle) mitziehen, Nachweis in [BACKLOG-DONE](BACKLOG-DONE.md).
 - Beim Nachziehen mitentscheiden: gepoolter v2–v4-Mittelwert auf der Kostenkurve (die
@@ -381,12 +297,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   ±10-%-Band. Kosten bei Umsetzung: 3 × ~1 h 40 (Neuexport + Restaging + Band) — **zusammen mit dem
   Punkt unten entscheiden**, es ist praktisch dieselbe Frage. Abwägung im Detail:
   `PANDA/docs/transferability.md` → B10, [METHODS-LOG](METHODS-LOG.md) §2.9. _(added 2026-07-29)_
-- **`[S]` Bake-off-Doku nachziehen oder als OSM-Ära kennzeichnen** — `PANDA/docs/`
-  `bakeoff_model_selection.md` ist der einzige Teil der Validierung, der *nicht* auf dem
-  Zensus-Prädiktor neu gerechnet ist (die Batterie ist es, → §2.9). Der Verdikt-Teil
-  („Demografie/Haushalte/Packstationen tragen kein übertragbares Signal") ist plausibel
-  unberührt, aber die Zahlen sind alt. Entweder `studies/bakeoff.py` neu laufen lassen oder
-  eine Kopfzeile setzen. _(added 2026-07-29)_
 - **`[M]` Zustellquoten-Abweichung von −14 % aufklären** — systematisch in beiden Bandarmen,
   hebt sich in Vergleichen weg, macht aber jede *absolut* berichtete Zustellquote zu optimistisch.
   Einstieg: `CarrierGenerator.adjustDeliveryRatesConsideringB2B:184`,
@@ -454,10 +364,9 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   design. Lohnt für die Latenz *eines* Laufs — für den Seed-Fächer ist Prozess-Parallelität besser.
   _(added 2026-07-30)_
 
-- **`[S]` Fork-Race: Submodul-Commit und Upstream-Meldung** — `HashMap`→`ConcurrentHashMap` in
-  `NetworkBasedTransportCosts` ist seit 2026-09-28 im Arbeitsbaum von `external/matsim-libs`, aber
-  noch **nicht** im Fork committet und gepusht. Upstream melden steht noch aus. _(added 2026-07-30,
-  umformuliert 2026-09-28)_
+- **`[S]` Fork-Race an matsim-org melden** — der `ConcurrentHashMap`-Fix in
+  `NetworkBasedTransportCosts` ist im Fork (`2db6789`, gepusht), die Meldung upstream fehlt.
+  _(added 2026-07-30, umformuliert 2026-09-30)_
 
 - **`[L]` jsprit-Upgrade 1.8 → 2.x — stark abgekühlt, nur noch ein Regler offen.** Der
   Hauptnutzen ist **schon in 1.8 geholt** (`REGRET_INSERTION`, −21 % Touren → §2.34), und
@@ -503,13 +412,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
 - **`[S]` `SimulationBatGenerator` umbiegen**, damit er `runs/hannover/run_hagrid_sim.bat` mit der
   `%~dp0..\..\hagrid\simulation`-cd-Form schreibt (heute schreibt er das git-ignorierte
   `hagrid/simulation/run_hagrid_sim.bat`). _(added 2026-09-18)_
-- **`[S]` `XMLParcelTypeFixer`: Aufruf entfernen oder Absicht klären** — der Fixer läuft bei
-  **jedem** Hannover-Lauf (`HAGRIDScenarioBuilder:218-219`, Delivery- und Supply-Carrier) und ist
-  nur deshalb harmlos, weil sein Muster nichts findet: `String.replaceAll` läse das `$P` in
-  `Delivery$ParcelType` erst bei einem Treffer als Gruppenreferenz und würfe dann. Es sucht nur den
-  Wert `Mixed`, nicht den veralteten Klassennamen. Den Fixer „reparieren“ würde Carrier-Dateien
-  ändern, also womöglich Hannover-Ergebnisse. Aufruf entfernen ist heute ein No-op. _(added
-  2026-09-18, korrigiert 2026-09-28: war als „nie benutzt“ gelesen)_
 - **`[M]` `GeoUtils`/`HagridConfig` regionsneutral machen**, damit `Region` nach `hagrid.hannover`
   ziehen kann. _(added 2026-09-18)_
 - **`[S]` Import-Blöcke alphabetisch sortieren** — die 11 redundanten same-package Imports sind
@@ -569,13 +471,6 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
 ---
 
 ## Low
-
-- **`[L]` Gitignorte Paper-Skripte auf alte Laufwurzeln prüfen** — `fig2_spatial_complementarity.py`,
-  `fig_abstract_spatial_complementarity.py`, `spatial_correlation_stats.py`,
-  `emissions-sos/scripts/{runpipe,zones}.py` zeigen noch auf `parcel-demand-2-matsim-pipeline/
-  hagrid-matsim-output` (Layout vor Teil 1). Der Umbau-Check sieht `paper-figures/` nicht, weil
-  gitignored. `charging_feasibility.py` und `spatial_emissions.py` sind 2026-09-29 korrigiert.
-  _(added 2026-09-29)_
 
 - **`[L]` Modul-Split (Restructure Schritt 4)** — Maven-Multi-Module `hagrid-core` / `hagrid-hannover`
   / `hagrid-lausitz`. Reiner Move-Refactor; `HagridPaths`-Root-Detection pro Szenario neu bauen.

@@ -7,9 +7,70 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-09-29._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-09-30._
 
 ---
+
+## 2026-09-30
+
+- **Paper-Skripte auf das neue Layout umgestellt** (gitignored, kein Commit):
+  `fig2_spatial_complementarity.py`, `fig_abstract_spatial_complementarity.py`,
+  `spatial_correlation_stats.py`, `emissions-sos/scripts/{runpipe,zones}.py`, `batch.sh`, außerhalb
+  der Backlog-Liste auch `emissions-services/pilot_spatial_km.py` (zwei Pfade; C2 wäre still auf
+  „no routed carriers" gelaufen) und ein LaTeX-Kommentar in `lce-scenario-section/bev-methods-text.tex`.
+  Nachweis: jeder aufgelöste Pfad existiert (Konstanten per `ast` ausgewertet, Module nicht
+  ausgeführt), `py_compile` 6/6, `bash -n batch.sh`, Abschluss-grep leer bis auf die ssh-Zeile in
+  `emissions-services/README.md`. Die bleibt alt, bis die VM umgestellt ist; die lokale
+  `build_kpis`-Zeile dort ist korrigiert.
+- **Kostenmodell-Herleitung ins METHODS-LOG** → §1.6 (neu), Querverweise in §1.2 und §2.6.
+  `cost_model.selftest()` bestanden, Zusammensetzung von C an den drei Paperläufen gemessen. Dabei
+  veraltete CSV-Notizen gefunden und einen Widerspruch zur Kostenaufteilung (§1.2 M11 gegen
+  `economics.py:205-214` → Massenzurechnung §2.26).
+- **CSV-Notizen in `cost_parameters.csv` korrigiert, Werte unverändert:** Personal 82–83 % statt
+  88 % von C (zwei Stellen), Deflationierung ca. 1,2 % statt 0,35 % von C, „Headline KPI is total
+  system cost“ → direkte Betriebskosten (zwei Stellen), `annual_km_per_vehicle_lmd` mit 300 statt
+  250 Betriebstagen (13.700 statt 11.400 km/a, Brotcorne-Faktor 1,8 statt „verdoppeln“); Kopfzeile
+  vermerkt die Korrektur. Nachweis: `cost_model.selftest()` gibt die sechs Sätze unverändert,
+  pandas liest 91 Zeilen wie vorher, `tests/test_cost_model.py` 18/18, CRLF durchgehend.
+- **Kostenaufteilung entschieden (User):** 1c als Sensitivität M11 gegen Massenzurechnung, 1d
+  physisch über die Kapsel-Exkursionen → METHODS-LOG §1.6 (von `offen` auf `trägt`), Annotation
+  an M11 in §1.2, Backlog-Punkt auf die Umsetzung umformuliert.
+- **PANDA-Bakeoff als OSM-Ära gekennzeichnet und PANDA gepusht** — Kopfzeile in
+  `PANDA/docs/bakeoff_model_selection.md:3-6`, Commit `422e475`. `main` stand 9 Commits vor
+  `origin` (seit 27.07., u. a. Zensus-Prädiktor `34cd5ff`, B8, B10), gepusht `1e683d0..422e475`,
+  danach 0/0. Neu rechnen hätte nichts gebracht: `studies/bakeoff.py` hat keinen Wohn-GF-Term,
+  `bakeoff_candidates.py` baut Test 3 fest aus OSM. Das Zensus-Gegenstück ist
+  `studies/run_efh_bakeoff.py` (transferability B8).
+- **`XMLParcelTypeFixer` entfernt** (Aufruf in `HAGRIDScenarioBuilder.mergeCarriers` und die
+  Klasse). Nachweis: `mvn -pl :hagrid -am test` mit `hagrid/core/**` 176/176 grün,
+  `ArchitectureRulesTest` einzeln 4/4, `BUILD SUCCESS`. Ergebnisneutral laut Prüfung unten; es
+  entfallen die `.bak`-Kopie (~47 MB je Lauf), der mtime-Sprung und das nicht-atomare
+  Zurückschreiben der Step-A-Carrier.
+- **`XMLParcelTypeFixer`-Eintrag geprüft, im Kern zutreffend** (read-only). Belege: einziger
+  Aufrufer `HAGRIDScenarioBuilder:218-219`, unbedingt auf jedem Hannover-Sim-Pfad, Lausitz kehrt
+  vorher zurück (`SimulationRunnerUtils:565/602`). jshell-Probe (JDK 21/25): ohne Treffer
+  unverändert, mit `>Mixed<` `IllegalArgumentException: Illegal group reference`. 0 Treffer in
+  52 routed-Carrier-Dateien (26 lokale v2-Läufe) + 28 `.bak`, Positivkontrolle 852.256
+  ParcelType-Attribute. 28/28 `.bak` ↔ `.xml` byteidentisch (`cmp`), nur mtime neu. Herkunft:
+  `fe5f41a` (18.09.2025, Workaround für gecachte Carrier nach der Enum-Umbenennung in `cf1ed4a`),
+  das `$P` stand schon in der ersten Fassung. Korrigiert: „No-op“ gilt für Ergebnisse, nicht fürs
+  Dateisystem; „Absicht klären“ entfällt.
+- **Backlog bereinigt.** Gestrichen, weil erledigt und die Substanz schon im METHODS-LOG steht:
+  - Flotten-Sweep über alle drei Szenarien → §2.68, §2.72, §2.74 (jede Zelle Szenario × Flotte
+    100–150 mit ≥3 Seeds bei 250 Iterationen, 18.–20.09.)
+  - 1d-Seed-Fächer neu aufsetzen → §2.74
+  - 250-Iterationen-Kontrollpunkt für 1c → §2.62 (n=5, f140, χ=900)
+  - Baseline-Seed-Fächer bei 250 (Nachweis 2026-09-09) · 7,0-h-Kontrollarm → §2.38 (Nachweis
+    2026-08-17) · Flottenkalibrierung auf der Depotstufe → §2.47/§2.48 · θ als Riegel vor dem
+    Budget → §2.61/§2.64 · Paketbasis vereinheitlicht → §2.66
+  - `V4_CAPS` in `extract_sweep.py` (steht auf :48, `EXPECTED_RUNS` v4 = 38)
+  - Fork-Race-Commit (`2db6789` auf `origin/hagrid/2025.0-PR3552`, Submodul-Zeiger committet);
+    offen bleibt nur die Upstream-Meldung
+  - Paper-Skripte, Kostenmodell-Sektion, Bakeoff-Kennzeichnung (oben)
+
+  Umformuliert: θ-Sensitivität 1d (Läufe `f135_t010`/`t020` liegen vor, offen ist nur die
+  Auswertung); Kostenfunktion-Blockade (der Merge ist durch, es bleibt „nach den Hannover-Läufen");
+  Kostenaufteilung in die Pipeline (Regel steht, Umsetzung offen).
 
 ## 2026-09-29
 

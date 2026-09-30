@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-28._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-30._
 
 ---
 
@@ -178,6 +178,8 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-28._
   Paketkosten = akzeptierter `totalTimeLoss` × Fahrzeug-Zeitrate + Zustell-km × km-Rate
   (nutzt die χ-Messung wieder); Pax tragen die Basis-Flottenkosten. Regel ist *vor* den Runs
   fixiert, um Ad-hoc-Wahl zu vermeiden. Gilt unter dem Vorbehalt aus §2.6.
+  **Eingeschränkt 2026-09-30 (User):** M11 ist in 1c nur noch eine Seite einer Sensitivität
+  (gegen die Massenzurechnung §2.26), in 1d wird physisch getrennt → §1.6.
 
 - **not-at-home beidseitig 100 % konsistent** — `trägt` · 2026-07-20 (M10)
 
@@ -388,6 +390,185 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-28._
 - **Berichtsregel für km-basierte KPIs: ≥10 Sim-Runs, Mittelwert + Min/Max** — `trägt` · 2026-07-28
   Ersetzt die frühere 3–5-Seed-Empfehlung. Begründung: §2.1 (Rauschboden) + §2.2 (Iterationskosten).
 
+### 1.6 Kostenmodell: direkte Betriebskosten C (nur Lausitz)
+
+Herleitung und Begründung des Kostenmodells, bis 2026-09-30 nur im Kopf von
+[cost_parameters.csv](../analysis/lausitz/kpi/cost_parameters.csv) dokumentiert. Werte, Quelle und
+Datum je Parameter bleiben dort (einzige Quelle der Wahrheit). Die Sätze leitet
+[cost_model.py](../analysis/lausitz/kpi/cost_model.py) ab, die Auswertung je Lauf macht
+[economics.py](../analysis/lausitz/kpi/economics.py). Stand, Grenzen und Defekte stehen in §2.6,
+Hannover rechnet weiter mit dem Platzhalter. **Alle Werte sind `vorläufig`**, bis die
+Parameterdatei (v0.7-draft, „do not cite") zum Zitieren freigegeben ist. `cost_model.selftest()`
+reproduziert die sechs abgeleiteten Sätze (geprüft 2026-09-30).
+
+- **Die Kennzahl heißt „direkte Betriebskosten", nicht „Systemkosten"** — `trägt` · 2026-08-14
+  C = Σ_Typen c_veh · N_veh + c_time · VHT + c_maint · VKT + E_MJ / 35,65 MJ/l · p_Diesel,
+  ausgewertet auf Flotten-Aggregaten je Arm. Vier Kanäle: Fahrerstunden, Fahrzeugkapital,
+  Ersatzteile, Energie. **Nicht** enthalten: Leitstelle, Buchungsplattform, Werkstattpersonal,
+  Depot, Verwaltung. „Systemkosten" würde eine Vollständigkeit behaupten, die das Modell nicht hat
+  (zwei gegenteilige CSV-Notizen am 2026-09-30 korrigiert). Dieselbe
+  Struktur (Strecke + Fahrerzeit + Fixsatz) bauen Meinhardt et al. 2022 (Tab. 2) und, in drei von
+  vier Termen, Hatzenbühler et al. 2022 (Tab. 4). Bei Hatzenbühler ist α3 = 6,9 €/h eher ein
+  Zeitwert der Fahrgäste als ein Lohn, die Übereinstimmung gilt dann nur für die Betreiberterme.
+  Gemessene Zusammensetzung in den drei Paperläufen (lokal gebaut 2026-09-29):
+
+  | Kanal | Baseline `b120rgs` | 1c `d1c_f140_c900_i250_s1337` | 1d `d1d_f130_d30_bud` |
+  |---|---|---|---|
+  | Personal | 82,2 % | 83,2 % | 82,2 % |
+  | Energie | 7,5 % | 7,1 % | 7,6 % |
+  | Verschleiß | 6,6 % | 6,3 % | 6,7 % |
+  | Kapital | 3,8 % | 3,5 % | 3,5 % |
+  | **C** | 88.942 € | 91.802 € | 84.475 € |
+
+  **C ist damit fast nur der Personalkanal**, und der hängt an der VHT-Basis (unten). Die früheren
+  „88 %" in den CSV-Notizen waren ein Schätzwert (korrigiert 2026-09-30).
+
+- **Overhead = 0 ist Algebra, keine Fairnessannahme** — `trägt` · 2026-08-14
+  Für einen armunabhängigen Faktor f gilt C_Arm = (1 + f) · D_Arm. f kürzt sich exakt in jedem
+  Verhältnis zwischen Armen und in der Break-even-Schranke C(1d) = C(Baseline); ein gesetztes f
+  wäre Scheingenauigkeit. Geprüft gegen die drei plausiblen Skalierungen:
+
+  | Overhead skaliert mit | Wirkung des Weglassens |
+  |---|---|
+  | direkten Kosten (Verwaltungsaufschlag) | kürzt sich exakt |
+  | Flottengröße (Depot, Flottenverwaltung) | benachteiligt die integrierten Arme, sie fahren weniger Fahrzeuge (130/140 gegen 120 + 41) |
+  | Nachfrage (Disposition je Fahrt/Paket) | kürzt sich bei den Paketen exakt (6.052 in allen Armen), bei den Fahrgastfahrten nur näherungsweise (endogen, Iso-Service §2.65/§2.68) |
+
+  Dazu kommt eine gleichgerichtete Asymmetrie: die Baseline betreibt zwei Betriebe, 1c/1d einen.
+  Die eingesparte Verwaltung sieht das Modell nicht. Jeder Fall ist neutral oder konservativ für die
+  Integrationshypothese. **Nicht neutral** ist die Null nur in einer Autonomie-Zerlegung:
+  Teleoperation und Fernaufsicht sind Overhead, eine hier gerechnete Autonomie-Ersparnis wäre
+  überschätzt (Autonomie liegt außerhalb des Scopes, §4.4). **Folge für die Kreuzproben:** jede
+  empirische Vergleichszahl (Sprinti, Currie/Fournier, Brotcorne) enthält Overhead. Sie sind
+  Obergrenzen, nie Kalibrierziel.
+
+- **Personal: Arbeitgeber-Vollkosten je produktiver Stunde** — `trägt` · 2026-08-13
+  Dieselbe Formel für beide Arme, Eingaben aus Tarifquellen:
+
+  | | LMD | DRT |
+  |---|---|---|
+  | Quelle | DHL-Stellenanzeige Cottbus | TV-N Sachsen EG 5 Stufe 2 |
+  | Tarifstundenlohn × Wochenstunden | 17,20 €/h × 38,5 h | 21,11 €/h × 38 h |
+  | Sonderzahlungen | 13. Monatsgehalt + 332 € Urlaubsgeld | 1.150 €/a |
+  | Brutto / Arbeitgeberkosten (+21 % Nebenkosten) | 37.636 / 45.539 €/a | 42.863 / 51.865 €/a |
+  | produktive Stunden (204 Tage) | 1.571 h | 1.550 h |
+  | **c_time** | **28,99 €/h** | **33,45 €/h** |
+
+  Produktive Tage = 52 × 5 − 30 Urlaub − 11 Feiertage (Sachsen mit Buß- und Bettag, bewusst nicht
+  um Wochenend-Feiertage gekürzt) − 15 Krankheit = 204. Geteilt wird durch die produktive, nicht
+  die vertragliche Stunde, sonst wäre Personal um rund ein Fünftel unterschätzt. **Das Verhältnis
+  1,154 zwischen DRT- und LMD-Satz treibt die 1c/1d-Ökonomie, nicht die Simulation:** in 1c/1d fährt
+  die Fracht zum DRT-Lohn ([economics.py:151-153](../analysis/lausitz/kpi/economics.py#L151-L153)).
+  Das Verhältnis gehört mit einer Sensitivität ins Paper. Bias: der DHL-Tarif liegt vermutlich über
+  dem Branchenniveau (Subunternehmer ohne veröffentlichte Sätze). Das verteuert die Baseline und
+  begünstigt damit die Integrationshypothese. Einordnung: Meinhardt et al. (17,64 €/h) nennen einen
+  Tabellenlohn ohne Nebenkosten, fast genau den DHL-Tarif (Faktor 1,64 zu unserem Satz). Brotcorne
+  et al. (56.000 €/a) ergeben über unsere produktiven Stunden 35,7 €/h, unsere Sätze sind also nicht
+  überhöht.
+
+- **VHT = durH: bezahlt wird die Schicht, nicht die Fahrt** — `trägt` · 2026-08-13, DRT-Basis 2026-08-28
+  LMD: Tourdauer inkl. Standzeit (`freight_tour_hours`). DRT kennt keine Tour, das Analogon ist
+  `drt_tour_hours_total`: je Fahrzeug die Spanne von der ersten bis zur letzten Aufgabe
+  (= `active_h`). Wie falsch die Fahrzeit als Basis wäre, zeigt Brotcorne: derselbe Fahrer kostet
+  über reine Fahrstunden 78,4 €/h statt 35,7 €/h. Die DRT-Basis ist eine **Setzung mit
+  Vorzeichenwirkung**, gemessen 2026-08-28 an 1d f135 gegen die Baseline
+  ([economics.py:12-30](../analysis/lausitz/kpi/economics.py#L12-L30)): `shift_h` (24 h bezahlt)
+  1d +4.307 €, `active_h` −180 €, `occupied_h` −7.949 €. Unterstellt ist freier Fahrerwechsel ohne
+  Mindestschicht. In den drei Paperläufen sind die DRT-Fahrzeuge im Mittel 16,0–16,3 h aktiv, über
+  dem ArbZG-Maximum von 10 h, also mindestens zwei Fahrer je Fahrzeug
+  (`cost_drivers_per_vehicle_min` = 2). `costActivity` steckt in c_time · VHT und kommt nie
+  zusätzlich hinzu. `costTimeWindowPenalty` (5 €/s) ist ein Scoring-Hebel, kein Preis, und bleibt
+  draußen.
+
+- **Fahrzeugkapital je Betriebstag: zwei Methoden, von der Laufleistung erzwungen** — `trägt` · 2026-08-14
+  LMD-Vans: Leasingrate (leasingmarkt.de, 36 Monate, netto) 220 / 265 / 320 €/Monat für
+  size_s/m/l, plus 1.800 €/a pauschal für Versicherung, Kfz-Steuer und HU, verteilt auf 300
+  Betriebstage (Mo–Sa) → 14,80 / 16,60 / 18,80 €/d. DRT-Fahrzeug: 50.000 € netto, linear über
+  5 Jahre auf 35 % Restwert (Methode nach Kim et al., nicht deren Werte), plus dieselbe Pauschale,
+  verteilt auf 365 Tage → 22,74 €/d. Zwei Methoden, weil Leasingangebote die Laufleistung bei
+  10.000–15.000 km/a deckeln. Das passt für den Van (~13.700 km/a), nicht für das DRT-Fahrzeug
+  (~100.000 km/a). Getrennte Betriebstage, weil dieselben Jahreskosten über mehr Tage einen
+  kleineren Tagessatz ergeben; ein gemeinsamer Wert hätte c_veh zwischen den Armen verzerrt.
+  **Ehrlich zur Konstruktion:** die 1.800 € sind als Hoerl et al. (370 €/Monat) minus Leasingrate
+  (220 €/Monat) definiert. Dass size_s Hoerls 14,80 €/d exakt trifft, ist eine **Identität, keine
+  Validierung**. Die Quellen teilen sich die Arbeit: der Leasingmarkt liefert die Relation der drei
+  Größen (1 : 1,20 : 1,45), Hoerl das Niveau. Die Obergrenze des Bandes setzt Brotcorne et al. mit
+  22,41 €/d.
+  **1d** hat keinen Marktpreis, deshalb ein Band statt einer Zahl: `modular_premium_factor`
+  1,00 / 1,10 / 1,15 / 1,20, nur auf den Fixkosten. 1,00 ist der berichtete Punkt, der Rest läuft
+  als `cost_total_premium_*` mit. Der Faktor deckt Driveboard, Hebemechanik und zwei Kapseln (je eine
+  für Pax und Fracht). Beide Literaturquellen landen bei ≤ 1,00 (Meinhardt: Aufpreis durch
+  Energieeinsparung ausgeglichen; Hatzenbühler: η = 0,6, aber für Platooning, als Zahl nicht
+  übertragbar). Das Band liegt also auf der pessimistischen Seite.
+
+- **Strecke = nur Verschleiß, Energie kommt aus dem Emissionskanal** — `trägt` · 2026-08-13
+  c_maint = 0,11 €/km (ICCT/RAP, Preise 2021) für alle Fahrzeugtypen, Band 0,075 (Brotcorne) bis
+  0,11. Kraftstoff läuft über die ENERGY_MJ-Zeilen des Emissionsextraktors: je Fahrzeug nach
+  N1-Segment und Geschwindigkeit gewichtet, umgerechnet mit 35,65 MJ/l (COPERT) und 1,5546 €/l netto
+  (1,85 € brutto ohne 19 % Vorsteuer). Das Band 1,18–1,85 €/l steht als `cost_total_diesel_low/high`
+  im Output. Kosten und CO₂ stehen damit auf **einer** Verbrauchsannahme. Die `c_dist_*`-Zeilen im
+  CSV enthalten Verschleiß **und** Kraftstoff und sind nur Vergleichswerte zu den Legacy-Sätzen; in
+  C würden sie den Kraftstoff doppelt zählen. Gegenprobe: Hoerls 14,40 €/100 km geteilt durch ICCTs
+  9,5 l/100 km ergibt 1,52 €/l, also dieselbe Verbrauchsannahme zu einem späteren Preisstand.
+  **C rechnet nur Diesel.** Ein Strompreis ist nicht parametriert, den BEV-Arm gibt es nur auf der
+  Emissionsseite.
+
+- **Bewusste Nullen, und was an ihnen hängt** — `trägt` · 2026-08-14
+  Kein eigener Swap- oder Stationsterm: die 420 s Umrüsten (`Modular.RETOOLING_S`) blockieren das
+  Fahrzeug und landen in VHT, Leerfahrten in VKT; ein Handling-Satz zählte doppelt
+  (`c_swap_event` = 0, der Fahrer tauscht selbst wie beim Aufsatteln). Die Hebemechanik ist
+  Fahrzeugkapital (`c_station_day` = 0), die Kapseln stecken im Modularsatz (`c_capsule_day` = 0),
+  Stellfläche und Vorkommissionierung fallen in beiden Armen an. 1c lädt im Regelbetrieb
+  (`c_handling_parcel` = 0). **Preis der Swap-Null:** der ganze Tauschaufwand hängt jetzt an den
+  420 s, einer eigenen Annahme ohne unabhängige Quelle. Die Umrüstzeit-Sensitivität wird dadurch
+  wichtiger, nicht unwichtiger. Die Infrastrukturfrage bleibt als Menge offen: `peak_concurrent_swaps`
+  je Depot (§2.19, §2.45).
+  Zuschläge: Überstunden 0, weil der TV-N über Freizeitausgleich abgilt und der
+  Jahres-Vollkostensatz das schon enthält (0,30 nur als Sensitivität). Abendzuschlag 20 % ab 21:00,
+  die Bemessungsbasis ist vermutlich null, weil das Zustellfenster um 21:00 endet; zu berichten als
+  gemessene Null mit Positivkontrolle. Sonn-/Feiertagszuschlag 25 % nur für Jahreswerte, der
+  Simulationstag ist ein Dienstag. Überstunden-Sensitivität und Abendzuschlag sind nicht
+  instrumentiert und stehen als `cost_*_instrumented = 0` im Output.
+
+- **Preisstand 2026, bewusst nicht deflationiert** — `trägt` · 2026-08-14
+  Vier Quellen, vier Preisstände: ICCT 2021, Hoerl 2025, Brotcorne unbekannt, Currie/Fournier
+  vermutlich 2017. Tragfähig, weil Personal auf Tarifen von 2026 steht. Betroffen ist praktisch nur
+  c_maint (+ca. 0,02 €/km deflationiert). Das sind **ca. 1,2 % von C**, gemessen an der Baseline
+  `b120rgs` (53.000 km × 0,02 €), nicht 0,35 % wie früher in der CSV-Notiz (korrigiert
+  2026-09-30). Die Entscheidung trägt trotzdem, weil die km zwischen den Armen kaum abweichen.
+
+- **Kreuzproben ordnen ein, sie kalibrieren nicht** — `trägt` · 2026-08-14
+  Die stärkste ist Sprinti Hannover: 15.000 € je Fahrzeug und Monat, alles inklusive, also
+  493 €/Fzg-Tag, gleiches Land, gleicher Modus, 86 % Sprinter-Klasse. Zwei Unbekannte
+  (Fahrzeugstunden, Overhead) in einer Gleichung: Sprinti bestätigt eine Region und bestimmt nichts.
+  Implizit sind es 41–54 €/Fzg-h, zwischen unserem Wert (C / VHT in 1c und 1d: 40–41 €/Fzg-h) und
+  Currie/Fournier (54,7 €/Fzg-h bei 10 Jahren Betriebsdauer; R² 0,37, nur als Band). **Nur je
+  Stunde vergleichen, nicht je Fahrzeugtag:** Sprinti trägt höchstens ~12 h je Fahrzeug und Tag,
+  unsere Fahrzeuge sind 16 h aktiv. Allein unser Personal je DRT-Fahrzeugtag (~535–545 €) liegt
+  damit über Sprintis Vollkosten. Gegen die Legacy-Sätze aus `lmd-vehicle-types.xml`: 189,15 € je
+  Tour gegen ~221 € neu für eine 7-h-Tour (Legacy ca. 15 % zu niedrig, hebt die Baseline an),
+  0,357 €/km gegen ~0,21 €/km neu (Legacy ca. 70 % zu hoch, gegenläufig).
+
+- **Kostenaufteilung in den Ein-Flotten-Armen: 1c als Sensitivität, 1d physisch** — `trägt` ·
+  2026-09-30 (User-Entscheidung; bis dahin `offen`, weil §1.2 M11 festlegte und `economics.py` auf
+  die Massenzurechnung §2.26 verwies)
+  **1c:** Pakete und Fahrgäste teilen dieselbe Fahrt, physisch trennen lässt sich nichts. Die Regel
+  ist deshalb eine Sensitivität: M11 (§1.2, marginale Attribution, die Fracht zahlt den akzeptierten
+  `totalTimeLoss` × Zeitsatz + Zustell-km × km-Satz, Pax den Rest samt Fixblock; Präzedenz
+  Meinhardt et al. 2022) gegen die Massenzurechnung aus §2.26. Berichtet wird die Spanne, kein
+  Punkt. Der „km-Satz" in M11 stammt aus der Zeit vor `fuel_cost_basis = energy_mj`: in C ist er
+  nur Verschleiß, der Energieanteil der Zustell-km muss über ENERGY_MJ kommen.
+  **1d:** die Fracht fährt in eigenen Kapsel-Exkursionen, die Zuordnung ist physisch. Stunden
+  (`freight_vehicle_hours`) und Energie (`freight_modular_energy_final`) gibt die Pipeline schon je
+  Exkursion aus, eine km-Summe der Exkursionen für den Verschleißterm noch nicht. Bei der Umsetzung
+  festzulegen: die Konventionen aus §2.12 (km) und §2.13 (unvollständige Exkursionen), wohin
+  Umrüstzeit und Anfahrt zum Hof gehen und wie das gemeinsame Driveboard-Kapital geteilt wird.
+  Bis zur Umsetzung gibt `economics.py` für beide Arme kein €/Fahrt und kein €/Paket aus
+  (`cost_per_unit_separable`; der Verweis auf §2.26 in
+  [economics.py:205-214](../analysis/lausitz/kpi/economics.py#L205-L214) und
+  [258-261](../analysis/lausitz/kpi/economics.py#L258-L261) gilt dann nur noch für 1c). Der
+  Headline-Vergleich braucht keine Aufteilung, verglichen wird `cost_total` bei gleichem Service.
+
 ---
 
 ## 2 · Limitations & Rauschböden
@@ -564,8 +745,8 @@ gilt nur noch für Hannover.** Welches Modell läuft, entscheidet
 
 - **Lausitz → direkte Betriebskosten C** aus
   [cost_model.py](../analysis/lausitz/kpi/cost_model.py), parametrisiert durch
-  [cost_parameters.csv](../analysis/lausitz/kpi/cost_parameters.csv) v0.7-draft. C hat vier Terme:
-  Personal `c_time × durH` (Arbeitgeber-Vollkosten je *produktiver* Stunde: 28,99 €/h LMD,
+  [cost_parameters.csv](../analysis/lausitz/kpi/cost_parameters.csv) v0.7-draft (Herleitung → §1.6).
+  C hat vier Terme: Personal `c_time × durH` (Arbeitgeber-Vollkosten je *produktiver* Stunde: 28,99 €/h LMD,
   33,45 €/h DRT), Fahrzeugkapital je Betriebstag (Vans 14,80 / 16,60 / 18,80 €, DRT-Fahrzeug
   22,74 €; 1d zusätzlich mit dem `modular_premium_factor`-Band 1,00–1,20), Verschleiß
   0,11 €/km und Energie aus den `*_energy_final`-Zeilen des Emissionskanals (Diesel netto
