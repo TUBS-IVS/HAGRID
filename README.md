@@ -357,7 +357,7 @@ reaches 70 million parcels a year in 2033, saturation in 2035 and boom in 2030; 
 ### 6.4 Land use: where demand moves
 
 The hexagon map at the top shows the trend scenario against its regional growth of +28 %: the city of Hannover grows by
-+25 %, the 20 surrounding towns by +29 %. By 2035 land use shifts about 1,900 parcels a day from the city to the towns: the
++25 %, the 20 surrounding towns by +29 %. By 2035 land use shifts about 1,950 parcels a day from the city to the towns: the
 city receives 43.3 % of the demand (2025: 44.1 %), and the two variants move this share to 43.7 % (infill) or 42.9 %
 (suburban).
 
@@ -411,7 +411,7 @@ runs\hannover\run_demand_decade.bat trend saettigung boom trend-innen trend-subu
 
 The year run simulates 2025 with its annual dashboard and copies the MATSim demand to
 `hagrid/simulation/input/hannover/demand/<run-id>/`. The decade run simulates 2025–2035 for every scenario (about 30 minutes
-and 7 GB each, run and stage cache) and renders `hagrid/demand/runs/decade_dashboard.html`. Further commands:
+and 7 GB each including the stage cache; the trend configuration exports eight days per year and takes about 80 minutes) and renders `hagrid/demand/runs/decade_dashboard.html`. Further commands:
 
 ```powershell
 python -m hagrid_demand baseline export-day --run hagrid/demand/runs/decade-trend --date 2035-06-05
@@ -445,7 +445,7 @@ The archived notebook generator exported CSV (geometry as WKT), Shapefile, GeoPa
 
 ## 8. Example Output: One Simulated Day
 
-`hagrid_parcel_demand_2035-05-11_(Friday).shp` from the trend scenario holds 50,929 stops with 232,209 parcels. Each row is one
+`hagrid_parcel_demand_2035-05-11_(Friday).shp` from the trend scenario holds 51,006 stops with 232,209 parcels. Each row is one
 stop, a group of buildings on one street side or a pickup point; all parcels of that stop are split by carrier and by
 B2C/B2B in the same row.
 
@@ -465,7 +465,7 @@ Two rows from that file, a building stop (here a firm with only B2B parcels) and
 
 | `stop_id` | `stop_type` | `str_idx` | B2B parcels (`<carrier>_type`) | B2C parcels (`<carrier>_tag`) | `total` |
 |---|---|---:|---|---|---:|
-| `stp:5ca96df7b827853c` | `home` | 6774 | DHL 62, UPS 29, FedEx 21, DPD 16, GLS 4, Hermes 2 | – | 134 |
+| `stp:5ca96df7b827853c` | `home` | 6774 | DHL 68, UPS 33, DPD 11, FedEx 9, GLS 9, Hermes 3 | – | 133 |
 | `ooh:osm:n10075369481` | `locker` | −1 | – | DHL 45 | 45 |
 
 The files load directly into QGIS or ArcGIS, and `hagrid/simulation` reads them for jsprit and MATSim.
