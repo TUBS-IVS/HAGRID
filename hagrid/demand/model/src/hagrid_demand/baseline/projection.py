@@ -86,7 +86,9 @@ def _profile(series: dict, year: int, dhl_fixed: dict | None = None) -> tuple[pd
     b2b = _year_row(_table(series.get("b2b"), "series.b2b"), year, {"year", "share"}, "b2b")
     if len(b2b) != 1 or market.carrier.astype(str).duplicated().any() or providers.carrier.astype(str).duplicated().any():
         raise ValueError("carrier and B2B series require unique labels per year")
-    market = market.assign(carrier=market.carrier.astype(str)).set_index("carrier", drop=False)
+    # a canonical carrier order: the reconciliation sums and optimises over the carriers, so in the order of the input
+    # rows its last bits would depend on that order (and on the platform)
+    market = market.assign(carrier=market.carrier.astype(str)).set_index("carrier", drop=False).sort_index()
     providers = providers.assign(carrier=providers.carrier.astype(str)).set_index("carrier", drop=False)
     if set(market.index) != set(providers.index):
         raise ValueError("market and provider carrier labels differ")
