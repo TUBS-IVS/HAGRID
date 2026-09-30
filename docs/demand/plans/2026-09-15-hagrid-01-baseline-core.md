@@ -4,7 +4,7 @@
 
 **Goal:** Originale HAGRID-Marktideen aus vorhandenen Quellen als deterministische, bilanzierte Python-Referenz bereitstellen und den Experimentbestand abgrenzen.
 
-**Architecture:** Neutrale Datenaufbereitung bleibt wiederverwendbar. Neue reine Fachfunktionen berechnen Markt-/B2B-Reihen, Potenziale und DHL-Referenz; alte freie Fits bleiben über Kompatibilitätswege verfügbar. Dieser Teil liefert einen ausführbaren Referenzlauf; der vollständige Tageslauf folgt in Plan 02.
+**Architecture:** Neutrale Datenaufbereitung bleibt wiederverwendbar. Neue reine Fachfunktionen berechnen Markt-/B2B-Reihen, Potenziale und LSP-Referenz; alte freie Fits bleiben über Kompatibilitätswege verfügbar. Dieser Teil liefert einen ausführbaren Referenzlauf; der vollständige Tageslauf folgt in Plan 02.
 
 **Tech Stack:** Python >=3.11, NumPy, Pandas, SciPy, GeoPandas/Shapely, PyArrow; `openpyxl>=3.1,<4` als deklarierter Leser der vorhandenen XLSX-Quelle; pytest.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Referenzjahr 2021; vollständige DHL-Beobachtungen >1000 ausschließen, 1000 behalten.
+- Referenzjahr 2021; vollständige LSP-Beobachtungen >1000 ausschließen, 1000 behalten.
 - Keine neuen OSM-Abfragen, externen Datendownloads oder MATSim-Ausführung als Baseline-Abhängigkeit.
 - Personen-, Firmen- und Nachfragerohdaten sowie historische Runs werden nicht überschrieben oder verschoben.
 - Baseline importiert keine experimentellen Module. JSON-Konfiguration; EPSG:25832 für Standortgeometrie.
@@ -25,7 +25,7 @@ Neue Dateien: `common/{__init__,contracts,provenance,rng,cache}.py`; `baseline/{
 
 `sites` hat `site_id,plz,segment,population,employees,branch,allocation_status` und optionale Geometrie. `potentials` hat eindeutige `(site_id,segment)`, `plz,weight,allocation_status`. `series` ist ein Dict mit `market` (year/carrier/market_share), `b2b` (year/share), `volume` (year/value/status/curve), `weekly` (week/weight) und `providers` (year/carrier/q_prior/q_scale/lower/upper). Alle Anteile sind Bruchteile, Mengen sind Pakete/Jahr.
 
-`reference` ist ein Dict mit `sites` (site_id/plz/segment/population/employees/branch/weight/reference_annual/historical_share/structural_share/allocation_status), `geometry` (site_id/geometry), `postal` (eine Zeile je plz, dhl_retained_mean/reference_annual/private_annual/business_annual/b2b_share/dhl_share), `carriers` (year/segment/carrier/share), `regional_annual` (float) und `checks` (JSON-fähiges Dict). Sites und Geometrie werden als `reference_sites.parquet`/`reference_geometry.parquet` gehasht gespeichert. Beobachtete DHL-Menge ist nicht auf mehrere Segmentzeilen dupliziert. Fachfunktionen schreiben keine Dateien. Der Workflow besitzt sämtliche IO. `allocation_status=located|unlocated`; letzteres ist eine explizite Nachfrage-Restkategorie mit fachlich belegter PLZ, kein normaler Punkt. Unbekannte PLZ ist nur Qualitätsinventar.
+`reference` ist ein Dict mit `sites` (site_id/plz/segment/population/employees/branch/weight/reference_annual/historical_share/structural_share/allocation_status), `geometry` (site_id/geometry), `postal` (eine Zeile je plz, lsp_retained_mean/reference_annual/private_annual/business_annual/b2b_share/lsp_share), `carriers` (year/segment/carrier/share), `regional_annual` (float) und `checks` (JSON-fähiges Dict). Sites und Geometrie werden als `reference_sites.parquet`/`reference_geometry.parquet` gehasht gespeichert. Beobachtete LSP-Menge ist nicht auf mehrere Segmentzeilen dupliziert. Fachfunktionen schreiben keine Dateien. Der Workflow besitzt sämtliche IO. `allocation_status=located|unlocated`; letzteres ist eine explizite Nachfrage-Restkategorie mit fachlich belegter PLZ, kein normaler Punkt. Unbekannte PLZ ist nur Qualitätsinventar.
 
 ### Task 1: Neutrale Verträge, stabile Zufallsnamen und abgesicherte CLI-Grenze
 
@@ -99,11 +99,11 @@ profile = profile / profile.mean()
 
 - [ ] Neu erzeugte 00–03-Reihen gegen bisherige Exporte vergleichen; Abweichungen durch Beobachtungsfilter, Jahreskennzeichnung oder Normierung im Prüfbericht benennen. Fitting und Export verwenden dieselbe Vorhersagefunktion. Tests plus unabhängiges Quellen-/Formelreview bestehen lassen und Task-Dateien gezielt committen.
 
-### Task 3: Potenziale, gemeinsame B2B-/Anbieterrechnung und DHL-Anker
+### Task 3: Potenziale, gemeinsame B2B-/Anbieterrechnung und LSP-Anker
 
 **Files:** `baseline/potentials.py`, `baseline/reference.py`, `tests/test_baseline_reference.py`.
 
-**Interfaces:** `build_potentials(sites: DataFrame, power: float=1.0, branch_multipliers: dict|None=None)->DataFrame`; `reconcile_carriers(m: ndarray,q: ndarray,b: float,lower: ndarray,upper: ndarray,scale: ndarray)->dict` mit `q` und `conditional` (2×C, private zuerst); `solve_reference(potentials: DataFrame,dhl: DataFrame,profiles: dict,b: float,operating_days: int)->dict`. `dhl` enthält `observation_id,plz,value,value_status`; Scopefilter und Ledger gehen der Summierung voraus.
+**Interfaces:** `build_potentials(sites: DataFrame, power: float=1.0, branch_multipliers: dict|None=None)->DataFrame`; `reconcile_carriers(m: ndarray,q: ndarray,b: float,lower: ndarray,upper: ndarray,scale: ndarray)->dict` mit `q` und `conditional` (2×C, private zuerst); `solve_reference(potentials: DataFrame,lsp: DataFrame,profiles: dict,b: float,operating_days: int)->dict`. `lsp` enthält `observation_id,plz,value,value_status`; Scopefilter und Ledger gehen der Summierung voraus.
 
 - [ ] Kleine analytische Gegenbeispiele schreiben und rot ausführen:
 
@@ -120,18 +120,18 @@ def test_reconciliation_and_infeasible_bounds():
         reconcile_carriers(m, prior, .1, np.full(2,.5), np.ones(2), np.ones(2))
 ```
 
-- [ ] `python -B -m pytest tests/test_baseline_reference.py -q` ausführen. Weitere Fälle: 1000/1000,0001; gemischte und reine PLZ; konstantes B2B-Ziel; fehlender Vorzeichenwechsel; Null-DHL-Profil bei positiver Beobachtung; Nullregion; unlokalisierte, aber eindeutig zugeordnete Quellenobjekte.
-- [ ] Zunächst Potenziale ohne räumliche Puffer summieren. Personen/Betriebe einmal zählen; bekannte PLZ bei fehlender Geometrie behalten, unbekannte PLZ inventarisieren. `scope.filter_dhl` oder dessen neutrale Extraktion für Schwellenregel verwenden; fehlende/negative Werte separat ablehnen.
+- [ ] `python -B -m pytest tests/test_baseline_reference.py -q` ausführen. Weitere Fälle: 1000/1000,0001; gemischte und reine PLZ; konstantes B2B-Ziel; fehlender Vorzeichenwechsel; Null-LSP-Profil bei positiver Beobachtung; Nullregion; unlokalisierte, aber eindeutig zugeordnete Quellenobjekte.
+- [ ] Zunächst Potenziale ohne räumliche Puffer summieren. Personen/Betriebe einmal zählen; bekannte PLZ bei fehlender Geometrie behalten, unbekannte PLZ inventarisieren. `scope.filter_lsp` oder dessen neutrale Extraktion für Schwellenregel verwenden; fehlende/negative Werte separat ablehnen.
 - [ ] Quadratische Profilabstimmung mit SciPy SLSQP und linearer Gleichheitsbedingung implementieren; Resultat unabhängig von Solver-Erfolgsmeldung auf Grenzen und Bilanz prüfen. Danach `eta`-Wurzel gemäß Spec mit Brent lösen, keine freie Optimierung je Standort. Die Kernrechnung lautet:
 
 ```python
 local_b = k * business / (private + k * business)
-dhl_share = (1-local_b)*profiles['conditional'][0, 0] + local_b*profiles['conditional'][1, 0]
-postal_total = dhl_values / dhl_share
+lsp_share = (1-local_b)*profiles['conditional'][0, 0] + local_b*profiles['conditional'][1, 0]
+postal_total = lsp_values / lsp_share
 residual = (postal_total @ local_b) / postal_total.sum() - target_b
 ```
 
-- [ ] Innerhalb jeder PLZ/Segment nach Potenzial verteilen; einmal mit Referenzbetriebstagen multiplizieren; H und S getrennt je Segment normieren. Bei leerem Segment leere Unterstützung explizit darstellen. Nachweis: über alle PLZ entspricht rekonstruierte DHL-Menge der behaltenen Beobachtung; regionale Jahresmenge ist bei konsistenten Profilen `sum(DHL)/m_DHL*operating_days`.
+- [ ] Innerhalb jeder PLZ/Segment nach Potenzial verteilen; einmal mit Referenzbetriebstagen multiplizieren; H und S getrennt je Segment normieren. Bei leerem Segment leere Unterstützung explizit darstellen. Nachweis: über alle PLZ entspricht rekonstruierte LSP-Menge der behaltenen Beobachtung; regionale Jahresmenge ist bei konsistenten Profilen `sum(LSP)/m_LSP*operating_days`.
 - [ ] Ein unabhängiger Terra-Reviewer prüft Mathematik/Scope und ein weiterer Review-Durchgang die Testgegenbeispiele, Nullunterstützung und Fehlerdiagnosen. Keine neue Genauigkeitszahl gegen dieselben Anker ausgeben. Bestehende Demand-Testsuite nach gemeinsamem Codeeingriff ausführen; eigene Dateien gezielt committen.
 
 ### Task 4: Referenzlauf, Berichte, Experimentmigration und Abschluss dieses Teilplans
@@ -140,8 +140,8 @@ residual = (postal_total @ local_b) / postal_total.sum() - target_b
 
 **Interfaces:** `run_baseline(config_path: Path, run_id: str, resume: bool=False)->Path`; `render_baseline(run: Path)->Path`. Der Renderer liest `dashboard_root` aus der aufgelösten Run-Konfiguration, schreibt `report_data.json` und aktualisiert den gemeinsamen Einstieg `<dashboard_root>/index.html`, dessen Pfad er zurückgibt. Standard: `<output_dir>/dashboard`. Config `output_scope='reference'` produziert nur die deterministische Referenz und `status='complete_reference'`; nach Plan 02 unterstützt `'daily'` den vollständigen Tageslauf. Bis dahin darf `'daily'` keinen erfolgreichen Abschluss melden.
 
-- [ ] Fixture mit zwei PLZ, zwei Privatstandorten, zwei Betrieben und vier DHL-Beobachtungen erstellen. `tests/baseline_fixtures.py:write_fixture(root: Path)->Path` schreibt lokale CSV/SHP/XLSX-Minimalquellen, Geometrien und Config; Schema anhand der vorhandenen `data.py`-Reader. `fixture_config`-pytest-Fixture ruft diese Funktion auf.
-- [ ] Exakte Fixture-Quellen: Personen-CSV `id,Building,Household,geometry` mit vier Personen in zwei Gebäuden; Firmen-SHP `id,employees,branch,type` mit zwei Punkten und Mitarbeitern 10/100; DHL-SHP `plz,name,tagesschni` mit vier Linien und Werten 10/20/30/40; PLZ-CSV `postal_cod,geometry` mit zwei nicht überlappenden Polygonen. GeoPandas schreibt SHP samt Nebenfiles. Bei Rohmodus mit gemeinsamem Foundation-Reader zusätzlich Hermes-CSV `PLZ;2019;2020;2021` mit je einer Zeile pro PLZ als Inventarquelle, nicht Niveauanker. XLSX-Blatt `Tabelle1` hat vier Spalten, eine erste zu überspringende Datenzeile und danach Wochen 1–52 mit positiven Werten für 2019/2020/2021. Config enthält `source_mode='raw'`, Quellenpfade/-IDs entsprechend dem vorhandenen Foundation-Vertrag, alle CRS=`EPSG:25832`, `reference_year=2021`, `reference_operating_days=313`, `output_scope='reference'`, `output_dir`, `weekly_source` und deaktivierten Legacy-Export. `invalid_employees` beim Fundamentexport erhalten oder aus gespeicherten Beschäftigtenwerten erneut ableiten.
+- [ ] Fixture mit zwei PLZ, zwei Privatstandorten, zwei Betrieben und vier LSP-Beobachtungen erstellen. `tests/baseline_fixtures.py:write_fixture(root: Path)->Path` schreibt lokale CSV/SHP/XLSX-Minimalquellen, Geometrien und Config; Schema anhand der vorhandenen `data.py`-Reader. `fixture_config`-pytest-Fixture ruft diese Funktion auf.
+- [ ] Exakte Fixture-Quellen: Personen-CSV `id,Building,Household,geometry` mit vier Personen in zwei Gebäuden; Firmen-SHP `id,employees,branch,type` mit zwei Punkten und Mitarbeitern 10/100; LSP-SHP `plz,name,tagesschni` mit vier Linien und Werten 10/20/30/40; PLZ-CSV `postal_cod,geometry` mit zwei nicht überlappenden Polygonen. GeoPandas schreibt SHP samt Nebenfiles. Bei Rohmodus mit gemeinsamem Foundation-Reader zusätzlich Hermes-CSV `PLZ;2019;2020;2021` mit je einer Zeile pro PLZ als Inventarquelle, nicht Niveauanker. XLSX-Blatt `Tabelle1` hat vier Spalten, eine erste zu überspringende Datenzeile und danach Wochen 1–52 mit positiven Werten für 2019/2020/2021. Config enthält `source_mode='raw'`, Quellenpfade/-IDs entsprechend dem vorhandenen Foundation-Vertrag, alle CRS=`EPSG:25832`, `reference_year=2021`, `reference_operating_days=313`, `output_scope='reference'`, `output_dir`, `weekly_source` und deaktivierten Legacy-Export. `invalid_employees` beim Fundamentexport erhalten oder aus gespeicherten Beschäftigtenwerten erneut ableiten.
 - [ ] Workflow-Test schreiben, rot ausführen, dann Implementierung:
 
 ```python

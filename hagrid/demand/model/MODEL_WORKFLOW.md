@@ -22,9 +22,9 @@ Datum, Realisierungen, Zukunfts-/Kalenderannahmen und Zustellmapping können ang
 
 ## 1. Quellen und Beobachtungsebene
 
-Standorte entstehen aus vorhandenen Personen-/Gebäude-IDs und Firmenpunkten. Die Kalibrierung nutzt PLZ-Summen der DHL-Zeilen und Hermes-PLZ-Werte des Referenzjahrs. Dadurch werden ungeklärte nächste Straßen nicht als bestätigte Gebäudezuordnungen benutzt.
+Standorte entstehen aus vorhandenen Personen-/Gebäude-IDs und Firmenpunkten. Die Kalibrierung nutzt PLZ-Summen der LSP-Zeilen und Hermes-PLZ-Werte des Referenzjahrs. Dadurch werden ungeklärte nächste Straßen nicht als bestätigte Gebäudezuordnungen benutzt.
 
-Die Additivität der DHL-Zeilen ist eine explizite, aus dem bestehenden PANDA-Ablauf übernommene Arbeitsannahme. Wiederholte Straßenkennungen bleiben als Datenproblem dokumentiert. Hermes wird wegen ungeklärter absoluter Einheit ausschließlich für die räumliche Form innerhalb der jeweiligen Trainingsmenge verwendet. Kein Hermes-Testwert wird zur Trainingsnormierung verwendet.
+Die Additivität der LSP-Zeilen ist eine explizite, aus dem bestehenden PANDA-Ablauf übernommene Arbeitsannahme. Wiederholte Straßenkennungen bleiben als Datenproblem dokumentiert. Hermes wird wegen ungeklärter absoluter Einheit ausschließlich für die räumliche Form innerhalb der jeweiligen Trainingsmenge verwendet. Kein Hermes-Testwert wird zur Trainingsnormierung verwendet.
 
 Die existierenden HAGRID-CSV-Reihen liefern nationale Marktanteile, Anbieter-B2B-Profile, Gesamt-B2B und Volumenpfade. Sie sind **übernommene Priors/Projektionen**, keine zusätzlichen unabhängigen Messungen. Eingeschriebene Zukunftswerte werden weder als Beobachtungen trainiert noch ihre alten Konfidenzbänder übernommen.
 
@@ -38,7 +38,7 @@ Die Vorhersage je PLZ und Anbieter lautet:
 
 `private Menge * privater Anbieteranteil + gewerbliche Menge * gewerblicher Anbieteranteil`.
 
-Das gemeinsame Kriterium berücksichtigt DHL-Abweichungen, Hermes-Form, Marktanteile, B2B-Gesamtanteil und Abweichungen von Ausgangsprofilen. Regularisierung begrenzt unnötig große Branchen-/Anbieteränderungen. Kein frei geschätzter Anteil je Standort wird vorgetäuscht. Die Gewichtungen des Kriteriums stehen in der Konfiguration und sind noch keine empirisch optimierten Unsicherheiten.
+Das gemeinsame Kriterium berücksichtigt LSP-Abweichungen, Hermes-Form, Marktanteile, B2B-Gesamtanteil und Abweichungen von Ausgangsprofilen. Regularisierung begrenzt unnötig große Branchen-/Anbieteränderungen. Kein frei geschätzter Anteil je Standort wird vorgetäuscht. Die Gewichtungen des Kriteriums stehen in der Konfiguration und sind noch keine empirisch optimierten Unsicherheiten.
 
 ## 3. Modellvergleich und Einfrieren
 
@@ -48,7 +48,7 @@ Verglichen werden:
 2. `branches`: zusätzliche gewerbliche Branchenintensitäten;
 3. `joint`: Branchenintensitäten und gemeinsam angepasste Anbieterprofile.
 
-Alle Kandidaten nutzen identische, seedabhängig festgelegte Trainings- und Validierungs-PLZ. Die Auswahl richtet sich nach DHL-wMAPE auf der Validierung. Anschließend wird die gewählte Modellfamilie auf Training plus Validierung angepasst und einmal auf den getrennten Test-PLZ bewertet. Danach erfolgt ein Fit auf allen Beobachtungen für die eingefrorene Anwendungsversion.
+Alle Kandidaten nutzen identische, seedabhängig festgelegte Trainings- und Validierungs-PLZ. Die Auswahl richtet sich nach LSP-wMAPE auf der Validierung. Anschließend wird die gewählte Modellfamilie auf Training plus Validierung angepasst und einmal auf den getrennten Test-PLZ bewertet. Danach erfolgt ein Fit auf allen Beobachtungen für die eingefrorene Anwendungsversion.
 
 Die Testkennzahlen gehören deshalb zum gespeicherten Evaluationsmodell, nicht zum anschließend auf allen Daten geschätzten Anwendungsmodell. Ein Test prüft explizit, dass geänderte zurückgehaltene Zielwerte die Trainingsparameter nicht beeinflussen.
 
@@ -56,7 +56,7 @@ Die aktuelle Implementierung verwendet einen disjunkten Split und keine verschac
 
 ## 4. Kalender und Zukunft
 
-Das kalibrierte mittlere DHL-Betriebstagsniveau wird über die angenommene Anzahl der Referenz-Betriebstage in Jahresmengen übersetzt. Die Beispielkonfiguration setzt 313 Tage; diese Umrechnung ist vor einer belastbaren absoluten Jahresprognose zu bestätigen.
+Das kalibrierte mittlere LSP-Betriebstagsniveau wird über die angenommene Anzahl der Referenz-Betriebstage in Jahresmengen übersetzt. Die Beispielkonfiguration setzt 313 Tage; diese Umrechnung ist vor einer belastbaren absoluten Jahresprognose zu bestätigen.
 
 Für jedes Zieljahr werden die jährlichen Segmentmengen mit dem gewählten relativen HAGRID-Volumenpfad fortgeschrieben. Anbieterprofile verändern sich anhand der relativen Entwicklung der übernommenen Segmentpriors. Modellierte Abweichungen am Referenzjahr bleiben dabei erhalten. Dies ist eine nachvollziehbare Fortschreibung, keine neu geschätzte langfristige Prognose aus zukünftigen Messungen.
 
@@ -91,7 +91,7 @@ Der Adapter verwendet die Semantik des tatsächlich geprüften Java-Codes: `<anb
 
 ## 7. Ergebnisqualität des ersten vollständigen Laufs
 
-Im ersten Lauf wurde `joint` ausgewählt. Auf zehn Test-PLZ: **27,7 % DHL-wMAPE und −9,2 % Bias**. Der Hermes-Formfehler auf den Test-PLZ beträgt 11,1 %, nach Skalierung auf deren beobachtete Summe. Das ist ausdrücklich keine absolute Hermes-Validierung.
+Im ersten Lauf wurde `joint` ausgewählt. Auf zehn Test-PLZ: **27,7 % LSP-wMAPE und −9,2 % Bias**. Der Hermes-Formfehler auf den Test-PLZ beträgt 11,1 %, nach Skalierung auf deren beobachtete Summe. Das ist ausdrücklich keine absolute Hermes-Validierung.
 
 Die Validierung lag bei allen drei Kandidaten ungefähr bei 50 %. Große Abweichungen konzentrieren sich unter anderem auf PLZ 30938, 30539 und 30855. Die Daten- und Sonderempfängerfragen sind damit nicht gelöst. Der gewählte Kandidat ist noch kein nachgewiesen überlegenes Endmodell; ein einzelner Split erlaubt keine robuste Aussage über kleine Unterschiede zwischen den Kandidaten.
 

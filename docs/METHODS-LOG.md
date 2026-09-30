@@ -606,7 +606,7 @@ OSM-Gebäude** — OSM kartiert die ländliche Lausitz unvollständig, was genau
 war. Diese Nachfrage ist echt, hat aber kein Gebäude zum Anhängen.
 
 **Korrektur der Größenangabe:** die zuerst notierten „630 von 6.024 Paketen (10,5 %)" verglichen
-DHL-Skala gegen All-Carrier-Skala. Korrekt sind **630 von 2.652 (23,8 %)** auf DHL-Skala bzw.
+LSP-Skala gegen All-Carrier-Skala. Korrekt sind **630 von 2.652 (23,8 %)** auf LSP-Skala bzw.
 **1.666 von 6.013 (27,7 %)** auf der exportierten All-Carrier-Skala — also gut ein Viertel der
 Nachfrage, nicht ein Zehntel.
 
@@ -4906,10 +4906,10 @@ Carrier-Match, und ungematchte Fahrzeuge werden bewusst weggelassen.
 
 `zurückgezogen` · 2026-07-29 (B10)
 
-**Geglaubt** (2026-07-24, OSM-Prädiktor): der auf DHL gefittete B2C-Teil (Einwohner + EFH/MFH)
+**Geglaubt** (2026-07-24, OSM-Prädiktor): der auf den LSP gefittete B2C-Teil (Einwohner + EFH/MFH)
 sagt die räumliche Verteilung eines **nie gefitteten** zweiten Carriers (Hermes, ~rein B2C)
 **+21 % besser** vorher als eine reine Bevölkerungsbasis (P(Skill > 0) ≈ 0,83). Gelesen als Beleg,
-dass das Siedlungsstruktur-Signal echt und übertragbar ist und kein DHL-Artefakt.
+dass das Siedlungsstruktur-Signal echt und übertragbar ist und kein LSP-Artefakt.
 
 **Gemessen** (2026-07-29, Zensus-Prädiktor): Skill **−3,5**, 95-%-KI **[−62 ; +33]**,
 P(Skill > 0) = **41 %**. Kein messbarer Vorteil mehr — und zwar in *keine* Richtung, das KI
@@ -4920,7 +4920,7 @@ das **zusätzlich** zur Bevölkerung etwas erklärt.
 
 **Es bleibt:** (a) die Decke-Kennzahl ist prädiktorunabhängig und unverändert — die
 Pro-Kopf-Muster der beiden Carrier stimmen nur moderat überein (r ≈ 0,31, KI 0,16–0,60), ein
-großer Teil des DHL-Residuums ist also echt carrier-spezifisch. (b) Der B2B-Teil überträgt
+großer Teil des LSP-Residuums ist also echt carrier-spezifisch. (b) Der B2B-Teil überträgt
 korrekt **nicht** auf einen reinen B2C-Carrier (−36 % statt vorher −6 %) — der B2C/B2B-Split
 trifft eine echte strukturelle Unterscheidung. (c) Die Übertragbarkeit **über den Raum** ist
 unberührt und sogar besser belegt (§2.9: Skill-KI ohne Null). Was fehlt, ist der Beleg über

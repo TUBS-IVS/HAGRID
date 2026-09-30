@@ -33,7 +33,7 @@ Die primäre Größe ist die Zahl eingehender Pakete. Ausgehende Geschäftssendu
 | Zukunftsprognose | Zentraler Entwicklungspfad und Bandbreiten; alternative Zukunftsannahmen können zusätzlich verglichen werden |
 | Realisierte Tagesnachfrage | Zufällige ganzzahlige Ausprägung der erwarteten Nachfrage für Logistiksimulationen |
 
-Die Genauigkeit für DHL, Gesamtmarkt, B2B-Zerlegung und Fremdanbieter wird getrennt angegeben. Ein guter DHL-Fit bestätigt nicht automatisch die übrigen Größen.
+Die Genauigkeit für LSP, Gesamtmarkt, B2B-Zerlegung und Fremdanbieter wird getrennt angegeben. Ein guter LSP-Fit bestätigt nicht automatisch die übrigen Größen.
 
 ## 3. Gemeinsame Datenbasis
 
@@ -44,7 +44,7 @@ Jede Quelle erhält eine stabile `source_id`, Originalpfad, Hash, räumlichen un
 Besonders wichtig:
 
 - Die alte HAGRID-Nachfrage ist ein Vergleichsergebnis, keine zusätzliche unabhängige Messung.
-- HAGRID- und PANDA-Kopien derselben DHL-Quelle werden nur einmal als Information gezählt.
+- HAGRID- und PANDA-Kopien derselben LSP-Quelle werden nur einmal als Information gezählt.
 - Personen und Zensus sind alternative/ergänzende Beschreibungen desselben Bevölkerungsbestands; sie werden nicht addiert.
 - Firmenpunkte und gewerbliche OSM-POIs können dieselben Betriebe beschreiben; ohne Abgleich entstehen Doppelzählungen.
 - Fehlende Beobachtung, erfasste Null und außerhalb der Abdeckung sind verschiedene Zustände.
@@ -56,7 +56,7 @@ Das Standortverzeichnis verbindet vier Objekte: physischer Standort, Nachfrageei
 
 Quelle, Lagequalität und Zuordnungsmethode bleiben an jedem Objekt erhalten. Gleiche Koordinaten bedeuten nicht automatisch identische Firmen. Eine Gebäude-ID ist noch kein verifizierter Eingang. Unsichere Fälle werden nicht unbemerkt gelöscht oder gleichmäßig auf Straßen verteilt. Details stehen in der [Aufbereitung ohne Raster](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/GRID_FREE_METHOD.md).
 
-Beobachtungen bleiben auf ihrer tatsächlichen Auflösung: DHL-Straße, Hermes-PLZ oder nationales Jahr. Für jeden Beobachtungstyp beschreibt eine Zuordnung A, welche Standorte und Zeiträume er erfasst. Die Vorhersage wird für den Vergleich auf diese Ebene summiert. Zuvor auf Gebäude verteilte Straßensummen werden nicht als unabhängige Gebäudemessungen zum Trainieren verwendet.
+Beobachtungen bleiben auf ihrer tatsächlichen Auflösung: LSP-Straße, Hermes-PLZ oder nationales Jahr. Für jeden Beobachtungstyp beschreibt eine Zuordnung A, welche Standorte und Zeiträume er erfasst. Die Vorhersage wird für den Vergleich auf diese Ebene summiert. Zuvor auf Gebäude verteilte Straßensummen werden nicht als unabhängige Gebäudemessungen zum Trainieren verwendet.
 
 ## 5. Modellstruktur und Kandidaten
 
@@ -87,7 +87,7 @@ Für eine echte Zählung ist eine Zählwahrscheinlichkeit möglich; für ein ges
 
 PANDAs schlankes Bevölkerungs-/Wohnstrukturmodell ist eine Referenz. HAGRIDs Firmen liefern Kandidaten für zusätzliche Branchen- und Beschäftigteneffekte. Zuerst werden wenige gemeinsame Koeffizienten geschätzt, keine freien Paketintensitäten für jeden Standort. Lineare und gedämpfte Betriebsgrößeneffekte sind zu vergleichen. Alters-, Haushalts- oder Mietmerkmale kommen nur bei belegtem zusätzlichem Nutzen hinzu.
 
-PANDA schätzt zunächst auf DHL-Niveau. Seine Koeffizienten dürfen daher nicht ohne Anpassung als Gesamtmarktintensitäten eingesetzt werden. Der Referenzadapter bewahrt zunächst diese Semantik; ein gemeinsames Marktmodell kalibriert die Parameter unter seiner eigenen Beobachtungsgleichung neu.
+PANDA schätzt zunächst auf LSP-Niveau. Seine Koeffizienten dürfen daher nicht ohne Anpassung als Gesamtmarktintensitäten eingesetzt werden. Der Referenzadapter bewahrt zunächst diese Semantik; ein gemeinsames Marktmodell kalibriert die Parameter unter seiner eigenen Beobachtungsgleichung neu.
 
 ### Anbieterunterschiede
 
@@ -111,7 +111,7 @@ Jahresmengen werden mit auf den tatsächlichen Kalender normierten Faktoren auf 
 
 Drei Unsicherheiten werden getrennt geführt: Parameter-/Datenunsicherheit, zufällige Tagesschwankung und unbekannte Zukunftsentwicklung. Eine zentrale Prognose wird nicht durch eine Sammlung ungewichteter Szenarien ersetzt. Ohne geeignete Daten sind Bandbreiten Sensitivitätsbereiche, keine nachgewiesen kalibrierten Konfidenzintervalle.
 
-Lieferzielwahl und Bündelung folgen der Nachfrage. Paketstationen erhalten verlagerten Bedarf; sie erzeugen dadurch nicht zusätzliche B2B-Pakete. Belegte Großempfänger werden separat berücksichtigt, aber ein DHL-Ausreißer ist weder automatisch B2B noch ein Großkunde aller Anbieter. Für Logistikvergleiche werden dieselben Nachfrageausprägungen und Zufallsgrundlagen verwendet.
+Lieferzielwahl und Bündelung folgen der Nachfrage. Paketstationen erhalten verlagerten Bedarf; sie erzeugen dadurch nicht zusätzliche B2B-Pakete. Belegte Großempfänger werden separat berücksichtigt, aber ein LSP-Ausreißer ist weder automatisch B2B noch ein Großkunde aller Anbieter. Für Logistikvergleiche werden dieselben Nachfrageausprägungen und Zufallsgrundlagen verwendet.
 
 ## 7. Vergleich und Entscheidung
 

@@ -10,7 +10,7 @@ and jsprit for delivery tours and demand-responsive transport. It bundles two st
 
 The separation is guarded by a source-scan test (`hagrid/simulation/src/test/java/hagrid/core/ArchitectureRulesTest.java`): it fails the build when `hagrid.hannover` and `hagrid.lausitz` reference each other, or when a `hagrid.core` class outside a four-class switchboard allowlist references a study package. It scans comment-stripped source text for package tokens, not the compiled dependency graph.
 
-**The Hannover demand model** calibrates parcel demand to the carrier observations of 2021 (DHL street volumes,
+**The Hannover demand model** calibrates parcel demand to the carrier observations of 2021 (LSP street volumes,
 population, firms and OSM buildings) and simulates it for **every day from 2025 to 2035** at **stop level**, with buildings
 grouped along ~50 m street sections. It derives **carrier-level and B2B/B2C shares**, sends a growing part of the parcels
 to **pickup points**, and lets demand follow **land-use change**: the population forecast per district, ageing, firm growth
@@ -132,7 +132,7 @@ The tree shows tracked content only. Locally, `analysis/lausitz/` additionally h
   - Street network shapefiles or MATSim network  
   - Population and company locations derived from the MATSim Hanover model  
     → Source: Bienzeisler, L., Lelke, T., Wage, O., Thiel, F., & Friedrich, B. (2020). *Development of an Agent-Based Transport Model for the City of Hanover Using Empirical Mobility Data and Data Fusion.* Transportation Research Procedia, 47, 99–106. https://doi.org/10.1016/j.trpro.2020.03.073. Extended these datasets from follow-up developments of the MATSim Hanover Region model  
-  - Carrier-specific parcel demand data (DHL street volumes of 2021, the anchor of the demand model – not publicly available)
+  - Carrier-specific parcel demand data (LSP street volumes of 2021, the anchor of the demand model – not publicly available)
 
 - **Population Forecast Region Hannover (2026)**  
   Landeshauptstadt und Region Hannover: *Bevölkerungsprognose 2025 bis 2035*, tables 7 and 8 (30 forecast districts of the city, 20 towns and municipalities). Drives the land-use dynamics.
@@ -248,7 +248,7 @@ hotspots, structural change, the hexagon change map, the pickup network and a ca
 ```mermaid
 flowchart TB
     subgraph inputs ["Inputs"]
-        dhl["DHL street volumes 2021"]
+        lsp["LSP street volumes 2021"]
         people["Synthetic persons and firms"]
         osm["OSM buildings, boundaries,<br/>land use, pickup points"]
         kep["National KEP series<br/>BIEK · Statista · Pitney Bowes"]
@@ -273,7 +273,7 @@ flowchart TB
         matsim["MATSim demand<br/>shapefile per day"]
         dashboards["Dashboards<br/>year · decade"]
     end
-    dhl & people & osm --> stops --> anchor
+    lsp & people & osm --> stops --> anchor
     kep --> scenario
     forecast --> landuse
     anchor & scenario & landuse --> projection
@@ -288,8 +288,8 @@ flowchart TB
 ### 6.2 Method
 
 1. **Reference year 2021: buildings, stops and the street anchor.** Synthetic persons are placed in OSM buildings (state of
-   2021-01-01), firms in matching buildings of their 100 m census cell. Every building gets its DHL street, 50 m section and
-   street side. The observed DHL street volumes of 2021 set the parcel rates per resident and firm and split every street into
+   2021-01-01), firms in matching buildings of their 100 m census cell. Every building gets its street from the LSP data, its
+   50 m section and its street side. The observed LSP street volumes of 2021 set the parcel rates per resident and firm and split every street into
    B2C and B2B; the other carriers follow their market and B2B shares. Buildings on the same street side within 2 × 40 m form
    one stop, large receivers (at least 15 parcels a day) a stop of their own. The reference holds 60.3 million parcels on 306
    delivery days.
@@ -394,7 +394,7 @@ city receives 43.3 % of the demand (2025: 44.1 %), and the two variants move thi
 ### 6.6 Running the model
 
 Inputs are git-ignored (`hagrid/demand/input/hannover/`, layout in [`hagrid/demand/README.md`](hagrid/demand/README.md)); the
-DHL street volumes are not public. Install and test from `hagrid/demand/model`:
+LSP street volumes are not public. Install and test from `hagrid/demand/model`:
 
 ```powershell
 cd hagrid/demand/model
@@ -480,7 +480,7 @@ The files load directly into QGIS or ArcGIS, and `hagrid/simulation` reads them 
   The model assumes a consistent set of parcel carriers throughout the projection period. Emerging or disappearing carriers are not explicitly modeled.
 
 - **Synthetic Localization:**  
-  DHL is anchored to its observed 2021 street volumes. The other carriers follow their market and B2B shares on the same
+  One LSP is anchored to its observed 2021 street volumes. The other carriers follow their market and B2B shares on the same
   sites, calibrated with available references and spatial proxies, not with complete ground-truth data.
 
 - **Weekly and Seasonal Patterns:**  
@@ -496,7 +496,7 @@ The files load directly into QGIS or ArcGIS, and `hagrid/simulation` reads them 
   measurements. Synthetic sites stand in for partner shops and counters missing from OSM.
 
 - **Data Availability:**  
-  Some internal data (e.g. DHL reference volumes) are not publicly available and must be substituted or removed in open use.
+  Some internal data (e.g. LSP reference volumes) are not publicly available and must be substituted or removed in open use.
 
 - **Lausitz study:**  
   Methodological decisions, known limitations and retracted findings of the DRT/freight study are recorded in `docs/METHODS-LOG.md`; this README does not repeat them.

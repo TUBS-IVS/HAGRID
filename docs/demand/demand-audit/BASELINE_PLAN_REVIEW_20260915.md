@@ -1,6 +1,6 @@
 # Prüfung der HAGRID-Baseline-Planung
 
-**Ergänzung nach Nutzerzustimmung:** Der [konsolidierte Entwurf mit DHL-Gewichtung und Unsicherheitsanalyse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/specs/2026-09-15-hagrid-baseline-design.md) und die [Umsetzungsroadmap mit Terra-Reviews](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-roadmap.md) konkretisieren diese Prüfung. Die dortige räumliche Mischung im Zieljahr ersetzt die unten zunächst beschriebene feste PLZ-Fortschreibung; die regionalen Jahresmengen bleiben separat bilanziert.
+**Ergänzung nach Nutzerzustimmung:** Der [konsolidierte Entwurf mit LSP-Gewichtung und Unsicherheitsanalyse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/specs/2026-09-15-hagrid-baseline-design.md) und die [Umsetzungsroadmap mit Terra-Reviews](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-roadmap.md) konkretisieren diese Prüfung. Die dortige räumliche Mischung im Zieljahr ersetzt die unten zunächst beschriebene feste PLZ-Fortschreibung; die regionalen Jahresmengen bleiben separat bilanziert.
 
 Stand: 15. September 2026. Geprüft wurden die zuletzt bestätigten Nutzerziele, die acht Nachfrage-Notebooks einschließlich Tagesgenerator, ihre vorhandenen Exporte und das bisherige Python-Paket. **Die Grundrichtung passt; der Gesprächsentwurf brauchte mehrere fachliche Korrekturen.** Dieses Dokument konsolidiert die Prüfung und die daraus empfohlenen Präzisierungen. Es dokumentiert keine bereits implementierte Baseline.
 
@@ -11,7 +11,7 @@ Die Nutzerentscheidung ersetzt die frühere offene Modellwahl im MASTERPLAN vom 
 | Anforderung | Konsequenz für die Planung |
 |---|---|
 | Grundgedanken der Notebooks erhalten | Jahresentwicklung, B2B/B2C, Anbieterprofile, regionale Nachfragepotenziale und zeitliche Verteilung bleiben fachlicher Kern. Bekannte Rechenfehler werden korrigiert. |
-| Bestehende Daten verwenden | Personen/Gebäude, Firmen/Beschäftigte, DHL 2021 und die vorhandenen Markt- und Zeitreihen sind die Ausgangsbasis. Neue OSM-Abfragen und neue externe Merkmale sind keine Voraussetzung. |
+| Bestehende Daten verwenden | Personen/Gebäude, Firmen/Beschäftigte, LSP 2021 und die vorhandenen Markt- und Zeitreihen sind die Ausgangsbasis. Neue OSM-Abfragen und neue externe Merkmale sind keine Voraussetzung. |
 | Aktuelle Nachfrage und Zukunft | Historische Referenz, Fortschreibung ins Zieljahr und realisierte Liefertage werden getrennt ausgewiesen. „Heute“ ist ohne neue Beobachtungen eine Schätzung. |
 | Anbieter unterscheiden | Unterschiede entstehen aus dem lokalen Privat-/Geschäftskundenmix und abgestimmten Anbieterprofilen. Unbeobachtete Anbieteranteile bleiben modellierte Größen. |
 | Menge UND Ort schwanken | Regionale Tagesmenge und räumliche Tagesanteile erhalten getrennte Parameter. Verteilung zwischen PLZ sowie innerhalb einer PLZ wird geprüft. |
@@ -26,13 +26,13 @@ Die Trennung von Nachfrageort und tatsächlichem Zustellziel bleibt bestehen. Ei
 
 Die Quelltext-Snapshots stimmen bei allen acht geprüften Notebooks mit dem aktuellen Code überein. Notebook-Hashes, Exportspalten und die nachfolgenden Zahlen stehen in [plan_verification_20260915.json](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/plan_verification_20260915.json). Es wurde kein vollständiger Notebook-Lauf ausgeführt und keine neue empirische Kalibrierung vorgenommen.
 
-### A. Der regionale DHL-Bezug muss in der Baseline bleiben
+### A. Der regionale LSP-Bezug muss in der Baseline bleiben
 
-Der ursprüngliche Generator summiert DHL 2021 pro PLZ, multipliziert mit einem Zeitfaktor und dividiert durch den lokalen DHL-Anteil. Anschließend verteilt er die PLZ-Menge räumlich. Die nationale Jahresreihe liefert eine relative Entwicklung; sie wird nicht als deutsche Gesamtmenge unmittelbar auf Hannover verteilt.
+Der ursprüngliche Generator summiert LSP 2021 pro PLZ, multipliziert mit einem Zeitfaktor und dividiert durch den lokalen LSP-Anteil. Anschließend verteilt er die PLZ-Menge räumlich. Die nationale Jahresreihe liefert eine relative Entwicklung; sie wird nicht als deutsche Gesamtmenge unmittelbar auf Hannover verteilt.
 
-Die vorherige Planung „nationale Menge → regionale Verteilung“ war ohne regionalen Bezugsfaktor unvollständig. Ebenso wäre es falsch, jede DHL-Verankerung den Experimenten zuzuordnen. **Die Hochrechnung aus DHL gehört zur Baseline; die neu entwickelte exakte Anpassung jeder einzelnen Straße bleibt ein Experiment.**
+Die vorherige Planung „nationale Menge → regionale Verteilung“ war ohne regionalen Bezugsfaktor unvollständig. Ebenso wäre es falsch, jede LSP-Verankerung den Experimenten zuzuordnen. **Die Hochrechnung aus LSP gehört zur Baseline; die neu entwickelte exakte Anpassung jeder einzelnen Straße bleibt ein Experiment.**
 
-Zusätzliche Korrektur: Im Notebook wird der DHL-Anteil des Zieljahres als Divisor benutzt. Bei sinkendem DHL-Anteil erhöht das die geschätzte Gesamtmenge zusätzlich zum nationalen Wachstum. Empfohlen wird, den Gesamtmarkt einmal mit dem DHL-Anteil des Referenzjahres herzuleiten und danach Gesamtmarktentwicklung und Anbieterentwicklung getrennt anzuwenden.
+Zusätzliche Korrektur: Im Notebook wird der LSP-Anteil des Zieljahres als Divisor benutzt. Bei sinkendem LSP-Anteil erhöht das die geschätzte Gesamtmenge zusätzlich zum nationalen Wachstum. Empfohlen wird, den Gesamtmarkt einmal mit dem LSP-Anteil des Referenzjahres herzuleiten und danach Gesamtmarktentwicklung und Anbieterentwicklung getrennt anzuwenden.
 
 Beleg: [Generator, Hochrechnung](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/notebook-sources/parcel-demand-estimation__ParcelDemandScenarioGenerator.py:646), [Auswahl des Zieljahres](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/notebook-sources/parcel-demand-estimation__ParcelDemandScenarioGenerator.py:2010).
 
@@ -64,7 +64,7 @@ Beleg: [Dirichlet-Verteilung](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/
 
 ### D. Kalender und Bezugsgröße brauchen einen gemeinsamen Vertrag
 
-Die alten Wochentagsgewichte ergeben **0,965 statt 1**. Der Zeitfaktor bezieht sich auf Kalenderwoche 20/2021; das ist nicht automatisch der Bezugszeitraum des DHL-Feldes `tagesschni`. Die Bedeutung dieses Tagesmittels muss als Annahme bzw. bestätigte Definition dokumentiert werden. Auch 313 Referenzbetriebstage sind eine Umrechnungskonvention, keine aus dem Feldnamen ablesbare Messdefinition.
+Die alten Wochentagsgewichte ergeben **0,965 statt 1**. Der Zeitfaktor bezieht sich auf Kalenderwoche 20/2021; das ist nicht automatisch der Bezugszeitraum des LSP-Feldes `tagesschni`. Die Bedeutung dieses Tagesmittels muss als Annahme bzw. bestätigte Definition dokumentiert werden. Auch 313 Referenzbetriebstage sind eine Umrechnungskonvention, keine aus dem Feldnamen ablesbare Messdefinition.
 
 Notebook 03 verwendet Schweizer Wochenwerte 2019–2021 als Proxy. Notebook 02 kennzeichnet eingetragene Schätzwerte ab 2024 im Export bis 2028 als `Observed`. Diese Kennzeichnung muss korrigiert werden; das aktuelle Kalenderjahr macht eine alte Schätzung nicht nachträglich zur Beobachtung.
 
@@ -104,13 +104,13 @@ Das lokale B2B-Verhältnis liefert unterschiedliche lokale Anbieteranteile. Dami
 Für PLZ `p` lautet der regionale Bezug vereinfacht:
 
 ```text
-s_DHL,p,2021 = b_p,2021 * P(DHL | B2B) + (1-b_p,2021) * P(DHL | B2C)
-T_p,2021 = DHL_p,2021 / s_DHL,p,2021
+s_LSP,p,2021 = b_p,2021 * P(LSP | B2B) + (1-b_p,2021) * P(LSP | B2C)
+T_p,2021 = LSP_p,2021 / s_LSP,p,2021
 ```
 
-`T` hat dabei zunächst dieselbe zeitliche Einheit wie die DHL-Beobachtung. Lokale B2B-Verhältnisse, Divisoren und Gesamtmengen dürfen nicht unabhängig voneinander festgeschrieben werden: Die lokale B2B-Verteilung muss mit Gewichten `T_p,2021` den gewählten regionalen B2B-Zielwert treffen. Eine kleine deterministische Abstimmung eines gemeinsamen Skalierungsfaktors der gewerblichen Potenziale ist dafür ein erster Ansatz. Positive Beobachtungen ohne positives Anbieter-/Standortpotenzial werden als Zielkonflikt behandelt. Das braucht keine freie Optimierung eines Parameters für jede Straße.
+`T` hat dabei zunächst dieselbe zeitliche Einheit wie die LSP-Beobachtung. Lokale B2B-Verhältnisse, Divisoren und Gesamtmengen dürfen nicht unabhängig voneinander festgeschrieben werden: Die lokale B2B-Verteilung muss mit Gewichten `T_p,2021` den gewählten regionalen B2B-Zielwert treffen. Eine kleine deterministische Abstimmung eines gemeinsamen Skalierungsfaktors der gewerblichen Potenziale ist dafür ein erster Ansatz. Positive Beobachtungen ohne positives Anbieter-/Standortpotenzial werden als Zielkonflikt behandelt. Das braucht keine freie Optimierung eines Parameters für jede Straße.
 
-Der Filter **über 1.000 Pakete** bleibt als explizite, vom Nutzer gesetzte Abgrenzung auf vollständigen DHL-Beobachtungen erhalten; genau 1.000 bleibt enthalten. Gefilterte Mengen werden separat bilanziert. Die Schwelle beweist weder Lkw-Zustellung noch erlaubt sie, automatisch Firmen oder Nachfrage anderer Anbieter zu löschen.
+Der Filter **über 1.000 Pakete** bleibt als explizite, vom Nutzer gesetzte Abgrenzung auf vollständigen LSP-Beobachtungen erhalten; genau 1.000 bleibt enthalten. Gefilterte Mengen werden separat bilanziert. Die Schwelle beweist weder Lkw-Zustellung noch erlaubt sie, automatisch Firmen oder Nachfrage anderer Anbieter zu löschen.
 
 ### Fortschreibung und Tagesmengen
 
@@ -120,7 +120,7 @@ Nach der dokumentierten Umrechnung auf eine Jahresbasis wird die Referenzmenge g
 A_p,y = A_p,2021 * V_y / V_2021
 ```
 
-Der DHL-Marktanteil des Zieljahres verändert danach die Anbieteraufteilung, nicht nochmals die Gesamtmenge. B2B- und Anbieterprofile erhalten eigene zeitliche Entwicklungen. Unterschiedliche regionale Wachstumspfade sind optionale, ausdrücklich angenommene Erweiterungen; unveränderte Standortdaten liefern keine gemessene Stadtentwicklung.
+Der LSP-Marktanteil des Zieljahres verändert danach die Anbieteraufteilung, nicht nochmals die Gesamtmenge. B2B- und Anbieterprofile erhalten eigene zeitliche Entwicklungen. Unterschiedliche regionale Wachstumspfade sind optionale, ausdrücklich angenommene Erweiterungen; unveränderte Standortdaten liefern keine gemessene Stadtentwicklung.
 
 Kalendergewichte werden über das tatsächliche Zieljahr normiert. Erwartete tägliche Segmentmengen summieren sich zur jährlichen Segmentmenge. Feiertage, ausgeschlossene Liefertage, Schaltjahre und ISO-Jahresgrenzen werden explizit behandelt. Werden verschiedene Tagesprofile für B2B/B2C verwendet, muss die resultierende räumliche Jahresbilanz erneut stimmen; ein nachträglicher Segmenttausch ohne Bilanzprüfung ist unzulässig.
 
@@ -144,7 +144,7 @@ Anbieter erhalten zuerst dieselbe realisierte Standortnachfrage mit unterschiedl
 
 **Mengenregime:** Im normalen stochastischen Modus gilt die Jahresmenge im Erwartungswert; ein einzelnes gezogenes Jahr darf abweichen. Ein optionaler konditionierter Modus hält eine Jahres- oder Wochenmenge exakt fest und zieht deren Verteilung. Diese Modi erzeugen unterschiedliche Abhängigkeiten und müssen im Bericht unterscheidbar sein. Bei festen Wochenmengen müssen diese zuvor aus einer konsistenten Jahresmenge hervorgehen.
 
-**Unsicherheit:** Tägliche Zufallsschwankung, unsichere Anbieter-/B2B-Parameter und Zukunftspfade werden getrennt gesteuert und dargestellt. Simulationsquantile bei festen Parametern sind keine vollständigen Prognoseintervalle. Die DHL-Tagesmittel 2021 reichen nicht zur empirischen Identifikation täglicher räumlicher Streuung und Persistenz. Bis entsprechende Zeitreihen vorliegen, bleiben diese Parameter begründete, durch Sensitivitätsanalysen geprüfte Annahmen.
+**Unsicherheit:** Tägliche Zufallsschwankung, unsichere Anbieter-/B2B-Parameter und Zukunftspfade werden getrennt gesteuert und dargestellt. Simulationsquantile bei festen Parametern sind keine vollständigen Prognoseintervalle. Die LSP-Tagesmittel 2021 reichen nicht zur empirischen Identifikation täglicher räumlicher Streuung und Persistenz. Bis entsprechende Zeitreihen vorliegen, bleiben diese Parameter begründete, durch Sensitivitätsanalysen geprüfte Annahmen.
 
 ## 5. Python-Stages und Abgrenzung
 
@@ -155,7 +155,7 @@ Die fachlichen Abhängigkeiten sind wichtiger als die alte Notebook-Nummerierung
 | 1. Quellen und Bezugsgrößen | Eingaben, Hashes, Zeitbezug, Einheiten, Scope, Herkunft und offene Definitionen erfassen. |
 | 2. Markt- und Jahresreihen | Marktanteile, B2B-Reihe, Volumenentwicklung; historische Werte, Interpolation und Annahmen unterscheiden. |
 | 3. Räumliche Potenziale | Gebäude/Personen, Betriebe/Beschäftigte, eindeutige Zuordnungen und ungelöste Fälle aufbereiten. |
-| 4. Referenzmodell | Anbieter-/B2B-Konsistenz und DHL-basierte regionale Bezugsmenge zusammen abstimmen; zentrale Standortmengen exportieren. |
+| 4. Referenzmodell | Anbieter-/B2B-Konsistenz und LSP-basierte regionale Bezugsmenge zusammen abstimmen; zentrale Standortmengen exportieren. |
 | 5. Zieljahr und Kalender | Jährliche Mengen, Segment-/Anbieterentwicklung, Kalenderprofile und deren Bilanzen berechnen. |
 | 6. Tagesgenerator | Konfigurierte Tage und Realisierungen mit Mengen- und Ortsvariation erzeugen. |
 | 7. Exporte und Auswertung | Standortnachfrage, PLZ-/Wochen-/Monatssummen, Legacy-Dateien, Restbilanzen, Dashboard und Run-Manifest schreiben. |
@@ -182,9 +182,9 @@ Wiederanlauf und Zwischenspeicher berücksichtigen die tatsächlichen Abhängigk
 | Reproduzierbarkeit | Gleicher Run wiederholbar; Datumsauswahl, erlaubte Reihenfolgeänderungen und Wiederanlauf verändern dasselbe Ergebnis nicht. |
 | Legacy-Kompatibilität | Referenz-IDs, Geometrien, Typen und Berechnungen der tatsächlichen Verbraucher passen; Abweichungen durch Bugfixes sind erklärt. |
 | Dashboard je Run | Kalender, Mengenbilanzen, Karten nach Datum/Segment/Anbieter, Unsicherheitsarten, Scope und Datenjahr sichtbar; PLZ-Anteile und Differenzkarten mit festen Skalen vergleichbar. |
-| Empirische Aussage | Verwendete DHL-Anker separat von zurückgehaltenen Beobachtungen bewerten; Abweichung zur alten Pipeline ist keine Fehlermetrik gegenüber Wahrheit. |
+| Empirische Aussage | Verwendete LSP-Anker separat von zurückgehaltenen Beobachtungen bewerten; Abweichung zur alten Pipeline ist keine Fehlermetrik gegenüber Wahrheit. |
 
-Die bisher erreichten DHL-Testfehler der experimentellen Fits sind Vergleichsergebnisse. Eine durch Konstruktion getroffene 2021-PLZ-Summe ist kein unabhängiger Genauigkeitsnachweis, und ohne andere Anbieterbeobachtungen lässt sich deren lokale Aufteilung nicht empirisch bestätigen.
+Die bisher erreichten LSP-Testfehler der experimentellen Fits sind Vergleichsergebnisse. Eine durch Konstruktion getroffene 2021-PLZ-Summe ist kein unabhängiger Genauigkeitsnachweis, und ohne andere Anbieterbeobachtungen lässt sich deren lokale Aufteilung nicht empirisch bestätigen.
 
 ## 7. Reihenfolge der Umsetzung nach dieser Prüfung
 
@@ -194,4 +194,4 @@ Die bisher erreichten DHL-Testfehler der experimentellen Fits sind Vergleichserg
 4. Legacy-Adapter und automatisches Dashboard im vollständigen Lauf prüfen; Annahmen und Abnahmeresultate ausgeben.
 5. Erst anhand dieser Referenz einzelne weitere Verbesserungen aus dem Experimentbestand bewerten.
 
-Offen bleiben fachlich die genaue Zeit-/Abdeckungsdefinition von DHL und Hermes, die empirische Stärke täglicher räumlicher Schwankungen und die Belastbarkeit nicht beobachteter Anbieterprofile. Diese Punkte verhindern eine transparente technische Umsetzung mit gekennzeichneten Annahmen nicht; sie begrenzen aber die behauptbare empirische Güte.
+Offen bleiben fachlich die genaue Zeit-/Abdeckungsdefinition von LSP und Hermes, die empirische Stärke täglicher räumlicher Schwankungen und die Belastbarkeit nicht beobachteter Anbieterprofile. Diese Punkte verhindern eine transparente technische Umsetzung mit gekennzeichneten Annahmen nicht; sie begrenzen aber die behauptbare empirische Güte.

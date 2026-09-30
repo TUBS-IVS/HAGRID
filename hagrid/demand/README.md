@@ -1,6 +1,6 @@
 # hagrid/demand — Parcel Demand for Region Hannover
 
-The demand side of HAGRID. From the DHL street volumes of 2021, population, firms and OSM buildings, the model builds the
+The demand side of HAGRID. From the LSP street volumes of 2021, population, firms and OSM buildings, the model builds the
 parcel demand of every day of 2025–2035 per stop and carrier, as MATSim input for `hagrid/simulation`. The method, the
 scenarios and the results are summarised in the [project README](../../README.md#6-hannover-demand-model-20252035).
 

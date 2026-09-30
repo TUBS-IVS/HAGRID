@@ -7,7 +7,7 @@ python -m hagrid_demand.model_search --config hagrid-demand/configs/improved.jso
 
 Der Vergleich umfasst 13 vorab definierte Varianten: bisheriges einfaches Modell, gemeinsames Nachfrage-/Anbietermodell, Logit mit acht B2B-Anbietereffekten fuer vier Branchengruppen, positive Ridge-Regression, zwei logarithmische Ridge-Modelle, zwei Poisson-Regressionen, Splines, Random Forest, Poisson-Boosting sowie zwei geglaettete raeumliche Residualmodelle mit 5/15 km Bandbreite.
 
-Alle verwenden denselben Beobachtungsbestand. Die Regressionsmodelle erhalten zusaetzlich Wohnstandortzahl, Betriebszahl, Beschaeftigtensumme, Quadratwurzel-/Logarithmussumme der Betriebsgroessen, Grossbetriebszahl ab 50 Beschaeftigten, Branchenexpositionen, PLZ-Flaeche und Dichten. Keine Merkmale werden aus den zurueckgehaltenen DHL-Zielwerten gebildet. Die raeumlichen Modelle korrigieren die Basisschaetzung ausschliesslich anhand der Trainingsresiduen; geringe lokale Unterstuetzung zieht die Korrektur gegen null.
+Alle verwenden denselben Beobachtungsbestand. Die Regressionsmodelle erhalten zusaetzlich Wohnstandortzahl, Betriebszahl, Beschaeftigtensumme, Quadratwurzel-/Logarithmussumme der Betriebsgroessen, Grossbetriebszahl ab 50 Beschaeftigten, Branchenexpositionen, PLZ-Flaeche und Dichten. Keine Merkmale werden aus den zurueckgehaltenen LSP-Zielwerten gebildet. Die raeumlichen Modelle korrigieren die Basisschaetzung ausschliesslich anhand der Trainingsresiduen; geringe lokale Unterstuetzung zieht die Korrektur gegen null.
 
 ## Pruefung
 
@@ -18,7 +18,7 @@ Alle verwenden denselben Beobachtungsbestand. Die Regressionsmodelle erhalten zu
 - Rohmengen und bedingte Restnachfrage werden separat gerechnet. Die Restnachfrage setzt bekannte PANDA-Grosskundenmengen voraus und validiert keine Grosskundenvorhersage.
 - 53 PLZ und bereits in frueheren Experimenten betrachtete Daten: kein abschliessender unabhaengiger Nachweis, keine automatisch errechnete Signifikanz.
 
-Die direkten Regressionsmodelle sagen nur DHL voraus. Eine gute DHL-Prognose identifiziert weder das Gesamtmarktvolumen noch die uebrigen Anbieter. Sie werden deshalb nicht automatisch als vollstaendiges Nachfragemodell in den Hauptlauf uebernommen.
+Die direkten Regressionsmodelle sagen nur LSP voraus. Eine gute LSP-Prognose identifiziert weder das Gesamtmarktvolumen noch die uebrigen Anbieter. Sie werden deshalb nicht automatisch als vollstaendiges Nachfragemodell in den Hauptlauf uebernommen.
 
 ## Ergebnisse und Nachvollziehbarkeit
 
@@ -41,4 +41,4 @@ Die Verbesserung hat einen Preis: Bei Rohmengen steigt die mittlere Unterschaetz
 
 Random Forest, Boosting und die direkten Regressionsmodelle schlagen das Basismodell hier nicht. Das groessere gemeinsame Modell erreicht bei raeumlich geblockter Restnachfrage 16.88 %, verschlechtert jedoch die Rohmengen. Die breite innere Modellauswahl ist bei Rohmengen instabil: 30.77 % zufaellig, aber 43.12 % raeumlich geblockt. Bei bedingter Restnachfrage erreicht sie 15.92 bzw. 16.94 %.
 
-Folgerung: Raeumliche Residualmodelle sind ein aussichtsreicher, aber noch explorativer DHL-Baustein. Keine automatische Uebernahme als Gesamtnachfrage-/Anbietermodell. Der naechste gezielte Test sollte Raeumlichkeit und Gesamtmengenbias gemeinsam bewerten, mit einer engeren vorab festgelegten Kandidatenmenge.
+Folgerung: Raeumliche Residualmodelle sind ein aussichtsreicher, aber noch explorativer LSP-Baustein. Keine automatische Uebernahme als Gesamtnachfrage-/Anbietermodell. Der naechste gezielte Test sollte Raeumlichkeit und Gesamtmengenbias gemeinsam bewerten, mit einer engeren vorab festgelegten Kandidatenmenge.

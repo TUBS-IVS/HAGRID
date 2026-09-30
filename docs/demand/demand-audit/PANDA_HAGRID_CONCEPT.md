@@ -4,7 +4,7 @@
 
 Stand: 9. September 2026. PANDA-Quellstand: `1e683d026cec3483214523280877ef44e012d6d5` vom 27. Juli 2026. Das private Repository wurde über den autorisierten Git-Zugang in einer separaten lokalen Arbeitskopie gelesen; PANDA wurde nicht verändert.
 
-**Entscheidung: strukturelles Bottom-up mit empirischer Kalibrierung und weichen Top-down-Randinformationen.** Die räumliche Verteilung entsteht aus Bevölkerung, Wohnstruktur und Betriebsstandorten. DHL-Beobachtungen bestimmen das empirisch abgesicherte Anbieterniveau und dessen räumliche Struktur. Gesamtmarkt, B2B-Zerlegung und andere Anbieter werden gemeinsam unter nachvollziehbaren, unsicheren Annahmen geschätzt.
+**Entscheidung: strukturelles Bottom-up mit empirischer Kalibrierung und weichen Top-down-Randinformationen.** Die räumliche Verteilung entsteht aus Bevölkerung, Wohnstruktur und Betriebsstandorten. LSP-Beobachtungen bestimmen das empirisch abgesicherte Anbieterniveau und dessen räumliche Struktur. Gesamtmarkt, B2B-Zerlegung und andere Anbieter werden gemeinsam unter nachvollziehbaren, unsicheren Annahmen geschätzt.
 
 Dieses Dokument präzisiert den [vorherigen Entwurf](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/DESIGN.md) nach Einsicht in PANDA. Insbesondere wird ein Haushaltsmodell nicht mehr als zwingender erster Prognoseansatz gesetzt: Bevölkerung plus Wohnstruktur ist die zuerst zu reproduzierende Referenz. Haushalte bleiben als mögliche Simulationseinheiten und ergänzende Daten relevant.
 
@@ -13,18 +13,18 @@ Dieses Dokument präzisiert den [vorherigen Entwurf](C:/Users/bienzeisler/Docume
 | Ansatz | Vorteil mit euren Daten | Grenze | Entscheidung |
 |---|---|---|---|
 | Nationales Volumen auf Hannover, PLZ und Gebäude verteilen | Einfache Summenbilanz | Regionale Marktanteile und Standortintensitäten fehlen; falsche räumliche Profile können trotz korrekter Summe bestehen bleiben | Nur als Vergleich und weiche Randinformation |
-| DHL je Straße mit pauschalem Faktor auf alle Anbieter hochrechnen | Nutzt vorhandene Messungen direkt | Andere Anbieter erben DHL-Geographie; Unterschied zwischen Anbieteranteil und echter Nachfrage ist nicht identifiziert | Keine allgemeine Hauptmethode |
-| Pakete aus jeder Person/Firma unabhängig hochrechnen | Räumliche Ursachen explizit; funktioniert auch ohne DHL-Beobachtung vor Ort | Intensitäten und Schwankungen sind teilweise unbekannt; die regionale Summe kann stark abweichen | Strukturelle Grundlage, nicht unkalibriert verwenden |
+| LSP je Straße mit pauschalem Faktor auf alle Anbieter hochrechnen | Nutzt vorhandene Messungen direkt | Andere Anbieter erben LSP-Geographie; Unterschied zwischen Anbieteranteil und echter Nachfrage ist nicht identifiziert | Keine allgemeine Hauptmethode |
+| Pakete aus jeder Person/Firma unabhängig hochrechnen | Räumliche Ursachen explizit; funktioniert auch ohne LSP-Beobachtung vor Ort | Intensitäten und Schwankungen sind teilweise unbekannt; die regionale Summe kann stark abweichen | Strukturelle Grundlage, nicht unkalibriert verwenden |
 | Hybrid: Strukturmodell + Beobachtungen + unsichere Marktgrenzen | Nutzt die jeweils stärkste Information auf ihrer tatsächlichen Auflösung | Erfordert klare Herkunft der Annahmen und Sensitivitätsanalysen | Empfohlener Hauptansatz |
 
-Die Priorität richtet sich nach Informationsqualität, nicht nach einer pauschalen Gewichtung wie „70 % Bottom-up, 30 % Top-down“. Eine verlässliche DHL-Straßenbeobachtung wiegt stark für DHL an dieser Straße. Eine nationale Anbieterprognose wirkt schwächer auf Hannovers Stadtteile.
+Die Priorität richtet sich nach Informationsqualität, nicht nach einer pauschalen Gewichtung wie „70 % Bottom-up, 30 % Top-down“. Eine verlässliche LSP-Straßenbeobachtung wiegt stark für LSP an dieser Straße. Eine nationale Anbieterprognose wirkt schwächer auf Hannovers Stadtteile.
 
 ## 2. Was PANDA bereits beiträgt
 
 Der [aktuelle Estimator](https://github.com/HBimmermann/PANDA/blob/1e683d026cec3483214523280877ef44e012d6d5/estimator.py) enthält fünf Parameter:
 
-- B2C auf DHL-Niveau: Bevölkerung plus Wohn-Geschossflächen für EFH und MFH;
-- B2B auf DHL-Niveau: Lager-Geschossfläche plus gewerbliche POIs;
+- B2C auf LSP-Niveau: Bevölkerung plus Wohn-Geschossflächen für EFH und MFH;
+- B2B auf LSP-Niveau: Lager-Geschossfläche plus gewerbliche POIs;
 - nichtnegative Kalibrierung mit einem Anteils-Malus auf etwa 20 % B2B einschließlich separat behandelter Großkunden.
 
 Die [Modellauswahl-Dokumentation](https://github.com/HBimmermann/PANDA/blob/1e683d026cec3483214523280877ef44e012d6d5/docs/bakeoff_model_selection.md) berichtet eine Verbesserung durch das schlanke Wohnstrukturmodell gegenüber komplexeren Kandidaten. Alters-/Mietmerkmale und die konkret getestete Haushaltszahl-Variante brachten dort keinen stabilen zusätzlichen Nutzen. Das ist Evidenz gegen deren ungeprüfte Übernahme, **kein allgemeiner Nachweis, dass Alter oder Haushalte keine Rolle spielen**.
@@ -40,7 +40,7 @@ PANDA dokumentiert außerdem:
 
 Die in der README berichteten ungefähr 10 % blinde PLZ-wMAPE und die Auflösungsbefunde wurden hier **nicht neu berechnet**. PANDA liefert die großen Rohdaten und räumlichen Caches nicht über Git mit. Geprüft wurden Dokumentation, Quellcode und die sieben vorhandenen Carrier-Split-Tests; diese sieben Tests bestanden. Es gibt damit keine unabhängige Bestätigung der empirischen Gütezahlen durch diesen Review.
 
-Zusätzliche Interpretationsgrenzen: Der Hermes-Test skaliert Vorhersagen auf die beobachtete Hermes-Summe und prüft somit die räumliche Form, nicht unabhängig deren absolutes Niveau. Eine schwache DHL-Hermes-Korrelation ist keine mathematische Obergrenze aller denkbaren Modelle. Der aus Straßen abgeleitete 100-m-Vergleichsdatensatz ist keine echte Messung je 100-m-Zelle. Die dokumentierte Güte ist ein Benchmark des getesteten Systems, keine bewiesene allgemeine Genauigkeitsgrenze.
+Zusätzliche Interpretationsgrenzen: Der Hermes-Test skaliert Vorhersagen auf die beobachtete Hermes-Summe und prüft somit die räumliche Form, nicht unabhängig deren absolutes Niveau. Eine schwache LSP-Hermes-Korrelation ist keine mathematische Obergrenze aller denkbaren Modelle. Der aus Straßen abgeleitete 100-m-Vergleichsdatensatz ist keine echte Messung je 100-m-Zelle. Die dokumentierte Güte ist ein Benchmark des getesteten Systems, keine bewiesene allgemeine Genauigkeitsgrenze.
 
 ## 3. Die zentrale Erweiterung: Anbieterprofile innerhalb der Segmente
 
@@ -78,13 +78,13 @@ P(B2B\mid c)=\frac{b\,s_{c\mid B2B}}
 {b\,s_{c\mid B2B}+(1-b)\,s_{c\mid B2C}}.
 \]
 
-**Konkreter Kompatibilitätscheck mit PANDAs Konfiguration:** 80 DHL-B2C-Pakete und 20 DHL-B2B-Pakete werden durch 0,467 bzw. 0,242 geteilt. Das ergibt rund 171,31 Gesamtmarkt-B2C- und 82,64 Gesamtmarkt-B2B-Pakete, also **32,54 % B2B im Gesamtmarkt**. Ein auf 20 % gesetzter DHL-Anteil ist folglich nicht gleich einem 20-%-Gesamtmarktanteil.
+**Konkreter Kompatibilitätscheck mit PANDAs Konfiguration:** 80 LSP-B2C-Pakete und 20 LSP-B2B-Pakete werden durch 0,467 bzw. 0,242 geteilt. Das ergibt rund 171,31 Gesamtmarkt-B2C- und 82,64 Gesamtmarkt-B2B-Pakete, also **32,54 % B2B im Gesamtmarkt**. Ein auf 20 % gesetzter LSP-Anteil ist folglich nicht gleich einem 20-%-Gesamtmarktanteil.
 
 Dies ist keine Widerlegung der Zahlen allein durch Arithmetik. Es zeigt, dass Niveau, Marktanteile und Kanalanteile zusammen kalibriert werden müssen. Die Referenzregion, Messperiode und Marktabgrenzung entscheiden, welche Kombination passt.
 
 Die Herkunft der PANDA-Anbieterannahmen ist besonders wichtig: [Transferspezifikation](https://github.com/HBimmermann/PANDA/blob/1e683d026cec3483214523280877ef44e012d6d5/docs/superpowers/specs/2026-06-19-paketmengen-lausitz-transfer-design.md) und Code beziehen sich neben Marktquellen auch auf eine bereits erzeugte Hannover/HAGRID-Nachfragedatei. Diese Datei ist ein Modellprodukt. Sie darf als Legacy-Prior dienen, aber nicht als unabhängige Bestätigung desselben B2B-/Anbietermodells zurück in dessen Kalibrierung eingehen.
 
-## 5. DHL möglichst vollständig nutzen, ohne alles zu DHL-Kopien zu machen
+## 5. LSP möglichst vollständig nutzen, ohne alles zu LSP-Kopien zu machen
 
 ### 5.1 Direkt auf den beobachteten Straßen kalibrieren
 
@@ -94,21 +94,21 @@ Für Standort i und Empfängergruppe g sei `lambda(i,g)` die latente Nachfragein
 \mu_{i,c}=\sum_g\lambda_{i,g}\,p(c\mid i,g).
 \]
 
-Die modellierte DHL-Menge einer beobachteten Straße ist die Summe der ihr zugeordneten Standortbeiträge, angepasst an das Messfenster. Die Kalibrierung vergleicht diese Summe direkt mit der Straßenbeobachtung. Die reale Straßenmenge wird nicht zuerst künstlich in vermeintlich beobachtete 100-m-Werte zerlegt.
+Die modellierte LSP-Menge einer beobachteten Straße ist die Summe der ihr zugeordneten Standortbeiträge, angepasst an das Messfenster. Die Kalibrierung vergleicht diese Summe direkt mit der Straßenbeobachtung. Die reale Straßenmenge wird nicht zuerst künstlich in vermeintlich beobachtete 100-m-Werte zerlegt.
 
 Wo die Straßenauflösung oder Zuordnung schwach ist, erfolgt der Vergleich auf gröberem Support. Straße und ihre PLZ-Summe sind dabei keine unabhängigen Beobachtungen; sie dürfen nicht ohne Berücksichtigung ihrer Abhängigkeit doppelt in die Likelihood eingehen.
 
-### 5.2 Allgemeine Struktur und DHL-spezifische Abweichung trennen
+### 5.2 Allgemeine Struktur und LSP-spezifische Abweichung trennen
 
-Ein hoher DHL-Wert kann aus hoher Gesamtnachfrage, hohem DHL-Anteil, einem Großkunden, einer Paketstation oder einer Buchungsbesonderheit entstehen. Er wird deshalb nicht automatisch als Indikator allgemeiner Nachfrage übernommen.
+Ein hoher LSP-Wert kann aus hoher Gesamtnachfrage, hohem LSP-Anteil, einem Großkunden, einer Paketstation oder einer Buchungsbesonderheit entstehen. Er wird deshalb nicht automatisch als Indikator allgemeiner Nachfrage übernommen.
 
-Das Strukturmodell erklärt gemeinsam nutzbare Muster. Ein separat regularisierter DHL-Effekt erklärt verbleibende, plausibel anbieterspezifische Abweichungen. Unbeobachtete Anbieter übernehmen den gemeinsamen Strukturanteil und ihre eigenen Profile, nicht automatisch den DHL-Restfehler.
+Das Strukturmodell erklärt gemeinsam nutzbare Muster. Ein separat regularisierter LSP-Effekt erklärt verbleibende, plausibel anbieterspezifische Abweichungen. Unbeobachtete Anbieter übernehmen den gemeinsamen Strukturanteil und ihre eigenen Profile, nicht automatisch den LSP-Restfehler.
 
 Diese Zerlegung bleibt bei einer einzelnen Anbieterbeobachtung teilweise unidentifiziert. Sie benötigt Priorinformation und mindestens einzelne zusätzliche Anker, etwa Hermes-Aggregate oder beobachtete regionale Gesamt-/B2B-Mengen. Mehr mathematische Komplexität ersetzt diese Anker nicht.
 
 ### 5.3 Rekonstruktion und Prognose unterscheiden
 
-Für eine **Baseline-Rekonstruktion** kann die überprüfte DHL-Straßenmenge exakt erhalten werden. Nur ihre plausible Verteilung auf untergeordnete Standorte ist dann noch modelliert. Das wird als beobachtungsbedingte Rekonstruktion gekennzeichnet.
+Für eine **Baseline-Rekonstruktion** kann die überprüfte LSP-Straßenmenge exakt erhalten werden. Nur ihre plausible Verteilung auf untergeordnete Standorte ist dann noch modelliert. Das wird als beobachtungsbedingte Rekonstruktion gekennzeichnet.
 
 Für **räumliche Validierung** wird die Teststraße bzw. der Testblock vollständig zurückgehalten. Dessen reale Menge darf weder die Gesamtmenge festlegen noch als Residualkorrektur eingehen.
 
@@ -118,13 +118,13 @@ Für **heutige und zukünftige Nachfrage** werden Struktur und Intensitäten for
 
 PANDAs Großkundenbehandlung ist ein sinnvoller Ausgangspunkt. Hohe Straßenmengen sollten allerdings zuerst klassifiziert werden: tatsächlicher Geschäftsempfänger, Privatkundenbündelung an einer Paketstation, Depot-/Buchungseffekt oder unklarer Sonderfall. Ein großes Gebäude und hohe Paketmenge allein belegen noch keinen B2B-Empfang.
 
-Bekannte DHL-Sonderkunden werden nicht anhand globaler Marktanteile auf weitere Anbieter vervielfacht. Bei Standorten mit mehreren Anbietern werden Vertrags-/Anbieterprofile separat modelliert. Rohwert, bereinigter Wert und Sonderkomponente bleiben im Mengenbuch nachvollziehbar.
+Bekannte LSP-Sonderkunden werden nicht anhand globaler Marktanteile auf weitere Anbieter vervielfacht. Bei Standorten mit mehreren Anbietern werden Vertrags-/Anbieterprofile separat modelliert. Rohwert, bereinigter Wert und Sonderkomponente bleiben im Mengenbuch nachvollziehbar.
 
 ## 6. Gemeinsame Abstimmung statt nacheinander reparierter Mengen
 
 Der Modellzustand ist eine positive Tabelle `Standort × Empfängergruppe × Anbieter × Zeit`. Sie wird gemeinsam angepasst an:
 
-- zuverlässige DHL-Beobachtungen auf ihrem tatsächlichen Support;
+- zuverlässige LSP-Beobachtungen auf ihrem tatsächlichen Support;
 - Hermes-Beobachtungen mit eigenem Messfenster;
 - strukturelle Nachfrageerwartungen;
 - quellen- und zeitspezifische Anbieter-/B2B-Priors;
@@ -146,7 +146,7 @@ Bei festen Priors, geeigneten konvexen Verlusten und linearen Nebenbedingungen i
 
 Im [ausführbaren Demonstrator](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/carrier_concept_demo.py) werden vier erfundene Gebietstypen, zwei Segmente und sieben Anbieter abgestimmt. Die Flächenmengen, Beobachtungen und Branchenneigungen sind **vollständig synthetisch**. PANDA-Anteile dienen nur als konfigurierter Vergleich, nicht als bestätigte Marktstatistik.
 
-Zwei Varianten werden mit exakt denselben DHL-Gebietsmengen, Gesamtmengen je Gebiet/Segment und Anbieter-Segment-Summen gerechnet. Nur die räumlichen Profilannahmen unterscheiden sich.
+Zwei Varianten werden mit exakt denselben LSP-Gebietsmengen, Gesamtmengen je Gebiet/Segment und Anbieter-Segment-Summen gerechnet. Nur die räumlichen Profilannahmen unterscheiden sich.
 
 | Synthetischer Gebietstyp | FedEx-Anteil am lokalen B2B, neutrales Profil | FedEx-Anteil am lokalen B2B, differenziertes Profil |
 |---|---:|---:|
@@ -157,8 +157,8 @@ Zwei Varianten werden mit exakt denselben DHL-Gebietsmengen, Gesamtmengen je Geb
 
 Beide Varianten halten alle gesetzten Mengenbedingungen mit maximalem numerischem Fehler unter `1e-9` ein. Das Beispiel zeigt:
 
-1. Räumlich unterschiedliche Anbieterprofile sind mit unveränderten DHL-Beobachtungen und Gesamtbilanzen vereinbar.
-2. Dieselben DHL-Beobachtungen identifizieren die Fremdanbieterverteilung nicht eindeutig.
+1. Räumlich unterschiedliche Anbieterprofile sind mit unveränderten LSP-Beobachtungen und Gesamtbilanzen vereinbar.
+2. Dieselben LSP-Beobachtungen identifizieren die Fremdanbieterverteilung nicht eindeutig.
 3. Die zweite Variante ist dadurch noch nicht empirisch besser. Ohne weitere Daten muss ihre räumliche Differenzierung als Prior-/Szenarioannahme ausgewiesen werden.
 
 Die [JSON-Ergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/carrier_concept_demo.json) enthalten beide vollständigen Tabellen. Die Unterschiede wären später Bestandteil eines Ensembles, statt eine Variante als sichere Wahrheit auszugeben.
@@ -167,7 +167,7 @@ Die [JSON-Ergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-a
 
 | Priorität | Daten | Beitrag |
 |---|---|---|
-| A | Messdefinition, Abdeckung und Qualität der vorhandenen DHL-Daten; neuere Zeitfenster, falls zugänglich | Stärkster vorhandener empirischer Anker wird fachlich belastbar |
+| A | Messdefinition, Abdeckung und Qualität der vorhandenen LSP-Daten; neuere Zeitfenster, falls zugänglich | Stärkster vorhandener empirischer Anker wird fachlich belastbar |
 | A | Hermes-PLZ-Daten mit geklärter Einheit/Periode | Zweiter Anker für private Nachfrage und Anbieterunterschiede |
 | A | HAGRID-Firmen: Branche, Beschäftigte, Standorte; Abgleich mit amtlichen Aggregaten | Gezielter Zusatznutzen gegenüber PANDAs offenen Gewerbeproxies |
 | A | Kleine geschichtete Stichprobe von Betrieben: Paketempfang nach Tag und Anbieter | Direkte Identifikation von B2B-Intensitäten und Anbieterprofilen |
@@ -175,13 +175,13 @@ Die [JSON-Ergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-a
 | B | Einzelne unabhängige Anbieter-/Gebietsaggregate, Großkunden- und Paketstationsinformationen | Engere Grenzen für Anbieterunterschiede |
 | C | Weitere soziodemografische Merkmale | Nur nach zusätzlichem Nutzen auf unabhängigen Testdaten übernehmen |
 
-Besonders wertvoll ist nicht die größtmögliche Datensammlung, sondern eine kleine Menge Information, die konkurrierende Erklärungen auseinanderhält: hoher allgemeiner Paketbedarf oder hoher DHL-Anteil; gewerblicher Empfang oder private Bündelung; viele kleine Lieferungen oder wenige Großempfänger.
+Besonders wertvoll ist nicht die größtmögliche Datensammlung, sondern eine kleine Menge Information, die konkurrierende Erklärungen auseinanderhält: hoher allgemeiner Paketbedarf oder hoher LSP-Anteil; gewerblicher Empfang oder private Bündelung; viele kleine Lieferungen oder wenige Großempfänger.
 
 ## 9. Umsetzung als überprüfbare Modellleiter
 
 1. **PANDA-Referenz reproduzieren:** dieselben Feature-Definitionen, Beobachtungen, Bereinigungen und Splits; Herkunft und Güte der Daten prüfen.
 2. **HAGRID-Firmendaten ergänzen:** wenige Branchen-/Beschäftigtenmerkmale gegen PANDA-B2B-Proxies testen. PLZ-, Block- und Sonderkundenfehler getrennt ausweisen.
-3. **Gemeinsames Beobachtungsmodell:** DHL und Hermes auf ihrem jeweiligen Support einbinden. Die B2B-/Anbieterannahmen auf Konsistenz prüfen und Unsicherheit dokumentieren.
+3. **Gemeinsames Beobachtungsmodell:** LSP und Hermes auf ihrem jeweiligen Support einbinden. Die B2B-/Anbieterannahmen auf Konsistenz prüfen und Unsicherheit dokumentieren.
 4. **Anbieterprofile erweitern:** zunächst wenige Segmente, dann belegte Branchenunterschiede. Gleichförmige und differenzierte Profile beide als Baseline/Sensitivität erhalten.
 5. **Zeit- und Zukunftsmodell ergänzen:** beständige Unterschiede, gemeinsame Tages-/Brancheneffekte und individuelle Zählprozesse getrennt. Ein Tagesmittel von 2021 allein identifiziert keine Tagesvarianz.
 6. **Zustellpolitik und MATSim anbinden:** Nachfrageentstehung, Anbieterzuordnung, Lieferzielwahl und Terminierung trennen; dieselbe Nachfrage für Strategie-Vergleiche nutzen.
@@ -190,4 +190,4 @@ Die Stages des früheren Projektentwurfs bleiben verwendbar; `fit_baseline` und 
 
 Empirische Tests trennen **absolute Menge, räumliche Form, B2B-Zerlegung, Anbieterprofil und Zukunftsgüte**. Keine Einzelmetrik belegt alle fünf. Merkmalsauswahl und abschließende Gütebewertung benötigen getrennte bzw. verschachtelte Splits. Ein Bootstrap über bereits fixe CV-Vorhersagen beschreibt nicht die vollständige Parameter- und Modellwahlunsicherheit.
 
-**Empfohlene erste Version:** PANDAs schlanke Struktur als Referenz, HAGRIDs Firmenstandorte als gezielte Erweiterung, DHL/Hermes als Beobachtungsanker und ein regularisiertes, gemeinsam abgestimmtes Anbietermodell. Eine vollständige Mikrosimulation jedes individuellen Kaufvorgangs ist dafür zunächst nicht nötig.
+**Empfohlene erste Version:** PANDAs schlanke Struktur als Referenz, HAGRIDs Firmenstandorte als gezielte Erweiterung, LSP/Hermes als Beobachtungsanker und ein regularisiertes, gemeinsam abgestimmtes Anbietermodell. Eine vollständige Mikrosimulation jedes individuellen Kaufvorgangs ist dafür zunächst nicht nötig.

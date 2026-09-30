@@ -43,7 +43,7 @@ def test_calendar_leap_year_and_holidays():
     assert c.set_index('date').loc['2024-01-01','calendar_weight'] == 0
 ```
 
-- [ ] `python -B -m pytest tests/test_baseline_projection.py tests/test_baseline_calendar.py -q` rot ausführen. Referenzfixture aus Plan 01 laden; zukünftigen DHL-Anteil ändern und unveränderte Regionalmenge prüfen. B2B darf Segmentmengen, aber nicht den regionalen Gesamtwert verändern.
+- [ ] `python -B -m pytest tests/test_baseline_projection.py tests/test_baseline_calendar.py -q` rot ausführen. Referenzfixture aus Plan 01 laden; zukünftigen LSP-Anteil ändern und unveränderte Regionalmenge prüfen. B2B darf Segmentmengen, aber nicht den regionalen Gesamtwert verändern.
 - [ ] Kalenderlogik aus der neutral geprüften `temporal.factors` übernehmen; Profil direkt als Tabelle statt experimenteller Config-/Outputdatei übergeben. Bei gleichzeitig vollem Wochenprofil und nicht neutralen Monatsgewichten Fehler. Wochentagsgewichte positiv/nicht negativ prüfen, Jahresgewichte einmal normieren. Woche 53 erhält den Mittelwert aus 52 und 1.
 
 ```python
@@ -53,7 +53,7 @@ if not np.isfinite(raw).all() or (raw < 0).any() or raw.sum() <= 0:
 weights = raw / raw.sum()
 ```
 
-- [ ] Jahresgesamtmenge `reference['regional_annual']*V_y/V_2021`, danach Segmentanteile und normierte historische Standortanteile anwenden. Profile für jedes Zieljahr über `reconcile_carriers` aus Plan 01 abstimmen. Nie zukünftigen DHL-Anteil nochmals als Divisor verwenden. `external_annual_series` direkt in Paketen/Jahr verwenden und zweiten Wachstumskanal ablehnen.
+- [ ] Jahresgesamtmenge `reference['regional_annual']*V_y/V_2021`, danach Segmentanteile und normierte historische Standortanteile anwenden. Profile für jedes Zieljahr über `reconcile_carriers` aus Plan 01 abstimmen. Nie zukünftigen LSP-Anteil nochmals als Divisor verwenden. `external_annual_series` direkt in Paketen/Jahr verwenden und zweiten Wachstumskanal ablehnen.
 - [ ] Green tests, Quellen-/Einheitenreview durch unabhängigen Terra-Agenten, gezielter Commit eigener Dateien.
 
 ### Task 6: Mengenregime und räumliche Dirichlet-Variation
@@ -130,7 +130,7 @@ def test_actual_legacy_reader(legacy_export_fixture):
 ```
 
 - [ ] `python -B -m pytest tests/test_baseline_compatibility.py tests/test_baseline_dashboard.py -q` rot ausführen. `legacy_export_fixture` in `tests/baseline_fixtures.py` ergänzt einen gehashten Vertrag mit zwei Rastergeometrien und drei echten Referenz-Samples; die Fixture exportiert über die neue Funktion, nicht über handgeschriebene Wunsch-CSV.
-- [ ] Zusätzlich Verbraucher-Semantik prüfen: eine PLZ mit zwei Zellen und `total_coun=3,1`, lokaler DHL-Anteil 0,5 und DHL-Referenz 20 muss bei Zeitfaktor 1 den Gesamtmarkt 40 und deterministische Zellgewichte 30/10 ergeben. `cell_id`/`postal_cod` und Dictionary-Konvention werden über die tatsächlichen Reader und die aus dem Notebook isolierte deterministische Gewichtungsformel geprüft; stochastische oder fehlerhafte Notebook-Top-Level-Schritte werden nicht ausgeführt. Das belegt Semantik zusätzlich zur CSV-Lesbarkeit.
+- [ ] Zusätzlich Verbraucher-Semantik prüfen: eine PLZ mit zwei Zellen und `total_coun=3,1`, lokaler LSP-Anteil 0,5 und LSP-Referenz 20 muss bei Zeitfaktor 1 den Gesamtmarkt 40 und deterministische Zellgewichte 30/10 ergeben. `cell_id`/`postal_cod` und Dictionary-Konvention werden über die tatsächlichen Reader und die aus dem Notebook isolierte deterministische Gewichtungsformel geprüft; stochastische oder fehlerhafte Notebook-Top-Level-Schritte werden nicht ausgeführt. Das belegt Semantik zusätzlich zur CSV-Lesbarkeit.
 - [ ] Vertrag aus statischen alten Raster-/Samplefeldern bilden. Quelle und ursprüngliche Reihenfolge/IDs sichern. Alte Mengenfelder nicht als neue Nachfrage übernehmen. Standort-zu-Raster/Sample-Zuordnung explizit und eindeutig auswerten; kein doppeltes Zählen bei Intersects. `total_coun` beschreibt den neu hergeleiteten Referenz-Tagesgesamtwert je Zelle; jährliche B2B-/Carrierfelder sind entsprechende gewichtete Anteile, nicht alte Werte. Bei Nullmenge Profil als uninformativ kennzeichnen; ein lesbares Referenzprofil kann mit Gewicht null exportiert werden.
 - [ ] 06-Gewichte aus zugeordneten privaten/gewerblichen Referenzpotenzialen bilden; Namen sind kompatibel, Semantik im Adaptervertrag festhalten. Dateinamen/Spalten gegen `plan_verification_20260915.json` prüfen. Jahresabhängige Standortänderungen werden im neuen Tagesgenerator berechnet; ein einzelner statischer 06-Export behauptet keine exakte Reproduktion jeder zukünftigen alten Notebook-Rechnung.
 - [ ] Diagramme/Karten offline aus gespeicherten Artefakten: Jahres-/Wochen-/Monatsmengen, Datumswechsel, B2B/Anbieter, absolute Mengen und normierte PLZ-Anteile, Differenzkarte mit festen Skalen, aktive Standorte, Restmengen und Datenjahr. Nullmengen bei Anteilsberechnung kennzeichnen statt dividieren. Neue Templates als Package-Data aufnehmen; unsichere Feldnamen/Quelltexte HTML/JSON-sicher einbetten.

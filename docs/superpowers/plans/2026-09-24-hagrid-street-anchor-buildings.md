@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Die Baseline verankert die Nachfrage auf DHL-Straßen, verteilt sie auf OSM-Gebäude und bündelt sie zu stabilen, adaptiven Stopps für den MATSim-Export.
+**Goal:** Die Baseline verankert die Nachfrage auf LSP-Straßen, verteilt sie auf OSM-Gebäude und bündelt sie zu stabilen, adaptiven Stopps für den MATSim-Export.
 
-**Architecture:** Eine neue Stage `buildings` ordnet Personen und Firmen OSM-Gebäuden, DHL-Straßen und 50-m-Abschnitten zu. Die Referenzstage erhält einen Straßenmodus (`anchor.mode = street`), der Pegelkorrektur, DHL-Zerlegung, DHL-fixe Anbieterabstimmung und die Verteilung auf Gebäude rechnet und dasselbe Referenzartefakt-Schema wie bisher liefert, ergänzt um Straßen-, Stopp- und Ankerartefakte. Projektion, Tagesgenerator und Export konsumieren diese Artefakte; der bestehende PLZ-Modus bleibt für alte Configs erhalten.
+**Architecture:** Eine neue Stage `buildings` ordnet Personen und Firmen OSM-Gebäuden, LSP-Straßen und 50-m-Abschnitten zu. Die Referenzstage erhält einen Straßenmodus (`anchor.mode = street`), der Pegelkorrektur, LSP-Zerlegung, LSP-fixe Anbieterabstimmung und die Verteilung auf Gebäude rechnet und dasselbe Referenzartefakt-Schema wie bisher liefert, ergänzt um Straßen-, Stopp- und Ankerartefakte. Projektion, Tagesgenerator und Export konsumieren diese Artefakte; der bestehende PLZ-Modus bleibt für alte Configs erhalten.
 
 **Tech Stack:** Python ≥ 3.11, pandas, geopandas, shapely 2 (vektorisierte Linearreferenzierung), pyogrio/GDAL-OSM-Treiber, scipy (`nnls`), pytest.
 
@@ -14,13 +14,13 @@
 
 - Paketwurzel: `hagrid-demand/`; alle Pfade unten relativ dazu. Tests: `python -B -m pytest -q -p no:cacheprovider` (Laufzeit ~3 min).
 - CRS aller räumlichen Artefakte: EPSG:25832; Zensuszellen aus EPSG:3035 als `100mN{floor(y/100)}E{floor(x/100)}`.
-- DHL-Schwelle: Beobachtungen mit Wert > 1000 sind ausgeschlossen (bestehender Meilensteinvertrag `dhl_exclude_above: 1000`).
+- LSP-Schwelle: Beobachtungen mit Wert > 1000 sind ausgeschlossen (bestehender Meilensteinvertrag `lsp_exclude_above: 1000`).
 - Pegelkorrektur-Standard: `min_persons=30`, `min_streets=20`, `upper=2.0`, `lower=0.5`.
-- Rückfall-Schwelle: Strukturerwartung ≥ 5 DHL-Pakete/Tag bei DHL = 0.
+- Rückfall-Schwelle: Strukturerwartung ≥ 5 LSP-Pakete/Tag bei LSP = 0.
 - Gebäude: Ausschlusstypen `garage, garages, roof, hut, shed, carport, greenhouse, barn, farm_auxiliary, parking, construction, ruins, bunker, toilets, transformer_tower`; Personen bis 65 m, Firmenkandidaten bis 100 m in derselben Zensuszelle, Firmen-Rückfall bis 250 m.
-- Straßenzuordnung: Name+PLZ (bis 500 m), sonst nächste DHL-Straße bis 100 m.
+- Straßenzuordnung: Name+PLZ (bis 500 m), sonst nächste LSP-Straße bis 100 m.
 - Stopps: `walking_radius_m=40`, `own_stop_parcels_per_day=15`, `max_parcels_per_row=400`, `section_length_m=50`.
-- DHL-B2B: q_DHL(y) = q_DHL(2021) · b(y)/b(2021); übrige Anbieter per `reconcile_carriers` in den Notebook-05-Grenzen; unzulässig → `ValueError`.
+- LSP-B2B: q_LSP(y) = q_LSP(2021) · b(y)/b(2021); übrige Anbieter per `reconcile_carriers` in den Notebook-05-Grenzen; unzulässig → `ValueError`.
 - Firmengewicht-Standard: `business_potential.model = company_locations`.
 - Keine zusätzliche Infrastruktur-Härtung (Locks, Caches, Überlauf-Sonderfälle) ohne konkreten Fehler; höchstens zwei Review-Runden je Aufgabe.
 - Jede Aufgabe endet mit einer fachlichen Plausibilitätsprüfung der Ergebnisse (Nutzerauftrag: „immer schauen, dass die Ergebnisse passen“).
@@ -28,8 +28,8 @@
 ## Review Focus
 
 1. Gebäude mit Einwohnern und Firmen zugleich (gemischte Nutzung) – beide Segmente müssen am selben Gebäude/Stopp erscheinen und im Export in einer Zeile summiert werden.
-2. DHL-Straßen mit mehreren Teilstücken (MultiLineString) und gleichnamige Straßen in derselben PLZ – Zuordnung und Projektion müssen das nächstgelegene Teilstück nehmen.
-3. Straßen mit DHL > 0 ohne zugeordnete Gebäude und Gebäude ohne DHL-Straße – Menge darf nicht verloren gehen (synthetische Punkte bzw. Rückfall) und muss im Bericht erscheinen.
+2. LSP-Straßen mit mehreren Teilstücken (MultiLineString) und gleichnamige Straßen in derselben PLZ – Zuordnung und Projektion müssen das nächstgelegene Teilstück nehmen.
+3. Straßen mit LSP > 0 ohne zugeordnete Gebäude und Gebäude ohne LSP-Straße – Menge darf nicht verloren gehen (synthetische Punkte bzw. Rückfall) und muss im Bericht erscheinen.
 4. Tagesmengen über 400 an einem Stopp – Export teilt in mehrere Zeilen am selben Punkt mit eindeutiger `id`, Summen bleiben gleich.
 5. Alte Configs ohne `osm_buildings` – laufen unverändert im PLZ-Modus (alle bestehenden Tests grün).
 
@@ -40,10 +40,10 @@
 | Datei | Verantwortung |
 |---|---|
 | `src/hagrid_demand/baseline/osm.py` (neu) | Tag-Parsing, Zuschnitt eines Geofabrik-PBF auf die Region |
-| `src/hagrid_demand/baseline/buildings.py` (neu) | Gebäude laden, Personen/Firmen zuordnen, Adressen, DHL-Straßen, Teilstücke, Abschnitte, Seite |
-| `src/hagrid_demand/baseline/anchor.py` (neu) | Straßentabelle, Pegelkorrektur, DHL-Raten, Zerlegung, Holdout, `solve_street_reference` |
+| `src/hagrid_demand/baseline/buildings.py` (neu) | Gebäude laden, Personen/Firmen zuordnen, Adressen, LSP-Straßen, Teilstücke, Abschnitte, Seite |
+| `src/hagrid_demand/baseline/anchor.py` (neu) | Straßentabelle, Pegelkorrektur, LSP-Raten, Zerlegung, Holdout, `solve_street_reference` |
 | `src/hagrid_demand/baseline/stops.py` (neu) | adaptive Stopps (S3) |
-| `src/hagrid_demand/baseline/projection.py` | DHL-fixe Anbieterabstimmung je Jahr |
+| `src/hagrid_demand/baseline/projection.py` | LSP-fixe Anbieterabstimmung je Jahr |
 | `src/hagrid_demand/compatibility/matsim_export.py` | Export je Stopp, Teilzeilen, `id`, `str_idx`, `section_id`, Ledger |
 | `src/hagrid_demand/baseline/workflow.py` | Stage `buildings`, Straßenmodus der Referenz, Artefakte, Tageslauf-Verdrahtung |
 | `src/hagrid_demand/baseline/config.py` | neue Config-Schlüssel |
@@ -85,7 +85,7 @@ def _business_employee_weight(config: dict) -> float | None:
     return float(spec.get("employee_weight", 0.1)) if spec["model"] == "company_plus_employees" else None
 ```
 
-In `configs/baseline-daily.json` `"business_potential": {"model": "company_locations"}` setzen; README-Zeile „Gewerbegewicht“ auf „1 je Firma (DHL-Straßencheck: Beschäftigte ohne Erklärungskraft); `company_plus_employees` optional“ ändern.
+In `configs/baseline-daily.json` `"business_potential": {"model": "company_locations"}` setzen; README-Zeile „Gewerbegewicht“ auf „1 je Firma (LSP-Straßencheck: Beschäftigte ohne Erklärungskraft); `company_plus_employees` optional“ ändern.
 - [ ] **Step 4:** Gesamte Testsuite → PASS.
 - [ ] **Step 5: Commit** (Kalender, NB05-Grenzen, Amazon-Normierung, MATSim-Export, Tagesconfig, Firmengewicht):
 
@@ -267,7 +267,7 @@ In `cli.py` einen Unterbefehl `osm-clip` im `baseline`-Parser ergänzen (Argumen
 - [ ] **Step 1: Fixture** `tests/street_fixtures.py`:
 
 ```python
-"""Tiny street/building world: two DHL streets, four buildings, persons and firms (EPSG:25832)."""
+"""Tiny street/building world: two LSP streets, four buildings, persons and firms (EPSG:25832)."""
 
 from __future__ import annotations
 
@@ -372,7 +372,7 @@ Hinweis zu `biz:x`: Die Zensuszelle entscheidet über Kandidaten; der Test prüf
 - [ ] **Step 4: Implementation** `src/hagrid_demand/baseline/buildings.py` (Teil 1):
 
 ```python
-"""Demand locations on OSM buildings: persons, firms, addresses, DHL streets and street sections."""
+"""Demand locations on OSM buildings: persons, firms, addresses, LSP streets and street sections."""
 
 from __future__ import annotations
 
@@ -510,7 +510,7 @@ def assign_firms(sites: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame, residents
 
 ---
 
-### Task 3: Adressen, DHL-Straßen, Teilstücke, Abschnitte und Seiten
+### Task 3: Adressen, LSP-Straßen, Teilstücke, Abschnitte und Seiten
 
 **Files:**
 - Modify: `src/hagrid_demand/baseline/buildings.py`
@@ -640,7 +640,7 @@ def project_on_streets(points: gpd.GeoDataFrame, parts: gpd.GeoDataFrame, sectio
 ```
 
 - [ ] **Step 4:** Tests → PASS. Plausibilität echt: Anteil `name`/`nearest`/`none` ausgeben (Ziel: `none` < 3 %); Stichprobe von 20 Namens-Treffern mit Distanz > 200 m ansehen.
-- [ ] **Step 5: Commit** `feat: match buildings to DHL streets, sections and sides`.
+- [ ] **Step 5: Commit** `feat: match buildings to LSP streets, sections and sides`.
 
 ---
 
@@ -784,8 +784,8 @@ def _anchor_mode(config: dict) -> str:
     return mode
 
 
-def _dhl_streets(source: Path) -> gpd.GeoDataFrame:
-    frame = gpd.read_parquet(source / "dhl_observations.parquet")
+def _lsp_streets(source: Path) -> gpd.GeoDataFrame:
+    frame = gpd.read_parquet(source / "lsp_observations.parquet")
     frame = frame[frame.geometry_usable.astype(bool)]
     return gpd.GeoDataFrame({"sid": frame.source_row.astype("int64").to_numpy(), "plz": frame.plz.astype(str).to_numpy(),
                              "street": frame.street.astype(str).to_numpy(), "value": frame.value.astype(float).to_numpy()},
@@ -798,7 +798,7 @@ def _write_buildings(config: dict, source: Path, output: Path) -> None:
     sites = gpd.read_parquet(source / "sites.parquet")
     table, mapping, report = build_buildings(
         sites, gpd.read_parquet(config["osm_buildings"]), gpd.read_parquet(config["osm_points"]),
-        _dhl_streets(source), gpd.read_parquet(source / "postal_support.parquet"),
+        _lsp_streets(source), gpd.read_parquet(source / "postal_support.parquet"),
         config.get("buildings", {}), int(config["seed"]))
     table.to_parquet(output / "buildings.parquet", index=False)
     mapping.to_parquet(output / "site_buildings.parquet", index=False)
@@ -827,14 +827,14 @@ def _write_buildings(config: dict, source: Path, output: Path) -> None:
 
 ---
 
-### Task 5: Straßentabelle, Pegelkorrektur, DHL-Raten, Zerlegung, Holdout
+### Task 5: Straßentabelle, Pegelkorrektur, LSP-Raten, Zerlegung, Holdout
 
 **Files:**
 - Create: `src/hagrid_demand/baseline/anchor.py`
 - Test: `tests/test_anchor.py`
 
 **Interfaces:**
-- Produces: `AnchorConfig` (Felder `min_persons=30., min_streets=20, upper=2., lower=.5, gap_threshold=5., exclude_above=1000., section_length_m=50.`, `AnchorConfig.from_mapping(dict | None)`); `street_table(buildings, streets, cfg) -> DataFrame[sid, plz, street, value, persons, companies, buildings, excluded]`; `level_correction(table, cfg) -> DataFrame[plz, residential_streets, rate, median_rate, factor_raw, factor, applied]`; `apply_correction(table, corrections) -> DataFrame (+factor, dhl_corrected)`; `fit_dhl_rates(table) -> {"person": float, "company": float}`; `decompose(table, rates, cfg) -> DataFrame (+expected_private, expected_business, dhl_private, dhl_business, anchor_status)`; `observed_b2b_share(decomposed) -> float`; `structure_holdout(table, seed: int, folds=5) -> dict`.
+- Produces: `AnchorConfig` (Felder `min_persons=30., min_streets=20, upper=2., lower=.5, gap_threshold=5., exclude_above=1000., section_length_m=50.`, `AnchorConfig.from_mapping(dict | None)`); `street_table(buildings, streets, cfg) -> DataFrame[sid, plz, street, value, persons, companies, buildings, excluded]`; `level_correction(table, cfg) -> DataFrame[plz, residential_streets, rate, median_rate, factor_raw, factor, applied]`; `apply_correction(table, corrections) -> DataFrame (+factor, lsp_corrected)`; `fit_lsp_rates(table) -> {"person": float, "company": float}`; `decompose(table, rates, cfg) -> DataFrame (+expected_private, expected_business, lsp_private, lsp_business, anchor_status)`; `observed_b2b_share(decomposed) -> float`; `structure_holdout(table, seed: int, folds=5) -> dict`.
 - `anchor_status` ∈ {`observed`, `observed_unstructured`, `gap`, `excluded`, `zero`}.
 
 - [ ] **Step 1: Failing tests** `tests/test_anchor.py`:
@@ -870,25 +870,25 @@ def test_level_correction_scales_only_extreme_postal_levels():
     assert corrections.loc["C", "applied"] and corrections.loc["C", "factor"] == pytest.approx(2.6)
     assert not corrections.loc["A", "applied"] and corrections.loc["A", "factor"] == 1.
     corrected = apply_correction(_table(), corrections.reset_index())
-    assert corrected.loc[corrected.plz.eq("C"), "dhl_corrected"].sum() == pytest.approx(
+    assert corrected.loc[corrected.plz.eq("C"), "lsp_corrected"].sum() == pytest.approx(
         _table().loc[lambda t: t.plz.eq("C"), "value"].sum() / 2.6)
 
 
 def test_rates_decomposition_statuses_and_b2b_share():
-    from hagrid_demand.baseline.anchor import (AnchorConfig, apply_correction, decompose, fit_dhl_rates,
+    from hagrid_demand.baseline.anchor import (AnchorConfig, apply_correction, decompose, fit_lsp_rates,
                                                level_correction, observed_b2b_share)
 
     cfg = AnchorConfig()
     table = apply_correction(_table(), level_correction(_table(), cfg))
-    rates = fit_dhl_rates(table)
+    rates = fit_lsp_rates(table)
     assert rates["person"] == pytest.approx(.06, rel=1e-6) and rates["company"] == pytest.approx(.4, rel=1e-6)
     parts = decompose(table, rates, cfg).set_index("street")
-    assert parts.loc["gewerbe", "dhl_business"] == pytest.approx(8.) and parts.loc["gewerbe", "dhl_private"] == pytest.approx(.6)
-    assert parts.loc["luecke", "anchor_status"] == "gap" and parts.loc["luecke", "dhl_private"] == pytest.approx(12.)
+    assert parts.loc["gewerbe", "lsp_business"] == pytest.approx(8.) and parts.loc["gewerbe", "lsp_private"] == pytest.approx(.6)
+    assert parts.loc["luecke", "anchor_status"] == "gap" and parts.loc["luecke", "lsp_private"] == pytest.approx(12.)
     assert parts.loc["leer", "anchor_status"] == "observed_unstructured"
     assert parts.loc["gross", "anchor_status"] == "excluded"
     observed = parts[parts.anchor_status.isin(["observed", "observed_unstructured"])]
-    assert (observed.dhl_private + observed.dhl_business).sum() == pytest.approx(observed.dhl_corrected.sum())
+    assert (observed.lsp_private + observed.lsp_business).sum() == pytest.approx(observed.lsp_corrected.sum())
     assert 0 < observed_b2b_share(parts.reset_index()) < 1
 
 
@@ -905,7 +905,7 @@ def test_structure_holdout_reports_street_and_postal_errors():
 - [ ] **Step 3: Implementation** `src/hagrid_demand/baseline/anchor.py` (Teil 1):
 
 ```python
-"""Street anchor: DHL street observations -> B2C/B2B demand per street and building (spec 5.5-5.10)."""
+"""Street anchor: LSP street observations -> B2C/B2B demand per street and building (spec 5.5-5.10)."""
 
 from __future__ import annotations
 
@@ -950,8 +950,8 @@ def street_table(buildings: pd.DataFrame, streets: pd.DataFrame, cfg: AnchorConf
 def level_correction(table: pd.DataFrame, cfg: AnchorConfig) -> pd.DataFrame:
     observed = table[~table.excluded]
     residential = observed[(observed.persons >= cfg.min_persons) & (observed.companies == 0)]
-    per = residential.groupby("plz").agg(residential_streets=("sid", "size"), dhl=("value", "sum"), persons=("persons", "sum"))
-    per["rate"] = per.dhl / per.persons
+    per = residential.groupby("plz").agg(residential_streets=("sid", "size"), lsp=("value", "sum"), persons=("persons", "sum"))
+    per["rate"] = per.lsp / per.persons
     median = float(per.rate.median())
     per["median_rate"] = median
     per["factor_raw"] = per.rate / median
@@ -964,15 +964,15 @@ def level_correction(table: pd.DataFrame, cfg: AnchorConfig) -> pd.DataFrame:
 def apply_correction(table: pd.DataFrame, corrections: pd.DataFrame) -> pd.DataFrame:
     result = table.merge(corrections[["plz", "factor"]], on="plz", how="left")
     result["factor"] = result.factor.fillna(1.)
-    result["dhl_corrected"] = result.value / result.factor
+    result["lsp_corrected"] = result.value / result.factor
     return result
 
 
-def fit_dhl_rates(table: pd.DataFrame) -> dict:
+def fit_lsp_rates(table: pd.DataFrame) -> dict:
     observed = table[~table.excluded]
-    coefficients, _ = nnls(observed[["persons", "companies"]].to_numpy(float), observed.dhl_corrected.to_numpy(float))
+    coefficients, _ = nnls(observed[["persons", "companies"]].to_numpy(float), observed.lsp_corrected.to_numpy(float))
     if not (coefficients > 0).all():
-        raise ValueError(f"DHL street rates must be positive for persons and companies: {coefficients.tolist()}")
+        raise ValueError(f"LSP street rates must be positive for persons and companies: {coefficients.tolist()}")
     return {"person": float(coefficients[0]), "company": float(coefficients[1])}
 
 
@@ -981,26 +981,26 @@ def decompose(table: pd.DataFrame, rates: dict, cfg: AnchorConfig) -> pd.DataFra
     t["expected_private"] = rates["person"] * t.persons
     t["expected_business"] = rates["company"] * t.companies
     expected = t.expected_private + t.expected_business
-    positive = t.dhl_corrected > 0
+    positive = t.lsp_corrected > 0
     t["anchor_status"] = np.select(
         [t.excluded, positive & (expected > 0), positive, ~positive & (expected >= cfg.gap_threshold)],
         ["excluded", "observed", "observed_unstructured", "gap"], default="zero")
     structured = t.anchor_status.eq("observed")
     share = np.divide(t.expected_business, expected, out=np.zeros(len(t)), where=expected > 0)
-    t["dhl_business"] = np.where(structured, t.dhl_corrected * share, 0.)
-    regional = float(t.loc[structured, "dhl_business"].sum() / t.loc[structured, "dhl_corrected"].sum())
+    t["lsp_business"] = np.where(structured, t.lsp_corrected * share, 0.)
+    regional = float(t.loc[structured, "lsp_business"].sum() / t.loc[structured, "lsp_corrected"].sum())
     unstructured = t.anchor_status.eq("observed_unstructured")
-    t.loc[unstructured, "dhl_business"] = t.loc[unstructured, "dhl_corrected"] * regional
-    t["dhl_private"] = np.where(structured | unstructured, t.dhl_corrected - t.dhl_business, 0.)
+    t.loc[unstructured, "lsp_business"] = t.loc[unstructured, "lsp_corrected"] * regional
+    t["lsp_private"] = np.where(structured | unstructured, t.lsp_corrected - t.lsp_business, 0.)
     structural = t.anchor_status.isin(["gap", "excluded"])
-    t.loc[structural, "dhl_private"] = t.loc[structural, "expected_private"]
-    t.loc[structural, "dhl_business"] = t.loc[structural, "expected_business"]
+    t.loc[structural, "lsp_private"] = t.loc[structural, "expected_private"]
+    t.loc[structural, "lsp_business"] = t.loc[structural, "expected_business"]
     return t
 
 
 def observed_b2b_share(decomposed: pd.DataFrame) -> float:
     observed = decomposed[decomposed.anchor_status.isin(["observed", "observed_unstructured"])]
-    return float(observed.dhl_business.sum() / (observed.dhl_private + observed.dhl_business).sum())
+    return float(observed.lsp_business.sum() / (observed.lsp_private + observed.lsp_business).sum())
 
 
 def _wmape(actual, predicted) -> float:
@@ -1013,7 +1013,7 @@ def structure_holdout(table: pd.DataFrame, seed: int, folds: int = 5) -> dict:
     order = named_rng(int(seed), channel="structure-holdout").permutation(len(plz))
     fold_of = {plz[index]: position % folds for position, index in enumerate(order)}
     fold = observed.plz.astype(str).map(fold_of).to_numpy()
-    y = observed.dhl_corrected.to_numpy(float)
+    y = observed.lsp_corrected.to_numpy(float)
     result = {}
     for name, columns in (("M0_persons", ["persons"]), ("M1_persons_companies", ["persons", "companies"])):
         X = observed[columns].to_numpy(float)
@@ -1029,8 +1029,8 @@ def structure_holdout(table: pd.DataFrame, seed: int, folds: int = 5) -> dict:
     return result
 ```
 
-- [ ] **Step 4:** Tests → PASS. Plausibilität echt (Scratch mit Gebäudetabelle aus Task 4): Korrektur nur für 30855 (Faktor ≈ 2,6), Raten ≈ 0,05/Person und 0,3–0,5/Firma, q_DHL 20–28 %, Holdout-PLZ-wMAPE M1 < M0.
-- [ ] **Step 5: Commit** `feat: add DHL street decomposition with level correction`.
+- [ ] **Step 4:** Tests → PASS. Plausibilität echt (Scratch mit Gebäudetabelle aus Task 4): Korrektur nur für 30855 (Faktor ≈ 2,6), Raten ≈ 0,05/Person und 0,3–0,5/Firma, q_LSP 20–28 %, Holdout-PLZ-wMAPE M1 < M0.
+- [ ] **Step 5: Commit** `feat: add LSP street decomposition with level correction`.
 
 ---
 
@@ -1043,12 +1043,12 @@ def structure_holdout(table: pd.DataFrame, seed: int, folds: int = 5) -> dict:
 **Interfaces:**
 - Consumes: Task 5; `reference.reconcile_carriers(m, q, b, lower, upper, scale) -> dict` (`q`, `conditional` 2×C, `diagnostics`).
 - Produces: `solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFrame, profiles: dict, b: float, operating_days: int, cfg: dict | None, *, seed: int, scope_plz: list[str]) -> dict` mit Schlüsseln wie `reference.solve_reference` (`sites`, `postal`, `carriers`, `regional_annual`, `checks`, `reconciliation`, `source_quality`, `implied_rates`) plus `anchor` (dict), `streets` (DataFrame), `units` (GeoDataFrame: Gebäude plus synthetische Punkte, Spalten wie Gebäudetabelle), `geometry` (GeoDataFrame `site_id, geometry`). `sites` hat exakt die Spalten `site_id, plz, segment, population, employees, branch, weight, historical_share, structural_share, reference_annual, allocation_status`; `site_id` = `building_key`.
-- `checks` enthält `scope_ledger`, `b2b_target`, `b2b_achieved`, `b2b_residual`, `k=None`, `k_status="not_applicable"`, `log_k=None`, `source_quality`, `allocation_balance`, `dhl_carrier`, `dhl_market_share`, `dhl_retained_mean`, `observed_identity`.
+- `checks` enthält `scope_ledger`, `b2b_target`, `b2b_achieved`, `b2b_residual`, `k=None`, `k_status="not_applicable"`, `log_k=None`, `source_quality`, `allocation_balance`, `lsp_carrier`, `lsp_market_share`, `lsp_retained_mean`, `observed_identity`.
 
 - [ ] **Step 1: Failing test** (anhängen):
 
 ```python
-def test_street_reference_hits_b2b_target_and_dhl_identity_and_keeps_every_parcel():
+def test_street_reference_hits_b2b_target_and_lsp_identity_and_keeps_every_parcel():
     import geopandas as gpd
     import street_fixtures as fx
     from shapely.geometry import Point
@@ -1065,7 +1065,7 @@ def test_street_reference_hits_b2b_target_and_dhl_identity_and_keeps_every_parce
                   Point(fx.X0 + 900, fx.Y0 + 900)], crs=fx.CRS)
     streets = fx.streets().assign(value=[6., 1.3])
     profiles = {"m": [.42, .58], "q_prior": [.3, .2], "lower": [0., 0.], "upper": [1., 1.], "scale": [1., 1.],
-                "carriers": ["DHL", "Other"]}
+                "carriers": ["LSP", "Other"]}
     solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
                                     seed=1, scope_plz=["01000"])
 
@@ -1080,7 +1080,7 @@ def test_street_reference_hits_b2b_target_and_dhl_identity_and_keeps_every_parce
     assert set(sites.loc[sites.site_id.eq("h1"), "segment"]) == {"private", "business"}  # mixed-use building
     assert solved["regional_annual"] == pytest.approx(sites.reference_annual.sum())
     q = solved["carriers"].set_index("carrier").q_adjusted
-    assert q["DHL"] == pytest.approx(solved["anchor"]["q_dhl"])
+    assert q["LSP"] == pytest.approx(solved["anchor"]["q_lsp"])
 ```
 
 - [ ] **Step 2:** Test → FAIL.
@@ -1093,25 +1093,25 @@ import shapely
 from .reference import reconcile_carriers
 
 
-def _dhl_index(carriers: list[str]) -> int:
-    matches = [index for index, label in enumerate(carriers) if str(label).strip().casefold() == "dhl"]
+def _lsp_index(carriers: list[str]) -> int:
+    matches = [index for index, label in enumerate(carriers) if str(label).strip().casefold() == "lsp"]
     if len(matches) != 1:
-        raise ValueError("profiles must contain exactly one DHL carrier label")
+        raise ValueError("profiles must contain exactly one LSP carrier label")
     return matches[0]
 
 
-def _reconcile_with_fixed_dhl(profiles: dict, b: float, q_dhl: float) -> tuple[dict, dict]:
+def _reconcile_with_fixed_lsp(profiles: dict, b: float, q_lsp: float) -> tuple[dict, dict]:
     carriers = list(profiles["carriers"])
-    index = _dhl_index(carriers)
+    index = _lsp_index(carriers)
     m = np.asarray(profiles.get("m", profiles.get("market")), float)
     prior = np.asarray(profiles.get("q", profiles.get("q_prior")), float)
     lower = np.asarray(profiles["lower"], float).copy()
     upper = np.asarray(profiles["upper"], float).copy()
     scale = np.asarray(profiles["scale"], float)
-    lower[index] = upper[index] = q_dhl
+    lower[index] = upper[index] = q_lsp
     prior = np.clip(prior, lower, upper)
     result = reconcile_carriers(m, prior, b, lower, upper, scale)
-    return result, {"m": m, "q_prior": prior, "lower": lower, "upper": upper, "scale": scale, "carriers": carriers, "dhl_index": index}
+    return result, {"m": m, "q_prior": prior, "lower": lower, "upper": upper, "scale": scale, "carriers": carriers, "lsp_index": index}
 
 
 def _synthetic_units(t: pd.DataFrame, streets: gpd.GeoDataFrame, section_length_m: float) -> gpd.GeoDataFrame:
@@ -1142,15 +1142,15 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
     table = street_table(buildings, in_scope, config)
     corrections = level_correction(table, config)
     table = apply_correction(table, corrections)
-    rates = fit_dhl_rates(table)
+    rates = fit_lsp_rates(table)
     t = decompose(table, rates, config)
-    q_dhl = observed_b2b_share(t)
-    reconciliation, inputs = _reconcile_with_fixed_dhl(profiles, b, q_dhl)
+    q_lsp = observed_b2b_share(t)
+    reconciliation, inputs = _reconcile_with_fixed_lsp(profiles, b, q_lsp)
     conditional = np.asarray(reconciliation["conditional"], float)
-    index = inputs["dhl_index"]
+    index = inputs["lsp_index"]
     p_private, p_business = float(conditional[0, index]), float(conditional[1, index])
-    t["private_daily"] = t.dhl_private / p_private
-    t["business_daily"] = t.dhl_business / p_business
+    t["private_daily"] = t.lsp_private / p_private
+    t["business_daily"] = t.lsp_business / p_business
 
     units = buildings.copy()
     street_values = t.set_index("sid")
@@ -1187,10 +1187,10 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
                    "structural_share", "reference_annual", "allocation_status"]]
 
     observed = t.anchor_status.isin(["observed", "observed_unstructured"])
-    m_dhl = (1 - b) * p_private + b * p_business
+    m_lsp = (1 - b) * p_private + b * p_business
     observed_total = float((t.loc[observed, "private_daily"] + t.loc[observed, "business_daily"]).sum())
     observed_b2b = float(t.loc[observed, "business_daily"].sum() / observed_total)
-    identity = {"total_residual": observed_total - float(t.loc[observed, "dhl_corrected"].sum()) / m_dhl,
+    identity = {"total_residual": observed_total - float(t.loc[observed, "lsp_corrected"].sum()) / m_lsp,
                 "b2b_residual": observed_b2b - b, "observed_daily": observed_total}
     if abs(identity["total_residual"]) > 1e-6 * max(observed_total, 1.) or abs(identity["b2b_residual"]) > 1e-9:
         raise ValueError(f"street anchor identity failed: {identity}")
@@ -1203,16 +1203,16 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
 
     postal_sites = sites.groupby(["plz", "segment"]).reference_annual.sum().unstack(fill_value=0.)
     postal = pd.DataFrame({"plz": postal_sites.index.astype(str)})
-    postal["dhl_retained_mean"] = postal.plz.map(t[~t.excluded].groupby("plz").value.sum()).fillna(0.).to_numpy()
+    postal["lsp_retained_mean"] = postal.plz.map(t[~t.excluded].groupby("plz").value.sum()).fillna(0.).to_numpy()
     postal["private_annual"] = postal_sites.get("private", 0.).to_numpy()
     postal["business_annual"] = postal_sites.get("business", 0.).to_numpy()
     postal["reference_annual"] = postal.private_annual + postal.business_annual
     postal["b2b_share"] = np.divide(postal.business_annual, postal.reference_annual, out=np.zeros(len(postal)),
                                     where=postal.reference_annual > 0)
-    dhl_daily = postal.plz.map(t[observed].groupby("plz").dhl_corrected.sum()).fillna(0.)
-    postal["dhl_share"] = np.divide(dhl_daily * operating_days, postal.reference_annual, out=np.zeros(len(postal)),
+    lsp_daily = postal.plz.map(t[observed].groupby("plz").lsp_corrected.sum()).fillna(0.)
+    postal["lsp_share"] = np.divide(lsp_daily * operating_days, postal.reference_annual, out=np.zeros(len(postal)),
                                     where=postal.reference_annual > 0)
-    postal = postal[["plz", "dhl_retained_mean", "reference_annual", "private_annual", "business_annual", "b2b_share", "dhl_share"]]
+    postal = postal[["plz", "lsp_retained_mean", "reference_annual", "private_annual", "business_annual", "b2b_share", "lsp_share"]]
 
     carriers = inputs["carriers"]
     q = np.asarray(reconciliation["q"], float)
@@ -1230,7 +1230,7 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
                     "out_of_scope_volume": float(streets.loc[~streets.plz.astype(str).isin(scope), "value"].sum())}
     status_volume = units.groupby("anchor_status")[["private_daily", "business_daily"]].sum()
     anchor = {
-        "rates_dhl_per_day": rates, "q_dhl": q_dhl, "p_dhl_private": p_private, "p_dhl_business": p_business,
+        "rates_lsp_per_day": rates, "q_lsp": q_lsp, "p_lsp_private": p_private, "p_lsp_business": p_business,
         "corrections": json_records(corrections), "street_status_counts": t.anchor_status.value_counts().to_dict(),
         "daily_by_status": {status: float(values.sum()) for status, values in status_volume.iterrows()},
         "total_daily": total_daily, "observed_identity": identity, "allocation_max_error": allocation_error,
@@ -1241,8 +1241,8 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
                       "structural_no_street_units": int(units.anchor_status.eq("structural_no_street").sum())}
     checks = {"scope_ledger": scope_ledger, "b2b_target": float(b), "b2b_achieved": observed_b2b,
               "b2b_residual": observed_b2b - b, "k": None, "k_status": "not_applicable", "log_k": None,
-              "dhl_carrier": carriers[index], "dhl_carrier_index": index, "dhl_market_share": float(market[index]),
-              "dhl_retained_mean": scope_ledger["retained_volume"], "observed_identity": identity,
+              "lsp_carrier": carriers[index], "lsp_carrier_index": index, "lsp_market_share": float(market[index]),
+              "lsp_retained_mean": scope_ledger["retained_volume"], "observed_identity": identity,
               "allocation_balance": {"street_max_error": allocation_error,
                                      "regional_error": regional_annual - total_daily * operating_days},
               "regional_annual_balance": regional_annual - total_daily * operating_days}
@@ -1258,7 +1258,7 @@ def solve_street_reference(buildings, streets, profiles: dict, b: float, operati
         "adjusted_q": [{"carrier": c, "q_adjusted": float(v)} for c, v in zip(carriers, q)],
         "conditional": [{"segment": seg, "carrier": c, "share": float(conditional[row, col])}
                         for row, seg in enumerate(("private", "business")) for col, c in enumerate(carriers)],
-        "diagnostics": reconciliation["diagnostics"], "dhl_fixed_q": q_dhl, "reference_balance": None,
+        "diagnostics": reconciliation["diagnostics"], "lsp_fixed_q": q_lsp, "reference_balance": None,
     }
     geometry = gpd.GeoDataFrame({"site_id": units.building_key.to_numpy()}, geometry=units.geometry.to_numpy(), crs=units.crs)
     return {"sites": sites, "postal": postal, "carriers": carriers_frame, "regional_annual": regional_annual, "checks": checks,
@@ -1276,7 +1276,7 @@ def json_records(frame: pd.DataFrame) -> list[dict]:
 
 ---
 
-### Task 7: Straßenmodus in Referenz, Projektion mit DHL-fixem q
+### Task 7: Straßenmodus in Referenz, Projektion mit LSP-fixem q
 
 **Files:**
 - Modify: `src/hagrid_demand/baseline/projection.py`, `src/hagrid_demand/baseline/workflow.py`
@@ -1284,22 +1284,22 @@ def json_records(frame: pd.DataFrame) -> list[dict]:
 
 **Interfaces:**
 - Consumes: `solve_street_reference` (Task 6).
-- Produces: `projection._profile(series, year, dhl_fixed: dict | None = None)`; `project_annual(..., cfg)` liest `cfg.get("dhl_b2b")` = `{"q_2021": float, "b_2021": float}`; Referenzartefakte im Straßenmodus zusätzlich `reference_anchor.json`, `reference_streets.parquet`, `reference_units.parquet` (Gebäude + synthetische Punkte mit Projektion).
+- Produces: `projection._profile(series, year, lsp_fixed: dict | None = None)`; `project_annual(..., cfg)` liest `cfg.get("lsp_b2b")` = `{"q_2021": float, "b_2021": float}`; Referenzartefakte im Straßenmodus zusätzlich `reference_anchor.json`, `reference_streets.parquet`, `reference_units.parquet` (Gebäude + synthetische Punkte mit Projektion).
 
 - [ ] **Step 1: Failing tests**
   - `tests/test_baseline_projection.py`:
 
 ```python
-def test_projection_fixes_dhl_b2b_proportional_to_the_national_trend():
+def test_projection_fixes_lsp_b2b_proportional_to_the_national_trend():
     from hagrid_demand.baseline.projection import _profile
     from hagrid_demand.baseline.series import build_series
     from hagrid_demand.baseline.sources import packaged_series_inputs
 
     series = build_series(packaged_series_inputs(), [2021, 2030], volume_fit_policy="observed_only")
     b = series["b2b"].set_index("year").share
-    profile, target = _profile(series, 2030, dhl_fixed={"q_2021": .24, "b_2021": float(b[2021])})
-    dhl = profile[(profile.carrier == "DHL")].q.iloc[0]
-    assert dhl == pytest.approx(.24 * b[2030] / b[2021])
+    profile, target = _profile(series, 2030, lsp_fixed={"q_2021": .24, "b_2021": float(b[2021])})
+    lsp = profile[(profile.carrier == "LSP")].q.iloc[0]
+    assert lsp == pytest.approx(.24 * b[2030] / b[2021])
     shares = profile.pivot(index="carrier", columns="segment", values="share")
     market = series["market"].query("year == 2030").set_index("carrier").market_share
     assert ((1 - target) * shares.private + target * shares.business).reindex(market.index).to_numpy() == pytest.approx(market.to_numpy())
@@ -1308,7 +1308,7 @@ def test_projection_fixes_dhl_b2b_proportional_to_the_national_trend():
   - `tests/test_street_workflow.py`:
 
 ```python
-def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
+def test_street_reference_and_daily_run_use_buildings_and_fixed_lsp(tmp_path):
     from hagrid_demand.baseline.workflow import run_baseline
 
     config_path = write_street_fixture(tmp_path)
@@ -1319,36 +1319,36 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
     run = run_baseline(config_path, "street-daily")
 
     anchor = json.loads((run / "reference_anchor.json").read_text(encoding="utf-8"))
-    assert 0 < anchor["q_dhl"] < 1
+    assert 0 < anchor["q_lsp"] < 1
     sites = pd.read_parquet(run / "reference_sites.parquet")
     assert sites.site_id.str.startswith(("osm:", "pt:", "syn:")).all()
     profiles = pd.read_parquet(run / "carrier_profiles.parquet")
-    dhl = profiles[(profiles.carrier == "DHL") & (profiles.year == 2025)].q.iloc[0]
-    assert dhl == pytest.approx(anchor["q_dhl"] * anchor["b2b_by_year"]["2025"] / anchor["b2b_by_year"]["2021"])
+    lsp = profiles[(profiles.carrier == "LSP") & (profiles.year == 2025)].q.iloc[0]
+    assert lsp == pytest.approx(anchor["q_lsp"] * anchor["b2b_by_year"]["2025"] / anchor["b2b_by_year"]["2021"])
 ```
 
 - [ ] **Step 2:** Tests → FAIL.
 - [ ] **Step 3: Implementation**
-  - `projection._profile`: Signatur `(series, year, dhl_fixed=None)`; nach `providers = providers.reindex(market.index)`:
+  - `projection._profile`: Signatur `(series, year, lsp_fixed=None)`; nach `providers = providers.reindex(market.index)`:
 
 ```python
     lower, upper = providers.lower.to_numpy(float).copy(), providers.upper.to_numpy(float).copy()
     prior = providers.q_prior.to_numpy(float).copy()
-    if dhl_fixed is not None:
-        index = [i for i, label in enumerate(market.index) if str(label).casefold() == "dhl"][0]
-        q_dhl = float(dhl_fixed["q_2021"]) * target / float(dhl_fixed["b_2021"])
-        lower[index] = upper[index] = q_dhl
+    if lsp_fixed is not None:
+        index = [i for i, label in enumerate(market.index) if str(label).casefold() == "lsp"][0]
+        q_lsp = float(lsp_fixed["q_2021"]) * target / float(lsp_fixed["b_2021"])
+        lower[index] = upper[index] = q_lsp
         prior = np.clip(prior, lower, upper)
     result = reconcile_carriers(values, prior, target, lower, upper, providers.q_scale.to_numpy(float))
 ```
 
-    `project_annual` ruft `_profile(series, year, cfg.get("dhl_b2b"))`.
+    `project_annual` ruft `_profile(series, year, cfg.get("lsp_b2b"))`.
   - `workflow._write_reference(config, source, series_dir, potentials_dir, output, buildings_dir=None)`: im Straßenmodus
 
 ```python
     if _anchor_mode(config) == "street":
         from .anchor import solve_street_reference
-        solved = solve_street_reference(gpd.read_parquet(buildings_dir / "buildings.parquet"), _dhl_streets(source), profiles, b2b,
+        solved = solve_street_reference(gpd.read_parquet(buildings_dir / "buildings.parquet"), _lsp_streets(source), profiles, b2b,
                                         config["reference_operating_days"], config.get("anchor"), seed=int(config["seed"]),
                                         scope_plz=postal_scope.plz.astype(str).tolist())
         geometry = solved["geometry"]
@@ -1363,9 +1363,9 @@ def test_street_reference_and_daily_run_use_buildings_and_fixed_dhl(tmp_path):
 
     Die übrigen Schreibvorgänge (`reference_postal`, `reference_sites`, `reference_geometry`, Profile, Checks) bleiben gemeinsam. Der Referenzstage-Aufruf übergibt `buildings_dir=run / "buildings"`; Abhängigkeiten und Implementierungsdateien der Referenzstage im Straßenmodus um `run / "buildings"`, `anchor.py`, `buildings.py` ergänzen; validate/copy_public um die drei neuen Dateien ergänzen (nur Straßenmodus). `_frozen_reference_artifacts` nimmt `reference_anchor.json` und `reference_units.parquet` in Gruppe `anchor` auf, wenn vorhanden.
   - `_series` für alle Jahre: `_write_series` baut bereits Referenzjahr + Config-Jahre; `b2b_by_year` enthält daher 2021 und alle Zieljahre.
-  - `_write_daily`: `projection_cfg = {"memory": {"fixed": 1}, "regional_level": config["regional_level"]}`; wenn `reference_anchor.json` existiert: `projection_cfg["dhl_b2b"] = {"q_2021": anchor["q_dhl"], "b_2021": anchor["b2b_by_year"]["2021"]}`.
+  - `_write_daily`: `projection_cfg = {"memory": {"fixed": 1}, "regional_level": config["regional_level"]}`; wenn `reference_anchor.json` existiert: `projection_cfg["lsp_b2b"] = {"q_2021": anchor["q_lsp"], "b_2021": anchor["b2b_by_year"]["2021"]}`.
 - [ ] **Step 4:** Tests → PASS; Gesamtsuite → PASS.
-- [ ] **Step 5: Commit** `feat: run the reference in street mode and fix DHL B2B over years`.
+- [ ] **Step 5: Commit** `feat: run the reference in street mode and fix LSP B2B over years`.
 
 ---
 
@@ -1493,7 +1493,7 @@ def build_stops(units: gpd.GeoDataFrame, expected_daily: pd.Series, streets: gpd
         from .stops import build_stops
         stop_cfg = config.get("stops", {})
         expected = solved["sites"].groupby("site_id").reference_annual.sum() / config["reference_operating_days"]
-        stops, site_stops = build_stops(solved["units"], expected, _dhl_streets(source),
+        stops, site_stops = build_stops(solved["units"], expected, _lsp_streets(source),
                                         float(stop_cfg.get("walking_radius_m", 40.)), float(stop_cfg.get("own_stop_parcels_per_day", 15.)),
                                         float(stop_cfg.get("section_length_m", 50.)))
         stops.to_parquet(output / "reference_stops.parquet", index=False)
@@ -1524,7 +1524,7 @@ def test_matsim_day_by_stop_splits_rows_above_the_limit_and_keeps_totals(tmp_pat
 
     chunk = pd.DataFrame({"date": pd.Timestamp("2025-05-13"), "site_id": ["h1", "h2", "f1", "f1"], "plz": ["1"] * 4,
                           "segment": ["private", "private", "business", "business"],
-                          "carrier": ["DHL", "DHL", "UPS", "DHL"], "count": [3, 4, 900, 5]})
+                          "carrier": ["LSP", "LSP", "UPS", "LSP"], "count": [3, 4, 900, 5]})
     geometry = gpd.GeoDataFrame({"site_id": ["h1", "h2", "f1"]}, geometry=[Point(1, 1), Point(2, 2), Point(9, 9)], crs="EPSG:25832")
     stops = {"site_stops": pd.DataFrame({"site_id": ["h1", "h2", "f1"], "stop_id": ["s1", "s1", "s2"]}),
              "stops": gpd.GeoDataFrame({"stop_id": ["s1", "s2"], "stop_index": [0, 1], "str_idx": [7, 8],
@@ -1595,13 +1595,13 @@ def _split_rows(table: pd.DataFrame, limit: int) -> pd.DataFrame:
 - Test: `tests/test_street_workflow.py`
 
 **Interfaces:**
-- Produces: `report_data["views"]["anchor"]` = Inhalt von `reference_anchor.json` plus `plausibility` (je PLZ: Pakete je Einwohner und Jahr, B2B-Anteil) und `buildings` (Inhalt `buildings/buildings_report.json`), wenn vorhanden; `report.md`-Abschnitt „Straßen-Anker“ mit q_DHL, Raten, korrigierten PLZ, Statusmengen, Holdout-Tabelle und © OpenStreetMap-Hinweis.
+- Produces: `report_data["views"]["anchor"]` = Inhalt von `reference_anchor.json` plus `plausibility` (je PLZ: Pakete je Einwohner und Jahr, B2B-Anteil) und `buildings` (Inhalt `buildings/buildings_report.json`), wenn vorhanden; `report.md`-Abschnitt „Straßen-Anker“ mit q_LSP, Raten, korrigierten PLZ, Statusmengen, Holdout-Tabelle und © OpenStreetMap-Hinweis.
 
-- [ ] **Step 1: Failing test** (anhängen an `test_street_reference_and_daily_run_use_buildings_and_fixed_dhl`):
+- [ ] **Step 1: Failing test** (anhängen an `test_street_reference_and_daily_run_use_buildings_and_fixed_lsp`):
 
 ```python
     report = json.loads((run / "report_data.json").read_text(encoding="utf-8"))
-    assert report["views"]["anchor"]["q_dhl"] == pytest.approx(anchor["q_dhl"])
+    assert report["views"]["anchor"]["q_lsp"] == pytest.approx(anchor["q_lsp"])
     assert "plausibility" in report["views"]["anchor"]
     markdown = (run / "report.md").read_text(encoding="utf-8")
     assert "Straßen-Anker" in markdown and "OpenStreetMap" in markdown
@@ -1635,8 +1635,8 @@ def _split_rows(table: pd.DataFrame, limit: int) -> pd.DataFrame:
         corrected = [row for row in anchor["corrections"] if row["applied"]]
         holdout = anchor["holdout"]
         text += ("\n## Straßen-Anker\n\n"
-                 f"DHL-B2B-Anteil aus Straßendaten: {anchor['q_dhl']:.3f}. DHL-Raten je Tag: "
-                 f"{anchor['rates_dhl_per_day']['person']:.4f} je Einwohner, {anchor['rates_dhl_per_day']['company']:.3f} je Firma.\n\n"
+                 f"LSP-B2B-Anteil aus Straßendaten: {anchor['q_lsp']:.3f}. LSP-Raten je Tag: "
+                 f"{anchor['rates_lsp_per_day']['person']:.4f} je Einwohner, {anchor['rates_lsp_per_day']['company']:.3f} je Firma.\n\n"
                  "Pegelkorrektur: " + (", ".join(f"{row['plz']} (Faktor {row['factor']:.2f})" for row in corrected) or "keine") + ".\n\n"
                  "Holdout (PLZ-wMAPE): " + ", ".join(f"{name} {values['postal_wmape']:.1%}" for name, values in holdout.items()) + ".\n\n"
                  "Gebäude: © OpenStreetMap contributors (ODbL), Stand 01.01.2021.\n")
@@ -1666,7 +1666,7 @@ def _split_rows(table: pd.DataFrame, limit: int) -> pd.DataFrame:
 
 - [ ] **Step 2:** Echten Lauf mit absoluten Pfaden (Scratch-Config) für die acht Tage 09.–17.05.2025 ausführen.
 - [ ] **Step 3: Plausibilitätsprüfung (Pflicht, Ergebnisse im Chat berichten):**
-  - Anker: q_DHL 0,20–0,28; Korrektur nur 30855; Status-Mengen; Anteil `structural_*` < 5 % der Tagesmenge.
+  - Anker: q_LSP 0,20–0,28; Korrektur nur 30855; Status-Mengen; Anteil `structural_*` < 5 % der Tagesmenge.
   - Gebäude: Personen in Gebäuden ≥ 90 %; Firmen `point` < 5 %; Straßenzuordnung `none` < 3 %.
   - Niveau: Pakete je Person und Jahr je PLZ (Median ~40–60, keine PLZ > 3 × Median ohne Erklärung); B2B-Anteil je PLZ plausibel (Innenstadt hoch).
   - Tage: Tagessummen vs. Notebook (Abweichung < 10 %), PLZ-Korrelation > 0,95 außer 30855 (erwartet niedriger wegen Korrektur).
