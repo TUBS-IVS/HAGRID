@@ -399,12 +399,14 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
     totals = groups.groupby("branch").employees.agg(["sum", "count"])
     rows = []
     span = sorted(int(value) for value in years if int(value) > int(base_year))
+    previous_year = int(base_year)
     for year in span:
         rng = rng_for_year(year)
         for branch in sorted(totals.index):
             employees, count = float(totals.at[branch, "sum"]), int(totals.at[branch, "count"])
             rate = float(rates.get(branch, rates["default"]))
-            growth = employees * ((1. + rate) ** (year - base_year) - (1. + rate) ** (year - 1 - base_year))
+            # the growth since the previous simulated year (years between two simulated years count too)
+            growth = employees * ((1. + rate) ** (year - base_year) - (1. + rate) ** (previous_year - base_year))
             size = max(1., employees / count) if count else 1.
             firms = int(np.floor(float(new_firm_share) * growth / size + 0.5)) if growth > 0 else 0
             if firms <= 0 or not len(areas):
@@ -415,6 +417,7 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
                              "year_opened": year, "population": np.nan, "employees": size, "branch": branch,
                              "historical_share": size * float(share_per_employee), "allocation_status": "located",
                              "geometry": _random_point(polygon, rng)})
+        previous_year = year
     columns = ["site_id", "segment", "plz", "district_id", "area", "year_opened", "population", "employees", "branch",
                "historical_share", "allocation_status", "geometry"]
     if not rows:
@@ -426,13 +429,16 @@ def new_firms(companies: pd.DataFrame, share_per_employee: float, years, base_ye
 
 def land_use_stops(sites: gpd.GeoDataFrame, first_index: int) -> tuple[gpd.GeoDataFrame, pd.DataFrame]:
     """One stop per new site, numbered from *first_index* in opening order; every development area forms one street
-    group (``str_idx = -(1 + area code)``) and every new firm its own (``-(1000 + i)``)."""
+    group (``str_idx = -(100 + area code)``) and every new firm its own (``-(1000 + i)``); reference stops use -1 for
+    off-street buildings, so the ranges never meet."""
     order = sites.assign(_year=pd.to_numeric(sites.year_opened, errors="coerce")).sort_values(["_year", "site_id"], kind="stable")
     order = order.reset_index(drop=True)
     codes = {name: code for code, name in enumerate(sorted(order["area"].dropna().unique()))}
     firm = order["area"].isna().to_numpy()
     firm_rank = np.cumsum(firm) - 1
-    str_idx = np.where(firm, -(1000 + firm_rank), [-(1 + codes.get(name, 0)) for name in order["area"].fillna("")])
+    if len(codes) >= 900:
+        raise ValueError("at most 899 development areas fit the street-group range -100..-999")
+    str_idx = np.where(firm, -(1000 + firm_rank), [-(100 + codes.get(name, 0)) for name in order["area"].fillna("")])
     stops = gpd.GeoDataFrame({"stop_id": order.site_id.to_numpy(), "stop_index": np.arange(len(order), dtype=np.int64) + int(first_index),
                               "str_idx": str_idx.astype(np.int64), "part": np.nan, "side": None, "section_id": "",
                               "plz": order.plz.astype(str).to_numpy(), "n_units": 1, "expected_daily": 0.,
@@ -500,6 +506,7 @@ class LandUsePlan:
     status: dict
     ages: pd.DataFrame | None = None          # region: persons and propensity per 5-year age band and year
     developments: pd.DataFrame | None = None  # model residents per development area and year
+    site_districts: pd.DataFrame | None = None  # site_id -> district_id of every reference and new site
 
 
 def read_persons(path: Path) -> pd.DataFrame:
@@ -519,6 +526,21 @@ def read_landuse(path: Path, crs) -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(frame[["fclass", "name"]], geometry=frame.geometry.map(wkt.loads), crs=crs)
 
 
+def site_district_ids(reference_sites: pd.DataFrame, stops: gpd.GeoDataFrame, site_stops: pd.DataFrame, postal: gpd.GeoDataFrame,
+                      frame: gpd.GeoDataFrame) -> pd.Series:
+    """Forecast district of every reference site id: at its stop, or at its postal area's centre without a stop."""
+    stop_xy = stops.drop_duplicates("stop_id").set_index("stop_id").geometry
+    stop_of = site_stops.drop_duplicates("site_id").set_index("site_id").stop_id
+    ids = reference_sites.site_id.astype(str).drop_duplicates().to_numpy()
+    located = gpd.GeoSeries(stop_xy.reindex(stop_of.reindex(ids).to_numpy()).to_numpy(), crs=stops.crs)
+    fallback = postal.set_index(postal.plz.astype(str)).representative_point().to_crs(stops.crs)
+    plz_of = reference_sites.drop_duplicates("site_id").set_index("site_id").plz.astype(str)
+    missing = located.isna().to_numpy()
+    if missing.any():
+        located[missing] = fallback.reindex(plz_of.reindex(ids[missing]).to_numpy()).to_numpy()
+    return pd.Series(assign_districts(np.column_stack([located.x.to_numpy(), located.y.to_numpy()]), frame), index=ids)
+
+
 def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFrame, stops: gpd.GeoDataFrame, site_stops: pd.DataFrame,
                         postal: gpd.GeoDataFrame, boundaries: gpd.GeoDataFrame, persons: pd.DataFrame, companies: pd.DataFrame,
                         landuse: gpd.GeoDataFrame) -> LandUsePlan:
@@ -534,17 +556,7 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
     inputs = load_land_use_inputs()
     units = {"districts": cfg["districts"], "variants": inputs["variants"]}
     frame = districts(boundaries.to_crs(stops.crs), units)
-    # every reference site sits at its stop; sites without a stop take their postal area's centre
-    stop_xy = stops.drop_duplicates("stop_id").set_index("stop_id").geometry
-    stop_of = site_stops.drop_duplicates("site_id").set_index("site_id").stop_id
-    ids = reference_sites.site_id.astype(str).drop_duplicates().to_numpy()
-    located = gpd.GeoSeries(stop_xy.reindex(stop_of.reindex(ids).to_numpy()).to_numpy(), crs=stops.crs)
-    fallback = postal.set_index(postal.plz.astype(str)).representative_point().to_crs(stops.crs)
-    plz_of = reference_sites.drop_duplicates("site_id").set_index("site_id").plz.astype(str)
-    missing = located.isna().to_numpy()
-    if missing.any():
-        located[missing] = fallback.reindex(plz_of.reindex(ids[missing]).to_numpy()).to_numpy()
-    district_of = pd.Series(assign_districts(np.column_stack([located.x.to_numpy(), located.y.to_numpy()]), frame), index=ids)
+    district_of = site_district_ids(reference_sites, stops, site_stops, postal, frame)
     sites = reference_sites.assign(district_id=district_of.reindex(reference_sites.site_id.astype(str)).to_numpy())
     private, business = sites.loc[sites.segment.eq("private")], sites.loc[sites.segment.eq("business")]
     model_persons = private.groupby("district_id").population.sum()
@@ -581,8 +593,11 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
               "new_sites": {str(int(year)): int(count) for year, count in new_sites.groupby("year_opened").size().items()},
               "development_sites": int(len(homes)), "new_firms": int(len(firms)),
               "developments": [area["name"] for area in cfg["developments"]]}
+    site_districts = pd.concat([pd.DataFrame({"site_id": district_of.index, "district_id": district_of.to_numpy()}),
+                                pd.DataFrame({"site_id": new_sites.site_id.astype(str).to_numpy(), "district_id": new_sites.district_id.to_numpy()})],
+                               ignore_index=True).drop_duplicates("site_id")
     return LandUsePlan(extended, factors, new_sites, new_stops, new_links, frame, table, status,
-                       age_bands(histograms, curve, cfg["cohort_shift"], base), residents)
+                       age_bands(histograms, curve, cfg["cohort_shift"], base), residents, site_districts)
 
 
 def age_bands(histograms: pd.DataFrame, curve: list[dict], cohort_shift: float, base_year: int, width: int = 5) -> pd.DataFrame:
