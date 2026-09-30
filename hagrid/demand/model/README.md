@@ -309,7 +309,8 @@ with one fixed random number per POI and network group (exponential-race samplin
 differ only in how far down it they go.
 
 **Run.** `runs\hannover\run_demand_decade.bat [trend saettigung boom trend-innen trend-suburban]` runs the scenarios one
-after another (about an hour each, about 0.5 GB of details per year plus about 45 MB per exported day) and then writes
+after another (about 30 minutes each, the trend configuration with eight exported days per year about 80 minutes;
+about 0.5 GB of details per year plus about 45 MB per exported day) and then writes
 `hagrid\demand\runs\decade_dashboard.html`.
 
 ### Land-Use Dynamics 2025–2035
