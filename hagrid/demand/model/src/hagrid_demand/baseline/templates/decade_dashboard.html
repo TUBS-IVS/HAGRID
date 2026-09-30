@@ -910,13 +910,13 @@ function structureValues(S, yr) {
 }
 function districtCard(S, i, yr) {
   const el = $('district-card'); el.replaceChildren();
-  const d = S.districts, pick = (key, y) => ((d[key] || {})[y] || [])[i];
+  const d = S.districts, pick = (key, y) => ((d[key] || {})[y] || [])[i], rel = x => ok(x) ? signed(x - 1) : '–';
   if (i == null) { el.append(h('div', {class: 'code', text: 'Region'}), h('div', {class: 'name', text: d.ids.length + ' forecast districts · variant ' + (S.meta.variant || '–')}),
     h('p', {class: 'note', text: 'Hover over a district for its profile.'})); return; }
   el.append(h('div', {class: 'code', text: d.ids[i]}), h('div', {class: 'name', text: d.names[i] + ' · ' + (d.kinds[i] === 'city' ? 'city district' : 'municipality')}),
-    h('dl', null, [['Persons (model) ' + yr, int(pick('persons_model', yr))], ['Persons vs ' + Y0, signed(pick('population_index', yr) - 1)],
-      ['Forecast vs ' + Y0, signed(pick('forecast_index', yr) - 1)], ['Online propensity', signed(pick('propensity_index', yr) - 1)],
-      ['Employees vs ' + Y0, signed(pick('employees_index', yr) - 1)]].map(([k, v]) => h('div', null, h('dt', {text: k}), h('dd', {text: v})))));
+    h('dl', null, [['Persons (model) ' + yr, int(pick('persons_model', yr))], ['Persons vs ' + Y0, rel(pick('population_index', yr))],
+      ['Forecast vs ' + Y0, rel(pick('forecast_index', yr))], ['Online propensity', rel(pick('propensity_index', yr))],
+      ['Employees vs ' + Y0, rel(pick('employees_index', yr))]].map(([k, v]) => h('div', null, h('dt', {text: k}), h('dd', {text: v})))));
 }
 function renderStructure() {
   const n = state.scenario, yr = state.year, S = (D.structure || {})[n], box = $('ch-structure');
@@ -925,7 +925,8 @@ function renderStructure() {
     const b = h('button', {type: 'button', text: text.split(' ')[0] === 'Online' ? 'Propensity' : text.split(' ')[0], 'aria-pressed': String(state.structure === key)});
     b.addEventListener('click', () => { state.structure = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderStructure(); }); ctl.appendChild(b); });
   if (!S) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use dynamics (land_use switched off).'}));
-    ['ch-structure-bars', 'ch-structure-age', 'tv-structure', 'sc-structure', 'district-card'].forEach(id => $(id).replaceChildren()); $('f-structure').textContent = ''; return; }
+    ['ch-structure-bars', 'ch-structure-age', 'tv-structure', 'sc-structure', 'district-card', 'lg-structure-bars', 'lg-structure-age'].forEach(id => $(id).replaceChildren());
+    ['f-structure', 's-structure', 's-structure-bars', 's-structure-age'].forEach(id => { $(id).textContent = ''; }); return; }
   const values = structureValues(S, yr) || [], feats = S.districts.geo ? S.districts.geo.features : [];
   const W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Map of the forecast districts'); const changes = values.map(x => ok(x) ? x - 1 : null);
   const pos = changes.filter(x => ok(x) && x > .002), br = breaks(pos, 4);
@@ -942,7 +943,7 @@ function renderStructure() {
       const mark = pointShape(kind, q[0], q[1], r, {class: 'pt', fill: T.segment[i] === 'business' ? 'var(--seg-b2b)' : 'var(--seg-b2c)', tabindex: 0,
         'aria-label': (T.segment[i] === 'business' ? 'New firm' : 'New home, ' + (T.area[i] || '')) + ', opened ' + T.year_opened[i]}, layer);
       hover(mark, t => { t.append(...tH(T.segment[i] === 'business' ? 'New firm' : 'New home · ' + (T.area[i] || ''), 'opened ' + T.year_opened[i]));
-        t.appendChild(tR(dec(T.size[i], 1), T.segment[i] === 'business' ? 'employees' : 'residents (model)')); }); }); }
+        t.appendChild(tR(dec(T.size[i], 1), T.segment[i] === 'business' ? 'employees' : 'residents at full occupancy (model)')); }); }); }
   binLegend($('sc-structure'), STRUCTMODE[state.structure] + ':', [{color: 'var(--neg2)', text: '< −2 %'}, {color: 'var(--neg1)', text: '−2 to 0 %'}, {color: 'var(--mid)', text: '± 0.2 %'}]
     .concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? '> 0 %' : 'from ' + signed(b)}))));
   const opened = T ? T.year_opened.filter(y => y <= yr).length : 0;
@@ -987,7 +988,8 @@ function renderChange() {
   if (!ctl.childElementCount) Object.entries(CHANGEMODE).forEach(([key, text]) => {
     const b = h('button', {type: 'button', text: {region: 'vs region', rel: 'Change %', abs: 'Change', density: 'Density', landuse: 'Land use'}[key], 'aria-pressed': String(state.change === key)});
     b.addEventListener('click', () => { state.change = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderChange(); }); ctl.appendChild(b); });
-  if (!C || !C.values[n]) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no annual projection per address.'})); ['sc-change', 'ch-change-drivers', 'tv-change-miles'].forEach(id => $(id).replaceChildren()); }
+  if (!C || !C.values[n]) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no annual projection per address.'}));
+    ['sc-change', 'ch-change-drivers', 'lg-change-drivers'].forEach(id => $(id).replaceChildren()); ['f-change', 's-change', 's-change-drivers'].forEach(id => { $(id).textContent = ''; }); }
   else {
     const V = C.values[n], now = V[yr] || {}, base = V[Y0] || {}, total = now.total || [], first = base.total || [], plain = now.plain || [];
     const growth = sum(first) > 0 ? sum(total) / sum(first) : 1;
@@ -1021,7 +1023,7 @@ function renderChange() {
       hbars($('ch-change-drivers'), yr === Y0 ? [] : rows.map(r => ({r, label: r.label, on: false, text: (r.total >= 0 ? '+' : '−') + dec(Math.abs(r.total), 0) + '/day',
         parts: [{value: r.volume, color: 'var(--q4)'}, {value: r.land, color: 'var(--seg-b2c)'}]})), {label: 'Districts by change in parcels per day', empty: 'Move the year slider past ' + Y0 + '.',
         tip: (t, row) => { t.append(...tH(row.r.label, Y0 + '→' + yr)); t.appendChild(tR(dec(row.r.volume, 1), 'more parcels overall')); t.appendChild(tR(dec(row.r.land, 1), 'moved by land use')); }}); }
-    else $('ch-change-drivers').replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use districts.'}));
+    else { $('ch-change-drivers').replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use districts.'})); $('lg-change-drivers').replaceChildren(); $('s-change-drivers').textContent = ''; }
     const up = C.hex.ids.map((_, i) => ({i, d: ok(total[i]) && ok(first[i]) ? total[i] - first[i] : null})).filter(r => ok(r.d)).sort((a, b) => b.d - a.d);
     const moved = C.hex.ids.map((_, i) => ok(total[i]) && ok(plain[i]) ? Math.abs(total[i] - plain[i]) : 0).reduce((a, b) => a + b, 0) / 2;
     $('f-change').replaceChildren(...(yr > Y0 ? ['From ' + Y0 + ' to ' + yr + ' the ' + label(n) + ' scenario adds ', h('b', {text: int(sum(total) - sum(first)) + ' parcels per delivery day'}),

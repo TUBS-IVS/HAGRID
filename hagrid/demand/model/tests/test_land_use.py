@@ -362,3 +362,33 @@ def test_site_factors_key_sites_by_segment():
     assert list(table.columns) == ["year", "site_id", "segment", "factor"]
     factor = table.set_index(["year", "site_id", "segment"]).factor
     assert factor.loc[(2030, "x", "private")] == pytest.approx(1.1) and factor.loc[(2030, "x", "business")] == pytest.approx(0.9)
+
+
+
+def test_new_firms_cover_the_growth_between_simulated_years():
+    """With gaps between simulated years the new firms carry the growth since the previous simulated year."""
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import new_firms
+
+    companies = pd.DataFrame({"branch": ["Q"] * 50, "employees": [2.] * 50})
+    firms = new_firms(companies, 0.002, [2025, 2030], 2025, {"Q": 0.12, "default": 0.0}, 0.5, _landuse(), _postal(),
+                      lambda year: np.random.default_rng([1, year]))
+    growth = 100. * (1.12 ** 5 - 1.)                                      # 2025 -> 2030
+    assert firms.groupby("year_opened").size().to_dict() == {2030: int(np.floor(0.5 * growth / 2. + 0.5))}
+
+
+def test_land_use_stops_never_share_the_reference_off_street_group():
+    """Reference stops use str_idx -1 for off-street buildings; development areas and firms need their own groups."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from hagrid_demand.baseline.land_use import land_use_stops
+
+    sites = gpd.GeoDataFrame({"site_id": ["lu:res:a:0", "lu:res:b:0", "lu:biz:Q:2026:0"], "segment": ["private", "private", "business"],
+                              "plz": "30001", "area": ["A", "B", None], "year_opened": [2026, 2026, 2026]},
+                             geometry=[Point(index, 0) for index in range(3)], crs=25832)
+    stops, _ = land_use_stops(sites, 1_000_000)
+    homes = stops.loc[stops.stop_id.str.startswith("lu:res:")].str_idx
+    assert (homes <= -100).all() and homes.nunique() == 2 and -1 not in set(stops.str_idx)

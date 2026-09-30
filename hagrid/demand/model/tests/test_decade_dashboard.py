@@ -328,3 +328,20 @@ def test_change_payload_aggregates_sites_to_hexagons(tmp_path):
 
 def test_change_payload_is_null_without_projection(payload):
     assert payload["change"] is None
+
+
+
+def test_change_drivers_use_the_model_districts_of_the_sites(tmp_path):
+    """The drivers and the city share follow the model's district of every site, not a new geometric assignment."""
+    from decade_fixtures import write_change_files, write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_land_use_files(run)
+    write_change_files(run)
+    geometric = build_decade_dashboard_data({"trend": run})["change"]["districts"]["trend"]
+    pd.DataFrame({"site_id": ["h1", "h2", "h3", "f1"], "district_id": ["B", "B", "B", "B"]}).to_parquet(run / "land_use_site_districts.parquet", index=False)
+    model = build_decade_dashboard_data({"trend": run})["change"]["districts"]["trend"]
+    assert model["2026"]["total"][model["ids"].index("A")] == 0.0 and model["2026"]["total"][model["ids"].index("B")] > 0.
+    assert geometric["2026"]["total"] != model["2026"]["total"]

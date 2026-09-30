@@ -476,6 +476,9 @@ Segmentsummen ändern sich dabei nicht, und das Bezugsjahr 2025 bleibt bitgleich
 **Ausgaben je Lauf:**
 
 - `land_use_districts.parquet`: je Jahr und Bezirk Index, Neigungsindex, Modellpersonen, Beschäftigte, Prognoseindex
+- `land_use_site_districts.parquet`: Bezirk jedes Standorts, wie ihn das Modell zuordnet (Grundlage der Dashboard-Zerlegung)
+- `land_use_ages.parquet` (Personen und Online-Neigung je 5-Jahres-Altersgruppe und Jahr) und `land_use_developments.parquet`
+  (Modelleinwohner je Neubaugebiet und Jahr)
 - `land_use_factors.parquet`
 - `land_use_sites.parquet` und `land_use_stops.parquet` (neue Standorte)
 - `land_use_district_shapes.parquet` (vereinfachte Bezirksgrenzen)
@@ -497,6 +500,13 @@ Die Grenzdatei wird einmalig erzeugt:
 python -m hagrid_demand baseline osm-boundaries --pbf ../input/hannover/osm/niedersachsen-210101.osm.pbf \
     --plz ../input/hannover/raw/plz_region_hannover.csv --out ../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet
 ```
+
+Das Dekaden-Dashboard zeigt die Landnutzung in zwei Abschnitten. **Strukturwandel** enthält eine Bezirkskarte
+(Personen, Neigung, Beschäftigte), den Vergleich Modell gegen Prognose, die Neigungskurve nach Alter und die
+Tabelle der Neubaugebiete. **Veränderung und Verlauf** zeigt eine Hexagon-Karte der erwarteten Nachfrage
+(800-m-Hexagone) mit den Ansichten Wachstum gegen die Region, Veränderung, Dichte und Landnutzungseffekt.
+Dazu kommen das Wachstum von Jahr zu Jahr, der Stadtanteil je Szenario, die Zerlegung jeder Bezirksveränderung
+in mehr Pakete insgesamt und Umverteilung durch Landnutzung sowie das erste Jahr jedes Meilensteins.
 
 Die Dekadenläufe `decade-{trend,saettigung,boom}` nutzen die Variante `prognose`. `decade-trend-innen` und
 `decade-trend-suburban` rechnen das Trendvolumen mit den beiden Varianten; ihre MATSim-Tage sind nur 2030 und 2035.

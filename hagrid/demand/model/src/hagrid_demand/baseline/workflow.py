@@ -450,6 +450,7 @@ def _land_use_plan(config: dict, run: Path, output: Path, reference: dict):
     shapes.to_parquet(output / "land_use_district_shapes.parquet", index=False)
     plan.ages.to_parquet(output / "land_use_ages.parquet", index=False)
     plan.developments.to_parquet(output / "land_use_developments.parquet", index=False)
+    plan.site_districts.to_parquet(output / "land_use_site_districts.parquet", index=False)
     return plan
 
 
@@ -1061,7 +1062,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                 _copy_public(run, "daily", "out_of_home_network.parquet")
             if (run / "daily" / "out_of_home_inputs.json").is_file():
                 _copy_public(run, "daily", "out_of_home_inputs.json")
-            for name in ['land_use_districts.parquet', 'land_use_factors.parquet', 'land_use_sites.parquet', 'land_use_stops.parquet', 'land_use_site_stops.parquet', 'land_use_district_shapes.parquet', 'land_use_ages.parquet', 'land_use_developments.parquet']:
+            for name in ['land_use_districts.parquet', 'land_use_factors.parquet', 'land_use_sites.parquet', 'land_use_stops.parquet', 'land_use_site_stops.parquet', 'land_use_district_shapes.parquet', 'land_use_ages.parquet', 'land_use_developments.parquet', 'land_use_site_districts.parquet']:
                 if (run / "daily" / name).is_file():
                     _copy_public(run, "daily", name)
             if (run / "daily" / "annual").is_dir():

@@ -750,7 +750,11 @@ def _change_block(loaded: dict[str, dict | None], names: list[str], years: list[
         shapes = gpd.read_parquet(shapes_path).to_crs(25832)
         kinds = shapes.set_index(shapes.district_id.astype(str)).kind.astype(str)
         positions = frames["positions"]
-        district_of = pd.Series(assign_districts(positions[["x", "y"]].to_numpy(float), shapes), index=positions.index)
+        register = _parquet(run["path"] / "land_use_site_districts.parquet")
+        if register is not None:  # the model's district of every site (full polygons, configured areas)
+            district_of = pd.Series(register.district_id.astype(str).to_numpy(), index=register.site_id.astype(str).to_numpy())
+        else:
+            district_of = pd.Series(assign_districts(positions[["x", "y"]].to_numpy(float), shapes), index=positions.index)
         block = {"ids": shapes.district_id.astype(str).tolist(), "names": shapes.name.astype(str).tolist(), "kinds": shapes.kind.astype(str).tolist()}
         sums = {key: frames[key].assign(district_id=frames[key].site_id.map(district_of)).groupby(["year", "district_id"]).annual_expected.sum()
                 for key in ("total", "plain")}

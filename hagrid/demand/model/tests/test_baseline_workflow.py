@@ -757,6 +757,11 @@ def test_land_use_run_writes_its_registers(land_use_run):
     ages = pd.read_parquet(land_use_run / "land_use_ages.parquet")
     assert list(ages.columns) == ["year", "band", "age_from", "persons", "propensity"] and set(ages.year) == {2025, 2026}
     assert ages.loc[ages.year.eq(2025), "persons"].sum() == pytest.approx(4.)       # the four persons of the fixture
+    districts_of = pd.read_parquet(land_use_run / "land_use_site_districts.parquet")
+    assert list(districts_of.columns) == ["site_id", "district_id"] and not districts_of.site_id.duplicated().any()
+    reference = pd.read_parquet(land_use_run / "reference_sites.parquet").site_id.astype(str).unique()
+    assert set(reference) | set(sites.site_id) == set(districts_of.site_id)
+    assert set(districts_of.set_index("site_id").district_id[homes.site_id]) == {"A"}   # the configured district of the area
     developments = pd.read_parquet(land_use_run / "land_use_developments.parquet")
     assert list(developments.columns) == ["year", "name", "district_id", "residents_model"]
     assert developments.set_index("year").residents_model[2025] == 0. and developments.set_index("year").residents_model[2026] > 0.
