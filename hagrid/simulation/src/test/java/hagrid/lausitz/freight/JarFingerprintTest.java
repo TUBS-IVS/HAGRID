@@ -35,13 +35,24 @@ class JarFingerprintTest {
 
     private static Path jar(Path file, long time, String manifest, String pomProperties,
                             Map<String, byte[]> entries, boolean reversed) throws IOException {
+        return jar(file, time, manifest, pomProperties, entries, reversed, true);
+    }
+
+    private static Path jar(Path file, long time, String manifest, String pomProperties,
+                            Map<String, byte[]> entries, boolean reversed, boolean withDirectoryEntries) throws IOException {
         try (ZipOutputStream z = new ZipOutputStream(Files.newOutputStream(file))) {
             put(z, "META-INF/MANIFEST.MF", manifest.getBytes(StandardCharsets.UTF_8), time);
             put(z, "META-INF/maven/g/a/pom.properties", pomProperties.getBytes(StandardCharsets.UTF_8), time);
-            ZipEntry dir = new ZipEntry("hagrid/");
-            dir.setTime(time);
-            z.putNextEntry(dir);
-            z.closeEntry();
+            if (withDirectoryEntries) {
+                ZipEntry dir = new ZipEntry("hagrid/");
+                dir.setTime(time);
+                z.putNextEntry(dir);
+                z.closeEntry();
+                ZipEntry vdir = new ZipEntry("META-INF/versions/");
+                vdir.setTime(time);
+                z.putNextEntry(vdir);
+                z.closeEntry();
+            }
             List<Map.Entry<String, byte[]>> list = new ArrayList<>(entries.entrySet());
             if (reversed) {
                 Collections.reverse(list);
@@ -114,6 +125,14 @@ class JarFingerprintTest {
         two.put("x/B.class", new byte[]{2, 3});
         assertThat(JarFingerprint.ofJar(jar(tmp.resolve("a.jar"), 0L, "m", "p", one, false)))
                 .isNotEqualTo(JarFingerprint.ofJar(jar(tmp.resolve("b.jar"), 0L, "m", "p", two, false)));
+    }
+
+    @Test
+    void directoryEntriesDoNotChangeTheFingerprint() throws IOException {
+        // JARs with identical file entries but different directory entries must have the same fingerprint
+        String with = JarFingerprint.ofJar(jar(tmp.resolve("with.jar"), 0L, "m", "p", entries(), false, true));
+        String without = JarFingerprint.ofJar(jar(tmp.resolve("without.jar"), 0L, "m", "p", entries(), false, false));
+        assertThat(without).isEqualTo(with);
     }
 
     @Test
