@@ -117,6 +117,63 @@ def test_aged_histograms_apply_survival_from_the_life_table():
     assert table.loc[2030].sum() == pytest.approx(3000.)                 # the total still follows the forecast
 
 
+def _age_seed(ages, district_ids):
+    import pandas as pd
+
+    return pd.DataFrame([{"district_id": district, "age": age, "persons": 10.} for district in district_ids for age in ages])
+
+
+def test_aged_histograms_rake_to_the_forecast_age_structure():
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import aged_histograms, load_land_use_inputs
+
+    inputs = load_land_use_inputs()
+    structure, q = inputs["age_structure"], inputs["mortality"]["q"]
+    kinds = {"1.1": "city", "31": "umland"}
+    persons = _age_seed(range(0, 101), list(kinds))
+    index = pd.DataFrame({"year": [2025, 2025, 2030, 2030], "district_id": ["1.1", "31"] * 2, "population_index": [1., 1., 1.1, 0.9]})
+    table = aged_histograms(persons, [2025, 2030], 2025, index, q, structure, kinds)
+    for year, district in ((2025, "31"), (2030, "1.1")):
+        rows = table.loc[table.year.eq(year) & table.district_id.eq(district)].set_index("age").persons
+        weight = (year - 2024) / 10.
+        youth, old = (np.interp(weight, [0, 1], structure["districts"][district][key]) for key in ("youth", "old"))
+        working = rows.sum() / (1 + youth / 100 + old / 100)
+        assert rows.loc[:17].sum() == pytest.approx(working * youth / 100, rel=1e-9)        # Tabelle 11 per district
+        assert rows.loc[65:].sum() == pytest.approx(working * old / 100, rel=1e-9)
+        area = np.array([np.interp(year - 2024, [0, 5, 10], [structure["areas"][kinds[district]][y][k] for y in ("2024", "2029", "2034")])
+                         for k in range(10)])
+        assert rows.loc[85:].sum() / rows.loc[65:].sum() == pytest.approx(area[9] / area[7:].sum(), rel=1e-9)   # Tabelle 5 within 65+
+        assert rows.loc[0:2].sum() / rows.loc[:17].sum() == pytest.approx(area[0] / area[:4].sum(), rel=1e-9)
+    totals = table.groupby(["year", "district_id"]).persons.sum()
+    assert totals.loc[(2030, "1.1")] == pytest.approx(1010. * 1.1) and totals.loc[(2030, "31")] == pytest.approx(1010. * 0.9)
+
+
+def test_age_raking_fills_age_groups_the_seed_lacks():
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import aged_histograms, load_land_use_inputs
+
+    inputs = load_land_use_inputs()
+    persons = _age_seed(range(20, 60), ["31"])                       # nobody under 20 or from 60 on
+    index = pd.DataFrame({"year": [2025], "district_id": ["31"], "population_index": [1.]})
+    table = aged_histograms(persons, [2025], 2025, index, inputs["mortality"]["q"], inputs["age_structure"], {"31": "umland"})
+    rows = table.set_index("age").persons
+    assert rows.loc[85:].sum() > 0 and rows.loc[:2].sum() > 0
+    assert rows.sum() == pytest.approx(400.)
+
+
+def test_age_structure_covers_only_its_forecast_districts():
+    from hagrid_demand.baseline.land_use import covers_age_structure, load_land_use_inputs
+
+    inputs = load_land_use_inputs()
+    packaged = {unit["id"]: unit["kind"] for unit in inputs["districts"]}
+    assert covers_age_structure(inputs["age_structure"], packaged)
+    assert not covers_age_structure(inputs["age_structure"], {**packaged, "A": "city"})
+    assert not covers_age_structure(inputs["age_structure"], {"1.1": "elsewhere"})
+
+
 def test_propensity_cohort_shift_limits():
     import numpy as np
 

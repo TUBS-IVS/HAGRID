@@ -196,16 +196,98 @@ def district_population(inputs: dict, years, base_year: int, variant: str) -> pd
 # --- age structure and propensity -----------------------------------------------------------------------------------
 
 MAX_AGE = 100
+_BROAD = ((0, 17), (18, 64), (65, MAX_AGE))      # under 18, 18 to under 65, 65 and older (forecast quotients)
+
+
+def _piecewise(year: int, points: dict[int, np.ndarray]) -> np.ndarray:
+    """Linear between the forecast dates (end of each year), beyond them along the nearest segment; never negative."""
+    known = sorted(points)
+    left = max([value for value in known[:-1] if value <= year] or [known[0]])
+    right = known[known.index(left) + 1]
+    weight = (year - left) / (right - left)
+    return np.clip(points[left] + (points[right] - points[left]) * weight, 0., None)
+
+
+def _district_broad_shares(structure: dict, district: str, year: int) -> np.ndarray:
+    """Shares of under 18, 18 to under 65 and 65+ of a model district in *year* from the forecast's youth and old-age
+    quotients (Tabelle 11); a merged model unit ("4.1+4.2") adds up its members weighted by their population."""
+    counts = np.zeros(3)
+    for member in str(district).split("+"):
+        entry = structure["districts"].get(member)
+        if entry is None:
+            raise ValueError(f"age_structure lacks the forecast district {member}")
+        youth, old = (float(_piecewise(year, {2024: np.array([entry[key][0]]), 2034: np.array([entry[key][1]])})[0])
+                      for key in ("youth", "old"))
+        population = _forecast_value(float(entry["pop"][0]), float(entry["pop"][1]), year)
+        working = population / (1. + youth / 100. + old / 100.)
+        counts += [working * youth / 100., working, working * old / 100.]
+    return counts / counts.sum()
+
+
+def _area_group_shares(structure: dict, kind: str, year: int, groups: list) -> np.ndarray:
+    """Share of every detailed age group within its broad group for city or Umland in *year* (Tabelle 5)."""
+    points = {int(key): np.asarray(values, dtype=float) for key, values in structure["areas"][kind].items()}
+    counts = _piecewise(year, points)
+    broad = np.array([next(b for b, (low, high) in enumerate(_BROAD) if low <= group[0] <= high) for group in groups])
+    totals = np.array([counts[broad == b].sum() for b in range(len(_BROAD))])
+    return np.divide(counts, totals[broad], out=np.zeros_like(counts), where=totals[broad] > 0)
+
+
+def covers_age_structure(structure: dict, kinds: dict) -> bool:
+    """True when the forecast age structure holds every district (all members of a merged unit) and its area."""
+    return all(kind in structure["areas"] and all(member in structure["districts"] for member in str(district).split("+"))
+               for district, kind in kinds.items())
+
+
+def _rake(matrix: np.ndarray, kinds: np.ndarray, district_targets: np.ndarray, groups: list, group_shares: dict,
+          iterations: int = 500, tolerance: float = 1e-11) -> np.ndarray:
+    """Iterative proportional fitting of a district x age matrix to two consistent margins: district x broad group and
+    area (city/Umland) x detailed group, where every detailed group lies inside one broad group. Blocks the seed leaves
+    empty but a margin fills start uniform."""
+    matrix = matrix.astype(float).copy()
+    broad_columns = [np.arange(low, high + 1) for low, high in _BROAD]
+    group_columns = [np.arange(group[0], min(group[1], MAX_AGE) + 1) for group in groups]
+    broad_of_group = [next(b for b, (low, high) in enumerate(_BROAD) if low <= group[0] <= high) for group in groups]
+    area_targets = {kind: np.array([district_targets[kinds == kind, broad_of_group[k]].sum() * group_shares[kind][k]
+                                    for k in range(len(groups))]) for kind in group_shares}
+    for b, columns in enumerate(broad_columns):
+        empty = (matrix[:, columns].sum(axis=1) <= 0) & (district_targets[:, b] > 0)
+        matrix[np.ix_(empty, columns)] = 1.
+    for kind, targets in area_targets.items():
+        rows = np.flatnonzero(kinds == kind)
+        for k, columns in enumerate(group_columns):
+            if targets[k] > 0 and matrix[np.ix_(rows, columns)].sum() <= 0:
+                matrix[np.ix_(rows, columns)] = 1e-9
+    for _ in range(iterations):
+        for b, columns in enumerate(broad_columns):
+            sums = matrix[:, columns].sum(axis=1)
+            matrix[:, columns] *= np.divide(district_targets[:, b], sums, out=np.zeros_like(sums), where=sums > 0)[:, None]
+        for kind, targets in area_targets.items():
+            rows = np.flatnonzero(kinds == kind)
+            for k, columns in enumerate(group_columns):
+                total = matrix[np.ix_(rows, columns)].sum()
+                matrix[np.ix_(rows, columns)] *= targets[k] / total if total > 0 else 0.
+        error = max(np.abs(matrix[:, columns].sum(axis=1) - district_targets[:, b]).max() for b, columns in enumerate(broad_columns))
+        if error <= tolerance * max(1., float(district_targets.max())):
+            break
+    return matrix
 
 
 def aged_histograms(persons: pd.DataFrame, years, base_year: int, population_index: pd.DataFrame,
-                    death_rates) -> pd.DataFrame:
+                    death_rates, age_structure: dict | None = None, kinds: dict | None = None) -> pd.DataFrame:
     """Age histogram (0..100) of every district and year: the base-year histogram ages by one year per year and every
     age survives the year with ``1 - death_rates[age]`` (100 is the open bucket 100+), the youngest ages keep their
-    base-year counts, and the total follows the district's population index."""
+    base-year counts, and the total follows the district's population index.
+
+    With ``age_structure`` (``land_use.json``) and the districts' ``kinds`` (city/umland) every year, the base year
+    included, is raked to the forecast's age margins: under 18 / 18-64 / 65+ per district (Tabelle 11) and the
+    detailed age groups of city and Umland (Tabelle 5); the aged histogram only shapes the ages within these groups.
+    """
     q = np.asarray(death_rates, dtype=float)
     if q.shape != (MAX_AGE + 1,) or not np.isfinite(q).all() or (q < 0).any() or (q > 1).any():
         raise ValueError(f"death_rates must hold {MAX_AGE + 1} probabilities for the ages 0..{MAX_AGE}")
+    if (age_structure is None) != (kinds is None):
+        raise ValueError("age_structure and kinds go together")
     base = (persons.assign(age=persons.age.clip(0, MAX_AGE).astype(int)).groupby(["district_id", "age"]).persons.sum()
             .unstack(fill_value=0.).reindex(columns=range(MAX_AGE + 1), fill_value=0.))
     index = population_index.set_index(["year", "district_id"]).population_index
@@ -225,6 +307,14 @@ def aged_histograms(persons: pd.DataFrame, years, base_year: int, population_ind
         totals = aged.sum(axis=1)
         target = values.sum(axis=1) * np.array([float(index.get((year, district), 1.)) for district in base.index])
         aged *= np.divide(target, totals, out=np.zeros_like(target), where=totals > 0)[:, None]
+        if age_structure is not None:
+            groups = [list(group) for group in age_structure["groups"]]
+            district_kinds = np.array([kinds.get(district) for district in base.index], dtype=object)
+            if missing := sorted(str(district) for district, kind in zip(base.index, district_kinds) if kind not in age_structure["areas"]):
+                raise ValueError(f"no age structure for the districts {', '.join(missing)}")
+            shares = np.array([_district_broad_shares(age_structure, district, year) for district in base.index])
+            group_shares = {kind: _area_group_shares(age_structure, kind, year, groups) for kind in set(district_kinds)}
+            aged = _rake(aged, district_kinds, target[:, None] * shares, groups, group_shares)
         frame = pd.DataFrame(aged, index=base.index, columns=range(MAX_AGE + 1)).stack().rename("persons").reset_index()
         frames.append(frame.rename(columns={"level_1": "age"}).assign(year=year))
     return pd.concat(frames, ignore_index=True)[["year", "district_id", "age", "persons"]]
@@ -620,7 +710,10 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
     residents = development_residents(cfg["developments"], span, ratio)
     existing, warnings = existing_factor(model_persons, population, residents)
     ages = persons.assign(district_id=assign_districts(persons[["x", "y"]].to_numpy(float), frame), persons=1.)
-    histograms = aged_histograms(ages[["district_id", "age", "persons"]], span, base, population, inputs["mortality"]["q"])
+    kinds = {unit["id"]: unit["kind"] for unit in units["districts"]}
+    raked = covers_age_structure(inputs["age_structure"], kinds)     # custom districts age with the life table only
+    histograms = aged_histograms(ages[["district_id", "age", "persons"]], span, base, population, inputs["mortality"]["q"],
+                                 inputs["age_structure"] if raked else None, kinds if raked else None)
     curve = inputs["propensity_curve"]["bands"]
     propensity_table = propensity_index(histograms, curve, cfg["cohort_shift"], base)
     firm_table = site_firm_factor(companies, span, base, cfg["firm_rates"], cfg["new_firm_share"])
@@ -644,6 +737,7 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
     table = _district_table(frame, population, propensity_table, existing, residents, model_persons, business, firm_table, firms, span)
     status = {"variant": cfg["variant"], "base_year": base, "cohort_shift": cfg["cohort_shift"], "new_firm_share": cfg["new_firm_share"],
               "districts": int(len(frame)), "clamped": warnings,
+              "ages": "raked to the forecast age structure" if raked else "life table only (no forecast age structure for these districts)",
               "new_sites": {str(int(year)): int(count) for year, count in new_sites.groupby("year_opened").size().items()},
               "development_sites": int(len(homes)), "new_firms": int(len(firms)),
               "developments": [area["name"] for area in cfg["developments"]]}

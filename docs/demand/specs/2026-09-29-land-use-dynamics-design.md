@@ -202,7 +202,7 @@ Mikrosimulation, Haushalte, Einkommen, Wohnungsbestand, Pendeln, Kalibrierung an
 - Das Dekaden-Dashboard speichert gleiche Bezirksformen und Standortlisten nur einmal (`structure_pool`) und liest
   die Standortprojektion Lauf für Lauf.
 
-## 10. Nachtrag 2026-10-01 (Sterblichkeit in der Alterung)
+## 10. Nachtrag 2026-10-01 (Sterblichkeit und amtliche Altersstruktur in der Alterung)
 
 - Befund: `aged_histograms` verschob das Histogramm nur um ein Jahr je Jahr, ohne Sterbefälle; ab 100 sammelte sich
   alles im letzten Fach. Die Skalierung auf die Bezirksbevölkerung kürzte alle Alter gleich, die Hochaltrigen
@@ -214,5 +214,15 @@ Mikrosimulation, Haushalte, Einkommen, Wohnungsbestand, Pendeln, Kalibrierung an
   Basiszahlen) und die Skalierung auf die Prognose bleiben unverändert; Wanderung steckt weiter in der Skalierung.
 - Wirkung auf die synthetische Bevölkerung der Region (Gesamtzahl konstant): 2035 65+ 24,7 % statt 31,4 %, 80+ 7,5 %
   statt 13,6 %, 85+ 4,1 % statt 9,2 % (2025: 20,7 / 4,7 / 1,7 %).
-- Offen: Die gleichen Werte der Bänder 0–4/10–14 und 5–9/15–19 nach zehn Jahren folgen aus der Annahme konstanter
-  Geburten (junge Jahrgänge = Basis-Jahrgänge) und sind kein Rechenfehler.
+- Raking an die amtliche Altersstruktur: Jedes Jahr, das Basisjahr eingeschlossen, wird das gealterte Histogramm per
+  iterativer proportionaler Anpassung an zwei konsistente Ränder gebracht: unter 18 / 18–64 / 65+ je Prognosebezirk
+  (aus Jugend- und Altenquotient, Tabelle 11; 4.1+4.2 personengewichtet) und die zehn Altersgruppen von Stadt und
+  Umland (Tabelle 5, Anteile innerhalb der Großgruppe). Zwischen 31.12.2024, 2029 und 2034 linear, danach entlang
+  des letzten Abschnitts. Die Alterung mit Sterbetafel formt nur noch die Einzelalter innerhalb der Gruppen; Geburten
+  und Wanderung kommen über die Ränder. Eigene Bezirke ohne amtliche Altersstruktur altern nur mit der Sterbetafel
+  (Status `ages` im Plan).
+- Wirkung (Region, synthetische Bevölkerung): 2025 65+ 21,7 %, 85+ 3,8 % (Prognose 31.12.2024: 21,6 / 3,8 %; die
+  synthetische Bevölkerung hatte nur 1,7 % ab 85); 2035 65+ 24,4 %, 85+ 3,7 % (Prognose 2034: 24,3 / 3,8 %). Die
+  Neigung 2035 (cohort_shift 0,7) liegt in Stadt und Umland fast gleich (1,054 / 1,057); ohne Raking 1,031 / 1,095.
+  Das Gefälle Stadt–Umland der Neigung war damit großteils ein Artefakt der synthetischen Altersstruktur.
+- Die gleichen Bänder 0–4/10–14 der Alterung allein verschwinden mit dem Raking (Tabelle 5 trennt 0–2, 3–5, 6–9, 10–17).
