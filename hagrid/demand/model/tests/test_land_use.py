@@ -174,6 +174,15 @@ def test_age_structure_covers_only_its_forecast_districts():
     assert not covers_age_structure(inputs["age_structure"], {"1.1": "elsewhere"})
 
 
+def test_default_cohort_shift_is_the_documented_estimate():
+    from hagrid_demand.baseline.land_use import load_land_use_inputs
+
+    inputs = load_land_use_inputs()
+    estimate = inputs["propensity_curve"]["cohort_estimate"]
+    assert inputs["defaults"]["cohort_shift"] == estimate["value"] == 1.0
+    assert "isoc_ec_ib20" in estimate["source"] and estimate["windows"]
+
+
 def test_propensity_cohort_shift_limits():
     import numpy as np
 
