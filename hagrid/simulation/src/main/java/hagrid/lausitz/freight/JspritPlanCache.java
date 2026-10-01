@@ -116,6 +116,9 @@ public final class JspritPlanCache {
      */
     public JspritCacheResult produce(LmdPreprocessInputs in, JspritCacheKey keyBeforeReading, Path carriersOut,
                                      HitReplay replay, Computation computation) throws IOException {
+        // Spec section 7: the sidecar always reflects THIS preprocessing - never a leftover from an
+        // earlier run with the same run id that aborted (wiring error, failing computation, ...).
+        Files.deleteIfExists(sidecarPathFor(carriersOut));
         JspritCacheResult result;
         try {
             result = decide(in, keyBeforeReading, carriersOut, replay, computation);
@@ -198,8 +201,44 @@ public final class JspritPlanCache {
         return new JspritCacheResult(status, mode, reason, null, variantName(in.variant()), null, null, seconds);
     }
 
+    /**
+     * Release seam for {@link #releaseQuietly} (F1 fix): a {@link CacheEntryLock} is handed in as a
+     * method reference ({@code lock::close}), so the release failure path can be unit-tested without
+     * a way to make the real {@link CacheEntryLock#close()} fail from outside this package, and
+     * without changing {@code CacheEntryLock.java}.
+     */
+    @FunctionalInterface
+    interface Releasable {
+        void close() throws IOException;
+    }
+
+    /**
+     * Releases the entry lock without ever letting a release failure replace the result (or
+     * exception) the body already produced (F1 fix: spec section 6.4/6.2, a mismatch or a hit must
+     * never silently degrade to a miss just because releasing the lock afterwards failed).
+     *
+     * <p>Package-private (not {@code private}) only so the release-failure path is unit-testable
+     * through the {@link Releasable} seam - the real {@link CacheEntryLock#close()} cannot be made to
+     * fail from outside this package without changing {@code CacheEntryLock.java}.
+     */
+    static void releaseQuietly(Releasable lock, JspritCacheKey key) {
+        try {
+            lock.close();
+        } catch (IOException e) {
+            LOG.warn("jsprit cache: could not release the lock for {} ({}) - the result above still stands",
+                    key.dirName(), e.toString());
+        }
+    }
+
     private Optional<JspritCacheResult> tryHit(JspritCacheKey key, Path entry, Path carriersOut, HitReplay replay) {
-        try (CacheEntryLock lock = CacheEntryLock.acquire(lockFile(key))) {
+        CacheEntryLock lock;
+        try {
+            lock = CacheEntryLock.acquire(lockFile(key));
+        } catch (IOException e) {
+            LOG.warn("jsprit cache lookup of {} failed ({}) - computing without it", key.dirName(), e.toString());
+            return Optional.empty();
+        }
+        try {
             EntryState state = inspect(entry, key);
             if (state instanceof EntryState.Corrupt corrupt) {
                 LOG.warn("jsprit cache entry {} is corrupt ({}) - recomputing", key.dirName(), corrupt.why());
@@ -218,11 +257,23 @@ public final class JspritPlanCache {
         } catch (IOException e) {
             LOG.warn("jsprit cache lookup of {} failed ({}) - computing without it", key.dirName(), e.toString());
             return Optional.empty();
+        } finally {
+            // never in the catch above: a release failure here must not turn an already-decided
+            // HIT (or an IOException already caught) into anything else (F1 fix).
+            releaseQuietly(lock::close, key);
         }
     }
 
     private JspritCacheResult publish(JspritCacheKey key, Path entry, Path carriersOut, double seconds) {
-        try (CacheEntryLock lock = CacheEntryLock.acquire(lockFile(key))) {
+        CacheEntryLock lock;
+        try {
+            lock = CacheEntryLock.acquire(lockFile(key));
+        } catch (IOException e) {
+            LOG.warn("jsprit cache: could not store {} ({}) - the run continues with its fresh result",
+                    key.dirName(), e.toString());
+            return result(Status.MISS, "store-failed", key, null, seconds);
+        }
+        try {
             EntryState state = inspect(entry, key);
             if (state instanceof EntryState.Blocked) {
                 LOG.error("jsprit cache BLOCKED while {} was computing - not storing", key.dirName());
@@ -245,6 +296,10 @@ public final class JspritPlanCache {
             LOG.warn("jsprit cache: could not store {} ({}) - the run continues with its fresh result",
                     key.dirName(), e.toString());
             return result(Status.MISS, "store-failed", key, null, seconds);
+        } finally {
+            // never in the catch above, and never swallowing a RuntimeException such as
+            // VerifyMismatch that compareWithPublished may throw out of the try block (F1 fix).
+            releaseQuietly(lock::close, key);
         }
     }
 
@@ -321,7 +376,9 @@ public final class JspritPlanCache {
     /** Short description of the block marker, or empty when the cache is not blocked. */
     private Optional<String> blockedNote() {
         Path marker = blockedFile();
-        if (!Files.exists(marker)) {
+        if (Files.notExists(marker)) {
+            // an undeterminable marker (e.g. a permission error) must err toward blocking, not toward
+            // treating the cache as healthy (F5 fix): Files.exists() would return false in that case.
             return Optional.empty();
         }
         try {
@@ -365,7 +422,9 @@ public final class JspritPlanCache {
 
     /** Re-evaluated under the lock every time - never carried over from an earlier check. */
     static EntryState inspect(Path entry, JspritCacheKey key) {
-        if (Files.exists(entry.resolveSibling(BLOCKED_FILE))) {
+        // !notExists(), not exists(): an undeterminable marker must err toward blocking rather than
+        // toward treating the cache as healthy, since exists() returns false in that case too (F5 fix).
+        if (!Files.notExists(entry.resolveSibling(BLOCKED_FILE))) {
             return new EntryState.Blocked();   // checked first: a blocked cache has no valid entries
         }
         if (!Files.exists(entry)) {
