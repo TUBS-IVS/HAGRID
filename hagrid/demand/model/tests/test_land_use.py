@@ -84,15 +84,37 @@ def test_variants_shift_city_and_umland_but_keep_the_region():
 def test_aged_histograms_shift_one_year_per_year():
     import pandas as pd
 
-    from hagrid_demand.baseline.land_use import aged_histograms
+    import numpy as np
 
+    from hagrid_demand.baseline.land_use import aged_histograms, load_land_use_inputs
+
+    q = np.asarray(load_land_use_inputs()["mortality"]["q"], dtype=float)
     persons = pd.DataFrame({"district_id": ["A", "A"], "age": [60, 20], "persons": [100., 50.]})
     index = pd.DataFrame({"year": [2025, 2030], "district_id": ["A", "A"], "population_index": [1.0, 1.2]})
-    table = aged_histograms(persons, [2025, 2030], 2025, index).set_index(["year", "district_id", "age"]).persons
+    table = aged_histograms(persons, [2025, 2030], 2025, index, q).set_index(["year", "district_id", "age"]).persons
     assert table.loc[(2030, "A", 65)] > 0 and table.get((2030, "A", 60), 0.) == 0.
     assert table.loc[(2030, "A", 25)] > 0
     assert table.loc[2030].sum() == pytest.approx(150. * 1.2)
-    assert table.loc[(2030, "A", 65)] / table.loc[(2030, "A", 25)] == pytest.approx(2.0)
+    survival = np.prod(1 - q[60:65]) / np.prod(1 - q[20:25])
+    assert table.loc[(2030, "A", 65)] / table.loc[(2030, "A", 25)] == pytest.approx(2.0 * survival)
+
+
+def test_aged_histograms_apply_survival_from_the_life_table():
+    import numpy as np
+    import pandas as pd
+
+    from hagrid_demand.baseline.land_use import aged_histograms, load_land_use_inputs
+
+    q = np.asarray(load_land_use_inputs()["mortality"]["q"], dtype=float)
+    assert len(q) == 101 and q[85] > q[60] > q[30] > 0
+    persons = pd.DataFrame({"district_id": ["A", "A", "A"], "age": [30, 80, 99], "persons": [1000., 1000., 1000.]})
+    index = pd.DataFrame({"year": [2025, 2030], "district_id": ["A", "A"], "population_index": [1.0, 1.0]})
+    table = aged_histograms(persons, [2025, 2030], 2025, index, q).set_index(["year", "district_id", "age"]).persons
+    survival = lambda age: np.prod(1 - q[age:age + 5])                   # five years from `age` on
+    old_100 = (1 - q[99]) * np.prod([1 - q[100]] * 4)                     # 99 -> 100, then four years in the open bucket
+    assert table.loc[(2030, "A", 85)] / table.loc[(2030, "A", 35)] == pytest.approx(survival(80) / survival(30))
+    assert table.loc[(2030, "A", 100)] / table.loc[(2030, "A", 35)] == pytest.approx(old_100 / survival(30))
+    assert table.loc[2030].sum() == pytest.approx(3000.)                 # the total still follows the forecast
 
 
 def test_propensity_cohort_shift_limits():
@@ -114,7 +136,7 @@ def test_propensity_index_is_one_in_base_year_and_falls_with_ageing():
     curve = load_land_use_inputs()["propensity_curve"]["bands"]
     persons = pd.DataFrame({"district_id": ["A"], "age": [60], "persons": [100.]})
     index = pd.DataFrame({"year": [2025, 2035], "district_id": ["A", "A"], "population_index": [1.0, 1.0]})
-    histograms = aged_histograms(persons, [2025, 2035], 2025, index)
+    histograms = aged_histograms(persons, [2025, 2035], 2025, index, load_land_use_inputs()["mortality"]["q"])
     ageing = propensity_index(histograms, curve, 0., 2025).set_index(["year", "district_id"]).propensity_index
     assert ageing.loc[(2025, "A")] == pytest.approx(1.0)
     assert ageing.loc[(2035, "A")] == pytest.approx(0.61 / 0.80)   # everybody is 70 in 2035

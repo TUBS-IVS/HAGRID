@@ -198,9 +198,14 @@ def district_population(inputs: dict, years, base_year: int, variant: str) -> pd
 MAX_AGE = 100
 
 
-def aged_histograms(persons: pd.DataFrame, years, base_year: int, population_index: pd.DataFrame) -> pd.DataFrame:
-    """Age histogram (0..100) of every district and year: the base-year histogram ages by one year per year, the
-    youngest ages keep their base-year counts, and the total follows the district's population index."""
+def aged_histograms(persons: pd.DataFrame, years, base_year: int, population_index: pd.DataFrame,
+                    death_rates) -> pd.DataFrame:
+    """Age histogram (0..100) of every district and year: the base-year histogram ages by one year per year and every
+    age survives the year with ``1 - death_rates[age]`` (100 is the open bucket 100+), the youngest ages keep their
+    base-year counts, and the total follows the district's population index."""
+    q = np.asarray(death_rates, dtype=float)
+    if q.shape != (MAX_AGE + 1,) or not np.isfinite(q).all() or (q < 0).any() or (q > 1).any():
+        raise ValueError(f"death_rates must hold {MAX_AGE + 1} probabilities for the ages 0..{MAX_AGE}")
     base = (persons.assign(age=persons.age.clip(0, MAX_AGE).astype(int)).groupby(["district_id", "age"]).persons.sum()
             .unstack(fill_value=0.).reindex(columns=range(MAX_AGE + 1), fill_value=0.))
     index = population_index.set_index(["year", "district_id"]).population_index
@@ -208,15 +213,13 @@ def aged_histograms(persons: pd.DataFrame, years, base_year: int, population_ind
     for year in sorted({*[int(value) for value in years], int(base_year)}):
         shift = max(0, year - int(base_year))
         values = base.to_numpy(float)
-        if shift == 0:
-            aged = values.copy()
-        else:
+        aged = values.copy()
+        for _ in range(shift):
+            survivors = aged * (1. - q)
             aged = np.zeros_like(values)
-            if shift <= MAX_AGE:
-                aged[:, shift:MAX_AGE] = values[:, :MAX_AGE - shift]          # everybody is `shift` years older
-                aged[:, MAX_AGE] = values[:, MAX_AGE - shift:].sum(axis=1)     # ages from 100 on share the last bucket
-            else:
-                aged[:, MAX_AGE] = values.sum(axis=1)
+            aged[:, 1:] = survivors[:, :MAX_AGE]                               # everybody is one year older
+            aged[:, MAX_AGE] += survivors[:, MAX_AGE]                          # the open bucket 100+ keeps its survivors
+        if shift:
             young = min(shift, MAX_AGE)
             aged[:, :young] = values[:, :young]                                # the youngest ages keep their base counts
         totals = aged.sum(axis=1)
@@ -617,7 +620,7 @@ def build_land_use_plan(cfg: dict, years, seed: int, reference_sites: pd.DataFra
     residents = development_residents(cfg["developments"], span, ratio)
     existing, warnings = existing_factor(model_persons, population, residents)
     ages = persons.assign(district_id=assign_districts(persons[["x", "y"]].to_numpy(float), frame), persons=1.)
-    histograms = aged_histograms(ages[["district_id", "age", "persons"]], span, base, population)
+    histograms = aged_histograms(ages[["district_id", "age", "persons"]], span, base, population, inputs["mortality"]["q"])
     curve = inputs["propensity_curve"]["bands"]
     propensity_table = propensity_index(histograms, curve, cfg["cohort_shift"], base)
     firm_table = site_firm_factor(companies, span, base, cfg["firm_rates"], cfg["new_firm_share"])
