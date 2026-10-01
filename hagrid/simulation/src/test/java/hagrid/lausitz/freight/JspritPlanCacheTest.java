@@ -24,6 +24,7 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("JspritPlanCache")
@@ -396,5 +397,84 @@ class JspritPlanCacheTest {
                 .isEqualTo(Path.of("c", "R_lmd_carriers_routed.cache.json"));
         assertThat(JspritPlanCache.sidecarPathFor(Path.of("c", "plain")))
                 .isEqualTo(Path.of("c", "plain.cache.json"));
+    }
+
+    // --- review round 1 fixes ------------------------------------------------------------------
+
+    /**
+     * F1: there is no way to make the real {@link CacheEntryLock#close()} fail from outside this
+     * package without changing {@code CacheEntryLock.java} (not permitted - see fix report). This
+     * exercises the {@code releaseQuietly} helper directly through the {@code Releasable} seam added
+     * for exactly this purpose: a release failure must be swallowed (logged), never thrown onward,
+     * so it can never replace a result (or exception) the caller already decided on.
+     */
+    @Test
+    void releaseQuietlySwallowsAReleaseFailureInsteadOfPropagatingIt() throws IOException {
+        JspritCacheKey key = JspritCacheKey.of(inputs, "fp-1", p -> null, "java-1");
+        JspritPlanCache.Releasable failingClose = () -> {
+            throw new IOException("simulated lock release failure");
+        };
+        assertThatCode(() -> JspritPlanCache.releaseQuietly(failingClose, key)).doesNotThrowAnyException();
+    }
+
+    /** F2 (promoted Minor 1a): spec section 5.4 - a 16-character prefix collision is a miss, never a
+     *  false hit, because the full key is re-checked against the manifest under the lock. */
+    @Test
+    void aManifestWithAForeignFullKeyIsTreatedAsCorruptNotAsAHit() throws IOException {
+        produce(cache(Mode.ON), inputs, out("RUN_A"), new CountingReplay(), new Counting("X"));
+        Path entry = onlyEntry();
+        Map<String, Object> manifest = json(entry.resolve(JspritPlanCache.MANIFEST_FILE));
+        manifest.put("key", "f".repeat(64));   // a different full hash - would-be prefix collision
+        new ObjectMapper().writeValue(entry.resolve(JspritPlanCache.MANIFEST_FILE).toFile(), manifest);
+
+        Counting c = new Counting("X");
+        CountingReplay replay = new CountingReplay();
+        JspritCacheResult r = produce(cache(Mode.ON), inputs, out("RUN_R"), replay, c);
+
+        assertThat(r.status()).isEqualTo(Status.MISS);
+        assertThat(r.reason()).isEqualTo("repaired");
+        assertThat(c.calls).as("no hit on a manifest key mismatch").isEqualTo(1);
+        assertThat(replay.calls).isZero();
+        try (Stream<Path> s = Files.list(cacheDir)) {
+            assertThat(s.map(p -> p.getFileName().toString())).anyMatch(n -> n.startsWith(".corrupt-"));
+        }
+        JspritCacheResult again = produce(cache(Mode.ON), inputs, out("RUN_C"), new CountingReplay(), new Counting("Y"));
+        assertThat(again.status()).as("the repaired entry is valid").isEqualTo(Status.HIT);
+        assertThat(read(out("RUN_C"))).isEqualTo("X");
+    }
+
+    /** F3 (promoted Minor 1b): the BLOCKED check inside {@code inspect} runs again under the lock in
+     *  {@code publish}, not only in {@code decide} before the computation - a mismatch published by
+     *  someone else WHILE this run's own jsprit was computing must still block. */
+    @Test
+    void aBlockWrittenWhileComputingStillBlocksPublish() throws IOException {
+        JspritPlanCache.Computation blockDuringComputation = target -> {
+            Files.createDirectories(cacheDir);
+            Files.writeString(cacheDir.resolve(JspritPlanCache.BLOCKED_FILE), "{}");
+            Files.createDirectories(target.toAbsolutePath().getParent());
+            Files.writeString(target, "X");
+        };
+        JspritCacheResult r = produce(cache(Mode.ON), inputs, out("RUN_A"), new CountingReplay(),
+                blockDuringComputation);
+        assertThat(r.status()).isEqualTo(Status.BLOCKED);
+        assertThat(entries()).as("nothing is stored while blocked").isEmpty();
+    }
+
+    /** F4 (promoted Minor 3): spec section 7 - the sidecar always reflects the current preprocessing,
+     *  never a stale value from an earlier run with the same run id that aborted. */
+    @Test
+    void aFailingComputationLeavesNoStaleSidecarBehind() throws IOException {
+        Path carriersOut = out("RUN_A");
+        Path sidecar = JspritPlanCache.sidecarPathFor(carriersOut);
+        Files.createDirectories(sidecar.getParent());
+        Files.writeString(sidecar, "{\"status\":\"hit\"}", StandardCharsets.UTF_8);
+
+        JspritPlanCache.Computation failing = target -> {
+            throw new IOException("jsprit failed");
+        };
+        assertThatThrownBy(() -> produce(cache(Mode.ON), inputs, carriersOut, new CountingReplay(), failing))
+                .isInstanceOf(IOException.class);
+        assertThat(Files.exists(sidecar)).as("the stale sidecar from an earlier run must not survive an abort")
+                .isFalse();
     }
 }
