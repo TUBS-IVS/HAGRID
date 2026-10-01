@@ -371,7 +371,7 @@ do not change, and the base year 2025 stays bit-identical to a run without land 
 
 ```json
 "osm_boundaries": "../../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet",
-"land_use": {"enabled": true, "variant": "prognose", "cohort_shift": 0.7, "new_firm_share": 0.3}
+"land_use": {"enabled": true, "variant": "prognose", "cohort_shift": 1.0, "new_firm_share": 0.3}
 ```
 
 Further keys: `base_year`, `grid_m`, `persons` and `landuse` (file names relative to `input_dir`), `developments`,

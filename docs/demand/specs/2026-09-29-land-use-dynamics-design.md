@@ -226,3 +226,8 @@ Mikrosimulation, Haushalte, Einkommen, Wohnungsbestand, Pendeln, Kalibrierung an
   Neigung 2035 (cohort_shift 0,7) liegt in Stadt und Umland fast gleich (1,054 / 1,057); ohne Raking 1,031 / 1,095.
   Das Gefälle Stadt–Umland der Neigung war damit großteils ein Artefakt der synthetischen Altersstruktur.
 - Die gleichen Bänder 0–4/10–14 der Alterung allein verschwinden mit dem Raking (Tabelle 5 trennt 0–2, 3–5, 6–9, 10–17).
+- Kohorteneffekt geschätzt statt angenommen: `cohort_shift` 0,7 → 1,0. Eurostat-IKT (isoc_ec_ibuy/isoc_ec_ib20, I_BLT12,
+  Deutschland): In acht Zehnjahresfenstern 2008→2018 … 2015→2025 erklärt `max(p_t(a), p_t(a − 10 s))` die Kurve zehn
+  Jahre später am besten mit s = 1,0, roh und relativ zu 25–34 (Methodenbruch 2021). Beispiel: 55–64 im Jahr 2015 kauften
+  zu 59 % online, als 65–74 im Jahr 2025 zu 61 %. Mit Raking bewegt der Wert das Gefälle Stadt–Umland der Neigung 2035
+  kaum (s = 0: −0,004; 0,7: +0,004; 1,0: +0,012), er hebt vor allem das Niveau.
