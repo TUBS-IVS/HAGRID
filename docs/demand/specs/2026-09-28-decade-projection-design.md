@@ -196,3 +196,12 @@ Jahres-Dashboards je Jahr + Dekaden-Dashboard über Läufe.
 
 Keine Vergangenheitsjahre, keine Shops/Fehlzustellungen, keine Java-Änderungen, keine Kalibrierung der
 Wachstumsraten an neue Quellen, keine parallelen Läufe.
+
+## 8. Nachtrag 2026-10-01 (Elastizität des Netzwachstums kalibriert)
+
+- R4 setzte die Elastizität auf 0,6 (Annahme). Kalibriert an den offiziellen Packstation-Zahlen von DHL (6.500 Ende 2020,
+  11.000 Ende 2022, 14.500 im Dezember 2024; Pressemitteilungen) gegen die DHL-Out-of-Home-Nachfrage aus
+  `out_of_home.json` (Trendanteil × nationale Menge): 2020→2022 1,19 (Ausbauphase), 2022→2024 0,69, 2020→2024 0,95.
+  Für 2025–2035 gilt der jüngste, sättigende Abschnitt: Elastizität 0,7.
+- OSM zeigt in der Region 70 Automaten am 1.1.2021 und 244 im Jahr 2026 (×3,5); das übertreibt das Wachstum, weil die
+  Karte im selben Zeitraum vollständiger wurde. Daher die offiziellen bundesweiten Zahlen als Grundlage.
