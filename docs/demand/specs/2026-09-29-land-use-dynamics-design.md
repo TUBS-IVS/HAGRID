@@ -62,7 +62,7 @@ Prognosebezirken (aus dem Tabellenanhang der Prognose; Stadtteile, die dort nich
 | L4 | Neubaugebiete bekommen absolute Einwohnerannahmen mit Start und Hochlauf; der Rest der Bezirksveränderung wirkt auf den Bestand. | So stimmt die Bezirkssumme mit der Prognose, und der Zuwachs landet dort, wo gebaut wird. | Annahmen je Gebiet (konfigurierbar). |
 | L5 | Neue Standorte liegen auf einem 50-m-Raster im Gebietspolygon, jeder mit eigenem Stopp. | Die OSM-Gebäude von 2021 kennen die Neubauten noch nicht. | Straßenzuordnung grob; MATSim nimmt den nächsten Link. |
 | L6 | Neigung: Destatis-Kurve je Altersgruppe; `cohort_shift` ∈ [0, 1] mischt zwischen Alterseffekt (0: die Kurve bleibt) und Kohorteneffekt (1: jede Person behält ihre Neigung beim Altern). Standard 0,7. | Ein Parameter, belegt durch den Anstieg der 55- bis 74-Jährigen von 66 % (2021) auf 73 % (2024). | Wirkung nur relativ zwischen Bezirken. |
-| L7 | Alterung je Bezirk ohne Mikrosimulation: das Histogramm von 2025 altert jährlich um ein Jahr, junge Jahrgänge werden mit der Altersverteilung von 2025 aufgefüllt, dann wird auf die Bezirksbevölkerung des Jahres skaliert. | Die amtliche Prognose rechnet Geburten, Sterbefälle und Wanderung schon; wir brauchen nur die Altersmischung. | Leicht überschätzte Alterung in Zuzugsgebieten. |
+| L7 | Alterung je Bezirk ohne Mikrosimulation: das Histogramm von 2025 altert jährlich um ein Jahr und überlebt je Alter mit 1 − q(a) der Destatis-Sterbetafel 2021/23 (seit Nachtrag 10), junge Jahrgänge werden mit der Altersverteilung von 2025 aufgefüllt, dann wird auf die Bezirksbevölkerung des Jahres skaliert. | Die amtliche Prognose rechnet Geburten, Sterbefälle und Wanderung schon; wir brauchen nur die Altersmischung. | Leicht überschätzte Alterung in Zuzugsgebieten. |
 | L8 | Firmen: Wachstum je WZ-Abschnitt (Standard Q +1,5 %/a, J/M/N +1,0 %/a, H +1,0 %/a, G 0,0 %/a, C −0,5 %/a, sonst +0,5 %/a); `new_firm_share` 0,3 des Beschäftigtenzuwachses entsteht als neue Betriebe in OSM-Gewerbe- und Industrieflächen. | Belegt durch die Regionsentwicklung (+0,5 bis +1,5 %/a) und die Branchentrends. | Annahmen konfigurierbar. |
 | L9 | Varianten als Jahresraten-Offsets: `innenentwicklung` +0,1 Prozentpunkte/a für städtische Bezirke, −0,1 für das Umland (nach 10 Jahren ±1 Prozentpunkt), `suburbanisierung` umgekehrt; danach auf die Regionssumme der Prognose normiert. | Dieselbe Mechanik, fast ohne Mehraufwand. | Offsets sind Konfiguration. |
 | L10 | Kein Java, keine Haushaltsbildung, kein Einkommen, kein Wohnungsmodell. | Schlank halten. | — |
@@ -86,8 +86,8 @@ Reine Funktionen, jede einzeln getestet:
 
 - `district_population(table, years, base_year, variant, offsets) -> DataFrame[year, district_id, population_index]`
   nach L3/L9 (Index = Bevölkerung(y) / Bevölkerung(base_year)).
-- `aged_histograms(persons_by_district: DataFrame[district_id, age, persons], years, base_year) -> DataFrame[year, district_id, age, persons]`
-  nach L7 (Altersgrenze 100, auf den Bezirksindex skaliert).
+- `aged_histograms(persons_by_district: DataFrame[district_id, age, persons], years, base_year, population_index, death_rates) -> DataFrame[year, district_id, age, persons]`
+  nach L7 (Altersgrenze 100 als offene Gruppe 100+, Überleben je Jahr mit `1 − death_rates[age]`, auf den Bezirksindex skaliert).
 - `propensity(ages, year, base_year, curve, cohort_shift) -> np.ndarray`: `p_y(a) = p(a − s(y))`,
   `s(y) = cohort_shift · (y − base_year)`, Kurve stückweise konstant nach Altersgruppen, unter 16 = 0.
 - `propensity_index(histograms, curve, cohort_shift, base_year) -> DataFrame[year, district_id, propensity_index]`:
@@ -201,3 +201,18 @@ Mikrosimulation, Haushalte, Einkommen, Wohnungsbestand, Pendeln, Kalibrierung an
 - Das Jahres-Dashboard zählt die bis zu seinem Jahr eröffneten Landnutzungsstopps mit.
 - Das Dekaden-Dashboard speichert gleiche Bezirksformen und Standortlisten nur einmal (`structure_pool`) und liest
   die Standortprojektion Lauf für Lauf.
+
+## 10. Nachtrag 2026-10-01 (Sterblichkeit in der Alterung)
+
+- Befund: `aged_histograms` verschob das Histogramm nur um ein Jahr je Jahr, ohne Sterbefälle; ab 100 sammelte sich
+  alles im letzten Fach. Die Skalierung auf die Bezirksbevölkerung kürzte alle Alter gleich, die Hochaltrigen
+  überlebten also faktisch zu 100 %. Region 2035 (Trend): 85–89 = 57.159 statt 13.620 (2025), 90+ = 49.029 statt
+  5.830; Anteil 85+ 9,2 %. Das überzeichnete den Kohorteneffekt auf die Bestellneigung im älteren Umland.
+- Korrektur: Jedes Alter überlebt ein Jahr mit `1 − q(a)`; `q` ist die Allgemeine Sterbetafel 2021/2023 für
+  Deutschland (Destatis, Statistischer Bericht Sterbetafeln 2021/2023, Tabelle 12621-01), beide Geschlechter mit `lx`
+  gewichtet, Alter 100 = offene Gruppe 100+ (`land_use.json` → `mortality`). Geburten (junge Jahrgänge behalten die
+  Basiszahlen) und die Skalierung auf die Prognose bleiben unverändert; Wanderung steckt weiter in der Skalierung.
+- Wirkung auf die synthetische Bevölkerung der Region (Gesamtzahl konstant): 2035 65+ 24,7 % statt 31,4 %, 80+ 7,5 %
+  statt 13,6 %, 85+ 4,1 % statt 9,2 % (2025: 20,7 / 4,7 / 1,7 %).
+- Offen: Die gleichen Werte der Bänder 0–4/10–14 und 5–9/15–19 nach zehn Jahren folgen aus der Annahme konstanter
+  Geburten (junge Jahrgänge = Basis-Jahrgänge) und sind kein Rechenfehler.
