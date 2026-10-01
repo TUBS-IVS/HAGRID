@@ -56,6 +56,9 @@ With `osm_buildings` and `osm_points`, the reference runs in street mode (`ancho
    streets (only for postcodes with an extreme LSP level; 2021: 30855), LSP rates per resident and per firm, the split of
    every LSP street into B2C and B2B, the B2B share of the LSP from these data and the extrapolation to all carriers. Streets with
    LSP volume but no building get synthetic points; buildings without a street and LSP gaps get the structural model.
+   Small streets with residents or firms but no LSP parcel in 2021 (`zero_filled`, 670 streets with 6,757 residents) take
+   their structural expectation from the observed streets of their postcode, which give it up proportionally (at most
+   `zero_fill_cap` = 50 % of their volume), so the observed postcode volume stays the same.
 3. **Stops** (`reference_stops.parquet`): buildings on the same street side within 2 × 40 m form one stop, large receivers
    (≥ 15 parcels a day) a stop of their own. The MATSim export writes one row per stop (`id`, `stop_id`, `str_idx`,
    `section_id`) and splits rows above 400 parcels. With `notebook_output_dir`, the run compares every day with the file of
