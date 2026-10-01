@@ -38,6 +38,10 @@ import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
 import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.vehicles.VehicleType;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -118,29 +122,50 @@ public final class LausitzFreightPreprocessor {
     public static void run(String demandShp, String depotCsv, String networkFile,
                            String vehicleTypesFile, String carriersOut, int jspritIterations,
                            String serviceAreaShp) {
+        run(demandShp, depotCsv, networkFile, vehicleTypesFile, carriersOut, jspritIterations,
+                serviceAreaShp, null);
+    }
+
+    /**
+     * Same as {@link #run(String, String, String, String, String, int, String)} with the jsprit
+     * result cache ({@link JspritPlanCache}, spec 2026-10-01): steps 1-4 always run, steps 5-6
+     * (jsprit routing and writing) are skipped when this machine already computed exactly this
+     * result. {@code cacheDir == null} turns the cache off.
+     *
+     * @return what the cache did, for {@code run_metadata.json}
+     */
+    public static JspritCacheResult run(String demandShp, String depotCsv, String networkFile,
+                                        String vehicleTypesFile, String carriersOut, int jspritIterations,
+                                        String serviceAreaShp, Path cacheDir) {
+        JspritPlanCache cache = JspritPlanCache.fromSystem(cacheDir);   // a typo in -Dhagrid.jsprit.cache fails here
+        LmdPreprocessInputs in = LmdPreprocessInputs.baseline(demandShp, depotCsv, networkFile,
+                vehicleTypesFile, jspritIterations, serviceAreaShp);
+        // hashed BEFORE step 1 reads anything; produce() hashes again and refuses the cache on a change
+        JspritCacheKey keyBeforeReading = cache.keyBeforeReading(in);
+
         // 1. network — route only on the connected car sub-network. The raw Lausitz network is a
         //    network-with-pt; leaving pt_*/pt_regio_* links in traps depot/service snapping and makes
         //    jsprit grind for hours on failing routes (see carNetwork()).
         Config config = ConfigUtils.createConfig();
-        config.network().setInputFile(networkFile);
+        config.network().setInputFile(in.network().toString());
         Scenario scenario = ScenarioUtils.loadScenario(config);
         Network network = carNetwork(scenario.getNetwork());
         ((MutableScenario) scenario).setNetwork(network);
 
         // 2. van vehicle types
         CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
-        new CarrierVehicleTypeReader(vehicleTypes).readFile(vehicleTypesFile);
+        new CarrierVehicleTypeReader(vehicleTypes).readFile(in.vehicleTypes().toString());
         VehicleType[] vans = vehicleTypes.getVehicleTypes().values().toArray(new VehicleType[0]);
         if (vans.length == 0) {
-            throw new IllegalStateException("No van vehicle types loaded from " + vehicleTypesFile);
+            throw new IllegalStateException("No van vehicle types loaded from " + in.vehicleTypes());
         }
 
         // 3. demand -> per-LSP deliveries ; depots -> per-LSP link
-        Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(demandShp));
-        if (serviceAreaShp != null && !serviceAreaShp.isBlank()) {
-            byProvider = clipToServiceArea(byProvider, serviceAreaShp);
+        Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(in.demandShp().toString()));
+        if (in.serviceAreaShp() != null) {
+            byProvider = clipToServiceArea(byProvider, in.serviceAreaShp().toString());
         }
-        Map<String, Id<Link>> depots = LmdDepotLoader.load(depotCsv, network);
+        Map<String, Id<Link>> depots = LmdDepotLoader.load(in.depotCsv().toString(), network);
 
         // 4. one carrier per demanded LSP, anchored at its depot
         Carriers carriers = new Carriers();
@@ -155,24 +180,26 @@ public final class LausitzFreightPreprocessor {
             Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
             Carrier carrier = LmdCarrierBuilder.build(provider, e.getValue(), depot, network, vans,
                     DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, DISPATCH_HOURS, missedRng);
-            CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
+            CarriersUtils.setJspritIterations(carrier, Math.max(1, in.jspritIterations()));
             carriers.addCarrier(carrier);
         }
 
-        // 5. route each carrier offline with HAGRID's custom jsprit algorithm (see routeWithDurationCap),
-        //    then stagger the INFINITE-fleet clone tours onto individual per-tour departures
-        //    (LmdTourRetimer; root cause 2026-07-30: all clones of a template share one jittered second)
-        routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations,
-                HAGRIDRouterUtils.MAXROUTEDURATION,
-                c -> new Random(TOUR_RETIME_SEED + c.getId().toString().hashCode()));
-
-        // 6. write the routed carriers (ensure the parent directory exists first)
+        // 5.+6. route each carrier offline with HAGRID's custom jsprit algorithm (see routeWithDurationCap),
+        //    stagger the INFINITE-fleet clone tours onto individual per-tour departures (LmdTourRetimer;
+        //    root cause 2026-07-30: all clones of a template share one jittered second) and write the
+        //    routed carriers - or, on a cache hit, read the cached file at this very point and copy it.
         try {
-            java.nio.file.Files.createDirectories(java.nio.file.Path.of(carriersOut).getParent());
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("Cannot create output directory for LMD carriers: " + carriersOut, e);
+            return cache.produce(in, keyBeforeReading, Path.of(carriersOut),
+                    cached -> new CarrierPlanXmlReader(new Carriers(), vehicleTypes).readFile(cached.toString()),
+                    target -> {
+                        routeWithDurationCap(carriers, network, vehicleTypes, in.jspritIterations(),
+                                HAGRIDRouterUtils.MAXROUTEDURATION,
+                                c -> new Random(TOUR_RETIME_SEED + c.getId().toString().hashCode()));
+                        writeRouted(carriers, target, "LMD carriers");
+                    });
+        } catch (IOException e) {
+            throw new UncheckedIOException("LMD preprocessing failed for " + carriersOut, e);
         }
-        CarriersUtils.writeCarriers(carriers, carriersOut);
     }
 
     /**
@@ -207,28 +234,47 @@ public final class LausitzFreightPreprocessor {
                                   String vanTypesFile, String carriersOut, int jspritIterations,
                                   String serviceAreaShp, int maxTourDurationSeconds,
                                   List<String> openDepots, int maxJobsPerDistrict) {
+        runModular(demandShp, depotCsv, networkFile, vanTypesFile, carriersOut, jspritIterations,
+                serviceAreaShp, maxTourDurationSeconds, openDepots, maxJobsPerDistrict, null);
+    }
+
+    /**
+     * Same as {@link #runModular(String, String, String, String, String, int, String, int, List, int)}
+     * with the jsprit result cache ({@link JspritPlanCache}); {@code cacheDir == null} turns it off.
+     *
+     * @return what the cache did, for {@code run_metadata.json}
+     */
+    public static JspritCacheResult runModular(String demandShp, String depotCsv, String networkFile,
+                                               String vanTypesFile, String carriersOut, int jspritIterations,
+                                               String serviceAreaShp, int maxTourDurationSeconds,
+                                               List<String> openDepots, int maxJobsPerDistrict, Path cacheDir) {
+        JspritPlanCache cache = JspritPlanCache.fromSystem(cacheDir);
+        LmdPreprocessInputs in = LmdPreprocessInputs.modular(demandShp, depotCsv, networkFile, vanTypesFile,
+                jspritIterations, serviceAreaShp, maxTourDurationSeconds, openDepots, maxJobsPerDistrict);
+        JspritCacheKey keyBeforeReading = cache.keyBeforeReading(in);   // before step 1, see run()
+
         // 1. network — same car sub-network derivation as run() (see carNetwork()).
         Config config = ConfigUtils.createConfig();
-        config.network().setInputFile(networkFile);
+        config.network().setInputFile(in.network().toString());
         Scenario scenario = ScenarioUtils.loadScenario(config);
         Network network = carNetwork(scenario.getNetwork());
         ((MutableScenario) scenario).setNetwork(network);
 
         // 2. capsule vehicle type — the ONLY delta of substance vs. run()'s van types.
-        CarrierVehicleTypes capsuleTypes = ModularVehicleTypes.createCapsuleTypes(vanTypesFile);
+        CarrierVehicleTypes capsuleTypes = ModularVehicleTypes.createCapsuleTypes(in.vehicleTypes().toString());
         VehicleType[] capsuleArr = capsuleTypes.getVehicleTypes().values().toArray(new VehicleType[0]);
 
         // 3. demand -> pooled stops in districts anchored at the nearest OPEN depot
-        Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(demandShp));
-        if (serviceAreaShp != null && !serviceAreaShp.isBlank()) {
-            byProvider = clipToServiceArea(byProvider, serviceAreaShp);
+        Map<String, List<Delivery>> byProvider = LmdDemandReader.group(LmdDemandReader.read(in.demandShp().toString()));
+        if (in.serviceAreaShp() != null) {
+            byProvider = clipToServiceArea(byProvider, in.serviceAreaShp().toString());
         }
         List<Delivery> all = byProvider.values().stream().flatMap(List::stream).toList();
-        Map<String, Coord> depotCoords = DrtDepotReader.readBySite(java.nio.file.Path.of(depotCsv));
+        Map<String, Coord> depotCoords = DrtDepotReader.readBySite(in.depotCsv());
         List<DepotNetwork.Depot> open =
-                DeliveryDistrictBuilder.selectOpenDepots(depotCoords, openDepots);
+                DeliveryDistrictBuilder.selectOpenDepots(depotCoords, in.openDepots());
         List<DeliveryDistrictBuilder.District> districts =
-                DeliveryDistrictBuilder.build(all, open, maxJobsPerDistrict);
+                DeliveryDistrictBuilder.build(all, open, in.maxJobsPerDistrict());
 
         // 4. one carrier per DISTRICT (not per LSP), anchored at the district's depot
         Carriers carriers = new Carriers();
@@ -240,21 +286,23 @@ public final class LausitzFreightPreprocessor {
                     DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, missedRng,
                     Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S,
                     Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S);
-            CarriersUtils.setJspritIterations(carrier, Math.max(1, jspritIterations));
+            CarriersUtils.setJspritIterations(carrier, Math.max(1, in.jspritIterations()));
             carriers.addCarrier(carrier);
         }
 
-        // 5. route each carrier offline, capped at the Modular tour duration (not the 7h shift)
-        routeWithDurationCap(carriers, network, capsuleTypes, jspritIterations, maxTourDurationSeconds);
-
-        // 6. write the routed carriers (ensure the parent directory exists first)
+        // 5.+6. route each carrier offline, capped at the Modular tour duration (not the 7h shift),
+        //    and write - or, on a cache hit, read the cached file at this point and copy it.
         try {
-            java.nio.file.Files.createDirectories(java.nio.file.Path.of(carriersOut).getParent());
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("Cannot create output directory for modular carriers: "
-                    + carriersOut, e);
+            return cache.produce(in, keyBeforeReading, Path.of(carriersOut),
+                    cached -> new CarrierPlanXmlReader(new Carriers(), capsuleTypes).readFile(cached.toString()),
+                    target -> {
+                        routeWithDurationCap(carriers, network, capsuleTypes, in.jspritIterations(),
+                                in.maxTourDurationSeconds());
+                        writeRouted(carriers, target, "modular carriers");
+                    });
+        } catch (IOException e) {
+            throw new UncheckedIOException("Modular LMD preprocessing failed for " + carriersOut, e);
         }
-        CarriersUtils.writeCarriers(carriers, carriersOut);
     }
 
     /**
@@ -411,6 +459,16 @@ public final class LausitzFreightPreprocessor {
             carrier.addPlan(plan);
             carrier.setSelectedPlan(plan);
         }
+    }
+
+    /** Step 6: write the routed carriers, creating the run's carriers/ directory first. */
+    private static void writeRouted(Carriers carriers, Path target, String what) {
+        try {
+            Files.createDirectories(target.toAbsolutePath().getParent());
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot create output directory for " + what + ": " + target, e);
+        }
+        CarriersUtils.writeCarriers(carriers, target.toString());
     }
 
     /**

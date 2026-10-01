@@ -96,6 +96,80 @@ class LausitzFreightPreprocessorTest {
         return java.util.HexFormat.of().formatHex(md.digest());
     }
 
+    @Test
+    @DisplayName("run(): the second call with identical inputs is a cache hit, byte-identical and golden")
+    void runIsServedFromTheCacheOnTheSecondCall(@TempDir Path tmp) throws Exception {
+        StagedFixture fixture = stageLmdFixture(tmp);
+        Path cacheDir = tmp.resolve("jsprit-cache");
+        Path out1 = tmp.resolve("RUN_A_lmd_carriers_routed.xml");
+        Path out2 = tmp.resolve("b").resolve("carriers").resolve("RUN_B_lmd_carriers_routed.xml");
+        JarFingerprint.setOverrideForTests("test-fingerprint");
+        try {
+            JspritCacheResult r1 = LausitzFreightPreprocessor.run(fixture.demandShp().toString(),
+                    fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
+                    out1.toString(), /*jspritIterations*/ 5, null, cacheDir);
+            JspritCacheResult r2 = LausitzFreightPreprocessor.run(fixture.demandShp().toString(),
+                    fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
+                    out2.toString(), /*jspritIterations*/ 5, null, cacheDir);
+
+            assertThat(r1.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(r2.status()).isEqualTo(JspritCacheResult.Status.HIT);
+            assertThat(r2.sourceRun()).isEqualTo("RUN_A");
+            assertThat(Files.mismatch(out1, out2)).isEqualTo(-1L);
+            // same fixture and jspritIterations as baselineCarrierOutputIsUnchanged: the hit is the golden output
+            assertThat(sha256(out2)).isEqualTo(Files.readString(
+                    Path.of("src/test/resources/baseline-golden/carriers-golden.sha256")).trim());
+        } finally {
+            JarFingerprint.setOverrideForTests(null);
+        }
+    }
+
+    @Test
+    @DisplayName("runModular(): the second call with identical inputs is a cache hit and byte-identical")
+    void runModularIsServedFromTheCacheOnTheSecondCall(@TempDir Path tmp) throws Exception {
+        StagedFixture fixture = stageLmdFixture(tmp);
+        Path shpFile = tmp.resolve("service-area.shp");
+        DrtE2eFixtures.writeSquareShapefile(shpFile, 1000.0);
+        Path cacheDir = tmp.resolve("jsprit-cache");
+        Path out1 = tmp.resolve("RUN_M1_lmd_carriers_routed.xml");
+        Path out2 = tmp.resolve("RUN_M2_lmd_carriers_routed.xml");
+        JarFingerprint.setOverrideForTests("test-fingerprint");
+        try {
+            JspritCacheResult r1 = LausitzFreightPreprocessor.runModular(fixture.demandShp().toString(),
+                    fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
+                    out1.toString(), 1, shpFile.toString(), 12600, List.of(), 300, cacheDir);
+            JspritCacheResult r2 = LausitzFreightPreprocessor.runModular(fixture.demandShp().toString(),
+                    fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
+                    out2.toString(), 1, shpFile.toString(), 12600, List.of(), 300, cacheDir);
+
+            assertThat(r1.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(r1.variant()).isEqualTo("modular");
+            assertThat(r2.status()).isEqualTo(JspritCacheResult.Status.HIT);
+            assertThat(Files.mismatch(out1, out2)).isEqualTo(-1L);
+            Carriers routed = new Carriers();
+            new CarrierPlanXmlReader(routed, ModularVehicleTypes.createCapsuleTypes(fixture.typesFile().toString()))
+                    .readFile(out2.toString());
+            assertThat(routed.getCarriers()).isNotEmpty();
+        } finally {
+            JarFingerprint.setOverrideForTests(null);
+        }
+    }
+
+    @Test
+    @DisplayName("without a JAR (tests, IDE) the cache is off and nothing is stored")
+    void withoutAJarTheCacheIsOffAndStoresNothing(@TempDir Path tmp) throws Exception {
+        StagedFixture fixture = stageLmdFixture(tmp);
+        Path cacheDir = tmp.resolve("jsprit-cache");
+        Path out = tmp.resolve("RUN_X_lmd_carriers_routed.xml");
+        JspritCacheResult r = LausitzFreightPreprocessor.run(fixture.demandShp().toString(),
+                fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
+                out.toString(), 1, null, cacheDir);
+        assertThat(r.status()).isEqualTo(JspritCacheResult.Status.OFF);
+        assertThat(r.reason()).isEqualTo("no-jar");
+        assertThat(Files.exists(out)).isTrue();
+        assertThat(Files.exists(cacheDir)).isFalse();
+    }
+
     /**
      * Fixture files (+ the in-memory van {@link CarrierVehicleTypes}) shared by every
      * {@link #stageLmdFixture(Path)} caller: grid network, single van type, dhl+hermes depot csv,
