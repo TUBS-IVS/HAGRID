@@ -41,7 +41,8 @@ public record JspritCacheResult(Status status, Mode mode, String reason, String 
                     return m;
                 }
             }
-            throw new IllegalArgumentException("-Dhagrid.jsprit.cache=" + raw + " is not one of on|off|verify");
+            throw new IllegalArgumentException("-D" + JspritPlanCache.MODE_PROPERTY + "=" + raw
+                    + " is not one of on|off|verify");
         }
     }
 }
