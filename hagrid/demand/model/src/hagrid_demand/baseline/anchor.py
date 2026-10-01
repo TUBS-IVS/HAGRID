@@ -14,6 +14,9 @@ from hagrid_demand.common.rng import named_rng
 from .reference import reconcile_carriers
 
 
+OBSERVED_STATUSES = ["observed", "observed_unstructured", "zero_filled"]      # streets that carry the observed volume
+
+
 @dataclass(frozen=True)
 class AnchorConfig:
     min_persons: float = 30.
@@ -21,6 +24,7 @@ class AnchorConfig:
     upper: float = 2.
     lower: float = .5
     gap_threshold: float = 5.
+    zero_fill_cap: float = .5
     exclude_above: float = 1000.
     section_length_m: float = 50.
 
@@ -94,12 +98,28 @@ def decompose(table: pd.DataFrame, rates: dict, cfg: AnchorConfig) -> pd.DataFra
     structural = t.anchor_status.isin(["gap", "excluded"])
     t.loc[structural, "dhl_private"] = t.loc[structural, "expected_private"]
     t.loc[structural, "dhl_business"] = t.loc[structural, "expected_business"]
+    # A small street with residents or firms and no LSP parcel in a whole year is no plausible zero: its parcels were
+    # recorded on a neighbouring segment or are missing. It takes its structural expectation from the observed streets
+    # of its postal area, which give it up proportionally (at most zero_fill_cap of their volume), so the observed
+    # postal LSP volume stays the same; areas without observed volume keep their zeros.
+    carrying = structured | unstructured
+    volume = (t.dhl_private + t.dhl_business).where(carrying, 0.)
+    observed_plz = volume.groupby(t.plz).transform("sum")
+    filled = t.anchor_status.eq("zero") & (expected > 0) & (observed_plz > 0)
+    wanted_plz = expected.where(filled, 0.).groupby(t.plz).transform("sum")
+    given_plz = np.minimum(wanted_plz, cfg.zero_fill_cap * observed_plz)
+    keep = 1. - np.divide(given_plz, observed_plz, out=np.zeros(len(t)), where=observed_plz > 0)
+    t.loc[carrying, ["dhl_private", "dhl_business"]] = t.loc[carrying, ["dhl_private", "dhl_business"]].mul(keep[carrying], axis=0)
+    take = np.divide(given_plz, wanted_plz, out=np.zeros(len(t)), where=wanted_plz > 0)
+    t.loc[filled, "dhl_private"] = t.loc[filled, "expected_private"] * take[filled]
+    t.loc[filled, "dhl_business"] = t.loc[filled, "expected_business"] * take[filled]
+    t.loc[filled, "anchor_status"] = "zero_filled"
     return t
 
 
 def observed_b2b_share(decomposed: pd.DataFrame) -> float:
-    """q_LSP: business share of the observed LSP volume."""
-    observed = decomposed[decomposed.anchor_status.isin(["observed", "observed_unstructured"])]
+    """q_LSP: business share of the observed LSP volume (zero-filled streets carry part of it)."""
+    observed = decomposed[decomposed.anchor_status.isin(OBSERVED_STATUSES)]
     return float(observed.dhl_business.sum() / (observed.dhl_private + observed.dhl_business).sum())
 
 
@@ -235,7 +255,7 @@ def solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFram
     sites = sites[["site_id", "plz", "segment", "population", "employees", "branch", "weight", "historical_share",
                    "structural_share", "reference_annual", "allocation_status"]]
 
-    observed = t.anchor_status.isin(["observed", "observed_unstructured"])
+    observed = t.anchor_status.isin(OBSERVED_STATUSES)
     m_dhl = (1 - b) * p_private + b * p_business
     observed_total = float((t.loc[observed, "private_daily"] + t.loc[observed, "business_daily"]).sum())
     observed_b2b = float(t.loc[observed, "business_daily"].sum() / observed_total)
@@ -286,9 +306,13 @@ def solve_street_reference(buildings: gpd.GeoDataFrame, streets: gpd.GeoDataFram
         "daily_by_status": {str(k): float(v.sum()) for k, v in status_volume.iterrows()},
         "total_daily": total_daily, "observed_identity": identity, "allocation_max_error": allocation_error,
         "holdout": structure_holdout(table, seed=seed), "synthetic_units": int(len(synthetic)),
-        "zero_street_units": {"streets": int(t.anchor_status.eq("zero").sum()),
-                              "persons": float(units.loc[units.anchor_status.eq("zero"), "population"].sum()),
-                              "firms": float(units.loc[units.anchor_status.eq("zero"), "companies"].sum())},
+        # streets observed with zero parcels and the persons and firms on them; those with units are zero-filled
+        "zero_street_units": {"streets": int(t.anchor_status.isin(["zero", "zero_filled"]).sum()),
+                              "persons": float(units.loc[units.anchor_status.isin(["zero", "zero_filled"]), "population"].sum()),
+                              "firms": float(units.loc[units.anchor_status.isin(["zero", "zero_filled"]), "companies"].sum())},
+        "zero_filled": {"streets": int(t.anchor_status.eq("zero_filled").sum()), "cap": config.zero_fill_cap,
+                        "daily": float((t.loc[t.anchor_status.eq("zero_filled"), "private_daily"]
+                                        + t.loc[t.anchor_status.eq("zero_filled"), "business_daily"]).sum())},
         # Spec 5.9: the observed part hits b exactly; the structural fallback is reported on top.
         "b2b_incl_fallback": float(units.business_daily.sum() / total_daily) if total_daily > 0 else None,
     }
