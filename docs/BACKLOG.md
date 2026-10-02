@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-10-01._
+_Zuletzt aktualisiert: 2026-10-02._
 
 ---
 
@@ -440,6 +440,14 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Zeichen, Pfade > 260 existieren seit dem `CRASHED_…`-Lauf. _(added 2026-09-25)_
 - **`[S]` Geparkte Altlasten** `%USERPROFILE%\hagrid-parked-inputs\legacy-phd\` (≈ 2,7 GB) nach
   Karenz löschen (Entscheidung C). _(added 2026-09-25)_
+- **`[S]` Review-Fixwelle 2026-10-02 beim Ausrollen** (je Maschine, zwischen Läufen):
+  vorbereitete 1c-Eingaben mit Paketen per `PrepareLausitzDrtInputs` neu erzeugen, denn der
+  Fingerprint trägt jetzt `openDepots` und den Inhalt der Nachfrage-Shapefile-Familie (alte
+  Fingerprints brechen die Validierung beim Start ab). Queue-Skripte, die einen **fertigen** Lauf
+  bewusst neu fahren, brauchen `overwrite=true`. **Vorher** die ungetrackten Queue-Skripte der
+  Maschine auf unbekannte, falsch geschriebene oder doppelte Spec-Schlüssel prüfen: der Parser
+  bricht dann den Start ab (die 132 getrackten Laufzeilen unter `runs/` sind sauber).
+  → BACKLOG-DONE 2026-10-02 _(added 2026-10-02)_
 - **`[S]` `runs/lausitz/campaigns/run_r3smoke.bat` nach dem Ausrollen** auf allen Maschinen
   entfernen oder als Dauer-Smoke behalten. _(added 2026-09-25)_
 - **`[S]` Allowlist von `tools/check-run-scripts.ps1` je Datei und Muster** statt pauschal je Datei.
@@ -512,6 +520,13 @@ weiter. Alles hier ist mechanisch und kann am Stück laufen. **Bewusst ausgenomm
   dieser Dateien ohnehin substanziell geändert wird. Punkt 3 ist der heikelste, obwohl `[L]`: eine
   Vertauschung korrumpiert den Stolperdraht, und der ist (Design D7) die **einzige** Absicherung
   der Fracht-Buchhaltung. _(added 2026-07-29)_
+
+- **`[L]` 1d: nach einer Splice-Ablehnung kein Ausweichfahrzeug** (externes Review 2026-10-02,
+  Punkt 9). `ModularTourDispatcher` versucht je Takt nur das euklidisch nächste freie Fahrzeug;
+  lehnt der Splicer ab, wartet die Tour auf den nächsten Takt. Gemessen über 33 lokale 1d-Läufe:
+  `tours_rejected_at_splice` = 0 außer `d1d_f120_d30_s3337` (1) und `poc1d` (5). Ein Fix ändert
+  die Dispatch-Dynamik, die vorhandenen 1d-Läufe wären danach nicht mehr vergleichbar, deshalb
+  erst nach dem Paper. _(added 2026-10-02)_
 
 ### Fallback-Audit 2026-07-27 (Low-Tier)
 

@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-30._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-02._
 
 ---
 
@@ -803,6 +803,14 @@ gilt nur noch für Hannover.** Welches Modell läuft, entscheidet
   `cost_per_ride` das Flag `cost_per_unit_separable`. **Bereits geschriebene 1c-CSVs führen die
   falsche Zeile weiter**, lokal wie auf den Rechenmaschinen, bis sie mit dem Fix neu gebaut
   sind. Eine 1c-€/Fahrt-Zahl aus ihnen nie verwenden.
+- **Defekt gefunden und behoben 2026-10-02 (externes Review, Punkt 1):** `drt_vehicles` und
+  `drt_vehicle_km` kommen aus den CSVs des Laufs, `drt_tour_hours_total` nur aus der
+  Event-Rekonstruktion. Bei einem `--no-events`-Build galt die DRT-Flotte deshalb als **nicht
+  vorhanden**, und die Baseline schrieb die Kosten der Van-Flotte allein als `cost_total`, mit der
+  Quelle „van fleet only". Jetzt verweigert `economics._direct_cost` eine gezählte Flotte ohne
+  Stunden oder km und meldet `cost_model_failed` (für die Vans ebenso). Ein `--no-events`-Build
+  der Baseline hat also keine Kostenzahl mehr. Betroffen war lokal kein Lauf: 0 von 65
+  `kpis_long.csv` mit `cost_total` und DRT-Flotte. Die Rechenmaschinen sind ungeprüft.
 
 **Status:** Hannover `vorläufig` wie unten. Lausitz: alle Parameter, die in C eingehen, stehen im
 CSV auf `SET` oder begründet auf `OPTIONAL`. `REVIEW` tragen nur Crosscheck-Zeilen und
@@ -1369,6 +1377,16 @@ Sensitivität, BACKLOG.)
    der D8-Beleg liegt damit pro Lauf vor, statt NEEDS-RUN zu bleiben. Design-Spec-D8 ist
    entsprechend umformuliert (→ [Design](superpowers/specs/2026-07-27-1d-modular-capsule-swap-design.md)
    §10 D8).
+   **Annotation 2026-10-02 (externes Review, Inkonsistenz 1): „bindet selten" hält nicht.**
+   Gemessen über die 33 lokalen 1d-Läufe: `max_parcels_per_tour` = 216, also Kapsel exakt voll, in
+   `d1d_dep1`, `d1d_nopart`, `d1d_nopart_s2`; 214–215 in 18 weiteren, darunter allen
+   `d1d_f130_d30_*`-Seeds, den Budget-Armen und der `d1d_dep7_*`-Reihe außer `dur20`. Darunter
+   liegen `d1d_dep3` (210), die Läufe mit `dur20` bzw. `d25`–`d45` im Tag (83–195) und die frühen
+   Läufe `f1xxt0xx`, `ctrl1d`, `m1d050`, `poc1d` (99–120). Dass bei 214 die
+   Kapazität begrenzt und nicht die Zeit, ist naheliegend, aber nicht direkt gemessen: dazu müsste
+   man die Dauer der vollen Touren gegen den Cap legen. Die Richtung aus Punkt 2 bleibt
+   (wo die Kapazität bindet, wirkt sie konservativ gegen 1d). Der Kommentar `Modular.java:12`
+   behauptete noch „DOCUMENTED NEVER-BINDING" und ist korrigiert.
 
 ### 2.23 1d Modular: Definitionskonventionen fürs Methods-Kapitel
 
@@ -2063,6 +2081,16 @@ nie zugegangen, es ist kein Beleg über die Schwelle), und der `χ<0`-Arm zeichn
 dort boardet kein Paket, die Trajektorie ist die reine Pax-Trajektorie, also ist seine Verteilung
 die **unperturbierte Referenz**. **Offen: der Rerun**, der die Datei erzeugt (bestehende
 χ=600-Konfiguration, ~7 h) — Sim-PC und Dev-PC waren am 2026-08-10 belegt.
+
+**Annotation 2026-10-02 (externes Review, Punkt 8): die Grenze `window_expired` / `pending_open`
+lag am falschen Zeitpunkt.** Getrennt wurde am letzten DRT-Request- oder Dropoff-Event, das der
+Handler gesehen hatte, nicht am Simulationsende. Kam das letzte solche Event vor dem
+Fensterende von 21:00, die Simulation lief aber darüber hinaus, landete ein verfallenes Segment
+als `pending_open` statt `window_expired`. Jetzt trennt `SharedUseKpiHandler` am QSim-Takt bei
+Mobsim-Ende (`MobsimBeforeCleanupListener`; das letzte Event bleibt Untergrenze und Rückfall) und
+schreibt ihn als `mobsim_end_s` in `shareduse_channel_stats.csv`. Betroffen war kein Befund: in
+allen 8 lokalen 1c-Läufen (`d1c_f140_c900_i250_s1337–41`, `d1c_dep1/3/7`) sind beide Töpfe 0.
+Ältere Kanal-CSVs haben keine `mobsim_end_s`-Zeile.
 
 ### 2.32 1d gegen 1c an den gemessenen Punkten: eine Achse trägt, die andere nicht
 
