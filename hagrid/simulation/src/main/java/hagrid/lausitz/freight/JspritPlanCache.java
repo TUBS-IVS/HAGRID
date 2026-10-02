@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -118,7 +120,14 @@ public final class JspritPlanCache {
                                      HitReplay replay, Computation computation) throws IOException {
         // Spec section 7: the sidecar always reflects THIS preprocessing - never a leftover from an
         // earlier run with the same run id that aborted (wiring error, failing computation, ...).
-        Files.deleteIfExists(sidecarPathFor(carriersOut));
+        Path sidecar = sidecarPathFor(carriersOut);
+        try {
+            Files.deleteIfExists(sidecar);
+        } catch (IOException e) {
+            // M3: a sidecar that cannot be deleted (locked, a directory) must not abort the run; the
+            // status in run_metadata.json comes from memory anyway (spec section 7)
+            LOG.warn("jsprit cache: could not delete the old sidecar {} ({}) - continuing", sidecar, e.toString());
+        }
         JspritCacheResult result;
         try {
             result = decide(in, keyBeforeReading, carriersOut, replay, computation);
@@ -168,7 +177,16 @@ public final class JspritPlanCache {
                     + " before step 1 reads the inputs (spec section 6.5)");
         }
 
-        JspritCacheKey key = JspritCacheKey.of(in, codeFingerprint.get().orElseThrow(), systemProperty, javaRuntime);
+        JspritCacheKey key;
+        try {
+            key = JspritCacheKey.of(in, codeFingerprint.get().orElseThrow(), systemProperty, javaRuntime);
+        } catch (IOException | RuntimeException e) {
+            // M2: the same hashing succeeded in keyBeforeReading, so a failure now means an input
+            // vanished or changed while steps 1-4 read it. The computation reads no file, so the run goes on.
+            LOG.warn("jsprit cache: cannot hash the inputs again after steps 1-4 ({}) - an input changed or"
+                    + " vanished while being read; computing without the cache", e.toString());
+            return computeUncached(in, carriersOut, computation, Status.BYPASS, "inputs-changed");
+        }
         if (!key.fullHash().equals(keyBeforeReading.fullHash())) {
             LOG.warn("jsprit cache: inputs changed while steps 1-4 read them ({}) - computing without the cache",
                     String.join(", ", key.changedComponents(keyBeforeReading.components())));
@@ -230,11 +248,23 @@ public final class JspritPlanCache {
         }
     }
 
+    /**
+     * Acquires the entry lock with the bounded wait of {@link CacheEntryLock}, logging once if another
+     * run holds it longer than {@link CacheEntryLock#LONG_WAIT}. Every failure, checked or not (a
+     * timeout, a file error, the reentrancy guard), reaches the caller, which degrades (I2(c)).
+     */
+    private CacheEntryLock acquire(JspritCacheKey key) throws IOException {
+        return CacheEntryLock.acquire(lockFile(key), CacheEntryLock.DEFAULT_TIMEOUT, file -> LOG.warn(
+                "jsprit cache: waiting more than {} s for {} - another run holds this entry; giving up after {} min",
+                CacheEntryLock.LONG_WAIT.toSeconds(), file, CacheEntryLock.DEFAULT_TIMEOUT.toMinutes()));
+    }
+
     private Optional<JspritCacheResult> tryHit(JspritCacheKey key, Path entry, Path carriersOut, HitReplay replay) {
         CacheEntryLock lock;
         try {
-            lock = CacheEntryLock.acquire(lockFile(key));
-        } catch (IOException e) {
+            lock = acquire(key);
+        } catch (IOException | RuntimeException e) {
+            // only the acquisition: a failure in the body below is handled there (I2(c))
             LOG.warn("jsprit cache lookup of {} failed ({}) - computing without it", key.dirName(), e.toString());
             return Optional.empty();
         }
@@ -265,10 +295,15 @@ public final class JspritPlanCache {
     }
 
     private JspritCacheResult publish(JspritCacheKey key, Path entry, Path carriersOut, double seconds) {
+        String host = HostName.VALUE;   // M9: resolved once per JVM, never while the entry lock is held
         CacheEntryLock lock;
         try {
-            lock = CacheEntryLock.acquire(lockFile(key));
-        } catch (IOException e) {
+            lock = acquire(key);
+        } catch (IOException | RuntimeException e) {
+            // only the acquisition: VerifyMismatch from the body below must keep propagating (I2(c))
+            if (mode == Mode.VERIFY) {
+                return verifyNotCompared(key, seconds, e);
+            }
             LOG.warn("jsprit cache: could not store {} ({}) - the run continues with its fresh result",
                     key.dirName(), e.toString());
             return result(Status.MISS, "store-failed", key, null, seconds);
@@ -290,7 +325,7 @@ public final class JspritPlanCache {
                         key.dirName(), corrupt.why(), aside.getFileName());
                 reason = "repaired";
             }
-            store(key, entry, carriersOut, seconds);
+            store(key, entry, carriersOut, seconds, host);
             return result(Status.MISS, reason, key, null, seconds);
         } catch (IOException e) {
             LOG.warn("jsprit cache: could not store {} ({}) - the run continues with its fresh result",
@@ -303,9 +338,24 @@ public final class JspritPlanCache {
         }
     }
 
+    /** M4: a verify run that could not compare says so - never a plain miss that reads like "nothing to verify". */
+    private JspritCacheResult verifyNotCompared(JspritCacheKey key, double seconds, Exception e) {
+        LOG.warn("jsprit cache: verify did not compare {} ({}) - the run continues with its fresh result",
+                key.dirName(), e.toString());
+        return result(Status.MISS, "verify-not-compared", key, null, seconds);
+    }
+
     private JspritCacheResult compareWithPublished(JspritCacheKey key, Path entry, Path carriersOut,
                                                    Manifest published, double seconds) throws IOException {
-        boolean equal = Files.mismatch(entry.resolve(RESULT_FILE), carriersOut) == -1L;
+        boolean equal;
+        try {
+            equal = Files.mismatch(entry.resolve(RESULT_FILE), carriersOut) == -1L;
+        } catch (IOException e) {
+            if (mode == Mode.VERIFY) {
+                return verifyNotCompared(key, seconds, e);
+            }
+            throw e;   // on mode: store-failed in publish, as before
+        }
         if (equal) {
             if (mode == Mode.VERIFY) {
                 LOG.info("jsprit cache VERIFIED {}: the fresh result is byte-identical to the entry computed by {}",
@@ -376,9 +426,7 @@ public final class JspritPlanCache {
     /** Short description of the block marker, or empty when the cache is not blocked. */
     private Optional<String> blockedNote() {
         Path marker = blockedFile();
-        if (Files.notExists(marker)) {
-            // an undeterminable marker (e.g. a permission error) must err toward blocking, not toward
-            // treating the cache as healthy (F5 fix): Files.exists() would return false in that case.
+        if (!blockMarkerMayExist(cacheDir)) {
             return Optional.empty();
         }
         try {
@@ -389,7 +437,8 @@ public final class JspritPlanCache {
         }
     }
 
-    private void store(JspritCacheKey key, Path entry, Path carriersOut, double seconds) throws IOException {
+    private void store(JspritCacheKey key, Path entry, Path carriersOut, double seconds, String host)
+            throws IOException {
         Files.createDirectories(cacheDir);
         Path tmp = cacheDir.resolve(".tmp-" + UUID.randomUUID());
         try {
@@ -398,7 +447,7 @@ public final class JspritPlanCache {
             Files.copy(carriersOut, result);
             Manifest m = new Manifest(key.fullHash(), variantName(key.variant()), key.components(),
                     Sha256.ofFile(result), LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                    producedByRun(carriersOut), seconds, hostName());
+                    producedByRun(carriersOut), seconds, host);
             JSON.writeValue(tmp.resolve(MANIFEST_FILE).toFile(), m.toMap());
             // the target is absent under the lock, so ATOMIC_MOVE never has to replace anything
             Files.move(tmp, entry, StandardCopyOption.ATOMIC_MOVE);
@@ -420,11 +469,38 @@ public final class JspritPlanCache {
         record Corrupt(String why) implements EntryState { }
     }
 
+    /**
+     * Whether {@code cacheDir/BLOCKED.json} exists OR cannot be determined. An undeterminable marker
+     * (e.g. a permission error) must err toward blocking, not toward treating the cache as healthy
+     * (F5 fix) - hence {@code !notExists()}, since {@code exists()} returns false in that case too.
+     *
+     * <p>M1: the one exception is a {@code cacheDir} that exists and is not a directory. It cannot
+     * contain a marker, but on Linux {@code notExists(file/BLOCKED.json)} fails with ENOTDIR and
+     * returns false, which would report {@code blocked} instead of letting the store fail.
+     */
+    static boolean blockMarkerMayExist(Path cacheDir) {
+        return blockMarkerMayExist(cacheDir, Files::notExists);
+    }
+
+    /** {@code notExists} is a seam so the Linux ENOTDIR answer can be tested on Windows. */
+    static boolean blockMarkerMayExist(Path cacheDir, Predicate<Path> notExists) {
+        if (isExistingNonDirectory(cacheDir)) {
+            return false;
+        }
+        return !notExists.test(cacheDir.resolve(BLOCKED_FILE));
+    }
+
+    private static boolean isExistingNonDirectory(Path p) {
+        try {
+            return !Files.readAttributes(p, BasicFileAttributes.class).isDirectory();
+        } catch (IOException e) {
+            return false;   // absent or undeterminable: not known to be a file, the F5 rule decides
+        }
+    }
+
     /** Re-evaluated under the lock every time - never carried over from an earlier check. */
     static EntryState inspect(Path entry, JspritCacheKey key) {
-        // !notExists(), not exists(): an undeterminable marker must err toward blocking rather than
-        // toward treating the cache as healthy, since exists() returns false in that case too (F5 fix).
-        if (!Files.notExists(entry.resolveSibling(BLOCKED_FILE))) {
+        if (blockMarkerMayExist(entry.toAbsolutePath().getParent())) {
             return new EntryState.Blocked();   // checked first: a blocked cache has no valid entries
         }
         if (!Files.exists(entry)) {
@@ -544,12 +620,21 @@ public final class JspritPlanCache {
         return String.format(Locale.ROOT, "%dh%02dm", s / 3600, (s % 3600) / 60);
     }
 
-    private static String hostName() {
-        try {
-            return InetAddress.getLocalHost().getHostName();
-        } catch (IOException e) {
-            String computer = System.getenv("COMPUTERNAME");
-            return computer == null ? "unknown" : computer;
+    /**
+     * M9: the host name for the manifest, looked up once per JVM on first use (lazy holder). A DNS
+     * lookup can hang for the resolver timeout on a misconfigured host, so {@link #publish} reads it
+     * before acquiring the entry lock, never under it.
+     */
+    private static final class HostName {
+        static final String VALUE = lookup();
+
+        private static String lookup() {
+            try {
+                return InetAddress.getLocalHost().getHostName();
+            } catch (IOException | RuntimeException e) {
+                String computer = System.getenv("COMPUTERNAME");
+                return computer == null ? "unknown" : computer;
+            }
         }
     }
 
