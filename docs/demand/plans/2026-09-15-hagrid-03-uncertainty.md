@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Terra-Implementierer und unabhängige Terra-Reviews sind gewählt.
 
-**Goal:** Steuerbaren räumlichen DHL-Einfluss, verschachtelte Monte-Carlo-Läufe und globale Sensitivitätsanalyse samt aussagekräftigem Run-Dashboard ergänzen.
+**Goal:** Steuerbaren räumlichen LSP-Einfluss, verschachtelte Monte-Carlo-Läufe und globale Sensitivitätsanalyse samt aussagekräftigem Run-Dashboard ergänzen.
 
 **Architecture:** Analysen laden eine eingefrorene Referenz mit geprüftem Fingerprint. Äußere Parameterpfade verändern Zukunftsannahmen, innere Ziehungen die Tage; gespeicherte Experimentdesigns steuern Reproduzierbarkeit. Kalender, Allokation und Reporting aus Plan 02 werden über reine Schnittstellen wiederverwendet.
 
@@ -15,7 +15,7 @@
 - Keine neuen OSM-Abfragen, externen Datendownloads oder MATSim-Ausführung als Baseline-Abhängigkeit.
 - Referenzjahr 2021; JSON-Konfiguration; Erwartungsbilanz `atol=1e-8, rtol=1e-10`, Counts exakt.
 - Gewichtsabnahme verändert räumliche Erwartungswerte, nicht zusätzlich das Regionalniveau oder die Rauschparameter.
-- Monte Carlo liefert annahmebedingte Simulationsintervalle; keine aus DHL-Tagesmitteln kalibrierte tägliche Variabilität behaupten.
+- Monte Carlo liefert annahmebedingte Simulationsintervalle; keine aus LSP-Tagesmitteln kalibrierte tägliche Variabilität behaupten.
 - Gleiche äußere Gewichte, getrennte inner/outer-Kennungen, keine still entfernten unzulässigen Ziehungen.
 - Pfade relativ zu `C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand`; Kommandos dort. Alle globalen Vorgaben der Spec gelten.
 
@@ -47,7 +47,7 @@ def test_memory_endpoints_and_half_life():
 ```
 
 - [ ] `python -B -m pytest tests/test_baseline_memory.py -q` rot ausführen. Zusätzliche Tests: floor, ungültige Jahre/Gewichte, fehlendes yearly-Jahr, vertauschter Standortindex, leeres positives Segment, fremde Bestands-ID. `fixed` nutzt `value`, `yearly` nutzt `values` mit Jahresstrings; `half_life` nutzt oben genannte Felder.
-- [ ] Formel aus Spec implementieren, Inputs streng prüfen, kein nachträgliches Rückskalieren auf DHL-PLZ-Anteile:
+- [ ] Formel aus Spec implementieren, Inputs streng prüfen, kein nachträgliches Rückskalieren auf LSP-PLZ-Anteile:
 
 ```python
 w = floor + (initial-floor)*2**(-(year-2021)/half_life_years)
@@ -55,7 +55,7 @@ p = w*historical + (1-w)*structural
 ```
 
 - [ ] In `project_annual` pro Segment einsetzen; Regionalmenge unverändert lassen. Unsichere Firmenexponenten in Analysen verändern S, nicht die eingefrorene historische Referenz H. Endpunktmengen, Gewicht und vor/nach-Anteile im Jahresartefakt speichern. Drei Szenario-Configs aus derselben Referenz erstellen: fixed1, half_life20, half_life5; keine Auswahl als empirisch beste Variante ausgeben.
-- [ ] Gegenprobe: nur Halbwertszeit ändern → gleiche Regional-/Segment-/Anbietergesamtmengen; nur zukünftigen DHL-Anteil ändern → gleicher Gesamtmarkt; w=0 entfernt H räumlich, nicht den Herkunftshinweis des Niveaus. Methodenreview und separates Codereview durch Terra, danach gezielter Commit.
+- [ ] Gegenprobe: nur Halbwertszeit ändern → gleiche Regional-/Segment-/Anbietergesamtmengen; nur zukünftigen LSP-Anteil ändern → gleicher Gesamtmarkt; w=0 entfernt H räumlich, nicht den Herkunftshinweis des Niveaus. Methodenreview und separates Codereview durch Terra, danach gezielter Commit.
 
 ### Task 10: Gespeicherte Parameterpfade und Monte-Carlo-Runner
 

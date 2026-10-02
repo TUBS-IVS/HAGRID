@@ -174,3 +174,49 @@ def test_projection_fixes_dhl_b2b_proportional_to_the_national_trend():
     market = series["market"].query("year == 2030").set_index("carrier").market_share
     mixed = ((1 - target) * shares.private + target * shares.business).reindex(market.index)
     assert mixed.to_numpy() == pytest.approx(market.to_numpy())
+
+
+def test_project_annual_with_factors_keeps_balances():
+    """Site factors re-weight the historical shares per segment and year; totals stay exact."""
+    from hagrid_demand.baseline.projection import project_annual
+
+    reference = _reference()
+    reference["sites"] = pd.concat([reference["sites"], pd.DataFrame({
+        "site_id": ["new"], "plz": ["2"], "segment": ["private"], "historical_share": [.5], "allocation_status": ["located"]})],
+        ignore_index=True)
+    plain = project_annual(_reference(), _series(), [2022], {"memory": {"fixed": 1}})
+    ones = pd.DataFrame({"year": 2022, "site_id": ["p1", "p2", "b1"], "segment": ["private", "private", "business"], "factor": 1.})
+    same = project_annual(_reference(), _series(), [2022], {"memory": {"fixed": 1}}, site_factors=ones)
+    pd.testing.assert_frame_equal(plain.sites, same.sites)
+
+    factors = pd.DataFrame({"year": 2022, "site_id": ["p1", "p2", "b1", "new"], "segment": ["private", "private", "business", "private"],
+                            "factor": [2., 1., 3., 0.]})
+    result = project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=factors)
+    by_site = result.sites.set_index("site_id").annual_expected
+    assert result.sites.groupby("segment").annual_expected.sum().to_dict() == pytest.approx({"private": 840., "business": 360.})
+    assert "new" not in by_site.index   # a closed site (factor 0) is not part of that year's table
+    assert by_site["p1"] == pytest.approx(840. * (.25 * 2.) / (.25 * 2. + .75 * 1.))   # weight = historical share x factor
+    opened = factors.assign(factor=[2., 1., 3., 1.])
+    result = project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=opened)
+    assert result.sites.set_index("site_id").annual_expected["new"] == pytest.approx(840. * .5 / (.5 + .75 + .5))
+    with pytest.raises(ValueError, match="site_factors"):
+        project_annual(reference, _series(), [2022], {"memory": {"fixed": 1}}, site_factors=factors.assign(factor=-1.))
+
+
+def test_profile_is_bit_identical_for_any_carrier_order():
+    """The carrier reconciliation sums and optimises over the carriers. Computed in the order of the input rows, its last
+    bits depended on that order and on the platform, which made the order-independence check fail on CI."""
+    from hagrid_demand.baseline.projection import _profile
+
+    carriers = ["DHL", "Hermes", "UPS", "DPD", "GLS", "FedEx/TNT", "Amazon"]
+    market = pd.DataFrame({"year": 2022, "carrier": carriers, "market_share": [0.104, 0.151, 0.084, 0.132, 0.03, 0.498, 0.001]})
+    providers = pd.DataFrame({"year": 2022, "carrier": carriers, "q_prior": [0.502, 0.488, 0.307, 0.217, 0.203, 0.19, 0.295],
+                              "q_scale": [1.26, 1.33, 1.99, 1.69, 1.43, 1.98, 0.82],
+                              "lower": [0.352, 0.338, 0.157, 0.067, 0.053, 0.04, 0.145],
+                              "upper": [0.652, 0.638, 0.457, 0.367, 0.353, 0.34, 0.445]})
+    b2b = pd.DataFrame({"year": [2022], "share": [0.274]})
+    key = ["year", "segment", "carrier"]
+    first, _ = _profile({"market": market, "providers": providers, "b2b": b2b}, 2022)
+    second, _ = _profile({"market": market.iloc[::-1], "providers": providers.iloc[::-1], "b2b": b2b}, 2022)
+    pd.testing.assert_frame_equal(first.sort_values(key).reset_index(drop=True), second.sort_values(key).reset_index(drop=True),
+                                  check_exact=True)

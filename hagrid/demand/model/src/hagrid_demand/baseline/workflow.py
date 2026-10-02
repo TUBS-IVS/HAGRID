@@ -26,6 +26,7 @@ from .config import load_baseline_config
 from .out_of_home import (apply_plan, build_plan, load_points, point_compartments, point_stops, population_near,
                           resolve_out_of_home, shop_targets, synthesize_shops, synthetic_candidates)
 from .network_growth import capacity_inputs, carrier_ooh_demand, growth_years, plan_network
+from .land_use import check_stop_ranges
 from .dashboard import _report_markdown, build_report_data, render_baseline
 from .calendar import DEFAULT_WEEKDAY_WEIGHTS, calendar_weights, public_holidays
 from .projection import project_annual
@@ -59,7 +60,7 @@ def _source_specs(config: dict) -> dict[str, Path]:
             raise ValueError("each raw source requires adapter and file")
         result[spec["adapter"]] = Path(config["input_dir"]) / spec["file"]
         if spec["adapter"] == "dhl" and spec.get("year") != 2021:
-            raise ValueError("DHL source metadata must declare year 2021")
+            raise ValueError("LSP source metadata must declare year 2021")
     required = {"persons", "companies", "dhl", "hermes", "plz"}
     if missing := required.difference(result):
         raise ValueError(f"raw source mode is missing adapters: {sorted(missing)}")
@@ -148,9 +149,9 @@ def _write_sources(config: dict, output: Path) -> None:
             sites, "sites", {"site_id", "recipient_type", "population", "employees", "location_status", "geometry"}
         )
         dhl_table = tables["dhl_observations.parquet"]
-        _require_foundation_columns(dhl_table, "DHL observations", {"year"})
+        _require_foundation_columns(dhl_table, "LSP observations", {"year"})
         if not dhl_table.year.eq(2021).all():
-            raise ValueError("foundation DHL data must contain only year 2021")
+            raise ValueError("foundation LSP data must contain only year 2021")
         membership = tables.get("site_postal_candidates.parquet")
         if membership is None:
             raise ValueError("foundation run requires site_postal_candidates.parquet")
@@ -187,7 +188,7 @@ def _write_sources(config: dict, output: Path) -> None:
     sites["segment"] = sites.recipient_type
     dhl = read_dhl(paths["dhl"], config["target_crs"])
     if not dhl.year.eq(2021).all():
-        raise ValueError("raw DHL data must contain only year 2021")
+        raise ValueError("raw LSP data must contain only year 2021")
     hermes = read_hermes(paths["hermes"])
     sites.to_parquet(output / "sites.parquet", index=False)
     dhl.to_parquet(output / "dhl_observations.parquet", index=False)
@@ -402,6 +403,92 @@ def _check_preconditions(config: dict) -> None:
         raise ValueError("network_growth with external_annual_series needs the reference year among the run years")
 
 
+def _stop_register(run: Path, output: Path | None) -> tuple[gpd.GeoDataFrame, pd.DataFrame]:
+    """Home stops of the daily stage: the reference stops plus the stops of new land-use sites (if any)."""
+    stops = gpd.read_parquet(run / "reference_stops.parquet")
+    links = pd.read_parquet(run / "reference_site_stops.parquet")
+    if output is not None and (output / "land_use_stops.parquet").is_file():
+        extra = gpd.read_parquet(output / "land_use_stops.parquet").to_crs(stops.crs)
+        stops = gpd.GeoDataFrame(pd.concat([stops, extra.drop(columns=["year_opened"], errors="ignore")], ignore_index=True), crs=stops.crs)
+        links = pd.concat([links, pd.read_parquet(output / "land_use_site_stops.parquet")], ignore_index=True)
+    return stops, links
+
+
+def _site_population(run: Path, output: Path | None) -> pd.Series:
+    """Residents per site id: the reference sites plus the development homes of the land-use plan."""
+    population = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"])
+    if output is not None and (output / "land_use_sites.parquet").is_file():
+        extra = pd.read_parquet(output / "land_use_sites.parquet", columns=["site_id", "population"])
+        population = pd.concat([population, extra], ignore_index=True)
+    return population.drop_duplicates("site_id").set_index("site_id").population
+
+
+def _land_use_plan(config: dict, run: Path, output: Path, reference: dict):
+    """The run's land-use plan (``land_use`` block), written to *output*; None without land use."""
+    from .land_use import build_land_use_plan, read_landuse, read_persons, resolve_land_use
+
+    cfg = resolve_land_use(config.get("land_use"))
+    if cfg is None:
+        return None
+    if not config.get("osm_boundaries"):
+        raise ValueError("land_use requires osm_boundaries (municipalities and city districts, see baseline osm-boundaries)")
+    input_dir = Path(config["input_dir"])
+    stops, links = _stop_register(run, None)
+    postal = gpd.read_parquet(run / "sources" / "postal_support.parquet").to_crs(stops.crs)
+    sources = pd.read_parquet(run / "sources" / "sites.parquet", columns=["site_id", "segment", "branch", "employees"])
+    buildings = pd.read_parquet(run / "buildings" / "site_buildings.parquet", columns=["site_id", "building_key"])
+    companies = (sources.loc[sources.segment.eq("business")].merge(buildings, on="site_id", how="inner")
+                 [["building_key", "branch", "employees"]].rename(columns={"building_key": "site_id"}))
+    plan = build_land_use_plan(cfg, config["years"], int(config["seed"]), reference["sites"], stops, links, postal,
+                               gpd.read_parquet(Path(config["osm_boundaries"])), read_persons(input_dir / (cfg["persons"] or "persons_total.csv")),
+                               companies, read_landuse(input_dir / (cfg["landuse"] or "osm_landuse_region_hannover.csv"), stops.crs))
+    plan.table.to_parquet(output / "land_use_districts.parquet", index=False)
+    plan.factors.to_parquet(output / "land_use_factors.parquet", index=False)
+    plan.new_sites.to_parquet(output / "land_use_sites.parquet", index=False)
+    plan.stops.to_parquet(output / "land_use_stops.parquet", index=False)
+    plan.site_stops.to_parquet(output / "land_use_site_stops.parquet", index=False)
+    shapes = plan.districts.assign(geometry=plan.districts.geometry.simplify(25., preserve_topology=True))
+    shapes.to_parquet(output / "land_use_district_shapes.parquet", index=False)
+    plan.ages.to_parquet(output / "land_use_ages.parquet", index=False)
+    plan.developments.to_parquet(output / "land_use_developments.parquet", index=False)
+    plan.site_districts.to_parquet(output / "land_use_site_districts.parquet", index=False)
+    return plan
+
+
+def _with_land_use(reference: dict, plan) -> dict:
+    """The reference contract with the new land-use sites: their rows join the sites and their points the geometry, so
+    every consumer of ``reference['geometry']`` (correlated allocation, MATSim export without stops) locates them."""
+    geometry = reference["geometry"]
+    added = plan.new_sites[["site_id", "geometry"]]
+    if len(added):
+        added = added.to_crs(geometry.crs)
+        geometry = gpd.GeoDataFrame(pd.concat([geometry, added], ignore_index=True), geometry="geometry", crs=geometry.crs)
+    return {**reference, "sites": plan.sites, "geometry": geometry}
+
+
+def _daily_dependencies(config: dict, run: Path) -> dict:
+    """Inputs whose content keys the daily stage cache."""
+    from .land_use import resolve_land_use
+
+    dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
+    if config.get("out_of_home") and config.get("osm_parcel_points"):
+        dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
+    if config.get("out_of_home") and config.get("osm_points"):
+        # retail POIs of the synthetic points and of the network growth
+        dependencies["osm_points"] = Path(config["osm_points"])
+    land_use = resolve_land_use(config.get("land_use"))   # an empty block enables land use with the defaults
+    if land_use is not None:
+        input_dir = Path(config["input_dir"])
+        if config.get("osm_boundaries"):
+            dependencies["osm_boundaries"] = Path(config["osm_boundaries"])
+        dependencies["persons"] = input_dir / (land_use["persons"] or "persons_total.csv")
+        dependencies["landuse"] = input_dir / (land_use["landuse"] or "osm_landuse_region_hannover.csv")
+        # branch, employees and building of every source firm (firm growth and new firms)
+        dependencies["source_sites"] = run / "sources" / "sites.parquet"
+        dependencies["site_buildings"] = run / "buildings" / "site_buildings.parquet"
+    return dependencies
+
+
 def _daily_code() -> dict:
     """Code and packaged inputs whose content keys the daily stage cache."""
     here = Path(__file__)
@@ -412,6 +499,7 @@ def _daily_code() -> dict:
             "temporal_inputs": here.with_name("data") / "temporal_inputs.json", "events": here.with_name("data") / "events.json",
             "out_of_home": here.with_name("out_of_home.py"), "out_of_home_inputs": here.with_name("data") / "out_of_home.json",
             "network_growth": here.with_name("network_growth.py"), "series": here.with_name("series.py"),
+            "land_use": here.with_name("land_use.py"), "land_use_inputs": here.with_name("data") / "land_use.json",
             "matsim_export": here.parents[1] / "compatibility" / "matsim_export.py"}
 
 def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, plan, generation: dict, temporal: dict):
@@ -451,9 +539,9 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
               "half_delivery_days": temporal["half_delivery_days"]}
     site_groups = None
     if float(config.get("spatial", {}).get("site_frailty_cv", 0.) or 0.) > 0 and (run / "reference_site_stops.parquet").is_file():
-        street = (pd.read_parquet(run / "reference_stops.parquet", columns=["stop_id", "str_idx"])
-                  .drop_duplicates("stop_id").set_index("stop_id").str_idx)
-        links = pd.read_parquet(run / "reference_site_stops.parquet").drop_duplicates("site_id")
+        home_stops, home_links = _stop_register(run, output)
+        street = home_stops[["stop_id", "str_idx"]].drop_duplicates("stop_id").set_index("stop_id").str_idx
+        links = home_links.drop_duplicates("site_id")
         site_groups = pd.Series(links.stop_id.map(street).to_numpy(), index=links.site_id.astype(str).to_numpy())
 
     ooh = resolve_out_of_home(config.get("out_of_home"))
@@ -463,14 +551,17 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
             raise ValueError("out_of_home requires osm_parcel_points")
         if not (run / "reference_stops.parquet").is_file():
             raise ValueError("out_of_home requires the street anchor with stops")
-        base_stops = gpd.read_parquet(run / "reference_stops.parquet")
-        base_links = pd.read_parquet(run / "reference_site_stops.parquet")
+        base_stops, base_links = _stop_register(run, output)
         site_xy_of = base_stops.drop_duplicates("stop_id").set_index("stop_id").geometry
         site_stop_of = base_links.drop_duplicates("site_id").set_index("site_id").stop_id
         # Network growth is a pre-pass: the stop register below holds every point of every simulated year.
         points, status["out_of_home"] = _out_of_home_points(config, run, ooh, base_stops.crs, projection=projection,
                                                             site_xy_of=site_xy_of, site_stop_of=site_stop_of)
-        extra = point_stops(points, int(base_stops.stop_index.max()) + 1)
+        # pickup points follow the reference stops; land-use stops have their own range above (LAND_USE_STOP_BASE)
+        land_use_stop = base_stops.stop_id.astype(str).str.startswith("lu:")
+        reference_last = int(base_stops.loc[~land_use_stop, "stop_index"].max())
+        extra = point_stops(points, reference_last + 1)
+        check_stop_ranges(reference_last, len(extra), int(base_stops.loc[land_use_stop, "stop_index"].min()) if land_use_stop.any() else None)
         export_stops = {"stops": gpd.GeoDataFrame(pd.concat([base_stops.assign(stop_type="home"), extra], ignore_index=True), crs=base_stops.crs),
                         "site_stops": pd.concat([base_links, pd.DataFrame({"site_id": extra.stop_id, "stop_id": extra.stop_id})], ignore_index=True)}
         extra = extra.assign(compartments=point_compartments(points, ooh), year_opened=points.year_opened.to_numpy(),
@@ -478,7 +569,7 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         extra.rename(columns={"stop_type": "kind"})[["stop_index", "point_id", "kind", "carriers", "brand", "context", "synthetic",
                                                      "compartments", "year_opened", "poi_type", "plz", "geometry"]] \
             .to_parquet(output / "out_of_home_points.parquet", index=False)
-        population_of = pd.read_parquet(run / "reference_sites.parquet", columns=["site_id", "population"]).drop_duplicates("site_id").set_index("site_id").population
+        population_of = _site_population(run, output)
         status["out_of_home"].update({"delivered": {}, "b2c_delivered": {}, "overflow_home": 0})
         _json(output / "out_of_home_inputs.json", ooh)  # the resolved inputs the run used (dashboards read them back)
         # Per point: first year it takes parcels, compartments after its latest planned year (0 = not sized yet) and
@@ -503,12 +594,15 @@ def _shipping_transit_chunks(config: dict, run: Path, output: Path, projection, 
         if not (run / "reference_stops.parquet").is_file():
             raise ValueError("annual_store requires the street anchor with stops")
         from .annual import AnnualStoreWriter
-        writer = AnnualStoreWriter(output, export_stops["stops"] if export_stops else gpd.read_parquet(run / "reference_stops.parquet"),
-                                   export_stops["site_stops"] if export_stops else pd.read_parquet(run / "reference_site_stops.parquet"),
+        home_stops, home_links = _stop_register(run, output)
+        writer = AnnualStoreWriter(output, export_stops["stops"] if export_stops else home_stops,
+                                   export_stops["site_stops"] if export_stops else home_links,
                                    {day for year in config["years"] for day in _holidays(config, year)})
         status["annual_store"] = True
         if export_stops is not None:
             shutil.copy2(output / "out_of_home_points.parquet", writer.directory / "out_of_home_points.parquet")
+        if (output / "land_use_stops.parquet").is_file():
+            shutil.copy2(output / "land_use_stops.parquet", writer.directory / "land_use_stops.parquet")
     occupancy_out = None
     if writer is not None and ooh is not None:
         from .annual import ParquetAppender
@@ -743,7 +837,11 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     """Project full calendar-year counts and stream only selected daily detail."""
     reference, projection_cfg = _projection_inputs(config, run)
     series = {name: pd.read_parquet(run / "series" / f"{name}.parquet") for name in ("volume", "market", "b2b", "providers")}
-    projection = project_annual(reference, series, config["years"], projection_cfg)
+    land = _land_use_plan(config, run, output, reference)
+    if land is not None:
+        reference = _with_land_use(reference, land)
+    projection = project_annual(reference, series, config["years"], projection_cfg,
+                                site_factors=land.factors if land is not None else None)
     calendar, calendar_metadata = _daily_calendar(config, run)
     plan = resolve_spatial_plan(reference, projection, {"seed": config["seed"], "spatial": config["spatial"]}, 0, Path(config["cache_root"]))
     generation = {"seed": config["seed"], "spatial": config["spatial"], "dates": config.get("dates"),
@@ -769,8 +867,8 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
         if ooh_stops is not None:
             stops = ooh_stops
         elif (run / "reference_stops.parquet").is_file():
-            stops = {"site_stops": pd.read_parquet(run / "reference_site_stops.parquet"),
-                     "stops": gpd.read_parquet(run / "reference_stops.parquet")}
+            home_stops, home_links = _stop_register(run, output)
+            stops = {"site_stops": home_links, "stops": home_stops}
         chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers, stops,
                                     int(config.get("stops", {}).get("max_parcels_per_row", 400)))
     summary = write_daily_aggregates(chunks, output, detail_draws)
@@ -785,7 +883,7 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     calendar.to_parquet(output / "calendar_weights.parquet", index=False)
     _json(output / "daily_status.json", {"output_scope": "daily", "years": config["years"], "selected_dates_are_filter_only": True,
                                           "spatial_status": plan.status, "calendar": calendar_metadata, "temporal": temporal_status,
-                                          "writer": summary})
+                                          "writer": summary, **({"land_use": land.status} if land is not None else {})})
     if config.get("legacy_export"):
         from hagrid_demand.compatibility.legacy_exports import export_legacy
         export_legacy(series, reference, projection, Path(config["legacy_contract"]), config["years"], output / "legacy", config["schema_version"])
@@ -970,12 +1068,7 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
         state["regional_annual"] = json.loads((run / "reference_regional_annual.json").read_text(encoding="utf-8"))["regional_annual"]
         _json(run / "run.json", state)
         if config["output_scope"] == "daily":
-            daily_dependencies = {"reference": run / "reference", "series": run / "series", "config": config}
-            if config.get("out_of_home") and config.get("osm_parcel_points"):
-                daily_dependencies["osm_parcel_points"] = Path(config["osm_parcel_points"])
-            if config.get("out_of_home") and config.get("osm_points"):
-                # retail POIs of the synthetic points and of the network growth
-                daily_dependencies["osm_points"] = Path(config["osm_points"])
+            daily_dependencies = _daily_dependencies(config, run)
             daily_snapshot = dependency_snapshot(daily_dependencies)
             daily_fingerprint = stage_key("daily", daily_dependencies, config, _daily_code(),
                                           dependency_snapshot=daily_snapshot)
@@ -995,6 +1088,9 @@ def run_baseline(config_path: Path, run_id: str, resume: bool = False) -> Path:
                 _copy_public(run, "daily", "out_of_home_network.parquet")
             if (run / "daily" / "out_of_home_inputs.json").is_file():
                 _copy_public(run, "daily", "out_of_home_inputs.json")
+            for name in ['land_use_districts.parquet', 'land_use_factors.parquet', 'land_use_sites.parquet', 'land_use_stops.parquet', 'land_use_site_stops.parquet', 'land_use_district_shapes.parquet', 'land_use_ages.parquet', 'land_use_developments.parquet', 'land_use_site_districts.parquet']:
+                if (run / "daily" / name).is_file():
+                    _copy_public(run, "daily", name)
             if (run / "daily" / "annual").is_dir():
                 if (run / "annual").exists():
                     shutil.rmtree(run / "annual")

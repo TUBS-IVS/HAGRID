@@ -1,6 +1,6 @@
 # HAGRID Demand: Audit und Neuentwurf
 
-**Aktueller Umsetzungseinstieg:** [HAGRID-Roadmap mit drei Teilplänen und Terra-Reviews](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-roadmap.md). Die zugehörige [Spezifikation](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/specs/2026-09-15-hagrid-baseline-design.md) enthält den konfigurierbaren Einfluss von DHL 2021, tägliche Ortsvariation, Monte Carlo und globale Sensitivitätsanalysen.
+**Aktueller Umsetzungseinstieg:** [HAGRID-Roadmap mit drei Teilplänen und Terra-Reviews](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/plans/2026-09-15-hagrid-roadmap.md). Die zugehörige [Spezifikation](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/superpowers/specs/2026-09-15-hagrid-baseline-design.md) enthält den konfigurierbaren Einfluss von LSP 2021, tägliche Ortsvariation, Monte Carlo und globale Sensitivitätsanalysen.
 
 Aktualisierung: 15. September 2026. Einstieg ist die [Prüfung der HAGRID-Baseline-Planung](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/BASELINE_PLAN_REVIEW_20260915.md), mit [frischem Zahlen- und Quellenabgleich](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/plan_verification_20260915.json). Nach Nutzerentscheidung wird zuerst der HAGRID-Grundgedanke als verbesserte Python-Baseline umgesetzt. Die bisherige gemeinsame Modellschätzung und ihre Erweiterungen gehören zum experimentellen Bestand; die Code-Trennung steht noch aus.
 
@@ -15,7 +15,7 @@ Der folgende Dokumentenbestand und Auditbericht stammt aus der Untersuchung vom 
 | [Nachfrage ohne Raster](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/GRID_FREE_METHOD.md) | Standortverzeichnis, Datenaufbereitung, Beobachtungszuordnung, Lieferziele und Validierung; TAZ vorerst ausgeklammert |
 | [Detailliertes Audit](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/AUDIT.md) | Notebook-Übersicht, tatsächliche Inputs, priorisierte Fehler, Modellkritik und Prüfgrenzen |
 | [Früherer Modell- und Projektentwurf](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/DESIGN.md) | Detailideen und erste Architektur; Modellpräferenzen durch Gesamtentwurf eingeordnet |
-| [PANDA + HAGRID: gemeinsames Hybridmodell](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/PANDA_HAGRID_CONCEPT.md) | Präzisierung nach PANDA-Review: Bottom-up/Top-down, DHL-Nutzung, differenzierte Anbieterprofile und synthetischer Nachweis |
+| [PANDA + HAGRID: gemeinsames Hybridmodell](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/PANDA_HAGRID_CONCEPT.md) | Präzisierung nach PANDA-Review: Bottom-up/Top-down, LSP-Nutzung, differenzierte Anbieterprofile und synthetischer Nachweis |
 | [LSP-Modell: Kandidatenherleitung](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/HAGRID_LSP_REFINEMENT.md) | Konsistente B2B/B2C-Mengenzerlegung als zu prüfender Modellbaustein |
 | [Prüfergebnisse](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/verification.json) | Aggregierte Datenprofile, zwölf reproduzierte Fehlerfälle und Notebook-Hashes |
 | [Prüfskript](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/verify_findings.py) | Wiederholbare Prüfung ohne Ausführung der gesamten Notebook-Pipeline |
@@ -24,7 +24,7 @@ Der folgende Dokumentenbestand und Auditbericht stammt aus der Untersuchung vom 
 
 1. **Ein frischer Gesamtlauf ist gebrochen.** Notebook 04 liest englische Exportspalten aus Notebook 01, erwartet aber deutsche Namen; außerdem kopiert es den DataFrame ohne die zuvor berechnete B2B-Normalisierung.
 2. **Die räumliche Abdeckung ist durch den alten Nachfragebestand begrenzt.** Von 15.917 Rasterzellen haben 8.531 null alte Paketmenge. Darunter befinden sich 2.625 Zellen mit Einwohnern oder Firmen. Der Filter `total_coun > 0` schließt sie aus.
-3. **Die Segmentgewichte zählen falsch.** Ein leerer Left Spatial Join wird als ein Treffer gezählt. Überlappende Puffer können dieselbe Person oder Firma mehrfach berücksichtigen. Ein DHL-Boost ignoriert seinen Schwellwert und wächst mit der Anzahl der Teilsegmente.
+3. **Die Segmentgewichte zählen falsch.** Ein leerer Left Spatial Join wird als ein Treffer gezählt. Überlappende Puffer können dieselbe Person oder Firma mehrfach berücksichtigen. Ein LSP-Boost ignoriert seinen Schwellwert und wächst mit der Anzahl der Teilsegmente.
 4. **Mehrere Verarbeitungsschritte verletzen Mengenbilanzen.** Unabhängiges Runden kann Pakete verlieren; B2B-Umschichtungen können die B2B-Gesamtzahl verändern; ein späterer Auffüllschritt erzeugt zusätzliche Nachfrage.
 5. **Prognose und Unsicherheit sind nicht sauber getrennt.** Eingeschriebene Schätzwerte 2024–2028 werden als beobachtet bezeichnet. Die linearen Konfidenzbänder werden falsch berechnet. Wochenprofile und Jahresmengen sind nicht exakt abgestimmt.
 6. **Der bessere Input ist teilweise schon da.** 52.931 Firmenstandorte enthalten Branche und Beschäftigtenzahl. 1.150.862 Personendatensätze enthalten Gebäudeinformationen. Haushaltsinformationen sind allerdings bei 536.496 Personen unvollständig.

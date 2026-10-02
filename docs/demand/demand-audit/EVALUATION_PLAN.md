@@ -43,7 +43,7 @@ Alle Kandidaten werden auf denselben echten Straßen-/PLZ-Beobachtungen bewertet
 ## 4. Entscheidung für das zentrale Modell
 
 1. Kandidaten mit verletzten Mengenidentitäten, Datenleckage oder nicht nachvollziehbarer Quellenverwendung werden unabhängig vom Fehlerwert zurückgestellt.
-2. Primäre Qualitätsgröße für die erste Anbieterprognose ist die absolute wMAPE auf zurückgehaltenen DHL-Beobachtungen, sofern deren Definition geklärt ist. Bias und Teilgruppenfehler werden zwingend mitbetrachtet. Diese Auswahlgröße bestätigt nicht die Güte für den gesamten Markt.
+2. Primäre Qualitätsgröße für die erste Anbieterprognose ist die absolute wMAPE auf zurückgehaltenen LSP-Beobachtungen, sofern deren Definition geklärt ist. Bias und Teilgruppenfehler werden zwingend mitbetrachtet. Diese Auswahlgröße bestätigt nicht die Güte für den gesamten Markt.
 3. Verbesserungen werden als gepaarte Unterschiede auf denselben Gruppen berichtet. Unsicherheit über Unterschiede wird gruppenweise untersucht; ein Bootstrap fixer Vorhersagen ist keine vollständige Wiederholung der Modellwahl.
 4. Bei ähnlich guten und statistisch nicht klar trennbaren Ergebnissen wird der einfachere, stabilere Kandidat bevorzugt. Kein universeller Mindestgewinn wird ohne Kenntnis der Daten willkürlich festgelegt.
 5. Ein Kandidat darf zusätzliche Anbieterunterschiede auch aus fachlich begründeten Priors darstellen. Der Auswahlbericht benennt dann den strukturellen Nutzen und die fehlende empirische Bestätigung dieser Komponente.

@@ -269,7 +269,7 @@ def test_cli_baseline_run_prints_the_path_returned_by_the_custom_dashboard_rende
 
 
 def test_reference_run_publishes_the_frozen_consumer_contract_and_dhl_identity(fixture_config):
-    """A reference run has all semantic artifacts, with DHL stored only at postal grain."""
+    """A reference run has all semantic artifacts, with LSP stored only at postal grain."""
     import geopandas as gpd
     import pandas as pd
 
@@ -326,7 +326,7 @@ def test_renderer_rejects_tampered_semantic_reference_artifact(fixture_config):
 
 
 def test_workflow_excludes_out_of_scope_dhl_before_anchor_support_and_ledgers_it(fixture_config):
-    """DHL rows outside verified postal support cannot create an anchor or a missing-potential error."""
+    """LSP rows outside verified postal support cannot create an anchor or a missing-potential error."""
     import geopandas as gpd
     import pandas as pd
     from shapely.geometry import LineString
@@ -697,3 +697,235 @@ def test_run_status_records_overflow_per_year(growth_run):
     assert set(by_year) == {"2025", "2026"} and sum(by_year.values()) == status["overflow_home"]
     block = build_annual_dashboard_data(growth_run, 2026)["meta"]["temporal"]["out_of_home"]
     assert block["overflow_home"] == by_year["2026"]
+
+
+# --- land-use dynamics -----------------------------------------------------------------------------------------------
+
+def _land_use_config(root, years):
+    """The growth fixture plus land use: city district A (PLZ 01000) with a development area, municipality B (PLZ 02000)
+    with a commercial area that receives one new office firm in 2026."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    config_path = _growth_config(root, years)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    inputs = root / "inputs"
+    gpd.GeoDataFrame({"osm_id": ["1", "2", "3"], "name": ["Hannover", "S1", "Testdorf"], "admin_level": [8, 10, 8]},
+                     geometry=[box(-10, -10, 60, 60), box(-10, -10, 60, 60), box(90, -10, 160, 60)], crs="EPSG:25832") \
+        .to_parquet(inputs / "boundaries.parquet", index=False)
+    pd.DataFrame({"age": [30, 70, 40, 10], "geometry": ["POINT (10 10)", "POINT (10 10)", "POINT (110 10)", "POINT (110 10)"]}) \
+        .to_csv(inputs / "persons_age.csv", index=False)
+    pd.DataFrame({"osm_id": [1], "code": [0], "fclass": ["commercial"], "name": [None], "geometry": [box(120, 30, 140, 45).wkt]}) \
+        .to_csv(inputs / "landuse.csv", index=False)
+    config["osm_boundaries"] = "inputs/boundaries.parquet"
+    config["land_use"] = {
+        "enabled": True, "persons": "persons_age.csv", "landuse": "landuse.csv", "new_firm_share": 0.5,
+        "firm_rates": {"office": 1.0, "default": 0.0},
+        "districts": [{"id": "A", "name": "Stadt", "kind": "city", "pop_2024": 100, "pop_2034": 10000, "stadtteile": ["S1"]},
+                      {"id": "B", "name": "Testdorf", "kind": "umland", "pop_2024": 100, "pop_2034": 90, "municipality": "Testdorf"}],
+        "developments": [{"name": "Neubau", "district_id": "A", "residents": 400, "start_year": 2026, "ramp_years": 1,
+                          "geometry": {"center": [25.0, 40.0], "radius_m": 6.0}}]}
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    return config_path
+
+
+@pytest.fixture(scope="module")
+def land_use_run(tmp_path_factory):
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    root = tmp_path_factory.mktemp("land-use")
+    return run_baseline(_land_use_config(root, [2025, 2026]), "street-land-use")
+
+
+def test_land_use_run_writes_its_registers(land_use_run):
+    import geopandas as gpd
+
+    districts = pd.read_parquet(land_use_run / "land_use_districts.parquet")
+    assert list(districts.columns) == ["year", "district_id", "name", "kind", "population_index", "propensity_index",
+                                       "persons_model", "employees_model", "forecast_index"]
+    assert sorted(zip(districts.year, districts.district_id)) == [(2025, "A"), (2025, "B"), (2026, "A"), (2026, "B")]
+    factors = pd.read_parquet(land_use_run / "land_use_factors.parquet")
+    assert list(factors.columns) == ["year", "site_id", "segment", "factor"]
+    sites = gpd.read_parquet(land_use_run / "land_use_sites.parquet")
+    homes = sites.loc[sites.segment.eq("private")]
+    assert len(homes) >= 5 and set(homes["area"]) == {"Neubau"} and set(homes.year_opened) == {2026}
+    assert sites.loc[sites.segment.eq("business"), "site_id"].tolist() == ["lu:biz:office:2026:0"]
+    stops = gpd.read_parquet(land_use_run / "land_use_stops.parquet")
+    assert stops.stop_index.min() >= 1_000_000 and len(stops) == len(sites)
+    status = json.loads((land_use_run / "daily_status.json").read_text(encoding="utf-8"))["land_use"]
+    assert status["variant"] == "prognose" and status["new_sites"] == {"2026": len(sites)}
+    ages = pd.read_parquet(land_use_run / "land_use_ages.parquet")
+    assert list(ages.columns) == ["year", "band", "age_from", "persons", "propensity"] and set(ages.year) == {2025, 2026}
+    assert ages.loc[ages.year.eq(2025), "persons"].sum() == pytest.approx(4.)       # the four persons of the fixture
+    districts_of = pd.read_parquet(land_use_run / "land_use_site_districts.parquet")
+    assert list(districts_of.columns) == ["site_id", "district_id"] and not districts_of.site_id.duplicated().any()
+    reference = pd.read_parquet(land_use_run / "reference_sites.parquet").site_id.astype(str).unique()
+    assert set(reference) | set(sites.site_id) == set(districts_of.site_id)
+    assert set(districts_of.set_index("site_id").district_id[homes.site_id]) == {"A"}   # the configured district of the area
+    developments = pd.read_parquet(land_use_run / "land_use_developments.parquet")
+    assert list(developments.columns) == ["year", "name", "district_id", "residents_model"]
+    assert developments.set_index("year").residents_model[2025] == 0. and developments.set_index("year").residents_model[2026] > 0.
+
+
+def test_land_use_base_year_equals_the_run_without_land_use(land_use_run, growth_run):
+    for name in ("stop_daily.parquet", "plz_daily.parquet"):
+        with_land_use = pd.read_parquet(land_use_run / "annual" / name)
+        without = pd.read_parquet(growth_run / "annual" / name)
+        first = with_land_use.loc[pd.to_datetime(with_land_use.date).dt.year.eq(2025)].reset_index(drop=True)
+        second = without.loc[pd.to_datetime(without.date).dt.year.eq(2025)].reset_index(drop=True)
+        pd.testing.assert_frame_equal(first, second)
+    for day in sorted((growth_run / "matsim").glob("*2025-*.dbf")):
+        assert (land_use_run / "matsim" / day.name).read_bytes() == day.read_bytes()
+
+
+def test_land_use_sites_take_parcels_from_their_opening_year(land_use_run):
+    stops = pd.read_parquet(land_use_run / "annual" / "stop_daily.parquet")
+    year = pd.to_datetime(stops.date).dt.year
+    land_use = stops.stop.ge(1_000_000)
+    assert not (land_use & year.eq(2025)).any() and (land_use & year.eq(2026)).any()
+
+
+def test_site_groups_for_land_use_sites_are_per_area(land_use_run):
+    import geopandas as gpd
+
+    stops = gpd.read_parquet(land_use_run / "land_use_stops.parquet")
+    homes = stops.loc[stops.stop_id.str.startswith("lu:res:")]
+    firms = stops.loc[stops.stop_id.str.startswith("lu:biz:")]
+    assert homes.str_idx.nunique() == 1 and int(homes.str_idx.iloc[0]) < 0
+    assert (firms.str_idx <= -1000).all() and not set(firms.str_idx) & set(homes.str_idx)
+
+
+def test_export_day_includes_land_use_stops_and_points(land_use_run, tmp_path):
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.annual import export_day
+
+    stops = pd.read_parquet(land_use_run / "annual" / "stop_daily.parquet")
+    points = pd.read_parquet(land_use_run / "annual" / "out_of_home_points.parquet")
+    stops["day"] = pd.to_datetime(stops.date)
+    has_land_use = stops.loc[stops.stop.ge(1_000_000)].groupby("day").size()
+    has_point = stops.loc[stops.stop.isin(points.stop_index)].groupby("day").size()
+    day = sorted(set(has_land_use.index) & set(has_point.index))[0]
+    ledger = export_day(land_use_run, day.date().isoformat(), tmp_path)
+    frame = gpd.read_file(tmp_path / ledger["file"])
+    assert frame.stop_id.str.startswith("lu:").any() and frame.stop_type.ne("home").any()
+    index = pd.concat([gpd.read_parquet(land_use_run / "reference_stops.parquet")[["stop_id", "stop_index"]],
+                       gpd.read_parquet(land_use_run / "land_use_stops.parquet")[["stop_id", "stop_index"]],
+                       points.assign(stop_id="ooh:" + points.point_id)[["stop_id", "stop_index"]]], ignore_index=True)
+    assert not index.stop_index.duplicated().any()
+    assert points.stop_index.max() < gpd.read_parquet(land_use_run / "land_use_stops.parquet").stop_index.min()
+
+
+def test_correlated_allocation_locates_land_use_sites(tmp_path):
+    """Correlated spatial allocation looks up every located site in reference['geometry']; new sites need a row too."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from hagrid_demand.baseline.spatial import resolve_spatial_plan
+    from hagrid_demand.baseline.workflow import _with_land_use
+    from hagrid_demand.common.contracts import AnnualProjection
+
+    reference = {"sites": pd.DataFrame({"site_id": ["a"], "segment": ["private"]}),
+                 "geometry": gpd.GeoDataFrame({"site_id": ["a"]}, geometry=[Point(0., 0.)], crs="EPSG:25832")}
+
+    class Plan:
+        sites = pd.DataFrame({"site_id": ["a", "lu:res:x:0"], "segment": ["private", "private"]})
+        new_sites = gpd.GeoDataFrame({"site_id": ["lu:res:x:0"]}, geometry=[Point(100., 0.)], crs="EPSG:25832")
+
+    annual = pd.DataFrame({"year": [2026, 2026], "segment": ["private"] * 2, "site_id": ["a", "lu:res:x:0"], "plz": ["01", "01"],
+                           "annual_expected": [5., 3.], "allocation_status": ["located", "located"]})
+    projection = AnnualProjection(annual, pd.DataFrame(), pd.DataFrame(), {"hashes": {}})
+    cfg = {"seed": 9, "spatial": {"mode": "correlated", "length_scale_m": 100., "log_sigma": .3, "rho": .5, "fourier_features": 16,
+                                  "calibration_draws": 64, "validation_draws": 128}}
+    with pytest.raises(ValueError, match="no coordinates"):
+        resolve_spatial_plan(reference, projection, cfg, 0, tmp_path / "raw")
+    extended = _with_land_use(reference, Plan())
+    assert extended["sites"].site_id.tolist() == ["a", "lu:res:x:0"] and reference["geometry"].site_id.tolist() == ["a"]
+    plan = resolve_spatial_plan(extended, projection, cfg, 0, tmp_path / "extended")
+    assert plan.calibration["2026:private"]["site_ids"] == ["a", "lu:res:x:0"]
+
+
+def test_daily_dependencies_cover_the_land_use_inputs(tmp_path):
+    """An empty land_use block enables land use with the defaults; its inputs must key the daily cache."""
+    from hagrid_demand.baseline.workflow import _daily_dependencies
+
+    run = tmp_path / "run"
+    config = {"input_dir": str(tmp_path), "osm_boundaries": str(tmp_path / "boundaries.parquet"), "land_use": {}}
+    dependencies = _daily_dependencies(config, run)
+    assert dependencies["reference"] == run / "reference" and dependencies["series"] == run / "series"
+    assert dependencies["osm_boundaries"] == tmp_path / "boundaries.parquet"
+    assert dependencies["persons"] == tmp_path / "persons_total.csv"
+    assert dependencies["landuse"] == tmp_path / "osm_landuse_region_hannover.csv"
+    assert dependencies["source_sites"] == run / "sources" / "sites.parquet"
+    assert dependencies["site_buildings"] == run / "buildings" / "site_buildings.parquet"
+    without = _daily_dependencies({**config, "land_use": {"enabled": False}}, run)
+    assert not {"osm_boundaries", "persons", "landuse", "source_sites", "site_buildings"} & set(without)
+
+
+def test_land_use_development_residents_follow_the_model_forecast_ratio(land_use_run):
+    """Forecast residents of a development area are scaled by the district's model persons over its forecast persons."""
+    districts = pd.read_parquet(land_use_run / "land_use_districts.parquet").set_index(["year", "district_id"])
+    developments = pd.read_parquet(land_use_run / "land_use_developments.parquet").set_index(["year", "name"])
+    forecast_2025 = 100. + (10000. - 100.) * (2025 - 2024) / 10.   # district A of the fixture: linear from the end of 2024
+    ratio = districts.loc[(2025, "A"), "persons_model"] / forecast_2025
+    assert ratio != pytest.approx(1.)
+    assert developments.loc[(2026, "Neubau"), "residents_model"] == pytest.approx(400. * ratio)
+    # existing stock plus the new residents follow the forecast index while the district is not clamped
+    assert districts.loc[(2026, "A"), "persons_model"] == pytest.approx(
+        districts.loc[(2025, "A"), "persons_model"] * districts.loc[(2026, "A"), "population_index"])
+
+
+def test_export_day_before_the_opening_year_has_no_land_use_stops(land_use_run, tmp_path):
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.annual import export_day
+
+    days = pd.read_parquet(land_use_run / "annual" / "days.parquet")
+    day = pd.to_datetime(days.loc[pd.to_datetime(days.date).dt.year.eq(2025) & days.parcels.gt(0), "date"]).iloc[0]
+    ledger = export_day(land_use_run, day.date().isoformat(), tmp_path)
+    frame = gpd.read_file(tmp_path / ledger["file"])
+    assert len(frame) and not frame.stop_id.str.startswith("lu:").any()
+
+
+def test_annual_dashboard_counts_the_land_use_stops_of_its_year(land_use_run):
+    """The stop totals of the annual dashboard hold the land-use stops opened by its year."""
+    import geopandas as gpd
+
+    from hagrid_demand.baseline.annual_dashboard import build_annual_dashboard_data
+
+    reference = gpd.read_parquet(land_use_run / "reference_stops.parquet").stop_id.nunique()
+    added = gpd.read_parquet(land_use_run / "land_use_stops.parquet")
+    assert set(added.year_opened) == {2026}
+    before, after = build_annual_dashboard_data(land_use_run, 2025), build_annual_dashboard_data(land_use_run, 2026)
+    assert before["meta"]["stops_total"] == reference and after["meta"]["stops_total"] == reference + len(added)
+    assert sum(after["plz"]["stops"]) - sum(before["plz"]["stops"]) == len(added)
+
+
+@pytest.fixture(scope="module")
+def clamped_run(tmp_path_factory):
+    """District A does not grow but its development area brings far more residents than A has: the existing stock is
+    clamped to zero."""
+    from hagrid_demand.baseline.workflow import run_baseline
+
+    root = tmp_path_factory.mktemp("land-use-clamped")
+    config_path = _land_use_config(root, [2025, 2026])
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["land_use"]["districts"][0]["pop_2034"] = 100
+    config["land_use"]["developments"][0]["residents"] = 100000
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    return run_baseline(config_path, "street-land-use-clamped")
+
+
+def test_clamped_district_runs_end_to_end(clamped_run, land_use_run):
+    status = json.loads((clamped_run / "daily_status.json").read_text(encoding="utf-8"))["land_use"]
+    assert [entry["district_id"] for entry in status["clamped"] if entry["year"] == 2026] == ["A"]
+    districts_of = pd.read_parquet(clamped_run / "land_use_site_districts.parquet").set_index("site_id").district_id
+    projection = pd.read_parquet(clamped_run / "annual_projection.parquet")
+    homes = projection.loc[projection.year.eq(2026) & projection.segment.eq("private")]
+    in_a = homes.site_id.astype(str).map(districts_of).eq("A")
+    assert in_a.any() and homes.loc[in_a].site_id.astype(str).str.startswith("lu:res:").all()   # only the new homes remain
+    totals = {name: pd.read_parquet(run / "annual_projection.parquet").groupby(["year", "segment"]).annual_expected.sum()
+              for name, run in (("clamped", clamped_run), ("plain", land_use_run))}
+    pd.testing.assert_series_equal(totals["clamped"], totals["plain"], rtol=1e-9)             # land use only redistributes
+    days = pd.read_parquet(clamped_run / "annual" / "days.parquet")
+    assert days.loc[pd.to_datetime(days.date).dt.year.eq(2026), "parcels"].sum() > 0

@@ -50,6 +50,45 @@ def test_rates_decomposition_statuses_and_b2b_share():
     assert 0 < observed_b2b_share(parts.reset_index()) < 1
 
 
+def test_small_zero_streets_with_residents_take_their_expectation_from_their_postal_area():
+    from hagrid_demand.baseline.anchor import AnchorConfig, apply_correction, decompose, fit_dhl_rates, level_correction
+
+    cfg = AnchorConfig()
+    base = _table()
+    extra = pd.DataFrame([{"sid": 900, "plz": "A", "street": "klein", "value": 0., "persons": 10, "companies": 1,
+                           "buildings": 2, "excluded": False},
+                          {"sid": 901, "plz": "A", "street": "feldweg", "value": 0., "persons": 0, "companies": 0,
+                           "buildings": 0, "excluded": False}])
+    table = apply_correction(pd.concat([base, extra], ignore_index=True), level_correction(base, cfg))
+    rates = fit_dhl_rates(table)
+    before = decompose(apply_correction(base, level_correction(base, cfg)), rates, cfg).set_index("street")
+    parts = decompose(table, rates, cfg).set_index("street")
+    assert parts.loc["klein", "anchor_status"] == "zero_filled" and parts.loc["feldweg", "anchor_status"] == "zero"
+    expected = rates["person"] * 10 + rates["company"] * 1
+    assert parts.loc["klein", "dhl_private"] + parts.loc["klein", "dhl_business"] == pytest.approx(expected)
+    carrying = ["observed", "observed_unstructured", "zero_filled"]
+    in_a = parts[parts.plz.eq("A") & parts.anchor_status.isin(carrying)]
+    observed_a = before[before.plz.eq("A") & before.anchor_status.isin(carrying)]
+    assert (in_a.dhl_private + in_a.dhl_business).sum() == pytest.approx((observed_a.dhl_private + observed_a.dhl_business).sum())
+    pick = lambda frame: frame[frame.plz.eq("A")].loc["s3", "dhl_private"]
+    ratio = pick(parts) / pick(before)
+    assert ratio < 1 and parts.loc["gewerbe", "dhl_business"] / before.loc["gewerbe", "dhl_business"] == pytest.approx(ratio)
+    other = parts[parts.plz.eq("B")]
+    assert (other.dhl_private + other.dhl_business).sum() == pytest.approx(other.dhl_corrected.sum())   # other areas untouched
+
+
+def test_zero_fill_never_takes_more_than_the_cap_of_an_area():
+    from hagrid_demand.baseline.anchor import AnchorConfig, decompose
+
+    t = pd.DataFrame([{"sid": 0, "plz": "Z", "street": "obs", "value": 1., "dhl_corrected": 1., "persons": 10, "companies": 0,
+                       "buildings": 1, "excluded": False},
+                      {"sid": 1, "plz": "Z", "street": "zero", "value": 0., "dhl_corrected": 0., "persons": 40, "companies": 0,
+                       "buildings": 4, "excluded": False}])
+    parts = decompose(t, {"person": .06, "company": .4}, AnchorConfig()).set_index("street")
+    assert parts.loc["zero", "anchor_status"] == "zero_filled"
+    assert parts.loc["obs", "dhl_private"] == pytest.approx(.5) and parts.loc["zero", "dhl_private"] == pytest.approx(.5)
+
+
 def test_structure_holdout_reports_street_and_postal_errors():
     from hagrid_demand.baseline.anchor import AnchorConfig, apply_correction, level_correction, structure_holdout
 
@@ -136,3 +175,7 @@ def test_street_reference_reports_persons_and_firms_on_zero_streets():
     solved = solve_street_reference(buildings, streets, profiles, b=.23, operating_days=300, cfg={"min_streets": 99},
                                     seed=1, scope_plz=["01000"])
     assert solved["anchor"]["zero_street_units"] == {"streets": 1, "persons": 3.0, "firms": 0.0}
+    filled = solved["sites"].loc[solved["sites"].site_id.eq("z1"), "reference_annual"].sum()
+    assert filled > 0 and solved["anchor"]["zero_filled"]["streets"] == 1                 # observed zero, filled from its area
+    assert solved["checks"]["observed_identity"]["total_residual"] == pytest.approx(0., abs=1e-9)
+    assert solved["checks"]["observed_identity"]["b2b_residual"] == pytest.approx(0., abs=1e-9)

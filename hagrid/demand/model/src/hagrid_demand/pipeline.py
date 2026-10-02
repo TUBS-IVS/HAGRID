@@ -215,7 +215,7 @@ def run_foundation(config_path, run_id):
                    "link_status": {str(k): {"sites": int(v.sites), "population": int(v.population)}
                                    for k, v in groups.iterrows()},
                    "blockers_for_calibration": ["Confirm observation units, reference windows and segment definitions",
-                     "Resolve repeated DHL street records: fragmentation versus distinct observations",
+                     "Resolve repeated LSP street records: fragmentation versus distinct observations",
                      "Validate candidate links using address/entrance or source mapping evidence",
                      "Confirm source years, spatial provenance and PLZ CRS metadata"],
                    "limits": ["No parcel demand has been estimated", "No observed counts distributed to sites",
@@ -231,7 +231,7 @@ The data run is complete. **Not yet approved for demand calibration.**
 | Persons | {person_count:,} |
 | Private building units | {len(residential):,} |
 | Firm sites | {len(business):,} |
-| DHL line observations | {len(dhl):,} |
+| LSP line observations | {len(dhl):,} |
 | Hermes PLZ/year observations | {len(hermes):,} |
 
 ## Spatial candidate assignment
@@ -240,7 +240,7 @@ The data run is complete. **Not yet approved for demand calibration.**
 |---|---:|---:|
 {rows}
 
-The assignment uses uniquely assigned PLZ and the nearest DHL line up to {cfg['max_street_distance_m']} m.
+The assignment uses uniquely assigned PLZ and the nearest LSP line up to {cfg['max_street_distance_m']} m.
 This is a documented candidate search, not proof of the actual delivery street.
 Equidistant candidates and repeated street keys remain visible.
 Sites with contradictory building coordinates are not linked automatically.
@@ -249,7 +249,7 @@ Parcel volumes were neither estimated nor distributed to sites.
 ## To clarify before calibration
 
 - Unit and period of the DHL/Hermes values; zero values versus missing coverage.
-- Meaning of repeated DHL street keys: line fragments or separate observations.
+- Meaning of repeated LSP street keys: line fragments or separate observations.
 - Confirm candidates using addresses, entrances or original assignments.
 - Confirm reference years, provenance of the site data and original PLZ CRS metadata.
 

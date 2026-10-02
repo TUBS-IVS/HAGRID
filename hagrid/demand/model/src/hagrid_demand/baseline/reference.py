@@ -1,4 +1,4 @@
-"""Balanced DHL-anchor reference calculation with no grid allocation."""
+"""Balanced LSP-anchor reference calculation with no grid allocation."""
 from __future__ import annotations
 
 import numpy as np
@@ -258,18 +258,18 @@ def _scope(dhl: pd.DataFrame, scope_plz: object = None) -> tuple[pd.DataFrame, d
     if missing := required.difference(dhl.columns):
         raise ValueError(f"dhl missing required columns: {sorted(missing)}")
     if dhl.observation_id.isna().any() or dhl.observation_id.duplicated().any():
-        raise ValueError("DHL observation_id must be present and unique")
+        raise ValueError("LSP observation_id must be present and unique")
     values = pd.to_numeric(dhl.value, errors="coerce")
     if values.isna().any():
-        raise ValueError("DHL has missing values")
+        raise ValueError("LSP has missing values")
     if not np.isfinite(values).all():
-        raise ValueError("DHL values must be finite")
+        raise ValueError("LSP values must be finite")
     if (values < 0).any():
-        raise ValueError("DHL has negative values")
+        raise ValueError("LSP has negative values")
     if dhl.value_status.isna().any():
-        raise ValueError("DHL value_status is required")
+        raise ValueError("LSP value_status is required")
     if dhl.plz.isna().any() or dhl.plz.astype(str).str.strip().eq("").any():
-        raise ValueError("DHL observations require a known PLZ")
+        raise ValueError("LSP observations require a known PLZ")
     source = dhl.copy(); source["value"] = values.astype(float); source["plz"] = source.plz.astype(str).str.strip()
     if scope_plz is None:
         in_scope = pd.Series(True, index=source.index)
@@ -332,7 +332,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     conditional, carriers, dhl_index = _profiles(profiles, b)
     retained, scope_ledger = _scope(dhl, scope_plz)
     if retained.empty or retained.value.sum() <= 0:
-        raise ValueError("empty DHL reference region has no positive retained observation")
+        raise ValueError("empty LSP reference region has no positive retained observation")
     required = {"site_id", "plz", "segment", "weight", "allocation_status"}
     if missing := required.difference(potentials.columns):
         raise ValueError(f"potentials missing required columns: {sorted(missing)}")
@@ -354,7 +354,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     modeled = sites.loc[known & sites.plz.isin(anchor.plz)].copy()
     known_outside_anchor = sites.loc[known & ~sites.plz.isin(anchor.plz)].copy()
     if modeled.empty:
-        raise ValueError("positive DHL has no potential support")
+        raise ValueError("positive LSP has no potential support")
     support = modeled.pivot_table(index="plz", columns="segment", values="weight", aggfunc="sum", fill_value=0.)
     support = anchor.set_index("plz").join(support, how="left").fillna(0.)
     for segment in ("private", "business"):
@@ -366,7 +366,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     positive = support.dhl_retained_mean.to_numpy(float) > 0
     private, business, dhl_values = (support[name].to_numpy(float) for name in ("private", "business", "dhl_retained_mean"))
     if np.any(positive & ((private + business) <= 0)):
-        raise ValueError("positive DHL has no potential support in at least one PLZ")
+        raise ValueError("positive LSP has no potential support in at least one PLZ")
     private_dhl, business_dhl = conditional[0, dhl_index], conditional[1, dhl_index]
     eta_diagnostics = {
         "initial_endpoints": [-30.0, 30.0],
@@ -378,13 +378,13 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
     }
     if b == 0:
         if np.any(positive & (private <= 0)):
-            raise ValueError("positive DHL has no private support for b=0")
+            raise ValueError("positive LSP has no private support for b=0")
         local_b = np.zeros(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
         eta_diagnostics.update(expanded_endpoints=[0.0, 0.0], expanded_residuals=[0.0, 0.0],
                                reachable_range=[0.0, 0.0], status="boundary_b2b_zero")
     elif b == 1:
         if np.any(positive & (business <= 0)):
-            raise ValueError("positive DHL has no business support for b=1")
+            raise ValueError("positive LSP has no business support for b=1")
         local_b = np.ones(len(support)); k, k_status, log_k, eta, iterations = 1., "finite", 0., 0., 0
         eta_diagnostics.update(expanded_endpoints=[0.0, 0.0], expanded_residuals=[0.0, 0.0],
                                reachable_range=[1.0, 1.0], status="boundary_b2b_one")
@@ -396,7 +396,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
             local[(private <= 0) & (business > 0)] = 1.
             share = (1 - local) * private_dhl + local * business_dhl
             if np.any(positive & (share <= 0)):
-                raise ValueError("positive DHL requires a positive local DHL share")
+                raise ValueError("positive LSP requires a positive local LSP share")
             total = np.divide(dhl_values, share, out=np.zeros_like(dhl_values), where=share > 0)
             return local, share, total
         def residual(candidate_eta):
@@ -455,7 +455,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
         local_b, _, _ = totals(eta)
     dhl_share = (1 - local_b) * private_dhl + local_b * business_dhl
     if np.any(positive & (dhl_share <= 0)):
-        raise ValueError("positive DHL requires a positive local DHL share")
+        raise ValueError("positive LSP requires a positive local LSP share")
     postal_total_mean = np.divide(dhl_values, dhl_share, out=np.zeros_like(dhl_values), where=dhl_share > 0)
     if not np.isfinite(postal_total_mean).all() or (postal_total_mean < 0).any():
         raise ValueError("inferred postal totals must be finite and nonnegative")
@@ -577,7 +577,7 @@ def solve_reference(potentials: pd.DataFrame, dhl: pd.DataFrame, profiles: dict,
               "allocation_ledger": site_support.groupby("allocation_status", dropna=False)["reference_annual"].sum().to_dict(),
               "reconciliation": None if reconciliation is None else reconciliation["diagnostics"]}
     if not np.isclose(reconstructed, dhl_values.sum(), atol=_ATOL, rtol=_RTOL):
-        raise ValueError("reconstructed DHL balance failed")
+        raise ValueError("reconstructed LSP balance failed")
     return {"sites": site_support, "postal": postal.drop(columns=["private_potential", "business_potential"]),
             "carriers": carriers_frame, "regional_annual": regional_annual, "checks": checks,
             "reconciliation": reconciliation_payload,

@@ -1,40 +1,55 @@
-# hagrid/demand — Paketnachfrage Region Hannover
+# hagrid/demand — Parcel Demand for Region Hannover
 
-Die Nachfrageseite von HAGRID: aus DHL-Straßenmengen 2021, Bevölkerung, Firmen und OSM-Gebäuden entsteht für jeden Tag
-eines Zieljahres die Paketnachfrage je Stopp und Anbieter, als MATSim-Eingabe für `hagrid/simulation`.
+The demand side of HAGRID. From the LSP street volumes of 2021, population, firms and OSM buildings, the model builds the
+parcel demand of every day of 2025–2035 per stop and carrier, as MATSim input for `hagrid/simulation`. The method, the
+scenarios and the results are summarised in the [project README](../../README.md#6-hannover-demand-model-20252035).
 
-| Ordner | Inhalt | Versioniert |
+| Folder | Content | Versioned |
 |---|---|---|
-| `model/` | Python-Paket `hagrid_demand`: Straßenanker, Gebäude, Stopps, Versandtag/Laufzeit, Abholpunkte, Jahresspeicher, Dashboards, Tests. Einstieg: [`model/README.md`](model/README.md) | ja |
-| `input/hannover/` | Rohdaten (`raw/`), OSM-Auszüge (`osm/`), Notebook-Outputs (`notebook-output/`) | nein (git-ignoriert) |
-| `runs/` | Läufe: Referenz, Tagesdateien, Jahresspeicher, `annual_dashboard.html`; Dekadenläufe `decade-*` und `decade_dashboard.html` | nein (git-ignoriert) |
-| `archive/notebooks/` | Die Notebook-Kette 00–06 und die Generatoren, aus denen die nationalen Reihen und Profile stammen; vom Modell abgelöst | ja |
+| `model/` | Python package `hagrid_demand`: street anchor, buildings, stops, shipping day and transit time, pickup points, land use, annual store, dashboards and tests. Start with [`model/README.md`](model/README.md). | yes |
+| `input/hannover/` | Raw data (`raw/`), OSM extracts (`osm/`) and notebook outputs (`notebook-output/`) | no (git-ignored) |
+| `runs/` | Runs: reference, daily files, annual store and `annual_dashboard.html`; the decade runs `decade-*` and `decade_dashboard.html` | no (git-ignored) |
+| `archive/notebooks/` | The notebook chain 00–06 and the generators that provided the national series and profiles; superseded by the model | yes |
 
-## Schnellstart
+## Quick Start
+
+Install and test the package in `hagrid/demand/model`:
 
 ```powershell
 cd hagrid/demand/model
 python -m pip install -e ".[test]"
-python -m pytest -q                                  # Tests
-tools\migrate-demand-input.ps1                       # einmalig: lokale Eingaben ins neue Layout (vom Repo-Stamm)
-runs\hannover\run_demand_year.bat demand-2025        # Jahreslauf + MATSim-Nachfrage nach hagrid/simulation/input/hannover/demand/demand-2025/
-runs\hannover\run_demand_decade.bat                 # 2025-2035 in drei Volumenszenarien + Dekaden-Dashboard (siehe model/README.md)
+python -m pytest -q
 ```
 
-Weitere Befehle (`export-day`, `annual-dashboard`, `osm-parcel-points`, `osm-transit`) und alle Modellannahmen mit Quellen
-stehen in [`model/README.md`](model/README.md); Spezifikationen und Pläne unter [`../../docs/demand/`](../../docs/demand/).
+Then run the model from the repository root:
 
-## Mehrjahresprojektion
+```powershell
+tools\migrate-demand-input.ps1                  # once: move local inputs into the current layout
+runs\hannover\run_demand_year.bat demand-2025   # one year plus MATSim demand in hagrid/simulation/input/hannover/demand/demand-2025/
+runs\hannover\run_demand_decade.bat             # 2025–2035 in the volume scenarios plus the decade dashboard
+```
 
-`years` kann mehrere Jahre umfassen. Die Configs `model/configs/decade-{trend,saettigung,boom}.json` rechnen 2025–2035 mit
-unterschiedlichen Anstiegen der nationalen Sendungsmenge (verkettet am Niveau 2025), einem nachfragegetrieben wachsenden
-Abholnetz (neue Packstationen, Boxen und Counter an Supermärkten, Tankstellen und Kiosken) und liefern je Jahr ein
-Jahres-Dashboard sowie ein gemeinsames Dekaden-Dashboard. Details und Annahmen: [`model/README.md`](model/README.md),
-Abschnitt „Mehrjahresprojektion 2025–2035“.
+[`model/README.md`](model/README.md) describes the further commands (`export-day`, `annual-dashboard`, `decade-dashboard`,
+`osm-parcel-points`, `osm-transit`, `osm-boundaries`) and every model assumption with its source. Specifications and
+implementation plans are in [`docs/demand/`](../../docs/demand/).
 
-## Datenfluss zu MATSim
+## Multi-Year Projection
 
-`baseline run` schreibt je konfiguriertem Tag `hagrid_parcel_demand_<Datum>_(<Wochentag>).shp` mit Stopps (`stop_type`
-`home`, `locker`, `shared_locker`, `counter`, `shop`) und Anbieterfeldern; `run_demand_year.bat` kopiert sie nach
-`hagrid/simulation/input/hannover/demand/<run-id>/`, wo `HagridPaths.demandDir(runId)` sie erwartet. Jeder andere Tag des
-Jahres lässt sich mit `export-day` aus dem Jahresspeicher erzeugen.
+`years` can hold several years. The configurations `model/configs/decade-{trend,saettigung,boom}.json` simulate 2025–2035
+with different growth of the national parcel volume, chained at the 2025 level, and a pickup network that grows with the
+demand (new parcel lockers, boxes and counters at supermarkets, fuel stations and kiosks). Every run writes an annual
+dashboard per year, and all scenarios together feed one decade dashboard. Details and assumptions:
+[`model/README.md`](model/README.md#multi-year-projection-20252035).
+
+With `land_use`, persons and firms are redistributed as well. Persons follow the official population forecast 2025–2035
+per forecast district, the age mix ages with a cohort effect on the online propensity, and firms grow by industry.
+Development areas (Kronsberg-Süd, Wasserstadt Limmer and others) and new firms become sites of their own.
+`decade-trend-innen.json` and `decade-trend-suburban.json` run the trend volume with the infill and the suburban variant.
+Details: [`model/README.md`](model/README.md#land-use-dynamics-20252035).
+
+## Data Flow to MATSim
+
+`baseline run` writes `hagrid_parcel_demand_<date>_(<weekday>).shp` for every configured day, with one row per stop
+(`stop_type` `home`, `locker`, `shared_locker`, `counter` or `shop`) and the parcels per carrier and segment.
+`run_demand_year.bat` copies the files to `hagrid/simulation/input/hannover/demand/<run-id>/`, where
+`HagridPaths.demandDir(runId)` expects them. `export-day` writes any other day of the year from the annual store.

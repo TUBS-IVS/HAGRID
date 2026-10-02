@@ -16,7 +16,7 @@ from .data import write_json
 LABELS = {
     "nearest_within_postal_unverified": "Unique geometric candidate",
     "equidistant_candidates": "Several equally near candidates",
-    "no_street_within_threshold_or_coverage": "No DHL candidate within the search radius",
+    "no_street_within_threshold_or_coverage": "No LSP candidate within the search radius",
     "no_postal_coverage": "No PLZ coverage",
     "ambiguous_postal_boundary": "Ambiguous PLZ assignment",
     "unresolved_site_location": "Unresolved site location",

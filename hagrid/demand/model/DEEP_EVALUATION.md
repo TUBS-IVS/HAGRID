@@ -2,7 +2,7 @@
 
 ## Entscheidung
 
-Für das Referenzjahr 2021 empfiehlt sich eine beobachtungsgebundene, hybride Rekonstruktion: verlässliche DHL-Mengen auf ihrer tatsächlichen räumlichen Beobachtungsebene erhalten und mit Personen-, Gebäude- und Betriebsinformationen auf Empfängerstandorte verteilen. Ein Modell muss bekannte Mengen nicht zunächst ungenau neu erfinden. Die Qualität der anschließenden Verteilung muss jedoch gesondert geprüft werden.
+Für das Referenzjahr 2021 empfiehlt sich eine beobachtungsgebundene, hybride Rekonstruktion: verlässliche LSP-Mengen auf ihrer tatsächlichen räumlichen Beobachtungsebene erhalten und mit Personen-, Gebäude- und Betriebsinformationen auf Empfängerstandorte verteilen. Ein Modell muss bekannte Mengen nicht zunächst ungenau neu erfinden. Die Qualität der anschließenden Verteilung muss jedoch gesondert geprüft werden.
 
 Für unbeobachtete Standorte, andere Anbieter und zukünftige Veränderungen bleibt ein erklärendes Modell notwendig. Der derzeit beste geprüfte Kandidat verbindet ein einfaches Nachfragemodell mit wenigen Personenmerkmalen und räumlicher Restkorrektur. Die neuen Versuche mit Top-down-Normierung, OSM-Nutzungsflächen und Hermes als lokalem Prädiktor verbessern diesen Kandidaten nicht. Dies ist kein Beweis, dass weitere Verbesserung unmöglich ist; die untersuchten Erweiterungen liefern dafür aber noch keine belastbare Grundlage.
 
@@ -10,11 +10,11 @@ Die Trennung zwischen Rekonstruktion, räumlicher Vorhersage und Zukunftsprognos
 
 ## Zielgröße und Datenlage
 
-Die Zielmenge umfasst DHL-Straßenbeobachtungen von 2021 mit Werten bis einschließlich 1000. Zwei größere Beobachtungen wurden vollständig ausgeschlossen: 7361 und 4606. Die verbleibende Summe beträgt 85939. Diese Abgrenzung definiert den betrachteten KEP-Nachfragescope; sie beweist nicht für jede ausgeschlossene Beobachtung eine bestimmte Fahrzeugart.
+Die Zielmenge umfasst LSP-Straßenbeobachtungen von 2021 mit Werten bis einschließlich 1000. Zwei größere Beobachtungen wurden vollständig ausgeschlossen: 7361 und 4606. Die verbleibende Summe beträgt 85939. Diese Abgrenzung definiert den betrachteten KEP-Nachfragescope; sie beweist nicht für jede ausgeschlossene Beobachtung eine bestimmte Fahrzeugart.
 
 Die Rohvariable wird entsprechend der bisherigen HAGRID-Verwendung als Tagesmittel behandelt. Ihr genauer Nenner bleibt unbestätigt. Eine Hochrechnung mit 313 Betriebstagen oder ein Vergleich mit Jahresmengen ist deshalb eine zusätzliche Annahme. Für die vorliegenden räumlichen Tests werden weder Jahreswachstum noch zufällige Tagesprofile benötigt.
 
-Vorhanden sind eine synthetische Bevölkerung mit 1150862 Personen, Empfängerstandorte, Unternehmen mit Branche und Beschäftigtenzahl, DHL-Straßengeometrien, Hermes-PLZ-Daten sowie OSM-Nutzungsflächen. Alter und Erwerbstätigkeit sind verfügbar, individuelle Onlinebestellungen dagegen nicht. Nur 13 Personen konnten im verwendeten Gebäude-/PLZ-Mapping nicht räumlich zugeordnet werden; die mengenmäßige Abdeckung ist damit hoch. Eine hohe Zuordnungsquote bestätigt allerdings weder das Datenjahr noch die Richtigkeit jedes Merkmals.
+Vorhanden sind eine synthetische Bevölkerung mit 1150862 Personen, Empfängerstandorte, Unternehmen mit Branche und Beschäftigtenzahl, LSP-Straßengeometrien, Hermes-PLZ-Daten sowie OSM-Nutzungsflächen. Alter und Erwerbstätigkeit sind verfügbar, individuelle Onlinebestellungen dagegen nicht. Nur 13 Personen konnten im verwendeten Gebäude-/PLZ-Mapping nicht räumlich zugeordnet werden; die mengenmäßige Abdeckung ist damit hoch. Eine hohe Zuordnungsquote bestätigt allerdings weder das Datenjahr noch die Richtigkeit jedes Merkmals.
 
 536496 Personen haben keine Household-Kennung. Die alternative Kennung h_id ist nicht eindeutig: 25803 von 33324 h_id-Werten mit bekannten Haushalten kommen in mehreren Haushalten vor. Auch die Kombination aus Gebäude und h_id liefert keine eindeutigen Ergänzungskandidaten für die fehlenden Kennungen. Daraus dürfen keine tatsächlichen Haushalte konstruiert werden. Für ein Haushaltsmodell werden die ursprüngliche Synthesezuordnung oder externe Haushaltsgrößenrestriktionen benötigt.
 
@@ -24,7 +24,7 @@ Vorhanden sind eine synthetische Bevölkerung mit 1150862 Personen, Empfängerst
 
 Top-down-Verfahren prognostizieren eine übergeordnete Gesamtmenge und verteilen diese anhand von Anteilen. Konsistente Summen sind damit konstruktiv erreichbar. Die Verfahren verbessern aber nicht automatisch die Qualität der Verteilungsanteile. Reconciliation verbindet Schätzungen verschiedener Ebenen unter Summenbedingungen; ihre Stärke hängt von den Informationsquellen und Fehlerstrukturen ab.[^1][^2]
 
-Für HAGRID bedeutet dies: Eine nationale Marktmenge kann eine regionale DHL-Menge nicht ohne zusätzliche Annahmen ersetzen. Anbieter, Marktsegment, Berichtszeitraum und die neue Ausschlussregel müssen zusammenpassen. Auch ein korrektes Regionstotal kann falsch verteilt werden. Das ist genau die Schwäche, die im zusätzlichen Top-down-Test sichtbar wird.
+Für HAGRID bedeutet dies: Eine nationale Marktmenge kann eine regionale LSP-Menge nicht ohne zusätzliche Annahmen ersetzen. Anbieter, Marktsegment, Berichtszeitraum und die neue Ausschlussregel müssen zusammenpassen. Auch ein korrektes Regionstotal kann falsch verteilt werden. Das ist genau die Schwäche, die im zusätzlichen Top-down-Test sichtbar wird.
 
 ### Personen und Haushalte als Nachfrageursprung
 
@@ -44,7 +44,7 @@ Eine aktuelle Studie aus Thessaloniki untersucht die Verknüpfung von Paketnachf
 
 Die aktuellen Vergleiche verwenden dieselben 53 PLZ und dieselbe bereinigte Zielgröße. Drei zufällige Fünffach-Aufteilungen werden durch eine zusätzliche Prüfung mit fünf räumlichen Gruppen ergänzt. Die Gruppen stammen aus Clustering der PLZ-Zentren. Es gibt keinen räumlichen Puffer; Abhängigkeiten zwischen benachbarten Gruppen sind daher weiterhin möglich.
 
-Modellauswahl erfolgt innerhalb der äußeren Trainingsmenge. Die äußeren Testziele werden nicht für Skalierung, Regressionsparameter oder räumliche Residuen verwendet. In den automatisierten Tests werden zurückgehaltene Zielwerte gezielt verändert, um zu prüfen, dass die Schätzung unverändert bleibt. Bei der Hermes-Übertragung gilt eine andere Informationslage: Hermes am Testort ist ausdrücklich ein bekannter Prädiktor; nur DHL bleibt dort verborgen.
+Modellauswahl erfolgt innerhalb der äußeren Trainingsmenge. Die äußeren Testziele werden nicht für Skalierung, Regressionsparameter oder räumliche Residuen verwendet. In den automatisierten Tests werden zurückgehaltene Zielwerte gezielt verändert, um zu prüfen, dass die Schätzung unverändert bleibt. Bei der Hermes-Übertragung gilt eine andere Informationslage: Hermes am Testort ist ausdrücklich ein bekannter Prädiktor; nur LSP bleibt dort verborgen.
 
 Die Daten wurden bereits in früheren Experimenten untersucht. Auch verschachtelte Kreuzvalidierung macht diese Gesamtrecherche nicht zu einem neuen, vollständig unberührten Abschlusstest. Sie verhindert eine direkte Nutzung der äußeren Ziele bei der jeweiligen Auswahl. Die Ergebnisse sind weiterhin explorativ. Dieses Vorgehen entspricht dem Zweck verschachtelter Validierung, Auswahl und Leistungsbewertung zu trennen.[^8]
 
@@ -72,7 +72,7 @@ Die Aussage lautet daher nicht, dass Top-down ungeeignet ist. Top-down ist für 
 
 ## Zusätzliche OSM-Nutzungsflächen
 
-Der neue Datenadapter berechnet Wohn-, Industrie-, Gewerbe- und Einzelhandelsflächen je PLZ aus dem vorhandenen OSM-Landuse-Bestand. Polygone werden je Nutzungsklasse vereinigt, damit Überlappungen derselben Klasse nicht doppelt gezählt werden. Die Verarbeitung verwendet keine DHL-Zielwerte. Der historische Datenstand bleibt unbestätigt; dies ist kein neu erhobener Gebäudeflächenbestand für 2021.
+Der neue Datenadapter berechnet Wohn-, Industrie-, Gewerbe- und Einzelhandelsflächen je PLZ aus dem vorhandenen OSM-Landuse-Bestand. Polygone werden je Nutzungsklasse vereinigt, damit Überlappungen derselben Klasse nicht doppelt gezählt werden. Die Verarbeitung verwendet keine LSP-Zielwerte. Der historische Datenstand bleibt unbestätigt; dies ist kein neu erhobener Gebäudeflächenbestand für 2021.
 
 Die Flächen werden mit den bisherigen Personenmerkmalen kombiniert und in stark regularisierten Residualmodellen sowie direkten Regressionen geprüft. Die beste Personen-/Raumvariante bleibt überlegen:
 
@@ -86,16 +86,16 @@ Damit ist nicht bewiesen, dass Gebäudedaten nutzlos sind. Landuse-Fläche misst
 
 ## Hermes als zweite lokale Informationsquelle
 
-In einem weiteren Vergleich wurde Hermes am jeweiligen Testort als bekannter Prädiktor verwendet. Getestet wurden ein auf Trainingsgebieten geschätztes DHL/Hermes-Verhältnis, eine 50/50-Mischung mit dem Basismodell und eine positive Regression mit Bevölkerung, Betriebsexposition und Hermes.
+In einem weiteren Vergleich wurde Hermes am jeweiligen Testort als bekannter Prädiktor verwendet. Getestet wurden ein auf Trainingsgebieten geschätztes LSP/Hermes-Verhältnis, eine 50/50-Mischung mit dem Basismodell und eine positive Regression mit Bevölkerung, Betriebsexposition und Hermes.
 
 | Variante | Zufällige Aufteilungen | Räumliche Gruppen |
 |---|---:|---:|
 | Personen plus Raum | 15,36 % | 15,98 % |
-| DHL/Hermes-Verhältnis | 25,99 % | 24,20 % |
+| LSP/Hermes-Verhältnis | 25,99 % | 24,20 % |
 | Mischung mit Basismodell | 19,48 % | 19,11 % |
 | Regression mit Hermes | 19,98 % | 23,59 % |
 
-Die innere Auswahl entscheidet in sämtlichen äußeren Folds für das Personen-/Raummodell. Hermes ist folglich in dieser einfachen Form kein geeigneter Ersatz für die lokale DHL-Nachfrage. Unterschiedliche Kundenstrukturen und unbestätigte Mengendefinitionen sind plausible Erklärungen, aber durch diesen Test nicht einzeln nachgewiesen. Andere Anbieter sollten deshalb weiterhin nicht über einen überall identischen DHL-Faktor erzeugt werden.
+Die innere Auswahl entscheidet in sämtlichen äußeren Folds für das Personen-/Raummodell. Hermes ist folglich in dieser einfachen Form kein geeigneter Ersatz für die lokale LSP-Nachfrage. Unterschiedliche Kundenstrukturen und unbestätigte Mengendefinitionen sind plausible Erklärungen, aber durch diesen Test nicht einzeln nachgewiesen. Andere Anbieter sollten deshalb weiterhin nicht über einen überall identischen LSP-Faktor erzeugt werden.
 
 ## Fehlerkonzentration und PLZ 30855
 
@@ -103,17 +103,17 @@ Bei räumlich geblockter Prüfung des Personen-/Raummodells werden in 30855 rund
 
 Die hohe Menge entsteht aus 289 Straßenbeobachtungen. Ihr Median liegt bei 12, der größte Einzelwert bei 174. Die Grenze von 1000 entfernt hier nichts. Alle geprüften Straßenmittelpunkte liegen im verwendeten Polygon der angegebenen PLZ. Ein einfacher PLZ-Geometriefehler erklärt diesen Befund somit nicht; damit sind weder alle Grenzgeometrien noch die Messdefinition verifiziert.
 
-Die Standortmerkmale umfassen dort 21054 Personen, 1606 Betriebe und 21830 Beschäftigte. Eine zusätzliche frei geschätzte PLZ-Konstante könnte die Menge nachträglich treffen, würde aber ohne weitere Daten kaum auf unbekannte Gebiete übertragen. Vorrangig sollten räumliche Unternehmensabdeckung, Datenstände und Unterschiede der DHL-Erhebung geprüft werden. Es ist ausdrücklich nicht belegt, dass die Beobachtung falsch ist.
+Die Standortmerkmale umfassen dort 21054 Personen, 1606 Betriebe und 21830 Beschäftigte. Eine zusätzliche frei geschätzte PLZ-Konstante könnte die Menge nachträglich treffen, würde aber ohne weitere Daten kaum auf unbekannte Gebiete übertragen. Vorrangig sollten räumliche Unternehmensabdeckung, Datenstände und Unterschiede der LSP-Erhebung geprüft werden. Es ist ausdrücklich nicht belegt, dass die Beobachtung falsch ist.
 
 ## Empfohlene Architektur
 
-**Referenzzustand 2021:** Bereinigte DHL-Beobachtungen als Mengenanker verwenden. Die vorliegende Rekonstruktion tut dies auf PLZ-Ebene. Der nächste Ausbau sollte die vorhandenen Straßenbeobachtungen berücksichtigen, sobald deren Additivität und räumliche Zuordnung verlässlich sind. Standorte ohne eindeutige Zuordnung müssen als Restmenge oder unsichere Zuordnung sichtbar bleiben. Keine Zwangsverteilung auf zufällige Gebäude.
+**Referenzzustand 2021:** Bereinigte LSP-Beobachtungen als Mengenanker verwenden. Die vorliegende Rekonstruktion tut dies auf PLZ-Ebene. Der nächste Ausbau sollte die vorhandenen Straßenbeobachtungen berücksichtigen, sobald deren Additivität und räumliche Zuordnung verlässlich sind. Standorte ohne eindeutige Zuordnung müssen als Restmenge oder unsichere Zuordnung sichtbar bleiben. Keine Zwangsverteilung auf zufällige Gebäude.
 
 **Räumliche Verteilung innerhalb der Beobachtungseinheiten:** Personen, Betriebe und gegebenenfalls verifizierte Gebäudeinformationen liefern relative Gewichte. Getrennt prüfen, ob diese Gewichte die Straßen- oder Gebäudeverteilung verbessern. PLZ-Summen allein können das nicht bestätigen. Räumliche Felder erzeugen Schwankungen, ersetzen aber keine validierte mittlere Verteilung.
 
 **Veränderung gegenüber 2021:** Zunächst relative Änderungen modellieren, etwa durch Bevölkerungs- und Betriebsentwicklung sowie Nachfrageintensität. Die empirische Referenzstruktur bleibt Ausgangspunkt. Ein Referenzfehler soll nicht automatisch in jedes Zukunftsjahr fortgeschrieben werden; gleichzeitig darf eine rein nationale Wachstumskurve lokale Strukturänderungen nicht überdecken.
 
-**Andere Anbieter:** Als zusätzliche, unsichere Modellschicht behandeln. Branchenprofile, Marktanteile und Hermes-Forminformation bleiben nützlich, aber die DHL-Rekonstruktion identifiziert keine UPS-, FedEx- oder Amazon-Nachfrage. Der vollständige Markt muss seine eigene Datenbasis und Unsicherheitsdarstellung behalten.
+**Andere Anbieter:** Als zusätzliche, unsichere Modellschicht behandeln. Branchenprofile, Marktanteile und Hermes-Forminformation bleiben nützlich, aber die LSP-Rekonstruktion identifiziert keine UPS-, FedEx- oder Amazon-Nachfrage. Der vollständige Markt muss seine eigene Datenbasis und Unsicherheitsdarstellung behalten.
 
 **Verhaltenssimulation:** Erst nach der mittleren Nachfrageverteilung Teilnahme, Bestellfrequenz, Paketaufteilung und Lieferverzug ergänzen. Bestellungen sind nicht automatisch Pakete oder Stopps. Ohne passende Beobachtungen müssen diese Übergänge als Annahmen oder Szenarien gekennzeichnet bleiben.
 

@@ -31,7 +31,7 @@ def constrain_streets(frame, observations, links):
     if not np.isfinite(observations.value).all() or (observations.value < 0).any():
         raise ValueError('Invalid observed demand')
     if not np.isfinite(frame.DHL).all() or (frame.DHL < 0).any():
-        raise ValueError('Invalid prior DHL weights')
+        raise ValueError('Invalid prior LSP weights')
     result = frame.copy()
     result['prior_DHL'] = result.DHL
     covered = result.plz.isin(observations.plz)
@@ -122,9 +122,9 @@ def main(argv=None):
             'Exact street totals include the unallocated street ledger. This is data conditioning, not out-of-sample accuracy.',
             'Nearest-site candidate links at the recorded foundation threshold are unverified. Within-street weights and recipient segments remain modeled.',
             'Ambiguous or repeated-street links and missing/zero prior support stay unassigned. They are not snapped to another building.',
-            'A zero DHL assignment at an unsupported site is not evidence of zero real demand. Consult dhl_assignment_status and the street ledger.',
+            'A zero LSP assignment at an unsupported site is not evidence of zero real demand. Consult dhl_assignment_status and the street ledger.',
             'Known source exclusions apply to entire observations before reconstruction; raw files are unchanged.',
-            'Other carriers retain their model estimates. DHL calibration does not validate their amounts or shares.',
+            'Other carriers retain their model estimates. LSP calibration does not validate their amounts or shares.',
             'Outside observed postal coverage, prior estimates remain and are excluded from the exact-fit claim.',
             'Source daily-mean denominator and additivity of repeated rows remain unconfirmed. No annualization or future growth applied.']}
     write_json(output/'result.json', note)
@@ -132,11 +132,11 @@ def main(argv=None):
     paths += [foundation/n for n in ['dhl_candidate_links.parquet', 'dhl_observations.parquet', 'config.resolved.json']]
     write_json(output/'provenance.json', {'inputs': {str(p.resolve()): digest(p) for p in paths},
         'code': _code_hashes()})
-    page = '<!doctype html><meta charset="utf-8"><title>DHL street reconstruction 2021</title><style>body{font:16px system-ui;max-width:1150px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}</style><h1>DHL 2021: streets as volume anchors</h1>'
+    page = '<!doctype html><meta charset="utf-8"><title>LSP street reconstruction 2021</title><style>body{font:16px system-ui;max-width:1150px;margin:35px auto;padding:0 20px;color:#243246}td,th{padding:7px}table{border-collapse:collapse;font-size:14px}</style><h1>LSP 2021: streets as volume anchors</h1>'
     def number(v): return f'{v:,.1f}'.replace(',', '_').replace('.', ',').replace('_', '.')
     page += f'<p><b>{number(note["observed_DHL"])}</b> observed volume units; <b>{number(note["assigned_to_sites"])}</b> modeled at sites; <b>{number(note["unallocated_at_streets"])}</b> remain at the observed streets.</p>'
     page += '<p>Every street volume is preserved. The exact match is imposed by the observation and is not a prediction test. Site proximity, the B2B/B2C split and volumes of other carriers remain model assumptions. Unassigned volumes are in a separate file with their original street geometry.</p>'
-    table = check.rename(columns={'observed_DHL':'DHL observed','assigned_to_sites':'Assigned to sites',
+    table = check.rename(columns={'observed_DHL':'LSP observed','assigned_to_sites':'Assigned to sites',
         'unallocated_at_streets':'Open at streets','difference':'Balance deviation'})
     page += '<h2>Check by PLZ</h2><p><label>Filter PLZ: <input id="postal-filter" placeholder="e.g., 30855" inputmode="numeric"></label></p>' + table.to_html(float_format=number,table_id='postal-table')
     page += '<script>document.getElementById("postal-filter").addEventListener("input",e=>{for(const row of document.querySelectorAll("#postal-table tbody tr"))row.hidden=!row.querySelector("th").textContent.includes(e.target.value.trim());});</script>'

@@ -56,7 +56,7 @@ def prepare_training(source, business_size_power=1., dhl_exclude_above=None):
     sites['business_exposure'] = business_exposure(sites.employees, business_size_power)
     dhl = pd.read_parquet(source/"dhl_observations.parquet")
     if dhl.value.isna().any() or (dhl.value<0).any():
-        raise ValueError("Missing/negative DHL values require resolution before additive PLZ fit")
+        raise ValueError("Missing/negative LSP values require resolution before additive PLZ fit")
     from ..scope import filter_dhl
     dhl = filter_dhl(dhl,dhl_exclude_above)
     y = dhl.groupby("plz").value.sum()
@@ -178,5 +178,5 @@ def fit_compare(data,priors,cfg):
                     "test_hermes_shape_only":hermes_metric,"evaluation_model":evaluated_fit,
                     "split":{label:[p for p,m in zip(data['plz'],mask) if m] for label,mask in [('train',train),('validation',validation),('test',test)]},
                     "coverage":data["coverage"],"limitations":["Single disjoint spatial split, not nested cross-validation.",
-                       "Model selection uses DHL validation error; B2B and other carriers remain prior-dependent.",
+                       "Model selection uses LSP validation error; B2B and other carriers remain prior-dependent.",
                        "Frozen application model is refit on all observations; reported test metrics belong to separate pre-test model."]}, predictions

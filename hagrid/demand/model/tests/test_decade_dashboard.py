@@ -10,9 +10,9 @@ import pytest
 from decade_fixtures import CODES, write_decade_run
 
 BOOM = {"name": "boom", "policy": "legacy_assumptions", "curve": "exponential", "chain_year": 2025}
-KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday"}
+KEYS = {"meta", "years", "national", "annual", "plz", "calendar", "network", "weekday", "structure", "structure_pool", "change"}
 PAYLOAD = re.compile(r'<script id="hagrid-decade" type="application/json">(.*?)</script>', re.S)
-SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "network", "calendar", "method"]
+SECTIONS = ["hero", "growth", "mix", "channels", "map", "hotspots", "structure", "change", "network", "calendar", "method"]
 
 
 @pytest.fixture(scope="module")
@@ -59,6 +59,34 @@ def test_decade_payload_shape(payload, runs):
     observed = payload["national"]["observed"]
     assert observed["years"][0] == 2000 and observed["values"][0] == pytest.approx(1.701) and max(observed["years"]) == 2023
     assert payload["national"]["scenarios"]["trend"]["values"][0] == pytest.approx(4.51)
+
+
+def test_decade_payload_shows_how_each_path_meets_the_observed_years(payload):
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    national = payload["national"]
+    assert national["estimates"]["years"] == [2024, 2025, 2026, 2027, 2028]
+    assert national["estimates"]["values"][0] == pytest.approx(4.2)
+    anchors = [row for row in packaged_series_inputs()["volume_inputs"]["anchors"] if row["status"] == "observed"]
+    line = np.polyfit([row["year"] for row in anchors], [row["value"] for row in anchors], 1)
+    for name in ("trend", "boom"):
+        scenario = national["scenarios"][name]
+        start = scenario["years"][scenario["status"].index(next(s for s in scenario["status"] if s != "observed"))]
+        fit = scenario["fit"]
+        assert fit["years"][0] == 2000 and fit["years"][-1] == start          # through the observed years to the start
+        assert fit["values"][-1] == pytest.approx(scenario["values"][scenario["years"].index(start)], abs=1e-4)
+    trend = national["scenarios"]["trend"]["fit"]
+    assert trend["values"][trend["years"].index(2010)] == pytest.approx(np.polyval(line, 2010) / 1e9, abs=1e-4)
+
+
+def test_decade_payload_carries_the_regional_reference_year(tmp_path):
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    (run / "reference").mkdir(exist_ok=True)
+    (run / "reference" / "reference_regional_annual.json").write_text(json.dumps({"regional_annual": 6.0e7, "year": 2021}))
+    meta = build_decade_dashboard_data({"trend": run})["meta"]["scenarios"][0]
+    assert meta["reference"] == {"year": 2021, "parcels": 60_000_000}
 
 
 def test_decade_payload_channels_add_up(payload, runs):
@@ -271,3 +299,97 @@ def test_point_daily_by_carrier_sums_the_year():
     assert _point_daily_by_carrier(frame, 2025) == {"DHL": 7., "Amazon": 1.}
     assert _point_daily_by_carrier(frame, 2027) == {"DHL": 0., "Amazon": 0.}
     assert _point_daily_by_carrier(None, 2025) is None
+
+
+
+def test_structure_payload_from_land_use_files(tmp_path):
+    from decade_fixtures import write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_land_use_files(run)
+    payload = build_decade_dashboard_data({"trend": run})
+    block, pool = payload["structure"]["trend"], payload["structure_pool"]
+    districts = block["districts"]
+    districts["geo"], block["sites"] = pool["geo"][districts["geo"]], pool["sites"][block["sites"]]
+    assert districts["ids"] == ["A", "B"] and districts["kinds"] == ["city", "umland"]
+    assert districts["population_index"]["2026"] == pytest.approx([1.02, 0.99]) and districts["population_index"]["2025"] == [1.0, 1.0]
+    assert districts["employees_index"]["2026"] == pytest.approx([1.01, 1.01]) and len(districts["geo"]["features"]) == 2
+    assert districts["forecast_index"]["2026"] == pytest.approx([1.02, 0.99])
+    sites = block["sites"]
+    assert sites["ids"] == ["lu:res:neubau:0", "lu:res:neubau:1", "lu:biz:Q:2026:0"] and sites["year_opened"] == [2026] * 3
+    assert sites["segment"] == ["private", "private", "business"] and sites["size"] == pytest.approx([5., 5., 12.])
+    [development] = block["developments"]
+    assert (development["name"], development["district_id"], development["residents"]) == ("Neubau", "A", {"2025": 0.0, "2026": 10.0})
+    assert development["parcels_per_day"]["2025"] == 0.0 and development["parcels_per_day"]["2026"] > 1.   # expected demand
+    assert block["age"]["bands"][0] == "0-4" and block["age"]["persons"]["2025"][0] == pytest.approx(10.)
+    assert block["meta"]["variant"] == "prognose"
+
+
+def test_structure_payload_is_null_without_land_use(payload):
+    assert payload["structure"] == {"trend": None, "boom": None} and payload["structure_pool"] == {"geo": {}, "sites": {}}
+
+
+
+def test_change_payload_aggregates_sites_to_hexagons(tmp_path):
+    from decade_fixtures import write_change_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_change_files(run)
+    change = build_decade_dashboard_data({"trend": run})["change"]
+    hexes = change["hex"]
+    assert len(hexes["ids"]) == 2 and len(hexes["geo"]["features"]) == 2 and hexes["km2"][0] == pytest.approx(1.663, abs=.01)
+    days = pd.read_parquet(run / "annual" / "days.parquet")
+    days["date"] = pd.to_datetime(days.date)
+    delivery = days.loc[days.date.dt.dayofweek.lt(6) & ~days.holiday.astype(bool)].groupby(days.date.dt.year).size()
+    values = change["values"]["trend"]
+    west = hexes["ids"].index(min(hexes["ids"], key=lambda key: hexes["centre"][hexes["ids"].index(key)][0]))
+    assert values["2025"]["total"][west] == pytest.approx(500. / delivery[2025], abs=.05)       # h1 + h2 in the western hexagon
+    total_2026 = 1100. * (500. / 1250.) + 1100. * (250. / 1250.)
+    assert values["2026"]["total"][west] == pytest.approx(total_2026 / delivery[2026], abs=.05)
+    assert values["2026"]["plain"][west] == pytest.approx(1100. * .5 / delivery[2026], abs=.05)  # without land use: shares of 2025
+    east = 1 - west
+    assert sum(values["2026"]["total"]) == pytest.approx((1100. + 440.) / delivery[2026], abs=.1)
+    assert values["2026"]["total"][east] + values["2026"]["total"][west] == pytest.approx(sum(values["2026"]["total"]))
+
+
+def test_change_payload_is_null_without_projection(payload):
+    assert payload["change"] is None
+
+
+
+def test_change_drivers_use_the_model_districts_of_the_sites(tmp_path):
+    """The drivers and the city share follow the model's district of every site, not a new geometric assignment."""
+    from decade_fixtures import write_change_files, write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    write_land_use_files(run)
+    write_change_files(run)
+    geometric = build_decade_dashboard_data({"trend": run})["change"]["districts"]["trend"]
+    pd.DataFrame({"site_id": ["h1", "h2", "h3", "f1"], "district_id": ["B", "B", "B", "B"]}).to_parquet(run / "land_use_site_districts.parquet", index=False)
+    model = build_decade_dashboard_data({"trend": run})["change"]["districts"]["trend"]
+    assert model["2026"]["total"][model["ids"].index("A")] == 0.0 and model["2026"]["total"][model["ids"].index("B")] > 0.
+    assert geometric["2026"]["total"] != model["2026"]["total"]
+
+
+def test_structure_payload_shares_identical_shapes_and_sites(tmp_path):
+    """District shapes and new sites that are identical across scenarios are stored once in the structure pool."""
+    from decade_fixtures import write_land_use_files
+
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    first = write_decade_run(tmp_path, "decade-trend")
+    second = write_decade_run(tmp_path, "decade-boom", growth=1.08, scenario=BOOM, seed=11)
+    write_land_use_files(first)
+    write_land_use_files(second)
+    payload = build_decade_dashboard_data({"trend": first, "boom": second})
+    pool = payload["structure_pool"]
+    assert len(pool["geo"]) == 1 and len(pool["sites"]) == 1
+    keys = {name: (block["districts"]["geo"], block["sites"]) for name, block in payload["structure"].items()}
+    assert keys["trend"] == keys["boom"] and all(isinstance(key, str) for pair in keys.values() for key in pair)
+    assert len(pool["geo"][keys["trend"][0]]["features"]) == 2 and pool["sites"][keys["trend"][1]]["year_opened"] == [2026] * 3
