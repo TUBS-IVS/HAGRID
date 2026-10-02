@@ -17,6 +17,13 @@ def _ts(series, hour, value, unit):
     return {"series": series, "hour": int(hour), "value": value, "unit": unit}
 
 
+def _requests(df, time_col):
+    """(requestId, t) per row; requestId is NA where the file predates the column,
+    which switches the dedup in `extract` off rather than collapsing every row."""
+    ids = df["requestId"] if "requestId" in df.columns else pd.Series(pd.NA, index=df.index)
+    return pd.DataFrame({"requestId": ids.values, "t": df[time_col].values})
+
+
 def extract(run_dir, prefix, freight_cache=None):
     run_dir = Path(run_dir)
     rows = []
@@ -26,6 +33,15 @@ def extract(run_dir, prefix, freight_cache=None):
     # dashboard's charts would contradict its own tiles on a Shared-Use run. On every
     # other scenario the split is a no-op (no parcel-persons exist), so the canonical
     # series stay byte-identical and the *_incl_parcels twins are simply not emitted.
+    # Submitted DEMAND per hour = every unique passenger request, served or not
+    # (review 2026-10-02 #7: this used to be the served legs alone, re-bucketed
+    # by submission time). Served legs carry their submissionTime; a rejected
+    # request is only in the rejections file, under its REJECTION time -- that
+    # file has no submission time. Deduplicated on requestId, served first:
+    # on 88 local runs no passenger request was in both files or rejected twice,
+    # so the dedup is a guard, not a correction.
+    demand = []   # DataFrames with columns requestId, t
+
     legs_f = run_dir / (prefix + ".output_drt_legs_drt.csv")
     if legs_f.exists():
         all_legs = pd.read_csv(legs_f, sep=";")
@@ -41,9 +57,7 @@ def extract(run_dir, prefix, freight_cache=None):
                 rows.append(_ts("drt_wait_mean" + label, h, float(wm), "s"))
 
         if "submissionTime" in legs.columns:
-            sub_hour = (legs["submissionTime"] // 3600).astype(int)
-            for h, n in sub_hour.value_counts().sort_index().items():
-                rows.append(_ts("drt_requests_submitted", h, int(n), "requests/h"))
+            demand.append(_requests(legs, "submissionTime"))
 
     rej_f = run_dir / (prefix + ".output_drt_rejections_drt.csv")
     if rej_f.exists():
@@ -55,6 +69,14 @@ def extract(run_dir, prefix, freight_cache=None):
         if len(rej):
             for h, n in (rej["time"] // 3600).astype(int).value_counts().sort_index().items():
                 rows.append(_ts("drt_rejections", h, int(n), "requests/h"))
+            demand.append(_requests(rej, "time"))
+
+    if demand:
+        sub = pd.concat(demand, ignore_index=True)
+        if sub["requestId"].notna().all():
+            sub = sub.drop_duplicates("requestId", keep="first")
+        for h, n in (sub["t"] // 3600).astype(int).value_counts().sort_index().items():
+            rows.append(_ts("drt_requests_submitted", h, int(n), "requests/h"))
 
     trips_f = run_dir / (prefix + ".output_trips.csv.gz")
     if trips_f.exists():

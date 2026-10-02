@@ -135,6 +135,25 @@ def _direct_cost(all_rows, meta, pf, params):
     frt_vkt = _num(all_rows, "freight_vehicle_km")
     energy = _num(all_rows, "total_energy_final")
 
+    # A fleet that is COUNTED but has no hours or km is not an absent fleet.
+    # drt_vehicles/drt_vehicle_km come from the run's CSVs, drt_tour_hours_total
+    # only from the event reconstruction, so a --no-events build of the
+    # baseline used to price the van fleet alone and publish that as cost_total
+    # (review 2026-10-02 #1). A partial C is refused, not caveated: the missing
+    # fleet is the larger part of it.
+    incomplete = []
+    if drt_n and (drt_vht is None or drt_vkt is None):
+        incomplete.append(
+            "DRT fleet counted (drt_vehicles=%s) but drt_tour_hours_total or "
+            "drt_vehicle_km missing -- events not reconstructed (--no-events?)"
+            % drt_n)
+    if frt_n and (frt_vht is None or frt_vkt is None):
+        incomplete.append(
+            "van fleet counted (freight_vehicles=%s) but freight_tour_hours or "
+            "freight_vehicle_km missing" % frt_n)
+    if incomplete:
+        return [], incomplete
+
     # Both fleets are optional and neither absence is a defect: an LMD-only run
     # has no DRT fleet, an integrated or pax-only run has no vans. Only a run
     # with NEITHER is un-evaluable.

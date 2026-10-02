@@ -216,3 +216,29 @@ def test_a_run_with_no_fleet_at_all_falls_back_and_says_so():
                 meta=_Meta())}
     assert out["cost_model_failed"]["value"] == 1
     assert "drt_cost_bottom_up_placeholder" in out
+
+
+def test_no_events_baseline_is_not_priced_as_its_van_fleet_alone():
+    """Review 2026-10-02 #1: drt_vehicles and drt_vehicle_km come from the
+    run's CSVs, drt_tour_hours_total only from the event reconstruction. On a
+    --no-events build of the baseline the DRT fleet used to count as ABSENT,
+    and cost_total went out as the van fleet's cost alone -- a system total
+    missing its larger part, with a source text calling it "van fleet only"."""
+    rows = [r for r in _rows(freight_vehicles=3, freight_tour_hours=20.0,
+                             freight_vehicle_km=200.0, parcels_handled=400)
+            if r["kpi_name"] != "drt_tour_hours_total"]
+    out = {r["kpi_name"]: r for r in econ(rows, meta=_Meta())}
+    assert "cost_total" not in out
+    assert "cost_per_parcel" not in out
+    assert out["cost_model_failed"]["value"] == 1
+    assert "drt_tour_hours_total" in out["cost_model_failed"]["source"]
+
+
+def test_a_van_fleet_without_tour_hours_is_not_dropped_either():
+    """Same defect, other fleet: a counted van fleet with no hours made the
+    baseline look passenger-only and priced EUR/ride on the DRT fleet alone."""
+    rows = _rows(freight_vehicles=3, freight_vehicle_km=200.0)
+    out = {r["kpi_name"]: r for r in econ(rows, meta=_Meta())}
+    assert "cost_total" not in out
+    assert "cost_per_ride" not in out
+    assert "freight_tour_hours" in out["cost_model_failed"]["source"]

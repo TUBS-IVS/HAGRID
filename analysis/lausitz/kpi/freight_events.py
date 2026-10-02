@@ -28,6 +28,7 @@ by build_kpis.build() and appended to kpi_timeseries.csv:
     `hour` field is a FRACTIONAL hour (t/3600, e.g. 8.0, 8.0833, ...), not
     an integer bucket; render treats it as a plain x value.
 """
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -126,12 +127,20 @@ def _depot_hour_counts(times_by_vehicle):
     return counts
 
 
+_ACTIVE_STEP_S = 300.0
+
+
 def active_vehicles_by_provider(fev, carriers, excluded):
     """5-minute (1/12-hour) sampling of active-vehicle counts per provider.
     A vehicle is active in the half-open interval
     [first_departure, last_arrival) -- resolved via the same carrier/tour
     walk as parcels_per_hour_by_provider (skips `excluded`). Returned hours
-    are FRACTIONAL (t/3600), not integer buckets."""
+    are FRACTIONAL (t/3600), not integer buckets.
+
+    The sample points are ONE absolute grid (k * 5 min of the day) shared by
+    every vehicle. The grid used to start at each vehicle's own departure, so
+    vans leaving a minute apart landed on keys that never coincided and the
+    curve showed 1 where 2 were on the road (review 2026-10-02 #5)."""
     out = {}  # provider -> {fractional_hour: active_count}
     for c in carriers:
         prov = freight_classify.provider_of(c.carrier_id, c.attrs.get("provider"))
@@ -143,14 +152,14 @@ def active_vehicles_by_provider(fev, carriers, excluded):
             arrs = fev.depot_arrivals.get(vid)
             if not deps or not arrs:
                 continue
-            start_h = min(deps) / 3600.0
-            end_h = max(arrs) / 3600.0
-            n_steps = int(round((end_h - start_h) * 12))
-            if n_steps <= 0:
+            # grid points k * step inside [dep, arr)
+            k_first = math.ceil(min(deps) / _ACTIVE_STEP_S)
+            k_end = math.ceil(max(arrs) / _ACTIVE_STEP_S)
+            if k_end <= k_first:
                 continue
             bins = out.setdefault(prov, {})
-            for i in range(n_steps):
-                h = round(start_h + i / 12.0, 6)
+            for k in range(k_first, k_end):
+                h = round(k / 12.0, 6)
                 bins[h] = bins.get(h, 0) + 1
     return out
 

@@ -24,9 +24,14 @@ def test_build_writes_all_csvs(tmp_path):
     assert ";passenger;drt_rides;9171;" in long_txt
     assert ";freight;parcels_total;500;" in long_txt
     # Lausitz runs go through the unified cost model (economics.extract ->
-    # cost_model); the legacy freight_cost_per_parcel is Hannover-only now.
-    assert ";economic;cost_per_parcel;" in long_txt
-    assert ";economic;cost_total;" in long_txt
+    # cost_model). This fixture is a married baseline built WITHOUT events, so
+    # the DRT fleet has no drt_tour_hours_total and the model must refuse: it
+    # used to publish the van fleet's cost alone as cost_total (review
+    # 2026-10-02 #1). The refusal names the missing input.
+    assert ";economic;cost_total;" not in long_txt
+    assert ";economic;cost_per_parcel;" not in long_txt
+    assert ";meta;cost_model_failed;" in long_txt
+    assert "drt_tour_hours_total" in long_txt.split(";meta;cost_model_failed;")[1].splitlines()[0]
 
     # FROZEN-SCHEMA REGRESSION: 1e long-CSV header must not change.
     long_header = long_txt.splitlines()[0]
@@ -435,3 +440,20 @@ def test_build_records_an_emissions_failure_as_a_meta_row(tmp_path):
     assert ";passenger;drt_rides;9171;" in long_txt
     assert (out / "kpi_distributions.csv").exists()
     assert not (out / "kpi_emissions_vehicles.csv").exists()
+
+
+def test_rebuild_drops_conditional_outputs_this_build_did_not_write(tmp_path):
+    """Review 2026-10-02 #6: kpi_vehicles.csv, kpis_provider.csv,
+    kpi_emissions_vehicles.csv and map_data.json are written only when their
+    input exists. A rebuild with less input (--no-events after a full build, a
+    failed provider parse) used to leave the previous build's file in place,
+    and render.load_run_data showed it next to the fresh headline KPIs."""
+    (tmp_path / "kpi_vehicles.csv").write_text("run_id;role\nOLD_BUILD;drt\n", encoding="utf-8")
+    (tmp_path / "map_data.json").write_text("{}", encoding="utf-8")
+    out = build(FIX, no_events=True, out_dir=tmp_path)
+    # drtrun without events yields no vehicle rows and no maps ...
+    assert not (out / "kpi_vehicles.csv").exists()
+    assert not (out / "map_data.json").exists()
+    # ... but does have freight, so THIS build's provider file stays
+    assert (out / "kpis_provider.csv").exists()
+    assert "OLD_BUILD" not in (out / "kpi_dashboard.html").read_text(encoding="utf-8")
