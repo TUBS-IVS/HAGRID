@@ -4,23 +4,41 @@
 # BOTH must be equal: if two fresh runs differ, byte-identity is not shown at all and the gate fails.
 # Precondition: no entries and no BLOCKED.json in hagrid-output\shared\jsprit-cache (C must be a real miss).
 # Keep the laptop on AC with the lid open: lid-close standby freezes the run.
+# All runs use a frozen copy of the JAR (other sessions may rebuild target\ meanwhile); its SHA-256
+# is logged. -Reuse b_A (etc.) keeps an already finished run instead of rerunning it.
+# Never hold gate_status.txt open while the gate runs (no tail -f); Mark retries but read it by polling.
 # ASCII only (Windows PowerShell 5.1 reads BOM-less scripts as cp1252).
 param(
     [string] $Java = 'C:\Program Files\Java\jdk-21.0.10\bin\java.exe',
-    [string] $Python = 'python'
+    [string] $Python = 'python',
+    [string] $JarSource = 'target\hagrid-1.0-SNAPSHOT-shaded.jar',
+    [string[]] $Reuse = @()
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $module = Join-Path $repo 'hagrid\simulation'
-$jar = 'target\hagrid-1.0-SNAPSHOT-shaded.jar'
+$jar = 'hagrid-output\logs\cache-gate\gate-hagrid-shaded.jar'   # relative to $module
 $log = Join-Path $module 'hagrid-output\logs\cache-gate'
 $cacheDir = Join-Path $module 'hagrid-output\shared\jsprit-cache'
 New-Item -ItemType Directory -Force -Path $log | Out-Null
 $status = Join-Path $log 'gate_status.txt'
 function Mark([string] $m) {
-    Add-Content -Path $status -Value ('{0}  {1}' -f (Get-Date -Format s), $m) -Encoding ascii
-    Write-Host $m
+    $line = '{0}  {1}' -f (Get-Date -Format s), $m
+    for ($i = 0; $i -lt 20; $i++) {
+        # a reader holding the file must never stop the gate (02.10.: tail -F did, after run b_A)
+        try { Add-Content -Path $status -Value $line -Encoding ascii -ErrorAction Stop; break }
+        catch { Start-Sleep -Milliseconds 250 }
+    }
+    Write-Host $line
 }
+
+$frozen = Join-Path $module $jar
+if ($Reuse.Count -eq 0 -or -not (Test-Path $frozen)) {
+    Copy-Item -Path (Join-Path $module $JarSource) -Destination $frozen -Force
+}
+$jarItem = Get-Item $frozen
+Mark ('JAR {0} sha256={1} mtime={2:s} reuse={3}' -f $jar, (Get-FileHash -Algorithm SHA256 -Path $frozen).Hash,
+      $jarItem.LastWriteTime, ($Reuse -join ','))
 
 $blockedMarker = Join-Path $cacheDir 'BLOCKED.json'
 if (Test-Path $cacheDir) {
@@ -61,12 +79,16 @@ function RunJava([string] $tag, [string] $mainClass, [string] $runArgs, [string]
 
 function OneRun($v, [string] $letter, [string] $cacheMode) {
     $tag = 'cgate_{0}_{1}' -f $v.Short, $letter
-    Mark ("{0} START cache={1}" -f $tag, $cacheMode)
-    $e1 = RunJava $tag 'hagrid.lausitz.drt.PrepareLausitzDrtInputs' $v.Args $cacheMode
-    if ($e1 -ne 0) { Mark ("{0} PREP_EXIT={1}" -f $tag, $e1); return $null }
-    $e2 = RunJava $tag 'hagrid.core.simulation.HAGRIDSimulationRunner' $v.Args $cacheMode
-    Mark ("{0} RUN_EXIT={1}" -f $tag, $e2)
-    if ($e2 -ne 0) { return $null }
+    if ($Reuse -contains ('{0}_{1}' -f $v.Short, $letter)) {
+        Mark ("{0} REUSED (finished earlier, not rerun) cache={1}" -f $tag, $cacheMode)
+    } else {
+        Mark ("{0} START cache={1}" -f $tag, $cacheMode)
+        $e1 = RunJava $tag 'hagrid.lausitz.drt.PrepareLausitzDrtInputs' $v.Args $cacheMode
+        if ($e1 -ne 0) { Mark ("{0} PREP_EXIT={1}" -f $tag, $e1); return $null }
+        $e2 = RunJava $tag 'hagrid.core.simulation.HAGRIDSimulationRunner' $v.Args $cacheMode
+        Mark ("{0} RUN_EXIT={1}" -f $tag, $e2)
+        if ($e2 -ne 0) { return $null }
+    }
     $runId = '{0}_13052025_{1}' -f $v.Concept, $tag
     $dir = Join-Path $module ('hagrid-matsim-output\{0}_iter2_jsprit{1}' -f $runId, $v.JsIter)
     $metaFile = Join-Path $dir 'run_metadata.json'
