@@ -399,6 +399,28 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-02._
 - **Berichtsregel für km-basierte KPIs: ≥10 Sim-Runs, Mittelwert + Min/Max** — `trägt` · 2026-07-28
   Ersetzt die frühere 3–5-Seed-Empfehlung. Begründung: §2.1 (Rauschboden) + §2.2 (Iterationskosten).
 
+- **jsprit-Ergebnis-Cache für den Lausitz-LMD-Vorlauf** — `trägt` · 2026-10-02, Commits `88a71f0`…`afa6e4d` (Spec/Plan 2026-10-01, unversioniert)
+  - **Was:** Ein Lauf übernimmt das Ergebnis der jsprit-Suche nur bei identischem Schlüssel. In den Schlüssel gehen ein:
+    - der Inhalt aller fünf Eingabedateien, bei Shapefiles samt Begleitdateien;
+    - die Vorlauf-Parameter und `hagrid.jsprit.seed`;
+    - ein Hash über alle JAR-Einträge einschließlich Manifest;
+    - die Java-Version.
+  - **Bewusst nicht im Schlüssel** sind Lauf-ID, Tag, MATSim-Seed und Flotte. Das stützen 23 Baseline-Läufe vom 15.08. bis 30.09. mit Flotte 100–150 und Seeds 1337–1341, deren Carrier-Dateien byte-gleich waren.
+  - **Was trotzdem immer läuft:** Netz, Nachfrage und Carrier-Aufbau, damit die MATSim-IDs in derselben Reihenfolge entstehen. Beim Treffer wird die Datei an der jsprit-Stelle eingelesen.
+  - **Sicherungen:**
+    - Ein Widerspruch zweier Rechnungen mit gleichem Schlüssel sperrt den ganzen Cache der Maschine (`BLOCKED.json`).
+    - Ändert sich eine Eingabe während des Einlesens, ist der Lauf vom Cache ausgeschlossen.
+    - Ein JAR, das jünger ist als die JVM, schaltet den Cache ab.
+    - Jeder Fehler im Cache endet im Rechnen ohne Cache, nie im Abbruch des Laufs.
+  - **Laufvergleich auf dem Dev (02.10.)**, Baseline und 1d je mit `off`/`miss`/`hit`/`verify`:
+    - Alle Ausgaben sind A gegen B (Treffer) und A gegen C (zweiter frischer Lauf) gleich: Ergebnisdatei, DRT-CSVs, `modestats`, `output_carriers`, `modular_tour_stats`.
+    - **Das Kriterium hat der User nach dem ersten Gate-Lauf festgelegt:** die Lauf-ID wird herausgerechnet, und die Events werden als Menge je Zeitschritt verglichen.
+    - Grund: Schon zwei frische Läufe mit gleichem Seed sind nicht byte-gleich. Die DRT-CSVs tragen die Lauf-ID, und `qsim.numberOfThreads=12` ordnet die Events innerhalb eines Zeitschritts in rund 90.000 von 115.000 Zeitschritten um. Die 7,98 Mio. Events selbst sind identisch. Zwei Seeds unterscheiden sich in 92.580 Zeitschritten (Negativkontrolle).
+    - `verify` bestätigt die abgelegte Datei byte-gleich.
+  - **Laufzeit:** Der Baseline-Treffer braucht 8 statt 78 min für Vorlauf plus 2 Iterationen; der jsprit-Vorlauf allein dauerte 4.218 s.
+  - **Bedienung:** Schalter `-Dhagrid.jsprit.cache=on|off|verify`, Standard `on`. Der Status je Lauf steht in `run_metadata.json` (`jsprit_cache`, `jsprit_cache_key`, `jsprit_cache_source_run`).
+  - **Grenzen:** Der Nachweis gilt je Maschine und JAR. Ein JAR aus einem neueren Stand rechnet beim ersten Lauf neu.
+
 ### 1.6 Kostenmodell: direkte Betriebskosten C (nur Lausitz)
 
 Herleitung und Begründung des Kostenmodells, bis 2026-09-30 nur im Kopf von

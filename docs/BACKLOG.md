@@ -370,7 +370,22 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   geprüft und grün: Determinismus bleibt (frische `Random` je Carrier,
   `HAGRIDRouterUtils.applySeedOverride:246`), `NetworkBasedTransportCosts` ist thread-safe by
   design. Lohnt für die Latenz *eines* Laufs — für den Seed-Fächer ist Prozess-Parallelität besser.
-  _(added 2026-07-30)_
+  Seit dem jsprit-Cache (METHODS-LOG §1.5, 2026-10-02) zählt der Gewinn nur noch beim ersten Lauf
+  je Maschine und JAR. _(added 2026-07-30)_
+
+- **`[S]` jsprit-Cache: Produktionsnachweis je Maschine** (Dev, IVS100, VM; Sim erst, wenn er
+  zurück ist), auf dem ersten neuen JAR: erster Baseline-Lauf `miss` mit Datei-SHA-256
+  `2c1195c3…`, der nächste `hit`, einmal ein `verify`-Lauf. **Auf der Ubuntu-VM vorher die
+  Cache-Unit-Tests laufen lassen** (`-Dtest='JspritPlanCache*,CacheEntryLock*,JspritCacheKey*,JarFingerprint*'`):
+  das Gate lief nur unter Windows und hat fcntl-Sperren und Inode-Austausch nie gesehen.
+  _(added 2026-10-02)_
+
+- **`[S]` jsprit-Cache: aufgeschobene Kleinpunkte aus dem Abschluss-Review 02.10.** — keiner
+  erzeugt einen falschen Treffer, alle fallen auf Neu-Rechnen zurück: kein Wiederholversuch beim
+  Umbenennen unter Windows-Handles (kostet nur den Eintrag); JAR-Prüfung nicht vor dem Ablegen
+  wiederholt; kein Schutz für JVMs mit mehreren Lausitz-Szenarien (Spec §11); `verify`-Logzeile
+  sagt fälschlich „missing or corrupt“; kein Test für das Leck in `CacheEntryLock.close()`.
+  _(added 2026-10-02)_
 
 - **`[S]` Fork-Race an matsim-org melden** — der `ConcurrentHashMap`-Fix in
   `NetworkBasedTransportCosts` ist im Fork (`2db6789`, gepusht), die Meldung upstream fehlt.
