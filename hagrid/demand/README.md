@@ -44,7 +44,8 @@ dashboard per year, and all scenarios together feed one decade dashboard. Detail
 With `land_use`, persons and firms are redistributed as well. Persons follow the official population forecast 2025–2035
 per forecast district, the age mix ages with a cohort effect on the online propensity, and firms grow by industry.
 Development areas (Kronsberg-Süd, Wasserstadt Limmer and others) and new firms become sites of their own.
-`decade-trend-innen.json` and `decade-trend-suburban.json` run the trend volume with the infill and the suburban variant.
+`decade-<scenario>-innen.json` and `decade-<scenario>-suburban.json` run every volume scenario (trend, saettigung, boom)
+with the infill and the suburban variant.
 Details: [`model/README.md`](model/README.md#land-use-dynamics-20252035).
 
 ## Data Flow to MATSim

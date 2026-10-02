@@ -377,7 +377,7 @@ The hexagon map at the top shows the trend scenario against its regional growth 
 +27.9 %, the 20 surrounding towns by +27.1 %. Its colours count hexagons: many outer city hexagons grow faster than the
 region, while the dense inner core, which carries a third of the city's parcels, grows slower. By 2035 land use moves about 440 parcels a day from the towns to the city: the
 city's share of the demand rises from 44.1 % to about 44.3 %, and the two variants move it to 44.6 % (infill) or 43.9 %
-(suburban). The official age structure decides this: the towns lose many 45- to 64-year-olds with a high online
+(suburban), in each of the three volume scenarios alike. The official age structure decides this: the towns lose many 45- to 64-year-olds with a high online
 propensity (−11.8 % by 2034), the city only −4.8 %, while both gain 65- to 74-year-olds who keep their online habit.
 
 <p align="center">
@@ -425,7 +425,7 @@ From the repository root:
 
 ```bat
 runs\hannover\run_demand_year.bat demand-2025
-runs\hannover\run_demand_decade.bat trend saettigung boom trend-innen trend-suburban
+runs\hannover\run_demand_decade.bat trend trend-innen trend-suburban saettigung saettigung-innen saettigung-suburban boom boom-innen boom-suburban
 ```
 
 The year run simulates 2025 with its annual dashboard and copies the MATSim demand to
