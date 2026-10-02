@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import carriers_parse
 from events_cache import ensure_caches
-from freight_events import (FreightEvents, hourly_series,
+from freight_events import (FreightEvents, active_vehicles_by_provider, hourly_series,
                              parcels_per_hour_by_provider, parse_freight_cache)
 
 MINI_FIXTURE = Path(__file__).parent / "fixtures" / "mini_events" / "MINI.output_events.xml.gz"
@@ -137,3 +137,33 @@ def test_hourly_series_active_vehicles_skips_excluded(tmp_path):
     rows = hourly_series(fev, carriers, excluded={VEH})
     active = [r for r in rows if r["series"] == "freight_active_vehicles_dhl"]
     assert active == []
+
+
+class _StubTour:
+    def __init__(self, vid):
+        self.vid = vid
+
+    def event_vehicle_id(self, carrier_id):
+        return self.vid
+
+
+class _StubCarrier:
+    def __init__(self, carrier_id, vids, provider="dhl"):
+        self.carrier_id = carrier_id
+        self.attrs = {"provider": provider}
+        self.tours = [_StubTour(v) for v in vids]
+
+
+def test_active_vehicles_sum_overlaps_on_one_absolute_grid():
+    """Review 2026-10-02 #5: the 5-min grid used to start at each van's OWN
+    departure, so vans leaving at 08:00 and 08:01 sat on offset grids that were
+    never summed -- the curve showed 1 where 2 were on the road. Measured on the
+    b100rgs baseline: 41 vans on 38 different 5-min offsets."""
+    fev = FreightEvents(depot_departures={"a": [28800.0], "b": [28860.0]},
+                        depot_arrivals={"a": [36000.0], "b": [36000.0]})
+    out = active_vehicles_by_provider(fev, [_StubCarrier("c1", ["a", "b"])],
+                                      excluded=set())["dhl"]
+    assert out[round(8 + 1 / 12.0, 6)] == 2     # 08:05: both on the road
+    assert out[8.0] == 1                         # 08:00: b has not left yet
+    assert max(out.values()) == 2
+    assert all(abs(h * 12 - round(h * 12)) < 1e-4 for h in out)  # absolute grid only

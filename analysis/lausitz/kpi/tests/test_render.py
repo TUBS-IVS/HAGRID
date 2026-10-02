@@ -127,6 +127,18 @@ def test_donut_registers_center_plugin_in_run_page(tmp_path):
 
 # --- Review fix package 2026-07-27: dashboard honesty on Shared-Use runs (E2-E6) ---
 
+def _without_meta(data):
+    """Drop every meta row from a loaded run.
+
+    The drtrun fixture has no events file, so its --no-events build carries
+    meta/cost_model_failed: a married baseline cannot be priced without the
+    event-derived drt_tour_hours_total (review 2026-10-02 #1). A real baseline
+    build with events carries no meta row, and the tests using this helper are
+    about how render treats such a run, not about what build emits."""
+    data.kpis = data.kpis[data.kpis["kpi_group"] != "meta"].reset_index(drop=True)
+    return data
+
+
 def _with_meta_row(data):
     """Append a meta/parcel_contaminated_kpis provenance row to a loaded run's
     kpis frame, mimicking what pax_only.apply_overrides does on a Shared-Use
@@ -163,7 +175,7 @@ def test_meta_notes_block_renders_only_when_meta_rows_exist(tmp_path):
     # E3: the meta group never fit the grouped-table loop -- it must surface
     # as a "Hinweise" block; baseline pages stay free of it.
     out = _build_clean(tmp_path)
-    data = render.load_run_data(out)
+    data = _without_meta(render.load_run_data(out))
     assert "Hinweise" not in render.render_kpi_table(data.kpis)
 
     import pax_only
@@ -402,8 +414,8 @@ def test_secondary_badge_absent_without_marker():
 
 def test_comparison_page_meta_notes_below_table_with_run_label_prefix(tmp_path):
     out = _build_clean(tmp_path)
-    data_a = render.load_run_data(out)
-    data_b = render.load_run_data(out)
+    data_a = _without_meta(render.load_run_data(out))
+    data_b = _without_meta(render.load_run_data(out))
     _with_modular_marker(data_b, source="drt_source_marker_xyz")
     runs = [{"label": "Lauf A", "scenario": "DRT_BASELINE", "data": data_a},
             {"label": "Lauf B", "scenario": "DRT_MODULAR", "data": data_b}]

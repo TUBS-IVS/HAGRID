@@ -32,10 +32,33 @@ def test_hourly_series():
 
 
 def test_requests_submitted_series():
+    """Submitted DEMAND, not served legs re-bucketed (review 2026-10-02 #7):
+    the two rejected requests count too, in the hour they were rejected."""
     rows = extract(FIX, "DRT_TEST")
     submitted = _series(rows, "drt_requests_submitted")
-    # submissionTime 25000->6, 25500->7, 29000->8, 36100->10
-    assert submitted == {6: 1, 7: 1, 8: 1, 10: 1}
+    # served submissionTime 25000->6, 25500->7, 29000->8, 36100->10;
+    # rejected 35928->9, 36100->10
+    assert submitted == {6: 1, 7: 1, 8: 1, 9: 1, 10: 2}
+    assert sum(submitted.values()) == (sum(_series(rows, "drt_rides").values())
+                                       + sum(_series(rows, "drt_rejections").values()))
+
+
+def test_requests_submitted_counts_each_request_once(tmp_path):
+    """Deduplicated on requestId, served first: a request in both files is one
+    request, and parcel rejections stay out like in drt_rejections."""
+    _seed_legs_with_ids(tmp_path, "DUP", [
+        "28000;28800;p1;drt_1;100\n",
+        "32000;32400;p2;drt_2;100\n",
+    ])
+    (tmp_path / "DUP.output_drt_rejections_drt.csv").write_text(
+        "time;personIds;requestId;cause\n"
+        "36000;p2;drt_2;no_insertion_found\n"      # also served -> counted once, hour 8
+        "39600;p3;drt_3;no_insertion_found\n"      # rejected only -> hour 11
+        "39700;p3;drt_3;no_insertion_found\n"      # same request twice -> once
+        "40000;parcel_dhl_1_B2C;drt_4;no_insertion_found\n",
+        encoding="utf-8")
+    submitted = _series(extract(tmp_path, "DUP"), "drt_requests_submitted")
+    assert submitted == {7: 1, 8: 1, 11: 1}
 
 
 def test_feeder_trips_series():
@@ -106,6 +129,12 @@ def test_write(tmp_path):
 def _seed_legs(dirpath, prefix, rows):
     (dirpath / (prefix + ".output_drt_legs_drt.csv")).write_text(
         "submissionTime;departureTime;personId;waitTime\n" + "".join(rows), encoding="utf-8")
+
+
+def _seed_legs_with_ids(dirpath, prefix, rows):
+    (dirpath / (prefix + ".output_drt_legs_drt.csv")).write_text(
+        "submissionTime;departureTime;personId;requestId;waitTime\n" + "".join(rows),
+        encoding="utf-8")
 
 
 def test_hourly_series_exclude_parcel_legs(tmp_path):

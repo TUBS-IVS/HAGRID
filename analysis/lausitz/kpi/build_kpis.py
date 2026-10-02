@@ -58,11 +58,22 @@ def _served_quantities(rows, run_dir, meta):
             "n_parcels": by_name.get("parcels_delivered")}
 
 
+#: Outputs a build writes only when their input exists. Removed up front, so
+#: whatever is in `out` afterwards comes from THIS build: a rebuild with less
+#: input (--no-events after a full build, a failed provider parse) used to keep
+#: the previous build's file, and render.load_run_data showed it next to the
+#: fresh headline KPIs (review 2026-10-02 #6).
+CONDITIONAL_OUTPUTS = ("kpis_provider.csv", "kpi_vehicles.csv",
+                       "kpi_emissions_vehicles.csv", "map_data.json")
+
+
 def build(run_dir, no_events=False, fleet_file=None, out_dir=None):
     run_dir = Path(run_dir)
     meta = load_run_meta(run_dir)
     out = Path(out_dir) if out_dir else run_dir / "analysis"
     out.mkdir(parents=True, exist_ok=True)
+    for name in CONDITIONAL_OUTPUTS:
+        (out / name).unlink(missing_ok=True)
 
     is_drt = (run_dir / (meta.prefix + ".drt_customer_stats_drt.csv")).exists()
     has_freight = (run_dir / "analysis" / "freight" / "TimeDistance_perCarrier.tsv").exists()
