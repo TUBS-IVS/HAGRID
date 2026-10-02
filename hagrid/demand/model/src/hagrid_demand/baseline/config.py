@@ -19,8 +19,9 @@ _ALLOWED_KEYS = {
     "dhl_exclude_above", "regional_level", "weight", "stock_updates", "baseline_run", "assumptions", "spatial", "business_potential", "matsim_export", "volume_fit_policy", "reference_operating_days_rule",
     "osm_buildings", "osm_points", "osm_parcel_points", "out_of_home", "buildings", "anchor", "stops", "notebook_output_dir", "temporal", "annual_store",
     "calendar", "process", "regime", "detail_draws", "legacy_contract", "legacy_grid", "legacy_samples", "volume_scenario",
+    "land_use", "osm_boundaries",
 }
-_PATH_KEYS = {"notebook_output_dir", "osm_buildings", "osm_points", "osm_parcel_points", "input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
+_PATH_KEYS = {"notebook_output_dir", "osm_buildings", "osm_points", "osm_parcel_points", "osm_boundaries", "input_dir", "output_dir", "cache_root", "dashboard_root", "foundation_run", "weekly_source", "stock_updates", "baseline_run", "legacy_contract", "legacy_grid", "legacy_samples"}
 _SOURCE_PATH_KEYS = {"file", "path", "input_path", "source_path", "directory", "dir"}
 
 
@@ -161,6 +162,11 @@ def load_baseline_config(path: Path) -> dict:
                                or any(type(year) is not int or year < 2021 for year in config["years"])):
         raise ValueError("years must contain integer years from 2021")
     config["years"] = sorted(set(config["years"])) if "years" in config else [config["reference_year"]]
+    if "land_use" in config:
+        from hagrid_demand.baseline.land_use import resolve_land_use, validate_land_use_years
+
+        # fail on load; the daily stage resolves the block again
+        validate_land_use_years(resolve_land_use(config["land_use"]), config["years"])
     if "volume_scenario" in config:
         from hagrid_demand.baseline.series import validate_volume_scenario
 

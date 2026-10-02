@@ -13,7 +13,7 @@ from ..data import write_json
 
 
 def predict(theta,data,priors):
-    # One additional coefficient: DHL log odds in manufacturing / transport-storage.
+    # One additional coefficient: LSP log odds in manufacturing / transport-storage.
     # All other carriers retain their relative prior odds; no unsupported free effects.
     business_shares=np.tile(priors['business'],(len(data['branches']),1))
     active=priors['business']>0

@@ -14,10 +14,10 @@ Ergebnis auf Rohmengen: Die logarithmische Hybridvariante reduziert den mittlere
 python -m hagrid_demand.reconstruct --model-run hagrid-demand/runs/local-carriers-20260909-v3 --output hagrid-demand/runs/reconstruction-new
 ```
 
-Dieser eigenstaendige Modus verbindet die vorhandenen Standort-/Anbieterprofile mit harten DHL-PLZ-Randbedingungen. Er skaliert die DHL-Standortmengen innerhalb jeder beobachteten PLZ auf deren Rohdatensumme. Relative DHL-Standortgewichte und modellierte Nicht-DHL-Mengen bleiben erhalten. Die Gesamtmarktmenge und die Anbieteranteile koennen sich deshalb aendern. Dies ist eine explizite bedingte Rekonstruktion, keine neue Marktbeobachtung.
+Dieser eigenstaendige Modus verbindet die vorhandenen Standort-/Anbieterprofile mit harten LSP-PLZ-Randbedingungen. Er skaliert die LSP-Standortmengen innerhalb jeder beobachteten PLZ auf deren Rohdatensumme. Relative LSP-Standortgewichte und modellierte Nicht-LSP-Mengen bleiben erhalten. Die Gesamtmarktmenge und die Anbieteranteile koennen sich deshalb aendern. Dies ist eine explizite bedingte Rekonstruktion, keine neue Marktbeobachtung.
 
 Ergebnis: 53 beobachtete PLZ, Summe 97.906, maximale numerische Abweichung 1.82e-12. Kein kuenstlicher 0-Prozent-Testfehler: Die Zahlen wurden als Randbedingungen verwendet.
 
-`reference_day_sites.parquet` enthaelt standortbezogene Referenzmengen und neue Anteile. `postal_checks.csv` zeigt beobachtete, vorherige und rekonstruierte DHL-Menge samt Korrekturfaktor. `carrier_postal_reference.csv`, Datenhashes und ein Dashboard werden automatisch geschrieben. Diese Referenzwerte sind weder ein konkreter Kalendertag noch automatisch eine Jahresmenge; der Nenner des Rohdaten-Tagesmittels bleibt zu klaeren.
+`reference_day_sites.parquet` enthaelt standortbezogene Referenzmengen und neue Anteile. `postal_checks.csv` zeigt beobachtete, vorherige und rekonstruierte LSP-Menge samt Korrekturfaktor. `carrier_postal_reference.csv`, Datenhashes und ein Dashboard werden automatisch geschrieben. Diese Referenzwerte sind weder ein konkreter Kalendertag noch automatisch eine Jahresmenge; der Nenner des Rohdaten-Tagesmittels bleibt zu klaeren.
 
 Die genaue Verteilung innerhalb der PLZ, einzelne Strassen und Grosskundenstandorte sind damit noch nicht rekonstruiert. Insbesondere darf ein extremer Sonderstandort nicht als erwiesene hohe Nachfrage aller Empfaenger derselben PLZ interpretiert werden. Die Datei ist ein Referenzartefakt; der bestehende Zukunftsgenerator konsumiert sie noch nicht automatisch.

@@ -62,7 +62,7 @@
   "target_crs": "EPSG:25832",
   "dhl_exclude_above": 1000,
   "assumptions": [
-    "DHL tagesschni is treated as a documented reference anchor pending measurement-definition review.",
+    "LSP tagesschni is treated as a documented reference anchor pending measurement-definition review.",
     "Hermes rows are inventory only and do not anchor the reference level.",
     "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL)."
   ],

@@ -8,7 +8,7 @@ Nachfolgende Nutzerergänzung: Die Dashboard-Ausgaben werden zu einem gemeinsame
 
 | Rolle | Agent/Modell | Prüfung |
 |---|---|---|
-| Methodischer Review | `method_review`, gpt-5.6-terra, high | Mengenbilanz, segmentweiser DHL-/Strukturblend, zeitliche Pfade, Monte Carlo, räumliche Mittelwerte, Sensitivitätsdesign |
+| Methodischer Review | `method_review`, gpt-5.6-terra, high | Mengenbilanz, segmentweiser LSP-/Strukturblend, zeitliche Pfade, Monte Carlo, räumliche Mittelwerte, Sensitivitätsdesign |
 | Technischer Review | `technical_review`, gpt-5.6-terra, high | Bestehende Module, neue Schnittstellen, Fixtures, Artefakt-Schemas, Zufall, Cache/Resume, Exporte und Agentenübergabe |
 | Integration und Gegenprüfung | Hauptagent | Befunde gegen Quellen geprüft, Änderungen eingearbeitet, Abdeckung/Signaturen/Links und synthetische Rechenbeispiele geprüft |
 
@@ -18,7 +18,7 @@ Beide Terra-Agenten arbeiteten ohne Schreibzugriff und unabhängig an ihrem Revi
 
 | Befund | Korrektur im Entwurf/Plan | Status |
 |---|---|---|
-| Globaler Blend könnte Segment-/Anbietermargen verändern | H und S getrennt je Segment normieren; keine erneuten zukünftigen DHL-PLZ-Anker | Eingearbeitet und nachgeprüft |
+| Globaler Blend könnte Segment-/Anbietermargen verändern | H und S getrennt je Segment normieren; keine erneuten zukünftigen LSP-PLZ-Anker | Eingearbeitet und nachgeprüft |
 | Referenzabstimmung hatte offene Machbarkeit | B2B-/Anbietergrenzen vorab prüfen; log(k)-Bracketing, konstante Fälle und Residuum explizit | Eingearbeitet und nachgeprüft |
 | Unklare Null-/Rest-/Geometrieunterstützung | Kanonischer Index, located/unlocated, Potenzialinventar getrennt, positive unbegründete Referenzmenge stoppt | Eingearbeitet und nachgeprüft |
 | Strukturmerkmale fehlten im eingefrorenen Referenzvertrag | Population/Beschäftigte/Branche und eigene Geometrietabelle im Fingerprint | Eingearbeitet und nachgeprüft |
@@ -30,19 +30,19 @@ Beide Terra-Agenten arbeiteten ohne Schreibzugriff und unabhängig an ihrem Revi
 | Morris-Punkte könnten durch Fehlerfilter verzerrt werden | Unveränderliches Design; ungültige Trajektorie gibt keine vollständige Rangliste; latente unabhängige Inputs | Eingearbeitet und nachgeprüft |
 | Neue Komponenten waren nicht vollständig verbunden | AnnualProjection, SpatialPlan, vollständige Generator-/Ensemble-Callchain und Legacy-Inputs definiert | Eingearbeitet und nachgeprüft |
 | Cache/Resume/Erweiterung waren nicht eindeutig | Expliziter cache_root, Fingerprint-Pfade, atomare Publikation, Designblöcke, per-Run-Manifest und kopierte finale Artefakte | Eingearbeitet und nachgeprüft |
-| CSV-Lesbarkeit beweist keine alte Semantik | Echte ID-/Geometrieverträge plus Verbraucherbeispiel DHL 20/Anteil 0,5 → Markt 40 → Zellgewichte 30/10 | Eingearbeitet und nachgeprüft |
+| CSV-Lesbarkeit beweist keine alte Semantik | Echte ID-/Geometrieverträge plus Verbraucherbeispiel LSP 20/Anteil 0,5 → Markt 40 → Zellgewichte 30/10 | Eingearbeitet und nachgeprüft |
 | Frischer Lauf/Installation könnten alte Outputs voraussetzen | Lokale JSON-Quellen, XLSX-Leser, konkrete Rohdatenfixture, importlib.resources und Package-Data | Eingearbeitet und nachgeprüft |
 
 ## Zusätzliche Gegenprüfung durch den Hauptagenten
 
-Die [Prüfdatei](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/planning_review_checks_20260915.json) enthält Dokumenthashes und Ergebnisse isolierter synthetischer Rechnungen. Getestet wurden eine kleine konsistente B2B-/Anbieterabstimmung mit DHL-Referenz, Halbwertszeit-/Blend-Endpunkte, hierarchische Dirichlet-Mittelwerte mit 4096 Ziehungen sowie Morris-Effekte für eine bekannte lineare Funktion. Die Python-Beispiele in den Plänen wurden auf Syntax und die lokalen Dokumentverweise auf Existenz geprüft.
+Die [Prüfdatei](C:/Users/bienzeisler/Documents/GitHub/HAGRID/docs/demand-audit/planning_review_checks_20260915.json) enthält Dokumenthashes und Ergebnisse isolierter synthetischer Rechnungen. Getestet wurden eine kleine konsistente B2B-/Anbieterabstimmung mit LSP-Referenz, Halbwertszeit-/Blend-Endpunkte, hierarchische Dirichlet-Mittelwerte mit 4096 Ziehungen sowie Morris-Effekte für eine bekannte lineare Funktion. Die Python-Beispiele in den Plänen wurden auf Syntax und die lokalen Dokumentverweise auf Existenz geprüft.
 
 Diese Rechnungen prüfen die geplanten Formeln und Testfälle. Sie sind keine Ausführung der noch zu implementierenden APIs, kein vollständiger HAGRID-Testlauf und keine Bestätigung empirischer Schwankungsparameter. Die Implementierungsaufgaben bleiben bis zur tatsächlichen Umsetzung und ihren separaten Reviews offen.
 
 ## Verbleibende fachliche Grenzen
 
 - Zeit-/Abdeckungsdefinition der beobachteten Tagesmittel bleibt eine dokumentierte Annahme.
-- Halbwertszeiten, tägliche Schwankungen, Persistenz und nicht beobachtete Anbieterprofile sind nicht aus DHL 2021 identifiziert.
+- Halbwertszeiten, tägliche Schwankungen, Persistenz und nicht beobachtete Anbieterprofile sind nicht aus LSP 2021 identifiziert.
 - Die HAGRID-Strukturverteilung aus alten Einwohner-/Firmendaten ist keine automatisch aktuelle Zukunftsbeobachtung.
 - Keine neue empirisch bessere Fehlerrate wurde in dieser Planungsrunde behauptet oder ermittelt.
 

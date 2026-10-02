@@ -203,6 +203,10 @@ def export_day(run_dir: Path, date: str, output_dir: Path | None = None, max_par
     if table.empty:
         return ledger
     stops = gpd.read_parquet(run_dir / "reference_stops.parquet")
+    if (store / "land_use_stops.parquet").is_file():
+        # stops of new land-use sites (development homes, new firms); they only carry parcels from their opening year
+        extra = gpd.read_parquet(store / "land_use_stops.parquet").to_crs(stops.crs)
+        stops = gpd.GeoDataFrame(pd.concat([stops, extra.drop(columns=["year_opened"], errors="ignore")], ignore_index=True), crs=stops.crs)
     if (store / "out_of_home_points.parquet").is_file():
         points = gpd.read_parquet(store / "out_of_home_points.parquet").to_crs(stops.crs)
         if "year_opened" in points:

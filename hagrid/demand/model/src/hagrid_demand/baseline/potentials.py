@@ -121,7 +121,7 @@ def _support_columns(support: pd.DataFrame, target: str | None = None) -> tuple[
 
 
 def fit_nonnegative_mean(support: pd.DataFrame) -> dict:
-    """Fit a no-intercept nonnegative mean model, labelled only as DHL response."""
+    """Fit a no-intercept nonnegative mean model, labelled only as LSP response."""
     persons, companies, target = _support_columns(support)
     x = support[[persons, companies]].to_numpy(float)
     y = support[target].to_numpy(float)
@@ -134,7 +134,7 @@ def fit_nonnegative_mean(support: pd.DataFrame) -> dict:
     coefficients, residual_norm = nnls(x, y)
     return {
         "model": "nonnegative_mean",
-        "coefficient_semantics": "DHL-response rates",
+        "coefficient_semantics": "LSP-response rates",
         "rates": {"persons": float(coefficients[0]), "companies": float(coefficients[1])},
         "predicted": x @ coefficients,
         "residual_norm": float(residual_norm),
@@ -246,7 +246,7 @@ def compare_structure_models(support: pd.DataFrame, group_col: str = "plz", fold
         models["nonnegative_mean"]["coefficient_stability"] = values.std(ddof=0).to_dict()
     if employee_stability and "employee_branch_candidate" in models:
         values = pd.DataFrame(employee_stability).fillna(0.)
-        models["employee_branch_candidate"]["coefficient_semantics"] = "DHL-response rates"
+        models["employee_branch_candidate"]["coefficient_semantics"] = "LSP-response rates"
         models["employee_branch_candidate"]["coefficient_stability"] = values.std(ddof=0).to_dict()
     if "employees" in frame and employee_failures:
         models["employee_branch_candidate"] = {

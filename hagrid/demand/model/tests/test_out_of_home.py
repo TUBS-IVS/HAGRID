@@ -387,7 +387,7 @@ def test_resolve_out_of_home_merges_and_validates_network_growth():
     from hagrid_demand.baseline.out_of_home import resolve_out_of_home
 
     defaults = resolve_out_of_home({"enabled": True})["network_growth"]
-    assert defaults["enabled"] is True and defaults["reference_year"] == 2025 and defaults["elasticity"] == .6
+    assert defaults["enabled"] is True and defaults["reference_year"] == 2025 and defaults["elasticity"] == .7
     assert defaults["candidate_types"]["amenity"] == ["fuel"] and defaults["kind_preferences"]["counter"]["shop"][0] == "kiosk"
     merged = resolve_out_of_home({"network_growth": {"elasticity": 1, "kind_preferences": {"locker": {"shop": ["kiosk"]}}}})["network_growth"]
     assert merged["elasticity"] == 1. and merged["min_spacing_m"] == 150. and merged["resize_existing"] is True

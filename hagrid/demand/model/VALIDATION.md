@@ -20,16 +20,16 @@ Stand: 9. September 2026. Implementierter Umfang: Quellenmanifest, Standortverze
 | Private Gebäudeeinheiten | 227.641 |
 | Betriebsstätten | 52.931 |
 | Standorte insgesamt | 280.572 |
-| DHL-Linien | 12.342 |
+| LSP-Linien | 12.342 |
 | Hermes-PLZ/Jahr-Zeilen | 159 |
-| Eindeutiger geometrischer DHL-Kandidat innerhalb PLZ und 100 m | 271.693 |
-| Gleich weit entfernte DHL-Kandidaten | 2.253 |
-| Kein DHL-Kandidat innerhalb Schwelle/Abdeckung | 6.618 |
+| Eindeutiger geometrischer LSP-Kandidat innerhalb PLZ und 100 m | 271.693 |
+| Gleich weit entfernte LSP-Kandidaten | 2.253 |
+| Kein LSP-Kandidat innerhalb Schwelle/Abdeckung | 6.618 |
 | Keine PLZ-Abdeckung | 8 |
 
-Alle Gebäudeeinheiten erfüllen die konfigurierte Koordinatentoleranz von 5 m. Das bestätigt interne Konsistenz, nicht die reale Lage oder Aktualität der Koordinaten. 75 DHL-Zeilen haben einen wiederholten PLZ-/Straßennamenschlüssel; deren Bedeutung muss geklärt werden. 765 DHL-Zeilen enthalten gemeldete Nullwerte, die erhalten bleiben.
+Alle Gebäudeeinheiten erfüllen die konfigurierte Koordinatentoleranz von 5 m. Das bestätigt interne Konsistenz, nicht die reale Lage oder Aktualität der Koordinaten. 75 LSP-Zeilen haben einen wiederholten PLZ-/Straßennamenschlüssel; deren Bedeutung muss geklärt werden. 765 LSP-Zeilen enthalten gemeldete Nullwerte, die erhalten bleiben.
 
-Die Nähezuordnung ist keine validierte Beobachtungszuordnung. Es gibt keine automatisch erzeugten Allokationsgewichte und keine Disaggregation der DHL-Paketmengen. `calibration_ready` bleibt false. Fehlende Einheiten, Referenzzeiträume, Standortherkunft und PLZ-CRS-Metadaten werden im Bericht benannt.
+Die Nähezuordnung ist keine validierte Beobachtungszuordnung. Es gibt keine automatisch erzeugten Allokationsgewichte und keine Disaggregation der LSP-Paketmengen. `calibration_ready` bleibt false. Fehlende Einheiten, Referenzzeiträume, Standortherkunft und PLZ-CRS-Metadaten werden im Bericht benannt.
 
 Lokaler vollständiger Bericht: [report.md](C:/Users/bienzeisler/Documents/GitHub/HAGRID/hagrid-demand/runs/hannover-foundation-20260909-v2/report.md).
 

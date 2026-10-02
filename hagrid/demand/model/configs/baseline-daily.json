@@ -62,10 +62,10 @@
   "target_crs": "EPSG:25832",
   "dhl_exclude_above": 1000,
   "assumptions": [
-    "DHL tagesschni is treated as a documented reference anchor pending measurement-definition review.",
+    "LSP tagesschni is treated as a documented reference anchor pending measurement-definition review.",
     "Hermes rows are inventory only and do not anchor the reference level.",
     "Same eight simulation days as ParcelDemandScenarioGenerator (Fri/Sat of ISO week 19 and Mon-Sat of ISO week 20, 2025).",
-    "DHL tagesschni is the mean per delivery day of 2021 under the configured calendar (Sundays and Lower Saxony holidays closed).",
+    "LSP tagesschni is the mean per delivery day of 2021 under the configured calendar (Sundays and Lower Saxony holidays closed).",
     "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL)."
   ],
   "years": [

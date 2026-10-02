@@ -64,7 +64,7 @@ def test_packaged_defaults_follow_the_spec():
     defaults = load_out_of_home_inputs()["network_growth"]
     assert {key: defaults[key] for key in ("enabled", "reference_year", "elasticity", "resize_existing", "demand_radius_m", "gap_scale_m",
                                            "min_spacing_m", "off_preference_weight")} == {
-        "enabled": True, "reference_year": 2025, "elasticity": .6, "resize_existing": True, "demand_radius_m": 500,
+        "enabled": True, "reference_year": 2025, "elasticity": .7, "resize_existing": True, "demand_radius_m": 500,
         "gap_scale_m": 600, "min_spacing_m": 150, "off_preference_weight": .25}
     assert defaults["candidate_types"] == {"shop": ["supermarket", "convenience", "kiosk", "chemist", "newsagent", "tobacco",
                                                     "variety_store", "bakery"], "amenity": ["fuel"]}
@@ -196,7 +196,7 @@ def test_grow_network_reports_shortfall():
     assert status[BOXES] == {"target_added": 1, "added": 0, "candidates": 0, "shortfall": 1}
     assert len(grown) == 8
     demand = {2025: _carrier_demand(1.), 2026: _carrier_demand(4.)}
-    network, plan_status = _plan([2025, 2026], demand, candidates=_three_pois())
+    network, plan_status = _plan([2025, 2026], demand, cfg=_cfg(elasticity=.6), candidates=_three_pois())
     entry = plan_status["years"]["2026"]["locker:DHL"]
     assert entry["target"] == round(3 * 4 ** .6) == 7 and entry["added"] == 3 and entry["shortfall"] == 1
     assert len(network) == 8  # the run goes on with the stations that could be placed
@@ -271,3 +271,12 @@ def test_growth_ranking_is_shared_between_scenarios():
     small_sites = {(point.x, point.y) for point in small.iloc[5:].geometry}
     large_sites = {(point.x, point.y) for point in large.iloc[5:].geometry}
     assert len(small_sites) == 3 and len(large_sites) == 5 and small_sites <= large_sites
+
+
+def test_packaged_elasticity_is_the_calibrated_value():
+    from hagrid_demand.baseline.out_of_home import load_out_of_home_inputs
+
+    inputs = load_out_of_home_inputs()
+    assert inputs["network_growth"]["elasticity"] == 0.7
+    note = inputs["sources"]["network_growth"]
+    assert "6,500" in note and "14,500" in note and "0.69" in note       # the official counts and the 2022-2024 estimate

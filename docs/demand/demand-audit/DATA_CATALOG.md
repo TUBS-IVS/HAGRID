@@ -12,7 +12,7 @@ Die Pfade beziehen sich auf [input](C:/Users/bienzeisler/Documents/GitHub/HAGRID
 |---|---|---|---|
 | H01 persons_total.csv/.shp | Profiliert: 1.150.862 Personen, 227.641 Building-IDs; 536.496 fehlende Household-Werte; Punkte EPSG:25832 | Private Standortstruktur, Bestandsprüfung | Erzeugungsverfahren und Referenzjahr; synthetisch vs. beobachtet; Konsistenz Gebäude-ID/Lage; CSV und SHP nicht doppelt zählen |
 | H02 companies_Total_reduced.shp | Profiliert: 52.931 eindeutige IDs, 19 Branchenwerte, 650.267 Beschäftigte; Punkte EPSG:25832 | Gewerbliche Intensitätsmerkmale und Standortstruktur | Branchenklassifikation, Jahr, Betriebsstätte vs. Firmensitz, Geocodierung, Bestandsabdeckung, Netzlink-Version |
-| H03 dhl2streets_2021.shp | Schema/Bestand geprüft: 12.342 Linien; name, plz, tagesschni; EPSG:4326 | DHL-Kalibrierung und zurückgehaltene Validierung | Paketdefinition, Tagesmittelnenner, Erfassungsfenster, Null/fehlend, Doppelung bei Linienfragmenten, Paketstationen und Großkunden |
+| H03 lsp2streets_2021.shp | Schema/Bestand geprüft: 12.342 Linien; name, plz, tagesschni; EPSG:4326 | LSP-Kalibrierung und zurückgehaltene Validierung | Paketdefinition, Tagesmittelnenner, Erfassungsfenster, Null/fehlend, Doppelung bei Linienfragmenten, Paketstationen und Großkunden |
 | H04 Hermes_PLZ-Menge_2019-2021.csv | Vorhanden; PANDA besitzt ebenfalls einen Hermes-Adapter | Zweiter Anbieteranker | Einheit/Periode je Spalte, PLZ-Abdeckung, Quellidentität mit PANDA, Formvergleich vs. absolute Validierung |
 | H05 final_grid_250_region_results_update.csv | Profiliert: 15.917 Zellen, fertige Mengen/B2B-/Fit-Felder | Historische Referenz; Herkunft bisheriger Annahmen | Wie Mengen und B2B-Ratio entstanden; nicht als unabhängiges Trainingsziel verwenden |
 | H06 plz_region_hannover.csv | Vorhanden | Beobachtungsabdeckung und Berichtsaggregation | Geometrie, CRS, Gebietsstand, PLZ-Änderungen |
@@ -34,9 +34,9 @@ Quellstand: [PANDA DATA.md](https://github.com/HBimmermann/PANDA/blob/1e683d026c
 | P03 Zensus2022_Durchschn_Nettokaltmiete.zip | Dokumentiert | Optionaler Kontextindikator | Räumliche Abdeckung, fehlende Werte, keine individuelle Einkommensinterpretation |
 | P04 OSMData/HAN_*.geojson | Dokumentiert | Gebäude, Geschossflächen, Nutzung und POIs | Originalstand für exakte Reproduktion; Proxydefinitionen prüfen; Betriebe mit H02 abgleichen |
 | P05 PLZ_Gebiete_*.zip | Dokumentiert | PANDA-Beobachtungseinheiten | Mit H06 vergleichen; Grenzen und IDs harmonisieren |
-| P06 KEP/versandmengen-realdaten | Dokumentiert; vermutlich überlappende DHL/Hermes-Quellen | Beobachtungen | Identität/Inhalte vor Verwendung abgleichen; Überlappung nicht doppelt gewichten |
+| P06 KEP/versandmengen-realdaten | Dokumentiert; vermutlich überlappende LSP/Hermes-Quellen | Beobachtungen | Identität/Inhalte vor Verwendung abgleichen; Überlappung nicht doppelt gewichten |
 | P07 KEP/Standorte und Kandidaten für Paketstationen | Dokumentiert | Sonderstandorte und Lieferzielwahl | Existierender Standort vs. Kandidat; Anbieter, Gültigkeit, Kapazität und enthaltene Sendungen |
-| P08 fitted_params / carrier_split / Studien | Code und ausgewählte Tests geprüft | Referenzmodell, Priors und Evaluationsmethoden | Fit auf DHL-Niveau beachten; Herkunft der Segmentanteile; dokumentierte CV noch nicht reproduziert |
+| P08 fitted_params / carrier_split / Studien | Code und ausgewählte Tests geprüft | Referenzmodell, Priors und Evaluationsmethoden | Fit auf LSP-Niveau beachten; Herkunft der Segmentanteile; dokumentierte CV noch nicht reproduziert |
 | P09 räumliche Caches / vm-hochrechnung | Dokumentiert, abgeleitet | Reproduktion und Exportvergleich | Keine unabhängigen Messungen; mit Daten-/Codeversion verbinden |
 
 ## Externe Ergänzungen nach erwarteter Wirkung
@@ -45,7 +45,7 @@ Die verlinkten Quellen wurden im bisherigen Review recherchiert; ihre konkrete L
 
 | Priorität | Quelle / Information | Zu schließende Lücke |
 |---|---|---|
-| A | Neuere DHL-Mengen und vollständige Messdefinition der vorhandenen Quelle | Zeitliche Aktualität, absolute Kalibrierung und echte Tagesstreuung |
+| A | Neuere LSP-Mengen und vollständige Messdefinition der vorhandenen Quelle | Zeitliche Aktualität, absolute Kalibrierung und echte Tagesstreuung |
 | A | Hermes bzw. weitere unabhängige Anbieteraggregate | Übertragbarkeit und Fremdanbieterniveau |
 | A | Kleine nach Branche und Betriebsgröße geschichtete Empfangsstichprobe | Paketintensitäten und B2B-/Anbieterprofile direkt prüfen; keine Befragung wurde veranlasst |
 | B | [Zensus 2022](https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Bevoelkerung/Zensus2022/_inhalt.html) | Wohnbevölkerung/-struktur prüfen, Lücken in synthetischem Bestand erkennen |

@@ -56,7 +56,7 @@ def build_profiles(sites,weights,shares,cfg,output):
     assumed=prob.copy()
     source=__import__('pathlib').Path(cfg['foundation_run'])
     dhl=pd.read_parquet(source/'dhl_observations.parquet')
-    if set(dhl.year.unique())!={cfg['reference_year']}: raise ValueError('DHL reference year mismatch')
+    if set(dhl.year.unique())!={cfg['reference_year']}: raise ValueError('LSP reference year mismatch')
     from ..scope import filter_dhl
     dhl=filter_dhl(dhl,cfg.get('dhl_exclude_above'))
     dhl=dhl.groupby('plz').value.sum()

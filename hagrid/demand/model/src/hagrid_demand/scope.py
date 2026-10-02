@@ -4,9 +4,9 @@ import numpy as np
 
 def filter_dhl(frame, threshold=None, output=None):
     if not np.isfinite(frame.value).all() or (frame.value<0).any():
-        raise ValueError('Invalid DHL observations')
+        raise ValueError('Invalid LSP observations')
     if threshold is not None and (not np.isfinite(threshold) or threshold<=0):
-        raise ValueError('DHL exclusion threshold must be positive')
+        raise ValueError('LSP exclusion threshold must be positive')
     excluded=frame.value.gt(threshold) if threshold is not None else frame.value.lt(0)
     if output is not None:
         frame.loc[excluded].drop(columns='geometry',errors='ignore').to_csv(output/'excluded_dhl_observations.csv',index=False)

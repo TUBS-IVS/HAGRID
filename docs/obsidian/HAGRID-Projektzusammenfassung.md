@@ -10,7 +10,7 @@ status: aktiv
 
 **HAGRID** ist das zentrale Forschungs-Repository (TU Braunschweig, Hendrik Bimmermann) zur Simulation von Paketlogistik in agentenbasierten Verkehrsmodellen. Es umfasst zwei Stränge:
 
-1. **Paketnachfrage-Generator (Hannover, 2014–2050):** projiziert und verortet tägliche Paketmengen auf ~50-m-Straßensegmente, aufgeschlüsselt nach [[CEP-Dienstleister]]n (DHL, Hermes, UPS, DPD, GLS, FedEx, Amazon) und [[B2B-B2C-Segmentierung]].
+1. **Paketnachfrage-Modell (Hannover, 2025–2035):** simuliert jeden Tag die Paketmengen je Stopp entlang ~50-m-Straßenabschnitten, aufgeschlüsselt nach [[CEP-Dienstleister]]n (DHL, Hermes, UPS, DPD, GLS, FedEx, Amazon) und [[B2B-B2C-Segmentierung]], mit Abholpunkten und Landnutzungsdynamik.
 2. **Lausitz-Studie (aktueller Kern):** Vergleich integrierter Personen+Güter-Verkehrskonzepte gegen eine Baseline in **einem** [[MATSim]]-Setup, Untersuchungsraum [[Hoyerswerda]] ([[Lausitz]]).
 
 Die externe Paketnachfrage kommt aus dem Schwesterprojekt [[PANDA]] (Parcel Demand Analyzer), das das Hannover-gefittete [[Paketmengenmodell]] auf die Lausitz überträgt.

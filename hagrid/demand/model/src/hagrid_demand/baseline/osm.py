@@ -89,6 +89,33 @@ def extract_transit_stations(pbf: Path, plz_csv: Path, out: Path, buffer_m: floa
     return out
 
 
+BOUNDARY_LEVELS = (8, 10)
+
+
+def extract_boundaries(pbf: Path, plz_csv: Path, out: Path, buffer_m: float = 250.) -> Path:
+    """Write the municipalities (``admin_level=8``) and city districts (``admin_level=10``) around the region (EPSG:25832).
+
+    The land-use dynamics assign every demand site to a district of the population forecast through these polygons.
+    """
+    pbf, out = Path(pbf), Path(out)
+    region, _ = study_region(Path(plz_csv), buffer_m)
+    bbox = tuple(gpd.GeoSeries([region], crs=25832).to_crs(4326).total_bounds)
+    pyogrio.set_gdal_config_options({"OSM_MAX_TMPFILE_SIZE": "4000", "OSM_USE_CUSTOM_INDEXING": "YES"})
+    frame = pyogrio.read_dataframe(pbf, layer="multipolygons", bbox=bbox, where="boundary = 'administrative'")
+    if frame.empty:
+        boundaries = gpd.GeoDataFrame({"osm_id": [], "name": [], "admin_level": []}, geometry=gpd.GeoSeries([], crs=25832), crs=25832)
+    else:
+        tags = frame["other_tags"].map(parse_other_tags) if "other_tags" in frame else pd.Series([{}] * len(frame), index=frame.index)
+        level = frame["admin_level"] if "admin_level" in frame else tags.map(lambda item: item.get("admin_level"))
+        frame["admin_level"] = pd.to_numeric(level, errors="coerce")
+        frame["osm_id"] = frame["osm_id"].where(frame["osm_id"].notna(), frame.get("osm_way_id")) if "osm_id" in frame else frame.get("osm_way_id")
+        boundaries = frame.loc[frame.admin_level.isin(BOUNDARY_LEVELS)].to_crs(25832)
+        boundaries = boundaries.loc[boundaries.intersects(region), ["osm_id", "name", "admin_level", "geometry"]].reset_index(drop=True)
+        boundaries["admin_level"] = boundaries.admin_level.astype(int)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    boundaries.to_parquet(out, index=False)
+    return out
+
 def clip_osm_region(pbf: Path, plz_csv: Path, out_dir: Path, buffer_m: float = 250.) -> dict:
     """Write buildings, address/POI points and a manifest for the buffered postal-area union."""
     started = time.time()

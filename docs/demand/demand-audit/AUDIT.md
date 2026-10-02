@@ -18,11 +18,11 @@ Belege: [maschineller Prüfbericht][verification], [ausführbares Prüfskript][v
 | [03 Wochenprofil][n03] | Schweizer Wochenreihe 2019–2021, feste Glättungs-/Weihnachtsparameter, stochastische Pfade | Wochenfaktoren pro Modell und Jahr | Kalenderfehler und fehlende Mengennormierung |
 | [04 lokales B2B][n04] | Fertiges 250-m-Raster mit `b2b_ratio`, `total_coun`, `fit`; GA je Jahr | Angepasste B2B-Zellanteile | Vorgelagerte Schätzung wird übernommen; frischer Lauf gebrochen |
 | [05 lokale Marktanteile][n05] | Nationale Marktanteile, lokale B2B-Ziele, angenommene B2B-Bandbreiten je Anbieter | Zell-Anbieteranteile und jährliche Anbieter-B2B-Anteile | Anbieterstruktur wird aus B2B-Annahmen konstruiert; Fitness/Export weichen ab |
-| [06 Segmentgewichte][n06] | DHL-Straßen, Personen und Firmen, 50-m-Teilsegmente mit 250-m-breiten Puffern | 112.478 gewichtete Sample-Punkte | Geometrische Mehrfachzählung, leere Treffer, DHL-Boost |
-| [ScenarioGenerator][ngen] | DHL-Basismenge / lokaler DHL-Marktanteil; relative Zeitfaktoren; PLZ→Zellen→Samples | Tagesnachfrage nach Anbieter und B2B/B2C, GIS-/MATSim-nahe Exporte | Viele nachträgliche Korrekturen; Mengen-/Kalender-/Reproduzierbarkeitsprobleme |
+| [06 Segmentgewichte][n06] | LSP-Straßen, Personen und Firmen, 50-m-Teilsegmente mit 250-m-breiten Puffern | 112.478 gewichtete Sample-Punkte | Geometrische Mehrfachzählung, leere Treffer, LSP-Boost |
+| [ScenarioGenerator][ngen] | LSP-Basismenge / lokaler LSP-Marktanteil; relative Zeitfaktoren; PLZ→Zellen→Samples | Tagesnachfrage nach Anbieter und B2B/B2C, GIS-/MATSim-nahe Exporte | Viele nachträgliche Korrekturen; Mengen-/Kalender-/Reproduzierbarkeitsprobleme |
 | [BatchDeliveryStrategies][nbatch] | Bereits erzeugte Nachfrage, Preispräferenzen, Anbieter-Liefertage | Verschiebung/Bündelung der Zustellung | Logistikpolitik, fachlich nach der Nachfrageerzeugung anzusiedeln |
 
-Die nationale Jahresmenge wird im Generator **als relativer Wachstumsfaktor** genutzt. Das lokale absolute Niveau entsteht aus DHL-Beobachtungen und angenommenem lokalem DHL-Anteil. Das ist keine direkte nationale Mengenallokation auf Hannover.
+Die nationale Jahresmenge wird im Generator **als relativer Wachstumsfaktor** genutzt. Das lokale absolute Niveau entsteht aus LSP-Beobachtungen und angenommenem lokalem LSP-Anteil. Das ist keine direkte nationale Mengenallokation auf Hannover.
 
 ## 3. Was die vorhandenen Daten ermöglichen
 
@@ -30,7 +30,7 @@ Die nationale Jahresmenge wird im Generator **als relativer Wachstumsfaktor** ge
 |---|---|---|
 | Firmen-Shapefile | 52.931 Zeilen und eindeutige IDs, 19 Branchenwerte, 650.267 Beschäftigte; keine fehlenden/negativen/null Beschäftigtenwerte im eingelesenen Feld | Branchen- und größenspezifische B2B-Intensitäten sind möglich. Bedeutung und Jahr der Branchenklassifikation müssen dokumentiert werden; Vollständigkeit ist noch kein Realitätsnachweis |
 | Personen-CSV | 1.150.862 Zeilen und eindeutige Personen-IDs; 227.641 Gebäudekennungen; 280.733 bekannte Haushaltskennungen | Gebäudeebene ist verfügbar. 536.496 fehlende Haushaltskennungen, also 46,62 %, erfordern einen Ersatzansatz. Bekannte Haushalte sind nicht die Gesamtzahl der Haushalte |
-| DHL-Straßendaten 2021 | DBF: 12.342 Geometrie-Datensätze; Feld `tagesschni`, PLZ und Name | Räumliche Kalibrierungsbeobachtung eines Anbieters; genaue Bezugsperiode des Tagesmittels klären |
+| LSP-Straßendaten 2021 | DBF: 12.342 Geometrie-Datensätze; Feld `tagesschni`, PLZ und Name | Räumliche Kalibrierungsbeobachtung eines Anbieters; genaue Bezugsperiode des Tagesmittels klären |
 | Hermes-CSV | PLZ-Werte für 2019–2021 | Zweite Anbieterinformation; Einheit und Beobachtungsfenster müssen vor Nutzung geklärt werden |
 | Altes Raster | 15.917 eindeutige Zellen; fertige Mengen, B2B-Ratio, Landnutzung, Regressions-/Fit-Felder | Legacy-Referenz und ggf. schwacher Prior; nicht als unabhängige B2B-Wahrheit verwenden |
 | OSM-Landnutzung / PLZ | Flächeninformationen und Zuordnungsgebiete | Kontextmerkmale, Plausibilitätsprüfung und Aggregation |
@@ -59,11 +59,11 @@ Später erwartet dieselbe Zelle `Jahr`, `Ist_B2B`, `Typ` und das Label `Prognose
 
 **Beheben:** Treffer über nichtleere rechte IDs zählen. Für den Neubau vorzugsweise jede Nachfrageeinheit eindeutig einem Zustellort zuordnen.
 
-### F03 · P1 · R/M — Puffer überzählen und DHL-Boost hängt an Segmentzahl
+### F03 · P1 · R/M — Puffer überzählen und LSP-Boost hängt an Segmentzahl
 
 [06, Zellen 5–8][n06]: 50-m-Teilsegmente erhalten 250-m-breite Puffer. An benachbarten Straßen und Kurven können sich diese überschneiden. Im Gegenbeispiel wird dieselbe Person in zwei Puffern zweimal gezählt. Dies ist keine automatisch massenerhaltende räumliche Gewichtung.
 
-Der Straßenwert `dhl_weight` wird auf jedes Teilsegment kopiert. Algebraisch vereinfacht sich der Boost bei positiven Ausgangsgewichten zu `base_weight + dhl_weight/2` je Teilsegment. Damit entsteht für eine Straße mit n Segmenten ein Gesamtzuschlag von `n * dhl_weight/2`. `min_tag=300` wird zwar übergeben, aber nie geprüft. Im Test steigen vier Gewichte von insgesamt 4 auf 24, obwohl alle DHL-Werte nur 10 betragen.
+Der Straßenwert `lsp_weight` wird auf jedes Teilsegment kopiert. Algebraisch vereinfacht sich der Boost bei positiven Ausgangsgewichten zu `base_weight + lsp_weight/2` je Teilsegment. Damit entsteht für eine Straße mit n Segmenten ein Gesamtzuschlag von `n * lsp_weight/2`. `min_tag=300` wird zwar übergeben, aber nie geprüft. Im Test steigen vier Gewichte von insgesamt 4 auf 24, obwohl alle LSP-Werte nur 10 betragen.
 
 **Beheben:** Eindeutige oder anteilige Zuordnung mit je Person/Firma aufsummiertem Gewicht 1; Straßenbeobachtungen einmalig auf ihre Teilsegmente verteilen und als Beobachtungen kalibrieren.
 
@@ -167,13 +167,13 @@ Tausende Zellfaktoren werden an einen nationalen Randwert und qualitative `fit`-
 
 [00, Zelle 6][n00]: Wird zu bereits auf 100 % normierten Anbietern ein als Gesamtmarktanteil verstandener Amazon-Wert von 20 hinzugefügt und alles erneut normiert, werden daraus 16,67 %. Entweder muss Amazon als Gesamtmarktanteil fixiert und der Rest auf 80 % verteilt werden, oder die ursprüngliche Definition muss anders lauten. Die Quelle/Grundgesamtheit entscheidet; die aktuelle Beschreibung passt nicht zur Arithmetik.
 
-[Generator, Zelle 6][ngen] berechnet `total_tag = dhl_2021 * Wachstum / DHL_share_Zieljahr`. Sinkt der angenommene DHL-Anteil von 50 % auf 40 %, steigt das geschätzte Gesamtvolumen allein dadurch um 25 %, zusätzlich zum allgemeinen Wachstumsfaktor. Das ist eine implizite Annahme, dass DHL selbst proportional zum Gesamtmarkt wächst und gleichzeitig Marktanteil verliert.
+[Generator, Zelle 6][ngen] berechnet `total_tag = lsp_2021 * Wachstum / LSP_share_Zieljahr`. Sinkt der angenommene LSP-Anteil von 50 % auf 40 %, steigt das geschätzte Gesamtvolumen allein dadurch um 25 %, zusätzlich zum allgemeinen Wachstumsfaktor. Das ist eine implizite Annahme, dass LSP selbst proportional zum Gesamtmarkt wächst und gleichzeitig Marktanteil verliert.
 
 **Beheben:** Regionales Gesamtvolumen zuerst mit Basisjahr-Anteilen kalibrieren und unabhängig fortschreiben; aktuelle Anbieteranteile erst danach auf die Gesamtmenge anwenden. KEP/Paket, Inland/Ausland, Eigenzustellung und Sendungsrichtung einheitlich definieren.
 
 ### F18 · P2 · S/M — Kalibrierungsdaten werden zugleich als Gütenachweis verwendet
 
-Der Generator bewertet die Straßenverteilung gegen DHL 2021. Dieselben Informationen bestimmen bereits das lokale Niveau, das alte Raster und den Segment-Boost. Ein guter RMSE belegt dann vor allem die Rekonstruktion des Kalibrierungsinputs. Der voreingestellte Hauptlauf simuliert Mai 2025 und vergleicht dennoch mit 2021.
+Der Generator bewertet die Straßenverteilung gegen LSP 2021. Dieselben Informationen bestimmen bereits das lokale Niveau, das alte Raster und den Segment-Boost. Ein guter RMSE belegt dann vor allem die Rekonstruktion des Kalibrierungsinputs. Der voreingestellte Hauptlauf simuliert Mai 2025 und vergleicht dennoch mit 2021.
 
 **Beheben:** Räumlich getrennte Testbereiche ohne Nutzung ihrer Zielmengen beim Fit; zeitliche Backtests soweit Beobachtungen vorliegen; gesonderte Baseline-Rekonstruktion für 2021. Keine Aussage zur 2030-Prognosegüte allein aus diesem RMSE ableiten.
 

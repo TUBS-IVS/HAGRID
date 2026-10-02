@@ -18,7 +18,7 @@ Am lokalen Input wurden zusätzlich zum Audit die Schemata geprüft:
 |---|---|---|
 | persons_total.csv / .shp | 1.150.862 Personen; Building, Household, Punktgeometrie; Shapefile EPSG:25832 | Nach Building aggregieren. 227.641 unterschiedliche Gebäude-IDs sind noch kein Nachweis für ebenso viele reale, korrekt geocodierte Gebäude. Herkunft, Referenzjahr und Koordinatenkonsistenz prüfen. |
 | companies_Total_reduced.shp | 52.931 Punkte; id, employees, branch, link, type; EPSG:25832 | Betriebsstandorte mit Branchenmerkmalen erhalten. Filiale versus Unternehmenssitz, Mehrfachstandorte und Netzlink-Herkunft prüfen. |
-| dhl2streets_2021.shp | 12.342 Linien; name, plz, tagesschni; EPSG:4326 | Beobachtungen getrennt speichern; für räumliche Operationen projizieren. Einheiten, Zeitraum und mögliche Wiederholung derselben Straßenmenge auf mehreren Linien klären. |
+| lsp2streets_2021.shp | 12.342 Linien; name, plz, tagesschni; EPSG:4326 | Beobachtungen getrennt speichern; für räumliche Operationen projizieren. Einheiten, Zeitraum und mögliche Wiederholung derselben Straßenmenge auf mehreren Linien klären. |
 | Hermes_PLZ-Menge_2019-2021.csv | Datei vorhanden | Weiterer Beobachtungstyp; Inhalt, Einheit, Jahre und Gebietsstand vor Einbindung prüfen. |
 
 46,62 % fehlende Household-Werte sprechen gegen eine verpflichtende vollständige Haushaltsrekonstruktion in Version 1. Die B2C-Basis kann je Gebäude aggregierte Bevölkerung verwenden. Gebäudeflächen oder Wohnungszahlen sind ergänzende Merkmale; sie dürfen bereits vorhandene Einwohner nicht nochmals als zusätzliche Bevölkerung erzeugen.
@@ -44,7 +44,7 @@ Jedes Objekt führt Quelle, Referenzjahr, Original-ID, Zuordnungsverfahren und Q
 2. **Wohnstandorte bilden:** Personen über Building zusammenfassen. Prüfen, ob eine Gebäude-ID räumlich konsistente Punkte besitzt. Bei Konflikten nicht blind den Mittelwert bilden; ID-Herkunft und Gebäudegeometrie klären.
 3. **Betriebe zuordnen:** Zuerst verlässliche IDs/Adressen, dann passende Gebäudegeometrien, zuletzt räumliche Kandidaten verwenden. Entfernung, Nutzungsart und Adressübereinstimmung dokumentieren. Bestehende link-Werte gegen das verwendete Netz prüfen.
 4. **Gebäudebestand ergänzen:** Aktuelle Gebäude bzw. Adressen mit Personen-/Firmenbestand abgleichen. Fehlende Betriebe oder Bewohner nicht allein aus Gebäudegröße als gesicherte Bestände erzeugen. Fehlbestände durch unabhängige Aggregate prüfen.
-5. **Beobachtungen anbinden:** DHL-Linien zu fachlichen Beobachtungen zusammenfassen, soweit die Quelldefinition dies verlangt. Gleiche Namen in verschiedenen PLZ sind nicht automatisch dieselbe Straße. Überschneidende Puffer dürfen Mengen nicht mehrfach zählen.
+5. **Beobachtungen anbinden:** LSP-Linien zu fachlichen Beobachtungen zusammenfassen, soweit die Quelldefinition dies verlangt. Gleiche Namen in verschiedenen PLZ sind nicht automatisch dieselbe Straße. Überschneidende Puffer dürfen Mengen nicht mehrfach zählen.
 6. **Netzzugang bestimmen:** Eingang/Adresse und erreichbare Straße bevorzugen. Die geometrisch nächste Straße kann eine Autobahn, falsche Straßenseite oder hinter einer Barriere liegen. Unsichere Anschlüsse markieren.
 
 Wenn ein Input ausschließlich eine Flächensumme liefert, wird diese anhand geeigneter Wohn-/Gewerbemerkmale auf Standorte verteilt. Die Summe bleibt erhalten; die Verteilung ist eine Schätzung. Das entspricht dem Prinzip der dasymetrischen Disaggregation. Die ONS beschreibt die Nutzung von Gebäude- und Adressdaten für solche kleinräumigen Schätzungen; dies belegt die Methode, nicht die Güte einer Übertragung auf Pakete: [ONS Methodenstudie](https://www.ons.gov.uk/methodology/methodologicalpublications/generalmethodology/onsworkingpaperseries/geospatialmethodsforsmallareapopulationestimatesproofofconcept).
@@ -61,7 +61,7 @@ Für disjunkte Beobachtungen müssen Zuordnungsgewichte Mengen erhalten. Sich ü
 
 B2C startet mit einem schlanken Bevölkerungs-/Wohnstrukturmodell. B2B startet mit wenigen Branchen und Beschäftigteneffekten. Ein großer Betrieb muss nicht proportional mehr Empfangspakete haben: lineare und gedämpfte Größeneffekte werden verglichen. Individuelle freie Parameter für jeden Standort sind mit den vorliegenden Aggregaten nicht identifizierbar.
 
-Anbieterprofile können von Branche und Standortmerkmalen abhängen. Räumlich ähnliche Standorte teilen sich Informationen über wenige gemeinsame Parameter. Ein eigener Anbieteranteil pro Gebäude wäre ohne entsprechende Daten Scheingenauigkeit. DHL allein bestimmt weder den B2B-Anteil noch sämtliche Fremdanbieterprofile eindeutig.
+Anbieterprofile können von Branche und Standortmerkmalen abhängen. Räumlich ähnliche Standorte teilen sich Informationen über wenige gemeinsame Parameter. Ein eigener Anbieteranteil pro Gebäude wäre ohne entsprechende Daten Scheingenauigkeit. LSP allein bestimmt weder den B2B-Anteil noch sämtliche Fremdanbieterprofile eindeutig.
 
 ## 5. Nachfrageort, Lieferziel und Fahrzeugstopp auseinanderhalten
 
@@ -69,7 +69,7 @@ Ein privat bestelltes Paket bleibt B2C, wenn es an eine Paketstation geliefert w
 
 Zuerst werden erwartete Empfangsmengen berechnet, dann Tagesmengen realisiert und Lieferziele zugeordnet. Erst danach werden Pakete desselben Anbieters an einem Lieferpunkt und Zeitfenster zu Bedienvorgängen gebündelt. Paketanzahl, Empfängerzahl und Stoppzahl werden separat ausgegeben.
 
-Aus bestehenden DHL-Lieferdaten ist zu klären, ob Paketstationsmengen bereits enthalten sind. Sie dürfen bei einer nachträglichen Zielwahl nicht doppelt umverteilt werden. Nicht bekannte Ursprungsorte solcher Mengen bleiben latent und werden als Szenarien behandelt.
+Aus bestehenden LSP-Lieferdaten ist zu klären, ob Paketstationsmengen bereits enthalten sind. Sie dürfen bei einer nachträglichen Zielwahl nicht doppelt umverteilt werden. Nicht bekannte Ursprungsorte solcher Mengen bleiben latent und werden als Szenarien behandelt.
 
 Ein Fachbeispiel für die explizite Modellierung von Lieferoptionen ist [Sakai et al.](https://arxiv.org/abs/2010.14375). Die Autoren weisen selbst auf erforderliche Kalibrierung hin; das Konzept liefert keine übertragbaren Hannover-Parameter.
 
@@ -92,6 +92,6 @@ Tagesmengen benötigen gemeinsame Kalender-/Brancheneffekte und individuelle Sch
 
 `ingest -> audit_sources -> build_sites -> link_observations -> fit_joint_demand -> forecast_sites -> sample_days -> assign_delivery_points -> export`
 
-Version 1 aggregiert B2C auf Gebäude-IDs, behält B2B-Betriebsstätten einzeln, kalibriert gegen die ursprünglichen DHL-Beobachtungen und führt Standort-/Zuordnungsqualität mit. Sie simuliert keine vollständigen individuellen Kaufbiografien. Lieferoptionen und zusätzliche Branchenprofile werden schrittweise anhand ihres nachgewiesenen Nutzens ergänzt.
+Version 1 aggregiert B2C auf Gebäude-IDs, behält B2B-Betriebsstätten einzeln, kalibriert gegen die ursprünglichen LSP-Beobachtungen und führt Standort-/Zuordnungsqualität mit. Sie simuliert keine vollständigen individuellen Kaufbiografien. Lieferoptionen und zusätzliche Branchenprofile werden schrittweise anhand ihres nachgewiesenen Nutzens ergänzt.
 
 Die wichtigste erste technische Lieferung ist ein geprüftes Standortverzeichnis mit Beobachtungszuordnung und Mengenbilanzen. Erst danach lohnt eine aufwendigere Modelloptimierung.

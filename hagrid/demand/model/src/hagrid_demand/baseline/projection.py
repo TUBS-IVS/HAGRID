@@ -78,7 +78,7 @@ def _national_total(reference: dict, volume: pd.DataFrame, year: int) -> tuple[f
 
 
 def _profile(series: dict, year: int, dhl_fixed: dict | None = None) -> tuple[pd.DataFrame, float]:
-    """Carrier profiles of *year*; ``dhl_fixed`` pins DHL's B2B share to q_2021 * b(y) / b_2021."""
+    """Carrier profiles of *year*; ``dhl_fixed`` pins the LSP's B2B share to q_2021 * b(y) / b_2021."""
     market = _year_row(_table(series.get("market"), "series.market"), year,
                        {"year", "carrier", "market_share"}, "market")
     providers = _year_row(_table(series.get("providers"), "series.providers"), year,
@@ -86,7 +86,9 @@ def _profile(series: dict, year: int, dhl_fixed: dict | None = None) -> tuple[pd
     b2b = _year_row(_table(series.get("b2b"), "series.b2b"), year, {"year", "share"}, "b2b")
     if len(b2b) != 1 or market.carrier.astype(str).duplicated().any() or providers.carrier.astype(str).duplicated().any():
         raise ValueError("carrier and B2B series require unique labels per year")
-    market = market.assign(carrier=market.carrier.astype(str)).set_index("carrier", drop=False)
+    # a canonical carrier order: the reconciliation sums and optimises over the carriers, so in the order of the input
+    # rows its last bits would depend on that order (and on the platform)
+    market = market.assign(carrier=market.carrier.astype(str)).set_index("carrier", drop=False).sort_index()
     providers = providers.assign(carrier=providers.carrier.astype(str)).set_index("carrier", drop=False)
     if set(market.index) != set(providers.index):
         raise ValueError("market and provider carrier labels differ")
@@ -122,8 +124,30 @@ def _years(values: list[int]) -> list[int]:
     return sorted(set(values))
 
 
-def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -> AnnualProjection:
-    """Project a regional annual total once and preserve reference shares by segment."""
+def _site_factor_lookup(site_factors: pd.DataFrame | None) -> pd.Series | None:
+    """Validated factor series indexed by (year, site_id, segment); None without factors."""
+    if site_factors is None:
+        return None
+    if not isinstance(site_factors, pd.DataFrame) or {"year", "site_id", "segment", "factor"} - set(site_factors.columns):
+        raise ValueError("site_factors needs the columns year, site_id, segment and factor")
+    values = pd.to_numeric(site_factors.factor, errors="coerce").to_numpy(float)
+    if not np.isfinite(values).all() or (values < 0).any():
+        raise ValueError("site_factors must be finite and nonnegative")
+    index = pd.MultiIndex.from_arrays([site_factors.year.astype(int).to_numpy(), site_factors.site_id.astype(str).to_numpy(),
+                                       site_factors.segment.astype(str).to_numpy()])
+    lookup = pd.Series(values, index=index)
+    if lookup.index.duplicated().any():
+        raise ValueError("site_factors must be unique per year, site_id and segment")
+    return lookup
+
+
+def project_annual(reference: dict, series: dict, years: list[int], cfg: dict,
+                   site_factors: pd.DataFrame | None = None) -> AnnualProjection:
+    """Project a regional annual total once and preserve reference shares by segment.
+
+    ``site_factors`` (``year, site_id, segment, factor``) re-weights the historical shares per year (land-use
+    dynamics): weight = historical share x factor, normalised per segment; a missing factor counts as 1.
+    """
     if not isinstance(reference, dict) or not isinstance(series, dict) or not isinstance(cfg, dict):
         raise ValueError("reference, series, and cfg must be mappings")
     if cfg.get("memory", {}).get("fixed") != 1:
@@ -150,6 +174,7 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
     regional_reference = float(reference.get("regional_annual", np.nan))
     if not np.isfinite(regional_reference) or regional_reference <= 0:
         raise ValueError("reference.regional_annual must be finite and positive")
+    factor_of = _site_factor_lookup(site_factors)
     for year in requested:
         total, growth = (_national_total(reference, volume, year) if mode == "national_series"
                          else (float(external.at[year, "value"]), float(external.at[year, "value"]) / regional_reference))
@@ -157,17 +182,26 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
         targets = {"private": total * (1 - b2b), "business": total * b2b}
         share = pd.Series(0., index=sites.index, dtype=float)
         support_status = pd.Series("zero_target_no_support", index=sites.index, dtype=object)
+        weights, year_support, open_rows = sites["historical_share"], support, None
+        if factor_of is not None:
+            keys = pd.MultiIndex.from_arrays([np.full(len(sites), year), sites.site_id.astype(str).to_numpy(), sites.segment.to_numpy()])
+            factor = np.nan_to_num(factor_of.reindex(keys).to_numpy(float), nan=1.)
+            weights = sites["historical_share"] * factor
+            year_support = weights.groupby(sites.segment).sum()
+            open_rows = factor != 0.  # closed sites (not yet opened, emptied stock) are left out of the year
         for segment, target in targets.items():
             segment_mask = sites.segment.eq(segment)
-            segment_support = float(support.get(segment, 0.))
+            segment_support = float(year_support.get(segment, 0.))
             if target > ATOL and segment_support <= 0:
                 raise ValueError(f"positive {segment} annual target requires positive site support")
             if segment_support > 0:
-                share.loc[segment_mask] = sites.loc[segment_mask, "historical_share"] / segment_support
+                share.loc[segment_mask] = weights.loc[segment_mask] / segment_support
                 support_status.loc[segment_mask] = "supported"
         annual = pd.DataFrame({"year": year, "site_id": sites.site_id, "plz": sites.plz.astype(str), "segment": sites.segment,
                                "allocation_status": sites.allocation_status, "support_status": support_status,
                                "annual_expected": share * sites.segment.map(targets), "share": share})
+        if open_rows is not None:
+            annual = annual.loc[open_rows].reset_index(drop=True)
         grouped = annual.groupby(["plz", "segment"], as_index=False)["annual_expected"].sum()
         grid = pd.MultiIndex.from_product([sorted(annual.plz.unique()), ["private", "business"]],
                                           names=["plz", "segment"]).to_frame(index=False)
@@ -190,7 +224,7 @@ def project_annual(reference: dict, series: dict, years: list[int], cfg: dict) -
             actual = annual.loc[annual.segment.eq(segment), "annual_expected"].sum()
             assert_balance(actual, target)
             segment_errors[segment] = float(actual - target)
-            segment_support = float(support.get(segment, 0.))
+            segment_support = float(year_support.get(segment, 0.))
             share_sum = float(annual.loc[annual.segment.eq(segment), "share"].sum())
             assert_balance(share_sum, 1. if segment_support > 0 else 0.)
             share_sums[segment] = share_sum

@@ -115,6 +115,8 @@ svg .col-hit{fill:transparent;cursor:pointer}
 #map-svg path.plz{stroke:var(--surface);stroke-width:1;cursor:pointer}
 #map-svg path.plz:hover,#map-svg path.plz.on{stroke:var(--ink);stroke-width:1.8}
 .pt{stroke:var(--ink);stroke-width:1.2;cursor:pointer}
+.hex{stroke:var(--surface);stroke-width:.6;cursor:pointer;transition:fill .35s ease}.hex:hover,.hex:focus{stroke:var(--ink);stroke-width:1.4;outline:none}
+@media (prefers-reduced-motion:reduce){.hex{transition:none}}
 .pt.new{fill:var(--ink);stroke:var(--surface);stroke-width:1.5}
 .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-out infinite;pointer-events:none}
 @keyframes pulse{0%{transform:scale(1);opacity:.95}100%{transform:scale(3.2);opacity:0}}
@@ -184,12 +186,12 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
         <div class="fig-head"><div><h3>Germany, billion parcels per year</h3><p class="sub">Observed volumes and the three scenario paths</p></div></div>
         <div class="legend" id="lg-national"></div>
         <div class="chart" id="ch-national"></div>
-        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02). Lines: scenario paths from the first simulated year, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
+        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02); rings: the BIEK estimates 2024–2028, which the saturation and boom fits include. Dashed: each scenario's fitted curve over the observed years up to its first simulated year, where the path starts; solid: the scenario paths, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
       </figure>
       <figure class="panel s5">
         <div class="fig-head"><div><h3>Region Hannover, simulated parcels</h3><p class="sub">Sum of all simulated days per year</p></div></div>
         <div class="chart" id="ch-regional"></div>
-        <p class="cap">The regional volume follows the national path of each scenario (2021 reference scaled by the national ratio), then carriers, days and addresses are drawn.</p>
+        <p class="cap">The ring is the calibrated 2021 reference (LSP street volumes extrapolated to all carriers). From it the regional volume follows the national path of each scenario (dashed: scaled by the national ratio up to the first simulated year), then carriers, days and addresses are drawn.</p>
       </figure>
     </div>
     <details class="tv"><summary>Table: national and regional volume per scenario</summary><div id="tv-growth"></div></details>
@@ -271,6 +273,53 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
     <details class="tv"><summary>Table: all postcode areas</summary><div id="tv-hot"></div></details>
   </section>
 
+  <section class="section" id="structure" aria-labelledby="h-structure">
+    <h2 id="h-structure">Structural change</h2>
+    <p class="finding" id="f-structure"></p>
+    <div class="map-wrap">
+      <figure class="panel">
+        <div class="fig-head"><div><h3>Forecast districts</h3><p class="sub" id="s-structure"></p></div>
+          <div class="map-tools"><div class="seg small" id="ctl-structure" role="group" aria-label="District indicator"></div></div></div>
+        <div class="chart" id="ch-structure"></div>
+        <div class="scale" id="sc-structure"></div>
+        <p class="cap">Change against the first year. Persons follow the official population forecast 2025–2035 per forecast district (Region Hannover), propensity the age mix with the cohort effect, employees the branch growth. New homes (circles) and new firms (squares) appear in the year they open.</p>
+      </figure>
+      <aside class="card" id="district-card" aria-live="polite"></aside>
+    </div>
+    <div class="grid">
+      <figure class="panel s6"><div class="fig-head"><div><h3>Model against forecast</h3><p class="sub" id="s-structure-bars"></p></div></div>
+        <div class="legend" id="lg-structure-bars"></div><div class="chart" id="ch-structure-bars"></div>
+        <p class="cap">Model persons of each district (existing homes plus new residents) against the forecast, both relative to the first year; top 15 by change.</p></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Online propensity by age</h3><p class="sub" id="s-structure-age"></p></div></div>
+        <div class="legend" id="lg-structure-age"></div><div class="chart" id="ch-structure-age"></div>
+        <p class="cap">Share of persons who order online by age band (Destatis 2025, 75+ assumed); with the cohort effect people keep the propensity of their younger selves. Bars: persons per band.</p></figure>
+    </div>
+    <details class="tv"><summary>Table: development areas</summary><div id="tv-structure"></div></details>
+  </section>
+
+  <section class="section" id="change" aria-labelledby="h-change">
+    <h2 id="h-change">Change over time</h2>
+    <p class="finding" id="f-change"></p>
+    <figure class="panel">
+      <div class="fig-head"><div><h3>Hexagon map of the expected demand</h3><p class="sub" id="s-change"></p></div>
+        <div class="map-tools"><div class="seg small" id="ctl-change" role="group" aria-label="Hexagon indicator"></div></div></div>
+      <div class="chart" id="ch-change"></div>
+      <div class="scale" id="sc-change"></div>
+      <p class="cap">Hexagons of about 1.4 km across (1.7 km²); expected parcels per delivery day from the annual projection of every address. <b>vs region</b>: growth of the hexagon against the growth of the whole region (blue grows faster, red slower). <b>Land-use effect</b>: demand with land use minus the demand the reference shares would give in the same year (persons moving, new homes and firms, ageing). Press play to watch the decade.</p>
+    </figure>
+    <div class="grid">
+      <figure class="panel s6"><div class="fig-head"><div><h3>Growth from year to year</h3><p class="sub">regional parcels, change against the previous year</p></div></div>
+        <div class="legend" id="lg-change-yoy"></div><div class="chart" id="ch-change-yoy"></div></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Share of the city of Hannover</h3><p class="sub">parcels in the 29 city districts, per scenario</p></div></div>
+        <div class="legend" id="lg-change-city"></div><div class="chart" id="ch-change-city"></div></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>What drives the change</h3><p class="sub" id="s-change-drivers"></p></div></div>
+        <div class="legend" id="lg-change-drivers"></div><div class="chart" id="ch-change-drivers"></div>
+        <p class="cap">Change in parcels per delivery day since the first year, split into more parcels overall (volume) and demand moved by land use.</p></figure>
+      <figure class="panel s6"><div class="fig-head"><div><h3>Milestones</h3><p class="sub" id="s-change-miles"></p></div></div>
+        <div id="tv-change-miles"></div></figure>
+    </div>
+  </section>
+
   <section class="section" id="network" aria-labelledby="h-net">
     <h2 id="h-net">The pickup network</h2>
     <p class="finding" id="f-net"></p>
@@ -299,13 +348,19 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
     <figure class="panel"><ol class="list" id="method-list"></ol></figure>
   </section>
 
-  <footer><span id="foot"></span><span>Maps © OpenStreetMap contributors (ODbL) · calibrated to DHL street volumes 2021</span></footer>
+  <footer><span id="foot"></span><span>Maps © OpenStreetMap contributors (ODbL) · calibrated to LSP street volumes 2021</span></footer>
 </div>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 
 <script>
 'use strict';
 const D = JSON.parse(document.getElementById('hagrid-decade').textContent);
+// district shapes and new sites that several scenarios share are stored once (structure_pool)
+Object.values(D.structure || {}).forEach(S => {
+  if (!S || !D.structure_pool) return;
+  if (typeof S.districts.geo === 'string') S.districts.geo = D.structure_pool.geo[S.districts.geo];
+  if (typeof S.sites === 'string') S.sites = D.structure_pool.sites[S.sites];
+});
 (function () {
 /* ---------- payload ---------- */
 const M = D.meta, YEARS = D.years, Y0 = YEARS[0], YN = YEARS[YEARS.length - 1];
@@ -356,7 +411,7 @@ function niceMax(v) { if (!(v > 0)) return 1; const e = Math.pow(10, Math.floor(
 function ticks(max, n) { const st = niceMax(max / n), o = []; for (let v = 0; v <= max + st * 1e-6; v += st) o.push(v); return o; }
 function runs(flags) { const o = []; let a = -1; flags.forEach((f, i) => { if (f && a < 0) a = i; if (!f && a >= 0) { o.push([a, i - 1]); a = -1; } }); if (a >= 0) o.push([a, flags.length - 1]); return o; }
 function barPath(x, y, w, hgt, r) { if (!(hgt > 0)) return ''; r = Math.min(r, w / 2, hgt); return 'M' + x + ',' + (y + hgt) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + hgt) + 'Z'; }
-function legend(host, items) { host.replaceChildren(...items.map(it => h('span', {class: 'li'}, h('i', {class: it.kind === 'line' ? 'lk' + (it.dash ? ' dash' : '') : it.kind === 'dot' ? 'dot-k' : 'sw', style: (it.kind === 'line' ? 'border-color:' : 'background:') + it.color}), it.label))); }
+function legend(host, items) { host.replaceChildren(...items.map(it => h('span', {class: 'li'}, h('i', {class: it.kind === 'line' ? 'lk' + (it.dash ? ' dash' : '') : it.kind === 'dot' || it.kind === 'ring' ? 'dot-k' : 'sw', style: it.kind === 'ring' ? 'background:transparent;box-sizing:border-box;border:2px solid ' + it.color : (it.kind === 'line' ? 'border-color:' : 'background:') + it.color}), it.label))); }
 function tableView(host, head, rows, opt = {}) {
   const body = rows.map(r => h('tr', {class: opt.on && opt.on(r) ? 'on' : null}, r.cells.map((c, i) => h('td', {class: i < (opt.left || 1) ? 'l' : (opt.wrap === i ? 'wrap l' : null)}, c))));
   host.replaceChildren(h('div', {class: 'tbl'}, h('table', null, h('thead', null, h('tr', null, head.map((t, i) => h('th', {class: i < (opt.left || 1) || opt.wrap === i ? 'l' : null}, t)))), h('tbody', null, body))));
@@ -409,7 +464,12 @@ function crosshair(F, yrs, build) {
   hit.addEventListener('click', e => { const yr = near(e); if (YEARS.includes(yr)) setYear(yr); });
 }
 /* Direct labels at the right edge: the most important first; a label too close to a placed one is left to the legend. */
-function endLabels(F, items) { const placed = []; items.filter(Boolean).sort((a, b) => b.priority - a.priority).forEach(it => { if (placed.some(y => Math.abs(y - it.y) < 13)) return; placed.push(it.y); s('text', {x: F.W - F.m.r + 6, y: it.y + 4, class: it.strong ? 'lbl-b' : 'lbl', text: it.text}, F.v); }); }
+// End labels: a line ending at the same value as an already labelled one stays unlabelled (identical paths); a label
+// that would overlap another moves 13 px away from it, on the side of its own line, instead of being dropped.
+function endLabels(F, items) { const placed = []; items.filter(Boolean).sort((a, b) => b.priority - a.priority).forEach(it => {
+  if (placed.some(p => Math.abs(p.y0 - it.y) < 1)) return;
+  let y = it.y; for (let k = 0; k < 8; k++) { const near = placed.find(p => Math.abs(p.y - y) < 13); if (!near) break; y = near.y + (it.y >= near.y0 ? 13 : -13); }
+  placed.push({y, y0: it.y}); s('text', {x: F.W - F.m.r + 6, y: y + 4, class: it.strong ? 'lbl-b' : 'lbl', text: it.text}, F.v); }); }
 const pctTick = t => NF[0].format(t * 100) + '%';
 
 /* Stacked area over the years; share=true normalises every year to 100 %. Bands are a light wash with a 2px edge. */
@@ -560,14 +620,22 @@ function renderHero() {
 function renderGrowth() {
   const nat = D.national, sel = state.scenario, order = NAMES.filter(n => n !== sel).concat([sel]);
   const color = n => n === sel ? 'var(--all)' : 'var(--other-line)';
-  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}, {kind: 'line', color: 'var(--all)', label: label(sel)}].concat(NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
-  // national fan: observed anchors and every scenario from the first simulated year on
+  const est = nat.estimates || {years: [], values: []};
+  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}].concat(est.years.length ? [{kind: 'ring', color: 'var(--obs)', label: 'BIEK estimate'}] : [],
+    [{kind: 'line', color: 'var(--all)', label: label(sel)}, {kind: 'line', dash: true, color: 'var(--all)', label: 'fitted through the data'}],
+    NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
+  // national fan: observed anchors, BIEK estimates, every scenario's fit over the observed years (dashed) and its
+  // path from the first simulated year on (solid)
   const box = $('ch-national'), narrow = box.clientWidth < 540, x0 = Math.min(nat.observed.years[0] || Y0, Y0);
-  const paths = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : []; });
-  const max = Math.max(1, ...nat.observed.values, ...NAMES.flatMap(n => paths[n].map(p => p[1])));
+  const paths = {}, fits = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : [];
+    fits[n] = S && S.fit ? S.fit.years.map((yr, i) => [yr, S.fit.values[i]]).filter(([yr]) => yr >= x0 && yr <= Y0) : []; });
+  const max = Math.max(1, ...nat.observed.values, ...est.values, ...NAMES.flatMap(n => paths[n].concat(fits[n]).map(p => p[1])));
   const F = frame(box, {x0, x1: YN, max, height: 290, margin: {r: narrow ? 50 : 150}, fmt: t => dec(t, 1), label: 'National parcel volume in billions'});
   marker(F, state.year);
+  const pathOf = pts => pts.map((p, i) => (i ? 'L' : 'M') + F.x(p[0]).toFixed(1) + ',' + F.y(p[1]).toFixed(1)).join('');
+  order.forEach(n => { if (fits[n].length > 1) s('path', {d: pathOf(fits[n]), fill: 'none', stroke: color(n), 'stroke-width': n === sel ? 1.8 : 1.4, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round'}, F.v); });
   nat.observed.years.forEach((yr, i) => s('circle', {cx: F.x(yr), cy: F.y(nat.observed.values[i]), r: 4, fill: 'var(--obs)', stroke: 'var(--surface)', 'stroke-width': 2}, F.v));
+  est.years.forEach((yr, i) => { if (yr <= YN) s('circle', {cx: F.x(yr), cy: F.y(est.values[i]), r: 3.5, fill: 'var(--surface)', stroke: 'var(--obs)', 'stroke-width': 1.6}, F.v); });
   order.forEach(n => { const pts = paths[n]; if (!pts.length) return; const on = n === sel;
     s('path', {d: pts.map((p, i) => (i ? 'L' : 'M') + F.x(p[0]).toFixed(1) + ',' + F.y(p[1]).toFixed(1)).join(''), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, F.v);
     const last = pts[pts.length - 1]; s('circle', {cx: F.x(last[0]), cy: F.y(last[1]), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, F.v); });
@@ -575,23 +643,33 @@ function renderGrowth() {
     return {y: F.y(last[1]), text: narrow ? dec(last[1], 2) : label(n) + ' · ' + dec(last[1], 2) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
   const span = []; for (let yr = x0; yr <= YN; yr++) span.push(yr);
   crosshair(F, span, (t, yr) => { t.append(...tH(String(yr), 'billion parcels in Germany')); const o = nat.observed.years.indexOf(yr); if (o >= 0) t.appendChild(tR(dec(nat.observed.values[o], 3), 'observed', 'var(--obs)'));
+    const e = est.years.indexOf(yr); if (e >= 0) t.appendChild(tR(dec(est.values[e], 3), 'BIEK estimate', 'var(--obs)'));
+    const f = fits[sel].find(q => q[0] === yr); if (f && yr < Y0) t.appendChild(tR(dec(f[1], 3), label(sel) + ' fit', color(sel)));
     NAMES.forEach(n => { const p = paths[n].find(q => q[0] === yr); if (p) t.appendChild(tR(dec(p[1], 3), label(n), color(n))); }); });
-  // regional fan: simulated parcels per scenario
+  // regional fan: the calibrated reference year, bridged (dashed) to every scenario's simulated parcels
   const rb = $('ch-regional'), rnarrow = rb.clientWidth < 540, reg = {}; NAMES.forEach(n => { reg[n] = series(n, A => A.parcels); });
-  const R = frame(rb, {max: Math.max(1, ...NAMES.flatMap(n => reg[n].filter(ok))), height: 290, margin: {r: rnarrow ? 50 : 132}, fmt: short, label: 'Simulated parcels in Region Hannover'});
+  const ref = (scenario(sel) || {}).reference, rx0 = ref && ref.year < Y0 ? ref.year : Y0;
+  const R = frame(rb, {x0: rx0, max: Math.max(1, ...NAMES.flatMap(n => reg[n].filter(ok)), ref ? ref.parcels : 0), height: 290, margin: {r: rnarrow ? 50 : 132}, fmt: short, label: 'Simulated parcels in Region Hannover'});
   marker(R, state.year);
+  if (ref && rx0 < Y0) {
+    order.forEach(n => { if (ok(reg[n][0])) s('path', {d: 'M' + R.x(ref.year).toFixed(1) + ',' + R.y(ref.parcels).toFixed(1) + 'L' + R.x(Y0).toFixed(1) + ',' + R.y(reg[n][0]).toFixed(1), fill: 'none', stroke: color(n), 'stroke-width': n === sel ? 1.8 : 1.4, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round'}, R.v); });
+    s('circle', {cx: R.x(ref.year), cy: R.y(ref.parcels), r: 4.5, fill: 'var(--surface)', stroke: 'var(--obs)', 'stroke-width': 2}, R.v);
+    s('text', {x: R.x(ref.year) + 8, y: R.y(ref.parcels) - 9, class: 'lbl', text: ref.year + ' reference ' + short(ref.parcels)}, R.v);
+  }
   order.forEach(n => { const on = n === sel; s('path', {d: linePath(R, reg[n]), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, R.v);
     reg[n].forEach((v, i) => { if (ok(v) && (YEARS[i] === state.year || i === reg[n].length - 1)) s('circle', {cx: R.x(YEARS[i]), cy: R.y(v), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, R.v); }); });
   endLabels(R, NAMES.map(n => { const i = reg[n].map(ok).lastIndexOf(true), g = scenario(n).regional; if (i < 0) return null;
     return {y: R.y(reg[n][i]), text: rnarrow ? label(n) + ' ' + short(reg[n][i]) : label(n) + ' · ' + short(reg[n][i]) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
-  crosshair(R, YEARS, (t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
+  crosshair(R, (ref && rx0 < Y0 ? [ref.year] : []).concat(YEARS), (t, yr) => { const i = YEARS.indexOf(yr);
+    if (ref && yr === ref.year && i < 0) { t.append(...tH(String(yr), 'calibrated reference year')); t.appendChild(tR(int(ref.parcels), 'LSP street volumes, all carriers', 'var(--obs)')); return; }
+    t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
   // finding and table
   const gs = SCEN.filter(item => item.national);
   $('f-growth').replaceChildren('Nationally the scenarios reach ', h('b', {text: gs.map(item => dec(item.national.to, 2) + ' billion (' + item.label + ')').join(', ').replace(/, ([^,]*)$/, ' and $1')}), ' parcels in ' + YN + ', ' +
     gs.map(item => signed(item.national.cagr) + ' a year').join(' / ') + ' from ' + (gs[0] ? gs[0].national.from_year : Y0) + '. In the region the ' + label(sel) + ' scenario grows from ' + short(reg[sel][0]) + ' to ' + short(reg[sel][reg[sel].length - 1]) + ' parcels.');
-  const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(YEARS))).sort((a, b) => a - b);
-  tableView($('tv-growth'), ['Year', 'Observed (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
-    allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3)].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
+  const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(est.years.filter(yr => yr <= YN), YEARS))).sort((a, b) => a - b);
+  tableView($('tv-growth'), ['Year', 'Observed (bn)', 'BIEK estimate (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
+    allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3), est.years.includes(yr) ? dec(est.values[est.years.indexOf(yr)], 3) : '–'].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
     {on: r => r.yr === state.year});
 }
 
@@ -831,11 +909,11 @@ function renderCalendar() {
 /* ---------- #method ---------- */
 function renderMethod() {
   const a = M.assumptions || {}, o = a.out_of_home, g = a.network_growth, t = a.temporal || {}, items = [];
-  const curve = {linear: 'linear', logistic: 'logistic', exponential: 'exponential'}, policy = {observed_only: 'the observed volumes 2000–2023', legacy_assumptions: 'the observed volumes plus the notebook estimates 2024–2028'};
+  const curve = {linear: 'linear', logistic: 'logistic', exponential: 'exponential'}, policy = {observed_only: 'the observed volumes 2000–2023', legacy_assumptions: 'the observed volumes plus the BIEK estimates 2024–2028'};
   items.push(['Scenarios:', SCEN.map(item => { const d = item.definition, nat = item.national;
     return item.label + ' – ' + (d ? (curve[d.curve] || d.curve) + ' fit of ' + (policy[d.policy] || d.policy) + (d.chained ? ', chained to the level of ' + d.chain_year : '') : 'no scenario definition in the run') +
       (nat ? ': ' + dec(nat.from, 2) + ' billion parcels in ' + nat.from_year + ', ' + dec(nat.to, 2) + ' in ' + nat.to_year + ' (' + signed(nat.cagr) + ' a year)' : '') + (item.missing_years.length ? '; ' + years(item.missing_years) + ' not simulated' : ''); }).join('; ') + '.']);
-  items.push(['Region:', 'the annual volume of the region is the 2021 reference (DHL street volumes, all carriers) scaled by the national volume of each year; carriers get their market share of the year, recipients their B2B share, and every day is drawn from the shipping calendar.']);
+  items.push(['Region:', 'the annual volume of the region is the 2021 reference (LSP street volumes, all carriers) scaled by the national volume of each year; carriers get their market share of the year, recipients their B2B share, and every day is drawn from the shipping calendar.']);
   if (o && o.trend) items.push(['Out of home:', 'the share of each carrier’s B2C parcels that goes to lockers, boxes and counters follows a logistic trend (growth ' + dec(o.trend.growth, 3) + ' a year, midpoint ' + dec(o.trend.midpoint, 1) + ') from its ' + o.trend.reference_year + ' level (' +
     Object.entries(o.shares_2025 || {}).map(([c, v]) => c + ' ' + pct(v, 0)).join(', ') + '); recipients choose among the ' + (o.choice_k || 1) + ' nearest points within ' + int(o.reach_m) + ' m, closer ones more often.']);
   if (g) items.push(['Network growth:', g.enabled === false ? 'switched off: the reference network serves every year.' : 'per group of kind and carriers the number of points follows N(y) = max(N(y−1), round(N(' + g.reference_year + ') × (D(y) / D(' + g.reference_year + '))^' + dec(g.elasticity, 1) + ')), D = the group’s out-of-home B2C parcels; the rest of the growth goes into larger stations. New sites go to retail and fuel-station POIs, weighted by B2C demand within ' + int(g.demand_radius_m) + ' m × coverage gap (1 − exp(−d / ' + int(g.gap_scale_m) + ' m)) × kind preference (' + dec(g.off_preference_weight, 2) + ' otherwise), never within ' + int(g.min_spacing_m) + ' m of a point of the same group.' +
@@ -845,9 +923,163 @@ function renderMethod() {
   items.push(['Channels:', 'out-of-home parcels are the parcels stored at a point; home deliveries are all other parcels. On the map and in the hotspots they count at the point’s postcode. Per carrier the out-of-home share is exact for single-carrier points; shared boxes split their parcels by the carriers’ target out-of-home volume.']);
   items.push(['Busiest days:', 'a peak between 1 and 24 December falls in the pre-Christmas season' + (t.christmas_pull_forward_days ? ' (orders of 24–26 December ship in the ' + t.christmas_pull_forward_days + ' days before)' : '') + '; a peak up to a week after a public holiday carries the holiday’s orders, which ship over the next ' + (t.holiday_spread_days || 1) + ' shipping days; otherwise it reflects the season and the weekday pattern.']);
   if ((t.events || []).length) items.push(['Events:', t.events.map(e => e.name + ' (' + (e.carriers === 'all' ? 'all carriers' : e.carriers.join('/')) + ', orders ×' + dec(e.uplift, 2) + ')').join(', ') + '; the calendar marks their shipping days.']);
+  const L = ((D.structure || {})[state.scenario] || {}).meta;
+  if (L && L.sources) items.push(['Land use:', 'variant ' + L.variant + ', base year ' + L.base_year + ', cohort effect ' + dec(L.cohort_shift, 1) + ', new firms take ' + pct(L.new_firm_share, 0) + ' of the employment growth. Sources: ' + L.sources.population + '; ' + L.sources.propensity + '; ' + L.sources.firms + '; ' + L.sources.developments + '.' + ((L.clamped || []).length ? ' ' + L.clamped.length + ' district-years lost all existing homes to their development areas (clamped).' : '')]);
   if ((a.texts || []).length) items.push(['Run assumptions:', a.texts.join(' ')]);
   items.push(['Provenance:', SCEN.map(item => item.label + ' = run ' + item.run_id).join(', ') + '; generated ' + String(M.generated_at).replace('T', ' ').replace('+00:00', ' UTC') + '.']);
   $('method-list').replaceChildren(...items.map(it => h('li', null, h('b', {text: it[0]}), ' ' + it[1])));
+}
+
+/* ---------- #structure ---------- */
+const STRUCTMODE = {persons: 'Persons vs first year', propensity: 'Online propensity vs first year', employees: 'Employees vs first year'};
+state.structure = state.structure || 'persons';
+function structureValues(S, yr) {
+  const key = {persons: 'population_index', propensity: 'propensity_index', employees: 'employees_index'}[state.structure];
+  const V = S.districts[key] || {}; return V[yr] || null;
+}
+function districtCard(S, i, yr) {
+  const el = $('district-card'); el.replaceChildren();
+  const d = S.districts, pick = (key, y) => ((d[key] || {})[y] || [])[i], rel = x => ok(x) ? signed(x - 1) : '–';
+  if (i == null) { el.append(h('div', {class: 'code', text: 'Region'}), h('div', {class: 'name', text: d.ids.length + ' forecast districts · variant ' + (S.meta.variant || '–')}),
+    h('p', {class: 'note', text: 'Hover over a district for its profile.'})); return; }
+  el.append(h('div', {class: 'code', text: d.ids[i]}), h('div', {class: 'name', text: d.names[i] + ' · ' + (d.kinds[i] === 'city' ? 'city district' : 'municipality')}),
+    h('dl', null, [['Persons (model) ' + yr, int(pick('persons_model', yr))], ['Persons vs ' + Y0, rel(pick('population_index', yr))],
+      ['Forecast vs ' + Y0, rel(pick('forecast_index', yr))], ['Online propensity', rel(pick('propensity_index', yr))],
+      ['Employees vs ' + Y0, rel(pick('employees_index', yr))]].map(([k, v]) => h('div', null, h('dt', {text: k}), h('dd', {text: v})))));
+}
+function renderStructure() {
+  const n = state.scenario, yr = state.year, S = (D.structure || {})[n], box = $('ch-structure');
+  const ctl = $('ctl-structure');
+  if (!ctl.childElementCount) Object.entries(STRUCTMODE).forEach(([key, text]) => {
+    const b = h('button', {type: 'button', text: text.split(' ')[0] === 'Online' ? 'Propensity' : text.split(' ')[0], 'aria-pressed': String(state.structure === key)});
+    b.addEventListener('click', () => { state.structure = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderStructure(); }); ctl.appendChild(b); });
+  if (!S) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use dynamics (land_use switched off).'}));
+    ['ch-structure-bars', 'ch-structure-age', 'tv-structure', 'sc-structure', 'district-card', 'lg-structure-bars', 'lg-structure-age'].forEach(id => $(id).replaceChildren());
+    ['f-structure', 's-structure', 's-structure-bars', 's-structure-age'].forEach(id => { $(id).textContent = ''; }); return; }
+  const values = structureValues(S, yr) || [], feats = S.districts.geo ? S.districts.geo.features : [];
+  const W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Map of the forecast districts'); const changes = values.map(x => ok(x) ? x - 1 : null);
+  const pos = changes.filter(x => ok(x) && x > .002), br = breaks(pos, 4);
+  const color = x => !ok(x) ? 'var(--surface-3)' : x < -.02 ? 'var(--neg2)' : x < -.002 ? 'var(--neg1)' : x <= .002 ? 'var(--mid)' : 'var(--q' + (cls(x, br) + 3) + ')';
+  feats.forEach(f => { const i = S.districts.ids.indexOf(f.properties.id); if (i < 0) return; const x = changes[i];
+    const path = s('path', {d: pathOf(f.geometry, pr), class: 'plz', fill: color(x), tabindex: 0, 'aria-label': S.districts.names[i] + ': ' + signed(x)}, v);
+    hover(path, t => { t.append(...tH(S.districts.names[i], label(n) + ' · ' + yr)); t.appendChild(tR(signed(x), STRUCTMODE[state.structure])); });
+    path.addEventListener('pointerenter', () => districtCard(S, i, yr)); path.addEventListener('pointerleave', () => districtCard(S, null, yr)); });
+  const T = S.sites;
+  if (T) { const layer = s('g', {'aria-label': 'New sites'}, v);
+    T.ids.forEach((id, i) => { if (T.year_opened[i] > yr || !ok(T.lon[i])) return; const q = pr.f(T.lon[i], T.lat[i]), isNew = T.year_opened[i] === yr && yr > Y0;
+      const kind = T.segment[i] === 'business' ? 'shared_locker' : 'locker', r = T.segment[i] === 'business' ? 3.2 : 2.2;
+      if (isNew) { const g = s('g', {class: 'pulse'}, layer); pointShape(kind, q[0], q[1], r + 2, {fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5}, g); }
+      const mark = pointShape(kind, q[0], q[1], r, {class: 'pt', fill: T.segment[i] === 'business' ? 'var(--seg-b2b)' : 'var(--seg-b2c)', tabindex: 0,
+        'aria-label': (T.segment[i] === 'business' ? 'New firm' : 'New home, ' + (T.area[i] || '')) + ', opened ' + T.year_opened[i]}, layer);
+      hover(mark, t => { t.append(...tH(T.segment[i] === 'business' ? 'New firm' : 'New home · ' + (T.area[i] || ''), 'opened ' + T.year_opened[i]));
+        t.appendChild(tR(dec(T.size[i], 1), T.segment[i] === 'business' ? 'employees' : 'residents at full occupancy (model)')); }); }); }
+  binLegend($('sc-structure'), STRUCTMODE[state.structure] + ':', [{color: 'var(--neg2)', text: '< −2 %'}, {color: 'var(--neg1)', text: '−2 to 0 %'}, {color: 'var(--mid)', text: '± 0.2 %'}]
+    .concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? '> 0 %' : 'from ' + signed(b)}))));
+  const opened = T ? T.year_opened.filter(y => y <= yr).length : 0;
+  $('s-structure').textContent = label(n) + ' · ' + yr + ' · variant ' + (S.meta.variant || '–') + (T ? ' · ' + int(opened) + ' new sites' : '');
+  districtCard(S, null, yr);
+  // model against forecast
+  const P = S.districts.population_index[yr] || [], F = S.districts.forecast_index[yr] || [], pm = S.districts.persons_model[yr] || [], pm0 = S.districts.persons_model[Y0] || [];
+  const model = pm.map((x, i) => ok(x) && ok(pm0[i]) && pm0[i] > 0 ? x / pm0[i] - 1 : null);
+  const rows = S.districts.ids.map((id, i) => ({i, label: S.districts.names[i], model: model[i], forecast: ok(F[i]) ? F[i] - 1 : null})).filter(r => ok(r.model))
+    .sort((a, b) => Math.abs(b.model) - Math.abs(a.model)).slice(0, 15);
+  legend($('lg-structure-bars'), [{color: 'var(--seg-b2c)', label: 'model persons'}]);
+  $('s-structure-bars').textContent = label(n) + ' · ' + Y0 + '→' + yr;
+  hbars($('ch-structure-bars'), yr === Y0 ? [] : rows.map(r => ({r, label: r.label, on: false, text: signed(r.model) + ' (forecast ' + signed(r.forecast) + ')',
+    parts: [{value: r.model * 100, color: 'var(--seg-b2c)'}]})), {label: 'Districts by change in model persons', empty: 'Move the year slider past ' + Y0 + '.',
+    tip: (t, row) => { t.append(...tH(row.r.label, Y0 + '→' + yr)); t.appendChild(tR(signed(row.r.model), 'model persons')); t.appendChild(tR(signed(row.r.forecast), 'forecast')); }});
+  // propensity by age
+  const A = S.age, ab = $('ch-structure-age');
+  if (A) { const Wa = Math.max(260, ab.clientWidth), Ha = 240, m = {l: 44, r: 12, t: 12, b: 34}, nb = A.bands.length, va = root(ab, Wa, Ha, 'Online propensity and persons by age band');
+    const bx = k => m.l + (Wa - m.l - m.r) * (k + .5) / nb, bw = (Wa - m.l - m.r) / nb * .7, py = p => m.t + (Ha - m.t - m.b) * (1 - p);
+    const persons = A.persons[yr] || [], maxP = Math.max(1, ...(A.persons[Y0] || []), ...persons);
+    persons.forEach((x, k) => { const hh = (Ha - m.t - m.b) * x / maxP; s('rect', {x: bx(k) - bw / 2, y: Ha - m.b - hh, width: bw, height: hh, fill: 'var(--surface-3)'}, va); });
+    [0, .25, .5, .75, 1].forEach(t => { s('line', {x1: m.l, x2: Wa - m.r, y1: py(t), y2: py(t), class: t === 0 ? 'ax' : 'gl'}, va); s('text', {x: m.l - 6, y: py(t) + 4, 'text-anchor': 'end', class: 'tick', text: Math.round(t * 100) + ' %'}, va); });
+    A.bands.forEach((b, k) => { if (k % Math.max(1, Math.ceil(nb / 8)) === 0) s('text', {x: bx(k), y: Ha - 12, 'text-anchor': 'middle', class: 'tick', text: b}, va); });
+    const line = (vals, stroke, dash) => { let d = ''; vals.forEach((p, k) => { if (!ok(p)) return; d += (d ? 'L' : 'M') + bx(k).toFixed(1) + ',' + py(p).toFixed(1); }); s('path', {d, fill: 'none', stroke, 'stroke-width': 2, 'stroke-dasharray': dash || null}, va); };
+    line(A.propensity[Y0] || [], 'var(--muted)', '4 3'); if (yr !== Y0) line(A.propensity[yr] || [], 'var(--all)');
+    legend($('lg-structure-age'), [{color: 'var(--muted)', label: 'propensity ' + Y0, kind: 'line'}].concat(yr !== Y0 ? [{color: 'var(--all)', label: 'propensity ' + yr, kind: 'line'}] : []).concat([{color: 'var(--surface-3)', label: 'persons ' + yr}]));
+    $('s-structure-age').textContent = 'Region Hannover · cohort effect ' + dec(S.meta.cohort_shift, 1);
+  } else ab.replaceChildren(h('p', {class: 'empty', text: 'No age bands in this run.'}));
+  tableView($('tv-structure'), ['Area', 'District', 'Residents ' + yr + ' (model)', 'Expected parcels per delivery day ' + yr],
+    (S.developments || []).map(d => ({cells: [d.name, (S.districts.names[S.districts.ids.indexOf(d.district_id)] || d.district_id), dec(d.residents[yr], 0), dec(d.parcels_per_day[yr], 1)]})));
+  const top = rows[0];
+  $('f-structure').replaceChildren(...(yr > Y0 && top ? ['From ' + Y0 + ' to ' + yr + ' ', h('b', {text: top.label + ' changes most (' + signed(top.model) + ' model persons, forecast ' + signed(top.forecast) + ')'}),
+    '; ' + int(opened) + ' new homes and firms have opened. The regional volume stays that of the scenario; land use only moves it between areas.'] : ['Move the year slider to see how persons and firms shift between the ' + S.districts.ids.length + ' forecast districts.']));
+}
+
+/* ---------- #change ---------- */
+const CHANGEMODE = {region: 'Growth against the region', rel: 'Change vs first year', abs: 'Change in parcels per day', density: 'Parcels per day and km²', landuse: 'Land-use effect (parcels per day)'};
+state.change = state.change || 'region';
+function hexPath(ring, pr) { let d = ''; ring.forEach((p, i) => { const q = pr.f(p[0], p[1]); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }); return d + 'Z'; }
+function renderChange() {
+  const C = D.change, n = state.scenario, yr = state.year, box = $('ch-change'), ctl = $('ctl-change');
+  if (!ctl.childElementCount) Object.entries(CHANGEMODE).forEach(([key, text]) => {
+    const b = h('button', {type: 'button', text: {region: 'vs region', rel: 'Change %', abs: 'Change', density: 'Density', landuse: 'Land use'}[key], 'aria-pressed': String(state.change === key)});
+    b.addEventListener('click', () => { state.change = key; [...ctl.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); renderChange(); }); ctl.appendChild(b); });
+  if (!C || !C.values[n]) { box.replaceChildren(h('p', {class: 'empty', text: 'This run has no annual projection per address.'}));
+    ['sc-change', 'ch-change-drivers', 'lg-change-drivers'].forEach(id => $(id).replaceChildren()); ['f-change', 's-change', 's-change-drivers'].forEach(id => { $(id).textContent = ''; }); }
+  else {
+    const V = C.values[n], now = V[yr] || {}, base = V[Y0] || {}, total = now.total || [], first = base.total || [], plain = now.plain || [];
+    const growth = sum(first) > 0 ? sum(total) / sum(first) : 1;
+    const value = i => { const a = total[i], b = first[i];
+      if (state.change === 'region') return ok(a) && ok(b) && b > .5 ? a / b / growth - 1 : null;
+      if (state.change === 'rel') return ok(a) && ok(b) && b > .5 ? a / b - 1 : null;
+      if (state.change === 'abs') return ok(a) && ok(b) ? a - b : null;
+      if (state.change === 'density') return ok(a) ? a / C.hex.km2[i] : null;
+      return ok(a) && ok(plain[i]) ? a - plain[i] : null; };
+    const vals = C.hex.ids.map((_, i) => value(i)), W = Math.max(260, box.clientWidth), pr = proj(W), v = root(box, W, pr.H, 'Hexagon map of Region Hannover');
+    let color, bins;
+    if (state.change === 'density') { const br = breaks(vals.filter(ok), 6); color = x => ok(x) && x > 0 ? 'var(--q' + (cls(x, br) + 1) + ')' : 'var(--surface-3)';
+      bins = [0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 1) + ')', text: k === 0 ? '< ' + dec(br[0], 0) : 'from ' + dec(b, 0)})); }
+    else { const relative = state.change === 'rel' || state.change === 'region', scale = relative ? .005 : .5, pos = vals.filter(x => ok(x) && x > scale), br = breaks(pos, 4), neg = vals.filter(x => ok(x) && x < -scale).sort((a, b) => a - b), cut = neg.length ? neg[Math.floor(neg.length / 2)] : -scale * 4;
+      const f = relative ? x => signed(x) : x => (x >= 0 ? '+' : '−') + dec(Math.abs(x), 1);
+      color = x => !ok(x) ? 'var(--surface-3)' : x < cut ? 'var(--neg2)' : x < -scale ? 'var(--neg1)' : x <= scale ? 'var(--mid)' : 'var(--q' + (cls(x, br) + 3) + ')';
+      bins = [{color: 'var(--neg2)', text: '< ' + f(cut)}, {color: 'var(--neg1)', text: 'down'}, {color: 'var(--mid)', text: 'about the same'}].concat([0].concat(br).map((b, k) => ({color: 'var(--q' + (k + 3) + ')', text: k === 0 ? 'up' : 'from ' + f(b)}))); }
+    C.hex.geo.features.forEach((feature, i) => { if (!ok(total[i]) && !ok(first[i])) return; if ((total[i] || 0) < .05 && (first[i] || 0) < .05) return;
+      const x = vals[i], path = s('path', {d: hexPath(feature.geometry.coordinates[0], pr), class: 'hex', fill: color(x), tabindex: 0, 'aria-label': 'Hexagon ' + (i + 1) + ': ' + (ok(total[i]) ? dec(total[i], 0) : '–') + ' parcels per day'}, v);
+      hover(path, t => { t.append(...tH('Hexagon ' + C.hex.ids[i], label(n) + ' · ' + Y0 + '→' + yr)); t.appendChild(tR(dec(first[i], 1) + ' → ' + dec(total[i], 1), 'parcels per delivery day'));
+        t.appendChild(tR(ok(first[i]) && first[i] > .5 && ok(total[i]) ? signed(total[i] / first[i] - 1) : '–', 'change'));
+        if (ok(plain[i])) t.appendChild(tR((total[i] - plain[i] >= 0 ? '+' : '−') + dec(Math.abs(total[i] - plain[i]), 1), 'land-use effect')); }); });
+    binLegend($('sc-change'), CHANGEMODE[state.change] + ':', bins);
+    $('s-change').textContent = label(n) + ' · ' + (state.change === 'density' ? yr : Y0 + '→' + yr) + ' · ' + C.hex.ids.length + ' hexagons';
+    // drivers by district
+    const B = (C.districts || {})[n];
+    if (B && B[yr] && B[Y0]) { const rows = B.ids.map((id, i) => { const t = B[yr].total[i], p = B[yr].plain[i], t0 = B[Y0].total[i]; return {i, label: B.names[i], volume: p - t0, land: t - p, total: t - t0}; })
+        .filter(r => ok(r.total)).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)).slice(0, 15);
+      legend($('lg-change-drivers'), [{color: 'var(--q4)', label: 'more parcels overall'}, {color: 'var(--seg-b2c)', label: 'moved by land use'}]);
+      $('s-change-drivers').textContent = label(n) + ' · ' + Y0 + '→' + yr + ' · top 15 districts';
+      hbars($('ch-change-drivers'), yr === Y0 ? [] : rows.map(r => ({r, label: r.label, on: false, text: (r.total >= 0 ? '+' : '−') + dec(Math.abs(r.total), 0) + '/day',
+        parts: [{value: r.volume, color: 'var(--q4)'}, {value: r.land, color: 'var(--seg-b2c)'}]})), {label: 'Districts by change in parcels per day', empty: 'Move the year slider past ' + Y0 + '.',
+        tip: (t, row) => { t.append(...tH(row.r.label, Y0 + '→' + yr)); t.appendChild(tR(dec(row.r.volume, 1), 'more parcels overall')); t.appendChild(tR(dec(row.r.land, 1), 'moved by land use')); }}); }
+    else { $('ch-change-drivers').replaceChildren(h('p', {class: 'empty', text: 'This run has no land-use districts.'})); $('lg-change-drivers').replaceChildren(); $('s-change-drivers').textContent = ''; }
+    const up = C.hex.ids.map((_, i) => ({i, d: ok(total[i]) && ok(first[i]) ? total[i] - first[i] : null})).filter(r => ok(r.d)).sort((a, b) => b.d - a.d);
+    const moved = C.hex.ids.map((_, i) => ok(total[i]) && ok(plain[i]) ? Math.abs(total[i] - plain[i]) : 0).reduce((a, b) => a + b, 0) / 2;
+    $('f-change').replaceChildren(...(yr > Y0 ? ['From ' + Y0 + ' to ' + yr + ' the ' + label(n) + ' scenario adds ', h('b', {text: int(sum(total) - sum(first)) + ' parcels per delivery day'}),
+      up.length ? '; the fastest-growing hexagon gains ' + dec(up[0].d, 0) + ' a day' : '', moved > 0 ? ', and land use moves about ' + int(moved) + ' parcels a day between hexagons.' : '.'] :
+      ['Move the year slider or press play to watch where the demand grows.']));
+  }
+  // year-on-year growth and city share for all scenarios (selected scenario blue, the others grey with end labels)
+  const scol = name => name === n ? 'var(--all)' : 'var(--other-line)';
+  const yoy = SCEN.map(item => { const vals = series(item.name, A => A.parcels); return {name: item.name, label: item.label, color: scol(item.name), width: item.name === n ? 2.6 : 1.6, priority: item.name === n ? 2 : 1, strong: item.name === n,
+    values: vals.map((x, i) => i && ok(x) && ok(vals[i - 1]) && vals[i - 1] > 0 ? x / vals[i - 1] - 1 : null), dots: item.name === n}; });
+  legend($('lg-change-yoy'), yoy.map(S => ({color: S.color, label: S.label, kind: 'line'})));
+  lines($('ch-change-yoy'), {series: yoy, height: 220, labels: true, margin: {r: 120}, fmt: x => dec(x * 100, 1) + ' %', vfmt: x => signed(x), label: 'Year-on-year growth of the regional parcels', title: 'change against the previous year',
+    max: Math.max(.001, ...yoy.flatMap(S => S.values.filter(ok)))});
+  const shares = C ? SCEN.map(item => { const S = (C.city_share || {})[item.name]; return S ? {name: item.name, label: item.label, color: scol(item.name), width: item.name === n ? 2.6 : 1.6, priority: item.name === n ? 2 : 1, strong: item.name === n, values: YEARS.map(y => S[y]), dots: item.name === n} : null; }).filter(Boolean) : [];
+  if (shares.length) { legend($('lg-change-city'), shares.map(S => ({color: S.color, label: S.label, kind: 'line'})));
+    const all = shares.flatMap(S => S.values.filter(ok)), lo = Math.min(...all), hi = Math.max(...all);
+    lines($('ch-change-city'), {series: shares.map(S => ({...S, values: S.values.map(x => ok(x) ? x - Math.floor(lo * 100 - 1) / 100 : null)})), height: 220, labels: true, margin: {r: 120},
+      fmt: x => dec((x + Math.floor(lo * 100 - 1) / 100) * 100, 1) + ' %', vfmt: x => pct(x + Math.floor(lo * 100 - 1) / 100, 2), label: 'Share of the city of Hannover in the regional parcels', title: 'city share',
+      max: hi - Math.floor(lo * 100 - 1) / 100}); }
+  else $('ch-change-city').replaceChildren(h('p', {class: 'empty', text: 'No land-use districts in these runs.'}));
+  // milestones
+  const miles = [['70 million parcels a year', A => A.parcels >= 7e7], ['80 million parcels a year', A => A.parcels >= 8e7], ['10 % of B2C parcels out of home', A => ok(A.ooh_b2c_share) && A.ooh_b2c_share >= .1],
+    ['15 % of B2C parcels out of home', A => ok(A.ooh_b2c_share) && A.ooh_b2c_share >= .15], ['400 pickup points', A => A.network && sum(Object.values(A.network.points)) >= 400],
+    ['500 pickup points', A => A.network && sum(Object.values(A.network.points)) >= 500], ['busiest day above 700,000 parcels', A => A.peak && A.peak.parcels >= 7e5]];
+  const first = test => SCEN.map(item => { const hit = YEARS.find(y => { const A = yd(item.name, y); return A && test(A); }); return hit ? String(hit) : '–'; });
+  $('s-change-miles').textContent = 'first year each threshold is reached';
+  tableView($('tv-change-miles'), ['Milestone'].concat(SCEN.map(item => item.label)), miles.map(([text, test]) => ({cells: [text].concat(first(test))})));
 }
 
 /* ---------- entry point ---------- */
@@ -855,7 +1087,7 @@ function render(name, yr) {
   state.scenario = NAMES.includes(name) ? name : M.primary;
   state.year = Math.max(Y0, Math.min(YN, yr));
   hide(); persist(); syncControls();
-  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderNetwork(); renderCalendar(); renderMethod();
+  renderHero(); renderGrowth(); renderMix(); renderChannels(); renderMap(); renderHotspots(); renderStructure(); renderChange(); renderNetwork(); renderCalendar(); renderMethod();
 }
 function setYear(yr) { stop(); render(state.scenario, yr); }
 setStatic(); buildControls(); render(state.scenario, state.year);

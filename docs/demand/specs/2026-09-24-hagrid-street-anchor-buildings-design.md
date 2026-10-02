@@ -6,12 +6,12 @@ Teilprojekt B (Tagesprozess) und C (Unsicherheit/Monte Carlo) folgen mit eigenen
 
 ## 1. Ziel und Erfolgskriterien
 
-Ein Paketnachfragemodell für die Region Hannover, das die DHL-Daten 2021 als räumliche Hauptbeobachtung nutzt,
+Ein Paketnachfragemodell für die Region Hannover, das die LSP-Daten 2021 als räumliche Hauptbeobachtung nutzt,
 Anbieter über den lokalen B2B/B2C-Mix unterscheidet und die Nachfrage auf OSM-Gebäuden zu realistischen Stopps bündelt.
 
 Erfolgskriterien (vom Nutzer gewählt):
 
-- **A – DHL-Straßen-Holdout:** Das Strukturmodell (Rückfall und Zukunftskomponente) wird auf DHL-Straßen mit räumlichem Holdout nach PLZ bewertet.
+- **A – LSP-Straßen-Holdout:** Das Strukturmodell (Rückfall und Zukunftskomponente) wird auf LSP-Straßen mit räumlichem Holdout nach PLZ bewertet.
 - **C – Plausibilität:** Pakete je Person und Jahr, B2B-Anteil je PLZ, Pakete je Stopp, Stopps je Tag und Anteil belieferter Gebäude sind plausibel und dokumentiert.
 
 Hermes-Daten werden nicht verwendet (Einheit unbekannt).
@@ -20,9 +20,9 @@ Hermes-Daten werden nicht verwendet (Einheit unbekannt).
 
 | Befund | Zahl | Folge |
 |---|---|---|
-| DHL-Pegel in PLZ 30855 gleichmäßig überhöht | Wohnstraßen 161 statt Median 62 Pakete je 1.000 Einwohner und Tag; Faktor 3,7 über alle Straßentypen; Nachbar-PLZ normal; kein DHL-Paketdepot, Packstationsdichte normal | Pegelkorrektur D (Abschnitt 5.5) |
-| DHL-B2B-Anteil aus eigenen Straßendaten | 24,2 % (Radius 50–150 m: 23–26 %; Bootstrap 90 %: 20,6–27,9 %; Stadt und Umland gleich) | q_DHL aus Daten statt 11,3 % (alte Baseline) bzw. 16,6 % (Notebook 05) |
-| Beschäftigtenzahl erklärt DHL-Menge nicht | NNLS-Koeffizient 0; PLZ-Holdout-Fehler „1 je Firma“ 12,9 %, „1 + 0,1 × Beschäftigte“ 15,7 % | Standard wieder „1 je Firma“ |
+| LSP-Pegel in PLZ 30855 gleichmäßig überhöht | Wohnstraßen 161 statt Median 62 Pakete je 1.000 Einwohner und Tag; Faktor 3,7 über alle Straßentypen; Nachbar-PLZ normal; kein LSP-Paketdepot, Packstationsdichte normal | Pegelkorrektur D (Abschnitt 5.5) |
+| LSP-B2B-Anteil aus eigenen Straßendaten | 24,2 % (Radius 50–150 m: 23–26 %; Bootstrap 90 %: 20,6–27,9 %; Stadt und Umland gleich) | q_LSP aus Daten statt 11,3 % (alte Baseline) bzw. 16,6 % (Notebook 05) |
+| Beschäftigtenzahl erklärt LSP-Menge nicht | NNLS-Koeffizient 0; PLZ-Holdout-Fehler „1 je Firma“ 12,9 %, „1 + 0,1 × Beschäftigte“ 15,7 % | Standard wieder „1 je Firma“ |
 | Firmendaten synthetisch | keine zwei Firmen am selben Punkt; IDs mit Zonennamen; Zensus-100-m-Zelle und MATSim-Link je Firma; nur 25 % liegen in einem OSM-Gebäude | Firmen auf Gebäude umlegen (5.3) |
 | Personen auf Gebäudegrundrissen | 94 % der Personen liegen in OSM-Gebäuden 2021 | B2C direkt an Gebäude (5.2) |
 | OSM 2021 Region | 253.918 Gebäude, 71 % der relevanten mit Adresse | Adressbasierte Straßenzuordnung (5.4) |
@@ -31,10 +31,10 @@ Hermes-Daten werden nicht verwendet (Einheit unbekannt).
 
 | Thema | Entscheidung |
 |---|---|
-| Räumlicher Anker | DHL-Straße (12.340 Straßen, Schwelle > 1.000 bleibt) statt PLZ-Summe |
+| Räumlicher Anker | LSP-Straße (12.340 Straßen, Schwelle > 1.000 bleibt) statt PLZ-Summe |
 | Ausreißer-PLZ | Variante D: Pegel über Wohnstraßen korrigieren, Muster innerhalb der PLZ bleibt |
-| DHL-B2B | aus der Straßenzerlegung; über die Zeit proportional zum nationalen B2B-Anteil |
-| Andere Anbieter | innerhalb der Notebook-05-Grenzen auf das nationale Ziel abgestimmt, DHL fest |
+| LSP-B2B | aus der Straßenzerlegung; über die Zeit proportional zum nationalen B2B-Anteil |
+| Andere Anbieter | innerhalb der Notebook-05-Grenzen auf das nationale Ziel abgestimmt, LSP fest |
 | Nachfrageorte | OSM-Gebäude Stand 01.01.2021 (Geofabrik) |
 | Stopps | S3: adaptive Stopps je Straße und Straßenseite, Laufradius einstellbar |
 | Firmengewicht | 1 je Firma; „1 + 0,1 × Beschäftigte“ bleibt Option |
@@ -44,7 +44,7 @@ Hermes-Daten werden nicht verwendet (Einheit unbekannt).
 
 | Quelle | Pfad | Nutzung |
 |---|---|---|
-| DHL-Straßen 2021 | `parcel-demand-estimation/input/dhl2streets_2021.shp` | Anker, Zerlegung |
+| LSP-Straßen 2021 | `parcel-demand-estimation/input/lsp2streets_2021.shp` | Anker, Zerlegung |
 | Personen | `persons_total.csv` | B2C-Gewicht je Gebäude |
 | Firmen | `companies_Total_reduced.shp` | B2B-Gewicht, Zensus-Zelle, Branche |
 | PLZ-Flächen | `plz_region_hannover.csv` | Scope, Pegelkorrektur |
@@ -86,18 +86,18 @@ im Gebäude heben die Passung auf 1,0. Die Auswahl ist gewichtet zufällig mit `
 und damit reproduzierbar. Mehrere Firmen je Gebäude sind erlaubt. Ohne Kandidat: nächstes relevantes Gebäude bis 250 m,
 sonst bleibt der Firmenpunkt (`footprint=false`). Alle Fälle stehen im Zuordnungsbericht.
 
-### 5.4 Adresse und DHL-Straße
+### 5.4 Adresse und LSP-Straße
 
 Adresse eines Gebäudes: `addr:street`/`addr:housenumber` am Gebäude, sonst ein Adresspunkt innerhalb des Gebäudes.
 Straßennamen werden normalisiert (Kleinschreibung, `str.`/`strasse` → `straße`, `ss`/`ß` vereinheitlicht, Leerzeichen/Bindestriche).
-Zuordnung zur DHL-Straße in dieser Reihenfolge:
+Zuordnung zur LSP-Straße in dieser Reihenfolge:
 
-1. normalisierter Straßenname und PLZ des Gebäudes gleich einer DHL-Straße (bei mehreren Teilstücken: nächstes Teilstück);
-2. nächste DHL-Straße bis 100 m;
-3. nächste DHL-Straße bis 250 m (`buildings.extended_match_distance_m`, `null` schaltet die Stufe ab) für Standorte hinter
+1. normalisierter Straßenname und PLZ des Gebäudes gleich einer LSP-Straße (bei mehreren Teilstücken: nächstes Teilstück);
+2. nächste LSP-Straße bis 100 m;
+3. nächste LSP-Straße bis 250 m (`buildings.extended_match_distance_m`, `null` schaltet die Stufe ab) für Standorte hinter
    internen Zufahrten (Gewerbegebiete, Kliniken); ergänzt nach dem Abnahmelauf, weil 6,3 % der Firmen sonst zusätzlich zur
-   DHL-Menge als Strukturnachfrage gezählt wurden;
-4. keine DHL-Straße → Rückfall (5.9).
+   LSP-Menge als Strukturnachfrage gezählt wurden;
+4. keine LSP-Straße → Rückfall (5.9).
 
 Einheiten außerhalb aller PLZ-Polygone erhalten die PLZ des nächsten Gebiets; der MATSim-Export lehnt PLZ ab, die nicht
 fünfstellig sind.
@@ -106,37 +106,37 @@ Der Anteil je Stufe wird berichtet.
 
 ### 5.5 Pegelkorrektur D
 
-Wohnstraßen einer PLZ sind DHL-Straßen mit mindestens 30 zugeordneten Einwohnern und ohne Firma.
-Rate R_p = ΣDHL / ΣEinwohner über die Wohnstraßen der PLZ; M = Median der R_p aller PLZ.
-Für PLZ mit mindestens 20 Wohnstraßen und f_p = R_p / M ≥ 2 oder ≤ 0,5 gilt DHL′_s = DHL_s / f_p für alle Straßen der PLZ.
+Wohnstraßen einer PLZ sind LSP-Straßen mit mindestens 30 zugeordneten Einwohnern und ohne Firma.
+Rate R_p = ΣLSP / ΣEinwohner über die Wohnstraßen der PLZ; M = Median der R_p aller PLZ.
+Für PLZ mit mindestens 20 Wohnstraßen und f_p = R_p / M ≥ 2 oder ≤ 0,5 gilt LSP′_s = LSP_s / f_p für alle Straßen der PLZ.
 Schwellen sind einstellbar. Erwartetes Ergebnis mit den Daten 2021: nur PLZ 30855, f ≈ 2,6. Korrigierte PLZ, Faktoren und
 Mengen vor/nach stehen im Bericht.
 
-### 5.6 DHL-Raten und Zerlegung je Straße
+### 5.6 LSP-Raten und Zerlegung je Straße
 
 Auf den korrigierten Straßenwerten wird regional ohne Achsenabschnitt nichtnegativ geschätzt:
-DHL′_s ≈ r_P · P_s + r_C · C_s (P_s Einwohner, C_s Firmen der zugeordneten Gebäude).
+LSP′_s ≈ r_P · P_s + r_C · C_s (P_s Einwohner, C_s Firmen der zugeordneten Gebäude).
 Aufteilung jeder Straße im Verhältnis der Erwartung:
-DHL_B2C,s = DHL′_s · r_P P_s / (r_P P_s + r_C C_s), DHL_B2B,s = DHL′_s − DHL_B2C,s.
-Straßen mit positiver DHL-Menge ohne zugeordnete Struktur werden mit dem regionalen Verhältnis aufgeteilt und
+LSP_B2C,s = LSP′_s · r_P P_s / (r_P P_s + r_C C_s), LSP_B2B,s = LSP′_s − LSP_B2C,s.
+Straßen mit positiver LSP-Menge ohne zugeordnete Struktur werden mit dem regionalen Verhältnis aufgeteilt und
 auf synthetische Punkte entlang der Straße gelegt (je 50-m-Abschnitt einer).
 
-### 5.7 DHL-B2B-Anteil und Anbieterprofile
+### 5.7 LSP-B2B-Anteil und Anbieterprofile
 
-q_DHL(2021) = ΣDHL_B2B / ΣDHL′; q_DHL(y) = q_DHL(2021) · b(y) / b(2021) mit der nationalen B2B-Reihe b(y).
-Die übrigen Anbieter werden je Jahr mit `reconcile_carriers` auf b(y) abgestimmt: DHL mit Unter- = Obergrenze q_DHL(y),
+q_LSP(2021) = ΣLSP_B2B / ΣLSP′; q_LSP(y) = q_LSP(2021) · b(y) / b(2021) mit der nationalen B2B-Reihe b(y).
+Die übrigen Anbieter werden je Jahr mit `reconcile_carriers` auf b(y) abgestimmt: LSP mit Unter- = Obergrenze q_LSP(y),
 übrige Grenzen, Startwerte und Skalen wie Notebook 05 (`provider_priors.json`). Unzulässig → harter Fehler.
 Daraus P(c | B2C) = m_c (1 − q_c) / (1 − b) und P(c | B2B) = m_c q_c / b.
 
 ### 5.8 Hochrechnung auf alle Anbieter
 
-B2C_s = DHL_B2C,s / P(DHL | B2C), B2B_s = DHL_B2B,s / P(DHL | B2B) (Tagesmittel 2021), Jahresmenge = Tagesmittel × Betriebstage
-(`reference_operating_days`, Standard `calendar`). Prüfidentitäten: Σ(B2C_s + B2B_s) = ΣDHL′ / m_DHL und Regional-B2B = b(2021) bis auf 1e-9.
+B2C_s = LSP_B2C,s / P(LSP | B2C), B2B_s = LSP_B2B,s / P(LSP | B2B) (Tagesmittel 2021), Jahresmenge = Tagesmittel × Betriebstage
+(`reference_operating_days`, Standard `calendar`). Prüfidentitäten: Σ(B2C_s + B2B_s) = ΣLSP′ / m_LSP und Regional-B2B = b(2021) bis auf 1e-9.
 
 ### 5.9 Rückfall auf das Strukturmodell
 
-Gilt für Gebäude ohne DHL-Straße und für Straßen mit DHL = 0, deren Strukturerwartung r_P P_s + r_C C_s ≥ 5 DHL-Pakete je Tag ist
-(Datenlücke). Nachfrage je Segment = Strukturerwartung des Segments / P(DHL | Segment). Diese Mengen kommen zur beobachtungsbasierten
+Gilt für Gebäude ohne LSP-Straße und für Straßen mit LSP = 0, deren Strukturerwartung r_P P_s + r_C C_s ≥ 5 LSP-Pakete je Tag ist
+(Datenlücke). Nachfrage je Segment = Strukturerwartung des Segments / P(LSP | Segment). Diese Mengen kommen zur beobachtungsbasierten
 Menge hinzu und stehen im Bericht getrennt (`anchor_status = observed | structural_gap | structural_no_street`). Die Identitäten aus 5.8
 gelten für den beobachtungsbasierten Teil; Gesamtmenge und Regional-B2B inklusive Rückfall werden zusätzlich berichtet.
 
@@ -147,8 +147,8 @@ Ergebnis: `annual_expected` je Gebäude × Segment; dieselbe Tabelle speist Jahr
 
 ### 5.11 Abschnitte und Straßenseite
 
-DHL-Straßen werden wie in Notebook 06 je LineString-Teil in 50-m-Abschnitte geteilt (Rest als eigenes Stück).
-Jedes Gebäude wird auf die Achse seiner DHL-Straße projiziert: Abschnitt = enthaltendes Stück, Seite = Vorzeichen des Kreuzprodukts
+LSP-Straßen werden wie in Notebook 06 je LineString-Teil in 50-m-Abschnitte geteilt (Rest als eigenes Stück).
+Jedes Gebäude wird auf die Achse seiner LSP-Straße projiziert: Abschnitt = enthaltendes Stück, Seite = Vorzeichen des Kreuzprodukts
 (links/rechts in Digitalisierrichtung), Position = Distanz entlang der Straße.
 
 ### 5.12 Stopps (S3)
@@ -170,14 +170,14 @@ die methodische Neugestaltung der Tagesstreuung ist Teilprojekt B.
 
 Der MATSim-Export schreibt je Liefertag eine Zeile je Stopp (bzw. Teilzeile nach 5.12) im bestehenden Vertrag
 (`<anbieter>_tag` B2C, `<anbieter>_type`/`_typ` B2B, 14 Notebook-Aliase `{ama,…}_{b2b,b2c}`, `total = total_sim = wl_tag`, `postal_cod`, `date`)
-und ergänzt `id` (int64, stabil je Stopp/Teilzeile), `stop_id`, `str_idx` (DHL-Straßenindex), `section_id`. Keine weiteren Spalten mit
+und ergänzt `id` (int64, stabil je Stopp/Teilzeile), `stop_id`, `str_idx` (LSP-Straßenindex), `section_id`. Keine weiteren Spalten mit
 Endung `_b2b`/`_b2c`. Tage 09.–17.05.2025 (Mo–Sa) sind in `configs/baseline-daily.json` enthalten.
 
 ## 6. Artefakte
 
 `buildings.parquet` (Gebäude, Einwohner, Firmen, Adresse, Straße, Abschnitt, Seite, Status), `site_buildings.parquet` (Personen-Gebäudepunkt bzw. Firma → Gebäude, Stufe),
-`street_decomposition.parquet` (DHL, DHL′, Korrektur, B2C/B2B, Status), `stops.parquet` (Stopp, Punkt, Gebäude, Erwartung je Segment),
-`anchor_report.json` (Raten, q_DHL, Korrekturen, Zuordnungsquoten, Identitäten), dazu die bestehenden Referenz-, Tages- und MATSim-Artefakte.
+`street_decomposition.parquet` (LSP, LSP′, Korrektur, B2C/B2B, Status), `stops.parquet` (Stopp, Punkt, Gebäude, Erwartung je Segment),
+`anchor_report.json` (Raten, q_LSP, Korrekturen, Zuordnungsquoten, Identitäten), dazu die bestehenden Referenz-, Tages- und MATSim-Artefakte.
 
 ## 7. Validierung und Tests
 
@@ -201,5 +201,5 @@ der Standard des Firmengewichts geht dabei auf „1 je Firma“ zurück.
 
 ## 10. Offene Punkte
 
-- Ursache des DHL-Pegels in 30855: Rückfrage beim Datenlieferanten der DHL-Straßendaten.
+- Ursache des LSP-Pegels in 30855: Rückfrage beim Datenlieferanten der LSP-Straßendaten.
 - Werte für Laufradius, eigene Stopps und Branchenfaktoren sind begründete Annahmen und werden in C per Sensitivität geprüft.

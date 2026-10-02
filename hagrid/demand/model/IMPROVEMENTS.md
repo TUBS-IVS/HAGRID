@@ -12,7 +12,7 @@ Neue Run-ID fuer weitere Laeufe verwenden. Der mitgelieferte Lauf umfasst 20.–
 
 Die Betriebsgroesse kann mit `business_size_power` eingestellt werden. 1 bedeutet die bisherige lineare Beschaeftigtenannahme; 0.5 die Quadratwurzel je Betrieb. Erst nach dieser Transformation wird auf PLZ summiert. Kalibrierung und Standortanwendung verwenden dieselbe Exposition. Ein eingefrorenes Modell verweigert eine nachtraeglich geaenderte Exposition.
 
-Der explorative Vergleich verwendet dieselben drei Seeds und je fuenf PLZ-Folds. Bei festen Anbieterprioren sinkt der mittlere Rohmengen-wMAPE von 33.21 auf 32.29 Prozent. Bedingt auf die aus PANDA vorgegebenen DHL-Grosskundenmengen sinkt er von 18.91 auf 17.05 Prozent. Diese Sondermengen werden im Hauptlauf noch nicht separat eingebaut; 17.05 Prozent ist deshalb kein Fehlerwert des vollstaendigen Hauptmodells.
+Der explorative Vergleich verwendet dieselben drei Seeds und je fuenf PLZ-Folds. Bei festen Anbieterprioren sinkt der mittlere Rohmengen-wMAPE von 33.21 auf 32.29 Prozent. Bedingt auf die aus PANDA vorgegebenen LSP-Grosskundenmengen sinkt er von 18.91 auf 17.05 Prozent. Diese Sondermengen werden im Hauptlauf noch nicht separat eingebaut; 17.05 Prozent ist deshalb kein Fehlerwert des vollstaendigen Hauptmodells.
 
 `improved.json` verwendet den einfachen Kandidaten mit Exponent 0.5. Die Auswahl wurde nach Betrachtung der bisherigen Testdaten getroffen. Auch der im Hauptdashboard weiterhin berichtete einzelne Split ist damit explorativ und keine neue unabhaengige Bestaetigung. Rohmengen und Bedingung auf bekannte Sonderstandorte werden getrennt berichtet.
 

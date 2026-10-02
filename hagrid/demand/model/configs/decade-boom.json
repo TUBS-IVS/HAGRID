@@ -62,13 +62,14 @@
   "target_crs": "EPSG:25832",
   "dhl_exclude_above": 1000,
   "assumptions": [
-    "DHL tagesschni is treated as a documented reference anchor pending measurement-definition review.",
+    "LSP tagesschni is treated as a documented reference anchor pending measurement-definition review.",
     "Hermes rows are inventory only and do not anchor the reference level.",
-    "DHL tagesschni is the mean per delivery day of 2021 under the configured calendar (Sundays and Lower Saxony holidays closed).",
+    "LSP tagesschni is the mean per delivery day of 2021 under the configured calendar (Sundays and Lower Saxony holidays closed).",
     "Demand locations are OSM buildings (Geofabrik Niedersachsen 2021-01-01, (c) OpenStreetMap contributors, ODbL).",
     "Exported days per year: Fri/Sat of ISO week 19 and Mon-Sat of ISO week 20 (the eight ParcelDemandScenarioGenerator days); a day on a public holiday moves to the same weekday one week later.",
     "Szenario Boom: exponentieller Fit unter den Notebook-Annahmen 2024-2028, am Niveau 2025 verkettet, 2035 = 6,45 Mrd.",
-    "Pickup network grows with out-of-home demand (elasticity 0.6) at retail and fuel-station POIs; see out_of_home.json network_growth."
+    "Pickup network grows with out-of-home demand (elasticity 0.7) at retail and fuel-station POIs; see out_of_home.json network_growth.",
+    "Land use: persons per forecast district (Bevölkerungsprognose 2025-2035), ageing with cohort effect, firm growth by WZ section, development areas and new firms as new sites (variant prognose)."
   ],
   "years": [
     2025,
@@ -186,5 +187,10 @@
     "policy": "legacy_assumptions",
     "curve": "exponential",
     "chain_year": 2025
+  },
+  "osm_boundaries": "../../input/hannover/osm/osm_boundaries_region_hannover_2021.parquet",
+  "land_use": {
+    "enabled": true,
+    "variant": "prognose"
   }
 }
