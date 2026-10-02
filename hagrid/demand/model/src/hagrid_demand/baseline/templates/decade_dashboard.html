@@ -464,7 +464,12 @@ function crosshair(F, yrs, build) {
   hit.addEventListener('click', e => { const yr = near(e); if (YEARS.includes(yr)) setYear(yr); });
 }
 /* Direct labels at the right edge: the most important first; a label too close to a placed one is left to the legend. */
-function endLabels(F, items) { const placed = []; items.filter(Boolean).sort((a, b) => b.priority - a.priority).forEach(it => { if (placed.some(y => Math.abs(y - it.y) < 13)) return; placed.push(it.y); s('text', {x: F.W - F.m.r + 6, y: it.y + 4, class: it.strong ? 'lbl-b' : 'lbl', text: it.text}, F.v); }); }
+// End labels: a line ending at the same value as an already labelled one stays unlabelled (identical paths); a label
+// that would overlap another moves 13 px away from it, on the side of its own line, instead of being dropped.
+function endLabels(F, items) { const placed = []; items.filter(Boolean).sort((a, b) => b.priority - a.priority).forEach(it => {
+  if (placed.some(p => Math.abs(p.y0 - it.y) < 1)) return;
+  let y = it.y; for (let k = 0; k < 8; k++) { const near = placed.find(p => Math.abs(p.y - y) < 13); if (!near) break; y = near.y + (it.y >= near.y0 ? 13 : -13); }
+  placed.push({y, y0: it.y}); s('text', {x: F.W - F.m.r + 6, y: y + 4, class: it.strong ? 'lbl-b' : 'lbl', text: it.text}, F.v); }); }
 const pctTick = t => NF[0].format(t * 100) + '%';
 
 /* Stacked area over the years; share=true normalises every year to 100 %. Bands are a light wash with a 2px edge. */
