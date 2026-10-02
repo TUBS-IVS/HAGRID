@@ -5,9 +5,6 @@ import hagrid.core.routing.HAGRIDRouterUtils;
 
 import java.io.IOException;
 import java.lang.reflect.RecordComponent;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,8 +13,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.StringJoiner;
-import java.util.TreeMap;
 import java.util.function.UnaryOperator;
 
 /**
@@ -120,7 +115,7 @@ final class JspritCacheKey {
         }
         if (value instanceof Path p) {
             return p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".shp")
-                    ? shapefileFamily(p)
+                    ? ShapefileFamily.hash(p)
                     : "sha256:" + Sha256.ofFile(p);
         }
         if (value instanceof LmdPreprocessInputs.Variant v) {
@@ -135,36 +130,5 @@ final class JspritCacheKey {
         }
         throw new IllegalStateException("LmdPreprocessInputs component '" + name + "' has type "
                 + value.getClass().getName() + ", which JspritCacheKey cannot encode - extend encode()");
-    }
-
-    /**
-     * Hashes every file next to the {@code .shp} whose base name matches, ignoring case (shapefiles
-     * from Windows shares come as {@code .SHP}/{@code .DBF}). A neighbour such as
-     * {@code drt-service-area-with-ruhland.shp} has a different base name and is not included.
-     */
-    private static String shapefileFamily(Path shp) throws IOException {
-        if (!Files.isRegularFile(shp)) {
-            throw new NoSuchFileException(shp.toString());
-        }
-        String file = shp.getFileName().toString();
-        String base = file.substring(0, file.length() - ".shp".length());
-        Map<String, String> byExtension = new TreeMap<>();
-        try (DirectoryStream<Path> dir = Files.newDirectoryStream(shp.toAbsolutePath().getParent())) {
-            for (Path f : dir) {
-                String n = f.getFileName().toString();
-                int dot = n.lastIndexOf('.');
-                if (dot <= 0 || !Files.isRegularFile(f) || !n.substring(0, dot).equalsIgnoreCase(base)) {
-                    continue;
-                }
-                String ext = n.substring(dot + 1).toLowerCase(Locale.ROOT);
-                if (byExtension.put(ext, Sha256.ofFile(f)) != null) {
-                    throw new IllegalStateException("two ." + ext + " files for shapefile " + shp
-                            + " that differ only in case - remove one");
-                }
-            }
-        }
-        StringJoiner j = new StringJoiner(",");
-        byExtension.forEach((ext, hash) -> j.add(ext + ":" + hash));
-        return j.toString();
     }
 }

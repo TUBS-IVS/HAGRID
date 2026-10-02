@@ -212,6 +212,55 @@ class SharedUseKpiHandlerTest {
                 .as("honest decomposition still conserves to submitted").isEqualTo(submitted);
     }
 
+    /**
+     * Review 2026-10-02 #8: the last event the handler saw is only a LOWER bound for the sim end.
+     * A run whose last request/dropoff came at 20:50 while the mobsim ran on past the 21:00
+     * deadline used to book the undelivered parcel as pending_open ("sim ended first") instead of
+     * window_expired, the bucket the chi-cost reading rests on.
+     */
+    @Test
+    @DisplayName("mobsim end past the deadline decides window_expired, not the last event seen")
+    void mobsimEndNotLastEventDecidesExpiry() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person deliveredP = personWithWindow(population, "parcel_dhl_1_B2C", 1, "DOOR", 75600.0);
+        Person openP = personWithWindow(population, "parcel_dhl_2_B2C", 1, "DOOR", 75600.0); // 21:00
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), deliveredP.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("o", Request.class), openP.getId()));
+        handler.handleEvent(droppedOff(75000.0, Id.create("d", Request.class), deliveredP.getId())); // 20:50
+        handler.recordMobsimEnd(86400.0);
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+        assertThat(m.get("segments_window_expired")).isEqualTo("1");
+        assertThat(m.get("segments_pending_open")).isEqualTo("0");
+        assertThat(m.get("mobsim_end_s")).isEqualTo("86400.0");
+    }
+
+    /** The mobsim end belongs to ONE iteration: a stale value must not decide the next one. */
+    @Test
+    @DisplayName("reset clears the mobsim end; without one the last event is the fallback")
+    void resetClearsMobsimEnd() throws Exception {
+        Population population = PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        Person deliveredP = personWithWindow(population, "parcel_dhl_1_B2C", 1, "DOOR", 70000.0);
+        Person openP = personWithWindow(population, "parcel_dhl_2_B2C", 1, "DOOR", 70000.0);
+        SharedUseKpiHandler handler = new SharedUseKpiHandler(population, controlerIO());
+        handler.recordMobsimEnd(86400.0);   // iteration 0
+        handler.reset(1);
+
+        handler.handleEvent(submitted(1000.0, Id.create("d", Request.class), deliveredP.getId()));
+        handler.handleEvent(submitted(1000.0, Id.create("o", Request.class), openP.getId()));
+        handler.handleEvent(droppedOff(50000.0, Id.create("d", Request.class), deliveredP.getId()));
+
+        Path csv = Path.of(utils.getOutputDirectory()).resolve("out.csv");
+        handler.writeCsv(csv);
+        Map<String, String> m = readCsv(csv);
+        assertThat(m.get("segments_pending_open")).isEqualTo("1");
+        assertThat(m).doesNotContainKey("mobsim_end_s");
+    }
+
     @Test
     @DisplayName("I1/F4: dropoff AFTER the window end counts as delivered_late, NOT delivered (delta = in-window only)")
     void dropoffAfterWindowEndCountsAsDeliveredLate() throws Exception {

@@ -137,6 +137,32 @@ public final class SimulationRunnerUtils {
     private static final java.util.Set<String> MULTI_VALUE_KEYS =
             java.util.Set.of("openDepots", "freightWindows");
 
+    /**
+     * Every key {@link #parseScenario} reads, plus {@code writeDashboard}, which
+     * {@link #extractDashboardFlags} reads from the raw spec. Anything else is rejected (review
+     * 2026-10-02 #11): a key outside this set used to be dropped silently, so a typo such as
+     * {@code budgetMdoe=selfref} ran the default with nothing but a log line to show for it. A key
+     * added to parseScenario without being added here fails loudly on first use, never silently.
+     */
+    static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
+            "concept", "date", "tag", "maxIter", "jspritIter", "zoneCaching", "zoneThreshold",
+            "uTurnPenalty", "studyArea", "fleetSize", "freight", "kpiDashboard", "chiThreshold",
+            "noParcels", "seed", "idleThreshold", "maxTourDuration", "openDepots",
+            "maxJobsPerDistrict", "maxConcurrentFreight", "freightWindows", "budgetMode",
+            "budgetSmoothing", "budgetHeadroom", "budgetUrgencyLeadS", "overwrite",
+            "writeDashboard");
+
+    private static String unknownKeyMessage(String key) {
+        for (String known : KNOWN_KEYS) {
+            if (known.equalsIgnoreCase(key)) {
+                return "Unknown key '" + key + "' - did you mean '" + known + "'? Keys are"
+                        + " case-sensitive, and an unknown one used to be ignored silently.";
+            }
+        }
+        return "Unknown key '" + key + "' - it would have been ignored silently and the run would"
+                + " have used the default. Known keys: " + new java.util.TreeSet<>(KNOWN_KEYS);
+    }
+
     public static HAGRIDSimulationConfig parseScenario(String spec) {
         if (spec == null || spec.isBlank()) {
             throw new IllegalArgumentException("Empty scenario specification");
@@ -160,6 +186,16 @@ public final class SimulationRunnerUtils {
                 throw new IllegalArgumentException("Invalid token: " + token);
             }
             lastKey = kv[0].trim();
+            if (!KNOWN_KEYS.contains(lastKey)) {
+                throw new IllegalArgumentException(unknownKeyMessage(lastKey));
+            }
+            if (map.containsKey(lastKey)) {
+                // Review 2026-10-02 #11: the later value used to win silently. One comparison
+                // rested on a .bat whose BASE variable already carried fleetSize.
+                throw new IllegalArgumentException("Key '" + lastKey + "' is set twice ('"
+                        + map.get(lastKey) + "' and '" + kv[1].trim() + "') - the later value"
+                        + " used to win silently. Set it once.");
+            }
             map.put(lastKey, kv[1].trim());
         }
 
@@ -250,6 +286,9 @@ public final class SimulationRunnerUtils {
         double budgetUrgencyLeadS = positiveDouble(map.getOrDefault("budgetUrgencyLeadS",
                 Double.toString(hagrid.lausitz.modular.Modular.DEFAULT_BUDGET_URGENCY_LEAD_S)),
                 "budgetUrgencyLeadS");
+        // Launch decision, not a scenario parameter: may this launch replace a COMPLETED run in
+        // its output directory? See HAGRIDSimulationConfig#validateInputFiles (review 2026-10-02 #2).
+        boolean overwrite = bool(map.getOrDefault("overwrite", "false"), "overwrite");
 
         // Output-collision guard (review I2/M5): runId = CONCEPT_date[_tag], and MATSim's
         // deleteDirectoryIfExists wipes an existing output directory at startup. chiThreshold,
@@ -322,18 +361,20 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={} maxConcurrentFreight={} freightWindows={} budgetMode={} budgetSmoothing={} budgetHeadroom={} budgetUrgencyLeadS={}",
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={} maxConcurrentFreight={} freightWindows={} budgetMode={} budgetSmoothing={} budgetHeadroom={} budgetUrgencyLeadS={} overwrite={}",
                 concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict,
                 maxConcurrentFreight == 0 ? "unlimited" : maxConcurrentFreight,
                 freightWindows.isEmpty() ? "always-open" : freightWindows,
-                budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS);
+                budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS, overwrite);
 
-        return new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
+        HAGRIDSimulationConfig cfg = new HAGRIDSimulationConfig(concept, date, maxIter, jspritIter,
                 zoneCaching, zoneThreshold, uTurnPenaltyCost, tag, studyArea, fleetSize,
                 drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed,
                 idleThreshold, maxTourDuration, openDepots, maxJobsPerDistrict,
                 maxConcurrentFreight, freightWindows,
                 budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS);
+        cfg.setOverwriteCompletedRun(overwrite);
+        return cfg;
     }
 
     /**
@@ -357,6 +398,24 @@ public final class SimulationRunnerUtils {
      * of errors to prevent running with incomplete inputs.
      */
     public static void validateAll(List<HAGRIDSimulationConfig> configs) {
+        // Review 2026-10-02 #2: two specs of ONE launch with the same output directory run one
+        // after the other, and the second deletes the first at its own startup. The completed-run
+        // guard in validateInputFiles cannot see this - at validation time neither has run yet.
+        Map<Path, Integer> firstSpec = new LinkedHashMap<>();
+        List<String> collisions = new ArrayList<>();
+        for (int i = 0; i < configs.size(); i++) {
+            Path out = configs.get(i).getOutputDirectory().toAbsolutePath().normalize();
+            Integer first = firstSpec.putIfAbsent(out, i);
+            if (first != null) {
+                collisions.add("scenario " + (first + 1) + " and " + (i + 1) + " -> " + out);
+            }
+        }
+        if (!collisions.isEmpty()) {
+            throw new IllegalStateException("Scenarios of this launch write to the same output"
+                    + " directory, so the later one would delete the earlier one's results."
+                    + " Give each its own tag: " + String.join("; ", collisions));
+        }
+
         LOG.info("Validating input files for {} scenario(s)...", configs.size());
         List<String> errors = new ArrayList<>();
         for (HAGRIDSimulationConfig cfg : configs) {
@@ -765,6 +824,11 @@ public final class SimulationRunnerUtils {
               fleetSize      DRT fleet size in vehicles (default 50; only used for DRT concepts)
               seed           MATSim global random seed (default 1337; vary for error-band replicates)
               writeDashboard true/false (default false) \u2014 generate dashboard after sim
+              overwrite      true/false (default false) \u2014 allow replacing a COMPLETED run
+                             (one with run_metadata.json) in the output directory; a crashed
+                             run restarts without it
+
+            Keys are case-sensitive; an unknown key or a key set twice aborts the launch.
 
             Note (DRT scenarios): the clipped network, clipped population, and fleet file must be
               pre-generated (by DrtNetworkPreparer / PopulationClipper / DrtFleetGenerator) before

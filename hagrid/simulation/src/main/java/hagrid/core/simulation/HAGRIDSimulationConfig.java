@@ -88,6 +88,14 @@ public class HAGRIDSimulationConfig {
     private final String runId;
 
     /**
+     * Whether this launch may replace a COMPLETED run in its output directory (review 2026-10-02
+     * #2). A launch decision, not a scenario parameter: it changes nothing the run computes, so it
+     * is set from the {@code overwrite=} key by {@code SimulationRunnerUtils.parseScenario} instead
+     * of being threaded through the constructor chain. See {@link #validateInputFiles()}.
+     */
+    private boolean overwriteCompletedRun = false;
+
+    /**
      * Geographic study area for this scenario.
      */
     private final StudyArea studyArea;
@@ -582,6 +590,16 @@ public class HAGRIDSimulationConfig {
     }
 
     // === GETTERS ===
+
+    /** @return true when this launch may replace a completed run (the {@code overwrite=} key) */
+    public boolean isOverwriteCompletedRun() {
+        return overwriteCompletedRun;
+    }
+
+    /** @param overwrite true to let this launch replace a completed run in its output directory */
+    public void setOverwriteCompletedRun(boolean overwrite) {
+        this.overwriteCompletedRun = overwrite;
+    }
 
     /**
      * Returns the unique run identifier of this scenario.
@@ -1186,6 +1204,20 @@ public class HAGRIDSimulationConfig {
         if (!missing.isEmpty()) {
             throw new IllegalStateException("Missing or stale required inputs:\n"
                     + String.join("\n", missing));
+        }
+
+        // Review 2026-10-02 #2: MATSim deletes an existing output directory at startup
+        // (deleteDirectoryIfExists) and the runId is only CONCEPT_date[_tag], so a spec differing
+        // from a finished run only in seed/fleetSize/theta used to destroy it, warned about below
+        // and nothing more. run_metadata.json is written after controler.run() returns, so it
+        // marks exactly the COMPLETED runs: a crashed run has none and restarts without a flag.
+        Path completedMarker = getOutputDirectory().resolve(
+                hagrid.lausitz.simulation.RunMetadataWriter.FILE_NAME);
+        if (completedMarker.toFile().exists() && !overwriteCompletedRun) {
+            throw new IllegalStateException("Output directory holds a COMPLETED run ("
+                    + completedMarker.toAbsolutePath() + " exists), and MATSim would delete it at"
+                    + " startup. Use a new tag, or add overwrite=true to the spec to replace it"
+                    + " deliberately.");
         }
 
         if (getOutputDirectory().toFile().exists()) {

@@ -1,6 +1,7 @@
 package hagrid.lausitz.drt;
 
 import hagrid.core.HagridConfig;
+import hagrid.lausitz.freight.ShapefileFamily;
 import hagrid.lausitz.shareduse.SharedUse;
 import hagrid.core.simulation.HAGRIDSimulationConfig;
 
@@ -14,6 +15,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeSet;
@@ -54,6 +56,7 @@ public final class DrtInputsFingerprint {
     private static final String K_BASE_SEATS = "sharedUse.BASE_SEATS";
     private static final String K_SEATS = "sharedUse.SEATS";
     private static final String K_PARCEL_SLOTS = "sharedUse.PARCEL_SLOTS";
+    private static final String K_OPEN_DEPOTS = "openDepots";
     private static final String SOURCE_PREFIX = "source.";
 
     private DrtInputsFingerprint() {}
@@ -141,9 +144,33 @@ public final class DrtInputsFingerprint {
         // Parcel demand only feeds the artifacts on a parcel-injecting Shared-Use run.
         if (HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase())
                 == HagridConfig.Scenario.DRT_SHAREDUSE && !cfg.isNoParcels()) {
-            putSource(m, "lmdDemandShp", cfg.getLmdDemandShapefile());
+            // The parcel agents are built from the districts of the OPEN depots, so the depot
+            // choice is baked into the prepared plans as much as the demand is; it was missing
+            // here (review 2026-10-02 #3). Sorted, because DeliveryDistrictBuilder.selectOpenDepots
+            // filters in depot-CSV order - the order given cannot change the districts.
+            TreeSet<String> depots = new TreeSet<>();
+            cfg.getOpenDepots().forEach(d -> depots.add(d.trim().toLowerCase(Locale.ROOT)));
+            m.put(K_OPEN_DEPOTS, depots.isEmpty() ? "all" : String.join(",", depots));
+            putShapefile(m, "lmdDemandShp", cfg.getLmdDemandShapefile());
         }
         return m;
+    }
+
+    /**
+     * Records the CONTENT of a whole shapefile family ({@link ShapefileFamily}): the parcel counts
+     * are in the {@code .dbf}, which {@code size:lastModified} of the {@code .shp} never saw
+     * (review 2026-10-02 #4). Hashing is affordable here, unlike for the multi-hundred-MB raw
+     * inputs {@link #putSource} handles: the demand shapefile is a few MB.
+     */
+    private static void putShapefile(Map<String, String> m, String label, String path) {
+        Path p = Path.of(path);
+        String value;
+        try {
+            value = Files.exists(p) ? ShapefileFamily.hash(p) : "absent";
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot hash DRT raw shapefile " + p, e);
+        }
+        m.put(SOURCE_PREFIX + label, value);
     }
 
     /**

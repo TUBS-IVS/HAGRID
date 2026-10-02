@@ -19,8 +19,10 @@ class LmdBaselineEndToEndTest {
     @Test
     @DisplayName("a maxIter=0 LMD_BASELINE run boots, routes carriers, and produces freight output")
     void bootsOnRealData() throws Exception {
+        // overwrite=true: this test writes to the real (persistent) output tree, so from its second
+        // run on the directory holds a COMPLETED run - replacing it is the point of a rerun.
         HAGRIDSimulationConfig cfg = SimulationRunnerUtils.parseScenario(
-                "concept=LMD_BASELINE,date=2025-05-13,maxIter=0,jspritIter=1,tag=SMOKE");
+                "concept=LMD_BASELINE,date=2025-05-13,maxIter=0,jspritIter=1,tag=SMOKE,overwrite=true");
 
         // Skip cleanly when the real Lausitz inputs are not staged on this machine.
         Assumptions.assumeTrue(Files.exists(Path.of(cfg.getLmdDemandShapefile())),

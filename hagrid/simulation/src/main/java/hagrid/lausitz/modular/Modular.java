@@ -9,9 +9,11 @@ import static org.matsim.contrib.drt.schedule.DrtTaskBaseType.STAY;
 
 /** Constants for the 1d Modular (U-Shift capsule swap) scenario. Extended in Task 3. */
 public final class Modular {
-    /** Cargo capsule parcel capacity (spec §6.1). DOCUMENTED NEVER-BINDING (design D8):
-     *  216 x 2 min dwell = 7.2h exceeds any tour cap <= 7h, so time always binds first.
-     *  It sizes the jsprit vehicle; it is NOT a DvrpLoad dimension (design D7 / plan C5). */
+    /** Cargo capsule parcel capacity (spec §6.1). It sizes the jsprit vehicle; it is NOT a
+     *  DvrpLoad dimension (design D7 / plan C5). It CAN bind: design D8's "never binding"
+     *  argument (216 x 2 min dwell = 7.2 h > any tour cap) ignored the 15-min dwell cap per stop
+     *  and is retracted (METHODS-LOG 2.22). Whether it binds is a per-run fact, exported as
+     *  max_parcels_per_tour: 214-216 in most 1d arms measured 2026-10-02. */
     public static final int CARGO_CAPACITY_PARCELS = 216;
     public static final String CARGO_CAPSULE_TYPE_ID = "ushift_cargo_capsule";
 
