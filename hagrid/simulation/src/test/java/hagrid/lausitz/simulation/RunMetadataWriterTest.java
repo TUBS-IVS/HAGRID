@@ -156,7 +156,14 @@ class RunMetadataWriterTest {
     void aRunWithoutPreprocessingIsNotApplicableEvenNextToAStaleSidecar() throws Exception {
         HAGRIDSimulationConfig cfg = baselineCfg("meta_stale");
         Path sidecar = JspritPlanCache.sidecarPathFor(Path.of(cfg.getLmdCarriersRouted()));
-        Files.createDirectories(sidecar.toAbsolutePath().getParent());
+        // The config always resolves into the module's real hagrid-output/ (the root only moves with a
+        // global system property), so this test removes exactly what it creates: the sidecar, then
+        // carriers/ and the run directory if they did not exist before (final review M7).
+        Path carriersDir = sidecar.toAbsolutePath().getParent();
+        Path runDir = carriersDir.getParent();
+        boolean createdRunDir = Files.notExists(runDir);
+        boolean createdCarriersDir = Files.notExists(carriersDir);
+        Files.createDirectories(carriersDir);
         Files.writeString(sidecar, "{\"status\": \"hit\", \"key\": \"stale-key\"}");
         try {
             String json = Files.readString(RunMetadataWriter.write(cfg, tmp, null));
@@ -168,6 +175,13 @@ class RunMetadataWriterTest {
             assertTrue(Files.readString(RunMetadataWriter.write(cfg, tmp)).contains("\"jsprit_cache\": \"not_applicable\""));
         } finally {
             Files.deleteIfExists(sidecar);
+            // non-recursive on purpose: anything else in there was not written by this test
+            if (createdCarriersDir) {
+                Files.deleteIfExists(carriersDir);
+            }
+            if (createdRunDir) {
+                Files.deleteIfExists(runDir);
+            }
         }
     }
 }
