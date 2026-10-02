@@ -5,7 +5,8 @@
 # Precondition: no entries and no BLOCKED.json in hagrid-output\shared\jsprit-cache (C must be a real miss).
 # Keep the laptop on AC with the lid open: lid-close standby freezes the run.
 # All runs use a frozen copy of the JAR (other sessions may rebuild target\ meanwhile); its SHA-256
-# is logged. -Reuse b_A (etc.) keeps an already finished run instead of rerunning it.
+# is logged. -Reuse b_A (etc.) keeps an already finished run instead of rerunning it; reusing all
+# eight (-Reuse b_A,b_C,b_B,b_D,m_A,m_C,m_B,m_D) re-evaluates finished runs without simulating.
 # Never hold gate_status.txt open while the gate runs (no tail -f); Mark retries but read it by polling.
 # ASCII only (Windows PowerShell 5.1 reads BOM-less scripts as cp1252).
 param(
@@ -15,6 +16,8 @@ param(
     [string[]] $Reuse = @()
 )
 $ErrorActionPreference = 'Stop'
+# powershell -File passes "b_A,b_C" as ONE string: split it here
+$Reuse = @($Reuse | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $module = Join-Path $repo 'hagrid\simulation'
 $jar = 'hagrid-output\logs\cache-gate\gate-hagrid-shaded.jar'   # relative to $module
@@ -41,7 +44,9 @@ Mark ('JAR {0} sha256={1} mtime={2:s} reuse={3}' -f $jar, (Get-FileHash -Algorit
       $jarItem.LastWriteTime, ($Reuse -join ','))
 
 $blockedMarker = Join-Path $cacheDir 'BLOCKED.json'
-if (Test-Path $cacheDir) {
+# the empty-cache precondition only matters while a C run (the first miss) is still to be computed
+$freshC = -not (($Reuse -contains 'b_C') -and ($Reuse -contains 'm_C'))
+if ($freshC -and (Test-Path $cacheDir)) {
     $existing = @(Get-ChildItem -Path $cacheDir -Directory | Where-Object { -not $_.Name.StartsWith('.') })
     if ($existing.Count -gt 0) {
         Mark ('ABORT: {0} cache entries exist in {1}; move them away for a clean gate' -f $existing.Count, $cacheDir)
