@@ -237,6 +237,157 @@ class HAGRIDSimulationConfigTest {
                 .hasMessageContaining("maxJobsPerDistrict");
     }
 
+    /**
+     * Review 2026-10-02 #2: MATSim deletes an existing output directory at startup, and the runId
+     * is only CONCEPT_date[_tag], so a spec differing from a FINISHED run only in seed, fleetSize
+     * or theta used to destroy it with nothing more than a log warning. A finished run is the
+     * directory holding run_metadata.json, which is written after controler.run() returns.
+     */
+    @Test
+    @DisplayName("completed run in the output directory → abort, naming overwrite=true")
+    void refusesToReplaceACompletedRun(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = preparedDrtConfig(tempDir);
+            Files.createDirectories(cfg.getOutputDirectory());
+            Files.writeString(cfg.getOutputDirectory().resolve(RunMetadataWriter.FILE_NAME), "{}");
+
+            assertThatThrownBy(cfg::validateInputFiles)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("COMPLETED run")
+                    .hasMessageContaining("overwrite=true");
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    @Test
+    @DisplayName("overwrite=true replaces a completed run deliberately")
+    void overwriteFlagAllowsReplacingACompletedRun(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = preparedDrtConfig(tempDir);
+            Files.createDirectories(cfg.getOutputDirectory());
+            Files.writeString(cfg.getOutputDirectory().resolve(RunMetadataWriter.FILE_NAME), "{}");
+            cfg.setOverwriteCompletedRun(true);
+
+            assertThatCode(cfg::validateInputFiles).doesNotThrowAnyException();
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /** A crashed run never wrote run_metadata.json: restarting it must need no flag. */
+    @Test
+    @DisplayName("crashed run (output dir without run_metadata.json) restarts without a flag")
+    void crashedRunRestartsWithoutAFlag(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = preparedDrtConfig(tempDir);
+            Files.createDirectories(cfg.getOutputDirectory().resolve("ITERS"));
+
+            assertThatCode(cfg::validateInputFiles).doesNotThrowAnyException();
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /**
+     * Review 2026-10-02 #3: the 1c preprocessor builds the parcel agents from the districts of the
+     * OPEN depots, so openDepots is baked into the prepared plans. It was not in the fingerprint:
+     * same tag, other depots, no re-prepare, and the run used the old parcel agents while its
+     * metadata named the new depots.
+     */
+    @Test
+    @DisplayName("1c: openDepots drift between prepare and run → abort naming it")
+    void detectsOpenDepotsDriftForSharedUse(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig prepared = sharedUseConfig(List.of("hoy_sued"));
+            stubSharedUseInputs(tempDir, prepared);
+            DrtInputsFingerprint.write(prepared, Path.of(prepared.getDrtInputsFingerprint()));
+
+            HAGRIDSimulationConfig run = sharedUseConfig(List.of("hoy_sued", "lauta"));
+
+            assertThatThrownBy(run::validateInputFiles)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("openDepots")
+                    .hasMessageContaining("prepared=hoy_sued");
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /** The district builder filters in depot-CSV order, so the order given must not matter. */
+    @Test
+    @DisplayName("1c: openDepots in another order is not drift")
+    void openDepotsOrderIsNotDrift(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig prepared = sharedUseConfig(List.of("lauta", "hoy_sued"));
+            stubSharedUseInputs(tempDir, prepared);
+            DrtInputsFingerprint.write(prepared, Path.of(prepared.getDrtInputsFingerprint()));
+
+            assertThatCode(sharedUseConfig(List.of("hoy_sued", "lauta"))::validateInputFiles)
+                    .doesNotThrowAnyException();
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /**
+     * Review 2026-10-02 #4: the parcel counts live in the demand shapefile's .dbf, but only the
+     * .shp's size and mtime were fingerprinted. Same-size content change, so a size check alone
+     * would miss it too.
+     */
+    @Test
+    @DisplayName("1c: changed parcel counts in the demand .dbf → abort naming the demand source")
+    void detectsDemandDbfChange(@TempDir Path tempDir) throws Exception {
+        System.setProperty("hagrid.pipeline.root", tempDir.toAbsolutePath().toString());
+        try {
+            HAGRIDSimulationConfig cfg = sharedUseConfig(List.of());
+            stubSharedUseInputs(tempDir, cfg);
+            DrtInputsFingerprint.write(cfg, Path.of(cfg.getDrtInputsFingerprint()));
+
+            Files.writeString(dbfOf(cfg.getLmdDemandShapefile()), "dhl_tag=9");   // was dhl_tag=4
+
+            assertThatThrownBy(cfg::validateInputFiles)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("source.lmdDemandShp");
+        } finally {
+            System.clearProperty("hagrid.pipeline.root");
+        }
+    }
+
+    /** DRT_SHAREDUSE with parcels, given open depots, at the temp root. */
+    private static HAGRIDSimulationConfig sharedUseConfig(List<String> openDepots) {
+        return new HAGRIDSimulationConfig(
+                "DRT_SHAREDUSE", LocalDate.of(2025, 5, 13), 1, 1,
+                false, 0.0, 0.0, "fp", StudyArea.LAUSITZ_HOYERSWERDA, 20,
+                false, true, 600.0, false, 1337L,
+                Modular.DEFAULT_IDLE_THRESHOLD, Modular.DEFAULT_MAX_TOUR_DURATION_S,
+                openDepots, 300);
+    }
+
+    /** The passenger-only stubs plus a demand shapefile family (.shp + .dbf). */
+    private static void stubSharedUseInputs(Path tempDir, HAGRIDSimulationConfig cfg) throws Exception {
+        stubDrtInputs(tempDir, cfg);
+        createStub(tempDir, cfg.getLmdDemandShapefile());
+        Files.writeString(dbfOf(cfg.getLmdDemandShapefile()), "dhl_tag=4");
+    }
+
+    private static Path dbfOf(String shp) {
+        return Path.of(shp.substring(0, shp.length() - ".shp".length()) + ".dbf");
+    }
+
+    /** Passenger-only DRT config with every input stubbed and fingerprinted, i.e. valid. */
+    private static HAGRIDSimulationConfig preparedDrtConfig(Path tempDir) throws Exception {
+        HAGRIDSimulationConfig cfg = drtConfig(20);
+        stubDrtInputs(tempDir, cfg);
+        DrtInputsFingerprint.write(cfg, Path.of(cfg.getDrtInputsFingerprint()));
+        return cfg;
+    }
+
     /** Passenger-only DRT config at the temp root; only fleetSize varies across tests. */
     private static HAGRIDSimulationConfig drtConfig(int fleetSize) {
         return new HAGRIDSimulationConfig(

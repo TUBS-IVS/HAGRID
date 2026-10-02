@@ -183,6 +183,12 @@ class SharedUseEndToEndTest {
         assertThat(delivered + deliveredLate + rejectedFinal + pendingEod)
                 .as("M3 conservation: delivered + delivered_late + rejected_final + pending_eod == submitted")
                 .isEqualTo(submitted);
+        // Review 2026-10-02 #8: the expired/open split is taken against the QSim clock at mobsim
+        // end, recorded by a MobsimBeforeCleanupListener. The row exists only when that listener
+        // fired, so its presence is the proof the binding reaches the QSim.
+        assertThat(metrics).as("mobsim_end_s: the handler's mobsim listener never fired")
+                .containsKey("mobsim_end_s");
+        assertThat(Double.parseDouble(metrics.get("mobsim_end_s"))).isGreaterThan(0.0);
 
         // ---- (e) at least one parcel_* person physically boarded a drt_* vehicle ----
         Path eventsFile = findFile(matsimOut, "output_events.xml.gz");

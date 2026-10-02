@@ -18,6 +18,9 @@ import org.matsim.core.controler.events.IterationEndsEvent;
 import org.matsim.core.controler.events.ShutdownEvent;
 import org.matsim.core.controler.listener.IterationEndsListener;
 import org.matsim.core.controler.listener.ShutdownListener;
+import org.matsim.core.mobsim.framework.events.MobsimBeforeCleanupEvent;
+import org.matsim.core.mobsim.framework.listeners.MobsimBeforeCleanupListener;
+import org.matsim.core.mobsim.qsim.interfaces.Netsim;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -73,9 +76,11 @@ import java.util.Set;
  * so {@code segments_rejected_final} captures only genuine hard rejects (which are ~always 0
  * for parcels). The real "χ cost" signal therefore lives in the undelivered remainder,
  * which is split at write time by each parcel's {@link SharedUse#WINDOW_END_ATTRIBUTE} against
- * the last simulated (event) time: {@code segments_window_expired} (windowEnd &le; last-event-time
- * = χ-starved past its deadline) vs {@code segments_pending_open} (windowEnd &gt; last-event-time
- * = the sim ended before the deadline).</p>
+ * the sim end: {@code segments_window_expired} (windowEnd &le; sim end = χ-starved past its
+ * deadline) vs {@code segments_pending_open} (windowEnd &gt; sim end = the sim ended before the
+ * deadline). The sim end is the QSim clock at mobsim end (a {@link MobsimBeforeCleanupListener}),
+ * falling back to the last event seen; that last event alone misfiled segments as pending_open
+ * whenever the mobsim ran on past the deadline without a DRT event (review 2026-10-02 #8).</p>
  *
  * <p><b>Injected vs submitted (C2/F5):</b> {@code segments_injected} / {@code parcels_injected}
  * count the FULL parcel subpopulation (the population snapshot), not just the segments that
@@ -117,7 +122,8 @@ public final class SharedUseKpiHandler implements
         PassengerRequestRejectedEventHandler,
         PassengerDroppedOffEventHandler,
         IterationEndsListener,
-        ShutdownListener {
+        ShutdownListener,
+        MobsimBeforeCleanupListener {
 
     private static final Logger LOG = LogManager.getLogger(SharedUseKpiHandler.class);
 
@@ -146,8 +152,15 @@ public final class SharedUseKpiHandler implements
     private final Map<Id<Request>, Double> submittedAt = new LinkedHashMap<>();
     private final Map<Id<Request>, Double> deliveredAt = new LinkedHashMap<>();
     private final Set<Id<Request>> rejectedFinal = new LinkedHashSet<>();
-    /** Latest time seen across ALL handled events (pax + parcel) = proxy for the sim end / EOD. */
+    /** Latest time seen across ALL handled events (pax + parcel): a LOWER bound for the sim end. */
     private double lastEventTime = 0.0;
+    /**
+     * QSim clock when this iteration's mobsim stopped; NaN until the mobsim listener fires
+     * (review 2026-10-02 #8). The last event seen is only a lower bound: a run whose last
+     * request/dropoff came at 20:50 while the mobsim ran on past the 21:00 deadline used to book
+     * the undelivered parcels as pending_open instead of window_expired.
+     */
+    private double mobsimEndTime = Double.NaN;
 
     private final Path outputCsv;
     private final Path outputIterationsCsv;
@@ -201,6 +214,7 @@ public final class SharedUseKpiHandler implements
         deliveredAt.clear();
         rejectedFinal.clear();
         lastEventTime = 0.0;
+        mobsimEndTime = Double.NaN;
         // The χ counters share this lifecycle deliberately: notifyIterationEnds has already
         // written the row that reports them (it fires BEFORE this reset), so clearing here
         // makes every reported χ count per-iteration, exactly like the segment counters.
@@ -261,6 +275,27 @@ public final class SharedUseKpiHandler implements
     @Override
     public void notifyIterationEnds(IterationEndsEvent event) {
         appendIterationRow(event.getIteration(), outputIterationsCsv);
+    }
+
+    @Override
+    public void notifyMobsimBeforeCleanup(MobsimBeforeCleanupEvent event) {
+        if (event.getQueueSimulation() instanceof Netsim netsim) {
+            recordMobsimEnd(netsim.getSimTimer().getTimeOfDay());
+        }
+    }
+
+    /** Package-visible so the unit test can drive it without a real QSim. */
+    void recordMobsimEnd(double time) {
+        mobsimEndTime = time;
+    }
+
+    /**
+     * The time undelivered segments are split against: the QSim clock at mobsim end when the
+     * listener fired, the last event seen otherwise (unit tests, a mobsim that died). Never
+     * earlier than the last event, which no sim end can precede.
+     */
+    private double simEndTime() {
+        return Double.isNaN(mobsimEndTime) ? lastEventTime : Math.max(mobsimEndTime, lastEventTime);
     }
 
     @Override
@@ -382,6 +417,12 @@ public final class SharedUseKpiHandler implements
                 if (t.segmentsDelivered > 0) {
                     writeMetric(w, "mean_time_to_delivery_s",
                             t.timeToDeliverySumS / t.segmentsDelivered);
+                }
+                // Review 2026-10-02 #8: the clock the expired/open split was taken against. Only
+                // when the mobsim listener fired - its absence says the split fell back to the
+                // last event seen.
+                if (!Double.isNaN(mobsimEndTime)) {
+                    writeMetric(w, "mobsim_end_s", mobsimEndTime);
                 }
             }
         } catch (IOException e) {
@@ -509,7 +550,7 @@ public final class SharedUseKpiHandler implements
                 // windowEndByPerson is total over the same validated person set as the two
                 // lookups above, so there is no "window unknown" bucket any more: the split is
                 // purely deadline-passed vs sim-ended-first.
-                if (windowEnd <= lastEventTime) {
+                if (windowEnd <= simEndTime()) {
                     t.segmentsWindowExpired++; // deadline passed within the sim = the real χ-cost bucket
                     // M6 attribution: was χ ever implicated in this segment's failure at all?
                     // Necessary-not-sufficient (a segment blocked once early may have failed

@@ -109,6 +109,9 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
         bind(SharedUseKpiHandler.class).asEagerSingleton();
         addEventHandlerBinding().to(SharedUseKpiHandler.class);
         addControlerListenerBinding().to(SharedUseKpiHandler.class);
+        // The QSim clock at mobsim end, which the expired/open split is taken against (review
+        // 2026-10-02 #8). SharedUseEndToEndTest proves this reaches the QSim (mobsim_end_s row).
+        addMobsimListenerBinding().to(SharedUseKpiHandler.class);
 
         // M7 (Task, final-review C2): PASSENGER-only rebalancing demand. The stock
         // PreviousIterationDrtDemandEstimator (bound by DrtModeMinCostFlowRebalancingModule) counts
