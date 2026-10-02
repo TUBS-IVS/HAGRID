@@ -22,7 +22,7 @@ Hannover, and three national volume scenarios span the range of plausible growth
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/demand/hexagon-change-dark.png">
-    <img src="docs/images/demand/hexagon-change-light.png" width="100%" alt="Hexagon map of Region Hannover: growth of the expected parcels per delivery day from 2025 to 2035 against the regional growth. Demand grows faster than the region in many surrounding towns and in the development areas, and slower in the inner city.">
+    <img src="docs/images/demand/hexagon-change-light.png" width="100%" alt="Hexagon map of Region Hannover: growth of the expected parcels per delivery day from 2025 to 2035 against the regional growth. The city grows about as fast as the surrounding towns; demand grows faster in the development areas and the southern suburbs, and slower in the older northern towns and the inner core.">
   </picture>
 </p>
 <p align="center"><sub>Hannover demand model, trend scenario with land-use dynamics: where parcel demand grows faster (blue) or slower (red) than the region between 2025 and 2035. Details in <a href="#6-hannover-demand-model-20252035">section 6</a>.</sub></p>
@@ -54,7 +54,7 @@ Hannover, and three national volume scenarios span the range of plausible growth
 - **B2B/B2C segmentation**: a declining national B2B share (bounded sigmoid) and carrier-specific B2B quotas, met exactly every year
 - **Volume scenarios**: trend (linear), saturation (logistic) and boom (exponential) fits of the national series, chained at the 2025 level
 - **Temporal model**: shipping day × transit time with seasonality, public holidays (Lower Saxony), Prime Day, Black Week, Singles' Day and the Christmas peak
-- **Land-use dynamics**: population forecast per district, ageing with a cohort effect on online shopping, firm growth by industry, development areas and new firms
+- **Land-use dynamics**: population forecast per district, ageing with the life table and the forecast's age structure, a cohort effect on online shopping, firm growth by industry, development areas and new firms
 - **Out-of-home delivery**: parcel lockers, shared boxes and counters with compartments, pickup times and a demand-driven growing network
 - **Outputs**: annual store (Parquet), MATSim demand shapefiles for any day, standalone HTML dashboards for one year and for the decade
 
@@ -135,10 +135,19 @@ The tree shows tracked content only. Locally, `analysis/lausitz/` additionally h
   - Carrier-specific parcel demand data (LSP street volumes of 2021, the anchor of the demand model – not publicly available)
 
 - **Population Forecast Region Hannover (2026)**  
-  Landeshauptstadt und Region Hannover: *Bevölkerungsprognose 2025 bis 2035*, tables 7 and 8 (30 forecast districts of the city, 20 towns and municipalities). Drives the land-use dynamics.
+  Landeshauptstadt und Region Hannover: *Bevölkerungsprognose 2025 bis 2035*, tables 7 and 8 (30 forecast districts of the city, 20 towns and municipalities), table 5 (ten age groups of city and Umland) and table 11 (youth and old-age quotients per district). Drives the land-use dynamics and the age structure.
 
 - **Destatis ICT Survey (2025)**  
   Share of persons who shopped online in the last 12 months by age group; used as the online-shopping propensity by age.
+
+- **Eurostat ICT Survey (2008–2025)**  
+  Online purchases by age group in Germany (`isoc_ec_ibuy`, `isoc_ec_ib20`); the pseudo-cohort fit gives the cohort effect (cohorts keep the online habit of their younger self).
+
+- **Destatis Life Table 2021/2023**  
+  General life table for Germany (table 12621-01); death probabilities by age for the ageing of the age mix.
+
+- **Parcel Locker Counts (2020–2024)**  
+  Official DHL Packstation counts (press releases: 6,500 at the end of 2020, 11,000 at the end of 2022, 14,500 in December 2024); calibrate how the pickup network grows with the out-of-home demand.
 
 - **Region Hannover, *Trends und Fakten* (2025)**  
   Employment development 2014–2024; basis of the firm growth rates by industry.
@@ -299,8 +308,9 @@ flowchart TB
    quotas per carrier come from the notebook series.
 3. **Land-use dynamics.** Persons follow the official population forecast 2025–2035 in 49 forecast districts (city districts
    and surrounding towns). Two variants shift growth towards the city (infill) or the towns (suburban). The age mix ages by one
-   year per year, and the online-shopping propensity by age (Destatis 2025) keeps a cohort effect: a cohort keeps the
-   propensity of its younger self. Firms grow by industry, from +1.5 % a year (health) to −0.5 % (manufacturing). Eight
+   year per year with the Destatis life table and is fitted every year to the forecast's age groups (under 18, 18–64 and
+   65+ per district, ten groups for city and Umland). The online-shopping propensity by age (Destatis 2025) keeps a full
+   cohort effect, estimated from the Eurostat ICT series 2008–2025: a cohort keeps the propensity of its younger self. Firms grow by industry, from +1.5 % a year (health) to −0.5 % (manufacturing). Eight
    development areas (Kronsberg-Süd, Wasserstadt Limmer, Seelze-Süd and five in Langenhagen and Garbsen) and new firms in
    commercial areas become new sites with stops of their own. Land use redistributes the regional volume and never changes it.
 4. **Annual projection.** For every year, site, segment and carrier, the expected parcels follow from the reference shares,
@@ -340,9 +350,9 @@ in [`docs/demand/`](docs/demand/).
 | Parcels per delivery day | 192k | 245k | 232k | 284k |
 | Parcels per resident and year | 50.7 | 64.6 | 61.0 | 74.8 |
 | B2B share | 21.5 % | 20.1 % | 20.1 % | 20.1 % |
-| B2C parcels delivered to pickup points | 5.9 % | 17.8 % | 17.8 % | 17.8 % |
-| Pickup points (lockers, shared boxes, counters) | 259 | 589 | 569 | 643 |
-| Parcels on the busiest day | 420k | 621k | 587k | 720k |
+| B2C parcels delivered to pickup points | 5.9 % | 17.9 % | 17.9 % | 17.9 % |
+| Pickup points (lockers, shared boxes, counters) | 259 | 675 | 649 | 749 |
+| Parcels on the busiest day | 421k | 621k | 586k | 720k |
 
 <p align="center">
   <picture>
@@ -357,9 +367,10 @@ reaches 70 million parcels a year in 2033, saturation in 2035 and boom in 2030; 
 ### 6.4 Land use: where demand moves
 
 The hexagon map at the top shows the trend scenario against its regional growth of +28 %: the city of Hannover grows by
-+25 %, the 20 surrounding towns by +29 %. By 2035 land use shifts about 1,950 parcels a day from the city to the towns: the
-city receives 43.3 % of the demand (2025: 44.1 %), and the two variants move this share to 43.7 % (infill) or 42.9 %
-(suburban).
++28 %, the 20 surrounding towns by +27 %. By 2035 land use moves about 440 parcels a day from the towns to the city: the
+city's share of the demand rises from 44.1 % to about 44.3 %, and the two variants move it to 44.6 % (infill) or 43.9 %
+(suburban). The official age structure decides this: the towns lose many 45- to 64-year-olds with a high online
+propensity (−11.8 % by 2034), the city only −4.8 %, while both gain 65- to 74-year-olds who keep their online habit.
 
 <p align="center">
   <picture>
