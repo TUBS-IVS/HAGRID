@@ -186,12 +186,12 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
         <div class="fig-head"><div><h3>Germany, billion parcels per year</h3><p class="sub">Observed volumes and the three scenario paths</p></div></div>
         <div class="legend" id="lg-national"></div>
         <div class="chart" id="ch-national"></div>
-        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02). Lines: scenario paths from the first simulated year, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
+        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02); rings: the notebook estimates 2024–2028, which the saturation and boom fits include. Dashed: each scenario's fitted curve over the observed years up to its first simulated year, where the path starts; solid: the scenario paths, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
       </figure>
       <figure class="panel s5">
         <div class="fig-head"><div><h3>Region Hannover, simulated parcels</h3><p class="sub">Sum of all simulated days per year</p></div></div>
         <div class="chart" id="ch-regional"></div>
-        <p class="cap">The regional volume follows the national path of each scenario (2021 reference scaled by the national ratio), then carriers, days and addresses are drawn.</p>
+        <p class="cap">The ring is the calibrated 2021 reference (LSP street volumes extrapolated to all carriers). From it the regional volume follows the national path of each scenario (dashed: scaled by the national ratio up to the first simulated year), then carriers, days and addresses are drawn.</p>
       </figure>
     </div>
     <details class="tv"><summary>Table: national and regional volume per scenario</summary><div id="tv-growth"></div></details>
@@ -411,7 +411,7 @@ function niceMax(v) { if (!(v > 0)) return 1; const e = Math.pow(10, Math.floor(
 function ticks(max, n) { const st = niceMax(max / n), o = []; for (let v = 0; v <= max + st * 1e-6; v += st) o.push(v); return o; }
 function runs(flags) { const o = []; let a = -1; flags.forEach((f, i) => { if (f && a < 0) a = i; if (!f && a >= 0) { o.push([a, i - 1]); a = -1; } }); if (a >= 0) o.push([a, flags.length - 1]); return o; }
 function barPath(x, y, w, hgt, r) { if (!(hgt > 0)) return ''; r = Math.min(r, w / 2, hgt); return 'M' + x + ',' + (y + hgt) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + hgt) + 'Z'; }
-function legend(host, items) { host.replaceChildren(...items.map(it => h('span', {class: 'li'}, h('i', {class: it.kind === 'line' ? 'lk' + (it.dash ? ' dash' : '') : it.kind === 'dot' ? 'dot-k' : 'sw', style: (it.kind === 'line' ? 'border-color:' : 'background:') + it.color}), it.label))); }
+function legend(host, items) { host.replaceChildren(...items.map(it => h('span', {class: 'li'}, h('i', {class: it.kind === 'line' ? 'lk' + (it.dash ? ' dash' : '') : it.kind === 'dot' || it.kind === 'ring' ? 'dot-k' : 'sw', style: it.kind === 'ring' ? 'background:transparent;box-sizing:border-box;border:2px solid ' + it.color : (it.kind === 'line' ? 'border-color:' : 'background:') + it.color}), it.label))); }
 function tableView(host, head, rows, opt = {}) {
   const body = rows.map(r => h('tr', {class: opt.on && opt.on(r) ? 'on' : null}, r.cells.map((c, i) => h('td', {class: i < (opt.left || 1) ? 'l' : (opt.wrap === i ? 'wrap l' : null)}, c))));
   host.replaceChildren(h('div', {class: 'tbl'}, h('table', null, h('thead', null, h('tr', null, head.map((t, i) => h('th', {class: i < (opt.left || 1) || opt.wrap === i ? 'l' : null}, t)))), h('tbody', null, body))));
@@ -615,14 +615,22 @@ function renderHero() {
 function renderGrowth() {
   const nat = D.national, sel = state.scenario, order = NAMES.filter(n => n !== sel).concat([sel]);
   const color = n => n === sel ? 'var(--all)' : 'var(--other-line)';
-  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}, {kind: 'line', color: 'var(--all)', label: label(sel)}].concat(NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
-  // national fan: observed anchors and every scenario from the first simulated year on
+  const est = nat.estimates || {years: [], values: []};
+  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}].concat(est.years.length ? [{kind: 'ring', color: 'var(--obs)', label: 'notebook estimate'}] : [],
+    [{kind: 'line', color: 'var(--all)', label: label(sel)}, {kind: 'line', dash: true, color: 'var(--all)', label: 'fitted through the data'}],
+    NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
+  // national fan: observed anchors, notebook estimates, every scenario's fit over the observed years (dashed) and its
+  // path from the first simulated year on (solid)
   const box = $('ch-national'), narrow = box.clientWidth < 540, x0 = Math.min(nat.observed.years[0] || Y0, Y0);
-  const paths = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : []; });
-  const max = Math.max(1, ...nat.observed.values, ...NAMES.flatMap(n => paths[n].map(p => p[1])));
+  const paths = {}, fits = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : [];
+    fits[n] = S && S.fit ? S.fit.years.map((yr, i) => [yr, S.fit.values[i]]).filter(([yr]) => yr >= x0 && yr <= Y0) : []; });
+  const max = Math.max(1, ...nat.observed.values, ...est.values, ...NAMES.flatMap(n => paths[n].concat(fits[n]).map(p => p[1])));
   const F = frame(box, {x0, x1: YN, max, height: 290, margin: {r: narrow ? 50 : 150}, fmt: t => dec(t, 1), label: 'National parcel volume in billions'});
   marker(F, state.year);
+  const pathOf = pts => pts.map((p, i) => (i ? 'L' : 'M') + F.x(p[0]).toFixed(1) + ',' + F.y(p[1]).toFixed(1)).join('');
+  order.forEach(n => { if (fits[n].length > 1) s('path', {d: pathOf(fits[n]), fill: 'none', stroke: color(n), 'stroke-width': n === sel ? 1.8 : 1.4, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round'}, F.v); });
   nat.observed.years.forEach((yr, i) => s('circle', {cx: F.x(yr), cy: F.y(nat.observed.values[i]), r: 4, fill: 'var(--obs)', stroke: 'var(--surface)', 'stroke-width': 2}, F.v));
+  est.years.forEach((yr, i) => { if (yr <= YN) s('circle', {cx: F.x(yr), cy: F.y(est.values[i]), r: 3.5, fill: 'var(--surface)', stroke: 'var(--obs)', 'stroke-width': 1.6}, F.v); });
   order.forEach(n => { const pts = paths[n]; if (!pts.length) return; const on = n === sel;
     s('path', {d: pts.map((p, i) => (i ? 'L' : 'M') + F.x(p[0]).toFixed(1) + ',' + F.y(p[1]).toFixed(1)).join(''), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, F.v);
     const last = pts[pts.length - 1]; s('circle', {cx: F.x(last[0]), cy: F.y(last[1]), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, F.v); });
@@ -630,23 +638,33 @@ function renderGrowth() {
     return {y: F.y(last[1]), text: narrow ? dec(last[1], 2) : label(n) + ' · ' + dec(last[1], 2) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
   const span = []; for (let yr = x0; yr <= YN; yr++) span.push(yr);
   crosshair(F, span, (t, yr) => { t.append(...tH(String(yr), 'billion parcels in Germany')); const o = nat.observed.years.indexOf(yr); if (o >= 0) t.appendChild(tR(dec(nat.observed.values[o], 3), 'observed', 'var(--obs)'));
+    const e = est.years.indexOf(yr); if (e >= 0) t.appendChild(tR(dec(est.values[e], 3), 'notebook estimate', 'var(--obs)'));
+    const f = fits[sel].find(q => q[0] === yr); if (f && yr < Y0) t.appendChild(tR(dec(f[1], 3), label(sel) + ' fit', color(sel)));
     NAMES.forEach(n => { const p = paths[n].find(q => q[0] === yr); if (p) t.appendChild(tR(dec(p[1], 3), label(n), color(n))); }); });
-  // regional fan: simulated parcels per scenario
+  // regional fan: the calibrated reference year, bridged (dashed) to every scenario's simulated parcels
   const rb = $('ch-regional'), rnarrow = rb.clientWidth < 540, reg = {}; NAMES.forEach(n => { reg[n] = series(n, A => A.parcels); });
-  const R = frame(rb, {max: Math.max(1, ...NAMES.flatMap(n => reg[n].filter(ok))), height: 290, margin: {r: rnarrow ? 50 : 132}, fmt: short, label: 'Simulated parcels in Region Hannover'});
+  const ref = (scenario(sel) || {}).reference, rx0 = ref && ref.year < Y0 ? ref.year : Y0;
+  const R = frame(rb, {x0: rx0, max: Math.max(1, ...NAMES.flatMap(n => reg[n].filter(ok)), ref ? ref.parcels : 0), height: 290, margin: {r: rnarrow ? 50 : 132}, fmt: short, label: 'Simulated parcels in Region Hannover'});
   marker(R, state.year);
+  if (ref && rx0 < Y0) {
+    order.forEach(n => { if (ok(reg[n][0])) s('path', {d: 'M' + R.x(ref.year).toFixed(1) + ',' + R.y(ref.parcels).toFixed(1) + 'L' + R.x(Y0).toFixed(1) + ',' + R.y(reg[n][0]).toFixed(1), fill: 'none', stroke: color(n), 'stroke-width': n === sel ? 1.8 : 1.4, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round'}, R.v); });
+    s('circle', {cx: R.x(ref.year), cy: R.y(ref.parcels), r: 4.5, fill: 'var(--surface)', stroke: 'var(--obs)', 'stroke-width': 2}, R.v);
+    s('text', {x: R.x(ref.year) + 8, y: R.y(ref.parcels) - 9, class: 'lbl', text: ref.year + ' reference ' + short(ref.parcels)}, R.v);
+  }
   order.forEach(n => { const on = n === sel; s('path', {d: linePath(R, reg[n]), fill: 'none', stroke: color(n), 'stroke-width': on ? 2.5 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, R.v);
     reg[n].forEach((v, i) => { if (ok(v) && (YEARS[i] === state.year || i === reg[n].length - 1)) s('circle', {cx: R.x(YEARS[i]), cy: R.y(v), r: 4, fill: color(n), stroke: 'var(--surface)', 'stroke-width': 2}, R.v); }); });
   endLabels(R, NAMES.map(n => { const i = reg[n].map(ok).lastIndexOf(true), g = scenario(n).regional; if (i < 0) return null;
     return {y: R.y(reg[n][i]), text: rnarrow ? label(n) + ' ' + short(reg[n][i]) : label(n) + ' · ' + short(reg[n][i]) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
-  crosshair(R, YEARS, (t, yr) => { const i = YEARS.indexOf(yr); t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
+  crosshair(R, (ref && rx0 < Y0 ? [ref.year] : []).concat(YEARS), (t, yr) => { const i = YEARS.indexOf(yr);
+    if (ref && yr === ref.year && i < 0) { t.append(...tH(String(yr), 'calibrated reference year')); t.appendChild(tR(int(ref.parcels), 'LSP street volumes, all carriers', 'var(--obs)')); return; }
+    t.append(...tH(String(yr), 'simulated parcels')); NAMES.forEach(n => t.appendChild(tR(ok(reg[n][i]) ? int(reg[n][i]) : 'not simulated', label(n), color(n)))); });
   // finding and table
   const gs = SCEN.filter(item => item.national);
   $('f-growth').replaceChildren('Nationally the scenarios reach ', h('b', {text: gs.map(item => dec(item.national.to, 2) + ' billion (' + item.label + ')').join(', ').replace(/, ([^,]*)$/, ' and $1')}), ' parcels in ' + YN + ', ' +
     gs.map(item => signed(item.national.cagr) + ' a year').join(' / ') + ' from ' + (gs[0] ? gs[0].national.from_year : Y0) + '. In the region the ' + label(sel) + ' scenario grows from ' + short(reg[sel][0]) + ' to ' + short(reg[sel][reg[sel].length - 1]) + ' parcels.');
-  const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(YEARS))).sort((a, b) => a - b);
-  tableView($('tv-growth'), ['Year', 'Observed (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
-    allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3)].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
+  const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(est.years.filter(yr => yr <= YN), YEARS))).sort((a, b) => a - b);
+  tableView($('tv-growth'), ['Year', 'Observed (bn)', 'Notebook estimate (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
+    allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3), est.years.includes(yr) ? dec(est.values[est.years.indexOf(yr)], 3) : '–'].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
     {on: r => r.yr === state.year});
 }
 
