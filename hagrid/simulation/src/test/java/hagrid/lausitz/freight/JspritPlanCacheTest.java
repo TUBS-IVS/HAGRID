@@ -460,6 +460,116 @@ class JspritPlanCacheTest {
         assertThat(entries()).as("nothing is stored while blocked").isEmpty();
     }
 
+    // --- final review 2026-10-02: every cache failure degrades, none aborts the run ---------------
+
+    /** The lock file the cache uses for {@code inputs} under fingerprint fp-1, with an entry already stored. */
+    private Path lockFileOfAStoredEntry() throws IOException {
+        produce(cache(Mode.ON), inputs, out("RUN_A"), new CountingReplay(), new Counting("X"));
+        JspritCacheKey key = JspritCacheKey.of(inputs, "fp-1", p -> null, "java-1");
+        Path lockFile = cacheDir.resolve(key.dirName() + ".lock");
+        assertThat(lockFile).as("precondition: the cache locks exactly this file").exists();
+        return lockFile;
+    }
+
+    /**
+     * I2(c): an unchecked failure of the lock acquisition - here the reentrancy guard, because the
+     * test thread already holds the entry lock - gives no hit and no store, never an exception.
+     */
+    @Test
+    void aFailingLockAcquisitionDegradesToComputingWithoutTheCache() throws IOException {
+        Path lockFile = lockFileOfAStoredEntry();
+        Counting c = new Counting("X");
+        CountingReplay replay = new CountingReplay();
+        JspritCacheResult r;
+        try (CacheEntryLock held = CacheEntryLock.acquire(lockFile)) {
+            r = produce(cache(Mode.ON), inputs, out("RUN_B"), replay, c);
+        }
+        assertThat(r.status()).isEqualTo(Status.MISS);
+        assertThat(r.reason()).isEqualTo("store-failed");
+        assertThat(replay.calls).as("no hit without the lock, although the entry is valid").isZero();
+        assertThat(c.calls).isEqualTo(1);
+        assertThat(read(out("RUN_B"))).isEqualTo("X");
+        assertSidecar(out("RUN_B"), "miss");
+    }
+
+    /** M4: a verify run that could not take the lock compared nothing and must say so. */
+    @Test
+    void aVerifyThatCouldNotCompareSaysSo() throws IOException {
+        Path lockFile = lockFileOfAStoredEntry();
+        Counting c = new Counting("X");
+        JspritCacheResult r;
+        try (CacheEntryLock held = CacheEntryLock.acquire(lockFile)) {
+            r = produce(cache(Mode.VERIFY), inputs, out("RUN_V"), new CountingReplay(), c);
+        }
+        assertThat(r.status()).isEqualTo(Status.MISS);
+        assertThat(r.reason()).isEqualTo("verify-not-compared");
+        assertThat(c.calls).isEqualTo(1);
+        assertThat(json(JspritPlanCache.sidecarPathFor(out("RUN_V"))).get("reason")).isEqualTo("verify-not-compared");
+        assertThat(cacheDir.resolve(JspritPlanCache.BLOCKED_FILE)).as("not compared is not a mismatch").doesNotExist();
+    }
+
+    /**
+     * M1: a file where the cache directory should be cannot hold a block marker. On Linux,
+     * notExists(file/BLOCKED.json) fails with ENOTDIR and answers false; the seam replays that here.
+     */
+    @Test
+    void aCacheDirThatIsAFileIsNotBlockedEvenWhereTheMarkerIsUndeterminable() throws IOException {
+        Files.createDirectories(cacheDir.getParent());
+        Files.writeString(cacheDir, "not a directory");
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir, linuxEnotdir -> false)).isFalse();
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir)).isFalse();
+    }
+
+    /** M1 keeps F5: every other undeterminable marker still blocks. */
+    @Test
+    void anUndeterminableMarkerStillBlocksInEveryOtherCase() throws IOException {
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir, undeterminable -> false))
+                .as("cache dir absent or undeterminable").isTrue();
+        Files.createDirectories(cacheDir);
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir, undeterminable -> false))
+                .as("e.g. a permission error on the marker").isTrue();
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir)).as("no marker").isFalse();
+        Files.writeString(cacheDir.resolve(JspritPlanCache.BLOCKED_FILE), "{}");
+        assertThat(JspritPlanCache.blockMarkerMayExist(cacheDir)).as("marker").isTrue();
+    }
+
+    /** M2: an input that vanishes between keyBeforeReading and produce (after step 4) does not abort. */
+    @Test
+    void anInputThatVanishesAfterStepFourComputesWithoutTheCache() throws IOException {
+        produce(cache(Mode.ON), inputs, out("RUN_OLD"), new CountingReplay(), new Counting("OLD"));
+        JspritPlanCache cache = cache(Mode.ON);
+        JspritCacheKey beforeReading = cache.keyBeforeReading(inputs);
+        Files.delete(inputs.vehicleTypes());
+
+        Counting c = new Counting("X");
+        CountingReplay replay = new CountingReplay();
+        JspritCacheResult r = cache.produce(inputs, beforeReading, out("RUN_A"), replay, c);
+
+        assertThat(r.status()).isEqualTo(Status.BYPASS);
+        assertThat(r.reason()).isEqualTo("inputs-changed");
+        assertThat(c.calls).as("the computation ran").isEqualTo(1);
+        assertThat(replay.calls).as("no hit on the entry of the old inputs").isZero();
+        assertThat(read(onlyEntry().resolve(JspritPlanCache.RESULT_FILE))).as("nothing stored").isEqualTo("OLD");
+        assertSidecar(out("RUN_A"), "bypass");
+    }
+
+    /** M3: an old sidecar that cannot be deleted (here a non-empty directory) does not abort the run. */
+    @Test
+    void anUndeletableOldSidecarDoesNotAbortTheRun() throws IOException {
+        Path carriersOut = out("RUN_A");
+        Path sidecar = JspritPlanCache.sidecarPathFor(carriersOut);
+        Files.createDirectories(sidecar);
+        Files.writeString(sidecar.resolve("keeps-it-non-empty.txt"), "x");
+
+        Counting c = new Counting("X");
+        JspritCacheResult r = produce(cache(Mode.ON), inputs, carriersOut, new CountingReplay(), c);
+
+        assertThat(r.status()).isEqualTo(Status.MISS);
+        assertThat(c.calls).isEqualTo(1);
+        assertThat(read(carriersOut)).isEqualTo("X");
+        assertThat(read(onlyEntry().resolve(JspritPlanCache.RESULT_FILE))).as("the cache itself still works").isEqualTo("X");
+    }
+
     /** F4 (promoted Minor 3): spec section 7 - the sidecar always reflects the current preprocessing,
      *  never a stale value from an earlier run with the same run id that aborted. */
     @Test
