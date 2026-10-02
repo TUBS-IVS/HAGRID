@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import hagrid.core.simulation.HAGRIDSimulationConfig;
+import hagrid.lausitz.freight.JspritCacheResult;
 import hagrid.lausitz.modular.Modular;
 
 /**
@@ -39,8 +40,21 @@ public final class RunMetadataWriter {
     private RunMetadataWriter() {
     }
 
-    /** Collects metadata from the run config and writes it into {@code targetDir}. */
+    /** Collects metadata from the run config and writes it into {@code targetDir} (no jsprit preprocessing). */
     public static Path write(HAGRIDSimulationConfig cfg, Path targetDir) throws IOException {
+        return write(cfg, targetDir, null);
+    }
+
+    /**
+     * Collects metadata from the run config and writes it into {@code targetDir}.
+     *
+     * @param jspritCache what the jsprit result cache did in THIS run, handed over in memory by the
+     *                    runner; {@code null} when the run did not call the LMD preprocessing
+     *                    (1c, DRT_BASELINE with freight=false, Hannover). Never read from the sidecar
+     *                    file, which may be left over from an earlier run with the same run id.
+     */
+    public static Path write(HAGRIDSimulationConfig cfg, Path targetDir, JspritCacheResult jspritCache)
+            throws IOException {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("run_id", cfg.getRunId());
         m.put("run_dir_name", targetDir.getFileName().toString());
@@ -83,6 +97,10 @@ public final class RunMetadataWriter {
         m.put("budget_smoothing", cfg.getBudgetSmoothing());
         m.put("budget_headroom", cfg.getBudgetHeadroom());
         m.put("budget_urgency_lead_s", cfg.getBudgetUrgencyLeadS());
+        // jsprit result cache (spec 2026-10-01 section 7): status of THIS run's preprocessing
+        m.put("jsprit_cache", jspritCache == null ? "not_applicable" : jspritCache.status().wireName());
+        m.put("jsprit_cache_key", jspritCache == null ? null : jspritCache.key());
+        m.put("jsprit_cache_source_run", jspritCache == null ? null : jspritCache.sourceRun());
         m.put("created", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return writeMap(m, targetDir);
     }

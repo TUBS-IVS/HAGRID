@@ -437,22 +437,23 @@ public final class SimulationRunnerUtils {
             boolean modular = concept == hagrid.core.HagridConfig.Scenario.DRT_MODULAR;
             boolean carrierModules = runsCarrierModules(concept, cfg.isDrtWithFreight());
 
+            hagrid.lausitz.freight.JspritCacheResult jspritCache = null;
             if (carrierModules) {
                 // 1. offline jsprit routing - the exact same call the LMD_BASELINE uses,
                 //    clipped to the SAME service-area shapefile (identical geography).
-                hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
+                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
                         cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
                         cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                         cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                        cfg.getDrtServiceAreaShapefile());
+                        cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir());
             } else if (modular) {
                 // jsprit YES (capsule type + tour cap), CarrierModule NO (design §3.4). Always
                 // runs regardless of the freight flag — 1d needs the LMD trio unconditionally.
-                hagrid.lausitz.freight.LausitzFreightPreprocessor.runModular(
+                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.runModular(
                         cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(), cfg.getLausitzNetworkRaw(),
                         cfg.getLmdVehicleTypes(), cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
                         cfg.getDrtServiceAreaShapefile(), cfg.getMaxTourDurationSeconds(),
-                        cfg.getOpenDepots(), cfg.getMaxJobsPerDistrict());
+                        cfg.getOpenDepots(), cfg.getMaxJobsPerDistrict(), cfg.getJspritCacheDir());
                 LOG.info("DRT_MODULAR: jsprit tours routed (cap {}s, openDepots={}, "
                         + "maxJobsPerDistrict={}); freight flag ignored - the DRT fleet executes "
                         + "them (no CarrierModule).", cfg.getMaxTourDurationSeconds(),
@@ -560,7 +561,7 @@ public final class SimulationRunnerUtils {
             }
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-            writeRunMetadataSafely(cfg);
+            writeRunMetadataSafely(cfg, jspritCache);
             KpiDashboardTrigger.triggerSafely(cfg);
             return;
         }
@@ -570,11 +571,11 @@ public final class SimulationRunnerUtils {
             // 1. preprocess: produce the routed carrier XML
             // Clip LMD demand to the SAME service-area shapefile the DRT uses, so both baselines
             // cover identical geography (no out-of-area outliers like Ruhland that DRT can't reach).
-            hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
+            hagrid.lausitz.freight.JspritCacheResult jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
                     cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
                     cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                     cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                    cfg.getDrtServiceAreaShapefile());
+                    cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir());
 
             // 2. build the run scenario on the Lausitz network with the routed carriers
             Config config = ConfigUtils.createConfig();
@@ -597,7 +598,7 @@ public final class SimulationRunnerUtils {
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-            writeRunMetadataSafely(cfg);
+            writeRunMetadataSafely(cfg, jspritCache);
             KpiDashboardTrigger.triggerSafely(cfg);
             return;
         }
@@ -627,7 +628,7 @@ public final class SimulationRunnerUtils {
         controler.run();
 
         logDuration("Simulation '" + cfg.getRunId() + "'", t0);
-        writeRunMetadataSafely(cfg);
+        writeRunMetadataSafely(cfg, null);
         KpiDashboardTrigger.triggerSafely(cfg);
 
         // GC hint between scenarios
@@ -643,9 +644,10 @@ public final class SimulationRunnerUtils {
      * {@code IOException}) so that any future unchecked failure inside {@code RunMetadataWriter}
      * is swallowed the same way.
      */
-    private static void writeRunMetadataSafely(HAGRIDSimulationConfig cfg) {
+    private static void writeRunMetadataSafely(HAGRIDSimulationConfig cfg,
+                                               hagrid.lausitz.freight.JspritCacheResult jspritCache) {
         try {
-            RunMetadataWriter.write(cfg, cfg.getOutputDirectory());
+            RunMetadataWriter.write(cfg, cfg.getOutputDirectory(), jspritCache);
             LOG.info("run_metadata.json written to {}", cfg.getOutputDirectory());
         } catch (Exception e) {
             LOG.warn("Could not write run_metadata.json (analysis falls back to dir-name parsing)", e);

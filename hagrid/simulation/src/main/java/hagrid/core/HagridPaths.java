@@ -239,6 +239,9 @@ public class HagridPaths {
     /** Shared network change events (same for all runs). */
     public String sharedNetworkChangeEvents() { return sharedDir().resolve("network_change_events.xml.gz").toString(); }
 
+    /** Machine-local jsprit result cache of the Lausitz LMD preprocessing (spec 2026-10-01). */
+    public Path jspritCacheDir() { return sharedDir().resolve("jsprit-cache"); }
+
     // =========================================================================
     // OUTPUT PATHS  (hagrid-output/{RUN_ID}/)
     // =========================================================================

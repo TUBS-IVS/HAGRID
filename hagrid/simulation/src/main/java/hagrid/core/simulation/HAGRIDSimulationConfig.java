@@ -1111,6 +1111,11 @@ public class HAGRIDSimulationConfig {
         return paths.lmdCarriersRouted();
     }
 
+    /** Machine-local jsprit result cache: hagrid-output/shared/jsprit-cache/. */
+    public Path getJspritCacheDir() {
+        return paths.jspritCacheDir();
+    }
+
     // === VALIDATION ===
 
     /**
