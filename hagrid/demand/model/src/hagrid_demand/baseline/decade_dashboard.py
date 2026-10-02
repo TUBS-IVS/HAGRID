@@ -29,7 +29,8 @@ from .annual_dashboard import PLZ_NAMES, _geo
 TEMPLATE = Path(__file__).with_name("templates") / "decade_dashboard.html"
 PLACEHOLDER = "__DECADE_DATA__"
 KINDS = ("locker", "shared_locker", "counter", "shop")
-LABELS = {"trend": "Trend", "saettigung": "Saturation", "boom": "Boom", "trend-innen": "Trend · infill", "trend-suburban": "Trend · suburban"}
+LABELS = {f"{volume}{suffix}": word + variant for volume, word in (("trend", "Trend"), ("saettigung", "Saturation"), ("boom", "Boom"))
+          for suffix, variant in (("", ""), ("-innen", " · infill"), ("-suburban", " · suburban"))}
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 OOH_ASSUMPTIONS = ("shares_2025", "trend", "kinds", "reach_m", "choice_k", "choice_decay_m", "compartments_by_demand",

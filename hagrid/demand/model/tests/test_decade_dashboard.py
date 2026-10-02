@@ -393,3 +393,11 @@ def test_structure_payload_shares_identical_shapes_and_sites(tmp_path):
     keys = {name: (block["districts"]["geo"], block["sites"]) for name, block in payload["structure"].items()}
     assert keys["trend"] == keys["boom"] and all(isinstance(key, str) for pair in keys.values() for key in pair)
     assert len(pool["geo"][keys["trend"][0]]["features"]) == 2 and pool["sites"][keys["trend"][1]]["year_opened"] == [2026] * 3
+
+
+def test_scenario_labels_cover_every_volume_and_land_use_variant():
+    from hagrid_demand.baseline.decade_dashboard import LABELS
+
+    for volume, word in (("trend", "Trend"), ("saettigung", "Saturation"), ("boom", "Boom")):
+        assert LABELS[volume] == word
+        assert LABELS[f"{volume}-innen"] == f"{word} · infill" and LABELS[f"{volume}-suburban"] == f"{word} · suburban"
