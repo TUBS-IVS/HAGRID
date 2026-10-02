@@ -1,11 +1,15 @@
 # HAGRID — Parcel demand and integrated freight/DRT simulation with MATSim
 
 HAGRID is a research framework of the Institute of Transportation and Urban Engineering at TU Braunschweig for parcel
-demand and last-mile logistics. It simulates parcel demand for every day of 2025–2035 in Region Hannover and uses MATSim
-and jsprit for delivery tours and demand-responsive transport. It bundles two studies on a shared core:
+demand and last-mile logistics. It couples a parcel demand model with MATSim and jsprit simulations of delivery tours and
+demand-responsive transport (DRT). Three research strands share one core:
 
-- **Hannover** — parcel demand for every day of **2025–2035** at stop and street-segment level (three volume scenarios, land-use dynamics, a growing pickup-point network) and last-mile delivery simulation with jsprit + MATSim, including a vehicle-capacity sweep (`analysis/hannover/sweep`).
-- **Lausitz (Hoyerswerda)** — integrated passenger and parcel service with demand-responsive transport (DRT): baseline, cargo hitching (1c, `drt_shareduse`) and capsule swap (1d, `drt_modular`), KPI dashboard v2 (`analysis/lausitz/kpi`). Study documentation lives in `docs/` (`DATA-LAUSITZ.md`, `METHODS-LOG.md`); the run list `docs/PAPER-RUNS.md` is a local working file and not tracked.
+| Strand | Question | Method | Headline |
+|---|---|---|---|
+| **[Hannover parcel demand 2025–2035](#6-hannover-demand-model-20252035)** | Where and when do parcels arise in the next decade? | Street-anchored demand model for every day of 2025–2035, three volume scenarios, land-use dynamics, a growing pickup network | 58 M parcels a year in 2025, 74 M in 2035 (trend); city and towns grow alike (+28 / +27 %) |
+| **[Last-mile simulation and transport geography](#7-last-mile-simulation-and-batch-evaluation-hannover)** | What does a parcel cost to deliver, and where do the vans emit? | jsprit tours of all seven carriers simulated in MATSim; batch evaluation of delivery strategies and a vehicle-capacity sweep | €1.74 per parcel in the city, €2.88 in rural areas; the suburbs carry 60 % of the van kilometres and of the CO₂ |
+| **[Lausitz: integrated passenger and parcel DRT](#8-lausitz-integrated-passenger-and-parcel-drt-hoyerswerda)** | Can one DRT fleet carry passengers and parcels in a rural region? | 100 % matsim-lausitz scenario of Hoyerswerda: baseline versus cargo hitching (1c) and capsule swap (1d) | At the same passenger service, cargo hitching needs about 138 vehicles and emits the same CO₂e as a DRT fleet plus separate delivery vans |
+
 - **Core** — geo, demand and routing utilities, repository-root detection and simulation wiring (`hagrid.core`).
 
 The separation is guarded by a source-scan test (`hagrid/simulation/src/test/java/hagrid/core/ArchitectureRulesTest.java`): it fails the build when `hagrid.hannover` and `hagrid.lausitz` reference each other, or when a `hagrid.core` class outside a four-class switchboard allowlist references a study package. It scans comment-stripped source text for package tokens, not the compiled dependency graph.
@@ -29,19 +33,21 @@ Hannover, and three national volume scenarios span the range of plausible growth
 
 ## Table of Contents
 
-1. [Overview & Key Features](#1-overview--key-features)  
-2. [Repository Structure](#2-repository-structure)  
-3. [Data Sources](#3-data-sources)  
-4. [Setup](#4-setup) (clone, freight submodule, inputs, runs)  
-5. [Installation (Python)](#5-installation-python)  
-6. [Hannover Demand Model 2025–2035](#6-hannover-demand-model-20252035) (method, scenarios, results, runs)  
-7. [Supported Output Formats](#7-supported-output-formats)  
-8. [Example Output](#8-example-output-one-simulated-day) (one simulated day)  
-9. [Limitations & Assumptions](#9-limitations--assumptions)  
-10. [License](#10-license)  
-11. [Contributing](#11-contributing)  
-12. [Contact](#12-contact)  
-13. [Project Status](#13-project-status)
+1. [Overview & Key Features](#1-overview--key-features)
+2. [Repository Structure](#2-repository-structure)
+3. [Data Sources](#3-data-sources)
+4. [Setup](#4-setup) (clone, freight submodule, inputs, runs)
+5. [Installation (Python)](#5-installation-python)
+6. [Hannover Demand Model 2025–2035](#6-hannover-demand-model-20252035) (method, scenarios, results, runs)
+7. [Last-Mile Simulation and Batch Evaluation (Hannover)](#7-last-mile-simulation-and-batch-evaluation-hannover)
+8. [Lausitz: Integrated Passenger and Parcel DRT (Hoyerswerda)](#8-lausitz-integrated-passenger-and-parcel-drt-hoyerswerda)
+9. [Supported Output Formats](#9-supported-output-formats)
+10. [Example Output](#10-example-output-one-simulated-day) (one simulated day)
+11. [Limitations & Assumptions](#11-limitations--assumptions)
+12. [License](#12-license)
+13. [Contributing](#13-contributing)
+14. [Contact](#14-contact)
+15. [Project Status](#15-project-status)
 
 
 ## 1. Overview & Key Features
@@ -58,9 +64,10 @@ Hannover, and three national volume scenarios span the range of plausible growth
 - **Out-of-home delivery**: parcel lockers, shared boxes and counters with compartments, pickup times and a demand-driven growing network
 - **Outputs**: annual store (Parquet), MATSim demand shapefiles for any day, standalone HTML dashboards for one year and for the decade
 
-**Lausitz study**
+**Beyond the demand model**
 
-- **Integrated DRT + freight**: passenger and parcel service on one DRT fleet, evaluated against a separate last-mile-delivery baseline
+- **Last-mile simulation (Hannover)**: jsprit tours per carrier simulated in MATSim, evaluated by area type, for batch delivery and in a vehicle-capacity sweep (section 7)
+- **Lausitz study (Hoyerswerda)**: one DRT fleet for passengers and parcels, cargo hitching and capsule swap against a dedicated baseline (section 8)
 
 ## 2. Repository Structure
 
@@ -441,12 +448,42 @@ Each notebook builds on the results of the previous ones. The general workflow m
 
 ---
 
-## 7. Supported Output Formats
+## 7. Last-Mile Simulation and Batch Evaluation (Hannover)
+
+A simulated day of the demand model feeds `hagrid/simulation` (package `hagrid.hannover`): jsprit plans the tours of every
+carrier from its hubs, MATSim simulates them on the Hannover network, and `hagrid_output_analysis` derives vehicle
+statistics, costs, EV assignment and emissions for one run or a batch (`runs/hannover/run_hagrid_sim.bat`,
+`run_analysis.bat`). Three studies build on it:
+
+- **Transport geography of parcel delivery** (*Journal of Transport Geography*): 222,693 parcels in 1,715 tours on a
+  reference day, by area type; delivering a parcel costs €1.74 in the city and €2.88 in rural areas, and the suburbs carry
+  60 % of the van kilometres and of the CO₂. Companion notebook:
+  [`analysis/hannover/notebooks/journal-of-transport-geography-paper/`](analysis/hannover/notebooks/journal-of-transport-geography-paper/).
+- **Batch delivery**: recipients bundle parcels on fewer days when fast delivery costs extra; scenarios compared with the
+  base case over a week (`analysis/hannover/notebooks/result-analysis-batch-*.ipynb`).
+- **Vehicle-capacity sweep** (Hendrik Bimmermann): 97 runs from 30 to 400 parcels per van with an interactive board
+  ([`analysis/hannover/sweep`](analysis/hannover/sweep)).
+
+<p align="center">
+  <img src="docs/images/simulation/last-mile-geography.png" width="100%" alt="Two 3-D surfaces over Region Hannover: (a) the average delivery cost per parcel, lowest in the city centre and rising towards the rural edges, with the carriers' hubs marked; (b) the total daily delivery-van CO2 per 10 km cell, peaking over the city and the inner suburbs.">
+</p>
+
+## 8. Lausitz: Integrated Passenger and Parcel DRT (Hoyerswerda)
+
+The Lausitz study (Hendrik Bimmermann) tests whether one demand-responsive fleet can carry passengers and parcels in a
+rural area. In the 100 % matsim-lausitz scenario of Hoyerswerda, a baseline (DRT minibuses plus separate delivery vans)
+is compared with **cargo hitching** (1c, passengers and parcels on board at once) and a **capsule swap** (1d, a passenger
+or a cargo capsule on the same driveboard). At the baseline's passenger service, cargo hitching needs about 138 vehicles
+and emits the same CO₂e as the baseline's DRT fleet plus 41 vans. KPI pipeline:
+[`analysis/lausitz/kpi`](analysis/lausitz/kpi); decisions and findings: [`docs/METHODS-LOG.md`](docs/METHODS-LOG.md);
+inputs: [`docs/DATA-LAUSITZ.md`](docs/DATA-LAUSITZ.md); runs: `runs/lausitz/`.
+
+## 9. Supported Output Formats
 
 The demand model writes:
 
 - **MATSim demand shapefiles** (`.shp`, EPSG:25832) – one file per delivery day, one point per stop with the parcels per
-  carrier and segment (section 8)
+  carrier and segment (section 10)
 - **Annual store** (`.parquet`) – every day of every simulated year per stop, postcode, pickup point and locker
 - **Registers** (`.parquet`, GeoParquet) – annual projection per site, pickup network per year, land-use districts, factors
   and new sites
@@ -454,7 +491,7 @@ The demand model writes:
 
 The archived notebook generator exported CSV (geometry as WKT), Shapefile, GeoPackage and GeoJSON.
 
-## 8. Example Output: One Simulated Day
+## 10. Example Output: One Simulated Day
 
 `hagrid_parcel_demand_2035-05-11_(Friday).shp` from the trend scenario holds 51,006 stops with 232,209 parcels. Each row is one
 stop, a group of buildings on one street side or a pickup point; all parcels of that stop are split by carrier and by
@@ -481,7 +518,7 @@ Two rows from that file, a building stop (here a firm with only B2B parcels) and
 
 The files load directly into QGIS or ArcGIS, and `hagrid/simulation` reads them for jsprit and MATSim.
 
-## 9. Limitations & Assumptions
+## 11. Limitations & Assumptions
 
 - **Aggregate Land-Use Dynamics:**  
   Persons follow the official forecast per district and firms grow by industry. Households, housing stock, incomes and
@@ -512,7 +549,7 @@ The files load directly into QGIS or ArcGIS, and `hagrid/simulation` reads them 
 - **Lausitz study:**  
   Methodological decisions, known limitations and retracted findings of the DRT/freight study are recorded in `docs/METHODS-LOG.md`; this README does not repeat them.
 
-## 10. License
+## 12. License
 
 This project is licensed under the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license.
 
@@ -527,7 +564,7 @@ Full license text:
 [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/)
 
 
-## 11. Contributing
+## 13. Contributing
 
 Contributions are welcome and encouraged!
 
@@ -542,16 +579,17 @@ For larger changes or questions, feel free to open an Issue beforehand to discus
 
 ---
 
-## 12. Contact
+## 14. Contact
 
 **Maintainer:** Dr.-Ing. Lasse Bienzeisler  
+**Lausitz study and capacity sweep:** Hendrik Bimmermann  
 **Institution:** Technische Universität Braunschweig, Institut für Verkehr und Stadtbauwesen  
 **Email:** l.bienzeisler@tu-braunschweig.de  
 **Website:** [https://www.tu-braunschweig.de/ivs](https://www.tu-braunschweig.de/ivs)
 
 ---
 
-## 13. Project Status
+## 15. Project Status
 
 HAGRID is under active development. Data structures, model parameters and results may change as the methods are refined;
 the demand model records its design decisions in the specifications under [`docs/demand/`](docs/demand/), the Lausitz study
