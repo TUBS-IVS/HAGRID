@@ -2,7 +2,8 @@
 setlocal
 rem Dekadenlauf 2025-2035 des Nachfragemodells (Python): je Szenario ein Lauf, danach das Dekaden-Dashboard.
 rem Aufruf: runs\hannover\run_demand_decade.bat [szenario ...]   (Standard: trend saettigung boom)
-rem Landnutzungsvarianten: trend-innen trend-suburban (Configs decade-trend-innen.json, decade-trend-suburban.json)
+rem Landnutzungsvarianten: <szenario>-innen und <szenario>-suburban fuer trend, saettigung, boom
+rem   (Configs decade-<szenario>-innen.json, decade-<szenario>-suburban.json)
 rem Configs: hagrid\demand\model\configs\decade-<szenario>.json, Laeufe: hagrid\demand\runs\decade-<szenario>
 rem Kein Kopieren nach hagrid\simulation: bei Bedarf runs\hannover\run_demand_year.bat-Logik nutzen oder export-day.
 

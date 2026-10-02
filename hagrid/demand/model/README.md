@@ -261,7 +261,7 @@ built per year, and the annual store keeps all years. The run configurations for
 | `configs/decade-trend.json` | none (linear fit of the observed series, the default path) | 5.57 | 1.27 (≈ 2.5 %/a) | eight comparison days per year |
 | `configs/decade-saettigung.json` | `legacy_assumptions` / `logistic` | 5.26 | 1.20 (≈ 1.9 %/a) | 2030 and 2035 |
 | `configs/decade-boom.json` | `legacy_assumptions` / `exponential` | 6.45 | 1.48 (≈ 4.0 %/a) | 2030 and 2035 |
-| `configs/decade-trend-innen.json`, `configs/decade-trend-suburban.json` | as trend, with the land-use variants infill and suburban | 5.57 | 1.27 | 2030 and 2035 |
+| `configs/decade-<scenario>-innen.json`, `configs/decade-<scenario>-suburban.json` (trend, saettigung, boom) | as the volume scenario, with the land-use variants infill and suburban | as the scenario | as the scenario | 2030 and 2035 |
 
 `configs/baseline-daily.json` writes the annual store (`annual_store: true`, like the accepted year runs). The year run then
 simulates every day, the pickup points fill up from January, and a single exported day differs minimally from a run without
@@ -311,7 +311,7 @@ and its compartment queue keeps its parcels across New Year. Published stages an
 with one fixed random number per POI and network group (exponential-race sampling), so the scenarios share one ranking and
 differ only in how far down it they go.
 
-**Run.** `runs\hannover\run_demand_decade.bat [trend saettigung boom trend-innen trend-suburban]` runs the scenarios one
+**Run.** `runs\hannover\run_demand_decade.bat [trend trend-innen trend-suburban saettigung saettigung-innen saettigung-suburban boom boom-innen boom-suburban]` runs the scenarios one
 after another (about 30 minutes each, the trend configuration with eight exported days per year about 80 minutes;
 about 0.5 GB of details per year plus about 45 MB per exported day) and then writes
 `hagrid\demand\runs\decade_dashboard.html`.
@@ -390,8 +390,10 @@ employees), the comparison of model and forecast, the propensity curve by age an
 change, density and land-use effect. It adds the growth from year to year, the city share per scenario, the decomposition
 of every district change into more parcels overall and redistribution by land use, and the first year of every milestone.
 
-The decade runs `decade-{trend,saettigung,boom}` use the variant `prognose`. `decade-trend-innen` and
-`decade-trend-suburban` run the trend volume with the two variants; they export MATSim days for 2030 and 2035 only.
+The decade runs `decade-{trend,saettigung,boom}` use the variant `prognose`. `decade-<scenario>-innen` and
+`decade-<scenario>-suburban` run each volume scenario with the two variants (3 x 3 runs); they export MATSim days for
+2030 and 2035 only. A variant moves the city share by the same amount in every volume scenario (2035: 44.3 % with the
+forecast, 44.7 % infill, 43.9 % suburban), since land use only redistributes the regional volume.
 
 ## Other Commands
 
