@@ -1,6 +1,8 @@
 package hagrid.lausitz.simulation;
 
 import hagrid.core.simulation.HAGRIDSimulationConfig;
+import hagrid.lausitz.freight.JspritCacheResult;
+import hagrid.lausitz.freight.JspritPlanCache;
 import hagrid.lausitz.modular.Modular;
 import hagrid.core.util.StudyArea;
 import org.junit.jupiter.api.Test;
@@ -122,5 +124,50 @@ class RunMetadataWriterTest {
         m.put("tag", "line1\nline2\rtabbed\tend");
         Path file = RunMetadataWriter.writeMap(m, tmp);
         assertTrue(Files.readString(file).contains("\"tag\": \"line1\\nline2\\rtabbed\\tend\""));
+    }
+
+    private static HAGRIDSimulationConfig baselineCfg(String tag) {
+        return new HAGRIDSimulationConfig(
+                "drt_baseline", LocalDate.of(2025, 5, 13), /*maxIterations*/ 3,
+                /*jspritIterations*/ 1, false, 0.0, 1.0, tag,
+                StudyArea.LAUSITZ_HOYERSWERDA, /*fleetSize*/ 120, /*drtWithFreight*/ true,
+                /*kpiDashboard*/ false, /*chiThreshold*/ 600.0, /*noParcels*/ false,
+                /*seed*/ 1337L, /*idleThreshold*/ 0.15, /*maxTourDurationSeconds*/ 12600,
+                List.of(), /*maxJobsPerDistrict*/ 300, /*maxConcurrentFreight*/ 40,
+                Modular.parseWindows(""), Modular.BudgetMode.OFF, /*budgetSmoothing*/ 5, /*budgetHeadroom*/ 0.15);
+    }
+
+    @Test
+    void writesTheJspritCacheProvenance() throws Exception {
+        JspritCacheResult r = new JspritCacheResult(JspritCacheResult.Status.HIT, JspritCacheResult.Mode.ON,
+                null, "abc123", "baseline", "DRT_BASELINE_13052025_src", "2026-10-01T10:00:00", 8100.0);
+        String json = Files.readString(RunMetadataWriter.write(baselineCfg("meta_cache"), tmp, r));
+        assertTrue(json.contains("\"jsprit_cache\": \"hit\""), json);
+        assertTrue(json.contains("\"jsprit_cache_key\": \"abc123\""), json);
+        assertTrue(json.contains("\"jsprit_cache_source_run\": \"DRT_BASELINE_13052025_src\""), json);
+    }
+
+    /**
+     * Review 2026-10-01 #2: the same DRT_BASELINE run id first with, then without freight leaves the
+     * first run's sidecar in carriers/. The second run never ran the preprocessing, so it must say
+     * not_applicable - the writer takes the status from memory, never from that file.
+     */
+    @Test
+    void aRunWithoutPreprocessingIsNotApplicableEvenNextToAStaleSidecar() throws Exception {
+        HAGRIDSimulationConfig cfg = baselineCfg("meta_stale");
+        Path sidecar = JspritPlanCache.sidecarPathFor(Path.of(cfg.getLmdCarriersRouted()));
+        Files.createDirectories(sidecar.toAbsolutePath().getParent());
+        Files.writeString(sidecar, "{\"status\": \"hit\", \"key\": \"stale-key\"}");
+        try {
+            String json = Files.readString(RunMetadataWriter.write(cfg, tmp, null));
+            assertTrue(json.contains("\"jsprit_cache\": \"not_applicable\""), json);
+            assertTrue(json.contains("\"jsprit_cache_key\": null"), json);
+            assertTrue(json.contains("\"jsprit_cache_source_run\": null"), json);
+            assertFalse(json.contains("stale-key"), json);
+            // the two-argument form is the same as passing null
+            assertTrue(Files.readString(RunMetadataWriter.write(cfg, tmp)).contains("\"jsprit_cache\": \"not_applicable\""));
+        } finally {
+            Files.deleteIfExists(sidecar);
+        }
     }
 }
