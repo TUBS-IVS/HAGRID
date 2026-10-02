@@ -227,11 +227,12 @@ def hexagon_change(payload: dict, region: Region, theme: dict, out: Path, mode: 
         total = {year: np.asarray(districts[year]["total"], float) for year in (first, last)}
         plain = np.asarray(districts[last]["plain"], float)
         city, umland = kinds == "city", kinds == "umland"
-        moved = plain[city].sum() - total[last][city].sum()
+        moved = plain[city].sum() - total[last][city].sum()         # > 0: land use moves parcels out of the city
+        direction = "from the city to the towns" if moved >= 0 else "from the towns to the city"
         rows = [(signed(growth - 1), "Region Hannover"),
                 (signed(total[last][city].sum() / total[first][city].sum() - 1), "City of Hannover"),
                 (signed(total[last][umland].sum() / total[first][umland].sum() - 1), "20 surrounding towns"),
-                (f"{moved:,.0f}", "parcels per day that land use\nshifts from the city to the towns")]
+                (f"{abs(moved):,.0f}", f"parcels per day that land use\nshifts {direction}")]
         key_figures(panel, y - .05, rows, theme, f"Parcels per delivery day {first} → {last}")
     source(fig, "HAGRID demand model · districts of the population forecast 2025–2035 · © OpenStreetMap contributors", theme)
     return save(fig, out, "hexagon-change", mode)
