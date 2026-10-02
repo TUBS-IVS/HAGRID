@@ -61,6 +61,34 @@ def test_decade_payload_shape(payload, runs):
     assert payload["national"]["scenarios"]["trend"]["values"][0] == pytest.approx(4.51)
 
 
+def test_decade_payload_shows_how_each_path_meets_the_observed_years(payload):
+    from hagrid_demand.baseline.sources import packaged_series_inputs
+
+    national = payload["national"]
+    assert national["estimates"]["years"] == [2024, 2025, 2026, 2027, 2028]
+    assert national["estimates"]["values"][0] == pytest.approx(4.2)
+    anchors = [row for row in packaged_series_inputs()["volume_inputs"]["anchors"] if row["status"] == "observed"]
+    line = np.polyfit([row["year"] for row in anchors], [row["value"] for row in anchors], 1)
+    for name in ("trend", "boom"):
+        scenario = national["scenarios"][name]
+        start = scenario["years"][scenario["status"].index(next(s for s in scenario["status"] if s != "observed"))]
+        fit = scenario["fit"]
+        assert fit["years"][0] == 2000 and fit["years"][-1] == start          # through the observed years to the start
+        assert fit["values"][-1] == pytest.approx(scenario["values"][scenario["years"].index(start)], abs=1e-4)
+    trend = national["scenarios"]["trend"]["fit"]
+    assert trend["values"][trend["years"].index(2010)] == pytest.approx(np.polyval(line, 2010) / 1e9, abs=1e-4)
+
+
+def test_decade_payload_carries_the_regional_reference_year(tmp_path):
+    from hagrid_demand.baseline.decade_dashboard import build_decade_dashboard_data
+
+    run = write_decade_run(tmp_path, "decade-trend")
+    (run / "reference").mkdir(exist_ok=True)
+    (run / "reference" / "reference_regional_annual.json").write_text(json.dumps({"regional_annual": 6.0e7, "year": 2021}))
+    meta = build_decade_dashboard_data({"trend": run})["meta"]["scenarios"][0]
+    assert meta["reference"] == {"year": 2021, "parcels": 60_000_000}
+
+
 def test_decade_payload_channels_add_up(payload, runs):
     year = payload["annual"]["trend"]["2026"]
     stored = _stored_by_point(runs["trend"], 2026).groupby("kind").stored.sum()

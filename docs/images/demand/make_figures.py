@@ -187,8 +187,8 @@ def save(fig, out: Path, name: str, mode: str) -> Path:
     return path
 
 
-def signed(value: float) -> str:
-    return f"{value * 100:+.0f} %"
+def signed(value: float, digits: int = 0) -> str:
+    return f"{value * 100:+.{digits}f} %"
 
 
 # --- figures ----------------------------------------------------------------------------------------------------------
@@ -212,7 +212,7 @@ def hexagon_change(payload: dict, region: Region, theme: dict, out: Path, mode: 
     height = 7.8
     fig = figure(height, "Where parcel demand grows until 2035",
                  f"Scenario {LABEL.get(name, name)} with land use · expected parcels per delivery day {first} → {last} in 800 m "
-                 f"hexagons, compared with the regional growth of {signed(growth - 1)}", theme)
+                 f"hexagons, compared with the regional growth of {signed(growth - 1, 1)}", theme)
     bottom, span = band(height, 1.05, .35)
     ax = fig.add_axes([.01, bottom, .67, span])
     region.districts.plot(ax=ax, facecolor=theme["land"], edgecolor="none", zorder=1)
@@ -229,12 +229,13 @@ def hexagon_change(payload: dict, region: Region, theme: dict, out: Path, mode: 
         city, umland = kinds == "city", kinds == "umland"
         moved = plain[city].sum() - total[last][city].sum()         # > 0: land use moves parcels out of the city
         direction = "from the city to the towns" if moved >= 0 else "from the towns to the city"
-        rows = [(signed(growth - 1), "Region Hannover"),
-                (signed(total[last][city].sum() / total[first][city].sum() - 1), "City of Hannover"),
-                (signed(total[last][umland].sum() / total[first][umland].sum() - 1), "20 surrounding towns"),
+        rows = [(signed(growth - 1, 1), "Region Hannover"),
+                (signed(total[last][city].sum() / total[first][city].sum() - 1, 1), "City of Hannover"),
+                (signed(total[last][umland].sum() / total[first][umland].sum() - 1, 1), "20 surrounding towns"),
                 (f"{abs(moved):,.0f}", f"parcels per day that land use\nshifts {direction}")]
         key_figures(panel, y - .05, rows, theme, f"Parcels per delivery day {first} → {last}")
-    source(fig, "HAGRID demand model · districts of the population forecast 2025–2035 · © OpenStreetMap contributors", theme)
+    source(fig, "Colours count hexagons; the growth figures weight them by parcels. HAGRID demand model · districts of the "
+           "population forecast 2025–2035 · © OpenStreetMap contributors", theme)
     return save(fig, out, "hexagon-change", mode)
 
 
@@ -246,29 +247,43 @@ def volume_scenarios(payload: dict, theme: dict, out: Path, mode: str) -> Path:
                  "Right: parcels simulated for Region Hannover, every day of every year.", theme)
     bottom, span = band(height, 1.2, .55)
     left, right = fig.add_axes([.065, bottom, .41, span]), fig.add_axes([.56, bottom, .33, span])
-    observed = national["observed"]
+    observed, estimates = national["observed"], national.get("estimates") or {"years": [], "values": []}
     left.axvspan(years[0] - .5, years[-1] + .5, color=theme["grid"], alpha=.5, linewidth=0, zorder=0)
-    left.plot(observed["years"], observed["values"], color=theme["ink2"], linewidth=2, zorder=3)
+    left.plot(observed["years"], observed["values"], "o", color=theme["ink2"], markersize=3.6, zorder=6)
+    left.plot(estimates["years"], estimates["values"], "o", markerfacecolor=theme["surface"], markeredgecolor=theme["ink2"],
+              markersize=4.2, markeredgewidth=1.2, linestyle="none", zorder=6)
     left.text(2009, 2.75, "observed", color=theme["ink2"], fontsize=8.5, ha="center")
+    if estimates["years"]:
+        left.annotate("notebook\nestimates", (estimates["years"][-1], estimates["values"][-1]), xytext=(2026.4, 2.55),
+                      color=theme["ink2"], fontsize=8, ha="center",
+                      arrowprops={"arrowstyle": "-", "color": theme["muted"], "linewidth": .8})
     left.text(years[0] + .2, .25, "projection", color=theme["muted"], fontsize=8)
+    reference = next((item.get("reference") for item in payload["meta"]["scenarios"] if item.get("reference")), None)
     for index, (key, label) in enumerate(SCENARIOS):
         series = national["scenarios"].get(key)
         if not series:
             continue
         xs, ys = zip(*[(year, value) for year, value in zip(series["years"], series["values"]) if year >= years[0]])
         color = theme["series"][index]
+        fit = series.get("fit")
+        if fit:
+            left.plot(fit["years"], fit["values"], color=color, linewidth=1.3, linestyle=(0, (4, 3)), zorder=3)
         left.plot(xs, ys, color=color, linewidth=2.2, zorder=4)
         left.plot([xs[-1]], [ys[-1]], "o", color=color, markersize=5, zorder=5)
         left.text(xs[-1] + .5, ys[-1], f"{label} {ys[-1]:.2f}", color=theme["ink"], fontsize=8.5, va="center")
         values = [annual[key][str(year)]["parcels"] / 1e6 if (annual.get(key) or {}).get(str(year)) else np.nan for year in years]
+        if reference:
+            right.plot([reference["year"], years[0]], [reference["parcels"] / 1e6, values[0]], color=color, linewidth=1.3,
+                       linestyle=(0, (4, 3)), zorder=3)
         right.plot(years, values, color=color, linewidth=2.2, marker="o", markersize=3.5, zorder=4)
         right.text(years[-1] + .35, values[-1], f"{label} {values[-1]:.1f} M", color=theme["ink"], fontsize=8.5, va="center")
     left.set_xlim(1999.5, years[-1] + 4.6)
     left.set_xticks([2000, 2005, 2010, 2015, 2020, 2025, 2030, 2035])
     left.set_ylim(0, 7.2)
     left.set_ylabel("billion shipments per year")
-    right.set_xlim(years[0] - .5, years[-1] + .5)
-    year_axis(right, years)
+    first = reference["year"] if reference else years[0]
+    right.set_xlim(first - .5, years[-1] + .5)
+    year_axis(right, list(range(first, years[-1] + 1)))
     right.set_ylim(0, 95)
     right.set_ylabel("million parcels per year")
     right.set_clip_on(False)
@@ -279,8 +294,15 @@ def volume_scenarios(payload: dict, theme: dict, out: Path, mode: str) -> Path:
     start = annual[SCENARIOS[0][0]][str(years[0])]["parcels"] / 1e6
     right.annotate(f"{years[0]}: {start:.1f} M", (years[0], start), xytext=(years[0] + .3, start - 16), color=theme["ink2"], fontsize=8.5,
                    arrowprops={"arrowstyle": "-", "color": theme["muted"], "linewidth": .8})
-    source(fig, "Observed: BIEK KEP studies / Statista (2000–2023). Scenarios chained at the calibrated 2025 level. "
-           "Region: HAGRID annual store.", theme)
+    if reference:
+        value = reference["parcels"] / 1e6
+        right.plot([reference["year"]], [value], "o", markerfacecolor=theme["surface"], markeredgecolor=theme["ink2"],
+                   markersize=5.5, markeredgewidth=1.4, zorder=6)
+        right.annotate(f"{reference['year']} reference: {value:.1f} M", (reference["year"], value),
+                       xytext=(reference["year"] + .2, value + 12), color=theme["ink2"], fontsize=8.5,
+                       arrowprops={"arrowstyle": "-", "color": theme["muted"], "linewidth": .8})
+    source(fig, "Observed: BIEK / Statista 2000–2023; rings: notebook estimates. Dashed: fits through the data and the bridge "
+           "from the calibrated 2021 reference; the scenarios start at the 2025 level. Region: HAGRID annual store.", theme)
     return save(fig, out, "volume-scenarios", mode)
 
 

@@ -6,7 +6,7 @@ demand-responsive transport (DRT). Three research strands share one core:
 
 | Strand | Question | Method | Headline |
 |---|---|---|---|
-| **[Hannover parcel demand 2025–2035](#6-hannover-demand-model-20252035)** | Where and when do parcels arise in the next decade? | Street-anchored demand model for every day of 2025–2035, three volume scenarios, land-use dynamics, a growing pickup network | 58 M parcels a year in 2025, 74 M in 2035 (trend); city and towns grow alike (+28 / +27 %) |
+| **[Hannover parcel demand 2025–2035](#6-hannover-demand-model-20252035)** | Where and when do parcels arise in the next decade? | Street-anchored demand model for every day of 2025–2035, three volume scenarios, land-use dynamics, a growing pickup network | 58 M parcels a year in 2025, 74 M in 2035 (trend); city and towns grow alike (+27.9 / +27.1 %) |
 | **[Last-mile simulation and transport geography](#7-last-mile-simulation-and-batch-evaluation-hannover)** | What does a parcel cost to deliver, and where do the vans emit? | jsprit tours of all seven carriers simulated in MATSim; batch evaluation of delivery strategies and a vehicle-capacity sweep | €1.74 per parcel in the city, €2.88 in rural areas; the suburbs carry 60 % of the van kilometres and of the CO₂ |
 | **[Lausitz: integrated passenger and parcel DRT](#8-lausitz-integrated-passenger-and-parcel-drt-hoyerswerda)** | Can one DRT fleet carry passengers and parcels in a rural region? | 100 % matsim-lausitz scenario of Hoyerswerda: baseline versus cargo hitching (1c) and capsule swap (1d) | At the same passenger service, cargo hitching needs about 138 vehicles and emits the same CO₂e as a DRT fleet plus separate delivery vans |
 
@@ -373,8 +373,9 @@ reaches 70 million parcels a year in 2033, saturation in 2035 and boom in 2030; 
 
 ### 6.4 Land use: where demand moves
 
-The hexagon map at the top shows the trend scenario against its regional growth of +28 %: the city of Hannover grows by
-+28 %, the 20 surrounding towns by +27 %. By 2035 land use moves about 440 parcels a day from the towns to the city: the
+The hexagon map at the top shows the trend scenario against its regional growth of +27.5 %: the city of Hannover grows by
++27.9 %, the 20 surrounding towns by +27.1 %. Its colours count hexagons: many outer city hexagons grow faster than the
+region, while the dense inner core, which carries a third of the city's parcels, grows slower. By 2035 land use moves about 440 parcels a day from the towns to the city: the
 city's share of the demand rises from 44.1 % to about 44.3 %, and the two variants move it to 44.6 % (infill) or 43.9 %
 (suburban). The official age structure decides this: the towns lose many 45- to 64-year-olds with a high online
 propensity (−11.8 % by 2034), the city only −4.8 %, while both gain 65- to 74-year-olds who keep their online habit.

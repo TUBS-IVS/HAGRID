@@ -298,12 +298,39 @@ def _carriers(loaded: dict[str, dict | None], primary: str) -> list[str]:
     return sorted(present, key=lambda carrier: (-shares.get(carrier, 0.), carrier))
 
 
+def _fit_history(inputs: dict, config: dict, scenario: dict) -> dict | None:
+    """A scenario's fitted curve from the first observed year to its start year, in billion parcels.
+
+    The trend path is the linear fit of the observed volumes itself; a chained scenario follows its candidate curve
+    scaled to the level of its start year (``apply_volume_scenario``), so the chart shows how each path meets the data.
+    """
+    from .series import _volume
+
+    starts = [year for year, status in zip(scenario["years"], scenario["status"]) if status != "observed"]
+    if not starts:
+        return None
+    start = starts[0]
+    block = (config or {}).get("volume_scenario")
+    policy = block["policy"] if isinstance(block, dict) else (config or {}).get("volume_fit_policy", "observed_only")
+    curve = block["curve"] if isinstance(block, dict) else "linear"
+    first = min(int(row["year"]) for row in inputs["volume_inputs"]["anchors"])
+    frame = _volume(inputs, list(range(first, start + 1)), policy).set_index("year")[curve]
+    if not np.isfinite(frame.to_numpy(float)).all() or frame.loc[start] <= 0:
+        return None
+    level = scenario["values"][scenario["years"].index(start)] / float(frame.loc[start])
+    return {"years": [int(year) for year in frame.index], "values": [round(float(value) * level, 4) for value in frame],
+            "curve": curve}
+
+
 def _national(loaded: dict[str, dict | None]) -> dict:
-    """Observed national anchors (2000-2023) and every scenario's national volume, in billion parcels per year."""
+    """Observed national anchors (2000-2023), the notebook estimates (2024-2028), every scenario's national volume and
+    its fitted curve over the observed years, in billion parcels per year."""
     from .sources import packaged_series_inputs
 
-    anchors = packaged_series_inputs()["volume_inputs"]["anchors"]
+    inputs = packaged_series_inputs()
+    anchors = inputs["volume_inputs"]["anchors"]
     observed = {int(row["year"]): float(row["value"]) for row in anchors if row.get("status") == "observed"}
+    estimates = {int(row["year"]): float(row["value"]) for row in anchors if row.get("status") == "legacy_estimate"}
     scenarios = {}
     for name, run in loaded.items():
         volume = None if run is None else run["volume"]
@@ -316,9 +343,11 @@ def _national(loaded: dict[str, dict | None]) -> dict:
             observed.setdefault(int(row.year), float(row.value))
         scenarios[name] = {"years": volume.year.astype(int).tolist(), "values": (volume.value / 1e9).round(4).tolist(),
                            "status": volume.status.astype(str).tolist()}
+        scenarios[name]["fit"] = _fit_history(inputs, run.get("config", {}), scenarios[name])
     years = sorted(observed)
     return {"unit": "billion parcels per year",
             "observed": {"years": years, "values": [round(observed[year] / 1e9, 4) for year in years]},
+            "estimates": {"years": sorted(estimates), "values": [round(estimates[year] / 1e9, 4) for year in sorted(estimates)]},
             "scenarios": scenarios}
 
 
@@ -528,6 +557,16 @@ def _growth(years: list[int], values: dict[int, float]) -> dict | None:
             "cagr": _cagr(values[first], values[last], last - first)}
 
 
+def _regional_reference(path: Path) -> dict | None:
+    """The calibrated regional volume of the reference year (``reference_regional_annual.json``), if the run has it."""
+    for candidate in (path / "reference" / "reference_regional_annual.json", path / "reference_regional_annual.json"):
+        if candidate.is_file():
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+            if np.isfinite(float(data.get("regional_annual", np.nan))) and data.get("year") is not None:
+                return {"year": int(data["year"]), "parcels": int(round(float(data["regional_annual"])))}
+    return None
+
+
 def _scenario_meta(name: str, run: dict | None, path: Path, years: list[int], present: list[int], annual: dict,
                    national: dict | None) -> dict:
     """Name, label, run id, years, national and regional growth, and the network-growth status of one scenario."""
@@ -540,6 +579,7 @@ def _scenario_meta(name: str, run: dict | None, path: Path, years: list[int], pr
             "definition": _definition(run.get("config", {})),
             "national": _growth(present, dict(zip(national["years"], national["values"])) if national else {}),
             "regional": _growth(present, {year: annual[str(year)]["parcels"] for year in present}),
+            "reference": _regional_reference(path),
             "network_status": growth, "shortfall": _shortfall(growth) if growth else 0,
             "assumptions": list(run.get("config", {}).get("assumptions", []))}
 
