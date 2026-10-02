@@ -175,6 +175,22 @@ class JspritCacheKeyTest {
         assertThat(key(withNull).fullHash()).isEqualTo(key(withEmpty).fullHash());
     }
 
+    /** M6: a comma inside one depot name must not read as two depots. */
+    @Test
+    void listEncodingIsUnambiguous() throws IOException {
+        Fixture f = stage(tmp.resolve("in"));
+        LmdPreprocessInputs one = LmdPreprocessInputs.modular(f.s("demand.shp"), f.s("depots.csv"),
+                f.s("net.xml.gz"), f.s("vans.xml"), 100, f.s("area.shp"), 10800, List.of("a,b"), 300);
+        LmdPreprocessInputs two = LmdPreprocessInputs.modular(f.s("demand.shp"), f.s("depots.csv"),
+                f.s("net.xml.gz"), f.s("vans.xml"), 100, f.s("area.shp"), 10800, List.of("a", "b"), 300);
+        assertThat(key(one).fullHash()).isNotEqualTo(key(two).fullHash());
+        assertThat(key(one).components().get("open_depots")).isEqualTo("[\"a,b\"]");
+        assertThat(key(two).components().get("open_depots")).isEqualTo("[\"a\",\"b\"]");
+        LmdPreprocessInputs none = LmdPreprocessInputs.modular(f.s("demand.shp"), f.s("depots.csv"),
+                f.s("net.xml.gz"), f.s("vans.xml"), 100, f.s("area.shp"), 10800, List.of(), 300);
+        assertThat(key(none).components().get("open_depots")).as("the empty list stays []").isEqualTo("[]");
+    }
+
     @Test
     void dirNameIsTheVariantPlusSixteenHexCharacters() throws IOException {
         assertThat(key(stage(tmp.resolve("in")).baseline()).dirName()).matches("baseline-[0-9a-f]{16}");
