@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -143,6 +144,43 @@ class JarFingerprintTest {
     @Test
     void inTheTestJvmTheRunningCodeIsAClassesDirectory() {
         assertThat(JarFingerprint.ofRunningCode()).isEmpty();
+    }
+
+    /** I1: a JAR replaced under the running JVM is no longer the code it runs - no fingerprint. */
+    @Test
+    void aJarModifiedAfterTheJvmStartedHasNoFingerprint() {
+        long jvmStart = 1_759_400_000_000L;
+        Path jar = tmp.resolve("hagrid.jar");
+        assertThat(JarFingerprint.keepIfUnchangedSinceJvmStart(jar, Optional.of("fp"), jvmStart + 1, jvmStart))
+                .as("modified 1 ms after the start").isEmpty();
+        assertThat(JarFingerprint.keepIfUnchangedSinceJvmStart(jar, Optional.of("fp"), jvmStart + 3_600_000L, jvmStart))
+                .as("rebuilt an hour into the run").isEmpty();
+    }
+
+    @Test
+    void aJarModifiedAtOrBeforeTheJvmStartKeepsItsFingerprint() {
+        long jvmStart = 1_759_400_000_000L;
+        Path jar = tmp.resolve("hagrid.jar");
+        assertThat(JarFingerprint.keepIfUnchangedSinceJvmStart(jar, Optional.of("fp"), jvmStart - 60_000L, jvmStart))
+                .contains("fp");
+        assertThat(JarFingerprint.keepIfUnchangedSinceJvmStart(jar, Optional.of("fp"), jvmStart, jvmStart))
+                .as("modified in the start millisecond").contains("fp");
+        assertThat(JarFingerprint.keepIfUnchangedSinceJvmStart(jar, Optional.empty(), jvmStart - 60_000L, jvmStart))
+                .as("no JAR stays no fingerprint").isEmpty();
+    }
+
+    /** A copy that keeps an old modification time ({@code cp -p}) still counts as changed on POSIX. */
+    @Test
+    void lastChangedSeesThroughAnOldModificationTimeWhereTheFileSystemCan() throws IOException {
+        Path jar = jar(tmp.resolve("t.jar"), 0L, "m", "p", entries(), false);
+        FileTime old = FileTime.fromMillis(1_600_000_000_000L);
+        Files.setLastModifiedTime(jar, old);
+        if (jar.getFileSystem().supportedFileAttributeViews().contains("unix")) {
+            // setting the time is itself a status change: ctime is now, not 2020
+            assertThat(JarFingerprint.lastChangedMillis(jar)).isGreaterThan(old.toMillis());
+        } else {
+            assertThat(JarFingerprint.lastChangedMillis(jar)).as("Windows: the modification time").isEqualTo(old.toMillis());
+        }
     }
 
     @Test
