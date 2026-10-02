@@ -7,9 +7,37 @@ Konsument: die Frage „haben wir das schon gemacht, und woran sieht man das?".
 Limitations, zurückgezogene Befunde) → [METHODS-LOG.md](METHODS-LOG.md). Erledigtes, das ändert
 *wie eine Zahl zu lesen ist*, steht in beiden: Nachweis hier, Konsequenz dort.
 
-Neueste zuerst. _Zuletzt aktualisiert: 2026-09-30._
+Neueste zuerst. _Zuletzt aktualisiert: 2026-10-02._
 
 ---
+
+## 2026-10-02
+
+- **Externes Code-Review (11 Bugs + 1 Inkonsistenz): Punkte 1–8, 10, 11 und I1 behoben, 9
+  bewusst offen** (→ BACKLOG `[L]`, ändert die 1d-Dispatch-Dynamik). Nicht committet.
+  Python: (1) `economics._direct_cost` verweigert eine gezählte Flotte ohne Stunden/km statt die
+  Van-Kosten als `cost_total` zu melden → METHODS-LOG §2.6; (5) aktive Vans auf EINEM absoluten
+  5-min-Raster (`b100rgs`: 41 Vans lagen auf 38 verschiedenen Rastern); (6) bedingte Ausgaben
+  (`kpis_provider`, `kpi_vehicles`, `kpi_emissions_vehicles`, `map_data`) werden vor dem Build
+  gelöscht; (7) `drt_requests_submitted` = bediente + abgelehnte Anfragen, dedupliziert nach
+  `requestId`; (10) Event-Caches über Temp-Datei + Umbenennen, Stempel mit Größe/mtime der
+  Eventdatei, ungestempelte Caches werden einmal neu gebaut. Java: (2) fertiger Lauf
+  (`run_metadata.json`) nur mit `overwrite=true` ersetzbar, gleiche Ausgabeordner in einem Aufruf
+  brechen ab; (3)+(4) 1c-Fingerprint mit `openDepots` (sortiert) und SHA-256 der
+  Nachfrage-Shapefile-Familie (neue Klasse `ShapefileFamily`, auch vom jsprit-Cache-Schlüssel
+  genutzt, Ausgabe unverändert); (8) 1c trennt `window_expired`/`pending_open` am QSim-Takt bei
+  Mobsim-Ende, CSV-Zeile `mobsim_end_s` → METHODS-LOG §2.31; (11) unbekannte oder doppelte
+  Spec-Schlüssel brechen den Start ab; (I1) `Modular.java`-Kommentar → METHODS-LOG §2.22.
+  **Nachweis:** Python-Suite 515/515. Java volle Modul-Suite `BUILD SUCCESS` (freight 272, 9
+  übersprungen wie zuvor; hagrid 792, 0 Fehler, inkl. `SharedUseEndToEndTest` mit
+  `mobsim_end_s` und `LmdBaselineEndToEndTest`), danach Punkt 11 mit allen 16 Parser-Testklassen
+  (99 Tests). Mutationsproben: sieben Java-Fixes einzeln zurückgedreht, jeder von seinem Test
+  gefangen; Python-Tests vor dem Fix rot gesehen. Echter Lauf `b100rgs`: `--no-events` →
+  `cost_model_failed`; voller Build `cost_total` 78.070 € = 69.012 € DRT + 9.058 € Vans; Caches
+  byte-gleich neu gebaut; Spitze 36 von 41 Vans gleichzeitig; Nachfragekurve Baseline
+  7.816 = 7.795 Fahrten + 21 Ablehnungen, 1c 9.332 = 9.317 + 15. Drei Tests, die das alte
+  Verhalten festschrieben, angepasst (`test_build_writes_all_csvs`, zwei Render-Tests zu
+  Meta-Zeilen). Ausrollen → BACKLOG „Review-Fixwelle 2026-10-02 beim Ausrollen".
 
 ## 2026-09-30
 
