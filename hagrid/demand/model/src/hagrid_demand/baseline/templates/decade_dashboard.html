@@ -186,7 +186,7 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:v
         <div class="fig-head"><div><h3>Germany, billion parcels per year</h3><p class="sub">Observed volumes and the three scenario paths</p></div></div>
         <div class="legend" id="lg-national"></div>
         <div class="chart" id="ch-national"></div>
-        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02); rings: the notebook estimates 2024–2028, which the saturation and boom fits include. Dashed: each scenario's fitted curve over the observed years up to its first simulated year, where the path starts; solid: the scenario paths, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
+        <p class="cap">Dots: observed national volumes (Statista and BIEK, notebook 02); rings: the BIEK estimates 2024–2028, which the saturation and boom fits include. Dashed: each scenario's fitted curve over the observed years up to its first simulated year, where the path starts; solid: the scenario paths, labelled with the value in the last year and the compound annual growth rate. The selected scenario is blue; the band marks the selected year. Click a year to select it.</p>
       </figure>
       <figure class="panel s5">
         <div class="fig-head"><div><h3>Region Hannover, simulated parcels</h3><p class="sub">Sum of all simulated days per year</p></div></div>
@@ -616,10 +616,10 @@ function renderGrowth() {
   const nat = D.national, sel = state.scenario, order = NAMES.filter(n => n !== sel).concat([sel]);
   const color = n => n === sel ? 'var(--all)' : 'var(--other-line)';
   const est = nat.estimates || {years: [], values: []};
-  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}].concat(est.years.length ? [{kind: 'ring', color: 'var(--obs)', label: 'notebook estimate'}] : [],
+  legend($('lg-national'), [{kind: 'dot', color: 'var(--obs)', label: 'observed'}].concat(est.years.length ? [{kind: 'ring', color: 'var(--obs)', label: 'BIEK estimate'}] : [],
     [{kind: 'line', color: 'var(--all)', label: label(sel)}, {kind: 'line', dash: true, color: 'var(--all)', label: 'fitted through the data'}],
     NAMES.length > 1 ? [{kind: 'line', color: 'var(--other-line)', label: 'other scenarios'}] : []));
-  // national fan: observed anchors, notebook estimates, every scenario's fit over the observed years (dashed) and its
+  // national fan: observed anchors, BIEK estimates, every scenario's fit over the observed years (dashed) and its
   // path from the first simulated year on (solid)
   const box = $('ch-national'), narrow = box.clientWidth < 540, x0 = Math.min(nat.observed.years[0] || Y0, Y0);
   const paths = {}, fits = {}; NAMES.forEach(n => { const S = nat.scenarios[n]; paths[n] = S ? S.years.map((yr, i) => [yr, S.values[i]]).filter(([yr]) => yr >= Y0 && yr <= YN) : [];
@@ -638,7 +638,7 @@ function renderGrowth() {
     return {y: F.y(last[1]), text: narrow ? dec(last[1], 2) : label(n) + ' · ' + dec(last[1], 2) + ' · ' + signed(g && g.cagr) + '/yr', priority: n === sel ? 2 : 1, strong: n === sel}; }));
   const span = []; for (let yr = x0; yr <= YN; yr++) span.push(yr);
   crosshair(F, span, (t, yr) => { t.append(...tH(String(yr), 'billion parcels in Germany')); const o = nat.observed.years.indexOf(yr); if (o >= 0) t.appendChild(tR(dec(nat.observed.values[o], 3), 'observed', 'var(--obs)'));
-    const e = est.years.indexOf(yr); if (e >= 0) t.appendChild(tR(dec(est.values[e], 3), 'notebook estimate', 'var(--obs)'));
+    const e = est.years.indexOf(yr); if (e >= 0) t.appendChild(tR(dec(est.values[e], 3), 'BIEK estimate', 'var(--obs)'));
     const f = fits[sel].find(q => q[0] === yr); if (f && yr < Y0) t.appendChild(tR(dec(f[1], 3), label(sel) + ' fit', color(sel)));
     NAMES.forEach(n => { const p = paths[n].find(q => q[0] === yr); if (p) t.appendChild(tR(dec(p[1], 3), label(n), color(n))); }); });
   // regional fan: the calibrated reference year, bridged (dashed) to every scenario's simulated parcels
@@ -663,7 +663,7 @@ function renderGrowth() {
   $('f-growth').replaceChildren('Nationally the scenarios reach ', h('b', {text: gs.map(item => dec(item.national.to, 2) + ' billion (' + item.label + ')').join(', ').replace(/, ([^,]*)$/, ' and $1')}), ' parcels in ' + YN + ', ' +
     gs.map(item => signed(item.national.cagr) + ' a year').join(' / ') + ' from ' + (gs[0] ? gs[0].national.from_year : Y0) + '. In the region the ' + label(sel) + ' scenario grows from ' + short(reg[sel][0]) + ' to ' + short(reg[sel][reg[sel].length - 1]) + ' parcels.');
   const allYears = Array.from(new Set(nat.observed.years.filter(yr => yr >= 2019).concat(est.years.filter(yr => yr <= YN), YEARS))).sort((a, b) => a - b);
-  tableView($('tv-growth'), ['Year', 'Observed (bn)', 'Notebook estimate (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
+  tableView($('tv-growth'), ['Year', 'Observed (bn)', 'BIEK estimate (bn)'].concat(NAMES.map(n => label(n) + ' national (bn)'), NAMES.map(n => label(n) + ' region')),
     allYears.map(yr => ({yr, cells: [String(yr), dec(nat.observed.values[nat.observed.years.indexOf(yr)], 3), est.years.includes(yr) ? dec(est.values[est.years.indexOf(yr)], 3) : '–'].concat(NAMES.map(n => { const p = paths[n].find(q => q[0] === yr); return p ? dec(p[1], 3) : '–'; }), NAMES.map(n => int(reg[n][YEARS.indexOf(yr)])))})),
     {on: r => r.yr === state.year});
 }
@@ -904,7 +904,7 @@ function renderCalendar() {
 /* ---------- #method ---------- */
 function renderMethod() {
   const a = M.assumptions || {}, o = a.out_of_home, g = a.network_growth, t = a.temporal || {}, items = [];
-  const curve = {linear: 'linear', logistic: 'logistic', exponential: 'exponential'}, policy = {observed_only: 'the observed volumes 2000–2023', legacy_assumptions: 'the observed volumes plus the notebook estimates 2024–2028'};
+  const curve = {linear: 'linear', logistic: 'logistic', exponential: 'exponential'}, policy = {observed_only: 'the observed volumes 2000–2023', legacy_assumptions: 'the observed volumes plus the BIEK estimates 2024–2028'};
   items.push(['Scenarios:', SCEN.map(item => { const d = item.definition, nat = item.national;
     return item.label + ' – ' + (d ? (curve[d.curve] || d.curve) + ' fit of ' + (policy[d.policy] || d.policy) + (d.chained ? ', chained to the level of ' + d.chain_year : '') : 'no scenario definition in the run') +
       (nat ? ': ' + dec(nat.from, 2) + ' billion parcels in ' + nat.from_year + ', ' + dec(nat.to, 2) + ' in ' + nat.to_year + ' (' + signed(nat.cagr) + ' a year)' : '') + (item.missing_years.length ? '; ' + years(item.missing_years) + ' not simulated' : ''); }).join('; ') + '.']);

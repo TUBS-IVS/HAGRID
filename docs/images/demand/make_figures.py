@@ -253,10 +253,6 @@ def volume_scenarios(payload: dict, theme: dict, out: Path, mode: str) -> Path:
     left.plot(estimates["years"], estimates["values"], "o", markerfacecolor=theme["surface"], markeredgecolor=theme["ink2"],
               markersize=4.2, markeredgewidth=1.2, linestyle="none", zorder=6)
     left.text(2009, 2.75, "observed", color=theme["ink2"], fontsize=8.5, ha="center")
-    if estimates["years"]:
-        left.annotate("notebook\nestimates", (estimates["years"][-1], estimates["values"][-1]), xytext=(2026.4, 2.55),
-                      color=theme["ink2"], fontsize=8, ha="center",
-                      arrowprops={"arrowstyle": "-", "color": theme["muted"], "linewidth": .8})
     left.text(years[0] + .2, .25, "projection", color=theme["muted"], fontsize=8)
     reference = next((item.get("reference") for item in payload["meta"]["scenarios"] if item.get("reference")), None)
     for index, (key, label) in enumerate(SCENARIOS):
@@ -301,7 +297,7 @@ def volume_scenarios(payload: dict, theme: dict, out: Path, mode: str) -> Path:
         right.annotate(f"{reference['year']} reference: {value:.1f} M", (reference["year"], value),
                        xytext=(reference["year"] + .2, value + 12), color=theme["ink2"], fontsize=8.5,
                        arrowprops={"arrowstyle": "-", "color": theme["muted"], "linewidth": .8})
-    source(fig, "Observed: BIEK / Statista 2000–2023; rings: notebook estimates. Dashed: fits through the data and the bridge "
+    source(fig, "Observed: BIEK / Statista 2000–2023; rings: BIEK estimates 2024–2028. Dashed: fits through the data and the bridge "
            "from the calibrated 2021 reference; the scenarios start at the 2025 level. Region: HAGRID annual store.", theme)
     return save(fig, out, "volume-scenarios", mode)
 
