@@ -1,5 +1,6 @@
 package hagrid.lausitz.freight;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import hagrid.core.routing.HAGRIDRouterUtils;
 
 import java.io.IOException;
@@ -39,6 +40,8 @@ final class JspritCacheKey {
     static final List<String> SYSTEM_PROPERTIES = List.of(HAGRIDRouterUtils.JSPRIT_SEED_PROPERTY);
     static final String NONE = "<none>";
     static final String UNSET = "<unset>";
+    /** Compact (never indented) - the encoding enters the key. */
+    private static final ObjectMapper LIST_JSON = new ObjectMapper();
 
     private final LmdPreprocessInputs.Variant variant;
     private final Map<String, String> components;
@@ -127,9 +130,8 @@ final class JspritCacheKey {
             return Integer.toString(i);
         }
         if (value instanceof List<?> list) {
-            StringJoiner j = new StringJoiner(",", "[", "]");
-            list.forEach(o -> j.add(String.valueOf(o)));
-            return j.toString();
+            // M6: a JSON array of strings, so ["a,b"] and ["a","b"] differ; the empty list stays []
+            return LIST_JSON.writeValueAsString(list.stream().map(String::valueOf).toList());
         }
         throw new IllegalStateException("LmdPreprocessInputs component '" + name + "' has type "
                 + value.getClass().getName() + ", which JspritCacheKey cannot encode - extend encode()");
