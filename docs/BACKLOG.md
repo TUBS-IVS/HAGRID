@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-09-30._
+_Zuletzt aktualisiert: 2026-10-01._
 
 ---
 
@@ -258,6 +258,14 @@ sollen auf derselben Kostenversion stehen.
 Die dauerhafte Reparatur im Java-Pfad läuft über `[H]` Kostenfunktion reviewen und ersetzt diesen
 Punkt später. _(added 2026-08-11, gekürzt 2026-08-17)_
 
+### `[M]` Hannover-Sweep: Tourenzahl im Plan ≠ Tourenzahl auf dem Board
+
+Der gewählte Plan in `output_carriers` hat bei 290v2 679 Touren / 97.557 Pakete, das Board 661 /
+97.423; bei 160v2 749 gegen 738. Ist das systematisch, zählt die „Fahrzeuge“-KPI des Sweeps um
+1,5–2,6 % zu niedrig. Zu tun: an einem der 14 lokalen v2-Läufe die fehlenden Touren benennen
+(Event-Rekonstruktion im `DashboardGenerator` gegen den Plan), Ursache und Wirkung ins METHODS-LOG.
+Plan-Extrakt: `analysis/capacity-explorer/spike/plans.py` (ungetrackt). _(added 2026-10-01)_
+
 ### `[H]` Pax-Nachfrage im Lausitz-Clip: Kontrolllauf ohne DRT und der kopierte DRT-ASC
 
 Anlass (User 2026-09-01): 9.036 DRT-Fahrten/Tag auf 41.937 Einwohner wirken gegenüber realen
@@ -368,24 +376,31 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   `NetworkBasedTransportCosts` ist im Fork (`2db6789`, gepusht), die Meldung upstream fehlt.
   _(added 2026-07-30, umformuliert 2026-09-30)_
 
-- **`[L]` jsprit-Upgrade 1.8 → 2.x — stark abgekühlt, nur noch ein Regler offen.** Der
-  Hauptnutzen ist **schon in 1.8 geholt** (`REGRET_INSERTION`, −21 % Touren → §2.34), und
-  Ruin-Operator-Diversität — 2.x' Hauptversprechen — ist auf diesen Daten ausdrücklich
-  **widerlegt**. Damit bleibt: **`FAST_REGRET`/`regretFast()` testen** (steht auf jsprit-Default
-  `false`, der nächste 1.8-Regler), erst danach Go/No-Go für 2.0.
-  **Wenn doch gebumpt wird:** 2.0.0 existiert und braucht Java 21 (haben wir); Kosten sind aber
-  ~16 Java-Dateien mit tiefer SPI-Nutzung **plus** der komplette MATSim-freight-contrib im Fork
-  portiert und die Divergenz dauerhaft gepflegt, weil Upstream auf 1.8 bleibt. Berührt `pom.xml`
-  (`jsprit.version`) + drei POMs, braucht freight-272-Regression und einen married250-Re-Run
-  (alle Dashboards neu baseline). Deshalb `[L]`, nicht `[M]`.
-  _(added 2026-07-16, neu eingeordnet 2026-08-11, gekürzt 2026-08-17)_
+- **`[L]` jsprit-Upgrade 1.8 → 2.0 — offen, der Nutzen ist bisher am falschen KPI gemessen.**
+  2.0.0 liegt seit 2026-03-27 auf Maven Central (Java 21, neue Ruins inkl. Kruskal-Cluster,
+  Regret-k); MATSim-Upstream bleibt auf 1.8. Das frühere „Ruin-Diversität widerlegt" deckt nur die
+  **Tourenzahl** eines Carriers mit 1.8-Operatoren (dpd, §2.34) — die **km-Streuung** (6,5 %, §2.1)
+  und die 2.0-Operatoren selbst sind nie gemessen. jsprit bleibt ohnehin nötig: Hannover plant in
+  der MATSim-Schleife auf Stau-Reisezeiten in 30-min-Scheiben (`ReplanningStrategies:184`), das
+  kann kein Matrix-Solver (PyVRP, VROOM, OR-Tools). **Erst Spike `[M]`:** (a) Compile-Probe gegen
+  2.0 im Worktree, Fehler zählen (14 HAGRID- + 12 Contrib-Dateien importieren jsprit); (b) offline
+  auf den plan-gepinnten KPIs, 7 Lausitz-Carrier × 5 Seeds, ohne MATSim: 1.8 · 1.8 + `FAST_REGRET`
+  · 2.0 · PyVRP als Qualitätsreferenz, gemessen an km-Niveau und km-Spanne. **Echter Bump:**
+  Contrib im Fork portieren und pflegen, freight-272-Regression, married250-Re-Run, Dashboards neu.
+  _(added 2026-07-16, neu eingeordnet 2026-08-11, neu bewertet 2026-09-30)_
 
 - **`[M]` Case-Study-Area erweitern** — Ruhland-Korridor, aktuell als Kurzfix dropped.
   **Entschieden: bleibt zunächst Hoyerswerda, Erweiterung erst ~2027**
   → [METHODS-LOG](METHODS-LOG.md) §4.6. Mitzuziehen, wenn es passiert: der 2026-07-20 entfernte
   „Bahn-Zubringer"-Kartenlayer (Port-Referenz Legacy `build_drt_dashboard.py:260-289`, Skript
   gelöscht, Stand im Parent von `b639ff3`); dabei die stille-`None`-Ursache mit-fixen und den Layer
-  nur bei vorhandenen Daten zeigen. _(added 2026-07-14, aktualisiert 2026-08-17)_
+  nur bei vorhandenen Daten zeigen. **Ebenfalls mitzuziehen (User 2026-09-30): die LMD aufs
+  Hannover-Schema umstellen**, also jeden Carrier einmal in der Schleife auf Stau umplanen (§2.77).
+  Das kostet eine zusätzliche jsprit-Phase je Lauf, nicht eine je Iteration, und der
+  Carrier-Neuzuschnitt drückt sie weiter (Laufzeit ∝ `jobs^1,4`, §2.2 ⇒ bei k gleich großen Carriern
+  ∝ k^−0,4, dazu parallel). Vorher entscheiden: Baseline und 1d gleich behandeln, Cost-Cache je
+  Umplanung frisch statt statisch, Planwahl hängt dann am Carrier-Score (`BestPlanSelector`), und
+  der Seed-Fächer streut dann auch die LMD-km. _(added 2026-07-14, aktualisiert 2026-09-30)_
 
 - **`[M]` hagrid/simulation/input Bootstrap (Restructure Schritt 3)** — ~156 MB, größtenteils untracked;
   letzter manueller Transfer-Schritt für "läuft auf jedem neuen PC". Geplant:

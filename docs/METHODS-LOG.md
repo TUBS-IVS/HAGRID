@@ -93,6 +93,15 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-09-30._
   war damit selbst fehlerhaft — die Entscheidung „Detour-only statt Dwell-inklusive" trägt, ihre
   Umsetzung war es nicht → §2.35.
 
+- **Die Lausitz-LMD plant einmal offline auf Freifluss und bleibt eingefroren** — `trägt` ·
+  2026-07-02 (D2, [Marriage-Plan](superpowers/plans/2026-07-02-lmd-drt-marriage.md)), Notiz
+  nachgetragen 2026-09-30
+  jsprit löst jeden Carrier einmal im Preprocessing; im Lauf wählt eine einzige
+  `KeepSelected`-Strategie diesen Plan in allen Iterationen wieder
+  (`FreightRunComposer.keepSelectedStrategyManager`). Geplant wird auf Freifluss, gefahren im
+  Mischverkehr, die Soll-Ist-Differenz der Tourdauer ist also ein Befund und kein Fehler. Hannover
+  plant anders (einmal in der Schleife auf Stau) → Gegenüberstellung und Folgen in §2.77.
+
 ### 1.2 Parametrisierung
 
 - **Sitz-Basis: Baseline 10 Sitze, Shared-Use 8 Sitze + 20 Paket-Slots** — `trägt` · 2026-07-20 (M1)
@@ -2324,6 +2333,12 @@ Vergleichsbasis aber schon. Ebenso der komplette **Hannover-Sweep cap 30→400**
 zusätzlicher Wucht, weil dessen Kostenkurve laut §2.33 der *Tourenzahl* folgt, also genau der
 Größe, die hier um ein Fünftel falsch war. Der Arbeitszeit-/Kapazitäts-Crossover bei ~170 (§2.33)
 ist neu zu vermessen, nicht fortzuschreiben.
+
+**Nachtrag 2026-09-30 — der Hannover-Teil trägt nicht (→ §2.77).** `BEST_INSERTION` saß nur in
+`configureAlgorithm` und baute in Hannover damit nur die Step-A-Startlösung (`jsprit=1`). Die
+gefahrenen Touren des Sweeps plant `CarrierVehicleReRouter` in der Schleife von Grund auf neu, mit
+jsprits Default `REGRET_INSERTION` (an `160v2` belegt). Der ~170-Crossover ist aus diesem Grund
+nicht neu zu vermessen. Betroffen bleiben Lausitz-Baseline und 1d.
 
 **Offen:** Seed-Fächer auf dem Fix (Einzellauf, jsprit-Default-Seed) — die Richtung ist weit
 außerhalb des Rauschbodens, die exakte Höhe nicht abgesichert. `FAST_REGRET` steht weiter auf
@@ -5115,6 +5130,62 @@ Seit wann die `tourId`s ungeordnet sind, ist nicht an REGRET_INSERTION (§2.34) 
 mit 52 Touren liegt vor dem Wechsel und trifft trotzdem nur 6. Nicht weiter eingegrenzt.
 
 Verwandt: §2.6 (Kosten), §2.33 (Plan- gegen Ausführungsdistanz).
+
+### 2.77 Zwei Planungsregime: Lausitz plant die LMD auf Freifluss, Hannover einmal in der Schleife auf Stau
+
+`trägt` · 2026-09-30 · am Code geprüft, an `160v2` belegt. Die Methodennotiz, die D2 im
+[Marriage-Plan](superpowers/plans/2026-07-02-lmd-drt-marriage.md) verlangt hatte (§1.1).
+**Betrifft jeden Vergleich von LMD-Zahlen zwischen den beiden Studien.**
+
+Die Startlösung entsteht in beiden Studien gleich: offline auf Freifluss.
+`NetworkBasedTransportCosts` ohne `setTravelTime` rechnet mit `min(vmax, freespeed)` (Fork,
+`NetworkBasedTransportCosts.java:325-331`), die gesetzte 1800-s-Zeitscheibe bleibt damit wirkungslos.
+Danach trennen sich die Wege:
+
+| | Lausitz (Baseline, 1d) | Hannover (Sweep) |
+|---|---|---|
+| Startplan | Preprocessing, `configureAlgorithm` | Step A, `jsprit=1`, `configureAlgorithm` |
+| Umplanung im Lauf | keine, nur `KeepSelected` | jeder Carrier **genau einmal**, ab Iteration 25, ≤ 16 je Iteration |
+| Reisezeiten der gefahrenen Touren | Freifluss | von MATSim gemessen, 30-min-Scheiben |
+| jsprit-Setup der gefahrenen Touren | `configureAlgorithm` (REGRET seit 2026-08-11) | jsprit-Defaults (REGRET, Default-Ruins) + eigene Aktivitätskosten für Verspätung, Warte- und Servicezeit |
+
+Die Hannover-Umplanung sitzt in `CarrierVehicleReRouter` (`STARTOPTIMIZATION = 25`,
+`MAXREPLANNINGSIZE = 16`, der Zweig für eine zweite Umplanung ist auskommentiert) und ist in diesen
+Punkten seit 2025-09-18 (`cf1ed4a`) unverändert, gilt also für alle Sweep-Läufe.
+
+**Die Stau-Zeiten sind eine Momentaufnahme, kein laufendes Signal.** `ZoneBasedTransportCosts`
+legt Zeit und Distanz je (von, nach, Zeitscheibe, Fahrzeugtyp) in einem statischen
+`sharedCostCache` ab, den nichts leert. Jeder Wert stammt aus der Iteration, in der er zuerst
+angefragt wurde. Bei 229 Carriern und 16 je Iteration ist die Umplanung frühestens in Iteration 39
+durch, danach ändert keine Iteration mehr eine Planzeit. Paare in verschiedenen Zonen ab 1500 m
+Luftlinie teilen sich außerdem einen Zonenwert (`zoneThreshold=1500`).
+
+**Beleg an `160v2`** (lokaler Lauf, `output_carriers` gegen die Step-A-Dateien):
+
+| | Step A | Endstand it. 150 |
+|---|---|---|
+| Carrier mit Schleifen-Umplanung (`jspritIterations` ≥ 100) | 0 von 229 (Step A läuft mit `jsprit=1`) | **229 von 229** (169× 1000, 60× früher abgebrochen) |
+| Pläne je Carrier | 1 | 5, alle mit der Tourenzahl des gewählten |
+| Touren gesamt | 863 | **882** |
+
+**Folge 1 — §2.34 erreicht die Hannover-Endtouren nicht.** jsprit-core 1.8 setzt
+`REGRET_INSERTION` als Default (`Jsprit.java:238`), und `CarrierVehicleReRouter` überschreibt ihn
+nicht. Die ~21 % zu vielen Touren aus §2.34 gelten für Lausitz, nicht für den Sweep (Nachtrag dort).
+Der gleichlautende Vorbehalt im README der EWGT26-Auswertung (`0326_EWGT26/Analysis_v2_v3_v4`) ist
+damit hinfällig, dort aber noch nicht geändert.
+
+**Folge 2 — LMD-Zahlen der beiden Studien stammen aus verschiedenen Regimen.** Touren, km und
+Tourdauern sind zwischen Lausitz und Hannover nur mit dieser Einschränkung nebeneinander zu stellen:
+Freifluss, einmal, HAGRID-Setup gegen Stau-Momentaufnahme, in der Schleife, jsprit-Defaults.
+
+**Folge 3 — wo der Freifluss in Lausitz schon gebissen hat:** §2.58. Die 1d-Disposition lag
+912–3.243 s unter der gerouteten Tourdauer, Freifluss auf dem Autonetz war eine von drei Ursachen.
+Für die Baseline ist die Soll-Ist-Differenz der Tourdauer nicht beziffert.
+
+Nebenbei zu §3.8: die 1000 Hannover-Iterationen laufen im Thread-Pool von `CarrierVehicleReRouter`
+(alle Kerne), nicht im Step-A-`Router`. „Hannover parallelisiert, Lausitz nicht" bleibt richtig.
+
+Perspektive, Lausitz auf das Hannover-Schema umzustellen: BACKLOG, Punkt Case-Study-Area.
 
 ---
 
