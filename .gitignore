@@ -1,0 +1,22 @@
+
+
+# Private carrier datasets: never commit, including renamed historical copies.
+dhl2streets_*
+Hermes_PLZ-Menge_*
+Parcels19_20_21_inter.*
+final_grid_250_region_results_update.*
+/pakethochrechnung/dhl/
+/pakethochrechnung/hermes/
+/parcel-demand-estimation/output/**
+!/parcel-demand-estimation/output/**/
+!/parcel-demand-estimation/output/**/.gitkeep
+/parcel-demand-2-matsim-pipeline/hagrid-input/demand/**
+!/parcel-demand-2-matsim-pipeline/hagrid-input/demand/**/
+!/parcel-demand-2-matsim-pipeline/hagrid-input/demand/**/.gitkeep
+/phd/output/
+/hagrid/demand/archive/notebooks/**/input/**
+!/hagrid/demand/archive/notebooks/**/input/**/
+!/hagrid/demand/archive/notebooks/**/input/**/.gitkeep
+/hagrid/demand/archive/notebooks/**/output/**
+!/hagrid/demand/archive/notebooks/**/output/**/
+!/hagrid/demand/archive/notebooks/**/output/**/.gitkeep
