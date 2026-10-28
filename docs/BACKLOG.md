@@ -22,7 +22,7 @@ Einstufungen sind mein Vorschlag und jederzeit anpassbar.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Erledigtes wandert nach BACKLOG-DONE (mit
 Nachweis), methodische Substanz ins METHODS-LOG, der Rest wird gestrichen.
-_Zuletzt aktualisiert: 2026-10-02._
+_Zuletzt aktualisiert: 2026-10-23._
 
 ---
 
@@ -265,6 +265,18 @@ Der gewählte Plan in `output_carriers` hat bei 290v2 679 Touren / 97.557 Pakete
 1,5–2,6 % zu niedrig. Zu tun: an einem der 14 lokalen v2-Läufe die fehlenden Touren benennen
 (Event-Rekonstruktion im `DashboardGenerator` gegen den Plan), Ursache und Wirkung ins METHODS-LOG.
 Plan-Extrakt: `analysis/capacity-explorer/spike/plans.py` (ungetrackt). _(added 2026-10-01)_
+
+### `[M]` U-Turn-Strafe auch in der Schleifen-Umplanung (Hannover)
+
+Die Strafe sollte die Touren realistischer machen. Sie erreicht die gefahrenen Touren aber nicht:
+Nur die Step-A-Startlösung plant mit ihr, `CarrierVehicleReRouter` plant jeden Carrier ohne sie
+neu ([METHODS-LOG](METHODS-LOG.md) §2.78). Zu tun: `UTurnSoftConstraint` in den
+Constraint-Manager des Re-Routers hängen
+([CarrierVehicleReRouter.java:238-253](../hagrid/simulation/src/main/java/hagrid/core/simulation/CarrierVehicleReRouter.java#L238-L253)),
+den Wert aus `HAGRIDSimulationModule` über `ReplanningStrategies:184` durchreichen. Vorher
+entscheiden: Strafhöhe (heute 1,0 ≙ ~2,6 km Distanzkosten, nie kalibriert). Wirkung an einem Lauf
+vorher/nachher über das Carrier-Attribut `uTurnCount` messen. Ändert die Sweep-Zahlen ⇒ nicht mit
+v2–v4 mischen. _(added 2026-10-23)_
 
 ### `[H]` Pax-Nachfrage im Lausitz-Clip: Kontrolllauf ohne DRT und der kopierte DRT-ASC
 

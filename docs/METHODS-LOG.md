@@ -24,7 +24,7 @@ noch nicht belegt · `zurückgezogen` = war ein Befund, ist keiner mehr · `offe
 steht aus.
 
 **Pflege:** wird im Arbeits-Workflow mitgepflegt. Jeder Eintrag trägt Datum, Status und — wo es
-einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-02._
+einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-27._
 
 ---
 
@@ -5236,6 +5236,46 @@ Nebenbei zu §3.8: die 1000 Hannover-Iterationen laufen im Thread-Pool von `Carr
 (alle Kerne), nicht im Step-A-`Router`. „Hannover parallelisiert, Lausitz nicht" bleibt richtig.
 
 Perspektive, Lausitz auf das Hannover-Schema umzustellen: BACKLOG, Punkt Case-Study-Area.
+
+### 2.78 Was jsprit im Hannover-Sweep optimiert: Fix + Distanz, harte Zeitfenster, U-Turn nur in der Startlösung
+
+`trägt` · 2026-10-23 · am Sweep-Commit `019fd5f` und an den jsprit-1.8-Quellen geprüft. Anlass:
+CVRPTW-Formulierung im EWGT26-Paper (Abschnitt 2.2). Gilt für die gefahrenen Touren (§2.77).
+
+| Baustein | Code | Folge für eine Modellformulierung |
+|---|---|---|
+| Zielfunktion | jsprit-Default: Fixkosten je Route (`Jsprit.java:768`) + Transport- + Aktivitätskosten; `ct_cep_*`: 189,15 €/Tag fix, 3,864e-4 €/m, `costsPerSecond=0` | Fix + Distanz; Fahrzeit hat Gewicht 0 |
+| Zeitfenster | `VehicleDependentTimeWindowConstraints` ist hart; Hannover einheitlich 8–20 Uhr | a_i ≤ w_ik ≤ b_i hart; die Verspätungskosten (5/s) in den Aktivitätskosten des Re-Routers greifen im Plan nie |
+| Warten | `costsPerSecondWaiting=10` geht in die Aktivitätskosten | Häufigkeit nicht ausgezählt |
+| U-Turn | `UTurnSoftConstraint` (eine Kante zwischen Stopps auf gegenläufigen Links, Strafe 1,0) nur in `configureAlgorithm` = Step A mit `jsprit=1`; `CarrierVehicleReRouter` plant ohne sie und ohne Startlösung neu | wirkt nicht auf die gefahrenen Touren; U-Turns und Verspätung bestraft nur das MATSim-Scoring der Ausführung (`uTurnCount`, `costTimeWindowPenalty`) |
+| Flotte | `FleetSize.INFINITE` | 𝒦 groß genug, Leerroute (0, n+1) |
+
+Nachrüsten der U-Turn-Strafe in der Umplanung: BACKLOG, Punkt „U-Turn-Strafe auch in der
+Schleifen-Umplanung".
+
+### 2.79 Kapazität/Arbeitszeit-Schnittpunkt (~170): robust bis zur 7,0-h-Planungsgrenze, darüber nicht
+
+`trägt` · 2026-10-27 · v2–v4 (114 Läufe), Anteile inklusiv, Logistik-Fits wie
+`build_paper_analysis.py`. Kontrolle 7,0 h / 90 % reproduziert `kpi_v2_v3_v4.csv` (|Δ| < 1e-4 pp)
+und die Fit-Parameter exakt. Reproduktion: `analysis/hannover/sweep/transition_robustness.py`.
+
+| Schwellen | Schnitt Fit | Schnitt Rohdaten | v2/v3/v4 einzeln | Zeitanteil-Decke L |
+|---|---|---|---|---|
+| 6,5 h / 85 % | 168,3 | 171,5 | 167,9–168,7 | 74 % |
+| **7,0 h / 90 %** (Paper) | **170,1** | 172,8 | 169,6–170,7 | 70 % |
+| 7,5 h / 95 % | 179,7 | 181,8 | 179,3–180,3 | 35 % |
+| 8,0 h / 100 % (≥ cap) | 216,7 | 194,3 | 216,5–216,8 | 9 % |
+
+Bei 6,5–7,0 h × 85–95 % liegt der Schnitt zwischen 158 und 175, also in der berichteten Zone
+144–200. Die beiden Schwellen ziehen gegenläufig, unterhalb von 7,0 h etwa gleich stark, darüber
+dominiert die Zeitschwelle. **Grund für den Bruch über 7,0 h:** Step A und Umplanung planen hart mit
+7,0 h (`HAGRIDRouterUtils.MAXROUTEDURATION`, `CarrierVehicleReRouter.MAXROUTEDURATIONHOUR`,
+Sweep-Commit `019fd5f`). Realisiert enden 62 % der
+Touren bei c ≥ 250 zwischen 7,0 und 8,0 h. Eine Schwelle darüber misst Stau-Überzug, nicht die
+Bindung. Bei 8,0 h ist der Zeitanteil nicht monoton (max. 12 % bei c=250, 6 % bei c=400), der
+Logistik-Fit trägt dort nicht. 100 % nur als `≥ cap`, mit `>` ist der Kapazitätsanteil null.
+Paper-Satz „threshold defined at 10 % below the respective maximum“ stimmt nur für die Kapazität,
+7,0 h ist die Planungsgrenze selbst.
 
 ---
 
