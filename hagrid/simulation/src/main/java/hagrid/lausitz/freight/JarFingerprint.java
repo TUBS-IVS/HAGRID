@@ -102,10 +102,29 @@ final class JarFingerprint {
         return Sha256.hex(outer.digest());
     }
 
+    /**
+     * Review 2026-10-02: asked again right before a result is stored. {@code false} when the JAR changed
+     * after this JVM started (it may have been rebuilt while jsprit ran) or cannot be checked.
+     */
+    static boolean unchangedSinceJvmStart() {
+        if (overrideForTests != null) {
+            return true;
+        }
+        try {
+            return lastChangedMillis(codeLocation()) <= ManagementFactory.getRuntimeMXBean().getStartTime();
+        } catch (IOException | URISyntaxException | RuntimeException e) {
+            LOG.warn("jsprit cache: cannot check whether the running code changed ({})", e.toString());
+            return false;
+        }
+    }
+
+    private static Path codeLocation() throws URISyntaxException {
+        return Path.of(LausitzFreightPreprocessor.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+    }
+
     private static Optional<String> compute() {
         try {
-            Path location = Path.of(LausitzFreightPreprocessor.class.getProtectionDomain()
-                    .getCodeSource().getLocation().toURI());
+            Path location = codeLocation();
             Optional<String> fingerprint = of(location);
             if (fingerprint.isEmpty()) {
                 return fingerprint;

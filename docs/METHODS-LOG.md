@@ -410,7 +410,8 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-27._
   - **Sicherungen:**
     - Ein Widerspruch zweier Rechnungen mit gleichem Schlüssel sperrt den ganzen Cache der Maschine (`BLOCKED.json`).
     - Ändert sich eine Eingabe während des Einlesens, ist der Lauf vom Cache ausgeschlossen.
-    - Ein JAR, das jünger ist als die JVM, schaltet den Cache ab.
+    - Ein JAR, das jünger ist als die JVM, schaltet den Cache ab. Seit 2026-11-02 wird das direkt vor dem Ablegen noch einmal geprüft: Wurde das JAR ersetzt, während jsprit lief, legt der Lauf nichts ab und vergleicht auch nicht (`jar-changed`).
+    - Seit 2026-11-02 nutzt nur das erste Lausitz-Szenario einer JVM den Cache. Ein zweites, anderes Szenario legt seine MATSim-IDs nicht als erstes an und rechnet deshalb ohne Cache (`bypass`/`other-scenario-in-jvm`). Dasselbe Szenario ein zweites Mal trifft weiter.
     - Jeder Fehler im Cache endet im Rechnen ohne Cache, nie im Abbruch des Laufs.
   - **Laufvergleich auf dem Dev (02.10.)**, Baseline und 1d je mit `off`/`miss`/`hit`/`verify`:
     - Alle Ausgaben sind A gegen B (Treffer) und A gegen C (zweiter frischer Lauf) gleich: Ergebnisdatei, DRT-CSVs, `modestats`, `output_carriers`, `modular_tour_stats`.

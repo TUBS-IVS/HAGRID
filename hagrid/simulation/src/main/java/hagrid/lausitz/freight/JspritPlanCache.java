@@ -12,7 +12,9 @@ import org.apache.logging.log4j.Logger;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -27,6 +29,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -49,6 +53,10 @@ import java.util.stream.Stream;
  * cache ({@link #BLOCKED_FILE}, spec section 6.4) until a person removes the marker. The inputs are
  * hashed twice, before step 1 ({@link #keyBeforeReading}) and in {@link #produce}; if they differ,
  * an input changed while being read and the run neither hits nor stores (spec section 6.5).
+ *
+ * <p>Two guards from the review of 2026-10-02, built in 2026-11-02: a JAR replaced while jsprit ran
+ * stores nothing ({@code jar-changed}), and only the first LMD scenario of a JVM uses the cache
+ * ({@code other-scenario-in-jvm}, spec section 11: a later one does not create the first MATSim Ids).
  */
 public final class JspritPlanCache {
 
@@ -60,6 +68,10 @@ public final class JspritPlanCache {
     private static final String RUN_SUFFIX = "_lmd_carriers_routed.xml";
     private static final Logger LOG = LogManager.getLogger(JspritPlanCache.class);
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    /** Key of the first scenario that used the cache in this JVM; production instances share it. */
+    private static final AtomicReference<String> JVM_SCENARIO = new AtomicReference<>();
+    /** A refused rename is tried this often, with 50, 100, 200, 400 ms pauses in between (review M8). */
+    static final int MOVE_ATTEMPTS = 5;
 
     /** Steps 5-6 of the preprocessing: route with jsprit and write the carriers to {@code target}. */
     @FunctionalInterface
@@ -78,21 +90,44 @@ public final class JspritPlanCache {
     private final Supplier<Optional<String>> codeFingerprint;
     private final UnaryOperator<String> systemProperty;
     private final String javaRuntime;
+    private final BooleanSupplier codeStillCurrent;
+    private final AtomicReference<String> jvmScenario;
+    /** Set by {@link #keyBeforeReading} when this JVM already used the cache for another scenario. */
+    private boolean otherScenarioInJvm;
 
+    /** Tests: the code never changes, and every instance is its own JVM. */
     JspritPlanCache(Path cacheDir, Mode mode, Supplier<Optional<String>> codeFingerprint,
                     UnaryOperator<String> systemProperty, String javaRuntime) {
+        this(cacheDir, mode, codeFingerprint, systemProperty, javaRuntime, () -> true, new AtomicReference<>());
+    }
+
+    /**
+     * @param codeStillCurrent asked right before storing: is the JAR still the one this JVM started with
+     * @param jvmScenario      key of the first scenario of this JVM that used the cache, {@code null} if none
+     */
+    JspritPlanCache(Path cacheDir, Mode mode, Supplier<Optional<String>> codeFingerprint,
+                    UnaryOperator<String> systemProperty, String javaRuntime,
+                    BooleanSupplier codeStillCurrent, AtomicReference<String> jvmScenario) {
         this.cacheDir = cacheDir;
         this.mode = Objects.requireNonNull(mode, "mode");
         this.codeFingerprint = Objects.requireNonNull(codeFingerprint, "codeFingerprint");
         this.systemProperty = Objects.requireNonNull(systemProperty, "systemProperty");
         this.javaRuntime = Objects.requireNonNull(javaRuntime, "javaRuntime");
+        this.codeStillCurrent = Objects.requireNonNull(codeStillCurrent, "codeStillCurrent");
+        this.jvmScenario = Objects.requireNonNull(jvmScenario, "jvmScenario");
     }
 
     /** Production wiring. Parses {@code -Dhagrid.jsprit.cache} immediately: a typo fails here. */
     public static JspritPlanCache fromSystem(Path cacheDir) {
         return new JspritPlanCache(cacheDir, Mode.parse(System.getProperty(MODE_PROPERTY)),
                 JarFingerprint::ofRunningCode, System::getProperty,
-                System.getProperty("java.vm.vendor") + " " + System.getProperty("java.runtime.version"));
+                System.getProperty("java.vm.vendor") + " " + System.getProperty("java.runtime.version"),
+                JarFingerprint::unchangedSinceJvmStart, JVM_SCENARIO);
+    }
+
+    /** Test hook: forgets which scenario this JVM preprocessed first. */
+    static void resetJvmScenarioForTests() {
+        JVM_SCENARIO.set(null);
     }
 
     /**
@@ -105,11 +140,21 @@ public final class JspritPlanCache {
         if (skip().isPresent()) {
             return null;
         }
+        JspritCacheKey key;
         try {
-            return JspritCacheKey.of(in, codeFingerprint.get().orElseThrow(), systemProperty, javaRuntime);
+            key = JspritCacheKey.of(in, codeFingerprint.get().orElseThrow(), systemProperty, javaRuntime);
         } catch (IOException e) {
             throw new UncheckedIOException("jsprit cache: cannot hash the LMD preprocessing inputs", e);
         }
+        String first = jvmScenario.compareAndExchange(null, key.fullHash());
+        if (first != null && !first.equals(key.fullHash())) {
+            otherScenarioInJvm = true;
+            LOG.warn("jsprit cache: this JVM already preprocessed another LMD scenario ({}), so the MATSim Ids of"
+                    + " this one are not created first and its result may differ from a fresh JVM - computing"
+                    + " without the cache (spec section 11)", first.substring(0, 16));
+            return null;
+        }
+        return key;
     }
 
     /**
@@ -163,6 +208,9 @@ public final class JspritPlanCache {
         if (codeFingerprint.get().isEmpty()) {
             return Optional.of(new Skip(Status.OFF, "no-jar"));
         }
+        if (otherScenarioInJvm) {
+            return Optional.of(new Skip(Status.BYPASS, "other-scenario-in-jvm"));
+        }
         return Optional.empty();
     }
 
@@ -207,7 +255,7 @@ public final class JspritPlanCache {
             }
         }
         LOG.info("jsprit cache {} {}: {}", mode == Mode.VERIFY ? "VERIFY" : "MISS", key.dirName(),
-                describeChange(newestManifest(key.variant()), key));
+                describeChange(newestManifest(key.variant()), key, mode == Mode.VERIFY));
         double seconds = timed(computation, carriersOut);
         return publish(key, entry, carriersOut, seconds);
     }
@@ -295,6 +343,13 @@ public final class JspritPlanCache {
     }
 
     private JspritCacheResult publish(JspritCacheKey key, Path entry, Path carriersOut, double seconds) {
+        if (!codeStillCurrent.getAsBoolean()) {
+            // neither store nor compare: the fresh result may come from other code than the key names,
+            // and a comparison could block the whole cache for nothing (review 2026-10-02)
+            LOG.warn("jsprit cache: the JAR changed while jsprit ran - not storing {} (and not comparing)",
+                    key.dirName());
+            return result(Status.MISS, "jar-changed", key, null, seconds);
+        }
         String host = HostName.VALUE;   // M9: resolved once per JVM, never while the entry lock is held
         CacheEntryLock lock;
         try {
@@ -320,7 +375,7 @@ public final class JspritPlanCache {
             String reason = mode == Mode.VERIFY ? "verify-no-entry" : null;
             if (state instanceof EntryState.Corrupt corrupt) {
                 Path aside = cacheDir.resolve(".corrupt-" + UUID.randomUUID());
-                Files.move(entry, aside);
+                moveWithRetry((s, t) -> Files.move(s, t), entry, aside);
                 LOG.warn("jsprit cache entry {} was corrupt ({}) - moved aside to {} and replaced",
                         key.dirName(), corrupt.why(), aside.getFileName());
                 reason = "repaired";
@@ -410,7 +465,7 @@ public final class JspritPlanCache {
                     blockedFile(), e.toString(), cacheDir);
         }
         try {
-            Files.move(entry, evidence);   // under the lock; the uuid target does not exist
+            moveWithRetry((s, t) -> Files.move(s, t), entry, evidence);   // under the lock; the uuid target does not exist
             Files.copy(carriersOut, evidence.resolve(FRESH_FILE));
             return evidence;
         } catch (IOException | RuntimeException e) {
@@ -450,11 +505,48 @@ public final class JspritPlanCache {
                     producedByRun(carriersOut), seconds, host);
             JSON.writeValue(tmp.resolve(MANIFEST_FILE).toFile(), m.toMap());
             // the target is absent under the lock, so ATOMIC_MOVE never has to replace anything
-            Files.move(tmp, entry, StandardCopyOption.ATOMIC_MOVE);
+            moveWithRetry((s, t) -> Files.move(s, t, StandardCopyOption.ATOMIC_MOVE), tmp, entry);
             LOG.info("jsprit cache STORED {} ({} s of jsprit)", key.dirName(), seconds);
         } finally {
             if (Files.exists(tmp)) {
                 deleteRecursively(tmp);
+            }
+        }
+    }
+
+    /** Seam for {@link #moveWithRetry}. */
+    @FunctionalInterface
+    interface Mover {
+        void move(Path source, Path target) throws IOException;
+    }
+
+    /**
+     * Review M8: on Windows a virus scanner or the indexer may hold a handle in a fresh directory for
+     * a moment, and the rename fails with "access denied" or "used by another process". Those two are
+     * retried {@link #MOVE_ATTEMPTS} times; every other error (target exists, source missing, ...)
+     * is final at once.
+     */
+    static void moveWithRetry(Mover mover, Path source, Path target) throws IOException {
+        long pauseMillis = 50;
+        for (int attempt = 1; ; attempt++) {
+            try {
+                mover.move(source, target);
+                return;
+            } catch (FileSystemException e) {
+                boolean transientRefusal = e instanceof AccessDeniedException || e.getClass() == FileSystemException.class;
+                if (!transientRefusal || attempt == MOVE_ATTEMPTS) {
+                    throw e;
+                }
+                LOG.info("jsprit cache: moving {} was refused ({}) - retry {} of {} in {} ms", source.getFileName(),
+                        e.getReason() == null ? e.getClass().getSimpleName() : e.getReason(), attempt,
+                        MOVE_ATTEMPTS - 1, pauseMillis);
+                try {
+                    Thread.sleep(pauseMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+                pauseMillis *= 2;
             }
         }
     }
@@ -532,7 +624,8 @@ public final class JspritPlanCache {
         return new EntryState.Valid(m);
     }
 
-    static String describeChange(Optional<Manifest> newest, JspritCacheKey key) {
+    /** @param verifying a verify run recomputes on purpose, so an unchanged key is no sign of damage */
+    static String describeChange(Optional<Manifest> newest, JspritCacheKey key, boolean verifying) {
         String variant = variantName(key.variant());
         if (newest.isEmpty()) {
             return "first entry for " + variant;
@@ -540,7 +633,10 @@ public final class JspritPlanCache {
         Manifest n = newest.get();
         var changed = key.changedComponents(n.components());
         if (changed.isEmpty()) {
-            return "the newest " + variant + " entry has the same components but is missing or corrupt";
+            return verifying
+                    ? "same inputs and code as the newest " + variant + " entry (" + n.created() + ", computed by "
+                            + n.producedByRun() + ") - recomputing to compare"
+                    : "the newest " + variant + " entry has the same components but is missing or corrupt";
         }
         return "changed since the newest " + variant + " entry (" + n.created() + ", computed by "
                 + n.producedByRun() + "): " + String.join(", ", changed);

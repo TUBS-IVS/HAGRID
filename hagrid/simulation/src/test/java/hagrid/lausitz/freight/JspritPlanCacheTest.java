@@ -13,13 +13,18 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
@@ -382,12 +387,12 @@ class JspritPlanCacheTest {
     @Test
     void describeChangeNamesWhatChangedSinceTheNewestEntry() throws IOException {
         JspritCacheKey first = JspritCacheKey.of(inputs, "fp-1", p -> null, "java-1");
-        assertThat(JspritPlanCache.describeChange(Optional.empty(), first)).isEqualTo("first entry for baseline");
+        assertThat(JspritPlanCache.describeChange(Optional.empty(), first, false)).isEqualTo("first entry for baseline");
 
         JspritPlanCache.Manifest newest = new JspritPlanCache.Manifest(first.fullHash(), "baseline",
                 first.components(), "sha", "2026-10-01T10:00:00", "RUN_A", 8100.0, "dev");
         JspritCacheKey changed = JspritCacheKey.of(inputs, "fp-2", p -> null, "java-1");
-        assertThat(JspritPlanCache.describeChange(Optional.of(newest), changed))
+        assertThat(JspritPlanCache.describeChange(Optional.of(newest), changed, false))
                 .contains("RUN_A").contains("code").doesNotContain("network");
     }
 
@@ -586,5 +591,128 @@ class JspritPlanCacheTest {
                 .isInstanceOf(IOException.class);
         assertThat(Files.exists(sidecar)).as("the stale sidecar from an earlier run must not survive an abort")
                 .isFalse();
+    }
+
+    // --- deferred review points of 2026-10-02, built in 2026-11-02 -----------------------------
+
+    private JspritPlanCache cache(Mode mode, String fingerprint, BooleanSupplier codeStillCurrent,
+                                 AtomicReference<String> jvmScenario) {
+        return new JspritPlanCache(cacheDir, mode, () -> Optional.of(fingerprint), p -> null, "java-1",
+                codeStillCurrent, jvmScenario);
+    }
+
+    /** Review point "JAR check not repeated before storing": a JAR replaced while jsprit ran stores nothing. */
+    @ParameterizedTest
+    @EnumSource(value = Mode.class, names = {"ON", "VERIFY"})
+    void aJarReplacedWhileJspritRanStoresNothing(Mode mode) throws IOException {
+        Counting c = new Counting("X");
+        JspritCacheResult r = produce(cache(mode, "fp-1", () -> false, new AtomicReference<>()), inputs,
+                out("RUN_A"), new CountingReplay(), c);
+
+        assertThat(r.status()).isEqualTo(Status.MISS);
+        assertThat(r.reason()).isEqualTo("jar-changed");
+        assertThat(c.calls).isEqualTo(1);
+        assertThat(read(out("RUN_A"))).as("the run keeps its fresh result").isEqualTo("X");
+        assertThat(entries()).as("nothing stored under a key the running code may not match").isEmpty();
+    }
+
+    @Test
+    void aJarReplacedWhileJspritRanNeverComparesSoItCannotBlock() throws IOException {
+        produce(cache(Mode.ON), inputs, out("RUN_A"), new CountingReplay(), new Counting("X"));
+        JspritCacheResult r = produce(cache(Mode.VERIFY, "fp-1", () -> false, new AtomicReference<>()), inputs,
+                out("RUN_V"), new CountingReplay(), new Counting("OTHER CODE"));
+
+        assertThat(r.reason()).isEqualTo("jar-changed");
+        assertThat(cacheDir.resolve(JspritPlanCache.BLOCKED_FILE)).as("no false mismatch").doesNotExist();
+        assertThat(read(onlyEntry().resolve(JspritPlanCache.RESULT_FILE))).isEqualTo("X");
+    }
+
+    /** Review point M5 (spec section 11): a second, DIFFERENT scenario in one JVM neither hits nor stores. */
+    @Test
+    void aSecondScenarioInTheSameJvmBypassesTheCache() throws IOException {
+        AtomicReference<String> jvm = new AtomicReference<>();
+        produce(cache(Mode.ON, "fp-1", () -> true, jvm), inputs, out("RUN_A"), new CountingReplay(), new Counting("X"));
+
+        JspritPlanCache other = cache(Mode.ON, "fp-2", () -> true, jvm);
+        assertThat(other.keyBeforeReading(inputs)).as("a bypassed run hashes nothing").isNull();
+        Counting c = new Counting("W");
+        JspritCacheResult r = other.produce(inputs, null, out("RUN_B"), new CountingReplay(), c);
+
+        assertThat(r.status()).isEqualTo(Status.BYPASS);
+        assertThat(r.reason()).isEqualTo("other-scenario-in-jvm");
+        assertThat(c.calls).isEqualTo(1);
+        assertThat(entries()).as("only the first scenario's entry").hasSize(1);
+        assertSidecar(out("RUN_B"), "bypass");
+    }
+
+    @Test
+    void theSameScenarioTwiceInOneJvmStillHits() throws IOException {
+        AtomicReference<String> jvm = new AtomicReference<>();
+        produce(cache(Mode.ON, "fp-1", () -> true, jvm), inputs, out("RUN_A"), new CountingReplay(), new Counting("X"));
+        JspritCacheResult r = produce(cache(Mode.ON, "fp-1", () -> true, jvm), inputs, out("RUN_B"),
+                new CountingReplay(), new Counting("Y"));
+        assertThat(r.status()).isEqualTo(Status.HIT);
+    }
+
+    @Test
+    void aJvmWhoseOnlyEarlierScenarioRanWithoutTheCacheIsNotClaimed() throws IOException {
+        AtomicReference<String> jvm = new AtomicReference<>();
+        produce(new JspritPlanCache(cacheDir, Mode.OFF, () -> Optional.of("fp-1"), p -> null, "java-1",
+                () -> true, jvm), inputs, out("RUN_OFF"), new CountingReplay(), new Counting("X"));
+        assertThat(jvm.get()).as("an off run claims nothing").isNull();
+    }
+
+    /** Review point "verify log line says missing or corrupt": a verify run says it recomputes to compare. */
+    @Test
+    void describeChangeOfAVerifyRunWithUnchangedInputsSaysItCompares() throws IOException {
+        JspritCacheKey key = JspritCacheKey.of(inputs, "fp-1", p -> null, "java-1");
+        JspritPlanCache.Manifest newest = new JspritPlanCache.Manifest(key.fullHash(), "baseline",
+                key.components(), "sha", "2026-10-01T10:00:00", "RUN_A", 8100.0, "dev");
+
+        assertThat(JspritPlanCache.describeChange(Optional.of(newest), key, true))
+                .contains("RUN_A").contains("compare").doesNotContain("missing or corrupt");
+        assertThat(JspritPlanCache.describeChange(Optional.of(newest), key, false))
+                .contains("missing or corrupt");
+    }
+
+    /** Review point M8: a rename that Windows refuses for a moment (scanner, indexer) is retried. */
+    @Test
+    void aMoveRefusedForAMomentIsRetried() throws IOException {
+        int[] calls = {0};
+        JspritPlanCache.Mover flaky = (s, t) -> {
+            if (++calls[0] == 1) {
+                throw new AccessDeniedException(s.toString());
+            }
+            if (calls[0] == 2) {
+                throw new FileSystemException(s.toString(), t.toString(),
+                        "The process cannot access the file because it is being used by another process");
+            }
+        };
+        JspritPlanCache.moveWithRetry(flaky, tmp.resolve("a"), tmp.resolve("b"));
+        assertThat(calls[0]).isEqualTo(3);
+    }
+
+    @Test
+    void aMoveThatKeepsFailingGivesUpWithTheLastError() {
+        int[] calls = {0};
+        JspritPlanCache.Mover denied = (s, t) -> {
+            calls[0]++;
+            throw new AccessDeniedException(s.toString());
+        };
+        assertThatThrownBy(() -> JspritPlanCache.moveWithRetry(denied, tmp.resolve("a"), tmp.resolve("b")))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThat(calls[0]).isEqualTo(JspritPlanCache.MOVE_ATTEMPTS);
+    }
+
+    @Test
+    void aMoveWithAPermanentErrorIsNotRetried() {
+        int[] calls = {0};
+        JspritPlanCache.Mover exists = (s, t) -> {
+            calls[0]++;
+            throw new FileAlreadyExistsException(t.toString());
+        };
+        assertThatThrownBy(() -> JspritPlanCache.moveWithRetry(exists, tmp.resolve("a"), tmp.resolve("b")))
+                .isInstanceOf(FileAlreadyExistsException.class);
+        assertThat(calls[0]).isEqualTo(1);
     }
 }

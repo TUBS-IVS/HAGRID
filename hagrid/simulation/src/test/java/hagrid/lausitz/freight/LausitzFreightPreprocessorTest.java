@@ -104,6 +104,7 @@ class LausitzFreightPreprocessorTest {
         Path out1 = tmp.resolve("RUN_A_lmd_carriers_routed.xml");
         Path out2 = tmp.resolve("b").resolve("carriers").resolve("RUN_B_lmd_carriers_routed.xml");
         JarFingerprint.setOverrideForTests("test-fingerprint");
+        JspritPlanCache.resetJvmScenarioForTests();   // other tests in this JVM may have claimed it
         try {
             JspritCacheResult r1 = LausitzFreightPreprocessor.run(fixture.demandShp().toString(),
                     fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
@@ -121,6 +122,7 @@ class LausitzFreightPreprocessorTest {
                     Path.of("src/test/resources/baseline-golden/carriers-golden.sha256")).trim());
         } finally {
             JarFingerprint.setOverrideForTests(null);
+            JspritPlanCache.resetJvmScenarioForTests();
         }
     }
 
@@ -134,6 +136,7 @@ class LausitzFreightPreprocessorTest {
         Path out1 = tmp.resolve("RUN_M1_lmd_carriers_routed.xml");
         Path out2 = tmp.resolve("RUN_M2_lmd_carriers_routed.xml");
         JarFingerprint.setOverrideForTests("test-fingerprint");
+        JspritPlanCache.resetJvmScenarioForTests();   // other tests in this JVM may have claimed it
         try {
             JspritCacheResult r1 = LausitzFreightPreprocessor.runModular(fixture.demandShp().toString(),
                     fixture.depotCsv().toString(), fixture.netFile().toString(), fixture.typesFile().toString(),
@@ -152,6 +155,7 @@ class LausitzFreightPreprocessorTest {
             assertThat(routed.getCarriers()).isNotEmpty();
         } finally {
             JarFingerprint.setOverrideForTests(null);
+            JspritPlanCache.resetJvmScenarioForTests();
         }
     }
 

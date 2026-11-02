@@ -6,6 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -146,6 +149,32 @@ class CacheEntryLockTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    /**
+     * Review point "no test for the leak in close()": when releasing the OS lock fails, close() still
+     * closes the channel and unlocks the in-JVM lock - otherwise every later acquire of this file in
+     * this JVM would time out.
+     */
+    @Test
+    void closeFreesTheJvmLockEvenWhenReleasingTheFileLockFails() throws Exception {
+        Path lockFile = tmp.resolve("leak.lock");
+        CacheEntryLock lock = CacheEntryLock.acquire(lockFile);
+        Field channelField = CacheEntryLock.class.getDeclaredField("channel");
+        channelField.setAccessible(true);
+        FileChannel channel = (FileChannel) channelField.get(lock);
+        channel.close();   // FileLock.release() on a closed channel throws ClosedChannelException
+
+        assertThatThrownBy(lock::close).isInstanceOf(ClosedChannelException.class);
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Throwable> other = pool.submit(() -> acquireAndReport(lockFile, Duration.ofSeconds(5)));
+            assertThat(other.get(60, TimeUnit.SECONDS)).as("another thread gets the lock").isNull();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(acquireAndReport(lockFile, Duration.ofSeconds(5))).as("and so does this thread").isNull();
     }
 
     /** @return {@code null} if the lock was acquired (and released), else what acquire threw */
