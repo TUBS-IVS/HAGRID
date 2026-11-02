@@ -392,30 +392,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   das Gate lief nur unter Windows und hat fcntl-Sperren und Inode-Austausch nie gesehen.
   _(added 2026-10-02)_
 
-- **`[S]` jsprit-Cache: aufgeschobene Kleinpunkte aus dem Abschluss-Review 02.10.** — keiner
-  erzeugt einen falschen Treffer, alle fallen auf Neu-Rechnen zurück: kein Wiederholversuch beim
-  Umbenennen unter Windows-Handles (kostet nur den Eintrag); JAR-Prüfung nicht vor dem Ablegen
-  wiederholt; kein Schutz für JVMs mit mehreren Lausitz-Szenarien (Spec §11); `verify`-Logzeile
-  sagt fälschlich „missing or corrupt“; kein Test für das Leck in `CacheEntryLock.close()`.
-  _(added 2026-10-02)_
-
-- **`[S]` Fork-Race an matsim-org melden** — der `ConcurrentHashMap`-Fix in
-  `NetworkBasedTransportCosts` ist im Fork (`2db6789`, gepusht), die Meldung upstream fehlt.
-  _(added 2026-07-30, umformuliert 2026-09-30)_
-
-- **`[L]` jsprit-Upgrade 1.8 → 2.0 — offen, der Nutzen ist bisher am falschen KPI gemessen.**
-  2.0.0 liegt seit 2026-03-27 auf Maven Central (Java 21, neue Ruins inkl. Kruskal-Cluster,
-  Regret-k); MATSim-Upstream bleibt auf 1.8. Das frühere „Ruin-Diversität widerlegt" deckt nur die
-  **Tourenzahl** eines Carriers mit 1.8-Operatoren (dpd, §2.34) — die **km-Streuung** (6,5 %, §2.1)
-  und die 2.0-Operatoren selbst sind nie gemessen. jsprit bleibt ohnehin nötig: Hannover plant in
-  der MATSim-Schleife auf Stau-Reisezeiten in 30-min-Scheiben (`ReplanningStrategies:184`), das
-  kann kein Matrix-Solver (PyVRP, VROOM, OR-Tools). **Erst Spike `[M]`:** (a) Compile-Probe gegen
-  2.0 im Worktree, Fehler zählen (14 HAGRID- + 12 Contrib-Dateien importieren jsprit); (b) offline
-  auf den plan-gepinnten KPIs, 7 Lausitz-Carrier × 5 Seeds, ohne MATSim: 1.8 · 1.8 + `FAST_REGRET`
-  · 2.0 · PyVRP als Qualitätsreferenz, gemessen an km-Niveau und km-Spanne. **Echter Bump:**
-  Contrib im Fork portieren und pflegen, freight-272-Regression, married250-Re-Run, Dashboards neu.
-  _(added 2026-07-16, neu eingeordnet 2026-08-11, neu bewertet 2026-09-30)_
-
 - **`[M]` Case-Study-Area erweitern** — Ruhland-Korridor, aktuell als Kurzfix dropped.
   **Entschieden: bleibt zunächst Hoyerswerda, Erweiterung erst ~2027**
   → [METHODS-LOG](METHODS-LOG.md) §4.6. Mitzuziehen, wenn es passiert: der 2026-07-20 entfernte
