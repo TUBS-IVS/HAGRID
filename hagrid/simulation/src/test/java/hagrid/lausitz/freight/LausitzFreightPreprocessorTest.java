@@ -72,6 +72,10 @@ class LausitzFreightPreprocessorTest {
      * {@code LmdCarrierBuilder.buildCore} documents an RNG draw-order contract that the overlay
      * rework touches. If this fails, the Baseline moved and every existing Baseline run became
      * incomparable.
+     *
+     * <p>Golden re-pinned 2026-11-03 (hannover-consistency-fixes Task 7): the output gained exactly
+     * one {@code dailyDeliveryBias} attribute line per carrier. With those lines removed the file
+     * hashes to the previous golden 6ce4bf6e...49628, i.e. routes and departures are unchanged.
      */
     @Test
     void baselineCarrierOutputIsUnchanged(@TempDir Path tmp) throws Exception {

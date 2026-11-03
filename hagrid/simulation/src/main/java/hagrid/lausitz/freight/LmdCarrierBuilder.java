@@ -248,6 +248,17 @@ public final class LmdCarrierBuilder {
             breakdown.append(prov).append('=').append(count);
         });
         carrier.getAttributes().putAttribute("parcelsByProvider", breakdown.toString());
+
+        // Daily bias per provider (percentage points), same first-appearance order; attribute only,
+        // the draws already happened above.
+        StringBuilder biasBreakdown = new StringBuilder();
+        dailyBias.forEach((prov, bias) -> {
+            if (biasBreakdown.length() > 0) {
+                biasBreakdown.append(';');
+            }
+            biasBreakdown.append(prov).append('=').append(bias);
+        });
+        carrier.getAttributes().putAttribute("dailyDeliveryBiasByProvider", biasBreakdown.toString());
         return carrier;
     }
 
@@ -280,6 +291,9 @@ public final class LmdCarrierBuilder {
         double baseRate = DELIVERY_RATES.getOrDefault(provider, DEFAULT_DELIVERY_RATE);
         double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
         double dailyBias = random.nextGaussian() * sigmaPercent;
+        // Stored for the analysis layer only (same attribute name as Hannover's CarrierGenerator).
+        // putAttribute, NOT another draw: the RNG stream feeds the overlay and the departure jitter.
+        carrier.getAttributes().putAttribute("dailyDeliveryBias", dailyBias);
 
         List<Id<CarrierService>> missedParcels = new ArrayList<>();
         int totalParcels = 0;

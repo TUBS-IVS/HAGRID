@@ -352,6 +352,116 @@ class LmdCarrierBuilderTest {
                 .isEqualTo("dhl=100;gls=20");
     }
 
+    private List<Delivery> overlayFixture() {
+        return List.of(
+                deliveryAt(100, 0, "gls", 300, Delivery.ParcelType.B2C),
+                deliveryAt(900, 0, "gls", 50, Delivery.ParcelType.B2B),
+                deliveryAt(500, 0, "gls", 200, Delivery.ParcelType.B2C));
+    }
+
+    @Test
+    @DisplayName("build: stores the daily bias as carrier attribute dailyDeliveryBias = first Gaussian * sigma")
+    void buildStoresDailyBias() {
+        Carrier gls = LmdCarrierBuilder.build("gls", overlayFixture(), DEPOT_LINK, net(), vanTypes(),
+                2, 15, List.of(8), new Random(7L));
+        assertThat(gls.getAttributes().getAttribute("dailyDeliveryBias"))
+                .isEqualTo(new Random(7L).nextGaussian() * 5.0);
+
+        Carrier dhl = LmdCarrierBuilder.build("dhl", List.of(deliveryAt(100, 0, "dhl", 5, Delivery.ParcelType.B2C)),
+                DEPOT_LINK, net(), vanTypes(), 2, 15, List.of(8), new Random(7L));
+        assertThat(dhl.getAttributes().getAttribute("dailyDeliveryBias"))
+                .as("DHL sigma is 2.5").isEqualTo(new Random(7L).nextGaussian() * 2.5);
+
+        Carrier single = LmdCarrierBuilder.buildSingleWindow("gls", overlayFixture(), DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(7L), 27000.0, 75600.0, 27000.0, 75600.0);
+        assertThat(single.getAttributes().getAttribute("dailyDeliveryBias"))
+                .isEqualTo(new Random(7L).nextGaussian() * 5.0);
+    }
+
+    @Test
+    @DisplayName("buildDistrict: stores one daily bias per provider as 'provider=value;...' in first-appearance order")
+    void districtStoresBiasPerProvider() {
+        List<DeliveryDistrictBuilder.PooledStop> stops = List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 200,
+                        List.of(deliveryAt(100, 100, "dhl", 100, Delivery.ParcelType.B2C),
+                                deliveryAt(100, 100, "gls", 100, Delivery.ParcelType.B2C))));
+        Carrier c = LmdCarrierBuilder.buildDistrict("bez0", stops, DEPOT_LINK, net(),
+                vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+
+        Random r = new Random(1L);
+        double dhl = r.nextGaussian() * 2.5;
+        double gls = r.nextGaussian() * 5.0;
+        assertThat(c.getAttributes().getAttribute("dailyDeliveryBiasByProvider"))
+                .isEqualTo("dhl=" + dhl + ";gls=" + gls);
+    }
+
+    @Test
+    @DisplayName("storing the bias adds no RNG draw: departure jitter and missed overlay are unchanged (pinned values)")
+    void overlayDrawsUnchanged() {
+        Carrier c = LmdCarrierBuilder.build("gls", overlayFixture(), DEPOT_LINK, net(), vanTypes(),
+                2, 15, List.of(8, 14), new Random(7L));
+
+        // Values captured from the code BEFORE the attribute was added (Random(7L), this fixture).
+        java.util.Map<String, Double> expected = new java.util.TreeMap<>();
+        expected.put("gls_ct_cep_size_l_h14_v0", 50520.01835581133);
+        expected.put("gls_ct_cep_size_l_h14_v1", 50234.566261285356);
+        expected.put("gls_ct_cep_size_l_h14_v2", 50212.79197669505);
+        expected.put("gls_ct_cep_size_l_h14_v3", 50553.663177426875);
+        expected.put("gls_ct_cep_size_l_h8_v0", 28200.87845138756);
+        expected.put("gls_ct_cep_size_l_h8_v1", 29405.357737480197);
+        expected.put("gls_ct_cep_size_l_h8_v2", 28608.84878122049);
+        expected.put("gls_ct_cep_size_l_h8_v3", 28256.32134956214);
+        expected.put("gls_ct_cep_size_m_h14_v0", 50843.36632056999);
+        expected.put("gls_ct_cep_size_m_h14_v1", 49692.29910644663);
+        expected.put("gls_ct_cep_size_m_h14_v2", 50358.68916441428);
+        expected.put("gls_ct_cep_size_m_h14_v3", 50053.572705167906);
+        expected.put("gls_ct_cep_size_m_h8_v0", 29621.588560878095);
+        expected.put("gls_ct_cep_size_m_h8_v1", 29631.545442025028);
+        expected.put("gls_ct_cep_size_m_h8_v2", 29065.719604187565);
+        expected.put("gls_ct_cep_size_m_h8_v3", 29212.852654124337);
+        java.util.Map<String, Double> actual = new java.util.TreeMap<>();
+        c.getCarrierCapabilities().getCarrierVehicles().values()
+                .forEach(v -> actual.put(v.getId().toString(), v.getEarliestStartTime()));
+        assertThat(actual).isEqualTo(expected);
+
+        assertThat((int) c.getAttributes().getAttribute("missedParcels")).isEqualTo(18);
+        assertThat((String) c.getAttributes().getAttribute("missedParcelDeliveriesAsString"))
+                .isEqualTo("[gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0, gls_0,"
+                        + " gls_1, gls_1, gls_2, gls_2, gls_2, gls_2]");
+    }
+
+    @Test
+    @DisplayName("the bias attributes survive the carrier plan XML round trip (Double / String)")
+    void biasAttributesSurviveXmlRoundTrip(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        Carrier lmd = LmdCarrierBuilder.build("gls", overlayFixture(), DEPOT_LINK, net(), vanTypes(),
+                2, 15, List.of(8), new Random(7L));
+        Carrier district = LmdCarrierBuilder.buildDistrict("bez0", List.of(
+                new DeliveryDistrictBuilder.PooledStop(new Coord(100, 100), 200,
+                        List.of(deliveryAt(100, 100, "dhl", 100, Delivery.ParcelType.B2C),
+                                deliveryAt(100, 100, "gls", 100, Delivery.ParcelType.B2C)))),
+                DEPOT_LINK, net(), vanTypes(), 2, 15, new Random(1L), 27000.0, 75600.0, 27000.0, 75600.0);
+        org.matsim.freight.carriers.Carriers carriers = new org.matsim.freight.carriers.Carriers();
+        carriers.addCarrier(lmd);
+        carriers.addCarrier(district);
+
+        String file = dir.resolve("carriers.xml").toString();
+        new org.matsim.freight.carriers.CarrierPlanWriter(carriers).write(file);
+        org.matsim.freight.carriers.Carriers back = new org.matsim.freight.carriers.Carriers();
+        org.matsim.freight.carriers.CarrierVehicleTypes types = new org.matsim.freight.carriers.CarrierVehicleTypes();
+        for (VehicleType t : vanTypes()) {
+            types.getVehicleTypes().put(t.getId(), t);
+        }
+        new org.matsim.freight.carriers.CarrierPlanXmlReader(back, types).readFile(file);
+
+        Object lmdBias = back.getCarriers().get(lmd.getId()).getAttributes().getAttribute("dailyDeliveryBias");
+        assertThat(lmdBias).isInstanceOf(Double.class)
+                .isEqualTo(lmd.getAttributes().getAttribute("dailyDeliveryBias"));
+        Object distBias = back.getCarriers().get(district.getId()).getAttributes()
+                .getAttribute("dailyDeliveryBiasByProvider");
+        assertThat(distBias).isInstanceOf(String.class)
+                .isEqualTo(district.getAttributes().getAttribute("dailyDeliveryBiasByProvider"));
+    }
+
     @Test
     @DisplayName("an unknown provider still gets the default delivery rate, but that is warned once")
     void unknownProviderFallsBackAndWarns() {
