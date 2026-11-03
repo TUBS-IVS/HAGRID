@@ -105,7 +105,41 @@ public class HagridPaths {
         Path input = pipelineRoot.resolve("input");
         this.inputBase = input.resolve(studyArea.folder());
         this.outputBase = pipelineRoot.resolve("hagrid-output");
-        this.matsimOutputBase = pipelineRoot.resolve("hagrid-matsim-output");
+        this.matsimOutputBase = resolveMatsimOutputBase(pipelineRoot,
+                System.getenv(OUTPUT_ROOT_ENV), System.getProperty(OUTPUT_ROOT_PROPERTY));
+        if (!this.matsimOutputBase.equals(defaultMatsimOutputBase(pipelineRoot))) {
+            LOGGER.info("MATSim output root overridden ({}): {}",
+                    isSet(System.getProperty(OUTPUT_ROOT_PROPERTY)) ? "property " + OUTPUT_ROOT_PROPERTY
+                            : "env " + OUTPUT_ROOT_ENV, this.matsimOutputBase);
+        }
+    }
+
+    /** Environment variable that moves ONLY the MATSim output tree (hagrid-matsim-output) to another root. */
+    public static final String OUTPUT_ROOT_ENV = "HAGRID_OUTPUT_ROOT";
+
+    /** System property with the same meaning as {@link #OUTPUT_ROOT_ENV}; it takes precedence. */
+    public static final String OUTPUT_ROOT_PROPERTY = "hagrid.output.root";
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static Path defaultMatsimOutputBase(Path pipelineRoot) {
+        return pipelineRoot.resolve("hagrid-matsim-output").toAbsolutePath().normalize();
+    }
+
+    /**
+     * Resolves the MATSim output base: property beats environment variable beats the default
+     * {@code <pipelineRoot>/hagrid-matsim-output}. {@code null}, empty and blank values count as
+     * unset; a relative value is resolved against {@code pipelineRoot}. Only the MATSim output
+     * tree moves: {@code hagrid-output/} (including the jsprit plan cache) stays put.
+     */
+    static Path resolveMatsimOutputBase(Path pipelineRoot, String envValue, String propertyValue) {
+        String chosen = isSet(propertyValue) ? propertyValue : isSet(envValue) ? envValue : null;
+        if (chosen == null) {
+            return defaultMatsimOutputBase(pipelineRoot);
+        }
+        return pipelineRoot.resolve(chosen.strip()).toAbsolutePath().normalize();
     }
 
     /** System property that, if set, overrides automatic root detection. */
@@ -191,6 +225,9 @@ public class HagridPaths {
     // =========================================================================
 
     public Path inputBase() { return inputBase; }
+
+    /** The input root {@code <pipelineRoot>/input} (parent of every study-area folder). */
+    public Path inputRoot() { return pipelineRoot.resolve("input"); }
 
     // --- Demand ---
     public Path demandDir() { return inputBase.resolve("demand"); }

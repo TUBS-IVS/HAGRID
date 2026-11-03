@@ -67,7 +67,15 @@ public final class SimulationRunnerUtils {
     public static void initLogging() {
         if (System.getProperty(LOG_DIR_PROPERTY) == null) {
             try {
-                Path logDir = Path.of("hagrid-matsim-output", "logs");
+                // Only the compile-time constants are read here (javac inlines them, so HagridPaths is
+                // not class-initialised): HagridPaths has a static Logger, and no Log4j2 Logger may
+                // exist before hagrid.log.dir is set. Same precedence/blank rule as
+                // HagridPaths.resolveMatsimOutputBase: property beats env, blank = unset.
+                String outRoot = System.getProperty(HagridPaths.OUTPUT_ROOT_PROPERTY);
+                if (outRoot == null || outRoot.isBlank()) outRoot = System.getenv(HagridPaths.OUTPUT_ROOT_ENV);
+                Path logDir = (outRoot == null || outRoot.isBlank())
+                        ? Path.of("hagrid-matsim-output", "logs")
+                        : Path.of(outRoot.strip(), "logs");
                 Files.createDirectories(logDir);
                 setOwnLogDir(logDir);
             } catch (Exception ignored) {
@@ -416,6 +424,11 @@ public final class SimulationRunnerUtils {
                     + " Give each its own tag: " + String.join("; ", collisions));
         }
 
+        // Final review I2: the per-run guard in runSimulation would let scenario k abort only after
+        // 1..k-1 spent their compute; check every DRT scenario's output path up front (the per-run
+        // check stays, for callers that skip validateAll).
+        OutputPathGuard.enforceAll(configs);
+
         LOG.info("Validating input files for {} scenario(s)...", configs.size());
         List<String> errors = new ArrayList<>();
         for (HAGRIDSimulationConfig cfg : configs) {
@@ -477,6 +490,9 @@ public final class SimulationRunnerUtils {
      * Runs a single HAGRID MATSim simulation.
      */
     public static void runSimulation(HAGRIDSimulationConfig cfg) throws Exception {
+        // Fail fast on an output path native SQLite cannot write (METHODS-LOG 2.51), before any work.
+        OutputPathGuard.enforce(cfg);
+
         Instant t0 = Instant.now();
 
         pointLogDirAt(cfg.getOutputDirectory().resolve("logs"));

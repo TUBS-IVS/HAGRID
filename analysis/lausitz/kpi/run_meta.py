@@ -41,11 +41,22 @@ class RunMeta:
     matsim_seed: Optional[int] = None
 
 
+META_FILE = "run_metadata.json"
+
+
+def read_metadata_json(run_dir):
+    """The raw run_metadata.json dict, or None when the run dir has none.
+    Malformed JSON raises (as load_run_meta always did)."""
+    meta_file = Path(run_dir) / META_FILE
+    if not meta_file.exists():
+        return None
+    return json.loads(meta_file.read_text(encoding="utf-8"))
+
+
 def load_run_meta(run_dir):
     run_dir = Path(run_dir)
-    meta_file = run_dir / "run_metadata.json"
-    if meta_file.exists():
-        j = json.loads(meta_file.read_text(encoding="utf-8"))
+    j = read_metadata_json(run_dir)
+    if j is not None:
         return RunMeta(
             run_id=j["run_id"], run_dir_name=j["run_dir_name"],
             scenario=j["scenario"], study_area=j["study_area"],

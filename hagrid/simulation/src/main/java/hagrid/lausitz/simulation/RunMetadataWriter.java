@@ -97,6 +97,12 @@ public final class RunMetadataWriter {
         m.put("budget_smoothing", cfg.getBudgetSmoothing());
         m.put("budget_headroom", cfg.getBudgetHeadroom());
         m.put("budget_urgency_lead_s", cfg.getBudgetUrgencyLeadS());
+        // Where this run's preprocessing artefacts and inputs live (spec 2026-11-03 section 3.2):
+        // HAGRID_OUTPUT_ROOT moves only the MATSim tree, so the KPI layer's old sibling lookup
+        // (<run_dir>/../../hagrid-output, <run_dir>/../../input) misses under an override root.
+        // Absolute and normalized; analysis/lausitz/kpi/run_paths.py reads them first.
+        m.put("hagrid_output_dir", cfg.getPreprocessingRunDir().toAbsolutePath().normalize().toString());
+        m.put("input_root", cfg.getInputRoot().toAbsolutePath().normalize().toString());
         // jsprit result cache (spec 2026-10-01 section 7): status of THIS run's preprocessing
         m.put("jsprit_cache", jspritCache == null ? "not_applicable" : jspritCache.status().wireName());
         m.put("jsprit_cache_key", jspritCache == null ? null : jspritCache.key());

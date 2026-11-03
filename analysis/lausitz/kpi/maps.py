@@ -54,6 +54,7 @@ from pyproj import Transformer
 
 import freight_classify
 import geometry
+import run_paths
 
 TF = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
 
@@ -267,7 +268,7 @@ def _service_area(run_dir):
     """Returns (rings, service_poly) or None. Lazy geopandas import: on
     ImportError, missing shp, or any read error -> None + ASCII note (never
     raises). Port of build_drt_dashboard.py:247-259."""
-    shp = Path(run_dir) / ".." / ".." / "input" / "lausitz" / "drt" / "drt-service-area.shp"
+    shp = run_paths.input_root(run_dir) / "lausitz" / "drt" / "drt-service-area.shp"
     try:
         import geopandas as gpd
     except ImportError:
@@ -299,7 +300,7 @@ def _depots(run_dir):
     consistent with how PROVIDER_SLOTS/CAT/classify key providers elsewhere
     in v2. Uppercasing here would be inconsistent with that convention and
     could break any future name-to-provider matching."""
-    path = Path(run_dir) / ".." / ".." / "input" / "lausitz" / "hubs" / "lmd-depots.csv"
+    path = run_paths.input_root(run_dir) / "lausitz" / "hubs" / "lmd-depots.csv"
     try:
         if not path.exists():
             print("[maps] depots csv not found -- depots skipped")

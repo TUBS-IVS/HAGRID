@@ -20,6 +20,7 @@ import timeseries
 from common import row as common_row
 from events_cache import ensure_caches
 from run_meta import load_run_meta
+import run_paths
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "drt-headline"))
 import drt_service_time  # noqa: E402
@@ -32,8 +33,9 @@ EXTRACTORS.append((extract_modular.has_modular_stats, extract_modular.extract))
 
 
 def _default_fleet_file(run_dir, meta):
-    # <module-root>/hagrid-output/<run_id>/<run_id>_drt_fleet.xml.gz
-    cand = run_dir.parent.parent / "hagrid-output" / meta.run_id / (meta.run_id + "_drt_fleet.xml.gz")
+    # hagrid-output/<run_id>/<run_id>_drt_fleet.xml.gz -- located via run_metadata.json, else the
+    # <module-root> sibling convention (run_paths; the explicit --fleet-file is handled by build())
+    cand = run_paths.hagrid_output_dir(run_dir, meta.run_id) / (meta.run_id + "_drt_fleet.xml.gz")
     return cand if cand.exists() else None
 
 

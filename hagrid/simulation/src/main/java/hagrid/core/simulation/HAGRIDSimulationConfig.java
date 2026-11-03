@@ -1104,6 +1104,20 @@ public class HAGRIDSimulationConfig {
         return paths.railTransitVehiclesFiltered();
     }
 
+    /**
+     * This run's preprocessing directory {@code hagrid-output/<runId>} (DRT fleet, carriers,
+     * parcel-demand provenance). It does NOT move with {@code HAGRID_OUTPUT_ROOT}, which is why
+     * {@code RunMetadataWriter} records it: the KPI layer cannot derive it from the MATSim run dir.
+     */
+    public Path getPreprocessingRunDir() {
+        return paths.runDir();
+    }
+
+    /** The input root {@code <pipelineRoot>/input} this run reads its study-area inputs from. */
+    public Path getInputRoot() {
+        return paths.inputRoot();
+    }
+
     /** Fingerprint of the prepared DRT inputs (written by {@code LausitzDrtPreprocessor}). */
     public String getDrtInputsFingerprint() {
         return paths.drtInputsFingerprint();

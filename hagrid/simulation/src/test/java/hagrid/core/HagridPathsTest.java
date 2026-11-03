@@ -425,6 +425,82 @@ class HagridPathsTest {
         }
     }
 
+    // =========================================================================
+    // OUTPUT ROOT OVERRIDE (HAGRID_OUTPUT_ROOT / hagrid.output.root)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("MATSim output root override")
+    class OutputRootOverride {
+
+        private final Path root = Path.of("some", "module");
+
+        @Test
+        @DisplayName("no override -> <pipelineRoot>/hagrid-matsim-output")
+        void defaultWithoutOverride() {
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, null, null))
+                .isEqualTo(root.resolve("hagrid-matsim-output").toAbsolutePath().normalize());
+        }
+
+        @Test
+        @DisplayName("env value beats the default")
+        void envOverridesDefault() {
+            Path env = Path.of("hmo-env").toAbsolutePath();
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, env.toString(), null)).isEqualTo(env);
+        }
+
+        @Test
+        @DisplayName("property beats env")
+        void propertyOverridesEnv() {
+            Path env = Path.of("hmo-env").toAbsolutePath();
+            Path prop = Path.of("hmo-prop").toAbsolutePath();
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, env.toString(), prop.toString())).isEqualTo(prop);
+        }
+
+        @Test
+        @DisplayName("null, empty and blank count as unset")
+        void blankOverrideFallsBackToDefault() {
+            Path expected = root.resolve("hagrid-matsim-output").toAbsolutePath().normalize();
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, "  ", "")).isEqualTo(expected);
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, "", "   ")).isEqualTo(expected);
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, null, "\t")).isEqualTo(expected);
+        }
+
+        @Test
+        @DisplayName("a relative override is resolved against the pipeline root")
+        void relativeOverrideResolvedAgainstPipelineRoot() {
+            assertThat(HagridPaths.resolveMatsimOutputBase(root, null, "short"))
+                .isEqualTo(root.resolve("short").toAbsolutePath().normalize());
+        }
+
+        @Test
+        @DisplayName("constants carry the documented names")
+        void constantNames() {
+            assertThat(HagridPaths.OUTPUT_ROOT_ENV).isEqualTo("HAGRID_OUTPUT_ROOT");
+            assertThat(HagridPaths.OUTPUT_ROOT_PROPERTY).isEqualTo("hagrid.output.root");
+        }
+
+        @Test
+        @DisplayName("the constructor reads the property; hagrid-output and the jsprit cache stay under the pipeline root")
+        void overrideMovesOnlyMatsimOutput(@TempDir Path tempDir) {
+            Path short_ = tempDir.resolve("short-root").toAbsolutePath();
+            String old = System.getProperty(HagridPaths.OUTPUT_ROOT_PROPERTY);
+            System.setProperty(HagridPaths.OUTPUT_ROOT_PROPERTY, short_.toString());
+            try {
+                HagridPaths p = new HagridPaths(tempDir);
+                p.initializeRun(RUN_ID);
+                assertThat(p.matsimOutputBase()).isEqualTo(short_);
+                assertThat(p.matsimRunDir(3, 7).startsWith(short_)).isTrue();
+                assertThat(p.sharedDir().startsWith(tempDir.resolve("hagrid-output"))).isTrue();
+                assertThat(p.runDir().startsWith(tempDir.resolve("hagrid-output"))).isTrue();
+                assertThat(p.jspritCacheDir().startsWith(tempDir.resolve("hagrid-output"))).isTrue();
+            } finally {
+                if (old == null) System.clearProperty(HagridPaths.OUTPUT_ROOT_PROPERTY);
+                else System.setProperty(HagridPaths.OUTPUT_ROOT_PROPERTY, old);
+            }
+        }
+    }
+
     @Nested
     @DisplayName("copyIfMissing (shared/ inputs)")
     class CopyIfMissing {

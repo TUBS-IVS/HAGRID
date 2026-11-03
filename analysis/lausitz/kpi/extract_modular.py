@@ -195,12 +195,14 @@ def _district_rows(run_dir, prefix):
     # run dir. DRT_MODULAR never runs that module -- its carriers are a PREPROCESSING artefact
     # (LausitzFreightPreprocessor -> jsprit -> ModularTourConverter) and land uncompressed under
     # hagrid-output/<run_id>/carriers/. Same sibling-directory convention as build_kpis.py's own
-    # drt_fleet lookup. Tried in order, first readable one wins; the baseline path stays FIRST so
+    # drt_fleet lookup (run_paths: run_metadata.json first, so it survives HAGRID_OUTPUT_ROOT).
+    # Tried in order, first readable one wins; the baseline path stays FIRST so
     # a run that has both keeps reading MATSim's executed output rather than the plan.
     import carriers_parse
+    import run_paths
     candidates = [
         Path(run_dir) / (prefix + ".output_carriers.xml.gz"),
-        (Path(run_dir).parent.parent / "hagrid-output" / prefix / "carriers"
+        (run_paths.hagrid_output_dir(run_dir, prefix) / "carriers"
          / (prefix + "_lmd_carriers_routed.xml")),
     ]
     carriers = None

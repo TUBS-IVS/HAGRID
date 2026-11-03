@@ -46,6 +46,7 @@ from pathlib import Path
 import pandas as pd
 
 import pax_only
+import run_paths
 from common import row
 from pax_only import PARCEL_PREFIX  # noqa: F401  (re-exported; canonical def lives there)
 
@@ -351,8 +352,9 @@ PROVENANCE_SUFFIX = "_parcel_demand_provenance.csv"
 def _read_provenance(run_dir, prefix):
     """Preprocessing-Verluste aus hagrid-output/<prefix>/ -- dieselbe Schwesterverzeichnis-
     Konvention wie build_kpis.py (drt_fleet) und extract_modular.py (carriers). Fehlt die Datei
-    (jeder Lauf vor 2026-08-26), wird None zurueckgegeben und alles bleibt beim Alten."""
-    f = Path(run_dir).parent.parent / "hagrid-output" / prefix / (prefix + PROVENANCE_SUFFIX)
+    (jeder Lauf vor 2026-08-26), wird None zurueckgegeben und alles bleibt beim Alten.
+    Das Verzeichnis kommt zuerst aus run_metadata.json (run_paths, HAGRID_OUTPUT_ROOT)."""
+    f = run_paths.hagrid_output_dir(run_dir, prefix) / (prefix + PROVENANCE_SUFFIX)
     try:
         d = {}
         for line in f.read_text(encoding="utf-8").splitlines():

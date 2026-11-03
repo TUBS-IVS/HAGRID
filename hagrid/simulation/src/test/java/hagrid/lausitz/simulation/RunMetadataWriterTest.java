@@ -147,6 +147,54 @@ class RunMetadataWriterTest {
         assertTrue(json.contains("\"jsprit_cache_source_run\": \"DRT_BASELINE_13052025_src\""), json);
     }
 
+    private static String jsonString(String key, Path value) {
+        return "\"" + key + "\": \"" + value.toString().replace("\\", "\\\\") + "\"";
+    }
+
+    /**
+     * Spec 2026-11-03 section 3.2 / final review C1: the KPI layer finds the preprocessing run dir
+     * (drt_fleet, carriers, parcel-demand provenance) and the input root through these two keys.
+     * Pinned against the config's own getters, absolute and normalized.
+     */
+    @Test
+    void writesThePreprocessingRunDirAndInputRoot() throws Exception {
+        HAGRIDSimulationConfig cfg = baselineCfg("meta_paths");
+        String json = Files.readString(RunMetadataWriter.write(cfg, tmp));
+        Path pre = cfg.getPreprocessingRunDir().toAbsolutePath().normalize();
+        Path in = cfg.getInputRoot().toAbsolutePath().normalize();
+        assertTrue(pre.isAbsolute() && pre.endsWith(Path.of("hagrid-output", cfg.getRunId())), pre.toString());
+        assertTrue(in.endsWith("input") && in.resolve("lausitz").equals(Path.of(cfg.getLmdDepotCsv())
+                .toAbsolutePath().normalize().getParent().getParent()), in.toString());
+        assertTrue(json.contains(jsonString("hagrid_output_dir", pre)), json);
+        assertTrue(json.contains(jsonString("input_root", in)), json);
+    }
+
+    /**
+     * Under HAGRID_OUTPUT_ROOT only the MATSim tree moves: the recorded preprocessing dir and input
+     * root stay at the module, i.e. NOT next to the (moved) MATSim run dir - exactly the case the
+     * old sibling lookup gets wrong.
+     */
+    @Test
+    void locationsStayAtTheModuleUnderAnOutputRootOverride() throws Exception {
+        Path override = tmp.resolve("override-root");
+        String old = System.getProperty(hagrid.core.HagridPaths.OUTPUT_ROOT_PROPERTY);
+        System.setProperty(hagrid.core.HagridPaths.OUTPUT_ROOT_PROPERTY, override.toString());
+        try {
+            HAGRIDSimulationConfig cfg = baselineCfg("meta_paths_ovr");
+            assertTrue(cfg.getOutputDirectory().startsWith(override.toAbsolutePath().normalize()));
+            String json = Files.readString(RunMetadataWriter.write(cfg, tmp));
+            Path pre = cfg.getPreprocessingRunDir().toAbsolutePath().normalize();
+            assertFalse(pre.startsWith(override.toAbsolutePath().normalize()), pre.toString());
+            assertNotEquals(cfg.getOutputDirectory().getParent().getParent().resolve("hagrid-output")
+                    .resolve(cfg.getRunId()), pre);
+            assertTrue(json.contains(jsonString("hagrid_output_dir", pre)), json);
+            assertTrue(json.contains(jsonString("input_root", cfg.getInputRoot().toAbsolutePath().normalize())), json);
+        } finally {
+            if (old == null) System.clearProperty(hagrid.core.HagridPaths.OUTPUT_ROOT_PROPERTY);
+            else System.setProperty(hagrid.core.HagridPaths.OUTPUT_ROOT_PROPERTY, old);
+        }
+    }
+
     /**
      * Review 2026-10-01 #2: the same DRT_BASELINE run id first with, then without freight leaves the
      * first run's sidecar in carriers/. The second run never ran the preprocessing, so it must say
