@@ -21,6 +21,7 @@ import org.matsim.freight.carriers.controller.CarrierControllerUtils;
 import org.matsim.freight.carriers.controller.CarrierReRouteVehicles;
 import org.matsim.freight.carriers.controller.CarrierStrategyManager;
 import org.matsim.freight.carriers.controller.CarrierTimeAllocationMutator;
+import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 import org.matsim.freight.carriers.usecases.chessboard.CarrierTravelDisutilities;
 
 import java.util.Map;
@@ -189,12 +190,21 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 		}
 
 		// Create the strategy using the shared path calculator
-		GenericPlanStrategy<CarrierPlan, Carrier> strategy3 = new CarrierVehicleReRouter(carNetwork, bikeNetwork, types, myTravelTime,
-				isUsingZones, vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime(), jspritIterations,
-				uTurnPenaltyCost)
+		GenericPlanStrategy<CarrierPlan, Carrier> strategy3 = createReRouter(carNetwork, bikeNetwork, myTravelTime,
+				vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime())
 				.createStrategy();
 
 		carrierStrategyManager.addStrategy(strategy3, null, 1.0);
 		carrierStrategyManager.addChangeRequest(stopReplanningJsprit, strategy3, null, 0);
+	}
+
+	/**
+	 * Builds the in-loop re-router with this provider's U-turn penalty. Package-private and
+	 * overridable so a wiring test can observe the instance {@link #get()} creates (final review I1).
+	 */
+	CarrierVehicleReRouter createReRouter(Network carNetwork, Network bikeNetwork, TravelTime travelTime,
+			Map<String, VRPTransportCosts> byModeVRPTransportCosts) {
+		return new CarrierVehicleReRouter(carNetwork, bikeNetwork, types, travelTime, isUsingZones,
+				byModeVRPTransportCosts, jspritIterations, uTurnPenaltyCost);
 	}
 }

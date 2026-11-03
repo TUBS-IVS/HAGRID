@@ -57,7 +57,28 @@ public class UTurnSoftConstraint implements SoftActivityConstraint {
     public UTurnSoftConstraint(Network network, double penaltyCost) {
         this.network = network;
         this.penaltyCost = penaltyCost;
-        LOGGER.info("U-turn soft constraint active: penalty = {} cost units", penaltyCost);
+        // One instance per carrier per replanning iteration in the in-loop re-router: INFO only the
+        // first time a penalty value is seen in this JVM (the visible confirmation it is active),
+        // DEBUG afterwards (final review M1).
+        if (ANNOUNCED_PENALTIES.add(penaltyCost)) {
+            LOGGER.info("U-turn soft constraint active: penalty = {} cost units (further instances at DEBUG)",
+                    penaltyCost);
+        } else {
+            LOGGER.debug("U-turn soft constraint active: penalty = {} cost units", penaltyCost);
+        }
+    }
+
+    private static final java.util.Set<Double> ANNOUNCED_PENALTIES =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** The penalty added per detected U-turn. */
+    public double penaltyCost() {
+        return penaltyCost;
+    }
+
+    /** True when this JVM has already logged the INFO line for {@code penaltyCost} (tests). */
+    static boolean announced(double penaltyCost) {
+        return ANNOUNCED_PENALTIES.contains(penaltyCost);
     }
 
     @Override

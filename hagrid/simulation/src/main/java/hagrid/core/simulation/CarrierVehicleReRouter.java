@@ -114,6 +114,25 @@ public final class CarrierVehicleReRouter {
 
     }
 
+    /** The U-turn penalty this re-router hands to its jsprit constraints (wiring tests). */
+    double uTurnPenaltyCost() {
+        return uTurnPenaltyCost;
+    }
+
+    /**
+     * Test hook (final review I1): sees every constraint manager the solve loop builds, so a test
+     * can prove the loop goes through {@link #constraintManagerFor} with this re-router's penalty.
+     * No-op in production; it observes, never changes, the manager.
+     */
+    volatile java.util.function.Consumer<ConstraintManager> constraintManagerObserver = cm -> { };
+
+    /** Constraints of the solve loop, built from THIS re-router's own penalty. */
+    ConstraintManager constraintManagerFor(VehicleRoutingProblem vrp, StateManager stateManager, Network network) {
+        ConstraintManager cm = buildConstraintManager(vrp, stateManager, network, uTurnPenaltyCost);
+        constraintManagerObserver.accept(cm);
+        return cm;
+    }
+
     /**
      * Constraints of the in-loop re-router. The U-turn soft constraint follows the same rule as
      * {@code HAGRIDRouterUtils.configureAlgorithm}: only with a network and a positive penalty.
@@ -173,6 +192,12 @@ public final class CarrierVehicleReRouter {
 
         GenericPlanStrategyImpl<CarrierPlan, Carrier> replanningStrat = new GenericPlanStrategyImpl<CarrierPlan, Carrier>(
                 new BestPlanSelector<CarrierPlan, Carrier>());
+        replanningStrat.addStrategyModule(createModule());
+        return replanningStrat;
+    }
+
+    /** The re-routing strategy module (package-private so a test can drive the real solve loop). */
+    GenericPlanStrategyModule<CarrierPlan> createModule() {
         GenericPlanStrategyModule<CarrierPlan> vraModule = new GenericPlanStrategyModule<CarrierPlan>() {
 
             private boolean startCarrierReplanning = false;
@@ -266,8 +291,7 @@ public final class CarrierVehicleReRouter {
                 stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
                         vrp.getTransportCosts(), MAXROUTEDURATION));
 
-                ConstraintManager constraintManager = buildConstraintManager(vrp, stateManager, vrpNetwork,
-                        uTurnPenaltyCost);
+                ConstraintManager constraintManager = constraintManagerFor(vrp, stateManager, vrpNetwork);
 
                 if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
                     // Previously adjusted radial/random share when replanning subsets; logic retained for future tuning
@@ -551,7 +575,6 @@ public final class CarrierVehicleReRouter {
 
         };
 
-        replanningStrat.addStrategyModule(vraModule);
-        return replanningStrat;
+        return vraModule;
     }
 }
