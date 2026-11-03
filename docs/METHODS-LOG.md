@@ -781,6 +781,34 @@ optimistisch. Einstieg für die Ursachensuche:
 `CarrierGenerator.adjustDeliveryRatesConsideringB2B:252`, `determineMissedParcels:1049`,
 Sollwerte `HagridConfig.java:190-196`.
 
+✅ **Nachtrag 2026-11-03 — `trägt` (Mechanismus quantifiziert).** Gemessen mit
+`analysis/common/delivery-rate/` (`measure_all.py`, `decompose.py`). Ein Java-`Random`-Port spielt
+das Lausitz-Overlay nach und trifft alle `missedParcels` der 8 Läufe exakt (56/56 Provider).
+
+| Region | Regel im Code | Folge |
+|---|---|---|
+| Lausitz | `LmdCarrierBuilder` nimmt das Soll direkt als **B2C-Quote** (B2B 99, Deckel 98) | Gesamtquote liegt schon im Erwartungswert über dem Soll (B2B-Anteil 11,3–11,5 %, UPS 69 %, FedEx 78 %) |
+| Hannover | `adjustDeliveryRatesConsideringB2B` rechnet so zurück, dass die **Gesamtquote** trifft; Ausnahme UPS/FedEx behalten das Soll als B2C-Quote (`CarrierGenerator:290-297`) | fünf Provider in allen 28 Provider-Läufen innerhalb ±2,3 σ der Code-Erwartung; UPS/FedEx erwartet 97,2/97,8 %, berichtet 96,9–97,9 % (B2B-Anteil 82/88 %, gezählt über die Attribute `b2b`/`b2c`, weil verschmolzene Services `MIXED` sind) |
+
+Zerlegung Lausitz, gepoolte fehlende Pakete (Band central / low / high / DRT_BASELINE):
+
+| Anteil | Wert |
+|---|---|
+| Semantik (B2C- statt Gesamtquote) | −12,8…−13,1 % der konfigurierten Fehlzustellungen = **72–90 % der Abweichung** (90 / 72 / 85 / 78) |
+| Tagesbias je Provider (`Random(4711 + provider.hashCode())`) | **+4,3…+4,7 %** gepoolt; je Provider dominant (Bias FedEx −10,78 pp, UPS −7,23, Hermes −7,42, DHL +2,17) — daher Hermes −8,4 pp, DHL +3,0 pp |
+| Restzug (eingefrorene Binomialziehung) | −6…−9 % (−1,5…−2,1 σ), gleiches Vorzeichen in allen Armen |
+
+- Die fünf DRT_BASELINE-Arme (`b120rgs`, `s1338`–`s1341`) sind **eine** Stichprobe: Das Overlay
+  hängt nicht am MATSim-Seed. Die Bandarme sind über die ähnliche Nachfrage korreliert.
+- Die Zählungen 475/552 und 388/452 oben lassen sich mit den heutigen Läufen nicht reproduzieren
+  (393/460, 339/414, 427/505, 387/463), die Größenordnung schon.
+- **Folge:** Absolute Lausitz-Zustellquoten sind nicht zitierfähig. Armvergleiche bleiben
+  unberührt, das Overlay ist deterministisch. Das Overlay ist rein kosmetisch (kein Einfluss aufs
+  Routing, ein Simulationstag). Deshalb wurde die Regel **nicht** vereinheitlicht (User 2026-11-03).
+  Lausitz speichert seither nur den Tagesbias als Carrier-Attribut `dailyDeliveryBias`. Touren und
+  Abfahrten sind byte-gleich, denn derselbe `missedRng` speist auch den Abfahrts-Jitter und die
+  Ziehreihenfolge blieb unverändert.
+
 ### 2.6 Kostenfunktion: Platzhalter nur noch in Hannover — Lausitz rechnet direkte Betriebskosten
 
 **Stand 2026-09-28, am Code geprüft. Der frühere Titel „Kostenfunktion ist ein Platzhalter"
@@ -2240,6 +2268,22 @@ zu „Plan vs. nach Re-Routing ausgeführt", erklären die 1,7 % Restlücke bei 
 **Mechanismus ungeklärt.** Für €-Summen irrelevant (4,6 % auf einen 7,9-%-Posten = 0,4 % der
 Gesamtkosten), für jede €/km- oder km-Kennzahl nicht.
 
+⚠️ **Nachtrag 2026-11-03 (Code gelesen, nichts gemessen):**
+
+| Größe | Quelle heute | Zählweise |
+|---|---|---|
+| `distKm` | **eventbasiert**, nicht der Plan: `DashboardGenerator.precomputeEventMaps:177-186` | Σ Linklängen der Link-Leave-Events je Fahrzeug |
+| `costDist` | `ScoringFunctions.handleLeg:315-323` → Attribut `costDistance` | je Leg Startlink + Zwischenlinks + Ziellink ⇒ jeder Stopp-Link doppelt (Ziel von Leg i, Start von Leg i+1) |
+| jsprit-Distanz | `ZoneBasedTransportCosts.computeAndCacheTransportData:1106-1109` | Startlink + Zwischenlinks, ohne Ziellink; geht in keine der beiden Größen ein |
+
+- **Vorzeichen widerspricht:** Die Doppelzählung macht `costDist` *länger*, gemessen wurde es
+  *kürzer*. Entweder wirkt ein zweiter Effekt, oder die Messung vom 2026-08-11 stand noch auf dem
+  planbasierten `distKm`. Ungeklärt.
+- **Fixort wäre `ScoringFunctions`.** Die Klasse läuft auch in Lausitz
+  (`FreightRunComposer:54`, U-Turn-Strafe 0), und `costDistance` speist dort
+  `extract_freight_provider.py:227` (`cost_dist`).
+- Der Fix verschiebt damit auch Lausitz-Zahlen und ist **gestoppt** (User 2026-11-03).
+
 **Konsequenz für die Kapazitäts-Sensitivität (Hannover).** Die Kostenkurve folgt heute der
 **Tourenzahl** (−81 % von cap 30→280), nicht den **Tourstunden** (−37 %). Probeweise nachgerechnet
 mit einem Zwei-Term-Modell (F_Fzg 40 €/Tag + w 21,31 €/h, niveauverankert auf 189,15 € bei 7 h,
@@ -3295,6 +3339,18 @@ Dateinamen, jedes Zeichen kostet also zwei:
 Ein Zeichen mehr in irgendeinem künftigen Tag — 1c, 1d oder Hannover — und derselbe stille
 Shutdown-Crash nach voller Rechenzeit. Der dauerhafte Fix ist ein kürzerer Ausgabe-Root, nicht
 kürzere Tags (→ BACKLOG).
+
+✅ **Nachtrag 2026-11-03 — Fix (a) umgesetzt:**
+
+| Punkt | Stand |
+|---|---|
+| Kürzerer Root | `-Dhagrid.output.root` oder `HAGRID_OUTPUT_ROOT` verlegt die MATSim-Ausgabe. Die Property schlägt die Umgebungsvariable, leer gilt als nicht gesetzt, relativ wird gegen den Pipeline-Root aufgelöst (`HagridPaths.resolveMatsimOutputBase`, Anleitung `runs/README.md`) |
+| Startprüfung | `OutputPathGuard`: `len(outputDir) + 1 + len(runId) + len(".drt_waitStats_drt_zonal.gpkg")` gegen **251**, vor jeder Rechenarbeit. `validateAll` prüft alle Szenarien eines Batches, `runSimulation` jedes einzeln |
+| Reaktion | Windows: Abbruch mit beiden Längen. Sonst: WARN (die Grenze ist MAX_PATH-bedingt). Längster projizierter Pfad (ITERS-PNG) > 259 ⇒ WARN |
+| KPI-Schicht | `run_metadata.json` trägt `hagrid_output_dir` + `input_root`. `analysis/lausitz/kpi/run_paths.py` findet Geschwisterordner darüber (explizit > Metadaten > alte Konvention) |
+| Nachweis | `OutputPathGuardTest` reproduziert das Paar 251/263 der Tabelle oben mit synthetischem Präfix, dazu Verdrahtungstest und Mutationsprobe. Der echte Sim-Pfad wurde nicht nachgemessen |
+
+(b) bleibt Sache des Watchers (CPU-Akkumulation, siehe oben).
 
 **(b) Die JVM beendet sich nach dem Absturz nicht.** Die Exception tötete `main`, aber der
 `MemoryObserver`-Heartbeat ist ein Non-Daemon-Thread und loggte weiter im Minutentakt — bei
