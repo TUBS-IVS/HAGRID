@@ -79,6 +79,7 @@ public class JspritCarrierTask implements PrioritizedRunnable {
         NetworkRouter.routePlan(newPlan, netBasedCosts);
         carrier.addPlan(newPlan);
         carrier.setSelectedPlan(newPlan);
+        HAGRIDRouterUtils.recordUTurnPenalty(carrier, uTurnPenaltyCost);
         LOGGER.info("Routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
                 carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);
     }

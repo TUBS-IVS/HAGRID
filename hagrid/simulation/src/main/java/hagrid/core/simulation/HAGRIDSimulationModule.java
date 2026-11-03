@@ -55,6 +55,10 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		this.uTurnPenaltyCost = uTurnPenaltyCost;
 	}
 
+	ReplanningStrategies replanningStrategies() {
+		return new ReplanningStrategies(types, isUsingZones, maxIterationsMATSim, jspritIterations, uTurnPenaltyCost);
+	}
+
 	@Inject
 	private Config config;
 
@@ -64,7 +68,7 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork(), uTurnPenaltyCost);		
 
 		bind(Carriers.class).toProvider(new CarrierProvider()).asEagerSingleton();
-		bind(CarrierStrategyManager.class).toProvider(new ReplanningStrategies(types, isUsingZones, maxIterationsMATSim, jspritIterations));
+		bind(CarrierStrategyManager.class).toProvider(replanningStrategies());
 
 		bind(CarrierScoringFunctionFactory.class).toInstance(scoringFunctionFactory);
 		

@@ -459,4 +459,18 @@ public class HAGRIDRouterUtils {
                     carrier.getId(), ids.size(), carrier.getServices().size(), unassignedParcels, ids);
         }
     }
+
+    /** Carrier attribute holding the U-turn penalty Step A (routing) used; read back by Step B. */
+    public static final String UTURN_PENALTY_ATTR = "uTurnPenaltyStepA";
+
+    /**
+     * Records the U-turn penalty used while routing this carrier, so the simulation run (Step B)
+     * can detect a mismatch with its own {@code uTurnPenalty} instead of silently diverging.
+     *
+     * @param carrier          the routed carrier; the attribute is written onto it
+     * @param uTurnPenaltyCost the soft score penalty per U-turn that Step A applied (written as {@code Double})
+     */
+    public static void recordUTurnPenalty(Carrier carrier, double uTurnPenaltyCost) {
+        carrier.getAttributes().putAttribute(UTURN_PENALTY_ATTR, Double.valueOf(uTurnPenaltyCost));
+    }
 }

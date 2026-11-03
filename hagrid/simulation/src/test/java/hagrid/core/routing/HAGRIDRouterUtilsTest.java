@@ -79,6 +79,16 @@ class HAGRIDRouterUtilsTest {
         assertThat(c.getAttributes().getAttribute("unassignedParcels")).isEqualTo(0);
     }
 
+    @Test
+    @DisplayName("records the Step-A U-turn penalty as a Double carrier attribute")
+    void recordsStepAPenaltyAsDouble() {
+        Carrier c = carrierWith(svc("s_ok", 2));
+
+        HAGRIDRouterUtils.recordUTurnPenalty(c, 1.0);
+
+        assertThat(c.getAttributes().getAttribute("uTurnPenaltyStepA")).isEqualTo(1.0);
+    }
+
     /**
      * The seed override is a diagnostic control for jsprit's stochastic search (see
      * {@link HAGRIDRouterUtils#JSPRIT_SEED_PROPERTY}). The failure mode worth guarding is a

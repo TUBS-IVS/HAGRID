@@ -1,5 +1,6 @@
 package hagrid.core.simulation;
 
+import hagrid.core.routing.HAGRIDRouterUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.geotools.api.feature.simple.SimpleFeature;
@@ -26,7 +27,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Builds a complete MATSim {@link Scenario} for the HAGRID simulation.
@@ -216,6 +219,13 @@ public class HAGRIDScenarioBuilder {
         new CarrierPlanXmlReader(delivery, types).readFile(simConfig.getDeliveryCarrierPath().toString());
         fixServiceParcelTypeAttributes(delivery);
         LOGGER.info("Loaded {} delivery carriers", delivery.getCarriers().size());
+        checkStepAPenalty(delivery, simConfig.getUTurnPenaltyCost()).ifPresent(msg -> {
+            if (msg.startsWith("INFO")) {
+                LOGGER.info(msg);
+            } else {
+                LOGGER.warn(msg);
+            }
+        });
 
         Carriers supply = new Carriers();
         new CarrierPlanXmlReader(supply, types).readFile(simConfig.getSupplyCarrierPath().toString());
@@ -242,6 +252,55 @@ public class HAGRIDScenarioBuilder {
         new CarrierPlanWriter(merged).write(simConfig.getMergedCarrierPath().toAbsolutePath().toString());
         Duration mergeDuration = Duration.between(start, Instant.now());
         LOGGER.info("Carrier merge completed in {} ms", mergeDuration.toMillis());
+    }
+
+    /**
+     * Compares the U-turn penalty Step A recorded on the routed delivery carriers
+     * ({@link HAGRIDRouterUtils#UTURN_PENALTY_ATTR}) with this run's {@code uTurnPenalty}.
+     * Never aborts; the caller logs the returned text (WARN, or INFO if it starts with "INFO").
+     *
+     * @param delivery      the routed delivery carriers as read from the Step-A file
+     * @param runnerPenalty the U-turn penalty of this simulation run
+     * @return a warning text if at least one carrier carries a deviating value (tolerance 1e-9);
+     *         an "INFO ..." text if no carrier carries the attribute (files from before the check);
+     *         empty if all recorded values match
+     */
+    static Optional<String> checkStepAPenalty(Carriers delivery, double runnerPenalty) {
+        Set<String> deviating = new TreeSet<>();
+        int withAttr = 0;
+        for (Carrier carrier : delivery.getCarriers().values()) {
+            Object raw = carrier.getAttributes().getAttribute(HAGRIDRouterUtils.UTURN_PENALTY_ATTR);
+            if (raw == null) {
+                continue;
+            }
+            withAttr++;
+            Double stepA = null;
+            if (raw instanceof Number n) {
+                stepA = n.doubleValue();
+            } else {
+                try {
+                    stepA = Double.parseDouble(raw.toString());
+                } catch (NumberFormatException e) {
+                    // never abort the run over a check: report the broken value as a deviation
+                    deviating.add("unparsable value '" + raw + "'");
+                }
+            }
+            if (stepA != null && Math.abs(stepA - runnerPenalty) > 1e-9) {
+                deviating.add(stepA.toString());
+            }
+        }
+        if (withAttr == 0) {
+            return Optional.of("INFO: delivery carriers carry no '" + HAGRIDRouterUtils.UTURN_PENALTY_ATTR
+                    + "' attribute (routed before the check existed); cannot verify that Step A used the runner's uTurnPenalty "
+                    + runnerPenalty);
+        }
+        if (deviating.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("U-turn penalty mismatch: Step A routed with " + deviating
+                + " but this run uses uTurnPenalty=" + runnerPenalty + " (" + HAGRIDRouterUtils.UTURN_PENALTY_ATTR
+                + " on " + withAttr + " carriers). Routing and simulation are not consistent; results are not comparable "
+                + "to runs with matching penalties.");
     }
 
     /**

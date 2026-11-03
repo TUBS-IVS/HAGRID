@@ -773,6 +773,8 @@ public class Router {
             // count instead of a false zero on the Hannover legacy path.
             HAGRIDRouterUtils.recordUnassignedJobs(carrier,
                     solution.getUnassignedJobs().stream().map(Job::getId).toList());
+            // Step B warns if its own uTurnPenalty differs from the value routing used here.
+            HAGRIDRouterUtils.recordUTurnPenalty(carrier, getUTurnPenaltyCost());
             CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
             CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
             long routeStart = System.currentTimeMillis();

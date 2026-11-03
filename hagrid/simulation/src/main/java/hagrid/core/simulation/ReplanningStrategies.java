@@ -58,6 +58,12 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 	private int stopReplanningJsprit;
 	private int stopReplanning;
 
+	private final double uTurnPenaltyCost;
+
+	double uTurnPenaltyCost() {
+		return uTurnPenaltyCost;
+	}
+
 	/**
 	 * Constructor for ReplanningStrategies.
 	 *
@@ -65,7 +71,9 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 	 * @param isUsingZones Indicates if zone-based routing is used.
 	 * @param maxIterationsMATSim 
 	 */
-	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations) {
+	public ReplanningStrategies(CarrierVehicleTypes types, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations,
+			double uTurnPenaltyCost) {
+		this.uTurnPenaltyCost = uTurnPenaltyCost;
 		this.types = types;
 		this.isUsingZones = isUsingZones;
 		this.stopReplanningJsprit = (int) Math.round(maxIterationsMATSim - maxIterationsMATSim * 0.35);
@@ -182,7 +190,8 @@ public class ReplanningStrategies implements Provider<CarrierStrategyManager> {
 
 		// Create the strategy using the shared path calculator
 		GenericPlanStrategy<CarrierPlan, Carrier> strategy3 = new CarrierVehicleReRouter(carNetwork, bikeNetwork, types, myTravelTime,
-				isUsingZones, vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime(), jspritIterations)
+				isUsingZones, vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime(), jspritIterations,
+				uTurnPenaltyCost)
 				.createStrategy();
 
 		carrierStrategyManager.addStrategy(strategy3, null, 1.0);

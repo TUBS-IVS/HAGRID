@@ -22,6 +22,7 @@ import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 import com.graphhopper.jsprit.core.algorithm.state.UpdateEndLocationIfRouteIsOpen;
 import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprovementTermination;
 import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
+import hagrid.core.routing.UTurnSoftConstraint;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
 import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
 import com.graphhopper.jsprit.core.problem.constraint.ServiceDeliveriesFirstConstraint;
@@ -93,9 +94,12 @@ public final class CarrierVehicleReRouter {
 
     private int jspritIterations;
 
+    private final double uTurnPenaltyCost;
+
     public CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
             TravelTime travelTimes,
-            Boolean isUsingZones, Map<String, VRPTransportCosts> byModeVRPTransportCosts, int jspritIterations) {
+            Boolean isUsingZones, Map<String, VRPTransportCosts> byModeVRPTransportCosts, int jspritIterations,
+            double uTurnPenaltyCost) {
         super();
         this.carNetwork = carNetwork;
         this.bikeNetwork = bikeNetwork;
@@ -104,9 +108,41 @@ public final class CarrierVehicleReRouter {
         this.isUsingZones = isUsingZones;
         this.byModeVRPTransportCosts = byModeVRPTransportCosts;
         this.jspritIterations = jspritIterations;
+        this.uTurnPenaltyCost = uTurnPenaltyCost;
 
         this.activityCosts = createVehicleRoutingActivityCosts();
 
+    }
+
+    /**
+     * Constraints of the in-loop re-router. The U-turn soft constraint follows the same rule as
+     * {@code HAGRIDRouterUtils.configureAlgorithm}: only with a network and a positive penalty.
+     */
+    static ConstraintManager buildConstraintManager(VehicleRoutingProblem vrp, StateManager stateManager,
+            Network network, double uTurnPenaltyCost) {
+        ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
+
+        constraintManager.addConstraint(
+                new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
+                Priority.CRITICAL);
+        constraintManager.addConstraint(
+                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
+                Priority.CRITICAL);
+
+        constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
+                vrp.getTransportCosts(), vrp.getActivityCosts()), ConstraintManager.Priority.HIGH);
+        constraintManager.addConstraint(new ServiceDeliveriesFirstConstraint(),
+                ConstraintManager.Priority.CRITICAL);
+
+        constraintManager.addTimeWindowConstraint();
+        constraintManager.addLoadConstraint();
+        constraintManager.addSkillsConstraint();
+        constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
+
+        if (network != null && uTurnPenaltyCost > 0.0) {
+            constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltyCost));
+        }
+        return constraintManager;
     }
 
     private VehicleRoutingActivityCosts createVehicleRoutingActivityCosts() {
@@ -193,17 +229,13 @@ public final class CarrierVehicleReRouter {
 
                 VehicleRoutingProblem.Builder vrpBuilder = null;
                 VRPTransportCosts transportCosts;
+                Network vrpNetwork;
                 boolean usingZoneBasedRouting = false;
 
                 if (isUsingZones) {
                     // TODO Different modes?
-                    if (CarriersUtils.getCarrierMode(carrier).contains("cargobike")) {
-                        vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier,
-                                bikeNetwork);
-                    } else {
-                        vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier,
-                                carNetwork);
-                    }
+                    vrpNetwork = CarriersUtils.getCarrierMode(carrier).contains("cargobike") ? bikeNetwork : carNetwork;
+                    vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, vrpNetwork);
                     transportCosts = byModeVRPTransportCosts.get(CarriersUtils.getCarrierMode(carrier));
                     if (transportCosts == null) {
                         log.warn("No zone-based transport costs registered for mode {}. Falling back to network-based costs for carrier {}.",
@@ -212,8 +244,8 @@ public final class CarrierVehicleReRouter {
                     }
                     usingZoneBasedRouting = transportCosts instanceof ZoneBasedTransportCosts;
                 } else {
-                    vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier,
-                            carNetwork);
+                    vrpNetwork = carNetwork;
+                    vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, vrpNetwork);
                     transportCosts = netBasedTransportCosts;
                 }
 
@@ -224,7 +256,6 @@ public final class CarrierVehicleReRouter {
                 VehicleRoutingProblem vrp = vrpBuilder.build();
 
                 StateManager stateManager = new StateManager(vrp);
-                ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
 
                 stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
                 stateManager.updateLoadStates();
@@ -235,22 +266,8 @@ public final class CarrierVehicleReRouter {
                 stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
                         vrp.getTransportCosts(), MAXROUTEDURATION));
 
-                constraintManager.addConstraint(
-                        new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
-                        Priority.CRITICAL);
-                constraintManager.addConstraint(
-                        new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
-                        Priority.CRITICAL);
-
-                constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
-                        vrp.getTransportCosts(), vrp.getActivityCosts()), ConstraintManager.Priority.HIGH);
-                constraintManager.addConstraint(new ServiceDeliveriesFirstConstraint(),
-                        ConstraintManager.Priority.CRITICAL);
-
-                constraintManager.addTimeWindowConstraint();
-                constraintManager.addLoadConstraint();
-                constraintManager.addSkillsConstraint();
-                constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
+                ConstraintManager constraintManager = buildConstraintManager(vrp, stateManager, vrpNetwork,
+                        uTurnPenaltyCost);
 
                 if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
                     // Previously adjusted radial/random share when replanning subsets; logic retained for future tuning
