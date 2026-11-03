@@ -5264,8 +5264,23 @@ CVRPTW-Formulierung im EWGT26-Paper (Abschnitt 2.2). Gilt für die gefahrenen To
 | U-Turn | `UTurnSoftConstraint` (eine Kante zwischen Stopps auf gegenläufigen Links, Strafe 1,0) nur in `configureAlgorithm` = Step A mit `jsprit=1`; `CarrierVehicleReRouter` plant ohne sie und ohne Startlösung neu | wirkt nicht auf die gefahrenen Touren; U-Turns und Verspätung bestraft nur das MATSim-Scoring der Ausführung (`uTurnCount`, `costTimeWindowPenalty`) |
 | Flotte | `FleetSize.INFINITE` | 𝒦 groß genug, Leerroute (0, n+1) |
 
-Nachrüsten der U-Turn-Strafe in der Umplanung: BACKLOG, Punkt „U-Turn-Strafe auch in der
-Schleifen-Umplanung".
+⚠️ **Nachtrag 2026-11-03 (Code, `85a009d`):** Die Strafe wirkt jetzt auch im Re-Router, also auf
+die gefahrenen Touren. Weg: `HAGRIDSimulationModule` → `ReplanningStrategies` →
+`CarrierVehicleReRouter.buildConstraintManager` → `UTurnSoftConstraint`, gleiche Regel wie Step A
+(Netz ≠ null und Strafe > 0), Default weiter 1,0. Step A schreibt seinen Wert als Carrier-Attribut
+`uTurnPenaltyStepA`; der Sim-Lauf warnt bei Abweichung vom Runner-Schlüssel `uTurnPenalty`.
+**Hannover-Läufe ab diesem Stand nicht mit v2–v4 mischen.**
+
+| Ort | Was als U-Turn zählt |
+|---|---|
+| jsprit (Step A, Re-Router) | zwei aufeinanderfolgende Stopps auf gegenläufigen Kanten |
+| MATSim-Scoring (`uTurnCount`) | jede Kehrtwende in der Linkfolge der gefahrenen Route |
+
+jsprit sieht also nur einen Teil dessen, was das Scoring bestraft (User 2026-11-03: reicht, Ziel
+ist weniger Wendemanöver, kein Verbot). Nicht umgesetzt: Die Linkfolge liegt in
+`ZoneBasedTransportCosts.computeAndCacheTransportData` ohnehin vor, ein U-Turn-Zähler im
+Cache-Eintrag wäre fast kostenlos; über der Euklid-Schwelle ist der Cache aber je Zonenpaar
+geschlüsselt, die Zahl wäre dort nur näherungsweise. Strafhöhe 1,0 ≙ ~2,6 km Umweg, nie kalibriert.
 
 ### 2.79 Kapazität/Arbeitszeit-Schnittpunkt (~170): robust bis zur 7,0-h-Planungsgrenze, darüber nicht
 
