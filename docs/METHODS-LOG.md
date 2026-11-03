@@ -421,6 +421,19 @@ einen gibt — den Reproduktionspfad. _Zuletzt aktualisiert: 2026-10-27._
   - **Laufzeit:** Der Baseline-Treffer braucht 8 statt 78 min für Vorlauf plus 2 Iterationen; der jsprit-Vorlauf allein dauerte 4.218 s.
   - **Bedienung:** Schalter `-Dhagrid.jsprit.cache=on|off|verify`, Standard `on`. Der Status je Lauf steht in `run_metadata.json` (`jsprit_cache`, `jsprit_cache_key`, `jsprit_cache_source_run`).
   - **Grenzen:** Der Nachweis gilt je Maschine und JAR. Ein JAR aus einem neueren Stand rechnet beim ersten Lauf neu.
+  - **Produktionsnachweis auf allen vier Maschinen (02./03.11.)**, ein JAR (`40cdc9b`, SHA-256 `c74327c7…`), echte Paper-Baseline (Flotte 120, `jspritIter=100`, Freight) mit 2 MATSim-Iterationen, Skript [tools/jsprit-cache-proof.ps1](../tools/jsprit-cache-proof.ps1) bzw. `.sh`:
+
+    | Maschine | OS / Java | `miss` | `hit` | `verified` |
+    |---|---|---|---|---|
+    | Sim | Windows / Temurin 21.0.8 | 93 min | 5,8 min | 94 min |
+    | IVS100 | Windows / Temurin 21.0.3 | 94 min | 4,9 min | 93 min |
+    | VM | Ubuntu 20.04 / Temurin 21.0.8 | 158 min | 12 min | 152 min |
+    | Dev | Windows / Oracle 21.0.10 | 297 min | 14 min | ~5 h |
+
+    - Alle zwölf Ergebnisdateien tragen SHA-256 `2c1195c3…` wie die 23 Baseline-Läufe vom 15.08.–30.09.: Der Cache liefert über Maschinen, Betriebssysteme und Java-Versionen dieselbe Datei wie ein Lauf ohne Cache.
+    - Gleiche Java-Version ergibt denselben Schlüssel über Betriebssysteme hinweg (Sim und VM `9d87bcc6…`), eine andere Version einen anderen (`386c3cd3…`, `5a27c667…`).
+    - Auf der VM liefen vorher die 102 Cache-Unit-Tests grün, auch die Sperrtests über Prozessgrenzen (fcntl).
+    - Der Dev-Laptop (Core Ultra 7 255U) rechnet den Vorlauf einfädig in rund 5 h, also gut dreimal so lange wie der Sim; für erste Läufe eines neuen JARs taugt er nicht.
 
 ### 1.6 Kostenmodell: direkte Betriebskosten C (nur Lausitz)
 

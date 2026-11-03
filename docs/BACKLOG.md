@@ -385,13 +385,6 @@ Zurückziehungen in [METHODS-LOG](METHODS-LOG.md) §1.3/§3.1/§3.2, Nachweise i
   Seit dem jsprit-Cache (METHODS-LOG §1.5, 2026-10-02) zählt der Gewinn nur noch beim ersten Lauf
   je Maschine und JAR. _(added 2026-07-30)_
 
-- **`[S]` jsprit-Cache: Produktionsnachweis je Maschine** (Dev, IVS100, VM; Sim erst, wenn er
-  zurück ist), auf dem ersten neuen JAR: erster Baseline-Lauf `miss` mit Datei-SHA-256
-  `2c1195c3…`, der nächste `hit`, einmal ein `verify`-Lauf. **Auf der Ubuntu-VM vorher die
-  Cache-Unit-Tests laufen lassen** (`-Dtest='JspritPlanCache*,CacheEntryLock*,JspritCacheKey*,JarFingerprint*'`):
-  das Gate lief nur unter Windows und hat fcntl-Sperren und Inode-Austausch nie gesehen.
-  _(added 2026-10-02)_
-
 - **`[M]` Case-Study-Area erweitern** — Ruhland-Korridor, aktuell als Kurzfix dropped.
   **Entschieden: bleibt zunächst Hoyerswerda, Erweiterung erst ~2027**
   → [METHODS-LOG](METHODS-LOG.md) §4.6. Mitzuziehen, wenn es passiert: der 2026-07-20 entfernte
