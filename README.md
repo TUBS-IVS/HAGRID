@@ -1,6 +1,179 @@
-# HAGRID — Parcel demand and integrated freight/DRT simulation with MATSim
+# HAGRID · From parcel demand to delivery routes
 
-> **HAGRID V2 integration branch:** [Configuration, build, included optimizations and current limits](docs/hagrid-v2-rollout.md). The new entry point plans one demand scenario with optimized jsprit; section-based MATSim replanning remains unsupported.
+<p align="center">
+  <img src="docs/images/hagrid-v2-hero.svg" width="100%" alt="HAGRID 2.0 — From parcel demand to delivery routes. Street-aware planning and a shared research pipeline at TU Braunschweig. Decorative street network, not a measured tour.">
+</p>
+
+<p align="center">
+  <strong>Python demand modelling · Java routing · MATSim transport research</strong><br>
+  Built at the Institute of Transportation and Urban Engineering, TU Braunschweig.
+</p>
+
+<p align="center">
+  <a href="#v2-at-a-glance">What's new</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#the-v2-pipeline">Pipeline</a> ·
+  <a href="#one-profile-your-routing-rules">Configuration</a> ·
+  <a href="#verified-scope">Verification</a> ·
+  <a href="#research-and-platform-guide">Research</a>
+</p>
+
+HAGRID connects **where parcels arise**, **how delivery vehicles serve them**, and **what that means for transport**.
+This branch brings the V2 route planner into the existing HAGRID data pipeline: optimised jsprit, street-section grouping,
+joint stop-order and approach selection, and central routing settings.
+
+> [!IMPORTANT]
+> **V2 integration branch: `codex/hagrid-v2-rollout`.** The new entry point plans one HAGRID scenario and date, including its carriers and vehicles, with jsprit. It does **not** start MATSim. Repeated MATSim replanning of section-based plans remains unsupported. See the [rollout guide](docs/hagrid-v2-rollout.md) for the full scope and remaining limits.
+
+## V2 at a glance
+
+| Capability | What changes in practice |
+|---|---|
+| **One data chain** | HAGRID customer coordinates, street positions, sides and source identities travel from the Python export into Java. Preparation uses the existing HAGRID data. |
+| **Street-aware approaches** | The search considers stop order and verified legal approach directions together. Customer-side service and opposite-side stopping are explicit configuration choices. |
+| **Configurable street sections** | Nearby services can share a search job within a maximum span along a street. Distances and travel times between sections remain part of the plan. |
+| **Adapted jsprit 2.0** | Core/Analysis 2.0.0 with targeted cache, neighbourhood-storage and compatibility patches; IO 1.8 retains the existing XML format. |
+| **Controlled resource use** | Bounded transport caches, reusable routing data, managed worker lifetimes and configurable solver/router concurrency. |
+| **Checked outputs** | Sections expand back into their original services; final checks cover service completeness, demand, timing and costs. |
+
+The jsprit changes are included in the build, with the Freight dependency pinned to a specific submodule commit.
+The packaged classes were checked against that source. The corrected fast-regret path is available but remains disabled
+by default; the profile does not enable every experimental option.
+
+## Quick start
+
+**Requirements:** Git · Java **21** · Maven **3.9** · Python **3.11+**.
+Run the commands below from the repository root. The first build needs access to the configured package repositories.
+
+**1. Get the V2 branch and its pinned dependency.**
+
+```shell
+git clone --branch codex/hagrid-v2-rollout https://github.com/TUBS-IVS/HAGRID.git
+cd HAGRID
+git submodule update --init external/matsim-libs
+python -m venv .venv
+```
+
+Activate the Python environment:
+
+| Shell | Command |
+|---|---|
+| Windows PowerShell | `.venv\Scripts\Activate.ps1` |
+| Linux / macOS | `source .venv/bin/activate` |
+
+**2. Install the demand package and build the planner.**
+
+```shell
+python -m pip install -e "hagrid/demand/model[test]"
+mvn -pl hagrid/simulation -am -DskipTests package
+```
+
+**3. Supply your HAGRID inputs and choose the run.**
+
+Provide the existing network, vehicle types, hubs, geodata and a fresh demand export for your chosen date.
+The export must include `hagrid-section-inputs.json`, `section_stops.parquet` and `section_streets.parquet`
+beside the freight demand. A code checkout alone does not supply these scenario data.
+
+Edit [`config/hagrid2-sections.properties`](config/hagrid2-sections.properties), particularly the scenario date and region.
+See the [input layout](hagrid/simulation/input/README.md), [demand package](hagrid/demand/README.md)
+and [HAGRID-only preparation](tools/section-road-evidence/HAGRID_ONLY.md).
+
+**4. Plan with jsprit.**
+
+```shell
+java -cp hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar hagrid.hannover.HagridV2RoutingRunner config/hagrid2-sections.properties
+```
+
+This runs demand preparation and route planning for the configured scenario. A full-region demand day can still be a large job;
+choose the JVM heap and concurrency for your data and machine. Keep the checkout and Python tools with the JAR.
+If Python is not on the active path, set `routing.sectionEvidencePython` in the profile.
+
+<details>
+<summary><strong>Updating an existing checkout</strong></summary>
+
+Save any local changes first, then use:
+
+```shell
+git switch codex/hagrid-v2-rollout
+git pull --ff-only
+git submodule update --init external/matsim-libs
+```
+
+Repeat the installation and build commands above. Use the pinned submodule commit; do not update it with `--remote`.
+
+</details>
+
+## The V2 pipeline
+
+```mermaid
+flowchart LR
+    A["HAGRID inputs<br/>Demand · streets · network"] --> B["Python export<br/>Position · side · identity"]
+    B --> C["Java preparation<br/>Sections · legal approaches"]
+    C --> D["Adapted jsprit 2.0<br/>Stop order + approach choice"]
+    D --> E["Expand + verify<br/>Original services · times · costs"]
+    E --> F["Delivery plans<br/>No MATSim launch"]
+```
+
+**Grouping changes the search problem, not the delivery obligations.** A section may represent several services during
+optimisation. The output restores those original services. Fewer jsprit jobs therefore do not imply fewer simulated delivery
+activities. The demand model's own stop generation and the V2 planner's section span are separate settings.
+
+## One profile, your routing rules
+
+[`config/hagrid2-sections.properties`](config/hagrid2-sections.properties) is a **standalone profile**.
+It does not load `config/hagrid.properties` on top; omitted keys use the Java defaults.
+
+```properties
+run.concept=basecase
+run.date=2025-05-13
+run.tag=v2
+demand.filterRegions=Hannover
+
+routing.sectionHagridInputs=auto
+routing.sectionMaxSpanMeters=200
+routing.sectionAllowStreetCrossing=false
+routing.sectionUnknownTurnPolicy=NETWORK_REVERSAL
+tourRules.uTurnPenaltyCost=0.1
+
+optimization.initialIterations=100
+optimization.offlineIterations=100
+```
+
+| Setting | How to read it |
+|---|---|
+| **200 m section span** | Maximum grouping span along a street, not a minimum distance between customers. |
+| **Customer side by default** | `false` keeps customer-side service; `true` allows opposite-side stopping as a model assumption. Only verified legal network directions can be used. |
+| **0.1 U-turn cost** | An additive generalised cost per U-turn, not seconds and not a prohibition. |
+| **Unknown reversals** | `NETWORK_REVERSAL` keeps uncertain reversals marked as unknown and traversable with the configured soft cost. It does not establish missing street identity. |
+| **100 / 100 iterations** | Separate budgets for initial tour planning and offline section search. |
+
+**200 m and 0.1 are working defaults, not empirically calibrated optima.** Allowing street crossing does not create a reverse
+direction on a one-way street, prove that a crossing is safe, or add a walking-time model.
+Cache limits, router concurrency, solver threads and seeds are also centrally configurable; the profile includes commented examples.
+
+## Verified scope
+
+The **10 November 2026 integration check** recorded the following results. These are a dated verification snapshot, not a live CI badge or a claim of universal speed-up.
+
+| Check | Recorded result |
+|---|---|
+| Java regression checks | **597 passed**, 0 failures, 0 skipped: 29 Freight + 568 HAGRID |
+| Portable Python checks | **40 passed**; 10 regional checks skipped without fixture paths |
+| Local producer checks | **13 passed** with explicit regional fixtures; this set overlaps the portable checks |
+| Build and packaging | Clean-base worktree build; **383 Freight classes** matched the pinned source; patched jsprit classes verified |
+| Simulation | **No MATSim run** in this verification |
+
+[Read the final review](docs/hagrid-v2-verification.md) · [Inspect the machine-readable evidence](docs/hagrid-v2-verification.json) · [Installation and limits](docs/hagrid-v2-rollout.md)
+
+> [!NOTE]
+> **What is still open:** older inputs can lack sufficient street identity to prove an approach. In the 42-service review fixture, 38 services bound with customer-side service and 41 with crossing allowed; an unresolved service prevents publication of a complete section plan. Full-region RAM behaviour, real-world calibration and repeated MATSim replanning of section plans are not established by these checks. The build reused the dependency cache.
+
+---
+
+## Research and platform guide
+
+The sections below describe the broader HAGRID framework and its research studies. Their demand forecasts and simulation
+results belong to those studies; they are **not benchmarks of the V2 changes** above.
 
 HAGRID is a research framework of the Institute of Transportation and Urban Engineering at TU Braunschweig for parcel
 demand and last-mile logistics. It couples a parcel demand model with MATSim and jsprit simulations of delivery tours and
@@ -173,6 +346,8 @@ The tree shows tracked content only. Locally, `analysis/lausitz/` additionally h
 
 ## 4. Setup
 
+> For the V2 jsprit-only entry point on this branch, use the [quick start](#quick-start) above. This section covers the broader research and simulation workflows.
+
 The freight module sources live in a git submodule (`external/matsim-libs`, a patched
 fork of matsim-libs — see `docs/superpowers/specs/2026-07-13-freight-fork-submodule-design.md`).
 
@@ -217,6 +392,8 @@ workspace (e.g. mid-refactor), stale `.class` stubs left behind in `target/class
 shadow the fresh build output and produce confusing failures. `mvn clean` clears them out.
 
 ## 5. Installation (Python)
+
+> The V2 routing setup is documented in the [quick start](#quick-start). This section also covers the wider Python research environment.
 
 Clone the repository with its submodule; [Setup](#4-setup) above describes the full bootstrap (submodule sparse-checkout,
 Windows long paths):
