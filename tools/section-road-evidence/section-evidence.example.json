@@ -1,0 +1,13 @@
+{
+  "cacheDir": "section-evidence-cache",
+  "importMinimumLinkLengthMeters": 5,
+  "sources": [
+    {
+      "path": "REPLACE_WITH_COVERING_SOURCE.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "format": "RoadSourceJSON",
+      "snapshot": "REPLACE_WITH_SOURCE_SNAPSHOT",
+      "bounds": [0, 0, 0, 0]
+    }
+  ]
+}

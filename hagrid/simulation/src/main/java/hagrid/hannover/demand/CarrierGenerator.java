@@ -3,6 +3,8 @@ package hagrid.hannover.demand;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import hagrid.core.HagridConfig;
+import hagrid.core.routing.CarrierModeResolver;
+import hagrid.core.config.HagridConfigResolver;
 import hagrid.hannover.pipeline.CarrierMergeLog;
 import hagrid.core.util.GeoUtils;
 import hagrid.core.util.Delivery;
@@ -15,9 +17,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.geotools.api.feature.simple.SimpleFeature;
 import org.jxmapviewer.viewer.util.GeoUtil;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
@@ -36,10 +35,11 @@ import java.util.Optional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Random;
+
 import java.util.stream.Collectors;
 import java.util.Arrays;
 import java.util.Collection;
@@ -54,16 +54,24 @@ import java.util.ConcurrentModificationException;
 public class CarrierGenerator implements Runnable {
 
         private static final Logger LOGGER = LogManager.getLogger(CarrierGenerator.class);
-        private static Random random = new Random();
+        private static volatile long legacySeed = 42L;
+        private hagrid.core.util.RunRandomStreams streams;
+
+        private hagrid.core.util.RunRandomStreams randomStreams() {
+                if (streams == null) streams = new hagrid.core.util.RunRandomStreams(hagridConfig == null
+                        ? new hagrid.core.config.RandomSeedSettings(legacySeed) : hagridConfig.randomSeeds());
+                return streams;
+        }
 
         /**
-         * Set the global random seed for deterministic behavior (should be called
+         * Set the fallback seed for legacy unconfigured instances (should be called
          * before any random logic).
          * 
-         * @param seed the seed to use (e.g. runId.hashCode())
+         * @param seed fallback seed; configured generation uses run.seed
          */
+        @Deprecated
         public static void setGlobalRandomSeed(long seed) {
-                random = new Random(seed);
+                legacySeed = seed;
         }
 
         @Inject
@@ -73,6 +81,15 @@ public class CarrierGenerator implements Runnable {
         private HagridConfig hagridConfig;
 
         private CarrierVehicleFactory carrierVehicleFactory;
+        private CarrierGenerationAccess generationAccess;
+
+        private CarrierGenerationAccess generationAccess() {
+                if (generationAccess == null) {
+                        generationAccess = new CarrierGenerationAccess(scenario.getNetwork(),
+                                        HAGRIDUtils.getScenarioElementAs("parcelServiceNetwork", scenario));
+                }
+                return generationAccess;
+        }
 
         /**
          * Executes the carrier generation process. This method retrieves the necessary
@@ -81,12 +98,11 @@ public class CarrierGenerator implements Runnable {
          */
         @Override
         public void run() {
-                try {
-                        // Set deterministic random seed based on runId for full reproducibility
-                        String runId = hagridConfig.getRunId();
-                        long seed = (runId != null) ? runId.hashCode() : 42L;
-                        setGlobalRandomSeed(seed);
-                        CarrierVehicleFactory.setGlobalRandomSeed(seed);
+                try (var transaction = new CarrierGenerationTransaction(scenario, "carriers")) {
+                        if (scenario.getScenarioElement("carriers") != null) {
+                                throw new IllegalStateException("Carrier generation requires a scenario without existing carriers");
+                        }
+                        streams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
 
                         LOGGER.info("Generating carriers from sorted deliveries and parcels...");
 
@@ -102,7 +118,11 @@ public class CarrierGenerator implements Runnable {
                         LOGGER.info("Scenario elements retrieved.");
 
                         // Create an instance of CarrierVehicleFactory with the retrieved vehicle types
-                        carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes);
+                        var fleet = HagridConfigResolver.resolve(hagridConfig,
+                                        HagridConfigResolver.Overrides.empty(),
+                                        HagridConfigResolver.Overrides.empty(), Map.of()).fleet();
+                        carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes, fleet, hagridConfig);
+                        generationAccess = new CarrierGenerationAccess(scenario.getNetwork(), subNetwork);
 
                         // Process the deliveries to create carriers
                         // minVehicleCapacity: Used for splitting parcels into vehicle-sized portions
@@ -115,7 +135,7 @@ public class CarrierGenerator implements Runnable {
                         LOGGER.info("Using fixed carrier merge threshold: {}", carrierMergeThreshold);
                         LOGGER.info("Using demand border for max services per carrier: {}", maxServicesPerCarrier);
                         
-                        final Carriers carriers = generateCarriersAndCarrierServices(deliveries, subNetwork,
+                        final Carriers carriers = generateCarriersAndCarrierServices(deliveries,
                                         vehicleTypes, hubList, carrierMergeThreshold,
                                         maxServicesPerCarrier);
 
@@ -125,15 +145,21 @@ public class CarrierGenerator implements Runnable {
 
                         // Check and log attributes of all carriers
                         HAGRIDUtils.checkAndLogCarrierAttributes(carriers);
+                        hagrid.core.simulation.CarrierInputValidator.validate(carriers, vehicleTypes, scenario.getNetwork());
+
 
                         LOGGER.info("Carrier generation completed.");
                         
 
-                        new CarrierPlanWriter(carriers).write(hagridConfig.io().deliveryCarriersUnrouted());
-                        LOGGER.info("Written: {}", hagridConfig.io().deliveryCarriersUnrouted());
-
-                        new CarrierVehicleTypeWriter(vehicleTypes).write(hagridConfig.io().vehicleTypesOutput());
-                        LOGGER.info("Written: {}", hagridConfig.io().vehicleTypesOutput());
+                        hagrid.core.util.OutputFileSet.publish(List.of(
+                                        new hagrid.core.util.OutputFileSet.Artifact(
+                                                        java.nio.file.Path.of(hagridConfig.io().deliveryCarriersUnrouted()),
+                                                        p -> new CarrierPlanWriter(carriers).write(p.toString())),
+                                        new hagrid.core.util.OutputFileSet.Artifact(
+                                                        java.nio.file.Path.of(hagridConfig.io().vehicleTypesOutput()),
+                                                        p -> new CarrierVehicleTypeWriter(vehicleTypes).write(p.toString()))));
+                        scenario.addScenarioElement("carriers", carriers);
+                        transaction.commit();
                         // HAGRIDUtils.convertDemandFromParcelsToShapeFile(carriers,
                         // "phd/output/delivery_carriers.shp");
 
@@ -141,6 +167,10 @@ public class CarrierGenerator implements Runnable {
 
                 } catch (Exception e) {
                         LOGGER.error("Error generating carriers", e);
+                        throw new IllegalStateException("Carrier generation failed", e);
+                } finally {
+                        // Release temporary geocoding views after this pipeline stage.
+                        generationAccess = null;
                 }
         }
 
@@ -171,14 +201,13 @@ public class CarrierGenerator implements Runnable {
          * network.
          *
          * @param deliveries   Map containing the deliveries sorted by carrier ID.
-         * @param subNetwork   The network used for parcel services.
          * @param hubList
          * @param vehicleTypes
          * @param mergeThreshold Fixed carrier merge threshold (parcels). Carriers below this get merged.
          * @return The generated carriers.
          */
         private Carriers generateCarriersAndCarrierServices(final Map<String, ArrayList<Delivery>> deliveries,
-                        final Network subNetwork, CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
+                        CarrierVehicleTypes vehicleTypes, Map<Id<Hub>, Hub> hubList,
                         int mergeThreshold, int maxServiceSize) {
                 final Carriers carriers = new Carriers();
                 Map<String, Double> adjustedDeliveryRates = adjustDeliveryRatesConsideringB2B(initializeDeliveryRate(),
@@ -189,16 +218,15 @@ public class CarrierGenerator implements Runnable {
                         final ArrayList<Delivery> carrierDeliveries = entry.getValue();
 
                         final Carrier carrier = CarriersUtils.createCarrier(Id.create(carrierID, Carrier.class));
-                        CarriersUtils.setCarrierMode(carrier, "car");
 
                         setupCarrierAttributes(carrier, carrierID);
 
                         try {
-                                addCarrierServicesToCarriers(carrier, carrierDeliveries, subNetwork,
+                                addCarrierServicesToCarriers(carrier, carrierDeliveries,
                                                 adjustedDeliveryRates);
                                 addCarrierVehiclesToCarrier(carrier, hubList);
                         } catch (ServiceCreationException e) {
-                                LOGGER.error(carrierID + ": Error creating carrier services", e);
+                                throw new IllegalArgumentException(carrierID + ": error creating carrier services", e);
                         }
 
                         return carrier;
@@ -208,7 +236,6 @@ public class CarrierGenerator implements Runnable {
 
                 LOGGER.info("Carriers generated: {}", carriers.getCarriers().size());
 
-                scenario.addScenarioElement("carriers", carriers);
 
                 return carriers;
         }
@@ -450,6 +477,13 @@ public class CarrierGenerator implements Runnable {
                         CarrierMergeLog mergeLog) {
                 Logger LOGGER = LogManager.getLogger(getClass());
 
+                if (maxServiceSize <= 0) throw new IllegalArgumentException("Maximum merged services must be positive");
+                var mergeAccess = new CarrierMergeAccess(scenario.getNetwork());
+                var merger = new CarrierMergeService();
+                var medians = new IdentityHashMap<Carrier, Coord>();
+                java.util.function.Function<Carrier, Coord> median = carrier ->
+                        medians.computeIfAbsent(carrier, GeoUtils::getMedianCoordOfStoredServiceCoords);
+
                 // Helper: sum parcel demand of a carrier
                 java.util.function.ToIntFunction<Carrier> parcelDemand = c -> c.getServices().values().stream()
                                 .mapToInt(CarrierService::getCapacityDemand).sum();
@@ -487,11 +521,13 @@ public class CarrierGenerator implements Runnable {
                         for (Carrier smallCarrier : new ArrayList<>(initialSmall)) {
                                 if (carriersToRemove.contains(smallCarrier.getId()))
                                         continue;
-                                Coord smallCoord = GeoUtils.getMedianCoordOfStoredServiceCoords(smallCarrier);
+                                Coord smallCoord = median.apply(smallCarrier);
                                 Carrier nearestLarge = initialLarge.stream()
+                                                .filter(big -> mergeAccess.canMerge(smallCarrier, big))
+                                                .filter(big -> (long) big.getServices().size() + smallCarrier.getServices().size() <= maxServiceSize)
                                                 .min(Comparator.comparingDouble(big -> CoordUtils.calcEuclideanDistance(
                                                                 smallCoord,
-                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(big))))
+                                                                median.apply(big))))
                                                 .orElse(null);
 
                                 if (nearestLarge != null) {
@@ -500,8 +536,8 @@ public class CarrierGenerator implements Runnable {
                                         int tgtServicesBefore = nearestLarge.getServices().size();
                                         int tgtParcelsBefore = parcelDemand.applyAsInt(nearestLarge);
 
-                                        smallCarrier.getServices().values()
-                                                        .forEach(svc -> CarriersUtils.addService(nearestLarge, svc));
+                                        merger.merge(nearestLarge, smallCarrier);
+                                                medians.remove(nearestLarge); medians.remove(smallCarrier);
                                         carriersToRemove.add(smallCarrier.getId());
                                         LOGGER.info("[Small->Large Merge] Merged carrier '{}' into '{}'",
                                                         smallCarrier.getId(), nearestLarge.getId());
@@ -520,6 +556,7 @@ public class CarrierGenerator implements Runnable {
                                         final double DIST_WEIGHT = 1.0;
                                         final double FILL_WEIGHT = 0;
                                         Carrier fallbackTarget = initialSmall.stream()
+                                                        .filter(other -> mergeAccess.canMerge(smallCarrier, other))
                                                         .filter(c -> !c.getId().equals(smallCarrier.getId()))
                                                         .filter(c -> !carriersToRemove.contains(c.getId()))
                                                         .filter(c -> (c.getServices().size() + smallCarrier
@@ -527,8 +564,7 @@ public class CarrierGenerator implements Runnable {
                                                         .min(Comparator.comparingDouble(other -> {
                                                                 double dist = CoordUtils.calcEuclideanDistance(
                                                                                 smallCoord,
-                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                other));
+                                                                                median.apply(other));
                                                                 double projectedFillRatio = (other.getServices().size()
                                                                                 + smallCarrier.getServices().size())
                                                                                 / (double) maxServiceSize;
@@ -541,8 +577,8 @@ public class CarrierGenerator implements Runnable {
                                                 int srcParcels = parcelDemand.applyAsInt(smallCarrier);
                                                 int tgtParcelsBefore = parcelDemand.applyAsInt(fallbackTarget);
                                                 int before = fallbackTarget.getServices().size();
-                                                smallCarrier.getServices().values().forEach(
-                                                                s -> CarriersUtils.addService(fallbackTarget, s));
+                                                merger.merge(fallbackTarget, smallCarrier);
+                                                medians.remove(fallbackTarget); medians.remove(smallCarrier);
                                                 int after = fallbackTarget.getServices().size();
                                                 carriersToRemove.add(smallCarrier.getId());
                                                 double dist = CoordUtils.calcEuclideanDistance(smallCoord, GeoUtils
@@ -573,8 +609,7 @@ public class CarrierGenerator implements Runnable {
                                                                                 .getServices().size()) > maxServiceSize)
                                                                 .sorted(Comparator.comparingDouble(c -> CoordUtils
                                                                                 .calcEuclideanDistance(smallCoord,
-                                                                                                GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                                c))))
+                                                                                                median.apply(c))))
                                                                 .limit(3)
                                                                 .map(c -> {
                                                                         int combined = c.getServices().size()
@@ -621,13 +656,14 @@ public class CarrierGenerator implements Runnable {
                                 for (Carrier smallCarrier : new ArrayList<>(smallDyn)) {
                                         if (carriersToRemove.contains(smallCarrier.getId()))
                                                 continue;
-                                        Coord smallCoord = GeoUtils.getMedianCoordOfStoredServiceCoords(smallCarrier);
+                                        Coord smallCoord = median.apply(smallCarrier);
                                         Carrier nearestLarge = largeDyn.stream()
+                                                        .filter(big -> mergeAccess.canMerge(smallCarrier, big))
+                                                .filter(big -> (long) big.getServices().size() + smallCarrier.getServices().size() <= maxServiceSize)
                                                         .min(Comparator.comparingDouble(
                                                                         big -> CoordUtils.calcEuclideanDistance(
                                                                                         smallCoord,
-                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                        big))))
+                                                                                        median.apply(big))))
                                                         .orElse(null);
                                         if (nearestLarge != null) {
                                                 int srcServices = smallCarrier.getServices().size();
@@ -635,8 +671,8 @@ public class CarrierGenerator implements Runnable {
                                                 int tgtServicesBefore = nearestLarge.getServices().size();
                                                 int tgtParcelsBefore = parcelDemand.applyAsInt(nearestLarge);
 
-                                                smallCarrier.getServices().values().forEach(
-                                                                svc -> CarriersUtils.addService(nearestLarge, svc));
+                                                merger.merge(nearestLarge, smallCarrier);
+                                                medians.remove(nearestLarge); medians.remove(smallCarrier);
                                                 carriersToRemove.add(smallCarrier.getId());
                                                 LOGGER.info("[Small->Large Merge][it={}] '{}' -> '{}'", iteration,
                                                                 smallCarrier.getId(), nearestLarge.getId());
@@ -655,6 +691,7 @@ public class CarrierGenerator implements Runnable {
                                                 final double DIST_WEIGHT = 0.75;
                                                 final double FILL_WEIGHT = 0.25;
                                                 Carrier fallbackTarget = smallDyn.stream()
+                                                                .filter(other -> mergeAccess.canMerge(smallCarrier, other))
                                                                 .filter(c -> !c.getId().equals(smallCarrier.getId()))
                                                                 .filter(c -> !carriersToRemove.contains(c.getId()))
                                                                 .filter(c -> (c.getServices().size() + smallCarrier
@@ -663,8 +700,7 @@ public class CarrierGenerator implements Runnable {
                                                                 .min(Comparator.comparingDouble(other -> {
                                                                         double dist = CoordUtils.calcEuclideanDistance(
                                                                                         smallCoord,
-                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                        other));
+                                                                                        median.apply(other));
                                                                         double projectedFillRatio = (other.getServices()
                                                                                         .size()
                                                                                         + smallCarrier.getServices()
@@ -679,13 +715,12 @@ public class CarrierGenerator implements Runnable {
                                                         int srcParcels = parcelDemand.applyAsInt(smallCarrier);
                                                         int tgtParcelsBefore = parcelDemand.applyAsInt(fallbackTarget);
                                                         int before = fallbackTarget.getServices().size();
-                                                        smallCarrier.getServices().values().forEach(s -> CarriersUtils
-                                                                        .addService(fallbackTarget, s));
+                                                        merger.merge(fallbackTarget, smallCarrier);
+                                                medians.remove(fallbackTarget); medians.remove(smallCarrier);
                                                         int after = fallbackTarget.getServices().size();
                                                         carriersToRemove.add(smallCarrier.getId());
                                                         double dist = CoordUtils.calcEuclideanDistance(smallCoord,
-                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                        fallbackTarget));
+                                                                        median.apply(fallbackTarget));
                                                         double fillPct = (after / (double) maxServiceSize) * 100.0;
                                                         LOGGER.info("[Small->Small Merge][it={}] '{}' -> '{}' | dist={}.1f added={} newSize={} fill={}.1f%% (<= {})",
                                                                         iteration,
@@ -718,8 +753,7 @@ public class CarrierGenerator implements Runnable {
                                                                         .sorted(Comparator.comparingDouble(
                                                                                         c -> CoordUtils.calcEuclideanDistance(
                                                                                                         smallCoord,
-                                                                                                        GeoUtils.getMedianCoordOfStoredServiceCoords(
-                                                                                                                        c))))
+                                                                                                        median.apply(c))))
                                                                         .limit(3)
                                                                         .map(c -> {
                                                                                 int combined = c.getServices().size()
@@ -815,9 +849,6 @@ public class CarrierGenerator implements Runnable {
                 // Initialize the carrier type attribute to CarrierType = delivery
                 carrier.getAttributes().putAttribute("carrierType", "delivery");
 
-                // Set the carrier mode to "car"
-                // TODO: Add an implementation for all modes etc.
-                CarriersUtils.setCarrierMode(carrier, "car");
         }
 
         /**
@@ -838,12 +869,11 @@ public class CarrierGenerator implements Runnable {
          *
          * @param carrier           The carrier to which services are to be added.
          * @param carrierDeliveries The deliveries for the carrier.
-         * @param subNetwork        The network used for parcel services.
          * @param deliveryRates     The delivery rates for each provider.
          * @throws ServiceCreationException if a service cannot be created.
          */
         private void addCarrierServicesToCarriers(final Carrier carrier, final ArrayList<Delivery> carrierDeliveries,
-                        final Network subNetwork, final Map<String, Double> deliveryRates)
+                        final Map<String, Double> deliveryRates)
                         throws ServiceCreationException {
 
                 // Retrieve the provider attribute from the carrier
@@ -854,8 +884,12 @@ public class CarrierGenerator implements Runnable {
                         throw new IllegalStateException("Delivery rate not available for provider: " + provider);
                 }
 
+                String mode = carrierVehicleFactory.networkModeFor(hagridConfig.getVehicleSizesForProvider(provider));
+                Network serviceNetwork = generationAccess().stops(mode);
+
                 int totalServices = 0;
                 int correctionFactor = 0;
+                int b2bCorrectionFactor = 0;
                 double totalWeightForCarrier = 0.0;
                 List<CarrierService> createdServices = new ArrayList<>();
 
@@ -863,7 +897,7 @@ public class CarrierGenerator implements Runnable {
                 double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
 
                 // Sample a daily bias around zero (in percentage points)
-                double dailyBias = random.nextGaussian() * sigmaPercent; // DHL: ±2.5%, others: ±5%
+                double dailyBias = randomStreams().forKey("demand.missed", hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(), "daily-bias")).nextGaussian() * sigmaPercent; // DHL: ±2.5%, others: ±5%
                 carrier.getAttributes().putAttribute("dailyDeliveryBias", dailyBias);
 
                 // Iterate through each delivery associated with the carrier
@@ -893,7 +927,7 @@ public class CarrierGenerator implements Runnable {
 
                         // Find the nearest link in the sub-network for the delivery location
                         final Id<Link> linkId = NetworkUtils
-                                        .getNearestLinkExactly(subNetwork, carrierDelivery.getCoordinate())
+                                        .getNearestLinkExactly(serviceNetwork, carrierDelivery.getCoordinate())
                                         .getId();
 
                         // Create and add services for the carrier delivery
@@ -907,7 +941,8 @@ public class CarrierGenerator implements Runnable {
                                                 carrierDelivery,
                                                 totalServices++, serviceWeights);
                                 createdServices.add(service);
-                                correctionFactor++; // Increment correction factor for each split
+                                correctionFactor++; // Every extra segment affects the total service count.
+                                if (carrierDelivery.getParcelType() == ParcelType.B2B) b2bCorrectionFactor++;
                                 LOGGER.debug("Incremented correction factor. New value: {}", correctionFactor);
                         }
 
@@ -932,6 +967,7 @@ public class CarrierGenerator implements Runnable {
                 // Update the correction factor in the summary
                 final HAGRIDSummary summary = (HAGRIDSummary) HAGRIDUtils.getScenarioElementAs("summary", scenario);
                 summary.setCorrectionFactor(summary.getCorrectionFactor() + correctionFactor);
+                summary.setB2bCorrectionFactor(summary.getB2bCorrectionFactor() + b2bCorrectionFactor);
 
                 LOGGER.debug("Total weight for carrier {}: {}", carrier.getId(), totalWeightForCarrier);
         }
@@ -986,6 +1022,12 @@ public class CarrierGenerator implements Runnable {
                         service.getAttributes().putAttribute("provider",
                                         carrier.getAttributes().getAttribute("provider"));
                         service.getAttributes().putAttribute("coord", carrierDelivery.getCoordinate());
+                        if (carrierDelivery.getStopId() != null) service.getAttributes().putAttribute("stop_id", carrierDelivery.getStopId());
+                        if (carrierDelivery.getStrIdx() != null) service.getAttributes().putAttribute("str_idx", carrierDelivery.getStrIdx());
+                        if (carrierDelivery.getSectionId() != null) service.getAttributes().putAttribute("section_id", carrierDelivery.getSectionId());
+                        if (carrierDelivery.getSide() != null) service.getAttributes().putAttribute("side", carrierDelivery.getSide());
+                        if (carrierDelivery.getPart() != null) service.getAttributes().putAttribute("part", carrierDelivery.getPart());
+                        if (carrierDelivery.getPositionM() != null) service.getAttributes().putAttribute("position_m", carrierDelivery.getPositionM());
                         service.getAttributes().putAttribute("type", carrierDelivery.getParcelType());
                         service.getAttributes().putAttribute("carrierMode", carrierDelivery.getDeliveryMode());
                         service.getAttributes().putAttribute("postalcode", carrierDelivery.getPostalCode());
@@ -1049,6 +1091,8 @@ public class CarrierGenerator implements Runnable {
         private void determineMissedParcels(final Carrier carrier, final CarrierService service, final double rate) {
 
                 final int amount = service.getCapacityDemand();
+                var random = randomStreams().forKey("demand.missed",
+                        hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(), service.getId().toString()));
                 int missed = 0;
                 final ArrayList<Id<CarrierService>> missedDeliveries = new ArrayList<>();
 
@@ -1093,13 +1137,6 @@ public class CarrierGenerator implements Runnable {
         private void addCarrierVehiclesToCarrier(final Carrier carrier,
                         final Map<Id<Hub>, Hub> hubs) {
 
-                // Find the closest hub for the carrier based on its ID and number of parcels
-                Hub closestHub = getClosestHub(carrier, hubs);
-
-                // Set hub attributes for the carrier
-                carrier.getAttributes().putAttribute("hub", closestHub);
-                carrier.getAttributes().putAttribute("hubId", closestHub.getId().toString());
-
                 // Retrieve start and end times from configuration
                 Object providerAttribute = carrier.getAttributes().getAttribute("provider");
                 String provider = providerAttribute == null ? "default"
@@ -1111,88 +1148,50 @@ public class CarrierGenerator implements Runnable {
 
                 List<String> vehicleSizes = hagridConfig.getVehicleSizesForProvider(provider);
                 List<Integer> dispatchHours = hagridConfig.getDispatchHours(provider);
+                String mode = carrierVehicleFactory.networkModeFor(vehicleSizes);
+                var depot = generationAccess().selectDepot(carrier, hubs.values(), mode);
+                Hub closestHub = depot.hub();
+                List<CarrierVehicle> vehicles = new ArrayList<>();
 
-                // Add vehicles to the carrier respecting provider-specific deployment profiles
+                // Prepare the fleet before publishing vehicles or reserving hub capacity.
                 if (!dispatchHours.isEmpty()) {
                         for (int startTime : dispatchHours) {
                                 for (String sizeAlias : vehicleSizes) {
                                         CarrierVehicle vehicle = carrierVehicleFactory.createCEPVehicle(
-                                                        closestHub.getLink(),
+                                                        depot.link(),
                                                         closestHub.getId().toString(), startTime, maxRouteDuration,
-                                                        sizeAlias);
-                                        CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                                                        sizeAlias, randomStreams().forKey("dispatch.departure",
+                                                                hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(),
+                                                                        depot.link().toString(), Integer.toString(startTime), sizeAlias)));
+                                        vehicles.add(vehicle);
                                 }
                         }
                 } else {
                         for (int startTime = start; startTime <= end; startTime++) {
                                 for (String sizeAlias : vehicleSizes) {
                                         CarrierVehicle vehicle = carrierVehicleFactory.createCEPVehicle(
-                                                        closestHub.getLink(),
+                                                        depot.link(),
                                                         closestHub.getId().toString(), startTime, maxRouteDuration,
-                                                        sizeAlias);
-                                        CarriersUtils.addCarrierVehicle(carrier, vehicle);
+                                                        sizeAlias, randomStreams().forKey("dispatch.departure",
+                                                                hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(),
+                                                                        depot.link().toString(), Integer.toString(startTime), sizeAlias)));
+                                        vehicles.add(vehicle);
                                 }
                         }
                 }
+
+                vehicles.forEach(vehicle -> CarriersUtils.addCarrierVehicle(carrier, vehicle));
+                CarrierModeResolver.assign(carrier);
+                int parcels = carrier.getServices().values().stream().mapToInt(CarrierService::getCapacityDemand).sum();
+                carrier.getAttributes().putAttribute("numberOfParcels", parcels);
+                carrier.getAttributes().putAttribute("hub", closestHub);
+                carrier.getAttributes().putAttribute("hubId", closestHub.getId().toString());
+                closestHub.increaseAssignedSupplyDemand(parcels);
 
                 // Log the creation of the carrier and its services
                 LOGGER.debug("Created Carrier {} with a number of {} services", carrier.getId(),
                                 carrier.getServices().values().size());
 
-        }
-
-        /**
-         * Finds the closest hub with enough capacity for the given number of parcels.
-         *
-         * @param carrier The carrier with services to be assigned to a hub.
-         * @param hubList A map of hub IDs to Hub objects.
-         * @return The closest Hub with sufficient capacity.
-         */
-        private static Hub getClosestHub(Carrier carrier, Map<Id<Hub>, Hub> hubList) {
-
-                // Create a GeometryFactory for point creation
-                GeometryFactory geometryFactory = new GeometryFactory();
-
-                // Determine the number of parcels for the carrier
-                int numberOfParcels = carrier.getServices().values().stream()
-                                .mapToInt(CarrierService::getCapacityDemand)
-                                .sum();
-                carrier.getAttributes().putAttribute("numberOfParcels", numberOfParcels);
-
-                // Extract the provider from the carrier's attributes
-                String provider = (String) carrier.getAttributes().getAttribute("provider");
-
-                // Find the closest hub
-                Optional<Hub> closestHub = carrier.getServices().values().stream()
-                                .flatMap(service -> {
-                                        Coord serviceCoord = (Coord) service.getAttributes().getAttribute("coord");
-                                        Point servicePoint = geometryFactory
-                                                        .createPoint(new Coordinate(serviceCoord.getX(),
-                                                                        serviceCoord.getY()));
-                                        return hubList.values().stream()
-                                                        .filter(hub -> hub.getProvider().contains(provider)
-                                                                        && hub.hasCapacity(numberOfParcels))
-                                                        .map(hub -> new Object[] { hub, servicePoint, hub.getCoord() });
-                                })
-                                .min(Comparator.comparingDouble(hubServiceCoord -> NetworkUtils.getEuclideanDistance(
-                                                ((Point) hubServiceCoord[1]).getX(),
-                                                ((Point) hubServiceCoord[1]).getY(),
-                                                ((Coord) hubServiceCoord[2]).getX(),
-                                                ((Coord) hubServiceCoord[2]).getY())))
-                                .map(hubServiceCoord -> (Hub) hubServiceCoord[0]);
-
-                // Throw an exception if no suitable hub is found
-                if (!closestHub.isPresent()) {
-                        throw new IllegalStateException("No suitable hub found for provider: " + provider);
-                }
-
-                Hub foundHub = closestHub.get();
-                // Increase the assigned supply demand for the closest hub
-                foundHub.increaseAssignedSupplyDemand(numberOfParcels);
-
-                // Log the found hub
-                LOGGER.debug("Found hub: {} for provider: {}", closestHub.get().getId(), provider);
-                return foundHub;
         }
 
         /**
@@ -1205,11 +1204,7 @@ public class CarrierGenerator implements Runnable {
 
                 LOGGER.info("Validating carrier missed deliveries...");
 
-                try {
-                        validateMissedParcelDeliveries(carriers);
-                } catch (ServiceCreationException e) {
-                        LOGGER.error("Error validating missed deliveries", e);
-                }
+                validateMissedParcelDeliveries(carriers);
                 LOGGER.info("Validation of carrier missed deliveries completed.");
 
                 LOGGER.info("Validating carrier services...");
@@ -1239,6 +1234,7 @@ public class CarrierGenerator implements Runnable {
                                 .mapToInt(CarrierService::getCapacityDemand)
                                 .sum();
 
+                final int b2bCorrectionFactor = summary.getB2bCorrectionFactor();
                 final int correctionFactor = summary.getCorrectionFactor(); // Get the correction factor from the
                                                                             // summary
                 LOGGER.info(String.format("Correction factor for Delivery Size Adjustment: %d", correctionFactor));
@@ -1258,11 +1254,11 @@ public class CarrierGenerator implements Runnable {
                                                         summary.getTotalParcels(), totalParcels));
                 }
 
-                if (totalB2BServices != summary.getTotalB2BDeliveries() + correctionFactor) {
+                if (totalB2BServices != summary.getTotalB2BDeliveries() + b2bCorrectionFactor) {
                         validationErrors.append(
                                         String.format("Validation failed: Total B2B deliveries do not match. Expected %d, but got %d.%n",
                                                         summary.getTotalB2BDeliveries(),
-                                                        totalB2BServices - correctionFactor));
+                                                        totalB2BServices - b2bCorrectionFactor));
                 }
 
                 if (totalB2BParcels != summary.getTotalB2BParcels()) {
@@ -1426,7 +1422,7 @@ public class CarrierGenerator implements Runnable {
                         LOGGER.info(String.format("Total deliveries match: %d.", totalServices - correctionFactor));
                         LOGGER.info(String.format("Total parcels match: %d.", totalParcels));
                         LOGGER.info(String.format("Total B2B deliveries match: %d.",
-                                        totalB2BServices - correctionFactor));
+                                        totalB2BServices - b2bCorrectionFactor));
                         LOGGER.info(String.format("Total B2B parcels match: %d.", totalB2BParcels));
                 }
 
@@ -1527,26 +1523,10 @@ public class CarrierGenerator implements Runnable {
          * @param carriers The list of carriers to validate.
          * @throws ServiceCreationException if validation fails.
          */
-        private void validateMissedParcelDeliveries(Carriers carriers) throws ServiceCreationException {
+        private void validateMissedParcelDeliveries(Carriers carriers) {
                 for (Carrier carrier : carriers.getCarriers().values()) {
-                        int expectedMissedDeliveries = (int) carrier.getAttributes().getAttribute("missedParcels");
-                        @SuppressWarnings("unchecked")
-                        List<Id<CarrierService>> missedDeliveries = (List<Id<CarrierService>>) carrier.getAttributes()
-                                        .getAttribute("missedParcelsAsList");
-                        int missedSize = 0; // Initialize missedSize to 0
-                        if (missedDeliveries != null) {
-                                missedSize = missedDeliveries.size();
-                        }
-
-                        if (missedSize != expectedMissedDeliveries) {
-                                throw new ServiceCreationException("Validation failed for carrier: " + carrier.getId() +
-                                                ". Expected missed parcel deliveries: " + expectedMissedDeliveries +
-                                                ", Actual missed parcel deliveries: " + missedDeliveries.size(), null);
-                        }
-                        carrier.getAttributes().putAttribute("missedParcelDeliveriesAsString",
-                                        missedDeliveries.toString());
+                        CarrierMetadata.rebuild(carrier, CarrierMetadata.missedEntries(carrier));
                 }
-
                 LOGGER.info("Validation passed for all carriers and their missed parcel deliveries.");
         }
 

@@ -22,16 +22,23 @@ public final class ModularCapacityChangeTask extends DefaultDrtCapacityChangeTas
 
     private final String tourId;
     private final boolean swapBack;
+    private final double intendedDuration;
 
     public ModularCapacityChangeTask(double beginTime, double endTime, Link link,
                                      DvrpLoad changedCapacity, String tourId, boolean swapBack) {
+        this(beginTime,endTime,link,changedCapacity,tourId,swapBack,hagrid.core.config.ModularSettings.DEFAULT_RETOOLING_SECONDS);
+    }
+    public ModularCapacityChangeTask(double beginTime,double endTime,Link link,DvrpLoad changedCapacity,
+            String tourId,boolean swapBack,double intendedDuration) {
         super(beginTime, endTime, link, changedCapacity);
+        if(!Double.isFinite(intendedDuration)||intendedDuration<=0) throw new IllegalArgumentException("Intended swap duration must be finite and positive");
+        this.intendedDuration=intendedDuration;
         this.tourId = tourId;
         this.swapBack = swapBack;
     }
 
     /** Retooling is a fixed concept parameter - the intended duration under timing updates. */
-    public double getIntendedDuration() { return Modular.RETOOLING_S; }
+    public double getIntendedDuration() { return intendedDuration; }
     public String getTourId() { return tourId; }
     /** false = swap-out (pax -> cargo) at excursion start; true = swap-back at the end. */
     public boolean isSwapBack() { return swapBack; }

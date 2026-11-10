@@ -60,6 +60,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DisplayName("ModularTourDispatcher")
 class ModularTourDispatcherTest {
+    @Test void actualLateStartIsReportedOnceAndRemainingChainIsRechecked() {
+        var vehicle=fixtureVehicle(depotLink,"window_vehicle");
+        var tour=new ModularFreightTour("window_tour","dhl",0,depotLink,T0,120,75600,
+                List.of(new ModularFreightTour.Stop(depotLink,120,2,T0+420,T0+420)));
+        assertThat(scheduler.schedule(vehicle,tour,T0)).isPresent();
+        var dispatcher=new ModularTourDispatcher("drt",List.of(tour),0.5,
+                fakeFleet(Map.of(vehicle.getId(),vehicle)),scheduleInquiry,scheduler,network,events);
+        var stop=vehicle.getSchedule().getTasks().stream().filter(ModularFreightStopTask.class::isInstance)
+                .map(ModularFreightStopTask.class::cast).findFirst().orElseThrow();
+        stop.setEndTime(stop.getEndTime()+60); stop.setBeginTime(stop.getBeginTime()+60);
+        dispatcher.observeTaskStart(vehicle,stop,T0+480);
+        dispatcher.observeTaskStart(vehicle,stop,T0+480);
+        assertThat(recorded(ModularTourEvent.Phase.TIME_WINDOW_VIOLATION)).hasSize(1);
+        assertThat(recorded(ModularTourEvent.Phase.TIME_WINDOW_VIOLATION).get(0).getParcels()).isEqualTo(2);
+        assertThat(recorded(ModularTourEvent.Phase.CHAIN_VIOLATION)).hasSize(1);
+    }
 
     /**
      * n1 --vehA(200m)--> n2 --depot(50m)--> n3 --mid(50m)--> n4 --vehB(300000m)--> n5, every hop

@@ -25,6 +25,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DisplayName("Architecture rules: core / hannover / lausitz")
 class ArchitectureRulesTest {
+    @Test void productCodeDoesNotCastToAConcreteZoneProvider() throws IOException {
+        var casts=Pattern.compile("\\(\\s*ZoneBasedTransportCosts\\s*\\)|instanceof\\s+ZoneBasedTransportCosts\\b");
+        var violations=mainSources().filter(p->{
+            try{return casts.matcher(codeWithoutComments(p)).find();}
+            catch(IOException failure){throw new RuntimeException(failure);}
+        }).map(Path::toString).toList();
+        assertThat(violations).isEmpty();
+    }
+    @Test void modalAdapterDoesNotOwnGraphsOrCaches() throws IOException {
+        var code=codeWithoutComments(MAIN.resolve("core/routing/ModalTransportCosts.java"));
+        assertThat(code).doesNotContain("class Engine", "class Mode", "new SpeedyDijkstra", "new ConcurrentHashMap");
+        assertThat(Files.isRegularFile(MAIN.resolve("core/routing/ModalRoutingEngine.java"))).isTrue();
+    }
 
     private static final Path MAIN = Path.of("src", "main", "java", "hagrid");
     // Keyed on the path relative to src/main/java/hagrid, NOT on the simple file name:
@@ -32,7 +45,7 @@ class ArchitectureRulesTest {
     // would wave both of them through.
     private static final Set<String> CORE_SWITCHBOARD = Set.of(
             "core/HagridPaths.java",
-            "core/simulation/HAGRIDScenarioBuilder.java",
+            "core/simulation/FreightScenarioConfiguration.java",
             "core/simulation/HAGRIDSimulationConfig.java",
             "core/simulation/SimulationRunnerUtils.java");
     // Heuristic, not a parser: string literals are not understood, so a "//" inside a
@@ -113,4 +126,16 @@ class ArchitectureRulesTest {
                     .isTrue();
         }
     }
-}
+
+    @Test
+    @DisplayName("simulation consumers use the routing contract instead of the concrete zone provider")
+    void simulationDoesNotDependOnConcreteZoneProvider() throws IOException {
+        Pattern concreteZone=Pattern.compile("\\bZoneBasedTransportCosts\\b");
+        List<String> violations=mainSources()
+                .filter(p->keyOf(p).startsWith("core/simulation/"))
+                .filter(p-> {
+                    try {return concreteZone.matcher(codeWithoutComments(p)).find();}
+                    catch(IOException failure){throw new RuntimeException(failure);}
+                }).map(Path::toString).toList();
+        assertThat(violations).isEmpty();
+    }}

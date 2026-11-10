@@ -90,6 +90,7 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
     static class CostAttributeWriter implements SumScoringFunction.BasicScoring {
         private final Carrier carrier;
         private final CarrierCostTracker tracker;
+        private boolean finished;
 
         CostAttributeWriter(Carrier carrier, CarrierCostTracker tracker) {
             this.carrier = carrier;
@@ -98,24 +99,12 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 
         @Override
         public void finish() {
-            carrier.getAttributes().putAttribute("costTotal", tracker.getTotalCosts());
-            carrier.getAttributes().putAttribute("costFix", tracker.fixCosts);
-            carrier.getAttributes().putAttribute("costDistance", tracker.distanceCosts);
-            carrier.getAttributes().putAttribute("costTime", tracker.timeCosts);
-            carrier.getAttributes().putAttribute("costActivity", tracker.activityCosts);
-            carrier.getAttributes().putAttribute("costOvertime", tracker.overtimeCosts);
-            carrier.getAttributes().putAttribute("costTimeWindowPenalty", tracker.timeWindowPenaltyCosts);
-            carrier.getAttributes().putAttribute("totalDistanceMeters", tracker.totalDistanceMeters);
-            carrier.getAttributes().putAttribute("totalTravelTimeSeconds", tracker.totalTravelTimeSeconds);
-            carrier.getAttributes().putAttribute("uTurnCount", tracker.uTurnCount);
-            LOGGER.debug("Carrier {} costs: total={} (fix={} dist={} time={} act={} ot={} tw={})",
-                    carrier.getId(), String.format("%.2f", tracker.getTotalCosts()),
-                    String.format("%.2f", tracker.fixCosts),
-                    String.format("%.2f", tracker.distanceCosts),
-                    String.format("%.2f", tracker.timeCosts),
-                    String.format("%.2f", tracker.activityCosts),
-                    String.format("%.2f", tracker.overtimeCosts),
-                    String.format("%.2f", tracker.timeWindowPenaltyCosts));
+            if (finished) return;
+            var snapshot = new hagrid.core.simulation.scoring.CarrierCostBreakdown(tracker.fixCosts,
+                    tracker.distanceCosts, tracker.timeCosts, tracker.activityCosts, tracker.overtimeCosts,
+                    tracker.timeWindowPenaltyCosts, tracker.totalDistanceMeters, tracker.totalTravelTimeSeconds, tracker.uTurnCount);
+            hagrid.core.simulation.scoring.CarrierCostAttributeWriter.write(carrier, snapshot);
+            finished = true;
         }
 
         @Override
@@ -136,18 +125,25 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
         private double score;
         private final CarrierCostTracker costTracker;
 
-        private final double timeParameter = 0.008;
-
-        private final double missedTimeWindowPenalty = 5.0;
-        private final double maxWorkDuration = 7.5 * 3600;
+        private final double timeParameter;
+        private final double missedTimeWindowPenalty;
+        private final double overtimePenalty;
+        private final double maxWorkDuration;
 
         private double startTime = -1;
-        
+
         private boolean isExceedingWorkTime = false;
 
         public DriversActivityScoring(CarrierCostTracker costTracker) {
-            super();
+            this(costTracker, hagrid.core.config.CarrierScoringSettings.defaults());
+        }
+
+        public DriversActivityScoring(CarrierCostTracker costTracker, hagrid.core.config.CarrierScoringSettings settings) {
             this.costTracker = costTracker;
+            this.timeParameter = settings.activityCostPerSecond();
+            this.missedTimeWindowPenalty = settings.timeWindowPenaltyPerSecond();
+            this.overtimePenalty = settings.overtimePenalty();
+            this.maxWorkDuration = settings.maxWorkDurationSeconds();
         }
 
         @Override
@@ -178,12 +174,13 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
             	if(startTime < 0) {
             		startTime = actStartTime;
             	}
-//            	
+//
             	if((actStartTime - startTime) > maxWorkDuration) {
 
             		if(!isExceedingWorkTime) {
-            			score += (missedTimeWindowPenalty * -1);
-            			costTracker.overtimeCosts += missedTimeWindowPenalty;
+                        score -= overtimePenalty;
+                        costTracker.overtimeCosts += overtimePenalty;
+                        isExceedingWorkTime = true;
             		}
             	}
 
@@ -226,42 +223,25 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
     }
 
     static class VehicleEmploymentScoring implements SumScoringFunction.BasicScoring {
-
         private final Carrier carrier;
         private final CarrierCostTracker costTracker;
-
+        private boolean finished;
+        private double score;
         public VehicleEmploymentScoring(Carrier carrier, CarrierCostTracker costTracker) {
-            super();
-            this.carrier = carrier;
-            this.costTracker = costTracker;
+            this.carrier = carrier; this.costTracker = costTracker;
         }
-
-        @Override
-        public void finish() {
-
-        }
-
-        @Override
-        public double getScore() {
-            double score = 0.;
+        @Override public void finish() {
+            if (finished) return;
+            double fixed = 0;
             CarrierPlan selectedPlan = carrier.getSelectedPlan();
-            if(selectedPlan == null) return 0.;            
-            for(ScheduledTour tour : selectedPlan.getScheduledTours()){    
-            	
-            	double tourStartTime = tour.getDeparture();
-            	
-                if(!tour.getTour().getTourElements().isEmpty()){
-                    double fixCost = tour.getVehicle().getType().getVehicleCostInformation().getFix();
-                    score += (-1) * fixCost;
-                    costTracker.fixCosts += fixCost;
-                }
+            if (selectedPlan != null) for (ScheduledTour tour : selectedPlan.getScheduledTours()) {
+                if (!tour.getTour().getTourElements().isEmpty()) fixed += tour.getVehicle().getType().getCostInformation().getFixedCosts();
             }
-
-            return score;
+            if (!Double.isFinite(fixed) || fixed < 0) throw new IllegalStateException("Invalid vehicle fixed costs");
+            costTracker.fixCosts += fixed; score = -fixed; finished = true;
         }
-
+        @Override public double getScore() { return score; }
     }
-
 	/**
 	 * Example leg scoring.
 	 *
@@ -369,8 +349,7 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 				// Same link can appear consecutively (loop) — not a U-turn
 				if (current.getId().equals(next.getId())) continue;
 				// Reverse-link check: current goes A→B, next goes B→A
-				if (current.getToNode().getId().equals(next.getFromNode().getId())
-						&& current.getFromNode().getId().equals(next.getToNode().getId())) {
+				if (hagrid.core.routing.OriginalRoadReverse.roadTransition(current,next)) {
 					count++;
 				}
 			}
@@ -429,22 +408,50 @@ public class ScoringFunctions implements CarrierScoringFunctionFactory{
 
     private final Network network;
     private final double uTurnPenaltyCost;
+    private final hagrid.core.config.CarrierScoringSettings scoringSettings;
+    private hagrid.core.simulation.scoring.CarrierExecutionLedger executionLedger;
+    private hagrid.core.config.ResolvedHagridConfig executionConfig;
+    private hagrid.core.routing.SectionBindingCompanion.BoundContext sectionBinding;
+
+    public ScoringFunctions(Network network, hagrid.core.config.ResolvedHagridConfig config, hagrid.core.simulation.scoring.CarrierExecutionLedger ledger, java.util.Map<String,hagrid.core.routing.SectionBindingCompanion.TurnEvidence> evidence) {
+        this(network,config,ledger); this.sectionBinding=hagrid.core.routing.SectionBindingCompanion.bind(network,evidence);
+    }
+
+    public ScoringFunctions(Network network, hagrid.core.config.ResolvedHagridConfig config,
+            hagrid.core.simulation.scoring.CarrierExecutionLedger ledger) {
+        this(network,config);
+        this.executionLedger=java.util.Objects.requireNonNull(ledger);
+        this.executionConfig=config;
+    }
 
     public ScoringFunctions(Network network, double uTurnPenaltyCost) {
         super();
         this.network = network;
         this.uTurnPenaltyCost = uTurnPenaltyCost;
+        this.scoringSettings = hagrid.core.config.CarrierScoringSettings.defaults();
+    }
+
+    public ScoringFunctions(Network network, hagrid.core.config.ResolvedHagridConfig config) {
+        this.network = network;
+        this.uTurnPenaltyCost = config.tourRules().uTurnPenaltyCost();
+        this.scoringSettings = config.scoring();
     }
 
 
 	@Override
 	public ScoringFunction createScoringFunction(Carrier carrier) {
-		CarrierCostTracker costTracker = new CarrierCostTracker();
+        if(carrier.getAttributes().getAttribute(hagrid.core.routing.SectionBindingCompanion.MARKER)!=null) {
+            if(executionLedger==null||sectionBinding==null)throw new IllegalStateException("Missing verified section turn evidence or execution ledger for "+carrier.getId());
+            sectionBinding.forCarrier(carrier,network);
+        }
+        if (executionLedger != null) return new hagrid.core.simulation.scoring.CarrierScoringFunction(
+                carrier,executionLedger,executionConfig,network,sectionBinding);
+        CarrierCostTracker costTracker = new CarrierCostTracker();
 
 		SumScoringFunction sf = new SumScoringFunction();
 		SimpleDriversLegScoring driverLegScoring = new SimpleDriversLegScoring(carrier, network, uTurnPenaltyCost, costTracker);
 		VehicleEmploymentScoring vehicleEmployment = new VehicleEmploymentScoring(carrier, costTracker);
-		DriversActivityScoring actScoring = new DriversActivityScoring(costTracker);
+		DriversActivityScoring actScoring = new DriversActivityScoring(costTracker, scoringSettings);
 		CostAttributeWriter costWriter = new CostAttributeWriter(carrier, costTracker);
 		sf.addScoringFunction(driverLegScoring);
 		sf.addScoringFunction(vehicleEmployment);

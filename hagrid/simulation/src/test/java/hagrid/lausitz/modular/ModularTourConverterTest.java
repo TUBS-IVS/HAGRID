@@ -37,6 +37,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DisplayName("ModularTourConverter - jsprit plan -> dispatchable ModularFreightTours")
 class ModularTourConverterTest {
+    @Test void preservesActualServiceStartWindowsThroughConversion() {
+        var service=CarrierService.Builder.newInstance(Id.create("window",CarrierService.class),Id.createLinkId("car_1"))
+                .setCapacityDemand(2).setServiceDuration(120)
+                .setServiceStartTimeWindow(org.matsim.freight.carriers.TimeWindow.newInstance(27000,28800)).build();
+        var carriers=fixtureCarriersWithOneTour("dhl",Id.createLinkId("car_1"),26000,75600,List.of(service));
+        var stop=ModularTourConverter.convert(carriers,buildCarNet(),buildDrtNet()).get(0).stops().get(0);
+        assertThat(stop.earliestStart()).isEqualTo(27000);
+        assertThat(stop.latestStart()).isEqualTo(28800);
+    }
 
     @Test
     @DisplayName("converts a routed tour: id, times, latestEnd, stops snapped to the drt network")

@@ -1,0 +1,8 @@
+8 [main] INFO com.graphhopper.jsprit.core.problem.VehicleRoutingProblem - setup problem: [fleetSize=FINITE][#jobs=1][#vehicles=1][#vehicleTypes=1][transportCost=hagrid.core.routing.ModalTransportCosts@3c4bc9fc][activityCosts=hagrid.core.routing.HagridActivityCosts@680362a]
+113 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm - algorithm starts: [maxIterations=2]
+117 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm - iterations start
+121 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm$Counter - iterations 1
+131 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm$Counter - iterations 2
+134 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm - iterations end at 2 iterations
+134 [main] INFO com.graphhopper.jsprit.analysis.toolbox.StopWatch - computation time [in sec]: 0.021
+134 [main] INFO com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm - took 0.021 seconds

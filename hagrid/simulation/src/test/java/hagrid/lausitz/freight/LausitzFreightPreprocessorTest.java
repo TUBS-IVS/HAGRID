@@ -24,6 +24,7 @@ import org.matsim.freight.carriers.Carriers;
 import org.matsim.freight.carriers.CarrierVehicleTypeWriter;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.ScheduledTour;
+import org.matsim.freight.carriers.Tour;
 import org.matsim.testcases.MatsimTestUtils;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
@@ -38,6 +39,49 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("LausitzFreightPreprocessor")
 class LausitzFreightPreprocessorTest {
+    @org.junit.jupiter.api.BeforeEach
+    @org.junit.jupiter.api.AfterEach
+    void resetProcessCacheOwnership() {
+        JspritPlanCache.resetJvmScenarioForTests();
+    }
+
+    @Test void centralWaveAndDeliveryRulesReachRealCarrierOutputAndCache(@TempDir Path tmp) throws Exception {
+        var f=stageLmdFixture(tmp);
+        Path file=Files.writeString(tmp.resolve("hagrid.properties"),
+                "run.concept=lmd_baseline\nrun.studyArea=LAUSITZ_HOYERSWERDA\nrun.date=2025-05-13\n"
+                +"lmd.dispatchHours=9\nlmd.waveVehicleCopies=2\nfleet.defaultDispatchJitterMinutes=0\n"
+                +"fleet.largeDispatchJitterMinutes=0\nproviders.deliveryRates.dhl=0\nproviders.deliveryRates.hermes=0\n"
+                +"lmd.dhlDailyBiasPercent=0\nlmd.defaultDailyBiasPercent=0\nlmd.b2bDeliveryRatePercent=0\n");
+        var cfg=hagrid.core.simulation.SimulationRunnerUtils.parseScenario("config="+file.toString().replace('\\','/'));
+        JarFingerprint.setOverrideForTests("central-wave-test");
+        try {
+            Path out=tmp.resolve("a.xml");
+            var miss=LausitzFreightPreprocessor.runConfigured(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),out.toString(),1,null,tmp.resolve("cache"),cfg.getResolvedRoutingConfig());
+            var hit=LausitzFreightPreprocessor.runConfigured(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("b.xml").toString(),1,null,tmp.resolve("cache"),cfg.getResolvedRoutingConfig());
+            assertThat(miss.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(hit.status()).isEqualTo(JspritCacheResult.Status.HIT);
+            assertThat(Files.mismatch(out,tmp.resolve("b.xml"))).isEqualTo(-1);
+            var carriers=new Carriers(); new CarrierPlanXmlReader(carriers,f.types()).readFile(out.toString());
+            for(var carrier:carriers.getCarriers().values()) {
+                assertThat(carrier.getSelectedPlan().getScheduledTours()).allSatisfy(tour->assertThat(tour.getDeparture()).isEqualTo(32400));
+                assertThat(carrier.getCarrierCapabilities().getCarrierVehicles().keySet().stream()
+                        .map(Object::toString).filter(id->!id.contains("_t")).toList()).hasSize(2).allSatisfy(id->assertThat(id).contains("_h9_"));
+                assertThat(carrier.getAttributes().getAttribute("missedParcels")).isEqualTo(carrier.getAttributes().getAttribute("numberOfParcels"));
+            }
+            Files.writeString(file,Files.readString(file).replace("lmd.dispatchHours=9","lmd.dispatchHours=10"));
+            var changed=hagrid.core.simulation.SimulationRunnerUtils.parseScenario("config="+file.toString().replace('\\','/'));
+            // This assertion compares distinct production launches. Same-JVM bypass is
+            // separately covered by JspritPlanCacheTest; keep that guard enabled in production.
+            JspritPlanCache.resetJvmScenarioForTests();
+            var fresh=LausitzFreightPreprocessor.runConfigured(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("c.xml").toString(),1,null,tmp.resolve("cache"),changed.getResolvedRoutingConfig());
+            assertThat(fresh.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(fresh.key()).isNotEqualTo(miss.key());
+        } finally { JarFingerprint.setOverrideForTests(null); }
+    }
+
 
     @RegisterExtension
     public MatsimTestUtils utils = new MatsimTestUtils();
@@ -67,36 +111,79 @@ class LausitzFreightPreprocessorTest {
     }
 
     /**
-     * Pins the LMD_BASELINE carrier output to a golden hash. The Baseline is explicitly out of
-     * scope for the district-depot change (spec 2026-08-17 §D2), and
-     * {@code LmdCarrierBuilder.buildCore} documents an RNG draw-order contract that the overlay
-     * rework touches. If this fails, the Baseline moved and every existing Baseline run became
-     * incomparable.
-     *
-     * <p>Golden re-pinned 2026-11-03 (hannover-consistency-fixes Task 7): the output gained exactly
-     * one {@code dailyDeliveryBias} attribute line per carrier. With those lines removed the file
-     * hashes to the previous golden 6ce4bf6e...49628, i.e. routes and departures are unchanged.
+     * Pins the jsprit 2.0 LMD baseline route output. The clean-branch
+     * dailyDeliveryBias addition only adds one persisted attribute per carrier,
+     * so the hash omits exactly those lines while the semantic check below
+     * verifies their seeded values. The jsprit 1.8 hash remains separate.
      */
     @Test
-    void baselineCarrierOutputIsUnchanged(@TempDir Path tmp) throws Exception {
+    void baselineCarrierOutputMatchesJsprit2Reference(@TempDir Path tmp) throws Exception {
         StagedFixture fixture = stageLmdFixture(tmp);
         Path out = tmp.resolve("baseline_carriers.xml");
         LausitzFreightPreprocessor.run(fixture.demandShp().toString(), fixture.depotCsv().toString(),
                 fixture.netFile().toString(), fixture.typesFile().toString(), out.toString(),
                 /*jspritIterations*/ 5);
 
-        String actual = sha256(out);
+        assertGoldenCarrierSemantics(out, fixture.types());
+        String actual = sha256WithoutDailyBias(out);
         Path golden = Path.of("src/test/resources/baseline-golden/carriers-golden.sha256");
         assertThat(golden).as("golden file missing - see plan Task 1 Step 2").exists();
         assertThat(actual)
-                .as("Baseline carrier output changed. The Baseline is out of scope for the "
-                        + "district-depot change (spec §D2) - investigate before proceeding.")
+                .as("Current jsprit 2.0 baseline output changed; inspect the semantic and XML "
+                        + "differences before updating the version-specific reference.")
                 .isEqualTo(Files.readString(golden).trim());
     }
 
-    private static String sha256(Path file) throws Exception {
+    @Test void configuredPreprocessingResourcesAreUsedAndCannotReuseTheOtherThreadCountsCache(@TempDir Path tmp) throws Exception {
+        var f=stageLmdFixture(tmp);var cache=tmp.resolve("cache-resources");
+        var single=new hagrid.core.config.ResolvedHagridConfig.Resources(1,java.util.OptionalInt.of(1));
+        var concurrent=new hagrid.core.config.ResolvedHagridConfig.Resources(2,java.util.OptionalInt.of(1));
+        JarFingerprint.setOverrideForTests("resource-propagation-test");
+        try {
+            var a=LausitzFreightPreprocessor.run(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("a.xml").toString(),1,null,cache,single);
+            // A changed thread budget starts a separate production launch/cache scope.
+            JspritPlanCache.resetJvmScenarioForTests();
+            var b=LausitzFreightPreprocessor.run(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("b.xml").toString(),1,null,cache,concurrent);
+            var c=LausitzFreightPreprocessor.run(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("c.xml").toString(),1,null,cache,concurrent);
+            assertThat(a.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(b.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(c.status()).isEqualTo(JspritCacheResult.Status.HIT);
+            assertThat(b.key()).isNotEqualTo(a.key());assertThat(c.key()).isEqualTo(b.key());
+            assertGoldenCarrierSemantics(tmp.resolve("c.xml"),f.types());
+        }finally{JarFingerprint.setOverrideForTests(null);}
+    }
+    @Test void configuredModularResourcesSurviveTheRealPreprocessingAndCacheHit(@TempDir Path tmp) throws Exception {
+        var f=stageLmdFixture(tmp);var area=tmp.resolve("resource-area.shp");
+        DrtE2eFixtures.writeSquareShapefile(area,1000);
+        var resources=new hagrid.core.config.ResolvedHagridConfig.Resources(2,java.util.OptionalInt.of(1));
+        JarFingerprint.setOverrideForTests("modular-resources-test");
+        try {
+            var a=LausitzFreightPreprocessor.runModular(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("a.xml").toString(),1,area.toString(),12600,List.of(),300,tmp.resolve("cache"),resources);
+            var b=LausitzFreightPreprocessor.runModular(f.demandShp().toString(),f.depotCsv().toString(),f.netFile().toString(),
+                    f.typesFile().toString(),tmp.resolve("b.xml").toString(),1,area.toString(),12600,List.of(),300,tmp.resolve("cache"),resources);
+            assertThat(a.status()).isEqualTo(JspritCacheResult.Status.MISS);
+            assertThat(b.status()).isEqualTo(JspritCacheResult.Status.HIT);
+            assertThat(Files.mismatch(tmp.resolve("a.xml"),tmp.resolve("b.xml"))).isEqualTo(-1);
+            var restored=new Carriers();
+            new CarrierPlanXmlReader(restored,ModularVehicleTypes.createCapsuleTypes(f.typesFile().toString())).readFile(tmp.resolve("b.xml").toString());
+            assertThat(restored.getCarriers()).isNotEmpty();
+            assertThat(restored.getCarriers().values()).allSatisfy(c->assertThat(c.getSelectedPlan()).isNotNull());
+        }finally{JarFingerprint.setOverrideForTests(null);}
+    }
+    private static String sha256WithoutDailyBias(Path file) throws Exception {
+        String xml = Files.readString(file, java.nio.charset.StandardCharsets.UTF_8);
+        var matcher = java.util.regex.Pattern.compile(
+                "(?m)^[ \\t]*<attribute name=\"dailyDeliveryBias\"[^\\r\\n]*</attribute>\\r?\\n")
+                .matcher(xml);
+        int removed = 0;
+        while (matcher.find()) removed++;
+        assertThat(removed).as("one persisted daily bias per baseline carrier").isEqualTo(2);
         java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-        md.update(Files.readAllBytes(file));
+        md.update(matcher.replaceAll("").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return java.util.HexFormat.of().formatHex(md.digest());
     }
 
@@ -121,12 +208,45 @@ class LausitzFreightPreprocessorTest {
             assertThat(r2.status()).isEqualTo(JspritCacheResult.Status.HIT);
             assertThat(r2.sourceRun()).isEqualTo("RUN_A");
             assertThat(Files.mismatch(out1, out2)).isEqualTo(-1L);
-            // same fixture and jspritIterations as baselineCarrierOutputIsUnchanged: the hit is the golden output
-            assertThat(sha256(out2)).isEqualTo(Files.readString(
+            assertGoldenCarrierSemantics(out2, fixture.types());
+            // Same inputs/budget as baselineCarrierOutputMatchesJsprit2Reference.
+            assertThat(sha256WithoutDailyBias(out2)).isEqualTo(Files.readString(
                     Path.of("src/test/resources/baseline-golden/carriers-golden.sha256")).trim());
         } finally {
             JarFingerprint.setOverrideForTests(null);
             JspritPlanCache.resetJvmScenarioForTests();
+        }
+    }
+
+    private void assertGoldenCarrierSemantics(Path output, CarrierVehicleTypes types) {
+        Carriers carriers = new Carriers();
+        new CarrierPlanXmlReader(carriers, types).readFile(output.toString());
+        assertThat(carriers.getCarriers()).containsOnlyKeys(
+                Id.create("dhl", Carrier.class), Id.create("hermes", Carrier.class));
+        for (Carrier carrier : carriers.getCarriers().values()) {
+            var planning = hagrid.core.config.LmdPlanningSettings.defaults();
+            String provider = carrier.getId().toString();
+            double expectedBias = new Random(planning.missedDeliverySeed() + provider.hashCode())
+                    .nextGaussian() * planning.dailyBiasPercent(provider);
+            assertThat(carrier.getAttributes().getAttribute("dailyDeliveryBias"))
+                    .as("persisted seeded daily bias for " + provider).isEqualTo(expectedBias);
+            var plan = carrier.getSelectedPlan();
+            assertThat(plan).isNotNull();
+            assertThat(plan.getScheduledTours()).hasSize(1);
+            var served = plan.getScheduledTours().stream()
+                    .flatMap(t -> t.getTour().getTourElements().stream())
+                    .filter(Tour.ServiceActivity.class::isInstance).map(Tour.ServiceActivity.class::cast)
+                    .map(a -> a.getService().getId()).toList();
+            assertThat(served).containsExactlyInAnyOrderElementsOf(carrier.getServices().keySet());
+            var expectedJobIds = carrier.getId().toString().equals("dhl")
+                    ? List.of("dhl_0", "dhl_1", "dhl_2") : List.of("hermes_0");
+            assertThat(served.stream().map(Object::toString).toList())
+                    .containsExactlyInAnyOrderElementsOf(expectedJobIds);
+            assertThat(carrier.getAttributes().getAttribute("unassignedJobs")).isEqualTo(0);
+            // DHL: co-located stops, only EUR 170 fixed cost. Hermes: EUR 170 + 4000 m * 0.0004.
+            double expectedScore = carrier.getId().toString().equals("dhl") ? -170.0 : -171.6;
+            assertThat(plan.getJspritScore()).isCloseTo(expectedScore,
+                    org.assertj.core.data.Offset.offset(1e-7));
         }
     }
 
@@ -194,7 +314,7 @@ class LausitzFreightPreprocessorTest {
      * <p>The depot csv carries a {@code site} column (dhl -&gt; wittichenau, hermes -&gt; hoy_sued,
      * mirroring the real depot naming, spec 2026-08-17 D7) so {@link DrtDepotReader#readBySite}
      * can resolve it; {@link LmdDepotLoader#load} only reads columns 0-2, so this is invisible to
-     * the Baseline path and does not move {@code baselineCarrierOutputIsUnchanged}'s golden hash.
+     * the Baseline path and does not move {@code baselineCarrierOutputMatchesJsprit2Reference}'s golden hash.
      */
     private StagedFixture stageLmdFixture(Path dir) throws Exception {
         // tiny grid network (car), 4 links in a square
@@ -485,10 +605,10 @@ class LausitzFreightPreprocessorTest {
 
     @Test
     @DisplayName("routeWithDurationCap records jobs jsprit cannot assign as carrier attributes")
-    void tracksUnassignedJobs() {
+    void rejectsUnassignedJobsBeforePublishingTheBatch() {
         // Square car network, depot on a_b. dhl gets one routable stop (2 parcels) plus one stop whose
         // 500 parcels exceed every van capacity (230) -> jsprit can never insert it and must leave it
-        // unassigned. hermes is fully assignable -> must carry explicit zero attributes.
+        // unassigned. No member of a failed group may publish plans or outcome attributes.
         Network net = NetworkUtils.createNetwork();
         Node a = NetworkUtils.createAndAddNode(net, Id.createNodeId("a"), new Coord(0, 0));
         Node b = NetworkUtils.createAndAddNode(net, Id.createNodeId("b"), new Coord(1000, 0));
@@ -526,22 +646,16 @@ class LausitzFreightPreprocessorTest {
         carriers.addCarrier(dhl);
         carriers.addCarrier(hermes);
 
-        LausitzFreightPreprocessor.routeWithDurationCap(carriers, net, types, /*jsprit*/ 10);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                LausitzFreightPreprocessor.routeWithDurationCap(carriers, net, types, /*jsprit*/ 10))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("dhl_1");
 
-        // dhl: the oversized stop (service id dhl_1) is unassigned; the routable one is still scheduled
-        assertThat(dhl.getAttributes().getAttribute("unassignedJobs"))
-                .as("dhl must report exactly the oversized stop as unassigned").isEqualTo(1);
-        assertThat(dhl.getAttributes().getAttribute("unassignedParcels"))
-                .as("parcel-level count of the unassigned stop").isEqualTo(500);
-        assertThat((String) dhl.getAttributes().getAttribute("unassignedJobsAsString"))
-                .as("unassigned service ids are persisted for the dashboard").contains("dhl_1");
-        assertThat(dhl.getSelectedPlan().getScheduledTours())
-                .as("the routable dhl stop must still be driven").isNotEmpty();
-
-        // hermes: fully assignable -> explicit zeros (dashboard reads the attribute unconditionally)
-        assertThat(hermes.getAttributes().getAttribute("unassignedJobs")).isEqualTo(0);
-        assertThat(hermes.getAttributes().getAttribute("unassignedParcels")).isEqualTo(0);
-        assertThat((String) hermes.getAttributes().getAttribute("unassignedJobsAsString")).isEqualTo("[]");
+        // Diagnostics travel with the exception; canonical outcomes belong to successful groups.
+        assertThat(dhl.getAttributes().getAttribute("unassignedJobs")).isNull();
+        assertThat(dhl.getAttributes().getAttribute("unassignedParcels")).isNull();
+        assertThat(dhl.getAttributes().getAttribute("unassignedJobsAsString")).isNull();
+        assertThat(dhl.getSelectedPlan()).as("an incomplete candidate is not a success plan").isNull();
+        assertThat(hermes.getSelectedPlan()).as("the failed batch publishes no other plan").isNull();
     }
 
     /** Adds a 50km, 13.9 m/s directed link (~1h travel) named {@code <from>_<to>}. */

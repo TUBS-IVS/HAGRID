@@ -27,7 +27,7 @@ public final class ModularTourEvent extends Event {
      * into {@code output_events.xml.gz} to say the one thing "this tour did not fit".
      */
     public enum Phase { PLANNED, EXPIRED, SPLICE_REJECTED, DISPATCHED, SWAP_DONE, STOP_SERVED,
-        COMPLETED }
+        COMPLETED, TIME_WINDOW_VIOLATION, CHAIN_VIOLATION }
 
     private final String tourId;
     private final Phase phase;
@@ -96,6 +96,12 @@ public final class ModularTourEvent extends Event {
     public static ModularTourEvent stopServed(double time, String tourId, Id<DvrpVehicle> vehicle,
                                               int parcels) {
         return new ModularTourEvent(time, tourId, Phase.STOP_SERVED, vehicle, parcels, 0, 0, 0, 0);
+    }
+    public static ModularTourEvent timeWindowViolation(double time,String tourId,Id<DvrpVehicle> vehicle,int parcels) {
+        return new ModularTourEvent(time,tourId,Phase.TIME_WINDOW_VIOLATION,vehicle,parcels,0,0,0,0);
+    }
+    public static ModularTourEvent chainViolation(double time,String tourId,Id<DvrpVehicle> vehicle) {
+        return new ModularTourEvent(time,tourId,Phase.CHAIN_VIOLATION,vehicle,0,0,0,0,0);
     }
     public static ModularTourEvent completed(double time, String tourId, Id<DvrpVehicle> vehicle) {
         return new ModularTourEvent(time, tourId, Phase.COMPLETED, vehicle, 0, 0, 0, 0, 0);

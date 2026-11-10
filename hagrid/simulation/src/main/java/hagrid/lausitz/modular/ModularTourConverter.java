@@ -183,7 +183,8 @@ public final class ModularTourConverter {
                 stops.add(new ModularFreightTour.Stop(
                         toDrtLink(service.getServiceLinkId(), carNetwork, drtNetwork),
                         service.getServiceDuration(),
-                        service.getCapacityDemand()));
+                        service.getCapacityDemand(), service.getServiceStartTimeWindow().getStart(),
+                        service.getServiceStartTimeWindow().getEnd()));
             }
         }
         String tourId = carrierId + "_t" + index;

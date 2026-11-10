@@ -21,7 +21,11 @@
     <maven.compiler.release>21</maven.compiler.release>
     <matsim.version>2025.0</matsim.version>
     <geotools.version>31.1</geotools.version>
-    <jsprit.version>1.8</jsprit.version>
+    <jts.version>1.20.0</jts.version>
+    <jsprit.version>2.0.0</jsprit.version>
+    <!-- jsprit 2.0 publishes Core/Analysis; legacy algorithm XML remains in IO 1.8.
+         JspritCompatibilityTest exercises the IO entry points against Core 2.0. -->
+    <jsprit.io.version>1.8</jsprit.io.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
     <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>

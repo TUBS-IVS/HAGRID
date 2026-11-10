@@ -10,22 +10,19 @@ import java.util.Random;
  */
 public class WeightGenerator {
 
-    private static Random RANDOM = new Random();
+    private static volatile long legacySeed = 42L;
+    private final java.util.random.RandomGenerator random;
 
-    /**
-     * Set the global random seed for deterministic behavior.
-     * @param seed the seed to use
-     */
-    public static void setGlobalRandomSeed(long seed) {
-        RANDOM = new Random(seed);
-    }
+    /** Compatibility only: sets the seed for future legacy instances, never another live generator. */
+    @Deprecated
+    public static void setGlobalRandomSeed(long seed) { legacySeed = seed; }
 
     // Default weight classes and probabilities for regular parcels
-    private static final Map<String, Double> defaultWeightClasses = new HashMap<>();
+    private static final Map<String, Double> defaultWeightClasses = new java.util.TreeMap<>();
     private static final Map<String, double[]> defaultWeightRanges = new HashMap<>();
 
     // Default weight classes and probabilities for B2B parcels
-    private static final Map<String, Double> defaultB2BWeightClasses = new HashMap<>();
+    private static final Map<String, Double> defaultB2BWeightClasses = new java.util.TreeMap<>();
     private static final Map<String, double[]> defaultB2BWeightRanges = new HashMap<>();
 
     // Default alpha and beta parameters for regular parcels
@@ -106,11 +103,15 @@ public class WeightGenerator {
     /**
      * Constructs a WeightGenerator with default parameters.
      */
-    public WeightGenerator() {
-        this.weightClasses = new HashMap<>(defaultWeightClasses);
-        this.weightRanges = new HashMap<>(defaultWeightRanges);
-        this.alphaParams = new HashMap<>(defaultAlphaParamsRegular);
-        this.betaParams = new HashMap<>(defaultBetaParamsRegular);
+    public WeightGenerator() { this(new Random(legacySeed)); }
+
+    public WeightGenerator(java.util.random.RandomGenerator random) {
+        this.random = java.util.Objects.requireNonNull(random, "random");
+        // Private defaults are initialized once; setters replace only this instance's references.
+        this.weightClasses = defaultWeightClasses;
+        this.weightRanges = defaultWeightRanges;
+        this.alphaParams = defaultAlphaParamsRegular;
+        this.betaParams = defaultBetaParamsRegular;
     }
 
     /**
@@ -123,7 +124,8 @@ public class WeightGenerator {
      */
     public WeightGenerator(Map<String, Double> weightClasses, Map<String, double[]> weightRanges,
                            Map<String, Double> alphaParams, Map<String, Double> betaParams) {
-        this.weightClasses = new HashMap<>(weightClasses);
+        this.random = new Random(legacySeed);
+        this.weightClasses = new java.util.TreeMap<>(weightClasses);
         this.weightRanges = new HashMap<>(weightRanges);
         this.alphaParams = new HashMap<>(alphaParams);
         this.betaParams = new HashMap<>(betaParams);
@@ -142,7 +144,7 @@ public class WeightGenerator {
         Map<String, Double> alphas = isB2B ? defaultAlphaParamsB2B : this.alphaParams;
         Map<String, Double> betas = isB2B ? defaultBetaParamsB2B : this.betaParams;
 
-        double randVal = RANDOM.nextDouble();
+        double randVal = random.nextDouble();
         double cumulativeProbability = 0.0;
         for (Map.Entry<String, Double> entry : classes.entrySet()) {
             cumulativeProbability += entry.getValue();
@@ -156,7 +158,7 @@ public class WeightGenerator {
                 return Math.round(weight * 100.0) / 100.0;
             }
         }
-        return Math.round(RANDOM.nextDouble() * 31.5 * 100.0) / 100.0;
+        return Math.round(random.nextDouble() * 31.5 * 100.0) / 100.0;
     }
 
     /**
@@ -182,7 +184,7 @@ public class WeightGenerator {
     private double gammaDistributionSample(double shape, double scale) {
         if (shape < 1) {
             shape += 1;
-            double u = RANDOM.nextDouble();
+            double u = random.nextDouble();
             return gammaDistributionSample(shape, scale) * Math.pow(u, 1.0 / shape);
         }
 
@@ -191,11 +193,11 @@ public class WeightGenerator {
         while (true) {
             double x, v;
             do {
-                x = RANDOM.nextGaussian();
+                x = random.nextGaussian();
                 v = 1.0 + c * x;
             } while (v <= 0);
             v = v * v * v;
-            double u = RANDOM.nextDouble();
+            double u = random.nextDouble();
             if (u < 1 - 0.0331 * (x * x) * (x * x) || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) {
                 return d * v * scale;
             }
@@ -208,7 +210,7 @@ public class WeightGenerator {
      * @param weightClasses Custom weight classes and probabilities.
      */
     public void setWeightClasses(Map<String, Double> weightClasses) {
-        this.weightClasses = new HashMap<>(weightClasses);
+        this.weightClasses = new java.util.TreeMap<>(weightClasses);
     }
 
     /**

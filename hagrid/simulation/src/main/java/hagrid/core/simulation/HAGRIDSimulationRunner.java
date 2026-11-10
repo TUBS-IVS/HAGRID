@@ -25,8 +25,6 @@ import java.util.List;
  *   <li>{@code tag}            — version tag appended to run ID (e.g. V1)</li>
  *   <li>{@code maxIter}        — MATSim iterations (default 150)</li>
  *   <li>{@code jspritIter}     — jsprit iterations (default 100)</li>
- *   <li>{@code zoneCaching}    — enable zone-based caching (default false)</li>
- *   <li>{@code zoneThreshold}  — zone caching threshold in m (default 1500 when enabled)</li>
  *   <li>{@code uTurnPenalty}   — score penalty per U-turn (default 1.0)</li>
  *   <li>{@code writeDashboard} — generate analysis dashboard after simulation (default false)</li>
  * </ul>
@@ -49,13 +47,12 @@ public class HAGRIDSimulationRunner {
         List<HAGRIDSimulationConfig> scenarios = SimulationRunnerUtils.parseScenarios(args);
         SimulationRunnerUtils.validateAll(scenarios);
 
-        boolean[] dashFlags = SimulationRunnerUtils.extractDashboardFlags(args);
 
         for (int i = 0; i < scenarios.size(); i++) {
             HAGRIDSimulationConfig cfg = scenarios.get(i);
             SimulationRunnerUtils.runSimulation(cfg);
 
-            if (dashFlags[i]) {
+            if (cfg.isWriteDashboard()) {
                 LOG.info("writeDashboard=true → generating dashboard...");
                 SimulationRunnerUtils.generateDashboard(cfg);
             }

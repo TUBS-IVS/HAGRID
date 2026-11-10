@@ -1,121 +1,76 @@
 package hagrid.hannover.demand;
 
 import com.google.inject.Inject;
+import hagrid.core.HagridConfig;
+import hagrid.core.routing.ModalRoutingNetwork;
+import hagrid.core.util.OutputFileSet;
+import hagrid.hannover.pipeline.PipelineStepException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.NetworkWriter;
-import org.matsim.api.core.v01.network.Node;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.network.algorithms.NetworkCleaner;
-import org.matsim.core.network.algorithms.TransportModeNetworkFilter;
 import org.matsim.core.network.io.MatsimNetworkReader;
-import hagrid.core.HagridConfig;
-import hagrid.core.util.Region;
+import org.matsim.core.scenario.MutableScenario;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.nio.file.Path;
+import java.util.List;
 
-/**
- * The NetworkProcessor class is responsible for processing the MATSim network,
- * adjusting link lengths and free speeds, and creating subnetworks based on specified criteria.
- * This class implements the Runnable interface to allow concurrent execution.
- */
+/** Owns the demand pipeline's single network import and publishes only fully prepared results. */
 public class NetworkProcessor implements Runnable {
-
-    // Logger instance for logging information, debug messages, and errors
     private static final Logger LOGGER = LogManager.getLogger(NetworkProcessor.class);
+    @Inject private Scenario scenario;
+    @Inject private HagridConfig hagridConfig;
 
-    @Inject
-    private Scenario scenario;
-    @Inject
-    private HagridConfig hagridConfig;
+    @Override public void run() { processNetwork(); }
 
-    @Override
-    public void run() {
-        processNetwork();
-    }
-
-    /**
-     * Processes the MATSim network by reading the network file, adjusting link lengths
-     * and free speeds, and creating subnetworks with eligible links.
-     */
     public void processNetwork() {
         try {
-            LOGGER.info("Starting network processing...");
-
-            // hagridConfig.addRegion(Region.HANNOVER);
-
-            // Read the network file
-            LOGGER.info("Reading the network file from path: {}", hagridConfig.getNetworkXmlPath());
-            Network network = scenario.getNetwork();
-            new MatsimNetworkReader(network).readFile(hagridConfig.getNetworkXmlPath());
-
-            // Adjust link lengths and free speeds
-            LOGGER.info("Adjusting link lengths and free speeds...");
+            if (!(scenario instanceof MutableScenario mutable)) {
+                throw new IllegalStateException("Network initialization requires a mutable demand scenario");
+            }
+            Network previous = scenario.getNetwork();
+            if (!previous.getNodes().isEmpty() || !previous.getLinks().isEmpty()
+                    || scenario.getScenarioElement("carFilteredNetwork") != null
+                    || scenario.getScenarioElement("parcelServiceNetwork") != null) {
+                throw new IllegalStateException("Demand network was already initialized; refusing a second import");
+            }
+            mutable.setNetwork(previous); // Check the demand lifecycle lock before reading or publishing files.
+            Network network = NetworkUtils.createNetwork(scenario.getConfig());
+            LOGGER.info("Reading demand network once: {}", hagridConfig.getNetworkXmlPath());
+            readNetwork(network, hagridConfig.getNetworkXmlPath());
             for (Link link : network.getLinks().values()) {
-                if (link.getLength() < hagridConfig.getMinLinkLength()) {
-                    link.setLength(hagridConfig.getMinLinkLength());
-                }
-                if (link.getFreespeed() < hagridConfig.getMinFreeSpeed()) {
-                    link.setFreespeed(hagridConfig.getMinFreeSpeed());
-                }
+                if (link.getLength() < hagridConfig.getMinLinkLength()) link.setLength(hagridConfig.getMinLinkLength());
+                if (link.getFreespeed() < hagridConfig.getMinFreeSpeed()) link.setFreespeed(hagridConfig.getMinFreeSpeed());
             }
-            LOGGER.info("Link adjustments completed.");
+            Network car = ModalRoutingNetwork.forMode(network, "car");
+            new NetworkCleaner().run(car);
+            Network parcel = ModalRoutingNetwork.forMode(car, "car", link ->
+                    isEligibleLink((String) link.getAttributes().getAttribute("osm:way:highway"), link.getFreespeed()));
+            publish(mutable, network, car, parcel);
+            LOGGER.info("Network processing completed: {} car links, {} parcel links", car.getLinks().size(), parcel.getLinks().size());
+        } catch (Exception failure) {
+            throw new PipelineStepException("Network Processing", failure);
+        }
+    }
 
-            // Filter network to only include car mode links
-            LOGGER.info("Filtering network to include only car mode links...");
-            Network carFilteredNetwork = NetworkUtils.createNetwork();
-            Set<String> carMode = new HashSet<>();
-            carMode.add("car");
-            new TransportModeNetworkFilter(network).filter(carFilteredNetwork, carMode);
-            LOGGER.info("Car mode network filtering completed.");
+    /** Single import boundary; also allows tests to count actual native reads. */
+    protected void readNetwork(Network network, String path) { new MatsimNetworkReader(network).readFile(path); }
 
-            NetworkCleaner cleaner = new NetworkCleaner();
-            cleaner.run(carFilteredNetwork);
-
-            // Create another filtered network based on custom criteria
-            LOGGER.info("Creating parcel service network based on custom criteria...");
-            Network parcelServiceNetwork = NetworkUtils.createNetwork();
-
-            // Add all nodes from the carFilteredNetwork to the parcelServiceNetwork
-            for (Node node : carFilteredNetwork.getNodes().values()) {
-                parcelServiceNetwork.addNode(node);
-            }
-
-            int totalLinks = carFilteredNetwork.getLinks().size(); // Total number of links in the carFilteredNetwork
-            LOGGER.info("Total number of links in the carFilteredNetwork: {}", totalLinks);
-            int addedLinks = 0; // Counter for the number of links added to the parcelServiceNetwork
-
-            // Iterate over all links in the carFilteredNetwork
-            for (Link link : carFilteredNetwork.getLinks().values()) {
-                String type = (String) link.getAttributes().getAttribute("osm:way:highway");
-
-                // Check if the link meets the eligibility criteria
-                if (isEligibleLink(type, link.getFreespeed())) {
-                    // Add the link to the parcelServiceNetwork if it meets the criteria
-                    parcelServiceNetwork.addLink(link);
-                    addedLinks++;
-                }
-            }
-
-            String output = hagridConfig.io().networkFiltered();
-            new NetworkWriter(carFilteredNetwork).write(output);
-            LOGGER.info("Written: {}", output);
-
-            LOGGER.info("Parcel service network created successfully with {} links added.", addedLinks);
-            LOGGER.info("Difference in number of links between carFilteredNetwork and parcel service network: {}", (totalLinks - addedLinks));
-
-            // Add the networks to the scenario
-            scenario.addScenarioElement("carFilteredNetwork", carFilteredNetwork);
-            scenario.addScenarioElement("parcelServiceNetwork", parcelServiceNetwork);
-
-
-        } catch (Exception e) {
-            // Log any exceptions that occur during the network processing
-            LOGGER.error("Error processing network", e);
+    private void publish(MutableScenario mutable, Network network, Network car, Network parcel) throws java.io.IOException {
+        try {
+            mutable.addScenarioElement("carFilteredNetwork", car);
+            mutable.addScenarioElement("parcelServiceNetwork", parcel);
+            OutputFileSet.publish(List.of(new OutputFileSet.Artifact(Path.of(hagridConfig.io().networkFiltered()),
+                    temporary -> new NetworkWriter(car).write(temporary.toString()))));
+            mutable.setNetwork(network);
+        } catch (java.io.IOException | RuntimeException failure) {
+            mutable.removeScenarioElement("parcelServiceNetwork");
+            mutable.removeScenarioElement("carFilteredNetwork");
+            throw failure;
         }
     }
 

@@ -2,6 +2,7 @@ package hagrid.core.routing;
 
 import java.util.concurrent.FutureTask;
 
+@Deprecated(forRemoval = false)
 public class CustomFutureTask<T> extends FutureTask<T> implements Comparable<CustomFutureTask<T>> {
     private final PrioritizedRunnable task;
 
@@ -11,7 +12,11 @@ public class CustomFutureTask<T> extends FutureTask<T> implements Comparable<Cus
      * @param task The runnable task.
      */
     public CustomFutureTask(Runnable task) {
-        super(task, null);
+        this(task,null);
+    }
+
+    public CustomFutureTask(Runnable task,T value) {
+        super(task,value);
         this.task = (PrioritizedRunnable) task;
     }
 

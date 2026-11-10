@@ -1,0 +1,15 @@
+{
+  "baseline": "afbaf33",
+  "jsprit_runtime": "1.8",
+  "matsim": "2025.0",
+  "matsim_freight_commit": "2db6789b6c3602c3f10487cdf4d01ad6fdc0c1be",
+  "upstream_jsprit_commit": "2a4ccbc2f53a39e936ee45d512bd54c8029cf9be",
+  "upstream_pom": "2.1.0-SNAPSHOT",
+  "published_jsprit": "2.0.0",
+  "java": "Eclipse Adoptium 21.0.7+6",
+  "jvm_heap": "1 GiB fixed",
+  "cpu_logical": 22,
+  "cpu_identifier": "Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "date": "2026-10-05T17:28:12.6005091+02:00"
+}

@@ -192,8 +192,8 @@ public final class LausitzDrtPreprocessor {
                 cfg.getRailTransitVehiclesFiltered(),
                 cfg.getFleetSize(),
                 capacity,
-                0.0,
-                86400.0
+                cfg.getResolvedRoutingConfig().drt().serviceBeginSeconds(),
+                cfg.getResolvedRoutingConfig().drt().serviceEndSeconds()
         );
 
         // Shared-Use only: inject the parcel subpopulation into the just-written, person-only
@@ -229,7 +229,8 @@ public final class LausitzDrtPreprocessor {
                     DeliveryDistrictBuilder.selectOpenDepots(depotCoords, cfg.getOpenDepots()),
                     Integer.MAX_VALUE);   // 1c never splits (spec D8) - maxJobsPerDistrict is a 1d-only concept
             ParcelAgentGenerator.Result r = ParcelAgentGenerator.generate(
-                    districts, area, drtNet, pop, 4711L);
+                    districts, area, drtNet, pop, cfg.getResolvedRoutingConfig().sharedUse().parcelSeed(),
+                    cfg.getResolvedRoutingConfig().sharedUse());
             LOG.info("SHAREDUSE: injected {} parcel-persons ({} parcels) into {}",
                     r.personsAdded(), r.parcels(), cfg.getPassengerPlansClipped());
             PopulationUtils.writePopulation(pop, cfg.getPassengerPlansClipped());

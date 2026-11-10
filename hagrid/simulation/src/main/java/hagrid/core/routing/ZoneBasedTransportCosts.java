@@ -29,16 +29,11 @@ import org.matsim.core.router.util.LeastCostPathCalculator.Path;
 import org.matsim.core.router.util.LeastCostPathCalculatorFactory;
 import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
-import org.matsim.core.utils.geometry.CoordUtils;
 import org.matsim.core.utils.misc.Counter;
 import org.matsim.freight.carriers.CarrierVehicle;
 import org.matsim.freight.carriers.jsprit.FiFoTravelTime;
-import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 import org.matsim.freight.carriers.jsprit.VehicleTypeDependentRoadPricingCalculator;
-import org.matsim.utils.objectattributes.attributable.Attributes;
-import org.matsim.utils.objectattributes.attributable.AttributesImpl;
 import org.matsim.vehicles.VehicleType;
-import org.matsim.vehicles.VehicleUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
@@ -46,52 +41,20 @@ import java.util.*;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
- * This calculates transport-times, transport-costs and the distance to cover
- * the distance from one location to another. It calculates these values based
- * on a {@link Network} to serve as {@link VehicleRoutingTransportCosts} in the
- * {@link VehicleRoutingProblem}. The distance includes the links of the path
- * and the fromLink and not the toLink.
+ * Legacy MATSim/jsprit adapter for live travel times, time bins and exact endpoints.
+ * Paths start after the origin link and include the destination link.
  *
- * <p>
- * It can be used with multiple threads. Note that each thread gets its own
- * leastCostPathCalculator. It is created only once and cached afterwards. Thus
- * it requires a threadSafe leastCostPathCalculatorFactory (the calculator
- * itself does not need to be thread-safe).
- *
- * <p>
- * If the client of this class requests cost-information to get from
- * from-location to to-location at a certain time and with a certain vehicle, it
- * looks up whether there is already an entry in the cache. If so, it returns
- * the cached value, if not it calculates new values with a
- * leastCostPathCalculator defined in here. It looks up the cached values
- * according to the {@link TransportDataKey}.
- *
- * <p>
- * Two TransportDataKeys are equal if the following data are equal</br>
- * - from-locations</br>
- * - to-locations</br>
- * - time and</br>
- * - vehicleTypes
- *
- * <p>
- * Keep in mind that if you have many locations, small time-bins and many
- * vehicleTypes, calculations get very time- and memory-consuming.
- *
- * @author stefan schröder
- *
+ * <p>Generation cache and worker ownership have separate components.
+ * Public builder, native counters, listeners and vehicle wrapper remain compatibility APIs.
+ * New frozen-context consumers use {@link ModalTransportCosts}.
  */
 @SuppressWarnings("deprecation")
-public class ZoneBasedTransportCosts implements VRPTransportCosts {
+public class ZoneBasedTransportCosts implements ReplanningTransportCosts {
 
 	private static final Logger LOGGER = LogManager.getLogger(ZoneBasedTransportCosts.class);
 
-	private final Map<Id<Link>, Integer> zoneCache = new ConcurrentHashMap<>();
 	private final Map<String, Id<Link>> idCache = new ConcurrentHashMap<>();
 
 	public interface InternalLeastCostPathCalculatorListener {
@@ -102,55 +65,12 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 	}
 
-	/**
-	 * This creates a matsim-vehicle {@link org.matsim.vehicles.Vehicle} from a
-	 * matsim-freight-vehicle {@link CarrierVehicle} and jsprit-vehicle .
-	 *
-	 * @author stefan schröder
-	 *
-	 */
-	public static class MatsimVehicleWrapper implements org.matsim.vehicles.Vehicle {
-
-		private final Id<org.matsim.vehicles.Vehicle> id;
-
-		private final org.matsim.vehicles.VehicleType type;
-
-		private final Attributes attributes = new AttributesImpl();
-
-		public MatsimVehicleWrapper(com.graphhopper.jsprit.core.problem.vehicle.Vehicle vehicle) {
-			this.id = Id.create(vehicle.getId(), org.matsim.vehicles.Vehicle.class);
-			this.type = makeType(vehicle.getType().getTypeId(), vehicle.getType().getMaxVelocity());
-		}
-
-		public MatsimVehicleWrapper(CarrierVehicle vehicle) {
-			this.id = vehicle.getId();
-			this.type = vehicle.getType();
-		}
-
-		// TODO: Anpassen mit Mode
-		private org.matsim.vehicles.VehicleType makeType(String typeId, double maxVelocity) {
-			org.matsim.vehicles.VehicleType vehicleTypeImpl = VehicleUtils
-					.createVehicleType(Id.create(typeId, VehicleType.class));
-			vehicleTypeImpl.setMaximumVelocity(maxVelocity);
-			return vehicleTypeImpl;
-		}
-
-		@Override
-		public Id<org.matsim.vehicles.Vehicle> getId() {
-			return id;
-		}
-
-		@Override
-		public org.matsim.vehicles.VehicleType getType() {
-			return type;
-		}
-
-		@Override
-		public Attributes getAttributes() {
-			return this.attributes;
-		}
-	}
-
+    /** Historical nested type retained for native callers. */
+    public static class MatsimVehicleWrapper extends LegacyRoutingVehicle {
+        public MatsimVehicleWrapper(Vehicle vehicle){super(vehicle,"car");}
+        private MatsimVehicleWrapper(Vehicle vehicle,String mode){super(vehicle,mode);}
+        public MatsimVehicleWrapper(CarrierVehicle vehicle){super(vehicle);}
+    }
 	/**
 	 * The key to cache {@link TransportData}.
 	 *
@@ -170,77 +90,10 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	 * @author stefan schröder
 	 *
 	 */
-	static class TransportDataKey {
-		private final String from;
-		private final String to;
-		private final double time;
-		private final String vehicleType;
+	private record TransportDataKey(Id<Link> from, Id<Link> to, double time,
+			String vehicleType, double maximumVelocity) {}
 
-		public TransportDataKey(String from, String to, double time, String vehicleType) {
-			super();
-			this.from = from;
-			this.to = to;
-			this.time = time;
-			this.vehicleType = vehicleType;
-		}
-
-		public String getFrom() {
-			return from;
-		}
-
-		public String getTo() {
-			return to;
-		}
-
-		public double getTime() {
-			return time;
-		}
-
-		public String getVehicleType() {
-			return vehicleType;
-		}
-
-		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + ((from == null) ? 0 : from.hashCode());
-			long temp;
-			temp = Double.doubleToLongBits(time);
-			result = prime * result + (int) (temp ^ (temp >>> 32));
-			result = prime * result + ((to == null) ? 0 : to.hashCode());
-			result = prime * result + ((vehicleType == null) ? 0 : vehicleType.hashCode());
-			return result;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (obj == null)
-				return false;
-			if (getClass() != obj.getClass())
-				return false;
-			TransportDataKey other = (TransportDataKey) obj;
-			if (from == null) {
-				if (other.from != null)
-					return false;
-			} else if (!from.equals(other.from))
-				return false;
-			if (Double.doubleToLongBits(time) != Double.doubleToLongBits(other.time))
-				return false;
-			if (to == null) {
-				if (other.to != null)
-					return false;
-			} else if (!to.equals(other.to))
-				return false;
-			if (vehicleType == null) {
-				return other.vehicleType == null;
-			} else
-				return vehicleType.equals(other.vehicleType);
-		}
-
-	}
+	private record VehicleKey(String id, String type, double maximumVelocity) {}
 
 	/**
 	 * Stores transport-costs, transport-times and the distance of travel.
@@ -262,376 +115,116 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 	}
 
-	/**
-	 * Calculates vehicle-type-dependent travelDisutility per link.
-	 *
-	 * <p>
-	 * Note that it uses
-	 * <code>vehicleType.getCostInformation().perDistanceUnit</code> and
-	 * <code>vehicleType.getCostInformation().perTimeUnit</code> to calculate time
-	 * and distance related transport costs.
-	 *
-	 * @author stefan
-	 *
-	 */
-	static class BaseVehicleTransportCosts implements TravelDisutility {
+    /** Compatibility configuration boundary; resolved new callers use the central HAGRID configuration. */
+    public static class Builder {
+        private final Network network;
+        private final Map<String,String> vehicleNetworkModes=new HashMap<>();
+        private final Map<String,VehicleRoutingDisutility.VariableCosts> typeSpecificCosts=new HashMap<>();
+        private final String defaultTypeId=UUID.randomUUID().toString();
 
-		private final TravelTime travelTime;
+        // Travel-time and objective policy.
+        private TravelTime travelTime=freeSpeedTravelTime();
+        private TravelDisutility baseDisutility;
+        private int timeSliceWidth=Integer.MAX_VALUE;
+        private boolean isFIFO;
 
-		private Map<String, VehicleTypeVarCosts> typeSpecificCosts = new HashMap<String, ZoneBasedTransportCosts.VehicleTypeVarCosts>();
 
-		/**
-		 * Constructs travelDisutility according to the builder.
-		 *
-		 */
-		private BaseVehicleTransportCosts(Map<String, VehicleTypeVarCosts> typeSpecificCosts, TravelTime travelTime) {
-			this.travelTime = travelTime;
-			this.typeSpecificCosts = typeSpecificCosts;
-		}
+        // Memory and worker reuse limits.
+        private int maximumCacheEntries=1_000_000;
+        private int routerPoolSize=Math.max(2,Runtime.getRuntime().availableProcessors());
+        private LeastCostPathCalculatorFactory leastCostPathCalculatorFactory;
 
-		@Override
-		public double getLinkTravelDisutility(Link link, double time, Person person,
-				org.matsim.vehicles.Vehicle vehicle) {
-			VehicleTypeVarCosts typeCosts = typeSpecificCosts.get(vehicle.getType().getId().toString());
-			if (typeCosts == null)
-				throw new IllegalStateException(
-						"type specific costs for " + vehicle.getType().getId().toString() + " are missing.");
-			double tt = travelTime.getLinkTravelTime(link, time, person, vehicle);
-			return typeCosts.perMeter * link.getLength() + typeCosts.perSecond * tt;
-		}
+        // Optional legacy road pricing.
+        private boolean withToll;
+        private VehicleTypeDependentRoadPricingCalculator roadPricingCalculator=new VehicleTypeDependentRoadPricingCalculator();
 
-		@Override
-		public double getLinkMinimumTravelDisutility(Link link) {
-			double minDisutility = Double.MAX_VALUE;
-			double free_tt = link.getLength() / link.getFreespeed();
-			for (VehicleTypeVarCosts c : typeSpecificCosts.values()) {
-				double disu = c.perMeter * link.getLength() + c.perSecond * free_tt;
-				if (disu < minDisutility)
-					minDisutility = disu;
-			}
-			return minDisutility;
-		}
+        public static Builder newInstance(Network network,Collection<VehicleType> types){return new Builder(network,types);}
+        public static Builder newInstance(Network network){return new Builder(network,Collections.emptyList());}
 
-	}
+        private Builder(Network network,Collection<VehicleType> types) {
+            this.network=Objects.requireNonNull(network,"network");
+            for(var type:types) {
+                vehicleNetworkModes.put(type.getId().toString(),type.hasNetworkMode()?type.getNetworkMode():"car");
+                typeSpecificCosts.put(type.getId().toString(),new VehicleRoutingDisutility.VariableCosts(
+                        type.getCostInformation().getCostsPerMeter(),type.getCostInformation().getCostsPerSecond()));
+            }
+            typeSpecificCosts.put(defaultTypeId,new VehicleRoutingDisutility.VariableCosts(1,0));
+        }
 
-	private static class VehicleTypeVarCosts {
-		final double perMeter;
-		final double perSecond;
+        /** Live link freespeed at entry time, capped by the vehicle's maximum speed. */
+        private static TravelTime freeSpeedTravelTime() {
+            return (link,time,person,vehicle)-> {
+                double speed=vehicle.getType().getMaximumVelocity()<link.getFreespeed(time)
+                        ?vehicle.getType().getMaximumVelocity():link.getFreespeed(time);
+                if(speed<=0)throw new IllegalStateException("velocity must be bigger than zero");
+                String mode;
+                try {mode=vehicle.getType().getNetworkMode();}
+                catch(NullPointerException missingMode){mode="car";}
+                // Historical compatibility penalty; modal graph filtering is owned by the factory.
+                return link.getLength()/(link.getAllowedModes().contains(mode)?speed:0.001);
+            };
+        }
 
-		VehicleTypeVarCosts(double perMeter, double perSecond) {
-			super();
-			this.perMeter = perMeter;
-			this.perSecond = perSecond;
-		}
-	}
+        public Builder setTravelTime(TravelTime time){travelTime=Objects.requireNonNull(time,"travelTime");return this;}
+        public Builder setBaseTravelTimeAndDisutility(TravelTime time,TravelDisutility costs) {
+            travelTime=time;baseDisutility=costs;return this;
+        }
+        /** Quantization evaluates queries at the start of each legacy time bin. */
+        public Builder setTimeSliceWidth(int seconds) {
+            if(seconds<=0)throw new IllegalArgumentException("Time slice width must be positive");
+            timeSliceWidth=seconds;return this;
+        }
+        /** Selects the native legacy FIFO wrapper; frozen-context certification remains separate. */
+        public Builder setFIFO(boolean enabled){isFIFO=enabled;return this;}
 
-	/**
-	 * Calculates disutilites including toll.
-	 *
-	 * @author stefan
-	 *
-	 */
-	static class VehicleTransportCostsIncludingToll implements TravelDisutility {
-
-		// private static Logger logger =
-		// Logger.getLogger(VehicleTransportCostsIncludingToll.class);
-
-		private final TravelDisutility baseTransportDisutility;
-
-		private final VehicleTypeDependentRoadPricingCalculator vehicleTypeDependentPricingCalculator;
-
-		public VehicleTransportCostsIncludingToll(TravelDisutility baseTransportDisutility,
-				VehicleTypeDependentRoadPricingCalculator vehicleTypeDependentPricingCalculator) {
-			super();
-			this.baseTransportDisutility = baseTransportDisutility;
-			this.vehicleTypeDependentPricingCalculator = vehicleTypeDependentPricingCalculator;
-			// System.out.println("huuuuuuuuuuuuuuuuuuuu - initialize transport costs with
-			// toll");
-		}
-
-		@Override
-		public double getLinkTravelDisutility(Link link, double time, Person person,
-				org.matsim.vehicles.Vehicle vehicle) {
-			double costs = baseTransportDisutility.getLinkTravelDisutility(link, time, person, vehicle);
-			Id<org.matsim.vehicles.VehicleType> typeId = vehicle.getType().getId();
-			double toll = vehicleTypeDependentPricingCalculator.getTollAmount(typeId, link, time);
-			// System.out.println("huuuuuuuuuuuuuuuuuuuu - paid toll");
-			return costs + toll;
-		}
-
-		@Override
-		public double getLinkMinimumTravelDisutility(Link link) {
-			return baseTransportDisutility.getLinkMinimumTravelDisutility(link);
-		}
-
-	}
-
-	public static class Builder {
-
-		public static Builder newInstance(Network network, Collection<VehicleType> vehicleTypes) {
-			return new Builder(network, vehicleTypes);
-		}
-
-		public static Builder newInstance(Network network) {
-			return new Builder(network, Collections.emptyList());
-		}
-
-		/**
-		 * By default it takes <code>link.getFreespeed(time);</code> to calculate the
-		 * travelTime over that link.
-		 */
-		private TravelTime travelTime = new TravelTime() {
-
-			@Override
-			public double getLinkTravelTime(Link link, double time, Person person,
-					org.matsim.vehicles.Vehicle vehicle) {
-				double velocity;
-				if (vehicle.getType().getMaximumVelocity() < link.getFreespeed(time)) {
-					velocity = vehicle.getType().getMaximumVelocity();
-				} else
-					velocity = link.getFreespeed(time);
-				if (velocity <= 0.0)
-					throw new IllegalStateException("velocity must be bigger than zero");
-
-				VehicleType type = vehicle.getType();
-				String mode;
-
-				try {
-					mode = type.getNetworkMode();
-				} catch (NullPointerException e) {
-					// LOGGER.warn("Vehicle type {} had no networkMode set. Using 'car' as
-					// fallback.", type.getId());
-					mode = "car";
-				}
-
-				if (link.getAllowedModes().contains(mode)) {
-					return link.getLength() / velocity;
-				} else {
-					return link.getLength() / 0.001;
-				}
-
-				// return link.getLength() / velocity;
-			}
-		};
-
-		private TravelDisutility baseDisutility;
-
-		private TravelDisutility finalDisutility;
-
-		private int timeSliceWidth = Integer.MAX_VALUE;
-
-		private LeastCostPathCalculatorFactory leastCostPathCalculatorFactory = new LeastCostPathCalculatorFactory() {
-
-			@Override
-			public LeastCostPathCalculator createPathCalculator(Network network, TravelDisutility travelCosts,
-					TravelTime travelTimes) {
-				return new SpeedyALTFactory().createPathCalculator(network, travelCosts, travelTime);
-			}
-		};
-
-		private VehicleTypeDependentRoadPricingCalculator roadPricingCalculator = new VehicleTypeDependentRoadPricingCalculator();
-
-	private boolean withToll = false;
-
-	private boolean zoneBasedCachingEnabled = false;
-
-	private double zoneBasedEuclideanThresholdMeters = 0.0;
-
+        /** Supplied factories must support concurrent calculator creation. */
+        public Builder setThreadSafeLeastCostPathCalculatorFactory(LeastCostPathCalculatorFactory factory) {
+            leastCostPathCalculatorFactory=Objects.requireNonNull(factory,"factory");return this;
+        }
+        /** Legacy reuse limit; native direct-router fallback is still per thread. */
+        public Builder setRouterPoolSize(int count) {
+            if(count<=0)throw new IllegalArgumentException("routerPoolSize must be positive");
+            routerPoolSize=count;return this;
+        }
+        public Builder setMaximumCacheEntries(int count) {
+            if(count<=0)throw new IllegalArgumentException("Maximum cache entries must be positive");
+            maximumCacheEntries=count;return this;
+        }
+        public Builder enableZoneBasedCaching(boolean enabled){hagrid.core.config.ResolvedHagridConfig.rejectRemoved("routing.zoneBasedCachingEnabled",enabled);return this;}
+        public Builder setZoneBasedEuclideanThreshold(double meters) {
+            if(!Double.isFinite(meters)||meters<0)
+                throw new IllegalArgumentException("Zone-based Euclidean threshold must be non-negative");
+            return this;
+        }
+        /** Historical call retained with its explicit ignored-setting diagnostic. */
+        public Builder enableZoneWarmup(boolean enabled,double departureTimeSeconds) {
+            LOGGER.warn("Zone warmup support has been removed and will be ignored (enabled={}, departureTimeSeconds={}).",
+                    enabled,departureTimeSeconds);return this;
+        }
+        public Builder setRoadPricingCalculator(VehicleTypeDependentRoadPricingCalculator calculator) {
+            withToll=true;roadPricingCalculator=calculator;return this;
+        }
+        /** Updates variable rates for subsequent builds; fixed costs belong to the solver objective. */
+        public void addVehicleTypeSpecificCosts(String typeId,double fix,double perSecond,double perMeter) {
+            typeSpecificCosts.put(typeId,new VehicleRoutingDisutility.VariableCosts(perMeter,perSecond));
+        }
+        public ZoneBasedTransportCosts build() {
+            TravelTime effectiveTime=isFIFO?new FiFoTravelTime(travelTime,timeSliceWidth):travelTime;
+            TravelDisutility effectiveCosts=baseDisutility==null
+                    ?new VehicleRoutingDisutility(typeSpecificCosts,effectiveTime):baseDisutility;
+            if(withToll)effectiveCosts=new TollRoutingDisutility(effectiveCosts,roadPricingCalculator);
+            return new ZoneBasedTransportCosts(this,effectiveTime,effectiveCosts);
+        }
+    }
 	private final Network network;
 
-	private int routerPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
+	private final GenerationTransportCache<TransportDataKey, TransportData> cache;
+	private final LegacyRoutingWorkers routingWorkers;
+	private final Map<String, String> vehicleNetworkModes;
 
-		private final Map<String, VehicleTypeVarCosts> typeSpecificCosts = new HashMap<String, ZoneBasedTransportCosts.VehicleTypeVarCosts>();
-
-		private boolean isFIFO = false;
-
-		private final String defaultTypeId = UUID.randomUUID().toString();
-
-		/**
-		 * Creates the builder requiring {@link Network} and a collection of
-		 * {@link VehicleType}.
-		 *
-		 * @param network
-		 * @param vehicleTypes must be all vehicleTypes and their assigned
-		 *                     costInformation in the system.
-		 */
-		private Builder(Network network, Collection<VehicleType> vehicleTypes) {
-			this.network = network;
-			retrieveTypeSpecificCosts(vehicleTypes);
-		}
-
-		private void retrieveTypeSpecificCosts(Collection<VehicleType> vehicleTypes) {
-			for (VehicleType type : vehicleTypes) {
-				typeSpecificCosts.put(type.getId().toString(), new VehicleTypeVarCosts(
-						type.getCostInformation().getCostsPerMeter(), type.getCostInformation().getCostsPerSecond()));
-			}
-			typeSpecificCosts.put(defaultTypeId, new VehicleTypeVarCosts(1., 0.));
-		}
-
-		/**
-		 * Sets the travelTime. By default travelTime is based on
-		 * <code>link.getFreespeed();</code>.
-		 *
-		 * @param travelTime
-		 * @return this builder
-		 */
-		public Builder setTravelTime(TravelTime travelTime) {
-			this.travelTime = travelTime;
-			return this;
-		}
-
-		/**
-		 * Sets travelTime and travelDisutility.
-		 *
-		 */
-		public Builder setBaseTravelTimeAndDisutility(TravelTime travelTime, TravelDisutility travelDisutility) {
-			this.travelTime = travelTime;
-			this.baseDisutility = travelDisutility;
-			return this;
-		}
-
-		/**
-		 * Sets the width of the time-bin. By default it is Integer.MAX_VALUE().
-		 * <p>
-		 * </p>
-		 * <i>Note that this needs to be set to some plausible value to enable any kind
-		 * of time-dependent network!!!</i> In particular if you are using the matsim
-		 * time dependent network option.
-		 */
-		public Builder setTimeSliceWidth(int timeSliceWidth) {
-			this.timeSliceWidth = timeSliceWidth;
-			return this;
-		}
-
-		/**
-		 * Ensures FIFO. ! NOT YET ENABLED.
-		 */
-		public Builder setFIFO(boolean isFIFO) {
-			this.isFIFO = isFIFO;
-			return this;
-		}
-
-		/**
-		 * Sets the leastCostPathCalculatorFactory to create the calculator to calculate
-		 * networkPaths, travelTimes and transportCosts.
-		 * <p>
-		 * NOTE, make sure the leastCostPathCalculatorFactory is threadSafe, since for
-		 * each thread a new LCPA is created with the same LCPA-factory. That is,
-		 * memorizing data in the factory-obj might violate thread-safety.
-		 * <p>
-		 * By default it use {@link FastDijkstraFactory}
-		 *
-		 * @param {@link {@link LeastCostPathCalculatorFactory}
-		 * @return this builder
-		 */
-		public Builder setThreadSafeLeastCostPathCalculatorFactory(
-				LeastCostPathCalculatorFactory leastCostPathCalcFactory) {
-			this.leastCostPathCalculatorFactory = leastCostPathCalcFactory;
-			return this;
-		}
-
-		public Builder setRouterPoolSize(int routerPoolSize) {
-			if (routerPoolSize <= 0) {
-				throw new IllegalArgumentException("routerPoolSize must be positive");
-			}
-			this.routerPoolSize = routerPoolSize;
-			return this;
-		}
-
-		public Builder enableZoneBasedCaching(boolean enabled) {
-			this.zoneBasedCachingEnabled = enabled;
-			return this;
-		}
-
-		public Builder setZoneBasedEuclideanThreshold(double thresholdMeters) {
-			if (thresholdMeters < 0) {
-				throw new IllegalArgumentException("Zone-based Euclidean threshold must be non-negative");
-			}
-			this.zoneBasedEuclideanThresholdMeters = thresholdMeters;
-			return this;
-		}
-
-		public Builder enableZoneWarmup(boolean enabled, double departureTimeSeconds) {
-			LOGGER.warn(
-					"Zone warmup support has been removed and will be ignored (enabled={}, departureTimeSeconds={}).",
-					enabled, departureTimeSeconds);
-			return this;
-		}
-
-		public Builder setRoadPricingCalculator(VehicleTypeDependentRoadPricingCalculator calculator) {
-			withToll = true;
-			this.roadPricingCalculator = calculator;
-			return this;
-		}
-
-		/**
-		 * Builds the network-based transport costs which are the basis for solving the
-		 * {@link VehicleRoutingProblem}.
-		 * <p>
-		 * </p>
-		 * Comments:
-		 * <ul>
-		 * <li>By default this will take free speed travel times.
-		 * <li>yyyy These free speed travel times do <i>not</i> take the time-dependent
-		 * network into account. kai, jan'14
-		 * <li>Either can be changed with builder.setTravelTime(...) or with
-		 * builder.setBaseTravelTimeAndDisutility(...).
-		 * </ul>
-		 *
-		 * @return
-		 */
-		public ZoneBasedTransportCosts build() {
-			if (baseDisutility == null) {
-				if (isFIFO)
-					travelTime = new FiFoTravelTime(travelTime, timeSliceWidth);
-				baseDisutility = new BaseVehicleTransportCosts(typeSpecificCosts, travelTime);
-			}
-			if (withToll) {
-				finalDisutility = new VehicleTransportCostsIncludingToll(baseDisutility, roadPricingCalculator);
-			} else
-				finalDisutility = baseDisutility;
-			return new ZoneBasedTransportCosts(this);
-		}
-
-		/**
-		 * Adds type-specific costs. If typeId already exists, existing entry is
-		 * overwritten.
-		 *
-		 * @param typeId
-		 * @param fix
-		 * @param perSecond
-		 * @param perMeter
-		 */
-		public void addVehicleTypeSpecificCosts(String typeId, double fix, double perSecond, double perMeter) {
-			typeSpecificCosts.put(typeId, new VehicleTypeVarCosts(perMeter, perSecond));
-		}
-
-	}
-
-	private final Network network;
-
-	/**
-	 * cost-cache to cache transport-costs and transport-times (see
-	 * {@link TransportData}) according to {@link TransportDataKey}
-	 */
-	// Shared, static cache for transport data
-	private static final ConcurrentHashMap<TransportDataKey, TransportData> sharedCostCache = new ConcurrentHashMap<>();
-
-	// Synchronized method to initialize the shared cache
-	// private synchronized void initializeSharedCache() {
-	// 	if (!isCacheInitialized) {
-	// 		LOGGER.info("Initializing shared ZoneBasedTransportCosts cache (currently {} entries)...", sharedCostCache.size());
-	// 		// Add any pre-computation for cache if necessary (placeholder)
-	// 		isCacheInitialized = true;
-	// 		LOGGER.info("Shared ZoneBasedTransportCosts cache initialized.");
-	// 	}
-	// }
-
-	/**
-	 * caches leastCostPathCalculators according to
-	 * <code>Thread.currentThread().getId()</code>
-	 */
-    private final ConcurrentHashMap<Long, LeastCostPathCalculator> legacyRouterCache = new ConcurrentHashMap<>();
+	private final Vehicle defaultVehicle;
+	private static final TransportData ZERO = new TransportData(0, 0, 0);
+	private static final TransportData UNREACHABLE = new TransportData(Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE);
 
 	private final TravelDisutility travelDisutility;
 
@@ -642,16 +235,12 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	 */
 	private final int timeSliceWidth;
 
-	// public final Counter ttMemorizedCounter;
-
-	// public final Counter ttRequestedCounter;
-
-	private final Map<String, org.matsim.vehicles.Vehicle> matsimVehicles = new ConcurrentHashMap<>();
+	private final Map<VehicleKey, org.matsim.vehicles.Vehicle> matsimVehicles = new ConcurrentHashMap<>();
 
 	private final VehicleTypeDependentRoadPricingCalculator roadPricingCalc;
 
 	/**
-	 * by default sets the {@link FastDijkstraFactory}
+	 * by default sets the {@link SpeedyALTFactory}
 	 */
 	private final LeastCostPathCalculatorFactory leastCostPathCalculatorFactory;
 
@@ -659,58 +248,39 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 
 	private final String defaultTypeId;
 
-	private final boolean zoneBasedCachingEnabled;
-
-	private final double zoneBasedEuclideanThresholdMeters;
-
-	private final int routerPoolSize;
-
-	private final ConcurrentLinkedQueue<LeastCostPathCalculator> routerPool = new ConcurrentLinkedQueue<>();
-
-	private final AtomicInteger routerPoolCount = new AtomicInteger(0);
-
 	public final Counter cacheRequestedCounter = new Counter("#ZoneTransportCostRequests ");
 
 	public final Counter cacheHitCounter = new Counter("#ZoneTransportCostCacheHits ");
 
 	public final Counter cacheMemorizedCounter = new Counter("#ZoneTransportCostValues cached ");
 
-	private final LongAdder totalRequestCount = new LongAdder();
-
-	private final LongAdder totalHitCount = new LongAdder();
-
-	private final LongAdder totalMemoizedCount = new LongAdder();
-
-	private final AtomicLong lastSummaryTotalRequests = new AtomicLong();
-
-	private final AtomicLong lastSummaryTotalHits = new AtomicLong();
-
-	private final AtomicLong lastSummaryTotalMemoized = new AtomicLong();
-
-	private ZoneBasedTransportCosts(Builder builder) {
-		super();
-		this.travelDisutility = builder.finalDisutility;
-		this.travelTime = builder.travelTime;
+	private ZoneBasedTransportCosts(Builder builder, TravelTime effectiveTime, TravelDisutility effectiveDisutility) {
+		this.travelDisutility = effectiveDisutility;
+		this.travelTime = effectiveTime;
 		this.network = builder.network;
-		this.leastCostPathCalculatorFactory = builder.leastCostPathCalculatorFactory;
+		this.leastCostPathCalculatorFactory = builder.leastCostPathCalculatorFactory == null
+				? defaultRouterFactory() : builder.leastCostPathCalculatorFactory;
 		this.roadPricingCalc = builder.roadPricingCalculator;
 		this.timeSliceWidth = builder.timeSliceWidth;
 		this.defaultTypeId = builder.defaultTypeId;
-		this.zoneBasedCachingEnabled = builder.zoneBasedCachingEnabled;
-		this.zoneBasedEuclideanThresholdMeters = builder.zoneBasedEuclideanThresholdMeters;
-		this.routerPoolSize = builder.routerPoolSize;
-		// initializeSharedCache();
+		this.routingWorkers = new LegacyRoutingWorkers(builder.routerPoolSize, this::createRouter);
+		this.cache = new GenerationTransportCache<>(builder.maximumCacheEntries,
+				cacheRequestedCounter::incCounter, cacheHitCounter::incCounter, cacheMemorizedCounter::incCounter);
+		this.vehicleNetworkModes = Map.copyOf(builder.vehicleNetworkModes);
+		this.defaultVehicle = VehicleImpl.Builder.newInstance("default").setType(
+				com.graphhopper.jsprit.core.problem.vehicle.VehicleTypeImpl.Builder.newInstance(defaultTypeId).build())
+				.setStartLocation(Location.newInstance("default")).build();
+	}
 
-		// Preload all zones into zoneCache (fast lookup during routing)
-		// for (Link link : network.getLinks().values()) {
-		// 	Object zoneAttr = link.getAttributes().getAttribute("zone");
-		// 	if (zoneAttr instanceof Integer) {
-		// 		zoneCache.put(link.getId(), (Integer) zoneAttr);
-		// 	}
-		// }
-
-		// this.ttMemorizedCounter = new Counter("#TransportCostValues cached ");
-		// this.ttRequestedCounter = new Counter("numTravelCosts requested ");
+	private static LeastCostPathCalculatorFactory defaultRouterFactory() {
+		return new LeastCostPathCalculatorFactory() {
+			private final SpeedyALTFactory factory = new SpeedyALTFactory();
+			@Override
+			public synchronized LeastCostPathCalculator createPathCalculator(Network network,
+					TravelDisutility costs, TravelTime times) {
+				return factory.createPathCalculator(network, costs, times);
+			}
+		};
 	}
 
 	/**
@@ -728,56 +298,7 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	@Override
 	public double getTransportTime(Location fromId, Location toId, double departureTime, Driver driver,
 			Vehicle vehicle) {
-		// If the origin and destination are the same, transport time is zero
-		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
-			return 0.0;
-		}
-
-		// Use a default vehicle if none is provided
-		if (vehicle == null) {
-			vehicle = getDefaultVehicle(fromId);
-		}
-
-		// Ensure departure time is non-negative
-		if (departureTime < 0) {
-			departureTime = 0;
-		}
-		Link fromLink = network.getLinks().get(getLinkId(fromId.getId()));
-		Link toLink = network.getLinks().get(getLinkId(toId.getId()));
-
-		// Create the transport data key using zone information if available
-		TransportDataKey transportDataKey = createTransportDataKey(fromId, toId, departureTime, vehicle, fromLink,
-				toLink);
-
-		// Retrieve the transport data from the shared cache
-		cacheRequestedCounter.incCounter();
-		recordCacheRequest();
-		TransportData data = sharedCostCache.get(transportDataKey);
-
-		// If cached data is found, return the cached transport time
-		if (data != null) {
-			cacheHitCounter.incCounter();
-			recordCacheHit();
-			return data.transportTime;
-		} else {
-			// Notify listeners that calculation is starting
-			informStartCalc();
-
-			// Compute the transport data and cache it
-			TransportData newData = computeAndCacheTransportData(fromId, toId, departureTime, vehicle,
-					transportDataKey, fromLink, toLink);
-
-			// Notify listeners that calculation has ended
-			informEndCalc();
-
-			return newData.transportTime;
-		}
-	}
-
-	private VehicleImpl getDefaultVehicle(Location fromId) {
-		return VehicleImpl.Builder.newInstance("default").setType(
-				com.graphhopper.jsprit.core.problem.vehicle.VehicleTypeImpl.Builder.newInstance(defaultTypeId).build())
-				.setStartLocation(fromId).build();
+		return getTransportData(fromId, toId, departureTime, vehicle).transportTime;
 	}
 
 	private void informEndCalc() {
@@ -807,59 +328,9 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	@Override
 	public double getTransportCost(Location fromId, Location toId, double departureTime, Driver driver,
 			Vehicle vehicle) {
-		// If the origin and destination are the same, transport cost is zero
-		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
-			return 0.0;
-		}
-
-		// Use a default vehicle if none is provided
-		if (vehicle == null) {
-			vehicle = getDefaultVehicle(fromId);
-		}
-
-		// Ensure departure time is non-negative
-		if (departureTime < 0) {
-			departureTime = 0;
-		}
-
-		Link fromLink = network.getLinks().get(getLinkId(fromId.getId()));
-		Link toLink = network.getLinks().get(getLinkId(toId.getId()));
-
-		// Create the transport data key using zone information if available
-		TransportDataKey transportDataKey = createTransportDataKey(fromId, toId, departureTime, vehicle, fromLink,
-				toLink);
-
-		// Retrieve the transport data from the shared cache
-		cacheRequestedCounter.incCounter();
-		recordCacheRequest();
-		TransportData data = sharedCostCache.get(transportDataKey);
-
-		// If cached data is found, return the cached transport cost
-		if (data != null) {
-			cacheHitCounter.incCounter();
-			recordCacheHit();
-			return data.transportCosts;
-		} else {
-			// Notify listeners that calculation is starting
-			informStartCalc();
-
-			// Compute the transport data and cache it
-			TransportData newData = computeAndCacheTransportData(fromId, toId, departureTime, vehicle,
-					transportDataKey, fromLink, toLink);
-
-			// Notify listeners that calculation has ended
-			informEndCalc();
-
-			return newData.transportCosts;
-		}
+		return getTransportData(fromId, toId, departureTime, vehicle).transportCosts;
 	}
 
-	private Integer getZone(Link link) {
-		return zoneCache.computeIfAbsent(link.getId(), id -> {
-			Object zoneAttr = link.getAttributes().getAttribute("zone");
-			return (zoneAttr instanceof Integer) ? (Integer) zoneAttr : null;
-		});
-	}
 
 	/**
 	 * Gets the distance for the transport.
@@ -875,51 +346,31 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	 */
 	@Override
 	public double getDistance(Location fromId, Location toId, double departureTime, Vehicle vehicle) {
-		// If the origin and destination are the same, distance is zero
-		if (fromId == toId || Objects.equals(fromId.getId(), toId.getId())) {
-			return 0.0;
-		}
-
-		// Use a default vehicle if none is provided
-		if (vehicle == null) {
-			vehicle = getDefaultVehicle(fromId);
-		}
-
-		// Ensure departure time is non-negative
-		if (departureTime < 0) {
-			departureTime = 0;
-		}
-		Link fromLink = network.getLinks().get(getLinkId(fromId.getId()));
-		Link toLink = network.getLinks().get(getLinkId(toId.getId()));
-
-		// Create the transport data key using zone information if available
-		TransportDataKey transportDataKey = createTransportDataKey(fromId, toId, departureTime, vehicle, fromLink,
-				toLink);
-
-		// Retrieve the transport data from the shared cache
-		cacheRequestedCounter.incCounter();
-		recordCacheRequest();
-		TransportData data = sharedCostCache.get(transportDataKey);
-
-		// If cached data is found, return the cached transport distance
-		if (data != null) {
-			cacheHitCounter.incCounter();
-			recordCacheHit();
-			return data.transportDistance;
-		} else {
-			// Notify listeners that calculation is starting
-			informStartCalc();
-
-			// Compute the transport data and cache it
-			TransportData newData = computeAndCacheTransportData(fromId, toId, departureTime, vehicle, transportDataKey,
-					fromLink, toLink);
-
-			// Notify listeners that calculation has ended
-			informEndCalc();
-
-			return newData.transportDistance;
-		}
+		return getTransportData(fromId, toId, departureTime, vehicle).transportDistance;
 	}
+
+	private TransportData getTransportData(Location from, Location to, double departureTime, Vehicle suppliedVehicle) {
+		if (from == to || Objects.equals(from.getId(), to.getId())) return ZERO;
+		if (!Double.isFinite(departureTime)) throw new IllegalArgumentException("Departure time must be finite");
+		Vehicle vehicle = suppliedVehicle == null ? defaultVehicle : suppliedVehicle;
+		double binStart = Math.floor(Math.max(0, departureTime) / timeSliceWidth) * timeSliceWidth;
+		Link fromLink = network.getLinks().get(getLinkId(from.getId()));
+		Link toLink = network.getLinks().get(getLinkId(to.getId()));
+		if (fromLink == null || toLink == null) return UNREACHABLE;
+		TransportDataKey key = new TransportDataKey(fromLink.getId(), toLink.getId(), binStart,
+				vehicle.getType().getTypeId(), vehicle.getType().getMaxVelocity());
+        Link origin=fromLink, destination=toLink;
+        return cache.get(key,()-> {
+            informStartCalc();
+            try {return calculateTransportData(binStart,vehicle,origin,destination);}
+            finally {informEndCalc();}
+        });
+    }
+	/** Begin a new cache generation after travel times change; earlier requests cannot populate it. */
+	public void clearCache() { cache.clear(); }
+
+    @Override public void prepareForReplanning(){clearCache();}
+    @Override public void logSummary(String label){logCacheSummary(label);}
 
 	/**
 	 * @return the listeners
@@ -961,33 +412,9 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	}
 
 	private org.matsim.vehicles.Vehicle getMatsimVehicle(Vehicle vehicle) {
-		String key = vehicle.getId() + "|" + vehicle.getType().getTypeId();
-		return matsimVehicles.computeIfAbsent(key, k -> new MatsimVehicleWrapper(vehicle));
-	}
-
-	private TransportDataKey createTransportDataKey(Location fromId, Location toId, double time, Vehicle vehicle,
-			Link fromLink, Link toLink) {
-		String typeId = vehicle.getType().getTypeId();
-		int timeSlice = (int) (time / timeSliceWidth);
-
-		if (zoneBasedCachingEnabled && fromLink != null && toLink != null) {
-			Integer fromZone = getZone(fromLink);
-			Integer toZone = getZone(toLink);
-
-			if (fromZone != null && toZone != null && !fromZone.equals(toZone)) {
-				boolean useZoneKey = true;
-				if (zoneBasedEuclideanThresholdMeters > 0) {
-					double directDistance = CoordUtils.calcEuclideanDistance(fromLink.getCoord(), toLink.getCoord());
-					useZoneKey = directDistance >= zoneBasedEuclideanThresholdMeters;
-				}
-
-				if (useZoneKey) {
-					return new TransportDataKey("zone_" + fromZone, "zone_" + toZone, timeSlice, typeId);
-				}
-			}
-		}
-
-		return new TransportDataKey(fromId.getId(), toId.getId(), timeSlice, typeId);
+		VehicleKey key = new VehicleKey(vehicle.getId(), vehicle.getType().getTypeId(), vehicle.getType().getMaxVelocity());
+		return matsimVehicles.computeIfAbsent(key, k -> new MatsimVehicleWrapper(vehicle,
+				vehicleNetworkModes.getOrDefault(k.type(), "car")));
 	}
 
 	private Id<Link> getLinkId(String id) {
@@ -995,71 +422,10 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 	}
 
 	@Override
-	public LeastCostPathCalculator getRouter() {
-		long threadId = Thread.currentThread().threadId();
-		return legacyRouterCache.computeIfAbsent(threadId, id -> {
-			LeastCostPathCalculator calc = leastCostPathCalculatorFactory
-					.createPathCalculator(network, travelDisutility, travelTime);
-			LOGGER.trace("Created thread-local router via getRouter for thread {}", id);
-			return calc;
-		});
-	}
+	public LeastCostPathCalculator getRouter() { return routingWorkers.getThreadRouter(); }
 
-	// private LeastCostPathCalculator createLeastCostPathCalculator() {
-	// LeastCostPathCalculator router =
-	// routerCache.get(Thread.currentThread().getId());
-	// if (router == null) {
-	// LeastCostPathCalculator newRouter =
-	// leastCostPathCalculatorFactory.createPathCalculator(network,
-	// travelDisutility, travelTime);
-	// router = routerCache.putIfAbsent(Thread.currentThread().getId(), newRouter);
-	// if (router == null) {
-	// router = newRouter;
-	// }
-	// }
-	// return router;
-	// }
-
-	private record RouterHandle(LeastCostPathCalculator router, boolean pooled) {}
-
-	private RouterHandle borrowRouter() {
-		LeastCostPathCalculator router = routerPool.poll();
-		if (router != null) {
-			return new RouterHandle(router, true);
-		}
-
-		if (routerPoolCount.get() < routerPoolSize) {
-			if (routerPoolCount.incrementAndGet() <= routerPoolSize) {
-				LeastCostPathCalculator created = leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime);
-				LOGGER.trace("Created pooled router. poolSize={} created={}", routerPoolSize, routerPoolCount.get());
-				return new RouterHandle(created, true);
-			}
-			routerPoolCount.decrementAndGet();
-		}
-
-		router = routerPool.poll();
-		if (router != null) {
-			return new RouterHandle(router, true);
-		}
-
-		long threadId = Thread.currentThread().threadId();
-		LeastCostPathCalculator fallback = legacyRouterCache.computeIfAbsent(threadId,
-				id -> {
-					LeastCostPathCalculator calc = leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime);
-					LOGGER.trace("Created thread-local router for thread {}", id);
-					return calc;
-				});
-		return new RouterHandle(fallback, false);
-	}
-
-	private void returnRouter(RouterHandle handle) {
-		if (handle == null || !handle.pooled) {
-			return;
-		}
-		LeastCostPathCalculator router = handle.router();
-		if (router != null) {
-			routerPool.offer(router);
-		}
+	private LeastCostPathCalculator createRouter() {
+		return leastCostPathCalculatorFactory.createPathCalculator(network, travelDisutility, travelTime);
 	}
 
 	/**
@@ -1089,65 +455,24 @@ public class ZoneBasedTransportCosts implements VRPTransportCosts {
 		return roadPricingCalc;
 	}
 
-	private TransportData computeAndCacheTransportData(Location fromId, Location toId, double departureTime,
-			Vehicle vehicle, TransportDataKey key, Link fromLink, Link toLink) {
-		org.matsim.vehicles.Vehicle matsimVehicle = getMatsimVehicle(vehicle);
-		RouterHandle routerHandle = borrowRouter();
-		LeastCostPathCalculator router = routerHandle.router();
-
-		Path path = router.calcLeastCostPath(fromLink.getToNode(), toLink.getFromNode(), departureTime, null,
-				matsimVehicle);
-
-		double additionalCostTo = travelDisutility.getLinkTravelDisutility(toLink, departureTime + path.travelTime,
-				null, matsimVehicle);
-		double additionalTimeTo = travelTime.getLinkTravelTime(toLink, departureTime + path.travelTime, null,
-				matsimVehicle);
-
-		double travelDistance = fromLink.getLength();
-		for (Link link : path.links) {
-			travelDistance += link.getLength();
-		}
-
-		TransportData newData = new TransportData(path.travelCost + additionalCostTo,
-				path.travelTime + additionalTimeTo, travelDistance);
-		TransportData existing = sharedCostCache.putIfAbsent(key, newData);
-		if (existing == null) {
-			cacheMemorizedCounter.incCounter();
-			recordCacheMemoized();
-			existing = newData;
-		} else {
-			cacheHitCounter.incCounter();
-			recordCacheHit();
-		}
-		returnRouter(routerHandle);
-		return existing;
-	}
-
-	private void recordCacheRequest() {
-		totalRequestCount.increment();
-	}
-
-	private void recordCacheHit() {
-		totalHitCount.increment();
-	}
-
-	private void recordCacheMemoized() {
-		totalMemoizedCount.increment();
-	}
-
-	public synchronized CacheStatsSnapshot snapshotAndResetSummaryWindow() {
-		long totalRequests = totalRequestCount.sum();
-		long totalHits = totalHitCount.sum();
-		long totalMemoized = totalMemoizedCount.sum();
-
-		long periodRequests = Math.max(0L, totalRequests - lastSummaryTotalRequests.getAndSet(totalRequests));
-		long periodHits = Math.max(0L, totalHits - lastSummaryTotalHits.getAndSet(totalHits));
-		long periodMemoized = Math.max(0L, totalMemoized - lastSummaryTotalMemoized.getAndSet(totalMemoized));
-
-		return new CacheStatsSnapshot(sharedCostCache.size(), totalRequests, totalHits, totalMemoized,
-				periodRequests, periodHits, periodMemoized);
-	}
-
+    private TransportData calculateTransportData(double departureTime,Vehicle vehicle,Link fromLink,Link toLink) {
+        var matsimVehicle=getMatsimVehicle(vehicle);
+        return routingWorkers.use(router-> {
+            Path path=router.calcLeastCostPath(fromLink.getToNode(),toLink.getFromNode(),departureTime,null,matsimVehicle);
+            if(path==null)return UNREACHABLE;
+            double arrival=departureTime+path.travelTime;
+            double costTo=travelDisutility.getLinkTravelDisutility(toLink,arrival,null,matsimVehicle);
+            double timeTo=travelTime.getLinkTravelTime(toLink,arrival,null,matsimVehicle);
+            double distance=toLink.getLength();
+            for(Link link:path.links)distance+=link.getLength();
+            return new TransportData(path.travelCost+costTo,path.travelTime+timeTo,distance);
+        });
+    }
+    public CacheStatsSnapshot snapshotAndResetSummaryWindow() {
+        var stats=cache.statistics();
+        return new CacheStatsSnapshot(stats.uniqueEntries(),stats.totalRequests(),stats.totalHits(),stats.totalMemoized(),
+                stats.periodRequests(),stats.periodHits(),stats.periodMemoized());
+    }
 	public synchronized void logCacheSummary(String contextLabel) {
 		CacheStatsSnapshot snapshot = snapshotAndResetSummaryWindow();
 

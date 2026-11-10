@@ -86,6 +86,7 @@ public class DemandProcessor implements Runnable {
             LOGGER.info("Freight demand data processing completed.");
         } catch (Exception e) {
             LOGGER.error("Error reading freight demand data", e);
+            throw new hagrid.hannover.pipeline.PipelineStepException("Demand Processing", e);
         }
     }
 
@@ -467,10 +468,9 @@ public class DemandProcessor implements Runnable {
         Relation<NumberVector> relation = database.getRelation(TypeUtil.NUMBER_VECTOR_FIELD);
         DBIDRange ids = (DBIDRange) relation.getDBIDs();
 
-        // Deterministic seed: combine runId (if available) and carrierId to keep stability across runs
-        long seedBase = 0L;
-        try { seedBase = (hagridConfig.getRunId() != null ? hagridConfig.getRunId().hashCode() : 0); } catch (Exception ignored) {}
-        long seed = Objects.hash(seedBase, carrierId, toSplit);
+        // Explicit demand seed, independent of the output tag and other carrier streams.
+        long seed = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds()).forKey("demand.cluster",
+                hagrid.core.util.RunRandomStreams.key(carrierId, Integer.toString(toSplit))).nextLong();
         RandomFactory seededFactory = RandomFactory.get(seed);
         LOGGER.debug("KMeans deterministic seed for carrier {} -> {}", carrierId, seed);
 

@@ -25,15 +25,70 @@ public record LmdPreprocessInputs(
         int jspritIterations,
         Integer maxTourDurationSeconds,
         List<String> openDepots,
-        Integer maxJobsPerDistrict) {
+        Integer maxJobsPerDistrict,
+        int internalSolverThreads,
+        Integer maxActiveSolvers,
+        List<String> tourRuleValues) {
 
     /** Which preprocessing produced the carriers: LMD baseline (vans) or 1d modular (capsules). */
     public enum Variant { BASELINE, MODULAR }
 
     public LmdPreprocessInputs {
         openDepots = openDepots == null ? null : List.copyOf(openDepots);
+        tourRuleValues=tourRuleValues==null?null:List.copyOf(tourRuleValues);
+        if (internalSolverThreads < 1 || (maxActiveSolvers != null && maxActiveSolvers < 1))
+            throw new IllegalArgumentException("Solver resource limits must be positive");
     }
 
+    public LmdPreprocessInputs(Variant variant,Path demandShp,Path depotCsv,Path network,Path vehicleTypes,
+            Path serviceAreaShp,int jspritIterations,Integer maxTourDurationSeconds,List<String> openDepots,
+            Integer maxJobsPerDistrict,int internalSolverThreads,Integer maxActiveSolvers) {
+        this(variant,demandShp,depotCsv,network,vehicleTypes,serviceAreaShp,jspritIterations,maxTourDurationSeconds,
+                openDepots,maxJobsPerDistrict,internalSolverThreads,maxActiveSolvers,null);
+    }
+    public LmdTourRules tourRules() {
+        return tourRuleValues==null?LmdTourRules.defaults(variant,routeDurationSeconds()):LmdTourRules.decode(tourRuleValues,routeDurationSeconds());
+    }
+    public LmdPreprocessInputs withTourRules(hagrid.core.config.ResolvedHagridConfig config) {return withTourRules(LmdTourRules.from(config));}
+    public LmdPreprocessInputs withTourRules(LmdTourRules rules) {
+        return new LmdPreprocessInputs(variant,demandShp,depotCsv,network,vehicleTypes,serviceAreaShp,jspritIterations,
+                rules.maxRouteDurationSeconds(),openDepots,maxJobsPerDistrict,internalSolverThreads,maxActiveSolvers,rules.encoded());
+    }
+    /** Compatibility inputs preserve the existing one-thread solver and caller-owned admission limit. */
+    public LmdPreprocessInputs(Variant variant, Path demandShp, Path depotCsv, Path network, Path vehicleTypes,
+            Path serviceAreaShp, int jspritIterations, Integer maxTourDurationSeconds,
+            List<String> openDepots, Integer maxJobsPerDistrict) {
+        this(variant,demandShp,depotCsv,network,vehicleTypes,serviceAreaShp,jspritIterations,
+                maxTourDurationSeconds,openDepots,maxJobsPerDistrict,1,null);
+    }
+
+    public LmdPreprocessInputs withResources(hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        java.util.Objects.requireNonNull(resources);
+        return new LmdPreprocessInputs(variant,demandShp,depotCsv,network,vehicleTypes,serviceAreaShp,
+                jspritIterations,maxTourDurationSeconds,openDepots,maxJobsPerDistrict,
+                resources.internalSolverThreads(),resources.maxActiveSolvers().isPresent()
+                        ? resources.maxActiveSolvers().getAsInt() : null,tourRuleValues);
+    }
+
+    /** Same effective cap for solver, wave windows, retiming and cached-plan verification. */
+    public int routeDurationSeconds() {
+        return maxTourDurationSeconds == null
+                ? hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS : maxTourDurationSeconds;
+    }
+
+    public LmdPreprocessInputs withRouteDurationSeconds(int seconds) {
+        if (seconds <= 0) throw new IllegalArgumentException("Solver route duration must be positive");
+        Integer explicit = variant == Variant.BASELINE
+                && seconds == hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS ? null : seconds;
+        return new LmdPreprocessInputs(variant,demandShp,depotCsv,network,vehicleTypes,serviceAreaShp,
+                jspritIterations,explicit,openDepots,maxJobsPerDistrict,internalSolverThreads,maxActiveSolvers,
+                tourRuleValues==null?null:LmdTourRules.decode(tourRuleValues,seconds).encoded());
+    }
+
+    public hagrid.core.config.ResolvedHagridConfig.Resources resources() {
+        return new hagrid.core.config.ResolvedHagridConfig.Resources(internalSolverThreads,
+                maxActiveSolvers == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(maxActiveSolvers));
+    }
     public static LmdPreprocessInputs baseline(String demandShp, String depotCsv, String networkFile,
                                                String vehicleTypesFile, int jspritIterations,
                                                String serviceAreaShp) {

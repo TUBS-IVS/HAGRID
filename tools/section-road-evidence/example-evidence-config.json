@@ -1,0 +1,10 @@
+{
+  "network": "REPLACE_WITH_NETWORK.xml.gz",
+  "catalog": "REPLACE_WITH_CATALOG.json",
+  "cacheDir": "REPLACE_WITH_WRITABLE_CACHE_DIRECTORY",
+  "bounds": [554280, 5798240, 554440, 5798390],
+  "sources": [
+    {"path": "REPLACE_WITH_niedersachsen-210101.osm.pbf", "sha256": "fe18880c0ed41bc65bd8f8985f6630fba0010fba277bc2d9f7745713c8936d49"},
+    {"path": "REPLACE_WITH_hannover-v1-network-detailed.osm.pbf", "sha256": "18773f51e78bf60b9216c43568ddc2677d3695185c68a993ad6394cdd82aad18"}
+  ]
+}

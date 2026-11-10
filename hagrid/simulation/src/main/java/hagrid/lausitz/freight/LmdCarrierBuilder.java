@@ -1,7 +1,7 @@
 package hagrid.lausitz.freight;
 
 import hagrid.core.util.Delivery;
-import hagrid.core.routing.HAGRIDRouterUtils;
+import hagrid.core.config.RoutingDefaults;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
@@ -55,7 +55,6 @@ public final class LmdCarrierBuilder {
     private static final double DAY_END = hagrid.lausitz.DeliveryDay.END_S;
 
     /** Absolute cap on any vehicle's operating end: the vehicle must be back by the day's end. */
-    private static final double LATEST_VEHICLE_END = hagrid.lausitz.DeliveryDay.END_S;
 
     /**
      * Jittered vehicle copies per van type per dispatch wave. With {@code FleetSize.INFINITE}
@@ -63,7 +62,7 @@ public final class LmdCarrierBuilder {
      * wave on the same minute — several copies give jsprit distinct departure times to pick from,
      * spreading real tour starts (legacy Hannover creates one template per dispatch HOUR instead).
      */
-    static final int VEHICLES_PER_TYPE_PER_WAVE = 4;
+    static final int VEHICLES_PER_TYPE_PER_WAVE = hagrid.core.config.LmdPlanningSettings.DEFAULT_WAVE_VEHICLE_COPIES;
 
     /**
      * Fallback dispatch waves when no explicit list is supplied (mirrors HAGRID CEP
@@ -72,20 +71,6 @@ public final class LmdCarrierBuilder {
      * its own {@code DISPATCH_HOURS} explicitly, so this is reached from tests only.
      */
     static final List<Integer> DEFAULT_DISPATCH_HOURS = List.of(8, 14);
-
-    /**
-     * Per-provider overall delivery success rates (percent), reused from the Hannover
-     * {@code HagridConfig} defaults for comparability. B2B parcels override to {@link #B2B_DELIVERY_RATE}.
-     */
-    private static final Map<String, Double> DELIVERY_RATES = Map.of(
-            "dhl", 94.0, "gls", 91.0, "hermes", 91.0, "dpd", 89.0,
-            "ups", 89.0, "amazon", 93.0, "fedex", 89.0);
-    /** Fallback only: all seven Lausitz providers are in {@link #DELIVERY_RATES}, so reaching
-     *  it means an unknown provider id -- logged as a warning, see {@code buildCore}. */
-    private static final double DEFAULT_DELIVERY_RATE = 90.0;
-    private static final double B2B_DELIVERY_RATE = 99.0;
-    /** Effective B2C rate is capped here (100% is never realistic), matching the legacy clamp. */
-    private static final double MAX_EFFECTIVE_RATE = 98.0;
 
     private LmdCarrierBuilder() {}
 
@@ -98,26 +83,53 @@ public final class LmdCarrierBuilder {
                                 Network network, VehicleType[] vanTypes,
                                 int durationPerParcelMin, int maxDurationPerStopMin,
                                 List<Integer> dispatchHours, Random random) {
+        return build(provider,deliveries,depotLink,network,vanTypes,durationPerParcelMin,maxDurationPerStopMin,
+                dispatchHours,random,RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS);
+    }
+
+    public static Carrier build(String provider, List<Delivery> deliveries, Id<Link> depotLink,
+                                Network network, VehicleType[] vanTypes,
+                                int durationPerParcelMin, int maxDurationPerStopMin,
+                                List<Integer> dispatchHours, Random random, int solverMaxRouteDurationSeconds) {
+        return build(provider,deliveries,depotLink,network,vanTypes,durationPerParcelMin,maxDurationPerStopMin,
+                dispatchHours,random,solverMaxRouteDurationSeconds,RoutingDefaults.VEHICLE_AVAILABILITY_BUFFER_SECONDS,
+                RoutingDefaults.VEHICLE_DAY_END_SECONDS,DAY_START,DAY_END);
+    }
+    public static Carrier build(String provider,List<Delivery> deliveries,Id<Link> depotLink,Network network,
+            VehicleType[] vanTypes,int durationPerParcelMin,int maxDurationPerStopMin,List<Integer> dispatchHours,Random random,
+            int solverMaxRouteDurationSeconds,double availabilityBufferSeconds,double vehicleDayEndSeconds,
+            double serviceWindowStart,double serviceWindowEnd) {
+        return build(provider,deliveries,depotLink,network,vanTypes,durationPerParcelMin,maxDurationPerStopMin,
+                dispatchHours,random,solverMaxRouteDurationSeconds,availabilityBufferSeconds,vehicleDayEndSeconds,
+                serviceWindowStart,serviceWindowEnd,hagrid.core.config.LmdPlanningSettings.defaults());
+    }
+    public static Carrier build(String provider,List<Delivery> deliveries,Id<Link> depotLink,Network network,
+            VehicleType[] vanTypes,int durationPerParcelMin,int maxDurationPerStopMin,List<Integer> dispatchHours,Random random,
+            int solverMaxRouteDurationSeconds,double availabilityBufferSeconds,double vehicleDayEndSeconds,
+            double serviceWindowStart,double serviceWindowEnd,hagrid.core.config.LmdPlanningSettings settings) {
+        if(solverMaxRouteDurationSeconds<=0 || !Double.isFinite(availabilityBufferSeconds)||availabilityBufferSeconds<0
+                ||!Double.isFinite(vehicleDayEndSeconds)||vehicleDayEndSeconds<=0)
+            throw new IllegalArgumentException("Invalid configured vehicle availability");
         Carrier carrier = buildCore(provider, deliveries, network, durationPerParcelMin,
-                maxDurationPerStopMin, random, TimeWindow.newInstance(DAY_START, DAY_END));
+                maxDurationPerStopMin, random, TimeWindow.newInstance(serviceWindowStart, serviceWindowEnd), settings);
 
         List<Integer> hours = (dispatchHours == null || dispatchHours.isEmpty())
                 ? DEFAULT_DISPATCH_HOURS : dispatchHours;
         for (int hour : hours) {
             for (VehicleType vanType : vanTypes) {
-                for (int copy = 0; copy < VEHICLES_PER_TYPE_PER_WAVE; copy++) {
+                for (int copy = 0; copy < settings.waveVehicleCopies(); copy++) {
                     // Legacy-parity Gaussian departure jitter (CarrierVehicleFactory.getTimeShift):
                     // sigma 15 min for size m, 5 min for size l — depot departures spread realistically
                     // instead of all vans leaving hard on the hour.
-                    double jitterSec = random.nextGaussian() * jitterSigmaMinutes(vanType) * 60.0;
+                    double jitterSec = random.nextGaussian() * settings.jitterMinutes(vanType.getId().toString()) * 60.0;
                     double earliestStart = hour * 3600.0 + jitterSec;
                     // Hannover parity (CarrierVehicleFactory.calculateEndTime): the operating window
                     // is WAVE-RELATIVE — start + 7h route cap + 1h buffer, capped at 21:00. This is
                     // what gives the 14:00 wave a real role: an 08:00 van may only operate until
                     // ~16:00, so late-afternoon workload can only go to the afternoon wave.
                     double latestEnd = Math.min(
-                            earliestStart + HAGRIDRouterUtils.MAXROUTEDURATION + 3600.0,
-                            LATEST_VEHICLE_END);
+                            earliestStart + solverMaxRouteDurationSeconds + availabilityBufferSeconds,
+                            vehicleDayEndSeconds);
                     String vehId = provider + "_" + vanType.getId().toString() + "_h" + hour + "_v" + copy;
                     CarrierVehicle vehicle = CarrierVehicle.Builder
                             .newInstance(Id.createVehicleId(vehId), depotLink, vanType)
@@ -136,7 +148,7 @@ public final class LmdCarrierBuilder {
      * 1d single-window variant (plan C4 revised, user 2026-07-28): the capsule "vehicles" are
      * virtual (the DRT fleet executes the tours), so NO dispatch waves, NO departure jitter -
      * ONE vehicle per van type with an explicit operating window, services with the aligned
-     * start time window (07:30-21:00 for 1d instead of the baseline's 08:00-20:00).
+     * configured start time window (default 07:30-21:00 across Lausitz arms).
      */
     public static Carrier buildSingleWindow(String provider, List<Delivery> deliveries,
             Id<Link> depotLink, Network network, VehicleType[] vanTypes, int durationPerParcelMin,
@@ -171,7 +183,13 @@ public final class LmdCarrierBuilder {
             Network network, VehicleType[] vehicleTypes, int durationPerParcelMin,
             int maxDurationPerStopMin, Random random, double vehicleEarliestStart,
             double vehicleLatestEnd, double serviceTwStart, double serviceTwEnd) {
-
+        return buildDistrict(districtId,stops,depotLink,network,vehicleTypes,durationPerParcelMin,maxDurationPerStopMin,
+                random,vehicleEarliestStart,vehicleLatestEnd,serviceTwStart,serviceTwEnd,hagrid.core.config.LmdPlanningSettings.defaults());
+    }
+    public static Carrier buildDistrict(String districtId,List<hagrid.lausitz.DeliveryDistrictBuilder.PooledStop> stops,
+            Id<Link> depotLink,Network network,VehicleType[] vehicleTypes,int durationPerParcelMin,int maxDurationPerStopMin,
+            Random random,double vehicleEarliestStart,double vehicleLatestEnd,double serviceTwStart,double serviceTwEnd,
+            hagrid.core.config.LmdPlanningSettings settings) {
         Carrier carrier = CarriersUtils.createCarrier(Id.create(districtId, Carrier.class));
         CarriersUtils.setCarrierMode(carrier, "car");
         carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
@@ -183,7 +201,7 @@ public final class LmdCarrierBuilder {
             for (Delivery d : stop.parts()) {
                 String p = d.getProvider() == null ? "" : d.getProvider().trim().toLowerCase();
                 dailyBias.computeIfAbsent(p, key ->
-                        random.nextGaussian() * ("dhl".equals(key) ? 2.5 : 5.0));
+                        random.nextGaussian() * settings.dailyBiasPercent(key));
             }
         }
 
@@ -212,9 +230,9 @@ public final class LmdCarrierBuilder {
                 String p = d.getProvider() == null ? "" : d.getProvider().trim().toLowerCase();
                 parcelsByProvider.merge(p, d.getAmount(), Integer::sum);
                 double effectiveRate = d.getParcelType() == Delivery.ParcelType.B2B
-                        ? B2B_DELIVERY_RATE
-                        : Math.max(0.0, Math.min(MAX_EFFECTIVE_RATE,
-                                DELIVERY_RATES.getOrDefault(p, DEFAULT_DELIVERY_RATE)
+                        ? settings.b2bDeliveryRate()
+                        : Math.max(0.0, Math.min(settings.maximumEffectiveDeliveryRate(),
+                                settings.baseDeliveryRate(p)
                                         + dailyBias.getOrDefault(p, 0.0)));
                 for (int i = 0; i < d.getAmount(); i++) {
                     if (random.nextDouble() * 100.0 > effectiveRate) {
@@ -276,6 +294,11 @@ public final class LmdCarrierBuilder {
     private static Carrier buildCore(String provider, List<Delivery> deliveries, Network network,
             int durationPerParcelMin, int maxDurationPerStopMin, Random random,
             TimeWindow serviceTimeWindow) {
+        return buildCore(provider,deliveries,network,durationPerParcelMin,maxDurationPerStopMin,random,
+                serviceTimeWindow,hagrid.core.config.LmdPlanningSettings.defaults());
+    }
+    private static Carrier buildCore(String provider,List<Delivery> deliveries,Network network,int durationPerParcelMin,
+            int maxDurationPerStopMin,Random random,TimeWindow serviceTimeWindow,hagrid.core.config.LmdPlanningSettings settings) {
         Carrier carrier = CarriersUtils.createCarrier(Id.create(provider, Carrier.class));
         CarriersUtils.setCarrierMode(carrier, "car");
         carrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
@@ -284,12 +307,11 @@ public final class LmdCarrierBuilder {
         carrier.getAttributes().putAttribute("provider", provider);
 
         // Per-provider base rate + a daily bias sampled once per carrier (mirrors CarrierGenerator).
-        if (!DELIVERY_RATES.containsKey(provider)) {
-            LOG.warn("Unknown provider '{}' - no delivery rate in LmdCarrierBuilder.DELIVERY_RATES,"
-                    + " falling back to DEFAULT_DELIVERY_RATE = {} %", provider, DEFAULT_DELIVERY_RATE);
+        if (!settings.deliveryRates().containsKey(provider)) {
+            LOG.warn("Unknown provider {} - using configured fallback delivery rate {} %", provider, settings.baseDeliveryRate(provider));
         }
-        double baseRate = DELIVERY_RATES.getOrDefault(provider, DEFAULT_DELIVERY_RATE);
-        double sigmaPercent = "dhl".equals(provider) ? 2.5 : 5.0;
+        double baseRate = settings.baseDeliveryRate(provider);
+        double sigmaPercent = settings.dailyBiasPercent(provider);
         double dailyBias = random.nextGaussian() * sigmaPercent;
         // Stored for the analysis layer only (same attribute name as Hannover's CarrierGenerator).
         // putAttribute, NOT another draw: the RNG stream feeds the overlay and the departure jitter.
@@ -315,8 +337,8 @@ public final class LmdCarrierBuilder {
 
             // Cosmetic missed-delivery overlay: draw each parcel against the effective rate.
             double effectiveRate = d.getParcelType() == Delivery.ParcelType.B2B
-                    ? B2B_DELIVERY_RATE
-                    : Math.max(0.0, Math.min(MAX_EFFECTIVE_RATE, baseRate + dailyBias));
+                    ? settings.b2bDeliveryRate()
+                    : Math.max(0.0, Math.min(settings.maximumEffectiveDeliveryRate(), baseRate + dailyBias));
             for (int p = 0; p < d.getAmount(); p++) {
                 if (random.nextDouble() * 100.0 > effectiveRate) {
                     missedParcels.add(serviceId);
@@ -337,6 +359,6 @@ public final class LmdCarrierBuilder {
      *  Package-private: {@link LmdTourRetimer} reuses the same sigmas for its per-tour draws. */
     static double jitterSigmaMinutes(VehicleType vanType) {
         String id = vanType.getId().toString().toLowerCase();
-        return id.endsWith("_l") ? 5.0 : 15.0;
+        return hagrid.core.config.LmdPlanningSettings.defaults().jitterMinutes(id);
     }
 }

@@ -69,6 +69,7 @@ public final class ScenarioRunner {
 	private final ScenarioConfig scenarioConfig;
 	private final Path pipelineRoot;
 	private final Path configXmlPath;
+    private final hagrid.core.config.HagridConfigFile configurationFile;
 
 	/**
 	 * Creates a new ScenarioRunner with the given configuration.
@@ -86,6 +87,8 @@ public final class ScenarioRunner {
 	 * @param pipelineRoot   the root directory of the pipeline
 	 */
 	public ScenarioRunner(ScenarioConfig scenarioConfig, Path pipelineRoot) {
+        this.configurationFile=scenarioConfig.getPipelineSettings().getConfigurationFile()
+                .map(hagrid.core.config.HagridConfigFile::load).orElse(null);
 		this.scenarioConfig = scenarioConfig;
 		this.pipelineRoot = pipelineRoot;
 		this.configXmlPath = pipelineRoot.resolve("input").resolve(StudyArea.HANNOVER.folder())
@@ -117,6 +120,14 @@ public final class ScenarioRunner {
 	 * @param date    the simulation date
 	 */
 	public void runSingleScenario(String concept, LocalDate date) {
+        // Validate the actual profile + captured file before log/cache/output side effects.
+        var preflight=new HagridConfig(new HagridPaths(pipelineRoot));
+        applyScenarioConfig(preflight,concept,date,null);
+        hagrid.core.config.HagridConfigResolver.resolve(preflight,
+                hagrid.core.config.HagridConfigResolver.Overrides.empty(),
+                hagrid.core.config.HagridConfigResolver.Overrides.empty(),Map.of());
+        // Input conflicts are diagnosed before logs, cache directories or outputs are created.
+        var module = new HagridModule(configXmlPath.toString(), preflight);
 		String runId = scenarioConfig.createRunId(concept, date);
 		LocalDateTime startedAt = LocalDateTime.now();
 
@@ -132,7 +143,7 @@ public final class ScenarioRunner {
 			CacheConfig cacheConfig = setupCacheConfig(runId);
 
 			// Create and configure Guice injector
-			Injector injector = createConfiguredInjector(concept, date, cacheConfig);
+			Injector injector = createConfiguredInjector(module, preflight, concept, date, cacheConfig);
 
 			// Execute pipeline
 			executePipeline(injector);
@@ -140,8 +151,7 @@ public final class ScenarioRunner {
 			// Write summary
 			writeSummary(runId, concept, date, startedAt, cacheConfig, injector);
 
-			// Cleanup
-			cleanup(injector);
+
 
 			LOGGER.info("Finished scenario: {}", runId);
 		} finally {
@@ -197,23 +207,17 @@ public final class ScenarioRunner {
 		return cacheConfig;
 	}
 
-	private Injector createConfiguredInjector(String concept, LocalDate date, CacheConfig cacheConfig) {
-		// Create Guice injector
-		Injector injector = Guice.createInjector(new HagridModule(configXmlPath.toString()));
-
-		// Get and configure HagridConfig
-		HagridConfig hagridConfig = injector.getInstance(HagridConfig.class);
-		applyScenarioConfig(hagridConfig, concept, date, cacheConfig);
-
-		// Create output directories for this run
-		try {
-			hagridConfig.io().createOutputDirectories();
-		} catch (Exception e) {
-			LOGGER.warn("Could not create output directories: {}", e.getMessage());
-		}
-
-		return injector;
-	}
+    private Injector createConfiguredInjector(HagridModule module, HagridConfig effective,
+            String concept, LocalDate date, CacheConfig cacheConfig) {
+        applyScenarioConfig(effective, concept, date, cacheConfig);
+        Injector injector = Guice.createInjector(module);
+        try {
+            effective.io().createOutputDirectories();
+        } catch (Exception failure) {
+            throw new PipelineStepException("Output Directories", failure);
+        }
+        return injector;
+    }
 
 	private void applyScenarioConfig(HagridConfig hagridConfig, String concept, 
 			LocalDate date, CacheConfig cacheConfig) {
@@ -226,6 +230,7 @@ public final class ScenarioRunner {
 
 		// Vehicle configuration
 		VehicleConfig vehicleConfig = scenarioConfig.getVehicleConfig();
+		vehicleConfig.getCargoBikeMaxSpeedKmh().ifPresent(hagridConfig.vehicles()::setCargoBikeMaxSpeedKmh);
 		hagridConfig.clearProviderVehicleSizes();
 		hagridConfig.setCepVehicleSizes(vehicleConfig.getDefaultVehicleSizes());
 
@@ -298,6 +303,10 @@ public final class ScenarioRunner {
 		// JSprit iterations configuration
 		int jspritIterations = scenarioConfig.getPipelineSettings().getJspritIterations();
 		hagridConfig.routing().setJspritIterations(jspritIterations);
+        if(configurationFile!=null) hagridConfig.applyConfiguration(configurationFile);
+        scenarioConfig.getVehicleConfig().getCargoBikeMaxSpeedKmh().ifPresent(hagridConfig.vehicles()::setCargoBikeMaxSpeedKmh);
+        scenarioConfig.getPipelineSettings().getSolverMaxRouteDurationSeconds()
+                .ifPresent(hagridConfig.routing()::setSolverMaxRouteDurationSeconds);
 		LOGGER.info("JSprit iterations: {}", jspritIterations);
 	}
 
@@ -338,17 +347,6 @@ public final class ScenarioRunner {
 				.build();
 		
 		ScenarioSummaryWriter.write(context);
-	}
-
-	private void cleanup(Injector injector) {
-		// Allow GC to collect resources
-		System.gc();
-		
-		try {
-			Thread.sleep(2000); // Give GC some time
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
 	}
 
 	/**

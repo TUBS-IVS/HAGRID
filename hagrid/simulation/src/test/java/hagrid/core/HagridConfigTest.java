@@ -313,22 +313,22 @@ class HagridConfigTest {
         }
 
         @Test
-        @DisplayName("jspritIterations defaults to 1")
+        @DisplayName("jspritIterations defaults to construction-only zero")
         void jspritDefault() {
-            assertThat(config.routing().getJspritIterations()).isEqualTo(1);
+            assertThat(config.routing().getJspritIterations()).isZero();
         }
 
         @Test
-        @DisplayName("setJspritIterations clamps to minimum 1")
-        void jspritClamped() {
+        @DisplayName("setJspritIterations preserves construction-only zero")
+        void jspritKeepsZero() {
             config.routing().setJspritIterations(0);
-            assertThat(config.routing().getJspritIterations()).isEqualTo(1);
+            assertThat(config.routing().getJspritIterations()).isZero();
         }
 
         @Test
-        @DisplayName("maxRouteDurationSeconds defaults to 27000 (7.5h)")
+        @DisplayName("maxRouteDurationSeconds defaults to 25200 (7h)")
         void maxRouteDuration() {
-            assertThat(config.routing().getMaxRouteDurationSeconds()).isEqualTo(27000);
+            assertThat(config.routing().getMaxRouteDurationSeconds()).isEqualTo(25200);
         }
 
         @Test

@@ -63,7 +63,7 @@ class ScenarioConfigTest {
         }
 
         @Test
-        @DisplayName("default pipeline settings: no simplifier, no routing, caching off, jsprit=1")
+        @DisplayName("default pipeline settings: no simplifier, no routing, caching off, jsprit=0")
         void defaultPipelineSettings() {
             ScenarioConfig config = ScenarioConfig.builder().build();
             PipelineSettings ps = config.getPipelineSettings();
@@ -71,7 +71,7 @@ class ScenarioConfigTest {
             assertThat(ps.isApplyServiceSimplifier()).isFalse();
             assertThat(ps.isRunRouting()).isFalse();
             assertThat(ps.isCachingEnabled()).isFalse();
-            assertThat(ps.getJspritIterations()).isEqualTo(1);
+            assertThat(ps.getJspritIterations()).isZero();
         }
     }
 
@@ -406,12 +406,12 @@ class ScenarioConfigTest {
         }
 
         @Test
-        @DisplayName("jspritIterations clamps to min 1")
-        void jspritClamps() {
+        @DisplayName("jspritIterations preserves construction-only zero")
+        void jspritKeepsZero() {
             ScenarioConfig config = ScenarioConfig.builder()
                 .jspritIterations(0)
                 .build();
-            assertThat(config.getPipelineSettings().getJspritIterations()).isEqualTo(1);
+            assertThat(config.getPipelineSettings().getJspritIterations()).isZero();
         }
 
         @Test

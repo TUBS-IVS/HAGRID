@@ -33,6 +33,10 @@ public class MaxRouteDurationConstraint implements HardActivityConstraint {
     @Override
     public ConstraintsStatus fulfilled(JobInsertionContext iFacts, TourActivity prevAct, TourActivity newAct, TourActivity nextAct, double depTimeAtPrevAct) {
 
+        var modal=ExactTemporalSolverCosts.rawAdapter(routingCosts);
+        if(modal!=null)
+            return ExactTemporalTourFeasibility.insertion(modal,iFacts,newAct,nextAct,maxRouteDuration);
+
         Double oldDuration = 0.0;
 
         if (!iFacts.getRoute().isEmpty()) {
@@ -54,7 +58,7 @@ public class MaxRouteDurationConstraint implements HardActivityConstraint {
         double routeDurationIncrease = 0.0;
 
         if (prevAct instanceof Start) {
-            double tp_time_start_newAct_backward = this.routingCosts.getBackwardTransportTime(prevAct.getLocation(), newAct.getLocation(), depTimeAtPrevAct, iFacts.getNewDriver(), iFacts.getNewVehicle());
+            double tp_time_start_newAct_backward = this.routingCosts.getBackwardTransportTime(prevAct.getLocation(), newAct.getLocation(), newAct_startTime, iFacts.getNewDriver(), iFacts.getNewVehicle());
             double newRouteRealStartTime = newAct_startTime - tp_time_start_newAct_backward;
             if (iFacts.getRoute().isEmpty())
                 routeDurationIncrease += depTimeAtPrevAct - newRouteRealStartTime;
@@ -70,7 +74,7 @@ public class MaxRouteDurationConstraint implements HardActivityConstraint {
             double nextAct_arrTime = newAct_endTime + tp_time_newAct_nextAct;
             double endTime_nextAct_new = CalculationUtils.getActivityEndTime(nextAct_arrTime, nextAct);
 
-            double arrTime_nextAct = depTimeAtPrevAct + this.routingCosts.getTransportTime(prevAct.getLocation(), nextAct.getLocation(), prevAct.getEndTime(), iFacts.getRoute().getDriver(), iFacts.getRoute().getVehicle());
+            double arrTime_nextAct = depTimeAtPrevAct + this.routingCosts.getTransportTime(prevAct.getLocation(), nextAct.getLocation(), prevAct.getEndTime(), iFacts.getRoute().getDriver(), iFacts.getRoute().isEmpty() ? iFacts.getNewVehicle() : iFacts.getRoute().getVehicle());
             double endTime_nextAct_old = CalculationUtils.getActivityEndTime(arrTime_nextAct, nextAct);
 
             double endTimeDelay_nextAct = Math.max(0.0D, endTime_nextAct_new - endTime_nextAct_old);

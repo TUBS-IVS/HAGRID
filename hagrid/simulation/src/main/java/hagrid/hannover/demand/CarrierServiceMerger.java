@@ -97,8 +97,7 @@ public class CarrierServiceMerger implements Runnable {
      * <ul>
      * <li>{@code ACC_CARGOBIKE}: Assumed acceleration for cargo bikes [m/s²]</li>
      * <li>{@code ACC_VAN}: Assumed acceleration for vans [m/s²]</li>
-     * <li>{@code VMAX_CARGOBIKE}: Maximum velocity for cargo bikes, realistically
-     * limited to ~25 km/h [m/s]</li>
+     * <li>Cargo-bike maximum: minimum of the configured cap and actual fleet maximum.</li>
      * <li>{@code VMAX_VAN}: Maximum velocity for vans, capped at ~150 km/h to
      * reflect rural and interurban conditions [m/s]</li>
      * </ul>
@@ -109,44 +108,34 @@ public class CarrierServiceMerger implements Runnable {
      * value at runtime, ensuring consistency with the road network constraints.
      */
 
+    private static int mergeCapacity(Double value, Carrier carrier) {
+        if (value == null || !Double.isFinite(value) || value <= 0
+                || value > Integer.MAX_VALUE || value != Math.rint(value)) {
+            throw new IllegalArgumentException("Invalid fleet merge capacity: " + carrier.getId());
+        }
+        return value.intValue();
+    }
+    private static int parcelCount(CarrierService service, String attribute) {
+        Object value = service.getAttributes().getAttribute(attribute);
+        if (!(value instanceof Number number) || number.doubleValue() < 0
+                || number.doubleValue() > Integer.MAX_VALUE
+                || number.doubleValue() != number.intValue()) {
+            throw new IllegalArgumentException("Invalid " + attribute + " parcel count: " + service.getId());
+        }
+        return number.intValue();
+    }
     private static final double ACC_CARGOBIKE = 1.0; // m/s²
     private static final double ACC_VAN = 1.2;
-    private static final double VMAX_CARGOBIKE = 6.94; // m/s
     private static final double VMAX_VAN = 41.66;
 
-    private record MergeKey(Id<Link> linkId, Coord coord, String carrierMode, Set<String> skillSet) {
+    private record MergeKey(Id<Link> linkId, Double x, Double y, String stopId,
+                            String streetIndex, String sectionId, String side, String part, String positionM,
+                            String carrierMode, Set<String> skillSet) {}
 
-        public static MergeKey byLink(Id<Link> linkId, String carrierMode, Set<String> skillSet) {
-            return new MergeKey(linkId, null, carrierMode, skillSet);
-        }
-
-        public static MergeKey byCoord(Coord coord, String carrierMode, Set<String> skillSet) {
-            return new MergeKey(null, coord, carrierMode, skillSet);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o)
-                return true;
-            if (!(o instanceof MergeKey other))
-                return false;
-            return Objects.equals(linkId, other.linkId)
-                    && Objects.equals(carrierMode, other.carrierMode)
-                    && Objects.equals(skillSet, other.skillSet)
-                    && Objects.equals(coord == null ? null : coord.getX(),
-                            other.coord == null ? null : other.coord.getX())
-                    && Objects.equals(coord == null ? null : coord.getY(),
-                            other.coord == null ? null : other.coord.getY());
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(linkId,
-                    coord == null ? null : coord.getX(),
-                    coord == null ? null : coord.getY(),
-                    carrierMode,
-                    skillSet);
-        }
+    private static String sourceAttribute(CarrierService service, String name) {
+        Object value = service.getAttributes().getAttribute(name);
+        if ("str_idx".equals(name)) return hagrid.core.util.Delivery.normalizeStreetIndex(value);
+        return value == null || value.toString().isBlank() ? null : value.toString().trim();
     }
 
     /**
@@ -204,9 +193,24 @@ public class CarrierServiceMerger implements Runnable {
 
     public static void mergeServices(Carriers carriers, Scenario scenario, HagridConfig hagridConfig,
             boolean fullMerge) {
-        final Network subNetwork = HAGRIDUtils.getScenarioElementAs("parcelServiceNetwork", scenario);
+        final Network subNetwork = scenario.getNetwork();
 
+        var sectionSettings=hagrid.core.config.SectionSettings.from(hagridConfig.getAdditionalConfigurationValues());
+        Set<String> sectionCarriers=Set.of();
+        if(sectionSettings.hagridInputsFile().isPresent())sectionCarriers=carriers.getCarriers().keySet().stream().map(Object::toString).collect(java.util.stream.Collectors.toSet());
+        else if(sectionSettings.enabled())try {sectionCarriers=hagrid.core.routing.sections.SectionCatalogInputs.read(java.nio.file.Path.of(sectionSettings.haltCatalogFile().orElseThrow())).keySet();}
+        catch(java.io.IOException e){throw new java.io.UncheckedIOException("Cannot read section catalog",e);}
+        var proposals = new java.util.IdentityHashMap<Carrier, Map<Id<CarrierService>,CarrierService>>();
+        var missedProposals = new java.util.IdentityHashMap<Carrier, List<Id<CarrierService>>>();
         for (Carrier carrier : carriers.getCarriers().values()) {
+            if(sectionCarriers.contains(carrier.getId().toString()))continue;
+            if (!carrier.getPlans().isEmpty()) throw new IllegalArgumentException("Service merging requires an unplanned carrier: " + carrier.getId());
+            var proposed = new LinkedHashMap<>(carrier.getServices());
+            proposals.put(carrier, proposed);
+            var missed = new ArrayList<>(CarrierMetadata.missedEntries(carrier));
+            missedProposals.put(carrier, missed);
+            var originalMissedCounts = new HashMap<Id<CarrierService>, Integer>();
+            missed.forEach(id -> originalMissedCounts.merge(id, 1, Math::addExact));
             List<CarrierService> allServices = new ArrayList<>(carrier.getServices().values());
 
             // Gruppieren
@@ -222,8 +226,13 @@ public class CarrierServiceMerger implements Runnable {
 
                 Id<Link> linkId = s.getServiceLinkId();
                 MergeKey key = fullMerge
-                        ? MergeKey.byLink(linkId, carrierMode, skillSet)
-                        : MergeKey.byCoord(coord, carrierMode, skillSet);
+                        ? new MergeKey(linkId, null, null, sourceAttribute(s, "stop_id"), sourceAttribute(s, "str_idx"),
+                                sourceAttribute(s, "section_id"), sourceAttribute(s, "side"),
+                                sourceAttribute(s, "part"), sourceAttribute(s, "position_m"), carrierMode, skillSet)
+                        : new MergeKey(linkId, coord.getX(), coord.getY(),
+                                sourceAttribute(s, "stop_id"), sourceAttribute(s, "str_idx"),
+                                sourceAttribute(s, "section_id"), sourceAttribute(s, "side"), sourceAttribute(s, "part"),
+                                sourceAttribute(s, "position_m"), carrierMode, skillSet);
 
                 groups.computeIfAbsent(key, k -> new ArrayList<>()).add(s);
             }
@@ -238,7 +247,8 @@ public class CarrierServiceMerger implements Runnable {
                 MergeKey key = entry.getKey();
                 // Link link = subNetwork.getLinks().get(key.linkId);
                 // Link link = fullMerge ? null : subNetwork.getLinks().get(key.linkId);
-                boolean isCargo = key.skillSet.contains("cargoBike");
+                String networkMode = hagrid.core.routing.CarrierModeResolver.resolve(carrier).orElseThrow();
+                boolean isCargo = networkMode.equals("bike") || networkMode.equals("cargobike");
 
                 int totalCapacity = 0, b2b = 0, b2c = 0;
                 double totalDuration = 0.0;
@@ -247,14 +257,25 @@ public class CarrierServiceMerger implements Runnable {
                 Map<String, Object> mergedMeta = new LinkedHashMap<>();
 
                 for (CarrierService s : services) {
-                    totalCapacity += s.getCapacityDemand();
+                    totalCapacity = Math.addExact(totalCapacity, s.getCapacityDemand());
                     totalDuration += s.getServiceDuration();
 
                     ParcelType type = (ParcelType) s.getAttributes().getAttribute("type");
-                    if (ParcelType.B2B == type)
-                        b2b += s.getCapacityDemand();
-                    if (ParcelType.B2C == type)
-                        b2c += s.getCapacityDemand();
+                    if (ParcelType.B2B == type) {
+                        b2b = Math.addExact(b2b, s.getCapacityDemand());
+                    } else if (ParcelType.B2C == type) {
+                        b2c = Math.addExact(b2c, s.getCapacityDemand());
+                    } else if (ParcelType.MIXED == type) {
+                        int originalB2b = parcelCount(s, "b2b");
+                        int originalB2c = parcelCount(s, "b2c");
+                        if (Math.addExact(originalB2b, originalB2c) != s.getCapacityDemand()) {
+                            throw new IllegalArgumentException("Mixed parcel counts disagree with demand: " + s.getId());
+                        }
+                        b2b = Math.addExact(b2b, originalB2b);
+                        b2c = Math.addExact(b2c, originalB2c);
+                    } else {
+                        throw new IllegalArgumentException("Missing or unsupported parcel type: " + s.getId());
+                    }
 
                     Coord coordObj = (Coord) s.getAttributes().getAttribute("coord");
                     if (coordObj instanceof Coord)
@@ -270,7 +291,7 @@ public class CarrierServiceMerger implements Runnable {
                         } else if ("coord".equals(attrName) && attrValue instanceof Coord coord) {
                             // Coord als [x, y]
                             singleMeta.put("coord", Arrays.asList(coord.getX(), coord.getY()));
-                            coords.add(coord); // für Fahrtzeitberechnung
+
                         } else {
                             // alle anderen raw übernehmen
                             singleMeta.put(attrName, attrValue);
@@ -280,6 +301,7 @@ public class CarrierServiceMerger implements Runnable {
                     // Pflichtwerte (außerhalb attributes)
                     singleMeta.put("capacity", s.getCapacityDemand());
                     singleMeta.put("serviceDuration", s.getServiceDuration());
+                    singleMeta.put("missedParcels", originalMissedCounts.getOrDefault(s.getId(), 0));
 
                     mergedMeta.put(s.getId().toString(), singleMeta);
                 }
@@ -299,12 +321,27 @@ public class CarrierServiceMerger implements Runnable {
                         ? subNetwork.getLinks().get(key.linkId)
                         : null;
 
-                double timeBonus = fullMerge ? computeRealisticTravelTime(coords, link, isCargo) : 0.0;
+                if (fullMerge && (link == null || !link.getAllowedModes().contains(networkMode))) {
+                    throw new IllegalArgumentException("Invalid merged access link " + selectedLinkId + " for " + networkMode);
+                }
+                double windowStart = services.stream().mapToDouble(s -> s.getServiceStaringTimeWindow().getStart()).max().orElseThrow();
+                double windowEnd = services.stream().mapToDouble(s -> s.getServiceStaringTimeWindow().getEnd()).min().orElseThrow();
+                if (windowStart > windowEnd) continue;
+
+                double timeBonus = fullMerge ? computeRealisticTravelTime(coords, link, isCargo, carrier, hagridConfig) : 0.0;
 
                 double finalDuration = totalDuration + timeBonus;
 
-                final double begin = hagridConfig.getDeliveryTimeWindowStart();
-                final double end = hagridConfig.getDeliveryTimeWindowEnd();
+                // Every original job must still be able to start within its own window.
+                // Reserve all other service durations and the within-stop travel allowance;
+                // this conservative bound does not depend on an unstored internal job order.
+                for (CarrierService original : services) {
+                    windowEnd = Math.min(windowEnd, original.getServiceStaringTimeWindow().getEnd()
+                            - (totalDuration - original.getServiceDuration() + timeBonus));
+                }
+                if (windowStart > windowEnd) continue;
+                final double begin = windowStart;
+                final double end = windowEnd;
 
                 // Cap each merged stop at what a single van can carry. A service cannot be split
                 // across vehicles, and the INFINITE fleet only clones identical vans, so a pooled
@@ -312,16 +349,23 @@ public class CarrierServiceMerger implements Runnable {
                 // by jsprit). segCap = min(demandBorder, minVehicleCapacity): at high capacities this
                 // equals demandBorder -> one segment -> behaviour unchanged; at low capacities the
                 // group is broken into ceil(total/segCap) sub-stops. See splitMergeGroup.
-                final int segCap = Math.min(demandBorder, hagridConfig.getMinVehicleCapacity());
+                final int fleetCapacity = carrier.getCarrierCapabilities().getCarrierVehicles().values().stream()
+                        .mapToInt(v -> mergeCapacity(v.getType().getCapacity().getOther(), carrier)).min()
+                        .orElse(hagridConfig.getMinVehicleCapacity());
+                final int segCap = Math.min(demandBorder, Math.min(hagridConfig.getMinVehicleCapacity(), fleetCapacity));
+                if (segCap <= 0) throw new IllegalArgumentException("Nonpositive merge capacity: " + carrier.getId());
                 List<MergeSegment> segments = splitMergeGroup(totalCapacity, segCap, finalDuration, b2b, b2c);
 
                 String mergedMetaJson = null;
                 try {
                     mergedMetaJson = objectMapper.writeValueAsString(mergedMeta);
                 } catch (JsonProcessingException e) {
-                    LOGGER.error("Failed to write merged service metadata", e);
+                    throw new IllegalStateException("Failed to encode merged service metadata", e);
                 }
 
+                var originalIds = services.stream().map(CarrierService::getId).collect(Collectors.toSet());
+                int missedRemaining = Math.toIntExact(missed.stream().filter(originalIds::contains).count());
+                missed.removeIf(originalIds::contains);
                 int seg = 0;
                 for (MergeSegment segment : segments) {
                     // Parcel type reflects this sub-stop's own B2B/B2C mix (a split may yield pure
@@ -354,6 +398,14 @@ public class CarrierServiceMerger implements Runnable {
                     builder.setServiceStartingTimeWindow(TimeWindow.newInstance(begin, end));
 
                     CarrierService mergedService = builder.build();
+                    mergedService.getAttributes().putAttribute("coord", services.get(0).getAttributes().getAttribute("coord"));
+                    for (String attribute : List.of("stop_id", "str_idx", "section_id", "side", "part", "position_m")) {
+                        String value = sourceAttribute(services.get(0), attribute);
+                        if (value != null && services.stream().allMatch(s -> Objects.equals(value, sourceAttribute(s, attribute)))) {
+                            mergedService.getAttributes().putAttribute(attribute, value);
+                        }
+                    }
+                    mergedService.getAttributes().putAttribute("provider", services.get(0).getAttributes().getAttribute("provider"));
                     mergedService.getAttributes().putAttribute("carrierMode", key.carrierMode);
                     mergedService.getAttributes().putAttribute("skills", String.join(",", key.skillSet));
                     mergedService.getAttributes().putAttribute("b2b", segment.b2b());
@@ -365,7 +417,11 @@ public class CarrierServiceMerger implements Runnable {
                         mergedService.getAttributes().putAttribute("mergedMetadata", mergedMetaJson);
                     }
 
-                    CarriersUtils.addService(carrier, mergedService);
+                    if (proposed.putIfAbsent(mergedService.getId(), mergedService) != null)
+                        throw new IllegalArgumentException("Merged service ID collision: " + mergedService.getId());
+                    int segmentMissed = Math.min(missedRemaining, segment.capacity());
+                    missed.addAll(Collections.nCopies(segmentMissed, mergedService.getId()));
+                    missedRemaining -= segmentMissed;
                     seg++;
                 }
 
@@ -375,7 +431,7 @@ public class CarrierServiceMerger implements Runnable {
                 }
 
                 // cleanup originals
-                services.forEach(s -> carrier.getServices().remove(s.getId()));
+                services.forEach(s -> proposed.remove(s.getId()));
                 merged++;
                 removed += services.size();
             }
@@ -386,15 +442,34 @@ public class CarrierServiceMerger implements Runnable {
             }
         }
 
+        proposals.forEach((carrier, services) -> CarrierMetadata.validate(services, missedProposals.get(carrier)));
+        var originals = carriers.getCarriers().values().stream().map(CarrierMergeService.State::capture).toList();
+        try {
+            proposals.forEach((carrier, services) -> {
+                carrier.getServices().clear(); carrier.getServices().putAll(services);
+                CarrierMetadata.rebuild(carrier, missedProposals.get(carrier));
+            });
+        } catch (RuntimeException | Error failure) {
+            for (var original : originals) {
+                try { original.restore(); }
+                catch (RuntimeException | Error recovery) { failure.addSuppressed(recovery); }
+            }
+            throw failure;
+        }
     }
 
-    private static double computeRealisticTravelTime(List<Coord> coords, Link link, boolean isCargoBike) {
+
+    private static double computeRealisticTravelTime(List<Coord> coords, Link link, boolean isCargoBike, Carrier carrier, HagridConfig config) {
         if (coords.size() < 2)
             return 0.0;
 
         double a = isCargoBike ? ACC_CARGOBIKE : ACC_VAN;
         double vLimit = link.getFreespeed(); // [m/s]
-        double vMax = isCargoBike ? Math.min(vLimit, VMAX_CARGOBIKE) : Math.min(vLimit, VMAX_VAN);
+        double fleetLimit = carrier.getCarrierCapabilities().getCarrierVehicles().values().stream()
+                .mapToDouble(v -> v.getType().getMaximumVelocity()).min().orElse(VMAX_VAN);
+        if (isCargoBike) fleetLimit = Math.min(fleetLimit, config.vehicles().getCargoBikeMaxSpeedKmh() / 3.6);
+        double vMax = Math.min(vLimit, fleetLimit);
+        if (!Double.isFinite(vMax) || vMax <= 0) throw new IllegalArgumentException("Invalid merged-stop speed for " + carrier.getId());
 
         double totalTime = 0.0;
 

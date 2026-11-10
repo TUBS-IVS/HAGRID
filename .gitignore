@@ -176,3 +176,10 @@ final_grid_250_region_results_update.*
 /hagrid/demand/archive/notebooks/**/output/**
 !/hagrid/demand/archive/notebooks/**/output/**/
 !/hagrid/demand/archive/notebooks/**/output/**/.gitkeep
+
+# Synthetic four-stop Python-to-Java regression fixture, not regional input data.
+!hagrid/simulation/src/test/resources/long-link-python/hagrid_parcel_demand_2025-05-13_(Tuesday).cpg
+!hagrid/simulation/src/test/resources/long-link-python/hagrid_parcel_demand_2025-05-13_(Tuesday).dbf
+!hagrid/simulation/src/test/resources/long-link-python/hagrid_parcel_demand_2025-05-13_(Tuesday).prj
+!hagrid/simulation/src/test/resources/long-link-python/hagrid_parcel_demand_2025-05-13_(Tuesday).shp
+!hagrid/simulation/src/test/resources/long-link-python/hagrid_parcel_demand_2025-05-13_(Tuesday).shx

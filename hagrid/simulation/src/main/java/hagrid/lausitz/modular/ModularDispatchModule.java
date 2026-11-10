@@ -120,9 +120,9 @@ import java.util.List;
  * {@link ModularTourScheduler} MUST be constructed with the IDENTICAL modal {@link Network} object
  * instance that the DVRP fleet's {@link Link} references come from — not merely a network with
  * matching link ids. {@code ScheduleImpl.validateArgsBeforeAddingTask} enforces link continuity by
- * REFERENCE equality, and the splicer truncates the vehicle's trailing STAY before appending, with
- * no rollback: a foreign-but-same-id network therefore throws on the FIRST stop leg of EVERY tour
- * (every tour has at least one stop) and leaves a half-spliced schedule behind. VERIFY-SOURCE for
+ * REFERENCE equality. The splicer now prepares tasks first and restores appended tasks plus the
+ * original STAY end on publication failure; this startup guard still rejects foreign-but-same-id
+ * networks before attempting any excursion. VERIFY-SOURCE for
  * why {@code getter.getModal(Network.class)} is the right key: {@code FleetModule.java:114-116}
  * builds the fleet with {@code Fleets.createDefaultFleet(spec, getter.getModal(Network.class)
  * .getLinks()::get)}, and that modal binding resolves to the controller-scope eager singleton
@@ -162,6 +162,7 @@ import java.util.List;
 public final class ModularDispatchModule extends AbstractDvrpModeModule {
 
     private final DrtConfigGroup drtCfg;
+    private final hagrid.core.config.ModularSettings settings;
     private final List<ModularFreightTour> tours;
     /** Passenger-first dispatch gate (design D6): dispatch only while the idle SHARE strictly
      *  exceeds this; 1.0 is the never-dispatch control arm, 0.0 dispatches whenever any vehicle
@@ -232,7 +233,15 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                                  Modular.BudgetMode budgetMode, int budgetSmoothing,
                                  double budgetHeadroom, double budgetUrgencyLeadS,
                                  ModularPlanStats planStats) {
+        this(drtCfg,tours,idleThreshold,maxConcurrentFreight,freightWindows,budgetMode,budgetSmoothing,budgetHeadroom,
+                budgetUrgencyLeadS,planStats,hagrid.core.config.ModularSettings.defaults());
+    }
+    public ModularDispatchModule(DrtConfigGroup drtCfg,List<ModularFreightTour> tours,double idleThreshold,
+            int maxConcurrentFreight,List<Modular.DispatchWindow> freightWindows,Modular.BudgetMode budgetMode,
+            int budgetSmoothing,double budgetHeadroom,double budgetUrgencyLeadS,ModularPlanStats planStats,
+            hagrid.core.config.ModularSettings settings) {
         super(drtCfg.getMode());
+        this.settings=java.util.Objects.requireNonNull(settings);
         this.budgetUrgencyLeadS = budgetUrgencyLeadS;
         this.drtCfg = drtCfg;
         this.tours = List.copyOf(tours);
@@ -281,7 +290,7 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                 budgetOn ? binder().getProvider(ModularBudgetStats.class) : null;
         bind(ModularKpiHandler.class)
                 .toProvider(() -> new ModularKpiHandler(controlerIOProvider.get(), planStats,
-                        budgetStatsProvider == null ? null : budgetStatsProvider.get()))
+                        budgetStatsProvider == null ? null : budgetStatsProvider.get(), settings))
                 .asEagerSingleton();
         addEventHandlerBinding().to(ModularKpiHandler.class);
         addControlerListenerBinding().to(ModularKpiHandler.class);
@@ -374,7 +383,7 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                             .createTravelDisutility(travelTime);
                     return new ModularTourScheduler(network, travelTime, disutility,
                             getter.getModal(DrtTaskFactory.class),
-                            getter.getModal(DvrpLoadType.class));
+                            getter.getModal(DvrpLoadType.class), settings);
                 })).asEagerSingleton();
 
                 // The online gate (Task 7). Same modal Network as the splicer, so a tour link the
@@ -401,7 +410,7 @@ public final class ModularDispatchModule extends AbstractDvrpModeModule {
                                 getter.getModal(DrtScheduleInquiry.class),
                                 getter.getModal(ModularTourScheduler.class),
                                 getter.getModal(Network.class),
-                                getter.get(EventsManager.class)))).asEagerSingleton();
+                                getter.get(EventsManager.class), settings))).asEagerSingleton();
 
                 // REBIND only - never addModalComponent (see class javadoc, binding rule).
                 // DefaultDrtOptimizer's 10 constructor arguments and their order are verbatim from

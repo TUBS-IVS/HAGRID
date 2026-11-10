@@ -32,7 +32,7 @@ def build_stops(units: gpd.GeoDataFrame, expected_daily: pd.Series, streets: gpd
         line = parts.get((sid, part)) if part is not None else line_of[sid]
         stop_id = _stop_id(sid, part, side, members.building_key.iloc[0])
         plz = members.groupby("plz").expected_daily.sum().idxmax()
-        stops.append({"stop_id": stop_id, "str_idx": sid, "part": part, "side": side,
+        stops.append({"stop_id": stop_id, "str_idx": sid, "part": part, "side": side, "position_m": position,
                       "section_id": f"{sid}-{part if part is not None else 's'}-{int(position // section_length_m)}",
                       "plz": str(plz), "n_units": int(len(members)), "expected_daily": float(members.expected_daily.sum()),
                       "geometry": line.interpolate(position)})
@@ -58,7 +58,7 @@ def build_stops(units: gpd.GeoDataFrame, expected_daily: pd.Series, streets: gpd
             emit(group.loc[cluster], int(sid), part, side)
     for row in frame[frame.sid < 0].sort_values("building_key").itertuples():
         stop_id = _stop_id("off", row.building_key)
-        stops.append({"stop_id": stop_id, "str_idx": -1, "part": None, "side": None, "section_id": None, "plz": str(row.plz),
+        stops.append({"stop_id": stop_id, "str_idx": -1, "part": None, "side": None, "position_m": None, "section_id": None, "plz": str(row.plz),
                       "n_units": 1, "expected_daily": float(row.expected_daily), "geometry": row.geometry})
         mapping.append({"building_key": row.building_key, "stop_id": stop_id})
     result = gpd.GeoDataFrame(stops, geometry="geometry", crs=units.crs).sort_values("stop_id").reset_index(drop=True)

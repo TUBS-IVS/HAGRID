@@ -47,11 +47,8 @@ import java.util.Set;
 public final class LausitzDrtConfigurator {
 
     /** Ride disutility multiplier on car scoring (matsim-lausitz native value). */
-    private static final double RIDE_SCORING_FACTOR = 2.0;
 
     /** DRT access/egress radius for intermodal rail feeding (native value, metres). */
-    private static final double DRT_INTERMODAL_RADIUS_M = 50_000.0;
-    private static final double DRT_INTERMODAL_SEARCH_EXT_M = 1_000.0;
 
     /** Stop attribute set by {@code PrepareTransitSchedule.tagIntermodalStops}. */
     static final String DRT_ACCESS_ATTR = "allowDrtAccessEgress";
@@ -112,6 +109,13 @@ public final class LausitzDrtConfigurator {
                                String serviceAreaShp, String fleetFile,
                                String railScheduleFile, String railTransitVehiclesFile, String vehicleTypesFile,
                                String outputDir, String runId, int lastIteration) {
+        return build(baseConfigPath,drtNetworkFile,plansFile,serviceAreaShp,fleetFile,
+                railScheduleFile,railTransitVehiclesFile,vehicleTypesFile,outputDir,runId,lastIteration,
+                hagrid.core.config.DrtSettings.defaults());
+    }
+    public static Config build(String baseConfigPath,String drtNetworkFile,String plansFile,
+            String serviceAreaShp,String fleetFile,String railScheduleFile,String railTransitVehiclesFile,
+            String vehicleTypesFile,String outputDir,String runId,int lastIteration,hagrid.core.config.DrtSettings settings) {
 
         // 1) Load the native config. loadConfig only PARSES — it never fetches the
         //    remote SVN file refs (verified in the spike).
@@ -163,7 +167,7 @@ public final class LausitzDrtConfigurator {
         // drt are NOT monetarily free while car pays per km (that asymmetry made drt
         // structurally over-attractive). Consumed by PtAndDrtFareModule (installed in
         // DrtConfigComposer): DRT is fared exactly like PT, chained rides pay once (upper bound).
-        composePtFareConfig(config);
+        composePtFareConfig(config,settings);
         // The native config carries a `simwrapper` module, but we do NOT register the
         // SimWrapper contrib (no SimWrapperConfigGroup / no dashboards in this milestone).
         // It therefore stays an UNMATERIALIZED generic group, and MATSim's
@@ -221,8 +225,8 @@ public final class LausitzDrtConfigurator {
             if (!config.routing().getTeleportedModeParams().containsKey(TransportMode.pt)) {
                 org.matsim.core.config.groups.RoutingConfigGroup.TeleportedModeParams ptTeleport =
                         new org.matsim.core.config.groups.RoutingConfigGroup.TeleportedModeParams(TransportMode.pt);
-                ptTeleport.setTeleportedModeSpeed(50.0 / 3.6);
-                ptTeleport.setBeelineDistanceFactor(1.3);
+                ptTeleport.setTeleportedModeSpeed(settings.teleportedPtSpeedKmh() / 3.6);
+                ptTeleport.setBeelineDistanceFactor(settings.teleportedPtBeelineFactor());
                 config.routing().addTeleportedModeParams(ptTeleport);
             }
         }
@@ -240,16 +244,16 @@ public final class LausitzDrtConfigurator {
         //    from the car params.
         SnzActivities.addScoringParams(config);
         RideScoringParamsFromCarParams.setRideScoringParamsBasedOnCarParams(
-                config.scoring(), RIDE_SCORING_FACTOR);
+                config.scoring(), settings.rideScoringFactor());
 
         // 7) Compose the full-DVRP DRT (full sim + fleet + serviceAreaBased + drt scoring/subtour/leg).
-        DrtConfigComposer.composeConfig(config, serviceAreaShp, fleetFile);
+        DrtConfigComposer.composeConfig(config, serviceAreaShp, fleetFile,settings);
 
         // 8) Intermodality: SwissRailRaptor walk + drt access/egress to rail stops (rail-on only).
         if (railEnabled) {
             // Must run AFTER DrtConfigComposer.composeConfig above: configureRailIntermodality reads
             // MultiModeDrtConfigGroup.getModalElements() to set maxWalkDistance on the DRT constraints set.
-            configureRailIntermodality(config);
+            configureRailIntermodality(config,settings);
         }
 
         return config;
@@ -266,22 +270,19 @@ public final class LausitzDrtConfigurator {
      * 140–158 verbatim).</p>
      */
     /** Consumer-price deflation 2024→2021 (Destatis VPI 119.3/103.1), as in the native scenario. */
-    private static final double PT_FARE_DEFLATION_2024_TO_2021 = 1.16;
 
     /** VVO Tarifzone 20 (Hoyerswerda) fare shapefile, relative to the config directory. */
-    private static final String VVO_FARE_ZONE_SHP =
-            "./vvo_tarifzone20/v2.0_vvo_tarifzone20_hoyerswerda_utm32n.shp";
 
     /**
      * Replicates the native {@code LausitzScenario.prepareConfig} fare block: trips inside VVO
      * Tarifzone 20 (Hoyerswerda) pay the zone fare (prices in the shapefile), every other trip
-     * pays the Deutschlandtarif 2024 deflated to 2021 prices (factor {@value #PT_FARE_DEFLATION_2024_TO_2021}).
+     * pays the Deutschlandtarif 2024 deflated to 2021 prices (factor configured centrally).
      *
      * <p>Unlike the native code, the Deutschlandtarif values are COPIED from the shared static
      * {@code GERMAN_WIDE_FARE_2024} instead of mutated in place — mutating the static deflates
      * a second time when {@code build()} runs twice in one JVM (tests).</p>
      */
-    private static void composePtFareConfig(Config config) {
+    private static void composePtFareConfig(Config config,hagrid.core.config.DrtSettings settings) {
         PtFareConfigGroup ptFare = ConfigUtils.addOrGetModule(config, PtFareConfigGroup.class);
         if (!ptFare.getParameterSets(FareZoneBasedPtFareParams.SET_TYPE).isEmpty()) {
             return;   // already composed (idempotent)
@@ -290,7 +291,7 @@ public final class LausitzDrtConfigurator {
         vvo20.setTransactionPartner("VVO Tarifzone 20");
         vvo20.setDescription("VVO Tarifzone 20");
         vvo20.setOrder(1);
-        vvo20.setFareZoneShp(VVO_FARE_ZONE_SHP);
+        vvo20.setFareZoneShp(settings.fareZoneFile());
 
         DistanceBasedPtFareParams germany = new DistanceBasedPtFareParams();
         germany.setTransactionPartner("Deutschlandtarif");
@@ -301,15 +302,15 @@ public final class LausitzDrtConfigurator {
                 .forEach((maxDist, cls) -> {
                     DistanceBasedPtFareParams.DistanceClassLinearFareFunctionParams copy =
                             germany.getOrCreateDistanceClassFareParams(maxDist);
-                    copy.setFareSlope(cls.getFareSlope() / PT_FARE_DEFLATION_2024_TO_2021);
-                    copy.setFareIntercept(cls.getFareIntercept() / PT_FARE_DEFLATION_2024_TO_2021);
+                    copy.setFareSlope(cls.getFareSlope() / settings.ptFareDeflation());
+                    copy.setFareIntercept(cls.getFareIntercept() / settings.ptFareDeflation());
                 });
 
         ptFare.addParameterSet(vvo20);
         ptFare.addParameterSet(germany);
     }
 
-    private static void configureRailIntermodality(Config config) {
+    private static void configureRailIntermodality(Config config,hagrid.core.config.DrtSettings settings) {
         ch.sbb.matsim.config.SwissRailRaptorConfigGroup srr =
                 ConfigUtils.addOrGetModule(config, ch.sbb.matsim.config.SwissRailRaptorConfigGroup.class);
 
@@ -326,9 +327,9 @@ public final class LausitzDrtConfigurator {
             ch.sbb.matsim.config.SwissRailRaptorConfigGroup.IntermodalAccessEgressParameterSet drtParam =
                     new ch.sbb.matsim.config.SwissRailRaptorConfigGroup.IntermodalAccessEgressParameterSet();
             drtParam.setMode(TransportMode.drt);
-            drtParam.setInitialSearchRadius(DRT_INTERMODAL_RADIUS_M);
-            drtParam.setMaxRadius(DRT_INTERMODAL_RADIUS_M);
-            drtParam.setSearchExtensionRadius(DRT_INTERMODAL_SEARCH_EXT_M);
+            drtParam.setInitialSearchRadius(settings.intermodalRadiusMeters());
+            drtParam.setMaxRadius(settings.intermodalRadiusMeters());
+            drtParam.setSearchExtensionRadius(settings.intermodalSearchExtensionMeters());
             drtParam.setStopFilterAttribute(DRT_ACCESS_ATTR);
             drtParam.setStopFilterValue("true");
             srr.addIntermodalAccessEgress(drtParam);

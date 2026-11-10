@@ -1,87 +1,59 @@
 package hagrid.core.routing;
 
-import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
-import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
-import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
-import com.graphhopper.jsprit.core.util.Solutions;
-import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.network.Network;
-
 import org.matsim.freight.carriers.Carrier;
-import org.matsim.freight.carriers.CarrierPlan;
-import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
-import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
-import org.matsim.freight.carriers.jsprit.NetworkRouter;
+import org.matsim.freight.carriers.CarriersUtils;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
-
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
+/** Initial-search adapter. A group collector receives detached results; standalone calls publish only validated plans. */
+@Deprecated(forRemoval = false)
 public class JspritCarrierTask implements PrioritizedRunnable {
     private static final Logger LOGGER = LogManager.getLogger(JspritCarrierTask.class);
     private final Carrier carrier;
-    private final VRPTransportCosts netBasedCosts;
-    private final AtomicInteger startedVRPCounter;
+    private final VRPTransportCosts costs;
+    private final AtomicInteger started;
     private final int taskCount;
-    private final Network network;
-    private final double uTurnPenaltyCost;
+    private final double uTurnPenalty;
+    private final int iterations;
+    private final Consumer<CarrierOptimizationService.Result> collector;
 
-    /**
-     * Constructs a new JspritCarrierTask.
-     * Used from MATSim CarriersUtils Class 
-     *
-     * @param carrier                The carrier to route.
-     * @param netBasedCosts          The network-based transport costs.
-     * @param startedVRPCounter      The counter for started VRP tasks.
-     * @param taskCount              The total number of tasks.
-     * @param network                The network.
-     * @param uTurnPenaltyCost       Soft score penalty per U-turn (0 to disable).
-     */
-    public JspritCarrierTask(Carrier carrier, VRPTransportCosts netBasedCosts,
-                             AtomicInteger startedVRPCounter, int taskCount, Network network,
-                             double uTurnPenaltyCost) {
-        this.carrier = carrier;
-        this.netBasedCosts = netBasedCosts;
-        this.startedVRPCounter = startedVRPCounter;
-        this.taskCount = taskCount;
-        this.network = network;
-        this.uTurnPenaltyCost = uTurnPenaltyCost;
+    public JspritCarrierTask(Carrier carrier, VRPTransportCosts costs, AtomicInteger started,
+                             int taskCount, Network network, double uTurnPenalty) {
+        this(carrier,costs,started,taskCount,network,uTurnPenalty,1,null);
     }
-
-    /** Backward-compatible constructor (no U-turn penalty). */
-    public JspritCarrierTask(Carrier carrier, VRPTransportCosts netBasedCosts,
-                             AtomicInteger startedVRPCounter, int taskCount, Network network) {
-        this(carrier, netBasedCosts, startedVRPCounter, taskCount, network, 0.0);
+    public JspritCarrierTask(Carrier carrier, VRPTransportCosts costs, AtomicInteger started,
+                             int taskCount, Network network) {
+        this(carrier,costs,started,taskCount,network,0);
     }
-
+    public JspritCarrierTask(Carrier carrier, VRPTransportCosts costs, AtomicInteger started,
+                             int taskCount, Network network, double uTurnPenalty, int iterations,
+                             Consumer<CarrierOptimizationService.Result> collector) {
+        this.carrier=carrier;this.costs=costs;this.started=started;this.taskCount=taskCount;
+        this.uTurnPenalty=uTurnPenalty;this.iterations=iterations;this.collector=collector;
+    }
     public int getPriority() { return carrier.getServices().size(); }
-
     public int getServiceCount() { return carrier.getServices().size(); }
-
     public String getCarrierId() { return carrier.getId().toString(); }
 
-    @Override
-    public void run() {
-        LOGGER.info("Started VRP solving for carrier number {} out of {} carriers. Thread id: {}. Priority: {}",
-                startedVRPCounter.incrementAndGet(), taskCount, Thread.currentThread().threadId(), this.getPriority());
-
-        double start = System.currentTimeMillis();
-        int serviceCount = carrier.getServices().size();
-
-        VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-        VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
-                vrp, serviceCount, 1, network, uTurnPenaltyCost);
-
-        VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-        CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
-
-        LOGGER.info("Routing plan for carrier {}", carrier.getId());
-        NetworkRouter.routePlan(newPlan, netBasedCosts);
-        carrier.addPlan(newPlan);
-        carrier.setSelectedPlan(newPlan);
-        HAGRIDRouterUtils.recordUTurnPenalty(carrier, uTurnPenaltyCost);
-        LOGGER.info("Routing for carrier {} finished. Tour planning plus routing took {} seconds. Carrier has {} services",
-                carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount);
+    @Override public void run() {
+        LOGGER.info("Initial search {} of {}: {}",started.incrementAndGet(),taskCount,carrier.getId());
+        var result=new CarrierOptimizationService().optimizeInitial(carrier,costs,iterations,
+                hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS,uTurnPenalty);
+        if(!result.diagnostics().isEmpty()) {
+            throw new IllegalStateException("Invalid initial result for "+carrier.getId()+": "+result.diagnostics());
+        }
+        if(collector!=null) {
+            collector.accept(result);
+        } else {
+            carrier.addPlan(result.plan());carrier.setSelectedPlan(result.plan());
+            CarriersUtils.setJspritIterations(carrier,result.iterations());
+            CarriersUtils.setJspritComputationTime(carrier,result.metrics().totalSeconds);
+            HAGRIDRouterUtils.recordUnassignedJobs(carrier,result.unassignedJobIds());
+            HAGRIDRouterUtils.recordUTurnPenalty(carrier,uTurnPenalty);
+        }
     }
 }
-

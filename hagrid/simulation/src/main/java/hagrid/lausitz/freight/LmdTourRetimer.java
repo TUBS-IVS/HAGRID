@@ -44,7 +44,6 @@ final class LmdTourRetimer {
     private static final Pattern WAVE_TEMPLATE_ID = Pattern.compile("_h(\\d+)_v\\d+$");
 
     /** Absolute cap on any vehicle's operating end (Hannover parity: 21:00). */
-    private static final double LATEST_VEHICLE_END = hagrid.lausitz.DeliveryDay.END_S;
 
     private LmdTourRetimer() {}
 
@@ -55,6 +54,16 @@ final class LmdTourRetimer {
      * the tour still ends by 21:00 (relevant for the 14:00 wave).
      */
     static void retime(Carrier carrier, CarrierPlan plan, Random random, int maxRouteDurationSeconds) {
+        retime(carrier,plan,random,maxRouteDurationSeconds,hagrid.core.config.RoutingDefaults.VEHICLE_AVAILABILITY_BUFFER_SECONDS,
+                hagrid.core.config.RoutingDefaults.VEHICLE_DAY_END_SECONDS);
+    }
+    static void retime(Carrier carrier,CarrierPlan plan,Random random,int maxRouteDurationSeconds,
+            double availabilityBufferSeconds,double vehicleDayEndSeconds) {
+        retime(carrier,plan,random,maxRouteDurationSeconds,availabilityBufferSeconds,vehicleDayEndSeconds,
+                hagrid.core.config.LmdPlanningSettings.defaults());
+    }
+    static void retime(Carrier carrier,CarrierPlan plan,Random random,int maxRouteDurationSeconds,
+            double availabilityBufferSeconds,double vehicleDayEndSeconds,hagrid.core.config.LmdPlanningSettings settings) {
         List<ScheduledTour> tours = new ArrayList<>(plan.getScheduledTours());
         // content-based draw order, independent of jsprit's route collection order
         tours.sort(Comparator
@@ -71,11 +80,11 @@ final class LmdTourRetimer {
                 continue;
             }
             int waveHour = Integer.parseInt(m.group(1));
-            double sigmaMinutes = LmdCarrierBuilder.jitterSigmaMinutes(template.getType());
+            double sigmaMinutes = settings.jitterMinutes(template.getType().getId().toString());
             double start = waveHour * 3600.0 + random.nextGaussian() * sigmaMinutes * 60.0;
             // keep the planned tour inside the 21:00 hard end (binds on the 14:00 wave)
-            start = Math.max(0.0, Math.min(start, LATEST_VEHICLE_END - plannedDuration(st)));
-            double end = Math.min(start + maxRouteDurationSeconds + 3600.0, LATEST_VEHICLE_END);
+            start = Math.max(0.0, Math.min(start, vehicleDayEndSeconds - plannedDuration(st)));
+            double end = Math.min(start + maxRouteDurationSeconds + availabilityBufferSeconds, vehicleDayEndSeconds);
 
             int copy = copyCounter.merge(template.getId(), 1, Integer::sum) - 1;
             CarrierVehicle vehicle = CarrierVehicle.Builder

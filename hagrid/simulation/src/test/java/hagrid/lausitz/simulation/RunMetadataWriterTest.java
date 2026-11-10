@@ -19,6 +19,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class RunMetadataWriterTest {
 
+    @Test void actualSolverCapIsRecordedSeparatelyFromLegacyDispatchInputs() throws Exception {
+        var launch=hagrid.core.simulation.SimulationRunnerUtils.parseScenario(
+                "concept=lmd_baseline,date=2025-05-13,solverMaxRouteDuration=14400");
+        var file=RunMetadataWriter.write(launch,tmp.resolve("configured-cap"),null);
+        assertTrue(Files.readString(file).contains("\"solver_max_route_duration_s\": 14400"));
+    }
+
     @TempDir
     Path tmp;
 

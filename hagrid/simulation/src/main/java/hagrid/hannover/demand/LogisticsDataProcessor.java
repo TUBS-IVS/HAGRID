@@ -56,6 +56,11 @@ public class LogisticsDataProcessor implements Runnable {
     public void run() {
         try {
             LOGGER.info("Reading logistics data...");
+            // Required vehicle definitions fail before geodata processing or scenario publication.
+            CarrierVehicleTypes vehicleTypes = hagrid.core.routing.CarrierVehicleTypeInputs.read(java.nio.file.Path.of(hagridConfig.getVehicleTypePath()));
+            for (String key : java.util.List.of("hubList", "parcelLockerList", "shippingPointList", "hanoverGeoData", CARRIER_VEHICLE_TYPES)) {
+                if (scenario.getScenarioElement(key) != null) throw new IllegalStateException("Logistics data already registered: " + key);
+            }
 
             // Read geodata — path resolved from centralized HagridPaths
             String geoDataPath = hagridConfig.io().geodataDir().resolve("Region Hannover.shp").toString();
@@ -69,36 +74,33 @@ public class LogisticsDataProcessor implements Runnable {
             hubList =  GeoUtils.filterHubsByRegions(hubList, hanoverGeoData,
                             EnumSet.complementOf(EnumSet.of(Region.ALL)));
 
-            // Read parcel locker data from file
-            LOGGER.info("Reading parcel locker data from file: {}", hagridConfig.getParcelLockerDataPath());
-            Map<Id<Hub>, Hub> parcelLockerList = readDataFromFile(hagridConfig.getParcelLockerDataPath(),
-                    DataType.PARCEL_LOCKER);
-
-            // Read shipping point data from files in the folder
-            LOGGER.info("Reading shipping point data from folder: {}", hagridConfig.getShippingPointDataPath());
+            Map<Id<Hub>, Hub> parcelLockerList = new HashMap<>();
             Map<Id<Hub>, Hub> shippingPointList = new HashMap<>();
-            for (String provider : hagridConfig.getLocationProviders()) {
-                shippingPointList.putAll(
-                        readDataFromFile(hagridConfig.getShippingPointDataPath() + provider + "_paketnet_list.csv",
-                                DataType.SHIPPING_POINT));
+            if (hagridConfig.hubs().isLoadLegacyLocations()) {
+                LOGGER.info("Reading parcel locker data from file: {}", hagridConfig.getParcelLockerDataPath());
+                parcelLockerList = readDataFromFile(hagridConfig.getParcelLockerDataPath(), DataType.PARCEL_LOCKER);
+                LOGGER.info("Reading shipping point data from folder: {}", hagridConfig.getShippingPointDataPath());
+                shippingPointList = readShippingPoints();
+            } else {
+                if (hagridConfig.isFixedParcelLockerDemand()) {
+                    throw new IllegalArgumentException("hubs.fixedParcelLockerDemand requires hubs.loadLegacyLocations=true");
+                }
+                LOGGER.info("Legacy location catalogs explicitly disabled; using the supplied calendar demand stops.");
             }
 
             // Store data in scenario
             // Filter out all parcel lockers and shipping points that are not located in the in the config defined regions
+            var filteredLockers = GeoUtils.filterHubsByRegions(parcelLockerList, hanoverGeoData, hagridConfig.getFilterRegions());
+            var filteredShippingPoints = GeoUtils.filterHubsByRegions(shippingPointList, hanoverGeoData, hagridConfig.getFilterRegions());
             scenario.addScenarioElement("hubList", hubList);
-            scenario.addScenarioElement("parcelLockerList",
-                    GeoUtils.filterHubsByRegions(parcelLockerList, hanoverGeoData,
-                            hagridConfig.getFilterRegions()));
-            scenario.addScenarioElement("shippingPointList",
-                    GeoUtils.filterHubsByRegions(shippingPointList, hanoverGeoData,
-                            hagridConfig.getFilterRegions()));
+            scenario.addScenarioElement("parcelLockerList", filteredLockers);
+            scenario.addScenarioElement("shippingPointList", filteredShippingPoints);
             scenario.addScenarioElement("hanoverGeoData", hanoverGeoData);
 
-            LOGGER.info("Loading carrier vehicle types...");
-            CarrierVehicleTypes vehicleTypes = new CarrierVehicleTypes();
-            new CarrierVehicleTypeReader(vehicleTypes).readFile(hagridConfig.getVehicleTypePath());
-            // HAGRIDUtils.addSkills(vehicleTypes);
-            // new CarrierVehicleTypeWriter(vehicleTypes).write("HAGRID_vehicleTypes2.0.xml");
+
+
+
+
 
 
             scenario.addScenarioElement(CARRIER_VEHICLE_TYPES, vehicleTypes);
@@ -106,6 +108,7 @@ public class LogisticsDataProcessor implements Runnable {
             LOGGER.info("Logistics data processing completed.");
         } catch (Exception e) {
             LOGGER.error("Error reading logistics data", e);
+            throw new hagrid.hannover.pipeline.PipelineStepException("Logistics Data", e);
         }
     }
 
@@ -118,6 +121,15 @@ public class LogisticsDataProcessor implements Runnable {
      * @return A map of Hub objects.
      * @throws Exception If an error occurs while reading the file.
      */
+    Map<Id<Hub>, Hub> readShippingPoints() throws Exception {
+        Map<Id<Hub>, Hub> points=new HashMap<>();
+        java.nio.file.Path directory=java.nio.file.Path.of(hagridConfig.getShippingPointDataPath());
+        for(String provider:hagridConfig.getLocationProviders()) {
+            points.putAll(readDataFromFile(directory.resolve(provider+"_paketnet_list.csv").toString(),DataType.SHIPPING_POINT));
+        }
+        return points;
+    }
+
     private Map<Id<Hub>, Hub> readDataFromFile(String filename, DataType dataType) throws Exception {
         Map<Id<Hub>, Hub> hubList = new HashMap<>();
         LOGGER.info("Reading data from file: {}", filename);
@@ -196,7 +208,7 @@ public class LogisticsDataProcessor implements Runnable {
                 x = Double.valueOf(dataSplit[1]);
                 y = Double.valueOf(dataSplit[2]);
 
-                String fileName = source.substring(source.lastIndexOf('/') + 1);
+                String fileName = java.nio.file.Path.of(source).getFileName().toString();
                 company = fileName.substring(0, fileName.indexOf('_')).toLowerCase();
 
                 hubCoord = GeoUtils.transformIfNeeded(new Coord(x, y));

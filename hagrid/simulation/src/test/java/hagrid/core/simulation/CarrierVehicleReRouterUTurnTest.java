@@ -64,7 +64,7 @@ import org.matsim.vehicles.VehicleUtils;
  * <p>Final review I1: each of the three wiring hops is exercised through the production path, not
  * only through the method the hop calls - {@code HAGRIDSimulationModule.install()} (the provider it
  * binds), {@code ReplanningStrategies.get()} (the re-router it creates) and the re-router's solve
- * loop (the constraint manager it builds). Removing any hop turns a test red (mutation-probed).
+ * loop (the selected route under the configured tariff).
  */
 @DisplayName("CarrierVehicleReRouter - U-turn constraint wiring")
 class CarrierVehicleReRouterUTurnTest {
@@ -114,25 +114,6 @@ class CarrierVehicleReRouterUTurnTest {
         CarrierVehicleTypes types = new CarrierVehicleTypes();
         types.getVehicleTypes().put(type.getId(), type);
         return types;
-    }
-
-    private static List<UTurnSoftConstraint> uTurnConstraints(ConstraintManager cm) {
-        return cm.getConstraints().stream().filter(c -> c instanceof UTurnSoftConstraint)
-                .map(c -> (UTurnSoftConstraint) c).toList();
-    }
-
-    @Test
-    @DisplayName("positive penalty registers the UTurnSoftConstraint")
-    void reRouterRegistersUTurnConstraintWhenPenaltyPositive() {
-        ConstraintManager cm = CarrierVehicleReRouter.buildConstraintManager(vrp, new StateManager(vrp), network, 1.0);
-        assertThat(cm.getConstraints()).anyMatch(c -> c instanceof UTurnSoftConstraint);
-    }
-
-    @Test
-    @DisplayName("zero penalty registers no UTurnSoftConstraint")
-    void reRouterOmitsUTurnConstraintAtZero() {
-        ConstraintManager cm = CarrierVehicleReRouter.buildConstraintManager(vrp, new StateManager(vrp), network, 0.0);
-        assertThat(cm.getConstraints()).noneMatch(c -> c instanceof UTurnSoftConstraint);
     }
 
     @Test
@@ -235,49 +216,51 @@ class CarrierVehicleReRouterUTurnTest {
         assertThat(rs.created.get(0).uTurnPenaltyCost()).isEqualTo(penalty);
     }
 
-    // ------------------------------------------------------------------ hop (c): the solve loop
-
+    // The shared optimizer now owns constraints; verify the actual selected route instead of
+    // observing a removed local constraint-manager implementation.
     @ParameterizedTest
     @ValueSource(doubles = {2.5, 0.0})
-    @DisplayName("constraintManagerFor uses the re-router's own penalty")
-    void instanceSeamUsesOwnPenalty(double penalty) {
-        CarrierVehicleReRouter r = new CarrierVehicleReRouter(network, network, types(), FREE_SPEED, false, Map.of(), 1,
-                penalty);
-        List<UTurnSoftConstraint> u = uTurnConstraints(r.constraintManagerFor(vrp, new StateManager(vrp), network));
-        if (penalty > 0) {
-            assertThat(u).singleElement().extracting(UTurnSoftConstraint::penaltyCost).isEqualTo(penalty);
-        } else {
-            assertThat(u).isEmpty();
-        }
-    }
-
-    /**
-     * Drives the real strategy module (prepare -> handlePlan -> finish, iteration inside the
-     * optimisation window) on a one-service carrier, so jsprit actually solves; the observer sees
-     * the constraint manager the solve loop built.
-     */
-    @ParameterizedTest
-    @ValueSource(doubles = {2.5, 0.0})
-    @DisplayName("solve loop builds its constraints through the seam with the penalty")
     void solveLoopUsesPenalty(double penalty) {
-        CarrierVehicleReRouter r = new CarrierVehicleReRouter(network, network, types(), FREE_SPEED, false, Map.of(), 1,
-                penalty);
-        List<ConstraintManager> seen = new CopyOnWriteArrayList<>();
-        r.constraintManagerObserver = seen::add;
-
-        CarrierPlan plan = new CarrierPlan(carrier, new ArrayList<>());
-        GenericPlanStrategyModule<CarrierPlan> module = r.createModule();
-        module.prepareReplanning(() -> 25);
-        module.handlePlan(plan);
-        module.finishReplanning();
-
-        assertThat(seen).hasSize(1);
-        List<UTurnSoftConstraint> u = uTurnConstraints(seen.get(0));
-        if (penalty > 0) {
-            assertThat(u).singleElement().extracting(UTurnSoftConstraint::penaltyCost).isEqualTo(penalty);
-        } else {
-            assertThat(u).isEmpty();
-        }
-        assertThat(plan.getScheduledTours()).isNotEmpty();
+        CarriersUtils.setCarrierMode(carrier,"car");
+        var c=NetworkUtils.createAndAddNode(network,Id.createNodeId("C"),new Coord(0,-500));
+        var d=NetworkUtils.createAndAddNode(network,Id.createNodeId("D"),new Coord(1000,-500));
+        var a=network.getNodes().get(Id.createNodeId("A"));
+        var b=network.getNodes().get(Id.createNodeId("B"));
+        for(var link:List.of(
+                NetworkUtils.createAndAddLink(network,Id.createLinkId("link_CD"),c,d,1000,10,1000,1),
+                NetworkUtils.createAndAddLink(network,Id.createLinkId("link_DB"),d,b,500,10,1000,1),
+                NetworkUtils.createAndAddLink(network,Id.createLinkId("link_AC"),a,c,500,10,1000,1)))
+            link.setAllowedModes(Set.of("car"));
+        var registry=types();
+        var alternative=CarrierVehicle.Builder.newInstance(Id.createVehicleId("alternative"),
+                Id.createLinkId("link_CD"),type).setEarliestStart(0).setLatestEnd(86400).build();
+        CarriersUtils.addCarrierVehicle(carrier,alternative);
+        var costs=hagrid.core.routing.NativeModalTransportCosts.create(network,registry,"car");
+        var original=carrier.getCarrierCapabilities().getCarrierVehicles().get(Id.createVehicleId("v1"));
+        // Independent replay proves both full candidate costs before testing solver selection.
+        assertThat(candidateCost(original,costs,penalty)).isEqualTo(14+2*penalty);
+        assertThat(candidateCost(alternative,costs,penalty)).isEqualTo(16);
+        var r=new CarrierVehicleReRouter(network,network,registry,FREE_SPEED,false,Map.of(),2,penalty);
+        var plan=new CarrierPlan(carrier,new ArrayList<>());
+        var module=r.createModule();module.prepareReplanning(()->25);module.handlePlan(plan);module.finishReplanning();
+        assertThat(plan.getScheduledTours()).hasSize(1);
+        // Same fixed10 for both: original travel4 + two reversals; alternative travel6, no reversal.
+        // Tariff2.5 must select16 over19; tariff0 must select14 over16.
+        assertThat(plan.getScheduledTours().iterator().next().getVehicle().getLinkId().toString())
+                .isEqualTo(penalty==0?"link_AB":"link_CD");
+        var replay=hagrid.core.routing.PlanValidator.validate(carrier,plan,costs,null,25200,penalty);
+        assertThat(replay.violations()).isEmpty();
+        assertThat(replay.finalCost()).isEqualTo(penalty==0?14.0:16.0);
     }
+    private double candidateCost(CarrierVehicle vehicle,VRPTransportCosts costs,double penalty) {
+        var tour=org.matsim.freight.carriers.Tour.Builder.newInstance(Id.create("candidate",org.matsim.freight.carriers.Tour.class));
+        tour.scheduleStart(vehicle.getLinkId());tour.addLeg(tour.createLeg());
+        tour.scheduleService(carrier.getServices().values().iterator().next());
+        tour.addLeg(tour.createLeg());tour.scheduleEnd(vehicle.getLinkId());
+        var plan=new CarrierPlan(List.of(org.matsim.freight.carriers.ScheduledTour.newInstance(tour.build(),vehicle,0)));
+        plan.setCarrier(carrier);hagrid.core.routing.CarrierRoadRouter.routePlan(plan,costs);
+        var replay=hagrid.core.routing.PlanValidator.validate(carrier,plan,costs,null,25200,penalty);
+        assertThat(replay.violations()).isEmpty();return replay.finalCost();
+    }
+
 }

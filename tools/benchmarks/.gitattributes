@@ -1,0 +1,3 @@
+# Preserve the exact raw measurement and XML bytes across checkout platforms.
+results/**/*.csv -text
+results/**/*.xml -text

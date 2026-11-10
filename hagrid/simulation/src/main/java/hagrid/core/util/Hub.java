@@ -64,7 +64,10 @@ public class Hub implements Attributable {
         this.provider = hub.provider;
         this.address = hub.address;
         this.type = hub.type;
-        this.coord = hub.coord;
+        this.coord = hub.coord == null ? null : hub.coord.hasZ()
+                ? new Coord(hub.coord.getX(), hub.coord.getY(), hub.coord.getZ())
+                : new Coord(hub.coord.getX(), hub.coord.getY());
+        this.wlSupplyDemandByProvider.putAll(hub.wlSupplyDemandByProvider);
         this.link = hub.link;
         this.assignedSupplyDemand = hub.assignedSupplyDemand;
         this.hasCapacity = hub.hasCapacity;
@@ -179,6 +182,11 @@ public class Hub implements Attributable {
     }
 
     // Setter for the capacity limit of the hub
+    /** Stored availability flag, distinct from the current demand/capacity comparison. */
+    public boolean isCapacityEnabled() { return hasCapacity; }
+
+    public int getCapacityLimit() { return capacityLimit; }
+
     public void setCapacityLimit(int capacityLimit) {
         this.capacityLimit = Math.max(capacityLimit, 0);
     }

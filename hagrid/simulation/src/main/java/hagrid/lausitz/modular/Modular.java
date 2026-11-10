@@ -26,13 +26,13 @@ public final class Modular {
     public static final double DELIVERY_DAY_END_S = hagrid.lausitz.DeliveryDay.END_S;
 
     /** Pure capsule-swap (retooling) duration, spec §6.1: 7 min. */
-    public static final double RETOOLING_S = 420.0;
+    public static final double RETOOLING_S = hagrid.core.config.ModularSettings.DEFAULT_RETOOLING_SECONDS;
     /** Submission look-ahead base (spec §4.3): effective look-ahead = this + RETOOLING_S. */
-    public static final double FREIGHT_LOOKAHEAD_S = 420.0;
+    public static final double FREIGHT_LOOKAHEAD_S = hagrid.core.config.ModularSettings.DEFAULT_FREIGHT_LOOK_AHEAD_SECONDS;
     /** Passenger-first dispatch gate default (design D6 / spec §6.1). */
     public static final double DEFAULT_IDLE_THRESHOLD = 0.50;
-    /** Tour-duration cap default: 3.5h concept parameter (design D5); 25200 = control arm. */
-    public static final int DEFAULT_MAX_TOUR_DURATION_S = 12600;
+    /** Shared seven-hour default; shorter experimental caps require explicit configuration. */
+    public static final int DEFAULT_MAX_TOUR_DURATION_S = hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS;
 
     /** Concurrency cap on vehicles committed to freight; 0 = unlimited (= behaviour before
      *  2026-08-30). Motivation, measured on basew21_it250: the passenger-only baseline leaves
@@ -132,7 +132,7 @@ public final class Modular {
      * near its deadline. It is corrected because a guessed constant that has since been measured
      * should not stay guessed, not because it changed a result.
      */
-    public static final double CHAIN_BOOTSTRAP_FACTOR = 1.15;
+    public static final double CHAIN_BOOTSTRAP_FACTOR = hagrid.core.config.ModularSettings.DEFAULT_CHAIN_BOOTSTRAP_FACTOR;
 
     /** A half-open dispatch window [startS, endS) in seconds after midnight. */
     public record DispatchWindow(double startS, double endS) {
@@ -153,10 +153,11 @@ public final class Modular {
      * <p><b>The late window is bounded by the expiry envelope, not by taste.</b>
      * {@code ModularTourDispatcher} drops a pending tour once
      * {@code now + 2*RETOOLING_S + plannedDuration > latestEnd}. With latestEnd =
-     * {@link #DELIVERY_DAY_END_S} (21:00) and a full 3.5 h tour that puts the last admissible
-     * dispatch at 17:16; measured vehicle binding was 3.85 h median / 4.36 h max, i.e. 16:38 in
-     * the worst case. A second window opening later than that does not shift work into the
-     * evening - it expires it. Verify {@code tours_expired_pending == 0} after any change here.
+     * {@link #DELIVERY_DAY_END_S} (21:00), the common 7 h cap and default 14-minute round-trip
+     * retooling permit a full-length tour to start no later than 13:46. The old explicitly
+     * configured 3.5 h experiment permitted 17:16 (measured binding 3.85 h median / 4.36 h max).
+     * A window after the actual tour's expiry envelope expires that tour. Recalculate the
+     * envelope from configured timing and verify {@code tours_expired_pending == 0} after changes.
      */
     public static java.util.List<DispatchWindow> parseWindows(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -193,6 +194,7 @@ public final class Modular {
     }
 
     /** Freight stop = plain STAY-base task (design D7): parcels never touch the passenger engine. */
+    public static final DrtTaskType FREIGHT_WAIT_TASK_TYPE = new DrtTaskType("MODULAR_FREIGHT_WAIT", STAY);
     public static final DrtTaskType FREIGHT_STOP_TASK_TYPE = new DrtTaskType("MODULAR_FREIGHT_STOP", STAY);
     /** Approach / inter-stop / return legs of a freight excursion. */
     public static final DrtTaskType FREIGHT_DRIVE_TASK_TYPE = new DrtTaskType("MODULAR_FREIGHT_DRIVE", DRIVE);
@@ -232,6 +234,7 @@ public final class Modular {
      */
     private static boolean isFreightTask(Task t) {
         return t.getTaskType().equals(FREIGHT_STOP_TASK_TYPE)
+                || t.getTaskType().equals(FREIGHT_WAIT_TASK_TYPE)
                 || t.getTaskType().equals(FREIGHT_DRIVE_TASK_TYPE)
                 || t instanceof ModularCapacityChangeTask;
     }

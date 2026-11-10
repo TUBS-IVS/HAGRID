@@ -57,6 +57,7 @@ import java.util.Map;
 public final class SharedUseModule extends AbstractDvrpModeModule {
 
     private final DrtConfigGroup drtCfg;
+    private final hagrid.core.config.SharedUseSettings settings;
     /** χ-gate threshold (seconds of max acceptable DRIVE-only added vehicle time per
      *  parcel insertion — each leg's own stop duration is subtracted from that leg;
      *  &lt; 0 = gate hard-closed, rejects all parcels); consumed by the QSim-half
@@ -64,8 +65,12 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
     private final double chiThreshold;
 
     public SharedUseModule(DrtConfigGroup drtCfg, double chiThreshold) {
+        this(drtCfg, chiThreshold, hagrid.core.config.SharedUseSettings.defaults());
+    }
+    public SharedUseModule(DrtConfigGroup drtCfg, double chiThreshold, hagrid.core.config.SharedUseSettings settings) {
         super(drtCfg.getMode());
         this.drtCfg = drtCfg;
+        this.settings = java.util.Objects.requireNonNull(settings);
         this.chiThreshold = chiThreshold;
     }
 
@@ -80,7 +85,7 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
             // through and the provider then dwelled it as a single parcel, quietly understating
             // both depot pickup and door service. See ParcelAttributes.
             return new SharedUseStopDurationProvider(drtCfg.getStopDuration(),
-                    ParcelAttributes.loads(population), ParcelAttributes.dwells(population));
+                    ParcelAttributes.loads(population), ParcelAttributes.dwells(population), settings);
         })).asEagerSingleton();
 
         bindModal(StopTimeCalculator.class).toProvider(modalProvider(getter ->
@@ -93,7 +98,7 @@ public final class SharedUseModule extends AbstractDvrpModeModule {
             DvrpLoadType loadType = getter.getModal(DvrpLoadType.class);
             return (capacity, vehicleId) -> loadType.fromMap(Map.<String, Number>of(
                     "passengers", capacity,                 // fleet XML scalar = seats
-                    "parcels", SharedUse.PARCEL_SLOTS));     // repurposed back-bench volume
+                    "parcels", settings.parcelSlots()));     // repurposed back-bench volume
         })).asEagerSingleton();
 
         // delta / channel KPIs (Task 7): tracks submitted/delivered/rejected parcel requests

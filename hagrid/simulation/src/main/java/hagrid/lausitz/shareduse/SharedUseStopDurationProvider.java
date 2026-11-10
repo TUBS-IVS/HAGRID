@@ -31,12 +31,18 @@ import java.util.Map;
 public final class SharedUseStopDurationProvider implements PassengerStopDurationProvider {
 
     private final double paxStopDuration;
+    private final hagrid.core.config.SharedUseSettings settings;
     private final Map<Id<Person>, Integer> parcelLoadById;
     private final Map<Id<Person>, Double> parcelDwellById;
 
     public SharedUseStopDurationProvider(double paxStopDuration,
                                          Map<Id<Person>, Integer> parcelLoadById,
                                          Map<Id<Person>, Double> parcelDwellById) {
+        this(paxStopDuration, parcelLoadById, parcelDwellById, hagrid.core.config.SharedUseSettings.defaults());
+    }
+    public SharedUseStopDurationProvider(double paxStopDuration, Map<Id<Person>, Integer> parcelLoadById,
+            Map<Id<Person>, Double> parcelDwellById, hagrid.core.config.SharedUseSettings settings) {
+        this.settings = java.util.Objects.requireNonNull(settings);
         this.paxStopDuration = paxStopDuration;
         this.parcelLoadById = Map.copyOf(parcelLoadById);
         this.parcelDwellById = Map.copyOf(parcelDwellById);
@@ -44,7 +50,7 @@ public final class SharedUseStopDurationProvider implements PassengerStopDuratio
 
     double pickupDurationFor(Id<Person> personId) {
         if (SharedUse.isParcelPerson(personId.toString())) {
-            return SharedUse.depotPickupSeconds(require(parcelLoadById, personId, "load"));
+            return settings.depotPickupSeconds(require(parcelLoadById, personId, "load"));
         }
         return paxStopDuration;
     }

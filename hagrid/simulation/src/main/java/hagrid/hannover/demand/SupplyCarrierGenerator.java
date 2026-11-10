@@ -3,6 +3,8 @@ package hagrid.hannover.demand;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import hagrid.core.HagridConfig;
+import hagrid.core.routing.CarrierModeResolver;
+import hagrid.core.config.HagridConfigResolver;
 import hagrid.core.util.Hub;
 import hagrid.core.util.HAGRIDUtils;
 import org.apache.logging.log4j.LogManager;
@@ -32,7 +34,12 @@ public class SupplyCarrierGenerator implements Runnable {
     private List<Id<Link>> supplyLinkIds;
     private Map<String, Double> supplyDirectionProbabilities;    
 
-    private Random rand;
+    private hagrid.core.util.RunRandomStreams streams;
+
+    private hagrid.core.util.RunRandomStreams randomStreams() {
+        if (streams == null) streams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
+        return streams;
+    }
 
     @Inject
     private Scenario scenario;
@@ -43,20 +50,21 @@ public class SupplyCarrierGenerator implements Runnable {
     private CarrierVehicleFactory carrierVehicleFactory;
     private CarrierVehicleTypes vehicleTypes;
     private Network network;
+    private CarrierGenerationAccess generationAccess;
+    private SupplyBaseline baseline;
 
     @Override
     public void run() {
-        try {
+        try (var transaction = new CarrierGenerationTransaction(scenario, "supply")) {
+            if (scenario.getScenarioElement("supply") != null) {
+                throw new IllegalStateException("Supply generation requires a scenario without existing supply");
+            }
             LOGGER.info("Starting supply carrier generation...");
 
             // Load configuration values from HagridConfig
             loadConfigValues();
 
-            // Use a deterministic random seed based on the runId for reproducibility
-            String runId = hagridConfig.getRunId();
-            long seed = (runId != null) ? runId.hashCode() : 42L;
-            this.rand = new Random(seed);
-            CarrierVehicleFactory.setGlobalRandomSeed(seed);
+            streams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
 
             // Retrieve existing carriers from the scenario
             Carriers carriers = HAGRIDUtils.getScenarioElementAs("carriers", scenario);
@@ -65,13 +73,21 @@ public class SupplyCarrierGenerator implements Runnable {
             // Retrieve hubs, vehicle types, and network from the scenario
             Map<Id<Hub>, Hub> hubs = HAGRIDUtils.getScenarioElementAs("hubList", scenario);
             vehicleTypes = HAGRIDUtils.getScenarioElementAs("carrierVehicleTypes", scenario);
-            network = HAGRIDUtils.getScenarioElementAs("carFilteredNetwork", scenario);
+            network = scenario.getNetwork();
+            var parcelNetwork = (Network) scenario.getScenarioElement("parcelServiceNetwork");
+            generationAccess = new CarrierGenerationAccess(network, parcelNetwork == null ? network : parcelNetwork);
 
             LOGGER.info("Retrieved {} hubs, {} vehicle types, and network from the scenario.", hubs.size(),
                     vehicleTypes.getVehicleTypes().size());
 
             // Create an instance of CarrierVehicleFactory with the retrieved vehicle types
-            carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes);
+            var fleet = HagridConfigResolver.resolve(hagridConfig,
+                    HagridConfigResolver.Overrides.empty(),
+                    HagridConfigResolver.Overrides.empty(), Map.of()).fleet();
+            carrierVehicleFactory = new CarrierVehicleFactory(vehicleTypes, fleet, hagridConfig);
+
+            baseline = hagridConfig.isWhiteLabel() ? SupplyBaseline.read(
+                    java.nio.file.Path.of(hagridConfig.supply().getBaselineCarriersFile()), vehicleTypes, network, hubs) : null;
 
             // Create supply carriers based on existing carriers
             Carriers supplyCarriers = createSupplyCarriersAndServices(carriers, hubs);
@@ -90,15 +106,25 @@ public class SupplyCarrierGenerator implements Runnable {
             validateSupplyCarriers(supplyCarriers, splitSupplyCarriers, hubs, hagridConfig.isWhiteLabel());
 
 
-            new CarrierPlanWriter(supplyCarriers).write(hagridConfig.io().supplyCarriersUnrouted());
-            LOGGER.info("Written: {}", hagridConfig.io().supplyCarriersUnrouted());
-
-            new CarrierPlanWriter(splitSupplyCarriers).write(hagridConfig.io().supplyCarriersSplitUnrouted());
-            LOGGER.info("Written: {}", hagridConfig.io().supplyCarriersSplitUnrouted());
+            hagrid.core.simulation.CarrierInputValidator.validate(supplyCarriers, vehicleTypes, network);
+            hagrid.core.simulation.CarrierInputValidator.validate(splitSupplyCarriers, vehicleTypes, network);
+            hagrid.core.util.OutputFileSet.publish(List.of(
+                    new hagrid.core.util.OutputFileSet.Artifact(
+                            java.nio.file.Path.of(hagridConfig.io().supplyCarriersUnrouted()),
+                            p -> new CarrierPlanWriter(supplyCarriers).write(p.toString())),
+                    new hagrid.core.util.OutputFileSet.Artifact(
+                            java.nio.file.Path.of(hagridConfig.io().supplyCarriersSplitUnrouted()),
+                            p -> new CarrierPlanWriter(splitSupplyCarriers).write(p.toString()))));
+            scenario.addScenarioElement("supply", splitSupplyCarriers);
+            transaction.commit();
             LOGGER.info("Supply carrier generation completed successfully.");
 
         } catch (Exception e) {
             LOGGER.error("Error generating supply carriers", e);
+            throw new IllegalStateException("Failed supply generation", e);
+        } finally {
+            generationAccess = null;
+            baseline = null;
         }
     }
 
@@ -113,9 +139,9 @@ public class SupplyCarrierGenerator implements Runnable {
         this.minSupplySplitDemand = hagridConfig.getMinSupplySplitDemand();
         
         // Convert supply link directions from String to Id<Link>
-        this.supplyLinkDirections = new HashMap<>();
+        this.supplyLinkDirections = new TreeMap<>();
         this.supplyLinkIds = new ArrayList<>();
-        for (Map.Entry<String, String> entry : hagridConfig.getSupplyLinkDirections().entrySet()) {
+        for (Map.Entry<String, String> entry : new TreeMap<>(hagridConfig.getSupplyLinkDirections()).entrySet()) {
             Id<Link> linkId = Id.createLinkId(entry.getValue());
             supplyLinkDirections.put(entry.getKey(), linkId);
             supplyLinkIds.add(linkId);
@@ -145,6 +171,8 @@ public class SupplyCarrierGenerator implements Runnable {
         LOGGER.info("Using minSupplySplitDemand = {} (supplyVehCap / 2 = {} / 2)", 
                 minSupplySplitDemand, supplyVehCap);
 
+        // Baseline channels already have fixed depots and proportions: never draw directions again.
+        if (hagridConfig.isWhiteLabel()) return supplyCarriers;
         Carriers splitSupplyCarriers = new Carriers();
 
         // Iterate over the original supply carriers
@@ -180,7 +208,7 @@ public class SupplyCarrierGenerator implements Runnable {
             }
         }
 
-        scenario.addScenarioElement("supply", splitSupplyCarriers);
+
 
         return splitSupplyCarriers;
     }
@@ -224,7 +252,6 @@ public class SupplyCarrierGenerator implements Runnable {
             // Create a new sub-carrier with the original carrier's ID and the direction
             Carrier subCarrier = CarriersUtils
                     .createCarrier(Id.create(originalCarrier.getId().toString() + "_" + direction, Carrier.class));
-            CarriersUtils.setCarrierMode(subCarrier, "car");
 
             // Copy attributes from the original carrier to the sub-carrier
             subCarrier.getAttributes().putAttribute("carrierType",
@@ -233,6 +260,10 @@ public class SupplyCarrierGenerator implements Runnable {
                     originalCarrier.getAttributes().getAttribute("provider"));
             subCarrier.getAttributes().putAttribute("supplyLink", linkId.toString());
             subCarrier.getAttributes().putAttribute("hubId", originalCarrier.getAttributes().getAttribute("hubId"));
+            subCarrier.getAttributes().putAttribute(SupplyBaseline.FLOW, originalCarrier.getAttributes().getAttribute(SupplyBaseline.FLOW));
+            subCarrier.getAttributes().putAttribute(SupplyBaseline.LANE, subCarrier.getId().toString());
+            Object origin = originalCarrier.getAttributes().getAttribute(SupplyBaseline.ORIGIN);
+            if (origin != null) subCarrier.getAttributes().putAttribute(SupplyBaseline.ORIGIN, origin);
 
             // Set up vehicles for the sub-carrier based on the link ID
             setupCarrierSupplyVehicles(subCarrier, linkId);
@@ -248,7 +279,7 @@ public class SupplyCarrierGenerator implements Runnable {
         // Assign each service from the original carrier to a sub-carrier
         for (CarrierService service : originalCarrier.getServices().values()) {
             // Get a random direction based on predefined probabilities
-            String direction = getRandomDirectionBasedOnProbability();
+            String direction = getRandomDirectionBasedOnProbability(originalCarrier.getId().toString(), service.getId().toString());
             Carrier subCarrier = subCarriers.get(direction);
 
             // Add the service to the corresponding sub-carrier
@@ -264,12 +295,12 @@ public class SupplyCarrierGenerator implements Runnable {
      *
      * @return The direction.
      */
-    private String getRandomDirectionBasedOnProbability() {
-        double randomValue = rand.nextDouble();
+    private String getRandomDirectionBasedOnProbability(String carrierId, String serviceId) {
+        double randomValue = randomStreams().forKey("supply.direction", hagrid.core.util.RunRandomStreams.key(carrierId, serviceId)).nextDouble();
         double cumulativeProbability = 0.0;
 
         // Iterate over the supply direction probabilities
-        for (Map.Entry<String, Double> entry : supplyDirectionProbabilities.entrySet()) {
+        for (Map.Entry<String, Double> entry : new java.util.TreeMap<>(supplyDirectionProbabilities).entrySet()) {
             cumulativeProbability += entry.getValue();
             if (randomValue <= cumulativeProbability) {
                 return entry.getKey();
@@ -290,13 +321,7 @@ public class SupplyCarrierGenerator implements Runnable {
     private Carriers createSupplyCarriersAndServices(Carriers carriers, Map<Id<Hub>, Hub> hubs) {
         Carriers supplyCarriers = new Carriers();
 
-        // Aggregate the parcel demand for each hub
-        for (Carrier existingCarrier : carriers.getCarriers().values()) {
-            Hub correspondingHub = (Hub) existingCarrier.getAttributes().getAttribute("hub");
-            int numberOfParcels = getNumberOfParcels(existingCarrier);
-            correspondingHub.increaseAssignedSupplyDemand(numberOfParcels);
-            LOGGER.debug("Added {} parcels to hub {}", numberOfParcels, correspondingHub.getId());
-        }
+        CarrierHubDemand.assign(carriers, hubs);
 
         if (hagridConfig.isWhiteLabel()) {
             // Create supply carriers for white label scenario
@@ -316,17 +341,30 @@ public class SupplyCarrierGenerator implements Runnable {
      * @param supplyCarriers Container for the generated supply carriers.
      */
     private void createWhiteLabelSupplyCarriers(Map<Id<Hub>, Hub> hubs, Carriers supplyCarriers) {
-        for (Hub hub : hubs.values()) {
-            if (hub.getAssignedSupplyDemand() > 0) {
-                Carrier supplyCarrier = createSupplyCarrier(hub, getRandomSupplyLinkID(), null, true);
-                addSupplyCarrierServices(supplyCarrier, hub, 0, null, null, null);
-                supplyCarriers.addCarrier(supplyCarrier);
-                LOGGER.info("Created supply carrier for hub {} with {} parcels", hub.getId(),
-                        getNumberOfParcels(supplyCarrier));
+        for (Hub hub : hubs.values().stream().sorted(Comparator.comparing(h -> h.getId().toString())).toList()) {
+            String hubId = hub.getId().toString();
+            boolean hasLane = baseline.lanes().stream().anyMatch(l -> l.hubId().equals(hubId));
+            if (hub.getAssignedSupplyDemand() > 0 && !hasLane)
+                throw new IllegalArgumentException("Positive supply demand with zero baseline for " + hubId);
+            for (SupplyBaseline.Flow flow : SupplyBaseline.Flow.values()) {
+                if (baseline.lanes().stream().noneMatch(l -> l.hubId().equals(hubId) && l.flow() == flow)) continue;
+                long units = baseline.requiredUnits(hubId, flow, hubs);
+                for (var allocation : baseline.allocate(hubId, flow, units).entrySet()) {
+                    if (allocation.getValue() == 0) continue;
+                    var lane = allocation.getKey();
+                    String carrierId = "supply_lane_" + java.util.HexFormat.of().formatHex(
+                            hagrid.core.util.RunRandomStreams.key(hubId, flow.name(), lane.laneId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    Carrier carrier = createSupplyCarrier(hub, lane.depotLink(), carrierId, true);
+                    carrier.getAttributes().putAttribute(SupplyBaseline.LANE, lane.laneId());
+                    carrier.getAttributes().putAttribute(SupplyBaseline.FLOW, flow.name());
+                    if (baseline.origin(lane) != null) carrier.getAttributes().putAttribute(SupplyBaseline.ORIGIN, baseline.origin(lane));
+                    addSupplyCarrierServices(carrier, null, Math.toIntExact(allocation.getValue()), hubId, hub.getProvider(),
+                            generationAccess.depotLink(hub, CarriersUtils.getCarrierMode(carrier)));
+                    supplyCarriers.addCarrier(carrier);
+                }
             }
         }
     }
-
     /**
      * Creates supply carriers for the non-white label scenario.
      *
@@ -342,9 +380,11 @@ public class SupplyCarrierGenerator implements Runnable {
 
         Carrier supplyCarrierDhlFromAnderten = createSupplyCarrier(andertenHub, andertenHub.getLink(),
                 "supply_from_dhl_anderten", false);
+        supplyCarrierDhlFromAnderten.getAttributes().putAttribute(SupplyBaseline.FLOW, SupplyBaseline.Flow.OUTBOUND.name());
+        supplyCarrierDhlFromAnderten.getAttributes().putAttribute(SupplyBaseline.ORIGIN, andertenHub.getId().toString());
         supplyCarriers.addCarrier(supplyCarrierDhlFromAnderten);
 
-        Carrier supplyCarrierDhlToAnderten = createSupplyCarrier(andertenHub, getRandomSupplyLinkID(),
+        Carrier supplyCarrierDhlToAnderten = createSupplyCarrier(andertenHub, getRandomSupplyLinkID("supply_to_dhl_anderten"),
                 "supply_to_dhl_anderten", false);
         supplyCarriers.addCarrier(supplyCarrierDhlToAnderten);
 
@@ -354,7 +394,7 @@ public class SupplyCarrierGenerator implements Runnable {
         for (Hub hub : sortedHubs) {
             if (hub.getAssignedSupplyDemand() > 0) {
                 if (!hub.getProvider().equalsIgnoreCase("dhl")) {
-                    Carrier supplyCarrierForHub = createSupplyCarrier(hub, getRandomSupplyLinkID(), null, false);
+                    Carrier supplyCarrierForHub = createSupplyCarrier(hub, getRandomSupplyLinkID(hub.getId().toString()), null, false);
                     addSupplyCarrierServices(supplyCarrierForHub, hub, 0, null, null, null);                    
                     supplyCarriers.addCarrier(supplyCarrierForHub);
                 } else {
@@ -369,7 +409,7 @@ public class SupplyCarrierGenerator implements Runnable {
         }
 
         addSupplyCarrierServices(supplyCarrierDhlToAnderten, null, supplyToAnderten, "dhl_anderten", "dhl",
-                andertenHub.getLink());
+                generationAccess.depotLink(andertenHub, CarriersUtils.getCarrierMode(supplyCarrierDhlToAnderten)));
 
         // Log all created supply carriers
         for (Carrier carrier : supplyCarriers.getCarriers().values()) {
@@ -422,32 +462,20 @@ public class SupplyCarrierGenerator implements Runnable {
     private Carrier createSupplyCarrier(Hub hub, Id<Link> linkId, String carrierId, boolean isWhiteLabel) {
         String id = carrierId == null ? "supply_" + hub.getId().toString().replace("/", "_") : carrierId;
         Carrier supplyCarrier = CarriersUtils.createCarrier(Id.create(id, Carrier.class));
-        CarriersUtils.setCarrierMode(supplyCarrier, "car");
-        String supplyLink = null;
-
-        if (isWhiteLabel) {
-            Carriers supplyCarriersBaseCase = new Carriers();
-            new CarrierPlanXmlReader(supplyCarriersBaseCase, vehicleTypes).readFile("carrierPlans_Supply.xml");
-
-            for (Carrier carrierBaseCase : supplyCarriersBaseCase.getCarriers().values()) {
-                if (carrierBaseCase.getId().toString().contains("supply_" + hub.getId().toString().replace("/", "_"))) {
-                    supplyLink = (String) carrierBaseCase.getAttributes().getAttribute("supplyLink");
-                    LOGGER.info("Found supply Link for: " + supplyCarrier.getId() + " -> " + supplyLink);
-                    break;
-                }
-            }
+        Id<Link> finalLinkId = linkId;
+        if (generationAccess != null && !isWhiteLabel && linkId.equals(hub.getLink())) {
+            finalLinkId = generationAccess.depotLink(hub,
+                    carrierVehicleFactory.networkModeFor(List.of("supply_early", "supply_late")));
         }
-
-        Id<Link> finalLinkId = supplyLink == null ? linkId : Id.createLinkId(supplyLink);
+        supplyCarrier.getAttributes().putAttribute(SupplyBaseline.FLOW, SupplyBaseline.Flow.INBOUND.name());
+        supplyCarrier.getAttributes().putAttribute(SupplyBaseline.LANE, id);
         supplyCarrier.getAttributes().putAttribute("carrierType", "supply");
         supplyCarrier.getAttributes().putAttribute("supplyLink", finalLinkId.toString());
         supplyCarrier.getAttributes().putAttribute("hubId", hub.getId().toString());
         supplyCarrier.getAttributes().putAttribute("provider", hub.getProvider());  
         
-        // TODO: Add working implementaion
-        CarriersUtils.setCarrierMode(supplyCarrier, "car");
 
-        setupCarrierSupplyVehicles(supplyCarrier, linkId);
+        setupCarrierSupplyVehicles(supplyCarrier, finalLinkId);
 
         supplyCarrier.getCarrierCapabilities().setFleetSize(FleetSize.INFINITE);
 
@@ -462,11 +490,12 @@ public class SupplyCarrierGenerator implements Runnable {
      */
     private void setupCarrierSupplyVehicles(Carrier carrier, Id<Link> linkId) {
         CarrierVehicle carrierVehicleEarly = carrierVehicleFactory.createSupplyVehicle(carrier.getId().toString(),
-                linkId, true);
+                linkId, true, randomStreams().forKey("supply.departure", hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(), "early")));
         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleEarly);
         CarrierVehicle carrierVehicleLate = carrierVehicleFactory.createSupplyVehicle(carrier.getId().toString(),
-                linkId, false);
+                linkId, false, randomStreams().forKey("supply.departure", hagrid.core.util.RunRandomStreams.key(carrier.getId().toString(), "late")));
         CarriersUtils.addCarrierVehicle(carrier, carrierVehicleLate);
+        CarrierModeResolver.assign(carrier);
     }
 
     /**
@@ -494,7 +523,9 @@ public class SupplyCarrierGenerator implements Runnable {
         int amountToHub = (hub == null) ? amount : hub.getAssignedSupplyDemand();
         String hubId = (hub == null) ? idHub : hub.getId().toString();
         String hubCompany = (hub == null) ? company : hub.getProvider();
-        Id<Link> hubLink = (hub == null) ? linkId : hub.getLink();
+        if (amountToHub < 0 || supplyVehCap <= 0) throw new IllegalArgumentException("Invalid supply demand or vehicle capacity");
+        if (amountToHub == 0) return;
+        Id<Link> hubLink = (hub == null) ? linkId : generationAccess.depotLink(hub, CarriersUtils.getCarrierMode(carrier));
 
         int numberOfServices = (int) Math.ceil(((double) amountToHub) / supplyVehCap);
 
@@ -507,6 +538,9 @@ public class SupplyCarrierGenerator implements Runnable {
             CarrierService service = serviceBuilder.build();
             service.getAttributes().putAttribute("provider", hubCompany);
             service.getAttributes().putAttribute("type", "supply");
+        service.getAttributes().putAttribute(SupplyBaseline.TARGET,
+                SupplyBaseline.Flow.OUTBOUND.name().equals(carrier.getAttributes().getAttribute(SupplyBaseline.FLOW))
+                        ? hubId : carrier.getAttributes().getAttribute("hubId"));
             service.getAttributes().putAttribute("coord", network.getLinks().get(hubLink).getCoord());
             CarriersUtils.addSkill(service, "supply"); 
             CarriersUtils.addService(carrier, service);
@@ -520,6 +554,9 @@ public class SupplyCarrierGenerator implements Runnable {
         CarrierService service = serviceBuilder.build();
         service.getAttributes().putAttribute("provider", hubCompany);
         service.getAttributes().putAttribute("type", "supply");
+        service.getAttributes().putAttribute(SupplyBaseline.TARGET,
+                SupplyBaseline.Flow.OUTBOUND.name().equals(carrier.getAttributes().getAttribute(SupplyBaseline.FLOW))
+                        ? hubId : carrier.getAttributes().getAttribute("hubId"));
         service.getAttributes().putAttribute("coord", network.getLinks().get(hubLink).getCoord());
         CarriersUtils.addSkill(service, "supply"); 
         CarriersUtils.addService(carrier, service);
@@ -542,6 +579,7 @@ public class SupplyCarrierGenerator implements Runnable {
         if (isWhiteLabel) {
             // Placeholder for validating white label supply carriers
             validateWhiteLabelSupplyCarriers(supplyCarriers, hubs);
+            validateWhiteLabelSupplyCarriers(splitSupplyCarriers, hubs);
         } else {
             // Validate direct supply carriers
             validateDirectSupplyCarriers(supplyCarriers, hubs);
@@ -692,8 +730,26 @@ public class SupplyCarrierGenerator implements Runnable {
      */
     private void validateWhiteLabelSupplyCarriers(Carriers supplyCarriers, Map<Id<Hub>, Hub> hubs)
             throws SupplyCarrierValidationException {
-        // Placeholder for white label supply carrier validation logic
-        LOGGER.info("White label supply carriers validation is not implemented yet.");
+        for (Hub hub : hubs.values()) {
+            String hubId = hub.getId().toString();
+            if (baseline == null) {
+                int actual = supplyCarriers.getCarriers().values().stream()
+                        .filter(c -> hubId.equals(c.getAttributes().getAttribute("hubId")))
+                        .flatMap(c -> c.getServices().values().stream()).mapToInt(CarrierService::getCapacityDemand).sum();
+                if (actual != hub.getAssignedSupplyDemand()) throw new SupplyCarrierValidationException(
+                        "White label supply demand differs for hub " + hubId + ": expected " + hub.getAssignedSupplyDemand() + ", got " + actual);
+                continue;
+            }
+            for (SupplyBaseline.Flow flow : SupplyBaseline.Flow.values()) {
+                if (baseline.lanes().stream().noneMatch(l -> l.hubId().equals(hubId) && l.flow() == flow)) continue;
+                long expected = baseline.requiredUnits(hubId,flow,hubs);
+                long actual = supplyCarriers.getCarriers().values().stream()
+                        .filter(c -> hubId.equals(c.getAttributes().getAttribute("hubId")) && flow.name().equals(c.getAttributes().getAttribute(SupplyBaseline.FLOW)))
+                        .flatMap(c -> c.getServices().values().stream()).mapToLong(CarrierService::getCapacityDemand).sum();
+                if (actual != expected) throw new SupplyCarrierValidationException("White label " + flow
+                        + " demand differs for hub " + hubId + ": expected " + expected + ", got " + actual);
+            }
+        }
     }
 
     /**
@@ -701,7 +757,7 @@ public class SupplyCarrierGenerator implements Runnable {
      *
      * @return A random supply link ID.
      */
-    private Id<Link> getRandomSupplyLinkID() {
-        return supplyLinkIds.get(rand.nextInt(supplyLinkIds.size()));
+    private Id<Link> getRandomSupplyLinkID(String stableId) {
+        return supplyLinkIds.get(randomStreams().forKey("supply.direction", hagrid.core.util.RunRandomStreams.key(stableId, "depot")).nextInt(supplyLinkIds.size()));
     }
 }

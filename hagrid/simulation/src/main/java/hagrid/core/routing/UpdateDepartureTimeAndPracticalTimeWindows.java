@@ -42,23 +42,30 @@ public class UpdateDepartureTimeAndPracticalTimeWindows implements ReverseActivi
 	private TourActivity prevAct;
 	
 	private final double maxOperationTimeOfDriver;
+    private final StateIds stateIds;
 
 	
 	
-	public UpdateDepartureTimeAndPracticalTimeWindows(StateManager states, VehicleRoutingTransportCosts transportCosts, double maxDriverTime) {
-		super();
-		this.states = states;
-		this.transportCosts = transportCosts;
-		maxOperationTimeOfDriver = maxDriverTime;
-		new StateIds(states).createStateIds();
-	}
+    public UpdateDepartureTimeAndPracticalTimeWindows(StateManager states, VehicleRoutingTransportCosts transportCosts,
+            double maxDriverTime) {
+        this(states, transportCosts, maxDriverTime, new StateIds(states));
+    }
+
+    public UpdateDepartureTimeAndPracticalTimeWindows(StateManager states, VehicleRoutingTransportCosts transportCosts,
+            double maxDriverTime, StateIds stateIds) {
+        stateIds.requireOwner(states);
+        this.states = states;
+        this.transportCosts = transportCosts;
+        this.maxOperationTimeOfDriver = maxDriverTime;
+        this.stateIds = stateIds;
+    }
 
 	@Override
 	public void begin(VehicleRoute route) {
 		this.route = route;
 		double newDepartureTime = getNewDepartureTime(route);
 		double latestArrAtDepot = Math.min(route.getEnd().getTheoreticalLatestOperationStartTime(),newDepartureTime+maxOperationTimeOfDriver);
-		states.putRouteState(route, StateIds.LATEST_ARR_AT_DEPOT, latestArrAtDepot);
+		states.putRouteState(route, stateIds.latestArrivalAtDepot, latestArrAtDepot);
 		latestArrTimeAtPrevAct = latestArrAtDepot;
 		prevAct = route.getEnd();
 	}
@@ -67,7 +74,7 @@ public class UpdateDepartureTimeAndPracticalTimeWindows implements ReverseActivi
 	public void visit(TourActivity activity) {
 		double potentialLatestArrivalTimeAtCurrAct = latestArrTimeAtPrevAct - transportCosts.getBackwardTransportTime(activity.getLocation(), prevAct.getLocation(), latestArrTimeAtPrevAct, route.getDriver(),route.getVehicle()) - activity.getOperationTime();
 		double latestArrivalTime = Math.min(activity.getTheoreticalLatestOperationStartTime(), potentialLatestArrivalTimeAtCurrAct);
-		states.putActivityState(activity, StateIds.LATEST_ACTIVITY_START, latestArrivalTime);
+		states.putActivityState(activity, stateIds.latestActivityStart, latestArrivalTime);
 		
 		latestArrTimeAtPrevAct = latestArrivalTime;
 		prevAct = activity;

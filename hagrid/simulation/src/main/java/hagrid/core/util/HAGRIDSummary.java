@@ -22,5 +22,7 @@ public class HAGRIDSummary {
     private int totalLockerParcels;
     private double lockerDeliveryRatio;
     private double lockerParcelRatio;
-    private int correctionFactor;  
+    private int correctionFactor;
+    // Additional service segments originating specifically from B2B deliveries.
+    private int b2bCorrectionFactor;
 }

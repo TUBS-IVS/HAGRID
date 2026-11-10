@@ -87,7 +87,7 @@ import java.util.function.ToIntFunction;
  *
  * <p><b>C8 late convention.</b> "Late" always means: event time (dwell END for {@code
  * STOP_SERVED}, swap-back end for {@code COMPLETED}) strictly after {@code
- * Modular.DELIVERY_DAY_END_S} (21:00) - the same convention for both {@code
+ * settings.deliveryEndSeconds()} (21:00) - the same convention for both {@code
  * tours_completed_late} and {@code parcels_served_late} below.</p>
  *
  * <p><b>⚠ The km metrics and {@code freight_vehicle_hours} are over DIFFERENT TOUR SETS</b>
@@ -196,8 +196,9 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         boolean expired;
         boolean rejectedAtSplice;   // review Finding 3: refused by the splicer at least once
         boolean completed;
-        boolean completedLate;      // C8: COMPLETED arrived after Modular.DELIVERY_DAY_END_S
+        boolean completedLate;      // C8: COMPLETED arrived after settings.deliveryEndSeconds()
         int parcelsServed;
+        int windowViolations; int parcelsWindowViolations; boolean chainViolation;
         int parcelsServedLate;      // C8: sum of STOP_SERVED parcels arriving after the threshold
         int swaps;
         double deadheadMeters;
@@ -206,7 +207,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         double completedAt = Double.NaN;
         // Task 1 (review F7, peak_concurrent_swaps): every SWAP_DONE's event time, appended in
         // handleEvent's SWAP_DONE case alongside the plain swaps++ counter. A swap occupies
-        // [time - Modular.RETOOLING_S, time] (SWAP_DONE fires at the swap's END, not its start).
+        // [time - settings.retoolingSeconds(), time] (SWAP_DONE fires at the swap's END, not its start).
         final List<Double> swapTimes = new ArrayList<>();
     }
 
@@ -241,6 +242,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      *  once by {@link ModularTourConverter#planStats} right after {@code convert} and handed in by
      *  {@link ModularDispatchModule} - this handler never touches a {@code Carriers} object. */
     private final ModularPlanStats planStats;
+    private final hagrid.core.config.ModularSettings settings;
     /**
      * Task 6 (plan 2026-09-04): the look-ahead capacity budget's two dispatch counters, or
      * {@code null} when {@code budgetMode=off}. The NULLNESS is the published on/off flag - see
@@ -261,6 +263,11 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      */
     public ModularKpiHandler(OutputDirectoryHierarchy controlerIO, ModularPlanStats planStats,
                              ModularBudgetStats budgetStats) {
+        this(controlerIO,planStats,budgetStats,hagrid.core.config.ModularSettings.defaults());
+    }
+    public ModularKpiHandler(OutputDirectoryHierarchy controlerIO,ModularPlanStats planStats,
+            ModularBudgetStats budgetStats,hagrid.core.config.ModularSettings settings) {
+        this.settings=java.util.Objects.requireNonNull(settings);
         this.outputCsv = Path.of(controlerIO.getOutputFilename(FILE_NAME));
         this.planStats = planStats;
         this.budgetStats = budgetStats;
@@ -328,14 +335,16 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
             }
             case STOP_SERVED -> {
                 s.parcelsServed += event.getParcels();
-                if (event.getTime() > Modular.DELIVERY_DAY_END_S) {
+                if (event.getTime() > settings.deliveryEndSeconds()) {
                     s.parcelsServedLate += event.getParcels();   // C8: strictly AFTER 21:00
                 }
             }
+            case TIME_WINDOW_VIOLATION -> { s.windowViolations++; s.parcelsWindowViolations+=event.getParcels(); }
+            case CHAIN_VIOLATION -> s.chainViolation=true;
             case COMPLETED -> {
                 s.completed = true;
                 s.completedAt = event.getTime();
-                s.completedLate = event.getTime() > Modular.DELIVERY_DAY_END_S;   // C8
+                s.completedLate = event.getTime() > settings.deliveryEndSeconds();   // C8
             }
         }
     }
@@ -365,7 +374,7 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         long deltaParcels = parcelsPlanned - parcelsServed;
 
         long swaps = sum(s -> true, s -> s.swaps);
-        double retoolingHours = swaps * Modular.RETOOLING_S / 3600.0;
+        double retoolingHours = swaps * settings.retoolingSeconds() / 3600.0;
         double deadheadKmPlanned = sumD(s -> s.dispatched, s -> s.deadheadMeters) / 1000.0;
         double serviceKmPlanned = sumD(s -> s.dispatched, s -> s.serviceMeters) / 1000.0;
         // Excludes incomplete excursions by construction (filter s.completed) - see class javadoc
@@ -486,6 +495,9 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
         // global figure cannot regress; see ModularKpiHandlerTest for the pinning assertion.
         peakConcurrentSwapsBySite().forEach((site, peak) ->
                 lines.add("peak_concurrent_swaps_" + site + ";" + peak));
+        lines.add("service_start_window_violations;"+sum(s->true,s->s.windowViolations));
+        lines.add("parcels_service_start_window_violations;"+sum(s->true,s->s.parcelsWindowViolations));
+        lines.add("tours_remaining_chain_violations;"+count(s->s.chainViolation));
         try {
             Path parent = outputCsv.getParent();
             if (parent != null) {
@@ -692,10 +704,10 @@ public final class ModularKpiHandler implements ModularTourEventHandler, Shutdow
      * at equal times), so two back-to-back swaps - one's end exactly equal to the next's start -
      * do NOT count as concurrent.
      */
-    private static long maxConcurrentSwaps(List<Double> swapEndTimes) {
+    private long maxConcurrentSwaps(List<Double> swapEndTimes) {
         List<double[]> deltas = new ArrayList<>();
         for (double end : swapEndTimes) {
-            deltas.add(new double[] {end - Modular.RETOOLING_S, 1});
+            deltas.add(new double[] {end - settings.retoolingSeconds(), 1});
             deltas.add(new double[] {end, -1});
         }
         deltas.sort(Comparator.<double[]>comparingDouble(d -> d[0]).thenComparingDouble(d -> d[1]));

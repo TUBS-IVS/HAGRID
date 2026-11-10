@@ -19,27 +19,28 @@ package hagrid.core.routing;
 import com.graphhopper.jsprit.core.algorithm.state.StateId;
 import com.graphhopper.jsprit.core.algorithm.state.StateManager;
 
-public class StateIds {	
-	
-	private final StateManager manager;
-	public static StateId LATEST_ACTIVITY_START = null;
-	public static StateId DEPARTURE_AT_DEPOT = null;
-	public static StateId LATEST_ARR_AT_DEPOT = null;
-	public static StateId ARRIVAL_AT_DEPOT = null;
+/** Custom state identifiers owned by exactly one solver's StateManager. */
+public final class StateIds {
+    private final StateManager manager;
+    public final StateId latestActivityStart;
+    public final StateId departureAtDepot;
+    public final StateId latestArrivalAtDepot;
+    public final StateId arrivalAtDepot;
 
-	public  StateIds(StateManager manager) {		
-		this.manager = manager;
-	}	
-	
-	public void createStateIds() {
-		LATEST_ACTIVITY_START = manager.createStateId("latest_start");
-		DEPARTURE_AT_DEPOT = manager.createStateId("departure");		
-		LATEST_ARR_AT_DEPOT = manager.createStateId("latestArrTimeAtDepot");
-		ARRIVAL_AT_DEPOT = manager.createStateId("arrTimeAtDepot");
+    public StateIds(StateManager manager) {
+        this.manager = java.util.Objects.requireNonNull(manager);
+        latestActivityStart = manager.createStateId("latest_start");
+        departureAtDepot = manager.createStateId("departure");
+        latestArrivalAtDepot = manager.createStateId("latestArrTimeAtDepot");
+        arrivalAtDepot = manager.createStateId("arrTimeAtDepot");
     }
-//	public static final StateId LATEST_ACTIVITY_START = StateFactory.createId("latest_start", 10); 
-	
-	
 
+    static StateIds forStates(com.graphhopper.jsprit.core.problem.solution.route.state.RouteAndActivityStateGetter states) {
+        if (states instanceof StateManager manager) return new StateIds(manager);
+        throw new IllegalArgumentException("Custom solver state requires its owning StateManager");
+    }
 
+    void requireOwner(com.graphhopper.jsprit.core.problem.solution.route.state.RouteAndActivityStateGetter states) {
+        if (states != manager) throw new IllegalArgumentException("StateIds belong to another StateManager");
+    }
 }

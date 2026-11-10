@@ -35,7 +35,11 @@ public final class SimulationBatGenerator {
 			int zoneThreshold,
 			double uTurnPenalty,
 			boolean writeDashboard
-	) {}
+	) {
+        public SimulationSettings {
+            hagrid.core.config.ResolvedHagridConfig.rejectRemoved("routing.zoneBasedCachingEnabled",zoneCaching);
+        }
+    }
 
 	private SimulationBatGenerator() { /* utility */ }
 
@@ -76,13 +80,20 @@ public final class SimulationBatGenerator {
 						sb.append(",tag=").append(tag);
 					}
 
+                    if(sc.getPipelineSettings().getConfigurationFile().isPresent()) {
+                        sb.append(",config=").append(sc.getPipelineSettings().getConfigurationFile().orElseThrow().toString().replace('\\','/'));
+                        sc.getPipelineSettings().getSolverMaxRouteDurationSeconds().ifPresent(value->sb.append(",solverMaxRouteDuration=").append(value));
+                        sc.getVehicleConfig().getCargoBikeMaxSpeedKmh().ifPresent(value->sb.append(",cargoBikeMaxSpeedKmh=").append(value));
+                        args.add(sb.toString());
+                        continue;
+                    }
 					sb.append(",maxIter=").append(s.maxIter());
 					sb.append(",jspritIter=").append(s.jspritIter());
+                    sc.getPipelineSettings().getSolverMaxRouteDurationSeconds()
+                            .ifPresent(seconds -> sb.append(",solverMaxRouteDuration=").append(seconds));
+					sc.getVehicleConfig().getCargoBikeMaxSpeedKmh()
+							.ifPresent(speed -> sb.append(",cargoBikeMaxSpeedKmh=").append(speed));
 
-					if (s.zoneCaching()) {
-						sb.append(",zoneCaching=true");
-						sb.append(",zoneThreshold=").append(s.zoneThreshold());
-					}
 
 					if (s.uTurnPenalty() != 1.0) {
 						sb.append(",uTurnPenalty=").append(s.uTurnPenalty());

@@ -17,10 +17,19 @@ public final class ModularFreightStopTask extends DefaultStayTask {
     private final int parcels;
     private final String tourId;
     private final int stopIndex;
+    private final double earliestStart;
+    private final double latestStart;
 
     public ModularFreightStopTask(double beginTime, double endTime, Link link,
                                   int parcels, String tourId, int stopIndex) {
+        this(beginTime,endTime,link,parcels,tourId,stopIndex,0,Double.POSITIVE_INFINITY);
+    }
+    public ModularFreightStopTask(double beginTime,double endTime,Link link,int parcels,String tourId,
+            int stopIndex,double earliestStart,double latestStart) {
         super(Modular.FREIGHT_STOP_TASK_TYPE, beginTime, endTime, link);
+        ModularTourTiming.validateWindow(earliestStart,latestStart);
+        this.earliestStart=earliestStart;
+        this.latestStart=latestStart;
         this.intendedDuration = endTime - beginTime;
         this.parcels = parcels;
         this.tourId = tourId;
@@ -32,4 +41,6 @@ public final class ModularFreightStopTask extends DefaultStayTask {
     public int getParcels() { return parcels; }
     public String getTourId() { return tourId; }
     public int getStopIndex() { return stopIndex; }
+    public double getEarliestStart() { return earliestStart; }
+    public double getLatestStart() { return latestStart; }
 }

@@ -47,11 +47,18 @@ public final class FreightRunComposer {
      * Safe for iterating runs: the KeepSelected strategy re-selects the fixed jsprit plan.
      */
     public static void installCarrierModules(Controler controler, Scenario scenario) {
+        installCarrierModules(controler, scenario, null);
+    }
+
+    public static void installCarrierModules(Controler controler, Scenario scenario,
+            hagrid.core.config.ResolvedHagridConfig settings) {
         controler.addOverridingModule(new CarrierModule());
         controler.addOverridingModule(new AbstractModule() {
             @Override public void install() {
                 bind(CarrierScoringFunctionFactory.class)
-                        .toInstance(new hagrid.core.simulation.ScoringFunctions(scenario.getNetwork(), 0.0));
+                        .toInstance(settings == null
+                                ? new hagrid.core.simulation.ScoringFunctions(scenario.getNetwork(), 0.0)
+                                : new hagrid.core.simulation.ScoringFunctions(scenario.getNetwork(), settings));
                 bind(CarrierStrategyManager.class).toInstance(keepSelectedStrategyManager());
             }
         });

@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -89,6 +90,7 @@ public class ModularTourDispatcher {
     private static final Logger LOG = LogManager.getLogger(ModularTourDispatcher.class);
 
     private final String mode;
+    private final hagrid.core.config.ModularSettings settings;
     private final List<ModularFreightTour> tours;      // sorted by (submissionTime, tourIndex, provider) - C7
     private final double idleThreshold;
     /** 0 = unlimited, see {@link Modular#DEFAULT_MAX_CONCURRENT_FREIGHT}. */
@@ -270,6 +272,15 @@ public class ModularTourDispatcher {
                                  Fleet fleet, DrtScheduleInquiry scheduleInquiry,
                                  ModularTourScheduler scheduler, Network network,
                                  EventsManager events) {
+        this(mode,tours,idleThreshold,maxConcurrentFreight,windows,profile,headroomShare,budgetStats,chainProfile,
+                urgencyLeadS,fleet,scheduleInquiry,scheduler,network,events,hagrid.core.config.ModularSettings.defaults());
+    }
+    public ModularTourDispatcher(String mode,List<ModularFreightTour> tours,double idleThreshold,
+            int maxConcurrentFreight,List<Modular.DispatchWindow> windows,PassengerLoadProfile profile,double headroomShare,
+            ModularBudgetStats budgetStats,FreightChainProfile chainProfile,double urgencyLeadS,Fleet fleet,
+            DrtScheduleInquiry scheduleInquiry,ModularTourScheduler scheduler,Network network,EventsManager events,
+            hagrid.core.config.ModularSettings settings) {
+        this.settings=java.util.Objects.requireNonNull(settings);
         this.budgetStats = budgetStats != null ? budgetStats : new ModularBudgetStats();
         this.chainProfile = chainProfile;
         if (!(urgencyLeadS > 0.0) || Double.isInfinite(urgencyLeadS)) {
@@ -293,7 +304,7 @@ public class ModularTourDispatcher {
         this.maxConcurrentFreight = maxConcurrentFreight;
         this.windows = List.copyOf(windows);
         this.tours = tours.stream()
-                .sorted(Comparator.comparingDouble(ModularFreightTour::submissionTime)
+                .sorted(Comparator.comparingDouble((ModularFreightTour tour) -> tour.submissionTime(settings))
                         .thenComparingInt(ModularFreightTour::tourIndex)     // C7 interleave
                         .thenComparing(ModularFreightTour::provider))
                 .toList();
@@ -325,7 +336,7 @@ public class ModularTourDispatcher {
         }
 
         while (nextToActivate < tours.size()
-                && tours.get(nextToActivate).submissionTime() <= now) {
+                && tours.get(nextToActivate).submissionTime(settings) <= now) {
             ModularFreightTour t = tours.get(nextToActivate++);
             pending.add(t);
             events.processEvent(ModularTourEvent.planned(now, t.tourId(), t.totalParcels()));
@@ -336,7 +347,8 @@ public class ModularTourDispatcher {
         // duration and the HONEST cap (plan 2026-09-05) - see chainDuration/deadlineCap for what
         // the previous "2*RETOOLING_S + plannedDuration > latestEnd" left out and what that cost.
         pending.removeIf(t -> {
-            if (now + chainDuration(t) > deadlineCap(t)) {
+            if (now + chainDuration(t) > deadlineCap(t)
+                    || t.stops().stream().anyMatch(stop->now>stop.latestStart())) {
                 // review Finding 1: `mode` earns its place in the log line here - a multi-mode
                 // DRT run would otherwise emit expiry warnings with no indication of which mode
                 // they came from.
@@ -432,6 +444,7 @@ public class ModularTourDispatcher {
                 }
                 budgetStats.recordChainRatio(
                         excursion.get().routedDurationS() / scheduler.minimumChainDurationS(tour));
+                excursionDepartures.put(tour.tourId(),now);
                 events.processEvent(ModularTourEvent.dispatched(now, tour.tourId(),
                         vehicle.getId(), tour.totalParcels(),
                         excursion.get().deadheadMeters(), excursion.get().serviceMeters(),
@@ -583,7 +596,7 @@ public class ModularTourDispatcher {
         if (!Double.isNaN(learned)) {
             return learned;
         }
-        return scheduler.minimumChainDurationS(tour) * Modular.CHAIN_BOOTSTRAP_FACTOR;
+        return scheduler.minimumChainDurationS(tour) * settings.chainBootstrapFactor();
     }
 
     /**
@@ -690,6 +703,40 @@ public class ModularTourDispatcher {
     /** KPI {@code budget_urgency_admits}: ZERO means the urgency ramp was never exercised. */
     int budgetUrgencyAdmits() {
         return budgetStats.urgencyAdmits();
+    }
+
+    private final Map<String,Double> excursionDepartures=new java.util.HashMap<>();
+    private final Set<String> invalidRemainingChains=new java.util.HashSet<>();
+    private final Map<String,Set<Integer>> observedWindowViolations=new java.util.HashMap<>();
+
+    /** Observe actual task starts after the native timing update; never backdate a late service. */
+    public void observeTaskStart(DvrpVehicle vehicle,Task next,double now) {
+        if(next==null)return;
+        if(next instanceof ModularFreightStopTask stop && now>stop.getLatestStart()
+                && observedWindowViolations.computeIfAbsent(stop.getTourId(),id->new java.util.HashSet<>()).add(stop.getStopIndex())) {
+            events.processEvent(ModularTourEvent.timeWindowViolation(now,stop.getTourId(),vehicle.getId(),stop.getParcels()));
+            LOG.warn("Modular tour {} stop {} begins at {}, after latest start {}",stop.getTourId(),stop.getStopIndex(),now,stop.getLatestStart());
+        }
+        // Recheck the full remaining schedule after observed travel-time changes. Predictions are
+        // a separate diagnostic: they are never reported as an already performed late delivery.
+        for(Task task:vehicle.getSchedule().getTasks()) {
+            if(task.getTaskIdx()<next.getTaskIdx())continue;
+            String id=null; boolean invalid=false;
+            if(task instanceof ModularFreightStopTask stop) {
+                id=stop.getTourId();invalid=task.getBeginTime()>stop.getLatestStart();
+            } else if(task instanceof ModularCapacityChangeTask swap && swap.isSwapBack()) {
+                id=swap.getTourId(); final String tourId=id;
+                var tour=tours.stream().filter(t->t.tourId().equals(tourId)).findFirst();
+                double shiftEnd=excursionDepartures.getOrDefault(id,Double.POSITIVE_INFINITY)+settings.maximumExcursionSeconds();
+                double deadline=Math.min(vehicle.getServiceEndTime(),shiftEnd);
+                if(tour.isPresent())deadline=Math.min(deadline,tour.get().latestEnd());
+                invalid=task.getEndTime()>deadline;
+            }
+            if(invalid && invalidRemainingChains.add(id)) {
+                events.processEvent(ModularTourEvent.chainViolation(now,id,vehicle.getId()));
+                LOG.warn("Modular tour {} remaining chain violates a start window or completion envelope at {}",id,now);
+            }
+        }
     }
 
     /** Feed from ModularOptimizer.nextTask: previous = the task just PERFORMED. */

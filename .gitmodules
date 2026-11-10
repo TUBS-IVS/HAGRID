@@ -1,6 +1,6 @@
 [submodule "external/matsim-libs"]
 	path = external/matsim-libs
 	url = https://github.com/TUBS-IVS/matsim-libs.git
-	branch = hagrid/2025.0-PR3552
+	branch = codex/hagrid-v2-rollout
 	shallow = true
 	ignore = untracked

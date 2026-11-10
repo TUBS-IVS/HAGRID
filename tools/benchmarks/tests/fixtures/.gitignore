@@ -1,0 +1,2 @@
+# Frozen raw probe observations are test inputs, not generated run logs.
+!replay-profile/*.log

@@ -40,6 +40,32 @@ import static org.junit.jupiter.api.Assertions.*;
  * left in {@code ParcelAgentGenerator} for those three tests to discriminate.</p>
  */
 class ParcelAgentGeneratorTest {
+    @Test void centralCapacityWindowsAndHandlingReachRealParcelPersons(@org.junit.jupiter.api.io.TempDir java.nio.file.Path temp) throws Exception {
+        var file=java.nio.file.Files.writeString(temp.resolve("hagrid.properties"),
+                "run.concept=drt_shareduse\nrun.tag=centralTest\nrun.studyArea=LAUSITZ_HOYERSWERDA\nrun.date=2025-05-13\nsharedUse.parcelSlots=3\n"
+                +"sharedUse.depotLoadPerParcelSeconds=10\nsharedUse.maxPickupDurationSeconds=25\n"
+                +"tourRules.durationPerParcelSeconds=60\ntourRules.maxDurationPerStopSeconds=120\n"
+                +"tourRules.deliveryWindowStartSeconds=28800\ntourRules.deliveryWindowEndSeconds=64800\nsharedUse.submitUntilSeconds=30000\n");
+        var cfg=hagrid.core.simulation.SimulationRunnerUtils.parseScenario("config="+file.toString().replace('\\','/'));
+        var settings=cfg.getResolvedRoutingConfig().sharedUse();
+        var pop=PopulationUtils.createPopulation(ConfigUtils.createConfig());
+        var net=hagrid.lausitz.drt.DrtE2eFixtures.buildGrid();
+        var depot=new DepotNetwork.Depot("depot_01",new Coord(500,500));
+        var delivery=deliveryAt(800,800,"dhl",7);
+        var districts=DeliveryDistrictBuilder.build(List.of(delivery),List.of(depot),100);
+        var result=ParcelAgentGenerator.generate(districts,square(1000),net,pop,4711,settings);
+        assertEquals(3,result.personsAdded()); assertEquals(7,result.parcels());
+        for(var person:pop.getPersons().values()) {
+            assertEquals(64800.0,person.getAttributes().getAttribute(SharedUse.WINDOW_END_ATTRIBUTE));
+            double dwell=((Number)person.getAttributes().getAttribute(SharedUse.DWELL_ATTRIBUTE)).doubleValue();
+            assertEquals(120.0,dwell);
+            var departure=((Activity)person.getSelectedPlan().getPlanElements().get(0)).getEndTime().seconds();
+            assertTrue(departure>=28800 && departure<=30000);
+        }
+        var provider=new SharedUseStopDurationProvider(60,ParcelAttributes.loads(pop),ParcelAttributes.dwells(pop),settings);
+        for(var person:pop.getPersons().values()) assertTrue(provider.pickupDurationFor(person.getId())<=25);
+    }
+
 
     private static Geometry square(double size) {
         var gf = new GeometryFactory();

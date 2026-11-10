@@ -32,7 +32,19 @@ public record ModularFreightTour(String tourId, String provider, int tourIndex,
                                  double latestEnd, List<Stop> stops) {
 
     /** A single delivery stop, already snapped to the DRT network. */
-    public record Stop(Id<Link> link, double serviceDuration, int parcels) {}
+    public record Stop(Id<Link> link, double serviceDuration, int parcels,
+                       double earliestStart, double latestStart) {
+        /** Legacy callers supplied no window; productive conversion always supplies both bounds. */
+        public Stop(Id<Link> link, double serviceDuration, int parcels) {
+            this(link,serviceDuration,parcels,0,Double.POSITIVE_INFINITY);
+        }
+        public Stop {
+            java.util.Objects.requireNonNull(link);
+            ModularTourTiming.validateWindow(earliestStart,latestStart);
+            if(!Double.isFinite(serviceDuration) || serviceDuration<0 || parcels<0)
+                throw new IllegalArgumentException("Invalid stop duration/parcels");
+        }
+    }
 
     public ModularFreightTour {
         stops = List.copyOf(stops);
@@ -42,7 +54,7 @@ public record ModularFreightTour(String tourId, String provider, int tourIndex,
     }
 
     public int totalParcels() {
-        return stops.stream().mapToInt(Stop::parcels).sum();
+        return stops.stream().map(Stop::parcels).reduce(0,Math::addExact);
     }
 
     /**
@@ -50,6 +62,9 @@ public record ModularFreightTour(String tourId, String provider, int tourIndex,
      * stored, so it can never drift out of sync with {@link #plannedStart()}.
      */
     public double submissionTime() {
-        return plannedStart - (Modular.FREIGHT_LOOKAHEAD_S + Modular.RETOOLING_S);
+        return submissionTime(hagrid.core.config.ModularSettings.defaults());
+    }
+    public double submissionTime(hagrid.core.config.ModularSettings settings) {
+        return plannedStart - (settings.freightLookAheadSeconds() + settings.retoolingSeconds());
     }
 }

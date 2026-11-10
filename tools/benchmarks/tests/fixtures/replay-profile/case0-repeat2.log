@@ -1,0 +1,42 @@
+2026-10-09T01:12:15.952763400Z main INFO Starting configuration XmlConfiguration[location=jar:file:/C:/Users/bienzeisler/.codex/worktrees/zone-router-fixes/HAGRID/hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar!/log4j2.xml, lastModified=2026-10-09T00:52:48.683Z]...
+2026-10-09T01:12:15.954268200Z main INFO Start watching for changes to jar:file:/C:/Users/bienzeisler/.codex/worktrees/zone-router-fixes/HAGRID/hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar!/log4j2.xml every 0 seconds
+2026-10-09T01:12:15.954268200Z main INFO Configuration XmlConfiguration[location=jar:file:/C:/Users/bienzeisler/.codex/worktrees/zone-router-fixes/HAGRID/hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar!/log4j2.xml, lastModified=2026-10-09T00:52:48.683Z] started.
+2026-10-09T01:12:15.956279700Z main INFO Stopping configuration org.apache.logging.log4j.core.config.DefaultConfiguration@d5b810e...
+2026-10-09T01:12:15.956279700Z main INFO Configuration org.apache.logging.log4j.core.config.DefaultConfiguration@d5b810e stopped.
+2026-10-09 03:12:16 INFO  MatsimXmlParser:153 - starting to parse xml from file C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\.contexts\.read-context-1182156437130736949\network.xml ...
+2026-10-09 03:12:16 INFO  IOUtils:224 - Resolved C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\.contexts\.read-context-1182156437130736949\network.xml to C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\.contexts\.read-context-1182156437130736949\network.xml
+2026-10-09 03:12:16 INFO  MatsimNetworkReader:122 - using network_v2-reader.
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/network_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 4
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 4
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 4
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 4
+2026-10-09 03:12:16 INFO  MatsimXmlParser:153 - starting to parse xml from file C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\types.xml ...
+2026-10-09 03:12:16 INFO  IOUtils:224 - Resolved C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\types.xml to C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\types.xml
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/matsimCommon.xsd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/vehicleDefinitionsEnumTypes.xsd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  CarrierVehicleTypeReader:142 - Using central vehicle parser
+2026-10-09 03:12:16 INFO  MatsimVehicleReader:77 - Found following schemaLocation in vehicle definition file: http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd
+2026-10-09 03:12:16 INFO  VehicleReaderV2:24 - Using org.matsim.vehicles.VehicleReaderV2
+2026-10-09 03:12:16 INFO  MatsimXmlParser:153 - starting to parse xml from file C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\carrier.xml ...
+2026-10-09 03:12:16 INFO  IOUtils:224 - Resolved C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\carrier.xml to C:\Users\bienzeisler\.codex\worktrees\zone-router-fixes\HAGRID\tools\benchmarks\results\k216-package-replay-20261009\cases\services\carrier.xml
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/carriersDefinitions_v2.1.xsd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  MatsimXmlParser:296 - Trying to load http://www.matsim.org/files/dtd/matsimCommon.xsd. In some cases (e.g. network interface up but no connection), this may take a bit.
+2026-10-09 03:12:16 INFO  CarrierPlanXmlReader:124 - Found following schemeLocation in carriers definition file: http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/carriersDefinitions_v2.1.xsd
+2026-10-09 03:12:16 INFO  CarrierPlanXmlReader:135 - Found carriersDefinitions_v2.1.xsd. Using CarrierPlanReaderV2.1
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:165 -  node # 4
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 1
+2026-10-09 03:12:16 INFO  NetworkImpl:161 -  link # 4
+2026-10-09 03:12:16 INFO  MatsimJspritFactory:328 - 'costsPerSecondInService' is not set in VehicleType attributes. Will use the value of 'costsPerSecond' instead. VehicleTypeId: van
+2026-10-09 03:12:16 INFO  MatsimJspritFactory:334 - 'costsPerSecondWaiting' is not set in VehicleType attributes. Will use the value of 'costsPerSecond' instead. VehicleTypeId: van
+2026-10-09 03:12:16 INFO  UTurnSoftConstraint:60 - U-turn soft constraint active: penalty = 1.0 cost units
+2026-10-09 03:12:16 INFO  MatsimJspritFactory:238 - Use the (MATSim) vehicleType that was stored inside the (jsprit) vehicleType during the jsprit run but never interacted with jsprit. 
+REPLAY_MEMORY_JSON {"carrierId":"services","contextFingerprint":"e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183","jobs":1,"iterations":2,"vehicles":1,"finalCost":100.25,"heapBeforeBytes":22978416,"wholeJvmSampledPeakBytes":26543304,"heapAfterBytes":21631840,"returnedResultGraphBytes":4080,"callerThreadAllocatedBytes":50032232,"elapsedNanos":1243477000,"garbageCollections":6,"garbageCollectionMillis":28,"maximumHeapBytes":389283840,"activeProcessors":1,"samplingMillis":5}
+2026-10-09T01:12:16.735020600Z pool-1-thread-1 INFO Stopping configuration XmlConfiguration[location=jar:file:/C:/Users/bienzeisler/.codex/worktrees/zone-router-fixes/HAGRID/hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar!/log4j2.xml, lastModified=2026-10-09T00:52:48.683Z]...
+2026-10-09T01:12:16.736955600Z pool-1-thread-1 INFO Configuration XmlConfiguration[location=jar:file:/C:/Users/bienzeisler/.codex/worktrees/zone-router-fixes/HAGRID/hagrid/simulation/target/hagrid-1.0-SNAPSHOT.jar!/log4j2.xml, lastModified=2026-10-09T00:52:48.683Z] stopped.

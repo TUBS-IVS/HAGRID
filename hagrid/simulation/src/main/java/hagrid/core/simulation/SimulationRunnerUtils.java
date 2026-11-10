@@ -122,29 +122,10 @@ public final class SimulationRunnerUtils {
     // ====================================================================
 
     /**
-     * Parses a single scenario specification of the form
-     * {@code concept=...,date=...,maxIter=...,jspritIter=...,writeDashboard=true}.
-     *
-     * <p>Comma is both the delimiter BETWEEN {@code key=value} tokens and, for the two
-     * multi-value keys {@code openDepots} (district-based depot assignment, spec 2026-08-17, e.g.
-     * {@code openDepots=wittichenau,hoy_sued,doergenhausen}) and {@code freightWindows}
-     * (dispatch windows, e.g. {@code freightWindows=07:00-13:00,16:45-18:30}), the delimiter
-     * WITHIN its value - there is no escaping mechanism. A token with no {@code =} is therefore
-     * accepted ONLY when the immediately preceding key was one of those two: it is then a
-     * continuation of that value and is re-joined with a comma. Deliberately narrow:
-     * for every OTHER key a bare token is still rejected with {@code "Invalid token: ..."}, the
-     * same as before this key existed - otherwise a stray token after e.g. {@code tag=...} would
-     * be silently absorbed into that key's value (a mangled run-directory name with no error),
-     * or after {@code concept=...} would silently corrupt the concept string instead of failing
-     * the enum lookup loudly.</p>
-     *
-     * @param spec comma-separated key=value string
-     * @return parsed configuration
+     * Parses one comma-separated scenario. List values may contain commas only for keys
+     * declared by HagridConfigurationCatalog.listValued; bare tokens after scalars fail.
+     * The captured file supplies RUN values and explicit CLI values take precedence.
      */
-    /** Keys whose VALUE may itself contain commas, so a bare token continues them. */
-    private static final java.util.Set<String> MULTI_VALUE_KEYS =
-            java.util.Set.of("openDepots", "freightWindows");
-
     /**
      * Every key {@link #parseScenario} reads, plus {@code writeDashboard}, which
      * {@link #extractDashboardFlags} reads from the raw spec. Anything else is rejected (review
@@ -158,7 +139,8 @@ public final class SimulationRunnerUtils {
             "noParcels", "seed", "idleThreshold", "maxTourDuration", "openDepots",
             "maxJobsPerDistrict", "maxConcurrentFreight", "freightWindows", "budgetMode",
             "budgetSmoothing", "budgetHeadroom", "budgetUrgencyLeadS", "overwrite",
-            "writeDashboard");
+            "writeDashboard", "cargoBikeMaxSpeedKmh", "eventsEvery", "plansEvery", "freightHistogramEvery",
+            "solverThreads", "maxActiveSolvers", "solverMaxRouteDuration", "config");
 
     private static String unknownKeyMessage(String key) {
         for (String known : KNOWN_KEYS) {
@@ -171,6 +153,31 @@ public final class SimulationRunnerUtils {
                 + " have used the default. Known keys: " + new java.util.TreeSet<>(KNOWN_KEYS);
     }
 
+    /** Validates sparse launch input without constructing a launch or writing files. */
+    public static void validateLaunchValues(Map<String,String> values) {
+        values.forEach((key,value)->{
+            switch(key) {
+                case "maxIter", "maxConcurrentFreight" -> nonNegInt(value,key);
+                case "jspritIter", "fleetSize", "solverThreads", "maxActiveSolvers", "eventsEvery", "plansEvery",
+                        "freightHistogramEvery", "solverMaxRouteDuration", "maxTourDuration", "maxJobsPerDistrict", "budgetSmoothing" -> positiveInt(value,key);
+                case "zoneCaching", "freight", "kpiDashboard", "writeDashboard", "noParcels", "overwrite" -> bool(value,key);
+                case "zoneThreshold", "uTurnPenalty", "idleThreshold" -> {
+                    double number=nonNegDouble(value,key);
+                    if(!Double.isFinite(number)) throw new IllegalArgumentException(key+" must be finite");
+                }
+                case "cargoBikeMaxSpeedKmh", "budgetUrgencyLeadS" -> positiveDouble(value,key);
+                case "budgetHeadroom" -> shareDouble(value,key);
+                case "chiThreshold" -> anyDouble(value,key);
+                case "seed" -> anyLong(value,key);
+                case "budgetMode" -> budgetMode(value,key);
+                case "freightWindows" -> hagrid.lausitz.modular.Modular.parseWindows(value);
+                case "date" -> LocalDate.parse(value,DATE_FMT);
+                case "studyArea" -> StudyArea.valueOf(value.trim().toUpperCase(Locale.ROOT));
+                default -> { /* Canonical section values have their typed validators. */ }
+            }
+        });
+    }
+
     public static HAGRIDSimulationConfig parseScenario(String spec) {
         if (spec == null || spec.isBlank()) {
             throw new IllegalArgumentException("Empty scenario specification");
@@ -180,10 +187,8 @@ public final class SimulationRunnerUtils {
         String lastKey = null;
         for (String token : spec.split(",")) {
             if (!token.contains("=")) {
-                // Only openDepots and freightWindows are multi-value keys - narrowed here
-                // (not "any bare token continues the previous key") so a typo after an unrelated
-                // key still fails loudly instead of being silently absorbed (review Important 1).
-                if (lastKey == null || !MULTI_VALUE_KEYS.contains(lastKey) || token.isBlank()) {
+                // The shared catalog defines lists; unrelated bare tokens remain errors.
+                if (lastKey == null || !hagrid.core.config.HagridConfigurationCatalog.listValued(lastKey) || token.isBlank()) {
                     throw new IllegalArgumentException("Invalid token: " + token);
                 }
                 map.put(lastKey, map.get(lastKey) + "," + token.trim());
@@ -194,7 +199,7 @@ public final class SimulationRunnerUtils {
                 throw new IllegalArgumentException("Invalid token: " + token);
             }
             lastKey = kv[0].trim();
-            if (!KNOWN_KEYS.contains(lastKey)) {
+            if (!KNOWN_KEYS.contains(lastKey) && !hagrid.core.config.HagridConfigurationCatalog.known(lastKey)) {
                 throw new IllegalArgumentException(unknownKeyMessage(lastKey));
             }
             if (map.containsKey(lastKey)) {
@@ -207,6 +212,27 @@ public final class SimulationRunnerUtils {
             map.put(lastKey, kv[1].trim());
         }
 
+        Map<String,String> explicitCli = Map.copyOf(map);
+        map = new LinkedHashMap<>(hagrid.core.config.HagridConfigurationCatalog.launchValues(map));
+        hagrid.core.config.HagridConfigFile configurationFile = null;
+        if(map.containsKey("config")) {
+            configurationFile = hagrid.core.config.HagridConfigFile.load(Path.of(map.get("config")));
+            Map<String,String> merged = new LinkedHashMap<>(configurationFile.launchValues());
+            merged.putAll(map);
+            map=merged;
+        }
+        validateLaunchValues(map);
+        Map<String,String> canonicalValidation = new LinkedHashMap<>();
+        map.forEach((key,value)->{
+            String canonical=hagrid.core.config.HagridConfigurationCatalog.canonicalName(key);
+            if(hagrid.core.config.HagridConfigResolver.isCanonicalKey(canonical) && (!explicitCli.containsKey(key) || key.equals(canonical))) {
+                try { hagrid.core.config.HagridConfigResolver.validateCanonicalValue(canonical,value); }
+                catch(IllegalArgumentException invalid) { throw new IllegalArgumentException(key + " ("+canonical+"): "+invalid.getMessage(), invalid); }
+                canonicalValidation.put(canonical,value);
+            }
+        });
+        hagrid.core.config.DrtSettings.from(canonicalValidation);
+        hagrid.core.config.VehicleDispatchSettings.from(canonicalValidation);
         String concept = require(map, "concept");
         LocalDate date;
         try {
@@ -218,10 +244,18 @@ public final class SimulationRunnerUtils {
         int maxIter      = nonNegInt(map.getOrDefault("maxIter", "150"), "maxIter");
         int jspritIter   = positiveInt(map.getOrDefault("jspritIter", "100"), "jspritIter");
         boolean zoneCaching = bool(map.getOrDefault("zoneCaching", "false"), "zoneCaching");
-        double zoneThreshold = map.containsKey("zoneThreshold")
-                ? nonNegDouble(map.get("zoneThreshold"), "zoneThreshold")
-                : (zoneCaching ? 1500.0 : 0.0);
+        hagrid.core.config.ResolvedHagridConfig.rejectRemoved("routing.zoneBasedCachingEnabled",zoneCaching);
+        double zoneThreshold = map.containsKey("zoneThreshold") ? nonNegDouble(map.get("zoneThreshold"), "zoneThreshold") : 0;
         double uTurnPenaltyCost = nonNegDouble(map.getOrDefault("uTurnPenalty", "1.0"), "uTurnPenalty");
+        if (map.containsKey("cargoBikeMaxSpeedKmh")) {
+            double speedKmh = positiveDouble(map.get("cargoBikeMaxSpeedKmh"), "cargoBikeMaxSpeedKmh");
+            if (speedKmh / 3.6 <= 0) {
+                throw new IllegalArgumentException("cargoBikeMaxSpeedKmh is too small to represent in m/s");
+            }
+        }
+        for (String key : java.util.List.of("eventsEvery", "plansEvery", "freightHistogramEvery", "solverThreads", "maxActiveSolvers", "solverMaxRouteDuration")) {
+            if (map.containsKey(key)) positiveInt(map.get(key), key);
+        }
         String tag = map.getOrDefault("tag", "").trim();
 
         StudyArea studyArea = StudyArea.valueOf(
@@ -229,6 +263,7 @@ public final class SimulationRunnerUtils {
         int fleetSize = positiveInt(map.getOrDefault("fleetSize", "50"), "fleetSize");
         boolean drtWithFreight = bool(map.getOrDefault("freight", "true"), "freight");
         boolean kpiDashboard = bool(map.getOrDefault("kpiDashboard", "true"), "kpiDashboard");
+        bool(map.getOrDefault("writeDashboard","false"),"writeDashboard");
         // chi-gate threshold (seconds): max acceptable DRIVE-only added vehicle time per parcel
         // insertion (the gate subtracts each leg's own stop duration from that leg). Negative are
         // deliberately ACCEPTED: < 0 = gate hard-closed, rejects ALL parcels (Task-10 leakage
@@ -239,8 +274,8 @@ public final class SimulationRunnerUtils {
         // (Task 10 / D10 (e)). Harmless default for every other concept (none inject parcels).
         boolean noParcels = bool(map.getOrDefault("noParcels", "false"), "noParcels");
         // MATSim global random seed (review F3): vary for error-band replicate runs. Default
-        // 1337 keeps identical specs identical. NOTE: the jsprit seed is a separate
-        // system-property override and is NOT affected by this key.
+        // 1337 is the common master of MATSim, configured jsprit and generation streams.
+        // The legacy system-property solver override must match the configured master.
         long seed = anyLong(map.getOrDefault("seed", "1337"), "seed");
         // Modular dispatch gate (design D6) and jsprit tour cap (design D5, seconds). Same
         // parse/ctor pattern as chiThreshold; harmless defaults for every other concept.
@@ -248,6 +283,12 @@ public final class SimulationRunnerUtils {
                 Double.toString(hagrid.lausitz.modular.Modular.DEFAULT_IDLE_THRESHOLD)), "idleThreshold");
         int maxTourDuration = positiveInt(map.getOrDefault("maxTourDuration",
                 Integer.toString(hagrid.lausitz.modular.Modular.DEFAULT_MAX_TOUR_DURATION_S)), "maxTourDuration");
+        if (concept.equalsIgnoreCase("drt_modular") && map.containsKey("solverMaxRouteDuration")) {
+            int commonCap=positiveInt(map.get("solverMaxRouteDuration"), "solverMaxRouteDuration");
+            if (map.containsKey("maxTourDuration") && maxTourDuration != commonCap)
+                throw new IllegalArgumentException("Conflicting modular duration values: maxTourDuration and solverMaxRouteDuration");
+            maxTourDuration=commonCap;
+        }
         // District-based depot assignment for the INTEGRATED arms (spec 2026-08-17). Ignored by
         // the Baseline, which keeps one depot per provider. Same parse pattern as chiThreshold.
         String openDepotsRaw = map.getOrDefault("openDepots", "all").trim();
@@ -272,7 +313,7 @@ public final class SimulationRunnerUtils {
         // Self-referential capacity budget (plan 2026-09-04). All three default to the
         // pre-2026-09-04 behaviour: budgetMode=off constructs no PassengerLoadProfile at all, so
         // an unset key leaves every existing run bit-identical AND free of the per-tick
-        // passenger-busy scan. These are plain scalar keys - deliberately NOT in MULTI_VALUE_KEYS,
+        // passenger-busy scan. These are scalar keys, deliberately not declared as lists,
         // which exists only for keys whose own value may contain a comma.
         hagrid.lausitz.modular.Modular.BudgetMode budgetMode = budgetMode(
                 map.getOrDefault("budgetMode",
@@ -369,8 +410,8 @@ public final class SimulationRunnerUtils {
             }
         }
 
-        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} zoneCaching={} zoneThreshold={}m uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={} maxConcurrentFreight={} freightWindows={} budgetMode={} budgetSmoothing={} budgetHeadroom={} budgetUrgencyLeadS={} overwrite={}",
-                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, zoneCaching, zoneThreshold, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict,
+        LOG.info("Scenario: concept={} date={} tag={} maxIter={} jspritIter={} uTurnPenalty={} studyArea={} fleetSize={} freight={} kpiDashboard={} chiThreshold={} noParcels={} seed={} idleThreshold={} maxTourDuration={} openDepots={} maxJobsPerDistrict={} maxConcurrentFreight={} freightWindows={} budgetMode={} budgetSmoothing={} budgetHeadroom={} budgetUrgencyLeadS={} overwrite={}",
+                concept, date, tag.isEmpty() ? "(none)" : tag, maxIter, jspritIter, uTurnPenaltyCost, studyArea, fleetSize, drtWithFreight, kpiDashboard, chiThreshold, noParcels, seed, idleThreshold, maxTourDuration, openDepots.isEmpty() ? "all" : openDepots, maxJobsPerDistrict,
                 maxConcurrentFreight == 0 ? "unlimited" : maxConcurrentFreight,
                 freightWindows.isEmpty() ? "always-open" : freightWindows,
                 budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS, overwrite);
@@ -381,6 +422,8 @@ public final class SimulationRunnerUtils {
                 idleThreshold, maxTourDuration, openDepots, maxJobsPerDistrict,
                 maxConcurrentFreight, freightWindows,
                 budgetMode, budgetSmoothing, budgetHeadroom, budgetUrgencyLeadS);
+        if(configurationFile!=null) cfg.captureConfigurationFile(configurationFile);
+        cfg.captureExplicitScenarioInputs(explicitCli);
         cfg.setOverwriteCompletedRun(overwrite);
         return cfg;
     }
@@ -489,12 +532,34 @@ public final class SimulationRunnerUtils {
     /**
      * Runs a single HAGRID MATSim simulation.
      */
+    private static int solverRouteDurationSeconds(hagrid.core.config.ResolvedHagridConfig config) {
+        double seconds=config.tourRules().maxRouteDurationSeconds();
+        if(seconds != Math.rint(seconds) || seconds <= 0 || seconds > Integer.MAX_VALUE)
+            throw new IllegalArgumentException("Lausitz solver route duration must be positive whole seconds");
+        return (int)seconds;
+    }
+
     public static void runSimulation(HAGRIDSimulationConfig cfg) throws Exception {
         // Fail fast on an output path native SQLite cannot write (METHODS-LOG 2.51), before any work.
         OutputPathGuard.enforce(cfg);
 
         Instant t0 = Instant.now();
+        var routingConfig = cfg.getResolvedRoutingConfig();
+        // Validate native preprocessing units before creating output or log directories.
+        Integer lausitzSolverDuration = null;
+        if (cfg.isLmdBaseline()) {
+            lausitzSolverDuration = solverRouteDurationSeconds(routingConfig);
+        } else if (cfg.isDrtScenario()) {
+            var concept = hagrid.core.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
+            if (concept == hagrid.core.HagridConfig.Scenario.DRT_MODULAR
+                    || runsCarrierModules(concept, cfg.isDrtWithFreight())) {
+                lausitzSolverDuration = solverRouteDurationSeconds(routingConfig);
+            }
+        }
 
+        if(cfg.isLmdBaseline() || hagrid.core.HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase()).name().equals("DRT_MODULAR")
+                || (cfg.isDrtScenario() && cfg.isDrtWithFreight() && !cfg.getConcept().equalsIgnoreCase("DRT_SHAREDUSE")))
+            hagrid.lausitz.freight.LmdTourRules.from(routingConfig);
         pointLogDirAt(cfg.getOutputDirectory().resolve("logs"));
 
         LOG.info("─── Simulation '{}' ───", cfg.getRunId());
@@ -516,22 +581,22 @@ public final class SimulationRunnerUtils {
             if (carrierModules) {
                 // 1. offline jsprit routing - the exact same call the LMD_BASELINE uses,
                 //    clipped to the SAME service-area shapefile (identical geography).
-                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
+                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.runConfigured(
                         cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
                         cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                         cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                        cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir());
+                        cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir(), routingConfig);
             } else if (modular) {
                 // jsprit YES (capsule type + tour cap), CarrierModule NO (design §3.4). Always
                 // runs regardless of the freight flag — 1d needs the LMD trio unconditionally.
-                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.runModular(
+                jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.runModularConfigured(
                         cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(), cfg.getLausitzNetworkRaw(),
                         cfg.getLmdVehicleTypes(), cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                        cfg.getDrtServiceAreaShapefile(), cfg.getMaxTourDurationSeconds(),
-                        cfg.getOpenDepots(), cfg.getMaxJobsPerDistrict(), cfg.getJspritCacheDir());
+                        cfg.getDrtServiceAreaShapefile(),
+                        cfg.getOpenDepots(), cfg.getMaxJobsPerDistrict(), cfg.getJspritCacheDir(), routingConfig);
                 LOG.info("DRT_MODULAR: jsprit tours routed (cap {}s, openDepots={}, "
                         + "maxJobsPerDistrict={}); freight flag ignored - the DRT fleet executes "
-                        + "them (no CarrierModule).", cfg.getMaxTourDurationSeconds(),
+                        + "them (no CarrierModule).", lausitzSolverDuration,
                         cfg.getOpenDepots().isEmpty() ? "all" : cfg.getOpenDepots(),
                         cfg.getMaxJobsPerDistrict());
             } else if (sharedUse && cfg.isDrtWithFreight()) {
@@ -542,7 +607,7 @@ public final class SimulationRunnerUtils {
             if (sharedUse) {
                 // Must run BEFORE `new Controler(scenario)` below: DRT config groups are read
                 // at controler construction time.
-                hagrid.lausitz.drt.DrtConfigComposer.composeSharedUse(scenario.getConfig());
+                hagrid.lausitz.drt.DrtConfigComposer.composeSharedUse(scenario.getConfig(),routingConfig.drt());
             }
             if (carrierModules) {
                 hagrid.lausitz.freight.FreightRunComposer.addCarriers(
@@ -552,16 +617,16 @@ public final class SimulationRunnerUtils {
             Controler controler = new Controler(scenario);
             java.util.List<org.matsim.api.core.v01.Coord> depots =
                     hagrid.lausitz.drt.DrtDepotReader.readCoords(java.nio.file.Path.of(cfg.getLmdDepotCsv()));
-            double serviceEnd = 86400.0;       // matches LausitzDrtPreprocessor default
-            double returnWindow = 5400.0;       // last 90 min target depots
+            double serviceEnd = routingConfig.drt().serviceEndSeconds();
+            double returnWindow = routingConfig.drt().returnWindowSeconds();
             // Depot parking capacity = even fleet split (matches the spawn distribution): each depot
             // zone absorbs at most ceil(fleet/depots) returning vehicles, so the end-of-day return
             // fills the nearest depot first and overflows to the next once full.
             double perDepotCapacity = Math.ceil((double) cfg.getFleetSize() / Math.max(1, depots.size()));
             hagrid.lausitz.drt.DrtConfigComposer.installModules(controler, depots,
-                    serviceEnd - returnWindow, perDepotCapacity, 1800.0);
+                    serviceEnd - returnWindow, perDepotCapacity, routingConfig.drt().depotArrivalIntervalSeconds());
             if (carrierModules) {
-                hagrid.lausitz.freight.FreightRunComposer.installCarrierModules(controler, scenario);
+                hagrid.lausitz.freight.FreightRunComposer.installCarrierModules(controler, scenario, routingConfig);
                 LOG.info("MARRIED baseline run '{}' (DRT fleet {} + LMD carriers).",
                         cfg.getRunId(), cfg.getFleetSize());
             } else if (sharedUse) {
@@ -573,7 +638,7 @@ public final class SimulationRunnerUtils {
                         org.matsim.contrib.drt.run.MultiModeDrtConfigGroup.get(scenario.getConfig())
                                 .getModalElements().iterator().next();
                 controler.addOverridingModule(
-                        new hagrid.lausitz.shareduse.SharedUseModule(drtCfg, cfg.getChiThreshold()));
+                        new hagrid.lausitz.shareduse.SharedUseModule(drtCfg, cfg.getChiThreshold(), cfg.getResolvedRoutingConfig().sharedUse()));
                 if (cfg.isNoParcels()) {
                     LOG.info("SHARED-USE run '{}' (DRT fleet {}, noParcels=true - 8-seat leakage "
                             + "control, module stack inert, chiThreshold={}s ignored).",
@@ -621,7 +686,7 @@ public final class SimulationRunnerUtils {
                 controler.addOverridingModule(new hagrid.lausitz.modular.ModularDispatchModule(
                         drtCfg, tours, cfg.getIdleThreshold(), cfg.getMaxConcurrentFreight(),
                         cfg.getFreightWindows(), cfg.getBudgetMode(), cfg.getBudgetSmoothing(),
-                        cfg.getBudgetHeadroom(), cfg.getBudgetUrgencyLeadS(), planStats));
+                        cfg.getBudgetHeadroom(), cfg.getBudgetUrgencyLeadS(), planStats, cfg.getResolvedRoutingConfig().modular()));
                 LOG.info("MODULAR run '{}' (DRT fleet {}, {} freight tours, idleThreshold={}, cap={}s,"
                         + " maxConcurrentFreight={}, freightWindows={}, budgetMode={},"
                         + " budgetSmoothing={}, budgetHeadroom={}, budgetUrgencyLeadS={},"
@@ -646,11 +711,11 @@ public final class SimulationRunnerUtils {
             // 1. preprocess: produce the routed carrier XML
             // Clip LMD demand to the SAME service-area shapefile the DRT uses, so both baselines
             // cover identical geography (no out-of-area outliers like Ruhland that DRT can't reach).
-            hagrid.lausitz.freight.JspritCacheResult jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.run(
+            hagrid.lausitz.freight.JspritCacheResult jspritCache = hagrid.lausitz.freight.LausitzFreightPreprocessor.runConfigured(
                     cfg.getLmdDemandShapefile(), cfg.getLmdDepotCsv(),
                     cfg.getLausitzNetworkRaw(), cfg.getLmdVehicleTypes(),
                     cfg.getLmdCarriersRouted(), cfg.getJspritIterations(),
-                    cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir());
+                    cfg.getDrtServiceAreaShapefile(), cfg.getJspritCacheDir(), routingConfig);
 
             // 2. build the run scenario on the Lausitz network with the routed carriers
             Config config = ConfigUtils.createConfig();
@@ -669,7 +734,7 @@ public final class SimulationRunnerUtils {
                     scenario, cfg.getLmdCarriersRouted(), cfg.getLmdVehicleTypes());
 
             Controler controler = new Controler(scenario);
-            hagrid.lausitz.freight.FreightRunComposer.installCarrierModules(controler, scenario);
+            hagrid.lausitz.freight.FreightRunComposer.installCarrierModules(controler, scenario, routingConfig);
             LOG.info("LMD baseline run '{}' on the Lausitz network.", cfg.getRunId());
             controler.run();
             logDuration("Simulation '" + cfg.getRunId() + "'", t0);
@@ -692,11 +757,7 @@ public final class SimulationRunnerUtils {
         Controler controler = new Controler(scenario);
         controler.addOverridingModule(new CarrierModule());
         controler.addOverridingModule(new HAGRIDSimulationModule(
-                scenario, true,
-                cfg.getMaxIterations(), cfg.getJspritIterations(),
-                cfg.isZoneBasedCachingEnabled(),
-                cfg.getZoneBasedCachingThresholdMeters(),
-                cfg.getUTurnPenaltyCost()));
+                scenario, true, cfg.getMaxIterations(), routingConfig));
 
         // Run
         LOG.info("Output: {}", cfg.getOutputDirectoryAsString());
@@ -706,11 +767,7 @@ public final class SimulationRunnerUtils {
         writeRunMetadataSafely(cfg, null);
         KpiDashboardTrigger.triggerSafely(cfg);
 
-        // GC hint between scenarios
-        System.gc();
-        try { Thread.sleep(5000); } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+
     }
 
     /**
@@ -833,8 +890,13 @@ public final class SimulationRunnerUtils {
               tag            version tag appended to run ID (optional, e.g. V1)
               maxIter        MATSim iterations (default 150)
               jspritIter     jsprit iterations (default 100)
-              zoneCaching    true/false (default false)
-              zoneThreshold  metres (default 1500 when zoneCaching=true)
+              cargoBikeMaxSpeedKmh maximum cargo bike speed in km/h (default 20; routing adapter)
+              solverMaxRouteDuration  positive route cap in seconds (default 25200; modular tour default preserved)
+              solverThreads  positive internal jsprit worker count (default 1; owned per search)
+              maxActiveSolvers positive outer solver limit (serial default; larger pools need calibrated budgets)
+              eventsEvery    positive event output interval (unset keeps native XML; final retained)
+              plansEvery     positive plan output interval (unset keeps native XML; final retained)
+              freightHistogramEvery positive freight/population histogram interval (default 1; final retained)
               uTurnPenalty   score penalty per U-turn (default 1.0)
               studyArea      HANNOVER or LAUSITZ_HOYERSWERDA (default HANNOVER)
               fleetSize      DRT fleet size in vehicles (default 50; only used for DRT concepts)

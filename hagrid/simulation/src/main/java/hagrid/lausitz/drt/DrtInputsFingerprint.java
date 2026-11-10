@@ -69,7 +69,7 @@ public final class DrtInputsFingerprint {
     public static int expectedCapacity(HAGRIDSimulationConfig cfg) {
         HagridConfig.Scenario scenario = HagridConfig.Scenario.valueOf(cfg.getConcept().toUpperCase());
         return scenario == HagridConfig.Scenario.DRT_SHAREDUSE
-                ? SharedUse.SEATS : SharedUse.BASE_SEATS;
+                ? cfg.getResolvedRoutingConfig().sharedUse().seats() : Integer.parseInt(cfg.getResolvedRoutingConfig().effectiveValues().get("drt.baseSeats"));
     }
 
     /** Writes the fingerprint for {@code cfg} to {@code out} (parent directories must exist). */
@@ -129,12 +129,29 @@ public final class DrtInputsFingerprint {
         m.put(K_FLEET_SIZE, Integer.toString(cfg.getFleetSize()));
         m.put(K_CAPACITY, Integer.toString(expectedCapacity(cfg)));
         m.put(K_NO_PARCELS, Boolean.toString(cfg.isNoParcels()));
+        m.put("drt.serviceBeginSeconds",Double.toString(cfg.getResolvedRoutingConfig().drt().serviceBeginSeconds()));
+        m.put("drt.serviceEndSeconds",Double.toString(cfg.getResolvedRoutingConfig().drt().serviceEndSeconds()));
         // Seat/slot constants are baked into the artifacts, so a code-side revision (e.g.
         // BASE_SEATS 8 -> 10) must invalidate previously prepared inputs.
-        m.put(K_BASE_SEATS, Integer.toString(SharedUse.BASE_SEATS));
-        m.put(K_SEATS, Integer.toString(SharedUse.SEATS));
-        m.put(K_PARCEL_SLOTS, Integer.toString(SharedUse.PARCEL_SLOTS));
+        m.put(K_BASE_SEATS, cfg.getResolvedRoutingConfig().effectiveValues().get("drt.baseSeats"));
+        if (cfg.getConcept().equalsIgnoreCase("DRT_SHAREDUSE")) {
+            var shared=cfg.getResolvedRoutingConfig().sharedUse();
+            m.put(K_SEATS,Integer.toString(shared.seats()));
+            m.put(K_PARCEL_SLOTS,Integer.toString(shared.parcelSlots()));
+        }
 
+
+        if (cfg.getConcept().equalsIgnoreCase("DRT_SHAREDUSE") && !cfg.isNoParcels()) {
+            var s=cfg.getResolvedRoutingConfig().sharedUse();
+            m.put("sharedUse.depotLoadPerParcelSeconds",Double.toString(s.depotLoadPerParcelSeconds()));
+            m.put("sharedUse.maxPickupDurationSeconds",Double.toString(s.maxPickupDurationSeconds()));
+            m.put("sharedUse.submissionStartSeconds",Double.toString(s.submissionStartSeconds()));
+            m.put("sharedUse.submissionEndSeconds",Double.toString(s.submissionEndSeconds()));
+            m.put("sharedUse.deliveryEndSeconds",Double.toString(s.deliveryEndSeconds()));
+            m.put("sharedUse.durationPerParcelSeconds",Double.toString(s.durationPerParcelSeconds()));
+            m.put("sharedUse.maxDurationPerStopSeconds",Double.toString(s.maxDurationPerStopSeconds()));
+            m.put("sharedUse.parcelSeed",Long.toString(s.parcelSeed()));
+        }
         putSource(m, "networkRaw", cfg.getLausitzNetworkRaw());
         putSource(m, "plansRaw", cfg.getPassengerPlansRaw());
         putSource(m, "serviceAreaShp", cfg.getDrtServiceAreaShapefile());

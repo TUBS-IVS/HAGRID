@@ -62,7 +62,7 @@ public final class DrtScenarioBuilder {
                 cfg.getOutputDirectoryAsString(),
                 cfg.getRunId(),
                 cfg.getMaxIterations(),
-                cfg.getSeed());
+                cfg.getSeed(),cfg.getResolvedRoutingConfig().drt());
     }
 
     // ===================================================================
@@ -144,11 +144,18 @@ public final class DrtScenarioBuilder {
                                  String serviceAreaShp, String fleetFile,
                                  String railScheduleFile, String railTransitVehiclesFile, String vehicleTypesFile,
                                  String outputDir, String runId, int lastIteration, long seed) {
+        return build(baseConfigPath,drtNetworkFile,plansFile,serviceAreaShp,fleetFile,
+                railScheduleFile,railTransitVehiclesFile,vehicleTypesFile,outputDir,runId,lastIteration,seed,
+                hagrid.core.config.DrtSettings.defaults());
+    }
+    public static Scenario build(String baseConfigPath,String drtNetworkFile,String plansFile,
+            String serviceAreaShp,String fleetFile,String railScheduleFile,String railTransitVehiclesFile,
+            String vehicleTypesFile,String outputDir,String runId,int lastIteration,long seed,hagrid.core.config.DrtSettings settings) {
 
         Config config = LausitzDrtConfigurator.build(
                 baseConfigPath, drtNetworkFile, plansFile, serviceAreaShp, fleetFile,
                 railScheduleFile, railTransitVehiclesFile, vehicleTypesFile,
-                outputDir, runId, lastIteration);
+                outputDir, runId, lastIteration,settings);
         config.global().setRandomSeed(seed);
 
         return loadScenarioFromConfig(config, serviceAreaShp, railScheduleFile);

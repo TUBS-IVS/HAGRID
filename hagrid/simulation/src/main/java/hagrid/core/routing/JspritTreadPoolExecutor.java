@@ -1,11 +1,11 @@
 package hagrid.core.routing;
 
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.RunnableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+@Deprecated(forRemoval = false)
 public class JspritTreadPoolExecutor extends ThreadPoolExecutor {
 
     /**
@@ -20,6 +20,7 @@ public class JspritTreadPoolExecutor extends ThreadPoolExecutor {
 
     @Override
     protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
-        return new CustomFutureTask<>(runnable);
+        if(runnable instanceof PrioritizedRunnable)return new CustomFutureTask<>(runnable,value);
+        return super.newTaskFor(runnable,value);
     }
 }

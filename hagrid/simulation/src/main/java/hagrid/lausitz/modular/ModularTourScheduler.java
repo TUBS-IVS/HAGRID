@@ -64,6 +64,7 @@ public class ModularTourScheduler {
                                      double plannedCompletion, double routedDurationS) {}
 
     private final Network network;
+    private final hagrid.core.config.ModularSettings settings;
     private final TravelTime travelTime;
     private final LeastCostPathCalculator router;
     private final DrtTaskFactory taskFactory;
@@ -87,6 +88,11 @@ public class ModularTourScheduler {
     public ModularTourScheduler(Network network, TravelTime travelTime,
                                 TravelDisutility travelDisutility,
                                 DrtTaskFactory taskFactory, DvrpLoadType loadType) {
+        this(network,travelTime,travelDisutility,taskFactory,loadType,hagrid.core.config.ModularSettings.defaults());
+    }
+    public ModularTourScheduler(Network network, TravelTime travelTime, TravelDisutility travelDisutility,
+            DrtTaskFactory taskFactory, DvrpLoadType loadType, hagrid.core.config.ModularSettings settings) {
+        this.settings=java.util.Objects.requireNonNull(settings);
         this.network = network;
         this.travelTime = travelTime;
         this.router = new SpeedyALTFactory().createPathCalculator(network, travelDisutility, travelTime);
@@ -118,7 +124,8 @@ public class ModularTourScheduler {
 
         Link depot = resolveLink(tour.depotLink(), tour);
         double departure = Math.max(lastStay.getBeginTime(), now);
-        double envelope = Math.min(tour.latestEnd(), vehicle.getServiceEndTime());
+        double envelope = Math.min(Math.min(tour.latestEnd(), vehicle.getServiceEndTime()),
+                departure+settings.maximumExcursionSeconds());
 
         // ---- 0. PROVABLE infeasibility: reach step 1's verdict without routing ----
         // The dispatcher re-offers every still-pending tour on every simstep its idle-share gate
@@ -161,7 +168,7 @@ public class ModularTourScheduler {
         // approach.getToLink() == depot always - this is a no-op in that branch.
         Link swapLink = approach != null ? approach.getToLink() : from;
         double swapOutBegin = t;
-        t += Modular.RETOOLING_S;
+        t += settings.retoolingSeconds();
 
         // Review Minor 8 (documented, not guarded): unlike the approach leg, a stop leg is never
         // checked against sameLink(prev, stopLink) first. A stop on the depot link, or two
@@ -173,53 +180,59 @@ public class ModularTourScheduler {
         // written against, for a saving of one zero-length task.
         Link prev = depot;
         List<VrpPathWithTravelData> stopLegs = new ArrayList<>();
+        List<ModularTourTiming.ServiceTiming> serviceTimings = new ArrayList<>();
         for (ModularFreightTour.Stop stop : tour.stops()) {
             Link stopLink = resolveLink(stop.link(), tour);
             VrpPathWithTravelData leg = VrpPaths.calcAndCreatePath(prev, stopLink, t, router, travelTime);
             stopLegs.add(leg);
             service += VrpPaths.calcDistance(leg);
-            t = leg.getArrivalTime() + stop.serviceDuration();
+            var timing=ModularTourTiming.service(leg.getArrivalTime(),stop.serviceDuration(),
+                    stop.earliestStart(),stop.latestStart());
+            if(timing.isEmpty())return Optional.empty();
+            serviceTimings.add(timing.get());
+            t = timing.get().endSeconds();
             prev = stopLink;
         }
         VrpPathWithTravelData back = VrpPaths.calcAndCreatePath(prev, depot, t, router, travelTime);
         deadhead += VrpPaths.calcDistance(back);
         double swapBackBegin = back.getArrivalTime();
-        double completion = swapBackBegin + Modular.RETOOLING_S;
+        double completion = swapBackBegin + settings.retoolingSeconds();
 
         if (completion > envelope) {
             return Optional.empty();      // explicit reject - schedule untouched
         }
 
-        // ---- 2. mutate: truncate the running trailing STAY, append the chain ----
-        lastStay.setEndTime(departure);
-
-        if (approach != null) {
-            schedule.addTask(taskFactory.createDriveTask(vehicle, approach,
-                    Modular.FREIGHT_DRIVE_TASK_TYPE));
+        // Build every task before changing the running schedule, including factory calls.
+        List<Task> prepared=new ArrayList<>();
+        if(approach!=null)prepared.add(taskFactory.createDriveTask(vehicle,approach,Modular.FREIGHT_DRIVE_TASK_TYPE));
+        prepared.add(new ModularCapacityChangeTask(swapOutBegin,swapOutBegin+settings.retoolingSeconds(),
+                swapLink,loadType.getEmptyLoad(),tour.tourId(),false,settings.retoolingSeconds()));
+        for(int i=0;i<tour.stops().size();i++) {
+            var stop=tour.stops().get(i); var leg=stopLegs.get(i); var timing=serviceTimings.get(i);
+            prepared.add(taskFactory.createDriveTask(vehicle,leg,Modular.FREIGHT_DRIVE_TASK_TYPE));
+            // Retain even an initially zero wait for a bounded window: real timing may arrive earlier.
+            if(stop.earliestStart()>0 || Double.isFinite(stop.latestStart()))
+                prepared.add(new ModularFreightWaitTask(leg.getArrivalTime(),timing.startSeconds(),
+                        leg.getToLink(),stop.earliestStart()));
+            prepared.add(new ModularFreightStopTask(timing.startSeconds(),timing.endSeconds(),
+                    leg.getToLink(),stop.parcels(),tour.tourId(),i,stop.earliestStart(),stop.latestStart()));
         }
-        schedule.addTask(new ModularCapacityChangeTask(swapOutBegin,
-                swapOutBegin + Modular.RETOOLING_S, swapLink, loadType.getEmptyLoad(),
-                tour.tourId(), false));
-
-        for (int i = 0; i < tour.stops().size(); i++) {
-            ModularFreightTour.Stop stop = tour.stops().get(i);
-            VrpPathWithTravelData leg = stopLegs.get(i);
-            schedule.addTask(taskFactory.createDriveTask(vehicle, leg,
-                    Modular.FREIGHT_DRIVE_TASK_TYPE));
-            double arrive = leg.getArrivalTime();
-            // The leg's own endpoint, not a fresh network lookup (review Minor 7): structurally
-            // the drive task's destination, so the stop task's begin link is guaranteed
-            // reference-continuous with it regardless of which Network instance a second
-            // stop.link() lookup would resolve against.
-            schedule.addTask(new ModularFreightStopTask(arrive, arrive + stop.serviceDuration(),
-                    leg.getToLink(), stop.parcels(), tour.tourId(), i));
+        prepared.add(taskFactory.createDriveTask(vehicle,back,Modular.FREIGHT_DRIVE_TASK_TYPE));
+        prepared.add(new ModularCapacityChangeTask(swapBackBegin,completion,back.getToLink(),
+                vehicle.getCapacity(),tour.tourId(),true,settings.retoolingSeconds()));
+        prepared.add(taskFactory.createStayTask(vehicle,completion,
+                Math.max(vehicle.getServiceEndTime(),completion),back.getToLink()));
+        int originalCount=schedule.getTaskCount(); double originalEnd=lastStay.getEndTime();
+        try {
+            lastStay.setEndTime(departure);
+            for(Task task:prepared)schedule.addTask(task);
+        } catch(RuntimeException | Error failure) {
+            try {
+                while(schedule.getTaskCount()>originalCount)schedule.removeLastTask();
+                lastStay.setEndTime(originalEnd);
+            } catch(RuntimeException | Error rollbackFailure){failure.addSuppressed(rollbackFailure);}
+            throw failure;
         }
-        schedule.addTask(taskFactory.createDriveTask(vehicle, back, Modular.FREIGHT_DRIVE_TASK_TYPE));
-        schedule.addTask(new ModularCapacityChangeTask(swapBackBegin, completion, depot,
-                vehicle.getCapacity(), tour.tourId(), true));
-        schedule.addTask(taskFactory.createStayTask(vehicle, completion,
-                Math.max(vehicle.getServiceEndTime(), completion), depot));
-
         return Optional.of(new ScheduledExcursion(deadhead, service, completion, completion - now));
     }
 
@@ -283,7 +296,7 @@ public class ModularTourScheduler {
                 .getTravelTime();
         double service = tour.stops().stream()
                 .mapToDouble(ModularFreightTour.Stop::serviceDuration).sum();
-        double bound = 2 * Modular.RETOOLING_S + service + travel;
+        double bound = 2 * settings.retoolingSeconds() + service + travel;
         minChainDurationS.put(tour.tourId(), bound);
         return bound;
     }

@@ -107,11 +107,15 @@ public final class ParcelAgentGenerator {
      * {@code ChiGateInsertionCostCalculator#detourOnlySeconds}).
      */
     static List<Integer> splitLoad(int amount) {
+        return splitLoad(amount, hagrid.core.config.SharedUseSettings.defaults().parcelSlots());
+    }
+    static List<Integer> splitLoad(int amount, int parcelSlots) {
+        if (parcelSlots < 1) throw new IllegalArgumentException("Parcel slots must be positive");
         List<Integer> subLoads = new java.util.ArrayList<>();
         if (amount <= 0) {
             return subLoads;
         }
-        int chunks = (amount + SharedUse.PARCEL_SLOTS - 1) / SharedUse.PARCEL_SLOTS;
+        int chunks = (amount - 1) / parcelSlots + 1;
         int base = amount / chunks;
         int remainder = amount % chunks;
         for (int i = 0; i < chunks; i++) {
@@ -123,6 +127,11 @@ public final class ParcelAgentGenerator {
     public static Result generate(List<DeliveryDistrictBuilder.District> districts,
                                   Geometry serviceArea, Network drtNetwork,
                                   Population population, long seed) {
+        return generate(districts, serviceArea, drtNetwork, population, seed, hagrid.core.config.SharedUseSettings.defaults());
+    }
+    public static Result generate(List<DeliveryDistrictBuilder.District> districts,
+                                  Geometry serviceArea, Network drtNetwork, Population population, long seed,
+                                  hagrid.core.config.SharedUseSettings settings) {
         DeliveryChannelResolver resolver = new DeliveryChannelResolver(List.of(), 500.0); // Phase 1: no lockers
         Random rnd = new Random(seed);
         PopulationFactory pf = population.getFactory();
@@ -154,7 +163,7 @@ public final class ParcelAgentGenerator {
                 // be undeliverable-by-construction. Split into >=1 sub-loads of <=20 parcels
                 // each, all visiting the same physical depot/stop point (dense point -> multiple
                 // visits).
-                List<Integer> subLoads = splitLoad(stop.totalParcels());
+                List<Integer> subLoads = splitLoad(stop.totalParcels(), settings.parcelSlots());
                 // A pooled stop can mix channels; resolve from a B2B part when one is present
                 // (channelRepresentative) so B2B's mandatory door delivery is not silently
                 // overridden by an earlier B2C part - inert today under the Phase-1 (locker-free)
@@ -162,7 +171,7 @@ public final class ParcelAgentGenerator {
                 String channel = resolver.resolve(channelRepresentative(stop.parts())).name();
                 // One deadline for every parcel type, and the same one the Baseline and 1d use
                 // (user decision 2026-07-30). See DeliveryDay.
-                double windowEnd = SharedUse.WINDOW_END_S;
+                double windowEnd = settings.deliveryEndSeconds();
 
                 for (int part = 0; part < subLoads.size(); part++) {
                     int subLoad = subLoads.get(part);
@@ -172,7 +181,7 @@ public final class ParcelAgentGenerator {
                     PopulationUtils.putSubpopulation(p, SharedUse.PARCEL_SUBPOPULATION);
                     p.getAttributes().putAttribute(SharedUse.LOAD_ATTRIBUTE, subLoad);
                     p.getAttributes().putAttribute(SharedUse.DWELL_ATTRIBUTE,
-                            SharedUse.segmentDwellSeconds(subLoad));
+                            settings.segmentDwellSeconds(subLoad));
                     p.getAttributes().putAttribute(SharedUse.CHANNEL_ATTRIBUTE, channel);
                     p.getAttributes().putAttribute("district", district.id());
                     p.getAttributes().putAttribute(SharedUse.WINDOW_END_ATTRIBUTE, windowEnd);
@@ -180,8 +189,8 @@ public final class ParcelAgentGenerator {
                     Plan plan = pf.createPlan();
                     Activity depot = pf.createActivityFromLinkId(SharedUse.ACT_DEPOT, depotLink.getId());
                     depot.setCoord(district.depot().coord());
-                    depot.setEndTime(SharedUse.SUBMIT_FROM_S
-                            + rnd.nextDouble() * (SharedUse.SUBMIT_TO_S - SharedUse.SUBMIT_FROM_S));
+                    depot.setEndTime(settings.submissionStartSeconds()
+                            + rnd.nextDouble() * (settings.submissionEndSeconds() - settings.submissionStartSeconds()));
                     plan.addActivity(depot);
                     plan.addLeg(pf.createLeg("drt"));
                     Activity delivery = pf.createActivityFromLinkId(SharedUse.ACT_DELIVERY,

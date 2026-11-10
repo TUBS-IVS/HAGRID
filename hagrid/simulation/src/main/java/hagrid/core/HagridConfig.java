@@ -45,7 +45,7 @@ public class HagridConfig {
     // CONFIGURATION SECTIONS
     // =========================================================================
 
-    private HagridPaths hagridPaths = new HagridPaths(StudyArea.HANNOVER);
+    private HagridPaths hagridPaths;
     private final InputPaths inputPaths = new InputPaths();
     private final ProviderConfig providers = new ProviderConfig();
     private final VehicleConfig vehicles = new VehicleConfig();
@@ -53,6 +53,28 @@ public class HagridConfig {
     private final SupplyConfig supply = new SupplyConfig();
     private final HubConfig hubs = new HubConfig();
     private final NetworkConfig network = new NetworkConfig();
+    private final ResourceConfig resources = new ResourceConfig();
+    private Map<String,String> additionalConfigurationValues = Map.of();
+    private hagrid.core.config.HagridConfigFile configurationFile;
+
+    public void loadConfiguration(java.nio.file.Path path) {
+        var captured=hagrid.core.config.HagridConfigFile.load(path);
+        applyConfiguration(captured);
+    }
+    /** Applies an already captured file; pipelines use the same snapshot for preflight and execution. */
+    public void applyConfiguration(hagrid.core.config.HagridConfigFile captured) {
+        captured.applyTo(this);
+        configurationFile=captured;
+    }
+    public Optional<java.nio.file.Path> getConfigurationFile() { return Optional.ofNullable(configurationFile).map(hagrid.core.config.HagridConfigFile::path); }
+    public hagrid.core.config.VehicleDispatchSettings dispatch() { return hagrid.core.config.VehicleDispatchSettings.from(additionalConfigurationValues); }
+
+    public hagrid.core.config.RandomSeedSettings randomSeeds() { return hagrid.core.config.RandomSeedSettings.from(additionalConfigurationValues); }
+
+    public Map<String,String> getAdditionalConfigurationValues() { return additionalConfigurationValues; }
+    public void setAdditionalConfigurationValues(Map<String,String> values) { additionalConfigurationValues=Map.copyOf(values); }
+    public hagrid.core.config.DrtSettings drt() { return hagrid.core.config.DrtSettings.from(additionalConfigurationValues); }
+
 
     // =========================================================================
     // SCENARIO ENUM
@@ -88,6 +110,13 @@ public class HagridConfig {
     // =========================================================================
     
     public HagridConfig() {
+        this(new HagridPaths(StudyArea.HANNOVER));
+    }
+
+    /** Explicit pipeline root; demand inputs and outputs use the same path resolver. */
+    public HagridConfig(HagridPaths paths) {
+        this.hagridPaths = Objects.requireNonNull(paths);
+        this.studyArea = paths.getStudyArea();
         initializeDefaults();
     }
 
@@ -102,7 +131,7 @@ public class HagridConfig {
      * so that calling {@link #setStudyArea(StudyArea)} after {@link #setSimulationDate(LocalDate)}
      * (or vice-versa) always produces a correctly scoped demand path regardless of call order. */
     private void deriveInputPaths() {
-        inputPaths.setNetwork(hagridPaths.networkFile());
+        inputPaths.setDerivedNetwork(hagridPaths.networkFile());
         inputPaths.setVehicleTypes(hagridPaths.vehicleTypesFile());
         inputPaths.setHubData(hagridPaths.hubDataFile());
         inputPaths.setShippingPoints(hagridPaths.shippingPointsDir());
@@ -134,8 +163,16 @@ public class HagridConfig {
         private String shippingPoints = "";
         private String parcelLockers = "";
 
+        private boolean networkExplicit;
         public String getNetwork() { return network; }
-        public void setNetwork(String network) { this.network = network; }
+        public boolean isNetworkExplicit() { return networkExplicit; }
+        public void setNetwork(String network) {
+            this.network = Objects.requireNonNull(network);
+            this.networkExplicit = true;
+        }
+        private void setDerivedNetwork(String network) {
+            if (!networkExplicit) this.network = network;
+        }
 
         public String getFreightDemand() { return freightDemand; }
         public void setFreightDemand(String freightDemand) { this.freightDemand = freightDemand; }
@@ -236,6 +273,21 @@ public class HagridConfig {
 
         // Active vehicle sizes for the simulation
         private List<String> activeSizes = new ArrayList<>(List.of("m", "l"));
+        // User-facing speed cap; routing adapters convert km/h to m/s once at resolution.
+        private double cargoBikeMaxSpeedKmh = 20.0;
+
+        public double getCargoBikeMaxSpeedKmh() { return cargoBikeMaxSpeedKmh; }
+
+        public void setCargoBikeMaxSpeedKmh(double kmh) {
+            this.cargoBikeMaxSpeedKmh = requireValidCargoBikeMaxSpeedKmh(kmh);
+        }
+
+        public static double requireValidCargoBikeMaxSpeedKmh(double kmh) {
+            if (!Double.isFinite(kmh) || kmh <= 0 || kmh / 3.6 <= 0) {
+                throw new IllegalArgumentException("cargoBikeMaxSpeedKmh must be finite, positive and representable in m/s");
+            }
+            return kmh;
+        }
         
         // Provider-specific vehicle sizes (optional override)
         private final Map<String, List<String>> providerSizes = new LinkedHashMap<>();
@@ -380,8 +432,30 @@ public class HagridConfig {
      */
     public static class RoutingConfig {
         
+        // Shared routing context: bounded storage/workers and independent temporal approximation.
+        private boolean transportCacheEnabled = true;
+        private int maximumCacheEntries = 100000;
+        private int maximumConcurrentRouters = 1;
+        private double odTimeQuantizationSeconds = 0;
+        public boolean isTransportCacheEnabled() { return transportCacheEnabled; }
+        public void setTransportCacheEnabled(boolean enabled) { transportCacheEnabled=enabled; }
+        public int getMaximumCacheEntries() { return maximumCacheEntries; }
+        public void setMaximumCacheEntries(int entries) {
+            if(entries<=0) throw new IllegalArgumentException("Maximum routing cache entries must be positive");
+            maximumCacheEntries=entries;
+        }
+        public int getMaximumConcurrentRouters() { return maximumConcurrentRouters; }
+        public void setMaximumConcurrentRouters(int routers) {
+            if(routers<=0) throw new IllegalArgumentException("Maximum concurrent routers must be positive");
+            maximumConcurrentRouters=routers;
+        }
+        public double getOdTimeQuantizationSeconds() { return odTimeQuantizationSeconds; }
+        public void setOdTimeQuantizationSeconds(double seconds) {
+            if(!Double.isFinite(seconds) || seconds<0) throw new IllegalArgumentException("OD quantization must be finite and nonnegative");
+            odTimeQuantizationSeconds=seconds;
+        }
         // Time constraints
-        private int maxRouteDurationSeconds = 27000;  // 7.5 hours
+        private int solverMaxRouteDurationSeconds = hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS;
         private double maxDriverTimeMinutes = 600.0;   // 10 hours
         
         // Service durations
@@ -391,15 +465,27 @@ public class HagridConfig {
         // Delivery time window — the REAL TW for MATSim scoring penalties.
         // Services (deliveries) outside this window incur a TW penalty.
         // Configured via ScenarioConfig.deliveryTimeWindow(start, end).
-        private int deliveryWindowStartHour = 8;
-        private int deliveryWindowEndHour = 20;
+        private double deliveryWindowStartSeconds = 8 * 3600;
+        private double deliveryWindowEndSeconds = 20 * 3600;
+        private double vehicleDayEndSeconds = hagrid.core.config.RoutingDefaults.VEHICLE_DAY_END_SECONDS;
+        public double getVehicleDayEndSeconds() { return vehicleDayEndSeconds; }
+        public void setVehicleDayEndSeconds(double seconds) {
+            if(!Double.isFinite(seconds)||seconds<=0) throw new IllegalArgumentException("Vehicle day end must be finite and positive");
+            vehicleDayEndSeconds=seconds;
+        }
+        private int vehicleAvailabilityBufferSeconds = hagrid.core.config.RoutingDefaults.VEHICLE_AVAILABILITY_BUFFER_SECONDS;
+        public int getVehicleAvailabilityBufferSeconds() { return vehicleAvailabilityBufferSeconds; }
+        public void setVehicleAvailabilityBufferSeconds(int seconds) {
+            if(seconds<0) throw new IllegalArgumentException("Vehicle buffer must be nonnegative");
+            vehicleAvailabilityBufferSeconds=seconds;
+        }
         
         // Demand splitting thresholds
         private int demandBorder = 600;  // Max deliveries per carrier for KMeans clustering
         private int dhlBorder = 450;     // DHL-specific border  for filtering input SHP File -> >500 = ASSUME TRUCK DELIVERY
         
         // JSprit optimization
-        private int jspritIterations = 1;  // 1 for initial model, 20-50 for production
+        private int jspritIterations = hagrid.core.config.RoutingDefaults.INITIAL_SOLVER_ITERATIONS;
 
         // Carrier merge threshold — fixed limit for merging small carriers into neighbors.
         // Carriers with total parcel demand below this threshold get merged.
@@ -408,8 +494,14 @@ public class HagridConfig {
 
         // --- Getters/Setters ---
 
-        public int getMaxRouteDurationSeconds() { return maxRouteDurationSeconds; }
-        public void setMaxRouteDurationSeconds(int seconds) { this.maxRouteDurationSeconds = seconds; }
+        /** One duration shared by demand preparation, optimization and overtime scoring. */
+        public int getSolverMaxRouteDurationSeconds() { return solverMaxRouteDurationSeconds; }
+        public void setSolverMaxRouteDurationSeconds(int seconds) {
+            if (seconds <= 0) throw new IllegalArgumentException("Solver route duration must be positive");
+            solverMaxRouteDurationSeconds = seconds;
+        }
+        public int getMaxRouteDurationSeconds() { return getSolverMaxRouteDurationSeconds(); }
+        public void setMaxRouteDurationSeconds(int seconds) { setSolverMaxRouteDurationSeconds(seconds); }
 
         public double getMaxDriverTimeMinutes() { return maxDriverTimeMinutes; }
         public void setMaxDriverTimeMinutes(double minutes) { this.maxDriverTimeMinutes = minutes; }
@@ -421,12 +513,16 @@ public class HagridConfig {
         public void setMaxDurationPerStopMinutes(int minutes) { this.maxDurationPerStopMinutes = minutes; }
 
         public TimeWindow getDeliveryTimeWindow() {
-            return TimeWindow.newInstance(deliveryWindowStartHour * 3600, deliveryWindowEndHour * 3600);
+            return TimeWindow.newInstance(deliveryWindowStartSeconds, deliveryWindowEndSeconds);
         }
 
         public void setDeliveryWindow(int startHour, int endHour) {
-            this.deliveryWindowStartHour = startHour;
-            this.deliveryWindowEndHour = endHour;
+            setDeliveryWindowSeconds(startHour * 3600.0, endHour * 3600.0);
+        }
+        public void setDeliveryWindowSeconds(double start,double end) {
+            if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||start>=end)
+                throw new IllegalArgumentException("Delivery window must be finite with 0 <= start < end");
+            deliveryWindowStartSeconds=start; deliveryWindowEndSeconds=end;
         }
 
         public int getDemandBorder() { return demandBorder; }
@@ -435,9 +531,9 @@ public class HagridConfig {
         public int getDhlBorder() { return dhlBorder; }
         public void setDhlBorder(int border) { this.dhlBorder = border; }
         
-        /** JSprit iterations for routing optimization. 1 = quick, 20-50 = production quality */
+        /** Initial improvement steps: 0 constructs and validates tours without improvement search. */
         public int getJspritIterations() { return jspritIterations; }
-        public void setJspritIterations(int iterations) { this.jspritIterations = Math.max(1, iterations); }
+        public void setJspritIterations(int iterations) { if (iterations < 0) throw new IllegalArgumentException("Initial solver iterations must be nonnegative"); this.jspritIterations = iterations; }
 
         /** Fixed carrier merge threshold (parcels). Carriers below this get merged into neighbors. */
         public int getCarrierMergeThreshold() { return carrierMergeThreshold; }
@@ -469,6 +565,9 @@ public class HagridConfig {
         
         private int vehicleCapacity = 2000;
         private int durationPerStopSeconds = 1800;  // 30 minutes
+        private String baselineCarriersFile = "carrierPlans_Supply.xml";
+        public String getBaselineCarriersFile() { return baselineCarriersFile; }
+        public void setBaselineCarriersFile(String file) { baselineCarriersFile = java.util.Objects.requireNonNull(file); }
 
         // Link directions for geographical splitting
         private final Map<String, String> linkDirections = new LinkedHashMap<>() {{
@@ -538,6 +637,8 @@ public class HagridConfig {
         // The demand files carry out-of-home stops (stop_type locker/shop); the fixed extra demand per
         // DHL Packstation would count those parcels twice and is only kept for older demand files.
         private boolean fixedParcelLockerDemand = false;
+        // Legacy location catalogs are optional for calendar demand with stops already supplied.
+        private boolean loadLegacyLocations = true;
 
         public int getLimitDHL() { return limitDHL; }
         public void setLimitDHL(int limit) { this.limitDHL = limit; }
@@ -551,6 +652,8 @@ public class HagridConfig {
         public int getParcelLockerDurationMinutes() { return parcelLockerDurationMinutes; }
         public void setParcelLockerDurationMinutes(int minutes) { this.parcelLockerDurationMinutes = minutes; }
 
+        public boolean isLoadLegacyLocations() { return loadLegacyLocations; }
+        public void setLoadLegacyLocations(boolean enabled) { this.loadLegacyLocations = enabled; }
         public boolean isFixedParcelLockerDemand() { return fixedParcelLockerDemand; }
         public void setFixedParcelLockerDemand(boolean enabled) { this.fixedParcelLockerDemand = enabled; }
     }
@@ -589,6 +692,27 @@ public class HagridConfig {
     public SupplyConfig supply() { return supply; }
     public HubConfig hubs() { return hubs; }
     public NetworkConfig network() { return network; }
+    public ResourceConfig resources() { return resources; }
+
+    /** Solver settings; an outer limit does not create an uncalibrated parallel pool. */
+    public static final class ResourceConfig {
+        private int internalSolverThreads = 1;
+        private Integer maxActiveSolvers;
+        public int getInternalSolverThreads() { return internalSolverThreads; }
+        public void setInternalSolverThreads(int value) {
+            if (value < 1) throw new IllegalArgumentException("Solver threads must be positive");
+            internalSolverThreads = value;
+        }
+        public Integer getMaxActiveSolvers() { return maxActiveSolvers; }
+        public void setMaxActiveSolvers(Integer value) {
+            if (value != null && value < 1) throw new IllegalArgumentException("Active solver limit must be positive");
+            maxActiveSolvers = value;
+        }
+        public hagrid.core.config.ResolvedHagridConfig.Resources snapshot() {
+            return new hagrid.core.config.ResolvedHagridConfig.Resources(internalSolverThreads,
+                    maxActiveSolvers == null ? OptionalInt.empty() : OptionalInt.of(maxActiveSolvers));
+        }
+    }
 
     // =========================================================================
     // SCENARIO SETTINGS

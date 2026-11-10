@@ -5,15 +5,16 @@ import com.google.inject.Provides;
 import com.google.inject.Singleton;
 
 import hagrid.core.routing.VRPTransportCostsFactory;
-import hagrid.core.routing.ZoneBasedTransportCostsFactory;
+import hagrid.core.config.ResolvedHagridConfig;
+import hagrid.core.routing.DefaultVRPTransportCostsFactory;
 
 import org.matsim.api.core.v01.Scenario;
 
 import org.matsim.core.config.Config;
 import org.matsim.core.controler.AbstractModule;
-import org.matsim.core.controler.OutputDirectoryHierarchy;
-import org.matsim.core.controler.events.IterationEndsEvent;
-import org.matsim.core.controler.listener.IterationEndsListener;
+
+
+
 import org.matsim.core.router.util.TravelTime;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 import org.matsim.freight.carriers.Carriers;
@@ -36,11 +37,22 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	private int maxIterationsMATSim;
 	private int jspritIterations;
 
-	private final boolean zoneBasedCachingEnabled;
 
-	private final double zoneBasedEuclideanThresholdMeters;
+
+
 
 	private final double uTurnPenaltyCost;
+    private ResolvedHagridConfig routingConfig;
+
+    public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterationsMATSim,
+            ResolvedHagridConfig config) {
+        this(scenario, isUsingZones, maxIterationsMATSim,
+                config.optimization().replanningIterations().orElseThrow(
+                        () -> new IllegalArgumentException("Module requires a replanning search budget")),
+                false, 0,
+                config.tourRules().uTurnPenaltyCost());
+        this.routingConfig = config;
+    }
 
 	public HAGRIDSimulationModule(Scenario scenario, Boolean isUsingZones, int maxIterationsMATSim, int jspritIterations,
 			boolean zoneBasedCachingEnabled, double zoneBasedEuclideanThresholdMeters,
@@ -50,13 +62,15 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		this.isUsingZones = isUsingZones;
 		this.maxIterationsMATSim = maxIterationsMATSim;
 		this.jspritIterations = jspritIterations;
-		this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
-		this.zoneBasedEuclideanThresholdMeters = zoneBasedEuclideanThresholdMeters;
+		hagrid.core.config.ResolvedHagridConfig.rejectRemoved("routing.zoneBasedCachingEnabled",zoneBasedCachingEnabled);
+
 		this.uTurnPenaltyCost = uTurnPenaltyCost;
 	}
 
 	ReplanningStrategies replanningStrategies() {
-		return new ReplanningStrategies(types, isUsingZones, maxIterationsMATSim, jspritIterations, uTurnPenaltyCost);
+		return routingConfig == null
+                ? new ReplanningStrategies(types,isUsingZones,maxIterationsMATSim,jspritIterations,uTurnPenaltyCost)
+                : new ReplanningStrategies(types,isUsingZones,maxIterationsMATSim,routingConfig);
 	}
 
 	@Inject
@@ -65,21 +79,33 @@ public class HAGRIDSimulationModule extends AbstractModule {
 	@Override
 	public void install() {
 		// Scoring and replanning function
-		ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork(), uTurnPenaltyCost);		
+        var scoringConfig = routingConfig == null ? hagrid.core.config.HagridConfigResolver.resolve(
+                new hagrid.core.HagridConfig(), hagrid.core.config.HagridConfigResolver.Overrides.empty(),
+                hagrid.core.config.HagridConfigResolver.Overrides.of(Map.of("tourRules.uTurnPenaltyCost",Double.toString(uTurnPenaltyCost))), Map.of()) : routingConfig;
+        var executionLedger = new hagrid.core.simulation.scoring.CarrierExecutionLedger(scenario,scoringConfig);
+        bind(hagrid.core.simulation.scoring.CarrierExecutionLedger.class).toInstance(executionLedger);
+        addEventHandlerBinding().toInstance(executionLedger);
+        ScoringFunctions scoringFunctionFactory = new ScoringFunctions(scenario.getNetwork(),scoringConfig,executionLedger,hagrid.core.routing.SectionBindingCompanion.context(scenario));
 
 		bind(Carriers.class).toProvider(new CarrierProvider()).asEagerSingleton();
-		bind(CarrierStrategyManager.class).toProvider(replanningStrategies());
+        if (routingConfig != null) {
+            bind(ResolvedHagridConfig.class).toInstance(routingConfig);
+            bind(ValidatedCarrierReplanning.class).in(Singleton.class);
+            addControlerListenerBinding().to(ValidatedCarrierReplanning.class);
+        }
+        bind(CarrierStrategyManager.class).toProvider(replanningStrategies());
 
 		bind(CarrierScoringFunctionFactory.class).toInstance(scoringFunctionFactory);
-		
-		bind(VRPTransportCostsFactory.class).to(ZoneBasedTransportCostsFactory.class).in(Singleton.class);
+
+		bind(VRPTransportCostsFactory.class).to(DefaultVRPTransportCostsFactory.class).in(Singleton.class);
 
 
 		Carriers carriers = CarriersUtils.getCarriers(scenario);
+        hagrid.core.routing.SectionBindingCompanion.requireStaticExecution(carriers,config.controller().getFirstIteration(),config.controller().getLastIteration());
 
 		final CarrierScoreStats scores = new CarrierScoreStats(carriers,
 				config.controller().getOutputDirectory() + "/carrier_scores", true);
-		final int statInterval = 1;
+
 		final LegHistogram freightOnly = new LegHistogram(900);
 		freightOnly.setInclPop(false);
 		binder().requestInjection(freightOnly);
@@ -89,27 +115,8 @@ public class HAGRIDSimulationModule extends AbstractModule {
 		addEventHandlerBinding().toInstance(withoutFreight);
 		addEventHandlerBinding().toInstance(freightOnly);
 		addControlerListenerBinding().toInstance(scores);
-		addControlerListenerBinding().toInstance(new IterationEndsListener() {
-
-			@Inject
-			private OutputDirectoryHierarchy controlerIO;
-
-			@Override
-			public void notifyIterationEnds(IterationEndsEvent event) {
-				if (event.getIteration() % statInterval != 0)
-					return;
-				// write plans
-				String dir = controlerIO.getIterationPath(event.getIteration());
-//				new CarrierPlanXmlWriterV2(carriers).write(dir + "/" + event.getIteration() + ".carrierPlans.xml");
-
-				// write stats
-				freightOnly.writeGraphic(dir + "/" + event.getIteration() + ".legHistogram_freight.png");
-				freightOnly.reset(event.getIteration());
-
-				withoutFreight.writeGraphic(dir + "/" + event.getIteration() + ".legHistogram_withoutFreight.png");
-				withoutFreight.reset(event.getIteration());
-			}
-		});
+        int histogramInterval = routingConfig == null ? 1 : routingConfig.results().freightHistogramWriteInterval();
+        addControlerListenerBinding().toInstance(new FreightHistogramOutput(freightOnly, withoutFreight, histogramInterval));
 
 	}
 
@@ -127,11 +134,11 @@ public class HAGRIDSimulationModule extends AbstractModule {
 
 	@Provides
 	@Singleton
-	private ZoneBasedTransportCostsFactory provideNetworkBasedTransportCostsFactory(Scenario scenario,
+	private DefaultVRPTransportCostsFactory provideNetworkBasedTransportCostsFactory(Scenario scenario,
 			Carriers carriers, Map<String, TravelTime> travelTimes, Config config) {
 
-		return new ZoneBasedTransportCostsFactory(scenario, carriers, travelTimes, config,
-				zoneBasedCachingEnabled, zoneBasedEuclideanThresholdMeters);
+		return new DefaultVRPTransportCostsFactory(scenario, carriers, travelTimes, config,
+				false, 0);
 	}
 
 }

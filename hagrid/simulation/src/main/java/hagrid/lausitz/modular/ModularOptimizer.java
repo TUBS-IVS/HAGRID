@@ -94,6 +94,7 @@ public class ModularOptimizer implements DrtOptimizer {
         Task next = currentOrNull(vehicle);
         if (previous != null && previous != next) {
             dispatcher.observeTaskTransition(vehicle, previous, timer.getTimeOfDay());
+            dispatcher.observeTaskStart(vehicle,next,timer.getTimeOfDay());
         }
     }
 
@@ -147,6 +148,14 @@ public class ModularOptimizer implements DrtOptimizer {
                 continue;
             }
             double intended;
+            if(t instanceof ModularFreightWaitTask wait) {
+                double end=Math.max(t.getBeginTime(),wait.getEarliestStart());
+                if(t.getEndTime()!=end) {
+                    t.setEndTime(end);
+                    scheduleTimingUpdater.updateTimingsStartingFromTaskIdx(vehicle,t.getTaskIdx()+1,end);
+                }
+                continue;
+            }
             if (t instanceof ModularFreightStopTask stop) {
                 intended = stop.getIntendedDuration();
             } else if (t instanceof ModularCapacityChangeTask swap) {

@@ -88,6 +88,12 @@ public final class RunMetadataWriter {
         // twice. Written for every scenario (harmless defaults elsewhere), same as chi_threshold.
         m.put("idle_threshold", cfg.getIdleThreshold());
         m.put("max_tour_duration_s", cfg.getMaxTourDurationSeconds());
+        m.put("solver_max_route_duration_s", cfg.getResolvedRoutingConfig().tourRules().maxRouteDurationSeconds());
+        cfg.getResolvedRoutingConfig().effectiveValues().forEach((key,value)->m.put("hagrid_config."+key,value));
+        cfg.getResolvedRoutingConfig().provenance().forEach((key,value)->m.put("hagrid_source."+key,value.name()));
+        cfg.getConfigurationFile().ifPresent(file->{
+            m.put("hagrid_config_file",file.path().toString());m.put("hagrid_config_file_sha256",file.sha256());
+        });
         m.put("max_concurrent_freight", cfg.getMaxConcurrentFreight());
         // "always_open" rather than "" for an empty window list, mirroring open_depots' "all":
         // an empty string reads as "the writer had nothing", a named default reads as the

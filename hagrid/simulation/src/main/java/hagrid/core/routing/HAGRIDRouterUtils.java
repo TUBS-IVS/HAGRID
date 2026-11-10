@@ -14,6 +14,7 @@ import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
 import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
 
 import hagrid.core.HagridPaths;
+import hagrid.core.config.ResolvedHagridConfig;
 
 import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
 
@@ -47,13 +48,9 @@ import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 public class HAGRIDRouterUtils {
 
     private static final Logger LOGGER = LogManager.getLogger(HAGRIDRouterUtils.class);
-    /**
-     * Hard cap on jsprit route duration (7h driver shift), enforced via
-     * {@code MaxRouteDurationConstraint} for BOTH the Hannover legacy path and the Lausitz LMD path.
-     * Also referenced by {@code LmdCarrierBuilder} to derive per-wave vehicle operating windows
-     * (Hannover parity) — do not change casually: it alters legacy Hannover routing results.
-     */
-    public static final int MAXROUTEDURATION = 25200;
+    /** Compatibility alias only. Configure tourRules.maxRouteDurationSeconds for actual runs. */
+    @Deprecated(forRemoval = false)
+    public static final int MAXROUTEDURATION = hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS;
 
     /**
      * System property that overrides jsprit's search seed, e.g. {@code -Dhagrid.jsprit.seed=1234}.
@@ -97,43 +94,6 @@ public class HAGRIDRouterUtils {
     public static final String ONLY_CARRIER_LARGEST = "largest";
 
     /**
-     * Configures the routing algorithm (no U-turn penalty).
-     *
-     * @param vrp          The vehicle routing problem.
-     * @param serviceCount The number of services.
-     * @return The configured vehicle routing algorithm.
-     */
-    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount) {
-        return configureAlgorithm(vrp, serviceCount, 1, null, 0.0);
-    }
-
-    /**
-     * Configures the routing algorithm with custom iteration count (no U-turn penalty).
-     */
-    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount, int jspritIterations) {
-        return configureAlgorithm(vrp, serviceCount, jspritIterations, null, 0.0);
-    }
-
-    /**
-     * Configures the routing algorithm with custom iteration count and optional U-turn penalty.
-     * Delegates to the 6-arg overload with {@link #MAXROUTEDURATION} (Hannover + Lausitz LMD_BASELINE
-     * parity — byte-identical to before the cap became a parameter).
-     *
-     * @param vrp                  The vehicle routing problem.
-     * @param serviceCount         The number of services.
-     * @param jspritIterations     Number of JSprit iterations (1=quick, 20-50=production)
-     * @param network              MATSim network for U-turn detection (null to disable)
-     * @param uTurnPenaltyCost  Soft score penalty per U-turn (0 to disable)
-     * @return The configured vehicle routing algorithm.
-     */
-    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
-                                                              int jspritIterations, Network network,
-                                                              double uTurnPenaltyCost) {
-        return configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost,
-                MAXROUTEDURATION);
-    }
-
-    /**
      * Configures the routing algorithm with an explicit route-duration cap, overriding
      * {@link #MAXROUTEDURATION}. Introduced for the 1d DRT_MODULAR path, whose capsule-swap tours
      * must fit the shorter 12600s (3.5h) round-trip budget instead of the 25200s (7h) driver-shift
@@ -151,39 +111,133 @@ public class HAGRIDRouterUtils {
                                                               int jspritIterations, Network network,
                                                               double uTurnPenaltyCost,
                                                               int maxRouteDurationSeconds) {
-        StateManager stateManager = new StateManager(vrp);
-        ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
+        return configureAlgorithm(vrp, serviceCount, jspritIterations, network, uTurnPenaltyCost,
+                maxRouteDurationSeconds, maxRouteDurationSeconds, AlgorithmPhase.INITIAL, 1, null);
+    }
 
-        stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
+    static VehicleRoutingAlgorithm configureInitialAlgorithm(VehicleRoutingProblem vrp, int iterations,
+            Network network, double uTurnPenalty, int routeLimit, int threads,
+            java.util.concurrent.ExecutorService executor, long seed) {
+        if (threads > 1 && executor == null) throw new IllegalArgumentException("Initial solver requires an owned executor");
+        return configureAlgorithm(vrp,vrp.getJobs().size(),iterations,network,uTurnPenalty,routeLimit,routeLimit,
+                AlgorithmPhase.INITIAL,threads,seed,executor);
+    }
+    /** Preserve existing phase-specific ruin choices while sharing correctness constraints. */
+    public enum AlgorithmPhase { INITIAL, OFFLINE, REPLANNING }
+
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, ResolvedHagridConfig config,
+            long seed, int iterations) {
+        var phase = config.optimization().replanningIterations().isPresent() ? AlgorithmPhase.REPLANNING
+                : config.optimization().offlineIterations().isPresent() ? AlgorithmPhase.OFFLINE : AlgorithmPhase.INITIAL;
+        return configureAlgorithm(vrp, config, seed, iterations, phase);
+    }
+
+    public static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, ResolvedHagridConfig config,
+            long seed, int iterations, AlgorithmPhase phase) {
+        return configureAlgorithm(vrp, config, seed, iterations, phase, null);
+    }
+
+    static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, ResolvedHagridConfig config,
+            long seed, int iterations, AlgorithmPhase phase, java.util.concurrent.ExecutorService executor) {
+        if (config.resources().internalSolverThreads() > 1 && executor == null)
+            throw new IllegalArgumentException("Multiple solver threads require an owned executor; use withConfiguredAlgorithm");
+        if (iterations < 0 || (phase != AlgorithmPhase.INITIAL && iterations == 0)) throw new IllegalArgumentException("Solver iterations must be nonnegative for INITIAL and positive otherwise");
+        Network network = vrp.getTransportCosts() instanceof VRPTransportCosts costs ? costs.getNetwork() : null;
+        if (config.tourRules().uTurnPenaltyCost() > 0 && network == null) {
+            throw new IllegalArgumentException("U-turn penalty requires the actual routing network");
+        }
+        double routeLimit = config.tourRules().maxRouteDurationSeconds();
+        // Existing solver constrained both to the tour cap; a tighter explicit driver rule also applies.
+        double driverLimit = Math.min(routeLimit, config.tourRules().maxDriverTimeSeconds());
+        return configureAlgorithm(vrp, vrp.getJobs().size(), iterations, network,
+                config.tourRules().uTurnPenaltyCost(), routeLimit, driverLimit, phase,
+                config.resources().internalSolverThreads(), seed, executor);
+    }
+
+    /** Runs caller setup/search with an owned pool; no native jsprit shutdown hook is installed. */
+    public static <T> T withConfiguredAlgorithm(VehicleRoutingProblem vrp, ResolvedHagridConfig config,
+            long seed, int iterations, AlgorithmPhase phase,
+            java.util.function.Function<VehicleRoutingAlgorithm, T> search) {
+        java.util.Objects.requireNonNull(search);
+        try (var workers = new SolverWorkers(config.resources().internalSolverThreads())) {
+            return search.apply(configureAlgorithm(vrp,config,seed,iterations,phase,workers.executor()));
+        }
+    }
+    /** Transitional raw constructor adapter; preserves the previous replanning search choices. */
+    public static VehicleRoutingAlgorithm configureLegacyReplanningAlgorithm(VehicleRoutingProblem vrp,
+            int iterations, double routeLimit) {
+        return configureAlgorithm(vrp, vrp.getJobs().size(), iterations, null, 0, routeLimit, routeLimit,
+                AlgorithmPhase.REPLANNING, 1, null);
+    }
+
+    private static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
+            int jspritIterations, Network network, double uTurnPenaltyCost, double maxRouteDurationSeconds,
+            double maxDriverDurationSeconds, AlgorithmPhase phase, int threads, Long seed) {
+        return configureAlgorithm(vrp,serviceCount,jspritIterations,network,uTurnPenaltyCost,maxRouteDurationSeconds,
+                maxDriverDurationSeconds,phase,threads,seed,null);
+    }
+
+    private static VehicleRoutingAlgorithm configureAlgorithm(VehicleRoutingProblem vrp, int serviceCount,
+            int jspritIterations, Network network, double uTurnPenaltyCost, double maxRouteDurationSeconds,
+            double maxDriverDurationSeconds, AlgorithmPhase phase, int threads, Long seed,
+            java.util.concurrent.ExecutorService executor) {
+        if (jspritIterations < 0 || (phase != AlgorithmPhase.INITIAL && jspritIterations == 0)) throw new IllegalArgumentException("Solver iterations must be nonnegative for INITIAL and positive otherwise");
+        StateManager stateManager = new StateManager(vrp);
+        StateIds stateIds = new StateIds(stateManager);
+        ConstraintManager constraintManager = new HagridConstraintManager(vrp, stateManager);
+        boolean rawTemporal=ExactTemporalSolverCosts.rawAdapter(vrp.getTransportCosts())!=null;
+        if(rawTemporal&&!(vrp.getTransportCosts() instanceof ExactTemporalSolverCosts))
+            throw new IllegalArgumentException("Build raw distance-profile VRPs with ModalTransportCosts.solverCosts() for exact solver timing");
+
+        if(!rawTemporal)stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
         stateManager.updateLoadStates();
-        stateManager.updateTimeWindowStates();
-        //TODO TEST
-        // stateManager.updateSkillStates();
+        if(!rawTemporal)stateManager.updateTimeWindowStates();
+        stateManager.updateSkillStates();
         stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
         stateManager.addStateUpdater(new OpenRouteStateVerifier());
-        stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
-                vrp.getTransportCosts(), maxRouteDurationSeconds));
+        if(!rawTemporal)stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
+                vrp.getTransportCosts(), maxDriverDurationSeconds, stateIds));
+        if(rawTemporal) {
+            // Native scalar latest-arrival/switch states assume FIFO. Exact candidate replay below
+            // replaces them; the immutable solver view supplies actual forward timings and unchanged rates.
+            stateManager.addStateUpdater(new com.graphhopper.jsprit.core.algorithm.state.UpdateActivityTimes(
+                    vrp.getTransportCosts(),vrp.getActivityCosts()));
+            stateManager.addStateUpdater(new com.graphhopper.jsprit.core.algorithm.state.UpdateVariableCosts(
+                    vrp.getActivityCosts(),vrp.getTransportCosts(),stateManager));
+            stateManager.addStateUpdater(new com.graphhopper.jsprit.core.algorithm.state.UpdateFutureWaitingTimes(
+                    stateManager,vrp.getTransportCosts()));
+        }
 
+        var rawRoads=ExactTemporalSolverCosts.rawAdapter(vrp.getTransportCosts());
+        var insertionReplay=rawTemporal && vrp.getActivityCosts() instanceof HagridActivityCosts h
+                ?new ExactInsertionReplay(rawRoads,h,Math.min(maxRouteDurationSeconds,maxDriverDurationSeconds)):null;
+        if(insertionReplay!=null) {
+            constraintManager.addConstraint((com.graphhopper.jsprit.core.problem.constraint.HardActivityConstraint)(facts,prev,inserted,next,end)->
+                    insertionReplay.evaluate(facts,inserted,next,false).feasible()
+                            ?com.graphhopper.jsprit.core.problem.constraint.HardActivityConstraint.ConstraintsStatus.FULFILLED
+                            :com.graphhopper.jsprit.core.problem.constraint.HardActivityConstraint.ConstraintsStatus.NOT_FULFILLED,Priority.CRITICAL);
+        }else {
         constraintManager.addConstraint(
                 new MaxRouteDurationConstraint(maxRouteDurationSeconds, stateManager, vrp.getTransportCosts()),
                 Priority.CRITICAL);
         constraintManager.addConstraint(
-                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), maxRouteDurationSeconds),
+                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), maxDriverDurationSeconds, stateIds),
                 Priority.CRITICAL);
 
-        constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
+        }
+
+        if(!rawTemporal)constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
                 vrp.getTransportCosts(), vrp.getActivityCosts()), ConstraintManager.Priority.HIGH);
         constraintManager.addConstraint(new ServiceDeliveriesFirstConstraint(),
                 ConstraintManager.Priority.CRITICAL);
 
-        constraintManager.addTimeWindowConstraint();
+        if(!rawTemporal)constraintManager.addTimeWindowConstraint();
         constraintManager.addLoadConstraint();
-        // TODO 
-        // constraintManager.addSkillsConstraint();
-        constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
+        constraintManager.addSkillsConstraint();
+        if(!rawTemporal)constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
 
         // Soft U-turn penalty: discourages reverse-link maneuvers in route solutions
-        if (network != null && uTurnPenaltyCost > 0.0) {
+        if (network != null && uTurnPenaltyCost > 0.0 && !(vrp.getTransportCosts() instanceof NativeTurnTransportCosts)) {
             constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltyCost));
         }
 
@@ -201,14 +255,10 @@ public class HAGRIDRouterUtils {
         int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
         int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
 
-    // int jspritThreads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-    Jsprit.Builder builder = Jsprit.Builder.newInstance(vrp)
+        Jsprit.Builder builder = Jsprit.Builder.newInstance(vrp)
+                .addCoreStateAndConstraintStuff(!rawTemporal)
                 .setStateAndConstraintManager(stateManager, constraintManager)
-                // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
-                .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
-                .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
-                .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
-                .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
+                .setProperty(Jsprit.Parameter.THREADS, Integer.toString(threads))
                 // REGRET_INSERTION is jsprit's own default; HAGRID used to override it with
                 // BEST_INSERTION, which cost roughly one vehicle per carrier. BEST_INSERTION is
                 // greedy per job — each job goes wherever it is cheapest AT THE MOMENT it is
@@ -232,25 +282,40 @@ public class HAGRIDRouterUtils {
                 // 50/70 caps (radial 122, random 163) leaves the tour count at 5.
                 // Pinned by JspritConstructionHeuristicTest — do not "restore" BEST_INSERTION.
                 .setProperty(Jsprit.Parameter.CONSTRUCTION, Jsprit.Construction.REGRET_INSERTION.toString())
-                // jsprit's default is false as well; kept explicit because regretFast() is the
-                // next candidate knob (see BACKLOG "jsprit-Upgrade 1.8 -> 2.x", spike question i).
+                // Keep standard regret insertion in the single production search configuration.
                 .setProperty(Jsprit.Parameter.FAST_REGRET, "false");
+
+        // The scalar fast path retains native insertion decisions. Opt in only when
+        // a diagnostic consumer needs the detailed insertion-cost breakdown.
+        builder.setServiceInsertionCalculatorFactory(
+                com.graphhopper.jsprit.core.algorithm.recreate.HagridServiceInsertionCalculator.factory(
+                        Boolean.getBoolean("hagrid.jsprit.insertionDiagnostics")));
 
         // Must be set on the builder, not via RandomNumberGeneration.setSeed(): Jsprit.Builder
         // takes its RNG from RandomNumberGeneration.newInstance(), which always uses the fixed
         // DEFAULT_SEED and therefore ignores setSeed() entirely.
-        applySeedOverride(builder);
+        if (phase != AlgorithmPhase.REPLANNING) {
+            builder.setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, Integer.toString(radialServicesReplanned))
+                    .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, Integer.toString(radialServicesReplanned))
+                    .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, Integer.toString(randomServicesReplanned))
+                    .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, Integer.toString(randomServicesReplanned));
+        }
+        if (seed == null) applySeedOverride(builder);
+        else builder.setRandom(new Random(seed));
 
+        if(rawTemporal)builder.setActivityInsertionCalculator(new ExactTemporalInsertionCosts(
+                ExactTemporalSolverCosts.rawAdapter(vrp.getTransportCosts()),vrp.getActivityCosts(),uTurnPenaltyCost,insertionReplay));
+        if(rawTemporal)builder.setCustomAcceptor(new ExactTemporalAcceptance(
+                ExactTemporalSolverCosts.rawAdapter(vrp.getTransportCosts()),Math.min(maxRouteDurationSeconds,maxDriverDurationSeconds)));
+        if (executor != null) builder.setExecutorService(executor, threads);
         VehicleRoutingAlgorithm algorithm = builder.buildAlgorithm();
 
-        int iterations = Math.max(1, jspritIterations);
-        int termination = calculateNoImprovementThreshold(iterations);
-
-        algorithm.setMaxIterations(iterations);
-        algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(termination));
+        algorithm.setMaxIterations(jspritIterations);
+        algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination(calculateNoImprovementThreshold(jspritIterations)));
         algorithm.getAlgorithmListeners().addListener(new StopWatch(), VehicleRoutingAlgorithmListeners.Priority.HIGH);
-        algorithm.addListener(new DepartureTimeReScheduler());
-  
+        algorithm.addListener(new DepartureTimeReScheduler(stateManager, algorithm.getObjectiveFunction(),
+                maxRouteDurationSeconds, maxDriverDurationSeconds));
+
 
         return algorithm;
     }
@@ -261,18 +326,35 @@ public class HAGRIDRouterUtils {
      * silently falling back: a seed sweep whose seed was ignored would produce identical runs
      * and read as "no search noise", the exact opposite of the truth.
      */
+    public static long resolveSolverSeed() {
+        String raw = System.getProperty(JSPRIT_SEED_PROPERTY);
+        if (raw == null || raw.isBlank()) return 4711L; // Pinned jsprit 2.0.0 default; checked against newInstance() in tests.
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(JSPRIT_SEED_PROPERTY + " must be a long, was: '" + raw + "'", e);
+        }
+    }
+
+    /** Configured HAGRID runs share the master seed; unconfigured compatibility callers retain the old entry point. */
+    public static long resolveSolverSeed(ResolvedHagridConfig config) {
+        return config == null ? resolveSolverSeed() : resolveSolverSeed(config.randomSeeds().seed());
+    }
+
+    public static long resolveSolverSeed(long masterSeed) {
+        String legacy = System.getProperty(JSPRIT_SEED_PROPERTY);
+        if (legacy != null && !legacy.isBlank() && resolveSolverSeed() != masterSeed)
+            throw new IllegalArgumentException(JSPRIT_SEED_PROPERTY + " conflicts with run.seed=" + masterSeed
+                    + "; configure the common seed using run.seed instead");
+        return masterSeed;
+    }
+
     static void applySeedOverride(Jsprit.Builder builder) {
         String raw = System.getProperty(JSPRIT_SEED_PROPERTY);
         if (raw == null || raw.isBlank()) {
             return;
         }
-        long seed;
-        try {
-            seed = Long.parseLong(raw.trim());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    JSPRIT_SEED_PROPERTY + " must be a long, was: '" + raw + "'", e);
-        }
+        long seed = resolveSolverSeed();
         builder.setRandom(new Random(seed));
         LOGGER.info("jsprit search seed overridden via -D{}={}", JSPRIT_SEED_PROPERTY, seed);
     }
@@ -416,6 +498,7 @@ public class HAGRIDRouterUtils {
      * @param netBasedCosts The network-based transport costs.
      * @return The created vehicle routing problem.
      */
+    @Deprecated(forRemoval = false)
     public static VehicleRoutingProblem createRoutingProblem(Carrier carrier, Network network,
             VRPTransportCosts netBasedCosts) {
         VehicleRoutingProblem.Builder vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, network);
@@ -472,5 +555,12 @@ public class HAGRIDRouterUtils {
      */
     public static void recordUTurnPenalty(Carrier carrier, double uTurnPenaltyCost) {
         carrier.getAttributes().putAttribute(UTURN_PENALTY_ATTR, Double.valueOf(uTurnPenaltyCost));
+    }
+
+    /** Configure jsprit's native search with complete section replay callbacks. */
+    public static VehicleRoutingAlgorithm configureSectionAlgorithm(VehicleRoutingProblem problem,
+            hagrid.core.routing.sections.SectionSearchState state,long seed,hagrid.core.routing.sections.SectionSearchPolicy policy) {
+        return hagrid.core.routing.sections.SectionInsertionAdapter.configure(problem,state,seed,policy);
+
     }
 }

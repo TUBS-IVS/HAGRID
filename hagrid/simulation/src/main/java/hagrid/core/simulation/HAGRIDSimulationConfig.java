@@ -7,11 +7,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
+import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import hagrid.core.HagridConfig;
+import hagrid.core.config.ResolvedHagridConfig;
+import hagrid.core.config.SimulationRoutingConfigAdapter;
 import hagrid.core.HagridPaths;
 import hagrid.lausitz.modular.Modular;
 import hagrid.core.util.StudyArea;
@@ -60,16 +64,6 @@ public class HAGRIDSimulationConfig {
     private final int jspritIterations;
 
     /**
-     * Enables aggregation of transport cost cache entries by freight zone when true.
-     */
-    private final boolean zoneBasedCachingEnabled;
-
-    /**
-     * Minimum crow-fly distance (in metres) required to use zone-based caching between distinct zones.
-     */
-    private final double zoneBasedCachingThresholdMeters;
-
-    /**
      * Soft U-turn penalty in score/cost units. Applied both during JSprit
      * route optimization and in the MATSim carrier scoring function.
      * Each detected U-turn subtracts this value from the MATSim utility score.
@@ -94,6 +88,56 @@ public class HAGRIDSimulationConfig {
      * of being threaded through the constructor chain. See {@link #validateInputFiles()}.
      */
     private boolean overwriteCompletedRun = false;
+
+    // Populated once by the parser before publication; absent for legacy constructor inputs.
+    private Map<String, String> explicitScenarioInputs;
+    private ResolvedHagridConfig resolvedRoutingConfig;
+    private hagrid.core.config.HagridConfigFile configurationFile;
+    synchronized void captureConfigurationFile(hagrid.core.config.HagridConfigFile file) {
+        if(configurationFile!=null || resolvedRoutingConfig!=null) throw new IllegalStateException("Configuration already captured");
+        configurationFile=file;
+    }
+    public Optional<hagrid.core.config.HagridConfigFile> getConfigurationFile() { return Optional.ofNullable(configurationFile); }
+    public Map<String,String> getFileScenarioInputs() { return configurationFile==null?Map.of():configurationFile.launchValues(); }
+
+    private String configuredValue(String key,String fallback) {
+        String launchName=hagrid.core.config.HagridConfigurationCatalog.launchName(key);
+        if(explicitScenarioInputs!=null) {
+            if(explicitScenarioInputs.containsKey(key)) return explicitScenarioInputs.get(key);
+            if(explicitScenarioInputs.containsKey(launchName)) return explicitScenarioInputs.get(launchName);
+        }
+        return configurationFile==null?fallback:configurationFile.values().getOrDefault(key,fallback);
+    }
+    private Path configuredPath(String key,Path fallback) {
+        String value=configuredValue(key,null);
+        if(value==null) return fallback;
+        boolean cli=explicitScenarioInputs!=null && explicitScenarioInputs.containsKey(key);
+        Path base=cli || configurationFile==null?Path.of("."):configurationFile.path().getParent();
+        return hagrid.core.config.HagridPathSettings.resolve(value,base);
+    }
+    /** Uses the same captured file and CLI precedence as the simulation itself. */
+    public boolean isWriteDashboard() { return Boolean.parseBoolean(configuredValue("results.writeDashboard","false")); }
+
+
+
+    /** One immutable effective routing configuration per launch; legacy getters retain input semantics. */
+    public synchronized ResolvedHagridConfig getResolvedRoutingConfig() {
+        if (resolvedRoutingConfig == null) {
+            resolvedRoutingConfig = SimulationRoutingConfigAdapter.resolve(this);
+        }
+        return resolvedRoutingConfig;
+    }
+
+    synchronized void captureExplicitScenarioInputs(Map<String, String> input) {
+        if (explicitScenarioInputs != null || resolvedRoutingConfig != null) {
+            throw new IllegalStateException("Explicit scenario inputs were already captured");
+        }
+        explicitScenarioInputs = Map.copyOf(input);
+    }
+
+    public Optional<Map<String, String>> getExplicitScenarioInputs() {
+        return Optional.ofNullable(explicitScenarioInputs);
+    }
 
     /**
      * Geographic study area for this scenario.
@@ -150,8 +194,8 @@ public class HAGRIDSimulationConfig {
     /**
      * MATSim global random seed; vary for error-band replicate runs. Applied to
      * {@code config.global().setRandomSeed(...)} on every simulation path (review F3);
-     * default 1337. The jsprit seed is a separate system-property override and is NOT
-     * affected. Persisted as {@code matsim_seed} in {@code run_metadata.json} so
+     * default 1337. It is also the master seed of configured jsprit and generation paths.
+     * Persisted as {@code matsim_seed} in {@code run_metadata.json} so
      * sweep/error-band assembly can bind replicates to their seed.
      */
     private final long seed;
@@ -167,7 +211,7 @@ public class HAGRIDSimulationConfig {
     /**
      * Jsprit tour-duration cap in seconds (design D5): the maximum route duration a single
      * DRT_MODULAR freight excursion may plan for. Default {@link Modular#DEFAULT_MAX_TOUR_DURATION_S}
-     * (3.5h); 25200 (7h) is the control arm. Only meaningful for {@code DRT_MODULAR}, harmless
+     * (7h); shorter caps must be explicitly supplied. Only meaningful for {@code DRT_MODULAR}, harmless
      * otherwise.
      */
     private final int maxTourDurationSeconds;
@@ -528,8 +572,8 @@ public class HAGRIDSimulationConfig {
         }
         this.maxIterations = maxIterations;
         this.jspritIterations = jspritIterations;
-        this.zoneBasedCachingEnabled = zoneBasedCachingEnabled;
-        this.zoneBasedCachingThresholdMeters = zoneBasedCachingThresholdMeters;
+        hagrid.core.config.ResolvedHagridConfig.rejectRemoved("routing.zoneBasedCachingEnabled",zoneBasedCachingEnabled);
+
         this.uTurnPenaltyCost = Math.max(0.0, uTurnPenaltyCost);
         this.tag = tag != null ? tag.trim() : "";
         this.studyArea = Objects.requireNonNull(studyArea, "studyArea must not be null");
@@ -581,12 +625,7 @@ public class HAGRIDSimulationConfig {
         this.paths = new HagridPaths(studyArea);
         this.paths.initializeRun(runId);
 
-        // Ensure shared simulation inputs are available in hagrid-output/shared/
-        try {
-            this.paths.ensureSharedSimulationInputs();
-        } catch (java.io.IOException e) {
-            LOGGER.warn("Could not ensure shared simulation inputs: {}", e.getMessage());
-        }
+        // Parsing/capture is side-effect free; shared inputs are staged after effective validation.
     }
 
     // === GETTERS ===
@@ -609,6 +648,9 @@ public class HAGRIDSimulationConfig {
     public String getRunId() {
         return runId;
     }
+
+    /** Returns the immutable launch date for scenario-identity checks. */
+    public LocalDate getSimulationDate() { return date; }
 
     /**
      * Returns the scenario concept name.
@@ -656,17 +698,17 @@ public class HAGRIDSimulationConfig {
     }
 
     /**
-     * Indicates whether zone-based transport-cost caching should be used for this scenario.
+     * Legacy neutral accessor; routing always uses original link endpoints.
      */
     public boolean isZoneBasedCachingEnabled() {
-        return zoneBasedCachingEnabled;
+        return false;
     }
 
     /**
      * Returns the minimum Euclidean distance (in metres) required to aggregate transport costs by zone.
      */
     public double getZoneBasedCachingThresholdMeters() {
-        return zoneBasedCachingThresholdMeters;
+        return 0;
     }
 
     /**
@@ -684,7 +726,7 @@ public class HAGRIDSimulationConfig {
      * @return freight zone file path
      */
     public Path getFreightZonePath() {
-        return Path.of(paths.zoneShapefile());
+        return configuredPath("paths.freightZones", Path.of(paths.zoneShapefile()));
     }
 
     /**
@@ -694,7 +736,7 @@ public class HAGRIDSimulationConfig {
      * @return vehicle types file path for this run
      */
     public Path getVehicleTypePath() {
-        return Path.of(paths.vehicleTypesOutput());
+        return configuredPath("paths.simulationVehicleTypes", Path.of(paths.vehicleTypesOutput()));
     }
 
     /**
@@ -703,7 +745,7 @@ public class HAGRIDSimulationConfig {
      * @return car network file path
      */
     public Path getCarNetworkPath() {
-        return Path.of(paths.networkFiltered());
+        return configuredPath("paths.simulationNetwork", Path.of(paths.networkFiltered()));
     }
 
     /**
@@ -712,7 +754,7 @@ public class HAGRIDSimulationConfig {
      * @return bike network file path
      */
     public Path getBikeNetworkPath() {
-        return Path.of(paths.cargobikeNetworkFile());
+        return configuredPath("paths.bikeNetwork", Path.of(paths.cargobikeNetworkFile()));
     }
 
     /**
@@ -721,7 +763,7 @@ public class HAGRIDSimulationConfig {
      * @return network change events file path
      */
     public Path getNetworkChangeEventPath() {
-        return Path.of(paths.networkChangeEvents());
+        return configuredPath("paths.networkChangeEvents", Path.of(paths.networkChangeEvents()));
     }
 
     /**
@@ -730,7 +772,7 @@ public class HAGRIDSimulationConfig {
      * @return run specific carrier directory
      */
     public Path getRunCarrierDir() {
-        return paths.carrierDir();
+        return configuredPath("paths.carrierDirectory", paths.carrierDir());
     }
 
     /**
@@ -739,7 +781,7 @@ public class HAGRIDSimulationConfig {
      * @return delivery carriers file path
      */
     public Path getDeliveryCarrierPath() {
-        return Path.of(paths.deliveryCarriersRouted());
+        return configuredPath("paths.deliveryCarriers", Path.of(paths.deliveryCarriersRouted()));
     }
 
     /**
@@ -748,7 +790,7 @@ public class HAGRIDSimulationConfig {
      * @return supply carriers file path
      */
     public Path getSupplyCarrierPath() {
-        return Path.of(paths.supplyCarriersRouted());
+        return configuredPath("paths.supplyCarriers", Path.of(paths.supplyCarriersRouted()));
     }
 
     /**
@@ -757,7 +799,7 @@ public class HAGRIDSimulationConfig {
      * @return merged carriers file path
      */
     public Path getMergedCarrierPath() {
-        return Path.of(paths.carrierPlansCombined());
+        return configuredPath("paths.mergedCarriers", Path.of(paths.carrierPlansCombined()));
     }
 
     /**
@@ -766,7 +808,7 @@ public class HAGRIDSimulationConfig {
      * @return MATSim config file path
      */
     public Path getConfigPath() {
-        return Path.of(paths.matsimConfigFile());
+        return configuredPath("paths.matsimConfig", Path.of(paths.matsimConfigFile()));
     }
 
     /**
@@ -778,7 +820,7 @@ public class HAGRIDSimulationConfig {
      * @return output directory path
      */
     public Path getOutputDirectory() {
-        return paths.matsimRunDir(maxIterations, jspritIterations);
+        return configuredPath("paths.outputDirectory", paths.matsimRunDir(maxIterations, jspritIterations));
     }
 
     /**
@@ -897,7 +939,7 @@ public class HAGRIDSimulationConfig {
     /**
      * Returns the jsprit tour-duration cap in seconds (design D5): the maximum route duration a
      * single DRT_MODULAR freight excursion may plan for. Default
-     * {@link Modular#DEFAULT_MAX_TOUR_DURATION_S} (3.5h); 25200 (7h) is the control arm. Only
+     * {@link Modular#DEFAULT_MAX_TOUR_DURATION_S} (7h); shorter caps must be explicitly supplied. Only
      * meaningful for {@code DRT_MODULAR}.
      *
      * @return maximum tour duration in seconds
@@ -1021,7 +1063,7 @@ public class HAGRIDSimulationConfig {
      * @return DRT service area shapefile path
      */
     public String getDrtServiceAreaShapefile() {
-        return paths.drtServiceAreaShapefile();
+        return configuredPath("paths.drtServiceArea", Path.of(paths.drtServiceAreaShapefile())).toString();
     }
 
     /**
@@ -1031,7 +1073,7 @@ public class HAGRIDSimulationConfig {
      * @return Lausitz base config path
      */
     public String getLausitzBaseConfig() {
-        return paths.lausitzBaseConfig();
+        return configuredPath("paths.lausitzBaseConfig", Path.of(paths.lausitzBaseConfig())).toString();
     }
 
     /**
@@ -1040,7 +1082,7 @@ public class HAGRIDSimulationConfig {
      * @return raw Lausitz network path
      */
     public String getLausitzNetworkRaw() {
-        return paths.lausitzNetworkRaw();
+        return configuredPath("paths.lausitzNetworkRaw", Path.of(paths.lausitzNetworkRaw())).toString();
     }
 
     /**
@@ -1049,7 +1091,7 @@ public class HAGRIDSimulationConfig {
      * @return raw passenger plans path
      */
     public String getPassengerPlansRaw() {
-        return paths.passengerPlansRaw();
+        return configuredPath("paths.passengerPlansRaw", Path.of(paths.passengerPlansRaw())).toString();
     }
 
     /**
@@ -1058,7 +1100,7 @@ public class HAGRIDSimulationConfig {
      * @return clipped DRT network path
      */
     public String getDrtNetworkClipped() {
-        return paths.drtNetworkClipped();
+        return configuredPath("paths.drtNetworkClipped", Path.of(paths.drtNetworkClipped())).toString();
     }
 
     /**
@@ -1067,7 +1109,7 @@ public class HAGRIDSimulationConfig {
      * @return clipped passenger plans path
      */
     public String getPassengerPlansClipped() {
-        return paths.passengerPlansClipped();
+        return configuredPath("paths.passengerPlansClipped", Path.of(paths.passengerPlansClipped())).toString();
     }
 
     /**
@@ -1076,32 +1118,32 @@ public class HAGRIDSimulationConfig {
      * @return DRT fleet file path
      */
     public String getDrtFleetFile() {
-        return paths.drtFleetFile();
+        return configuredPath("paths.drtFleet", Path.of(paths.drtFleetFile())).toString();
     }
 
     /** Staged native transit schedule (full) before rail-filtering. */
     public String getLausitzTransitScheduleRaw() {
-        return paths.lausitzTransitScheduleRaw();
+        return configuredPath("paths.transitScheduleRaw", Path.of(paths.lausitzTransitScheduleRaw())).toString();
     }
 
     /** Staged native transit vehicles (full) before rail-filtering. */
     public String getLausitzTransitVehiclesRaw() {
-        return paths.lausitzTransitVehiclesRaw();
+        return configuredPath("paths.transitVehiclesRaw", Path.of(paths.lausitzTransitVehiclesRaw())).toString();
     }
 
     /** Staged native passenger vehicle-types (enables modeVehicleTypesFromVehiclesData). */
     public String getLausitzVehicleTypes() {
-        return paths.lausitzVehicleTypes();
+        return configuredPath("paths.lausitzVehicleTypes", Path.of(paths.lausitzVehicleTypes())).toString();
     }
 
     /** Rail-only transit schedule for this run. */
     public String getRailScheduleFiltered() {
-        return paths.railScheduleFiltered();
+        return configuredPath("paths.railScheduleFiltered", Path.of(paths.railScheduleFiltered())).toString();
     }
 
     /** Transit vehicles referenced by the rail-only schedule. */
     public String getRailTransitVehiclesFiltered() {
-        return paths.railTransitVehiclesFiltered();
+        return configuredPath("paths.railVehiclesFiltered", Path.of(paths.railTransitVehiclesFiltered())).toString();
     }
 
     /**
@@ -1120,32 +1162,32 @@ public class HAGRIDSimulationConfig {
 
     /** Fingerprint of the prepared DRT inputs (written by {@code LausitzDrtPreprocessor}). */
     public String getDrtInputsFingerprint() {
-        return paths.drtInputsFingerprint();
+        return configuredPath("paths.drtInputsFingerprint", Path.of(paths.drtInputsFingerprint())).toString();
     }
 
     /** Provider-tagged synthetic LMD depot CSV (one row per LSP). */
     public String getLmdDepotCsv() {
-        return paths.lmdDepotCsv();
+        return configuredPath("paths.lmdDepotCsv", Path.of(paths.lmdDepotCsv())).toString();
     }
 
     /** PANDA parcel-demand shapefile staged for the LMD baseline (date-named as exported). */
     public String getLmdDemandShapefile() {
-        return paths.lmdDemandShapefile();
+        return configuredPath("paths.lmdDemand", Path.of(paths.lmdDemandShapefile())).toString();
     }
 
     /** Lausitz freight van vehicle-types: ct_cep_size_s / _m / _l, all three offered to jsprit. */
     public String getLmdVehicleTypes() {
-        return paths.lmdVehicleTypes();
+        return configuredPath("paths.lmdVehicleTypes", Path.of(paths.lmdVehicleTypes())).toString();
     }
 
     /** Routed LMD carrier plans for this run (jsprit output). */
     public String getLmdCarriersRouted() {
-        return paths.lmdCarriersRouted();
+        return configuredPath("paths.lmdCarriersRouted", Path.of(paths.lmdCarriersRouted())).toString();
     }
 
     /** Machine-local jsprit result cache: hagrid-output/shared/jsprit-cache/. */
     public Path getJspritCacheDir() {
-        return paths.jspritCacheDir();
+        return configuredPath("paths.jspritCacheDirectory", paths.jspritCacheDir());
     }
 
     // === VALIDATION ===
@@ -1156,13 +1198,20 @@ public class HAGRIDSimulationConfig {
      * are missing.
      */
     public void validateInputFiles() {
+        getResolvedRoutingConfig();
+        try {
+            paths.ensureSharedSimulationInputs();
+        } catch (java.io.IOException e) {
+            LOGGER.warn("Could not ensure shared simulation inputs: {}", e.getMessage());
+        }
         List<String> missing = new ArrayList<>();
 
         if (!isDrtScenario() && !isLmdBaseline()) {
             checkFile(getConfigPath(), "Simulation config", missing);
             checkFile(getVehicleTypePath(), "Vehicle types", missing);
             checkFile(getCarNetworkPath(), "Car network", missing);
-            checkFile(getBikeNetworkPath(), "Bike network", missing);
+            // Additional modal input is required only when the loaded carrier locations need it.
+            // ScenarioModalNetworks performs that check during network setup, without rereading inputs here.
             checkFile(getNetworkChangeEventPath(), "Network change events", missing);
             checkFile(getFreightZonePath(), "Freight zone shapefile", missing);
             checkFile(getDeliveryCarrierPath(), "Delivery carriers", missing);

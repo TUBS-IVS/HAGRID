@@ -40,15 +40,12 @@ public class DeliveryGenerator implements Runnable {
         @Inject
         private HagridConfig hagridConfig;
 
-        private WeightGenerator parcelWeightGenerator = new WeightGenerator();
+        private hagrid.core.util.RunRandomStreams randomStreams;
 
         @Override
                 public void run() {
                         try {
-                                // Set deterministic random seed based on runId for full reproducibility
-                                String runId = hagridConfig.getRunId();
-                                long seed = (runId != null) ? runId.hashCode() : 42L;
-                                WeightGenerator.setGlobalRandomSeed(seed); // Also seed the weight generator
+                                randomStreams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
 
                                 LOGGER.info("Generating parcels from sorted carrier demand...");
                                 Map<String, List<SimpleFeature>> carrierDemand = Optional.ofNullable(
@@ -87,6 +84,7 @@ public class DeliveryGenerator implements Runnable {
 
                         } catch (Exception e) {
                                 LOGGER.error("Error generating parcels", e);
+            throw new hagrid.hannover.pipeline.PipelineStepException("Delivery Generation", e);
                         }
                 }
 
@@ -347,6 +345,11 @@ public class DeliveryGenerator implements Runnable {
                 return 0L;
         }
 
+        private static String sourceAttribute(SimpleFeature feature, String name) {
+                Object value = feature.getFeatureType().getDescriptor(name) == null ? null : feature.getAttribute(name);
+                return value == null || value.toString().isBlank() ? null : value.toString().trim();
+        }
+
         /**
          * Creates a Delivery object from a SimpleFeature.
          *
@@ -370,6 +373,9 @@ public class DeliveryGenerator implements Runnable {
                 boolean isB2B = Delivery.ParcelType.B2B.equals(parcelType);
 
                 ArrayList<Double> individualWeights = new ArrayList<>();
+                if (randomStreams == null) randomStreams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
+                var parcelWeightGenerator = new WeightGenerator(randomStreams.forKey("demand.weight",
+                        hagrid.core.util.RunRandomStreams.key(provider, parcelType.name(), deliveryPointId, postalCode)));
                 for (int i = 0; i < amount; i++) {
                         double weight = parcelWeightGenerator.generateWeight(isB2B);
                         individualWeights.add(weight);
@@ -384,6 +390,12 @@ public class DeliveryGenerator implements Runnable {
                                 .postalCode(postalCode)
                                 .individualWeights(individualWeights)
                                 .deliveryMode(mode)
+                                .stopId(sourceAttribute(feature, "stop_id"))
+                                .strIdx(Delivery.normalizeStreetIndex(sourceAttribute(feature, "str_idx")))
+                                .sectionId(sourceAttribute(feature, "section_id"))
+                                .side(sourceAttribute(feature, "side"))
+                                .part(Delivery.normalizeStreetIndex(sourceAttribute(feature, "part")))
+                                .positionM(sourceAttribute(feature, "position_m"))
                                 .build();
         }
 
@@ -427,6 +439,9 @@ public class DeliveryGenerator implements Runnable {
 
                 // Generate new individual weights for the parcels
                 ArrayList<Double> individualWeights = new ArrayList<>();
+                if (randomStreams == null) randomStreams = new hagrid.core.util.RunRandomStreams(hagridConfig.randomSeeds());
+                var parcelWeightGenerator = new WeightGenerator(randomStreams.forKey("demand.weight",
+                        hagrid.core.util.RunRandomStreams.key("locker", hub.getId().toString())));
                 for (int i = 0; i < parcelLockerDemand; i++) {
                         double weight = parcelWeightGenerator.generateWeight(false); // Assuming parcel locker
                                                                                      // deliveries are

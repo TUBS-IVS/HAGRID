@@ -159,7 +159,7 @@
     <dependency>
       <groupId>org.locationtech.jts</groupId>
       <artifactId>jts-core</artifactId>
-      <version>1.16.1</version>
+      <version>${jts.version}</version>
     </dependency>
     <dependency>
       <groupId>com.opencsv</groupId>
@@ -195,7 +195,7 @@
     <dependency>
       <groupId>com.graphhopper</groupId>
       <artifactId>jsprit-io</artifactId>
-      <version>${jsprit.version}</version>
+      <version>${jsprit.io.version}</version>
     </dependency>
     <dependency>
       <groupId>com.graphhopper</groupId>
@@ -376,6 +376,32 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <!-- Capture resolved runtime artifacts for the post-package bytecode gate. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.7.0</version>
+        <executions>
+          <execution>
+            <id>runtime-classpath-evidence</id>
+            <phase>prepare-package</phase>
+            <goals><goal>build-classpath</goal></goals>
+            <configuration>
+              <includeScope>runtime</includeScope>
+              <outputFile>${project.build.directory}/runtime-classpath.txt</outputFile>
+              <regenerateFile>true</regenerateFile>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Shade replaces the main artifact; always rebuild its thin input so
+           dependency-only changes cannot retain stale embedded classes. -->
+      <plugin>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <forceCreation>true</forceCreation>
+        </configuration>
+      </plugin>
       <!-- Fat JAR mit Manifest Main Class -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -392,6 +418,9 @@
 
               <artifactSet>
                 <excludes>
+                  <!-- The reactor Freight module contains all upstream classes plus our
+                       reviewed fixes. Never package a second, unpatched copy. -->
+                  <exclude>org.matsim.contrib:freight</exclude>
                   <exclude>javax.media:jai_imageio</exclude>
                   <exclude>javax.media:jai_core</exclude>
                 </excludes>
@@ -405,6 +434,20 @@
               </transformers>
 
               <filters>
+                <!-- Reviewed 2.0.0 cache-correctness backport is compiled by this
+                     module. Keep exactly that class; never package its upstream
+                     duplicate. See 2026-10-20-fast-regret-kapazitaetsfix.md. -->
+                <filter>
+                  <artifact>com.graphhopper:jsprit-core</artifact>
+                  <excludes>
+                    <exclude>com/graphhopper/jsprit/core/algorithm/recreate/RegretInsertionFast.class</exclude>
+                    <!-- AP2: use the Freight iteration-noise compatibility shim. -->
+                    <exclude>com/graphhopper/jsprit/core/algorithm/box/InsertionNoiseMaker.class</exclude>
+                    <!-- Exact 2.0 neighborhood representation; preserve full search capacity. -->
+                    <exclude>com/graphhopper/jsprit/core/algorithm/ruin/JobNeighborhoodsOptimized.class</exclude>
+                    <exclude>com/graphhopper/jsprit/core/algorithm/ruin/JobNeighborhoodsOptimized$*.class</exclude>
+                  </excludes>
+                </filter>
                 <filter>
                   <artifact>*:*</artifact>
                   <excludes>

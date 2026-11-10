@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -211,12 +213,16 @@ public final class ScenarioConfig {
 		private final boolean runRouting;
 		private final boolean enableCaching;
 		private final int jspritIterations;
+		private final Integer solverMaxRouteDurationSeconds;
+        private final java.nio.file.Path configurationFile;
 
 		private PipelineSettings(Builder builder) {
 			this.applyServiceSimplifier = builder.applyServiceSimplifier;
 			this.runRouting = builder.runRouting;
 			this.enableCaching = builder.enableCaching;
 			this.jspritIterations = builder.jspritIterations;
+			this.solverMaxRouteDurationSeconds = builder.solverMaxRouteDurationSeconds;
+            this.configurationFile=builder.configurationFile;
 		}
 
 		public boolean isApplyServiceSimplifier() {
@@ -238,6 +244,13 @@ public final class ScenarioConfig {
 		public int getJspritIterations() {
 			return jspritIterations;
 		}
+
+        /** Explicit solver cap; empty inherits the common configuration (default seven hours). */
+        public java.util.Optional<java.nio.file.Path> getConfigurationFile() { return java.util.Optional.ofNullable(configurationFile); }
+        public OptionalInt getSolverMaxRouteDurationSeconds() {
+            return solverMaxRouteDurationSeconds == null ? OptionalInt.empty()
+                    : OptionalInt.of(solverMaxRouteDurationSeconds);
+        }
 	}
 
 	/**
@@ -255,6 +268,7 @@ public final class ScenarioConfig {
 
 		private final List<String> defaultVehicleSizes;
 		private final VehicleSchedule defaultSchedule;
+		private final Double cargoBikeMaxSpeedKmh;
 		private final Map<String, List<String>> providerVehicleSizes;
 		private final Map<String, VehicleSchedule> providerSchedules;
 		private final Map<String, List<Integer>> providerCustomDispatchHours;
@@ -263,6 +277,7 @@ public final class ScenarioConfig {
 		private VehicleConfig(Builder builder) {
 			this.defaultVehicleSizes = Collections.unmodifiableList(new ArrayList<>(builder.vehicleSizes));
 			this.defaultSchedule = builder.defaultSchedule;
+			this.cargoBikeMaxSpeedKmh = builder.cargoBikeMaxSpeedKmh;
 			this.providerVehicleSizes = Collections.unmodifiableMap(new LinkedHashMap<>(builder.providerVehicleSizes));
 			this.providerSchedules = Collections.unmodifiableMap(new LinkedHashMap<>(builder.providerSchedules));
 			this.providerCustomDispatchHours = Collections.unmodifiableMap(new LinkedHashMap<>(builder.providerCustomDispatchHours));
@@ -271,6 +286,11 @@ public final class ScenarioConfig {
 
 		public List<String> getDefaultVehicleSizes() {
 			return defaultVehicleSizes;
+		}
+
+		/** Empty means inherit the existing common/profile value (default 20 km/h). */
+		public OptionalDouble getCargoBikeMaxSpeedKmh() {
+			return cargoBikeMaxSpeedKmh == null ? OptionalDouble.empty() : OptionalDouble.of(cargoBikeMaxSpeedKmh);
 		}
 
 		public VehicleSchedule getDefaultSchedule() {
@@ -538,11 +558,14 @@ public final class ScenarioConfig {
 		private boolean applyServiceSimplifier = false;
 		private boolean runRouting = false;
 		private boolean enableCaching = false;
-		private int jspritIterations = 1;
+		private int jspritIterations = hagrid.core.config.RoutingDefaults.INITIAL_SOLVER_ITERATIONS;
+		private Integer solverMaxRouteDurationSeconds;
+        private java.nio.file.Path configurationFile;
 
 		// Vehicle configuration
 		private final List<String> vehicleSizes = new ArrayList<>();
 		private VehicleSchedule defaultSchedule = VehicleSchedule.SIMPLE_STAGGERED;
+		private Double cargoBikeMaxSpeedKmh;
 		private final Map<String, List<String>> providerVehicleSizes = new LinkedHashMap<>();
 		private final Map<String, VehicleSchedule> providerSchedules = new LinkedHashMap<>();
 		private final Map<String, List<Integer>> providerCustomDispatchHours = new LinkedHashMap<>();
@@ -689,21 +712,40 @@ public final class ScenarioConfig {
 		/**
 		 * Sets the number of JSprit iterations for routing optimization.
 		 * <p>
-		 * Higher values improve solution quality but increase computation time.
-		 * Use 1 for initial/quick model, 20-50 for production runs.
+		 * Positive values allow improvement search and increase computation time.
+		 * Use 0 for construction-only initial plans before simulation replanning.
 		 * </p>
 		 *
-		 * @param iterations number of iterations (default: 1)
+		 * @param iterations number of initial improvement steps (default: 0)
 		 * @return this builder
 		 */
 		public Builder jspritIterations(int iterations) {
-			this.jspritIterations = Math.max(1, iterations);
+			if (iterations < 0) throw new IllegalArgumentException("Initial solver iterations must be nonnegative");
+			this.jspritIterations = iterations;
 			return this;
 		}
+
+        /** Set the same positive solver limit for initial routing and generated simulation starts. */
+        public Builder configurationFile(java.nio.file.Path file) {
+            configurationFile=java.util.Objects.requireNonNull(file).toAbsolutePath().normalize();
+            if(configurationFile.toString().contains(",")) throw new IllegalArgumentException("Configuration path must not contain a comma in launch syntax");
+            return this;
+        }
+        public Builder solverMaxRouteDurationSeconds(int seconds) {
+            if (seconds <= 0) throw new IllegalArgumentException("solverMaxRouteDurationSeconds must be positive");
+            this.solverMaxRouteDurationSeconds = seconds;
+            return this;
+        }
 
 		// ---------------------------------------------------------------------
 		// Vehicle Configuration
 		// ---------------------------------------------------------------------
+
+		/** Override the common cargo bike cap in km/h; unset inherits its 20 km/h default. */
+		public Builder cargoBikeMaxSpeedKmh(double kmh) {
+			this.cargoBikeMaxSpeedKmh = hagrid.core.HagridConfig.VehicleConfig.requireValidCargoBikeMaxSpeedKmh(kmh);
+			return this;
+		}
 
 		/**
 		 * Sets the default vehicle sizes for all providers.

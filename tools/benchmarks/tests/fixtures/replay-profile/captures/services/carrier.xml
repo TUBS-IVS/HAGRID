@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?><carriers xmlns="http://www.matsim.org/files/dtd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/carriersDefinitions_v2.1.xsd">
+	<carrier id="services">
+		<attributes>
+			<attribute name="carrierMode" class="java.lang.String">car</attribute>
+		</attributes>
+		<capabilities fleetSize="FINITE">
+			<vehicles>
+				<vehicle id="van" depotLinkId="depot" typeId="van" earliestStart="0.0" latestEnd="1000.0"/>
+			</vehicles>
+		</capabilities>
+		<services>
+			<service id="a" to="stop" capacityDemand="1" earliestStart="0.25" latestEnd="900.75" serviceDuration="10.25"/>
+		</services>
+		<plans>
+			<plan selected="true">
+				<tour tourId="1" vehicleId="van">
+					<act type="start" end_time="0.0"/>
+					<leg expected_dep_time="0.0" expected_transp_time="20.0">
+						<route>road</route>
+					</leg>
+					<act type="service" serviceId="a"/>
+					<leg expected_dep_time="30.25" expected_transp_time="20.0">
+						<route>return</route>
+					</leg>
+					<act type="end"/>
+				</tour>
+			</plan>
+		</plans>
+	</carrier>
+</carriers>

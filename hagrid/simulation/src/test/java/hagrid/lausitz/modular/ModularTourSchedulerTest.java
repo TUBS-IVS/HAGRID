@@ -34,6 +34,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("ModularTourScheduler")
 class ModularTourSchedulerTest {
+    @Test void configuredRetoolingReachesTheRoutedScheduleAndTimingUpdates() {
+        var time=new FreeSpeedTravelTime();
+        var settings=new hagrid.core.config.ModularSettings(60,120,1.2,75600);
+        var configured=new ModularTourScheduler(network,time,new TimeAsTravelDisutility(time),
+                new DrtTaskFactoryImpl(),loadType,settings);
+        var tour=tour(depotLink,75600,stop(stopLink1,120,2));
+        assertThat(configured.minimumChainDurationS(tour)).isCloseTo(scheduler.minimumChainDurationS(tour)-720,
+                org.assertj.core.data.Offset.offset(1e-7));
+        var routed=configured.schedule(vehicle,tour,28800);
+        assertThat(routed).isPresent();
+        var swaps=vehicle.getSchedule().getTasks().stream().filter(ModularCapacityChangeTask.class::isInstance)
+                .map(ModularCapacityChangeTask.class::cast).toList();
+        assertThat(swaps).hasSize(2).allSatisfy(task->{
+            assertThat(task.getEndTime()-task.getBeginTime()).isEqualTo(60);
+            assertThat(task.getIntendedDuration()).isEqualTo(60);
+        });
+        assertThat(tour.submissionTime(settings)).isEqualTo(tour.plannedStart()-180);
+    }
+
 
     /**
      * 4-node line network, all links drt-routable: n1 --start--> n2 --depot--> n3 --stop1--> n4
@@ -473,6 +492,76 @@ class ModularTourSchedulerTest {
         // what reOfferedHopelessTourIsNotReRouted pins.
     }
 
+    @Test void windowWaitsAtEveryStopAndLateAttemptPreservesSchedule() {
+        vehicle=fixtureVehicle(network.getLinks().get(depotLink));
+        var t=tour(depotLink,75600,
+                new ModularFreightTour.Stop(depotLink,120,2,30000,30600),
+                new ModularFreightTour.Stop(depotLink,120,3,31000,31200));
+        assertThat(scheduler.schedule(vehicle,t,28800)).isPresent();
+        var stops=vehicle.getSchedule().getTasks().stream().filter(ModularFreightStopTask.class::isInstance)
+                .map(ModularFreightStopTask.class::cast).toList();
+        assertThat(stops).extracting(ModularFreightStopTask::getBeginTime).containsExactly(30000.0,31000.0);
+        assertThat(stops).extracting(ModularFreightStopTask::getLatestStart).containsExactly(30600.0,31200.0);
+        var lateVehicle=fixtureVehicle(network.getLinks().get(depotLink),"late");
+        var before=List.copyOf(lateVehicle.getSchedule().getTasks());
+        double beforeEnd=before.get(0).getEndTime();
+        assertThat(scheduler.schedule(lateVehicle,t,32000)).isEmpty();
+        assertThat(List.<Task>copyOf(lateVehicle.getSchedule().getTasks())).containsExactlyElementsOf(before);
+        assertThat(before.get(0).getEndTime()).isEqualTo(beforeEnd);
+    }
+
+    @Test void latestStartInclusiveAndConfiguredShiftRestrictsCompleteChain() {
+        vehicle=fixtureVehicle(network.getLinks().get(depotLink));
+        var t=tour(depotLink,75600,new ModularFreightTour.Stop(depotLink,120,1,29220,29220));
+        assertThat(scheduler.schedule(vehicle,t,28800)).isPresent();
+        var shortShift=new hagrid.core.config.ModularSettings(420,420,1.15,75600,900);
+        var time=new FreeSpeedTravelTime();
+        var limited=new ModularTourScheduler(network,time,new TimeAsTravelDisutility(time),
+                new DrtTaskFactoryImpl(),loadType,shortShift);
+        var fresh=fixtureVehicle(network.getLinks().get(depotLink),"short");
+        assertThat(limited.schedule(fresh,t,28800)).isEmpty();
+        assertThat(fresh.getSchedule().getTaskCount()).isEqualTo(1);
+    }
+
+    @Test void taskFactoryFailureCannotTruncateIdleStay() {
+        var real=new DrtTaskFactoryImpl();
+        var broken=(DrtTaskFactory)java.lang.reflect.Proxy.newProxyInstance(DrtTaskFactory.class.getClassLoader(),
+                new Class<?>[]{DrtTaskFactory.class},(proxy,method,args)->{
+                    if(method.getName().equals("createStayTask"))throw new IllegalStateException("factory failure");
+                    try{return method.invoke(real,args);}catch(java.lang.reflect.InvocationTargetException e){throw e.getCause();}
+                });
+        var time=new FreeSpeedTravelTime();
+        var failing=new ModularTourScheduler(network,time,new TimeAsTravelDisutility(time),broken,loadType);
+        var original=vehicle.getSchedule().getCurrentTask(); double end=original.getEndTime();
+        assertThatThrownBy(()->failing.schedule(vehicle,tour(depotLink,75600,stop(stopLink1,120,1)),28800))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("factory failure");
+        assertThat(vehicle.getSchedule().getTaskCount()).isEqualTo(1);
+        assertThat(original.getEndTime()).isEqualTo(end);
+    }
+
+    @Test void appendFailureRollsBackAlreadyPublishedTasksAndOriginalStayEnd() {
+        var originalSchedule=vehicle.getSchedule();var originalTasks=List.copyOf(originalSchedule.getTasks());
+        double originalEnd=originalSchedule.getCurrentTask().getEndTime();
+        var adds=new java.util.concurrent.atomic.AtomicInteger();
+        var failingSchedule=(org.matsim.contrib.dvrp.schedule.Schedule)java.lang.reflect.Proxy.newProxyInstance(
+                org.matsim.contrib.dvrp.schedule.Schedule.class.getClassLoader(),
+                new Class<?>[]{org.matsim.contrib.dvrp.schedule.Schedule.class},(proxy,method,args)-> {
+                    if(method.getName().equals("addTask") && adds.incrementAndGet()==2)throw new IllegalStateException("append failure");
+                    try{return method.invoke(originalSchedule,args);}catch(java.lang.reflect.InvocationTargetException e){throw e.getCause();}
+                });
+        var actualVehicle=vehicle;
+        var wrapped=(DvrpVehicle)java.lang.reflect.Proxy.newProxyInstance(DvrpVehicle.class.getClassLoader(),new Class<?>[]{DvrpVehicle.class},
+                (proxy,method,args)-> {
+                    if(method.getName().equals("getSchedule"))return failingSchedule;
+                    try{return method.invoke(actualVehicle,args);}catch(java.lang.reflect.InvocationTargetException e){throw e.getCause();}
+                });
+        assertThatThrownBy(()->scheduler.schedule(wrapped,tour(depotLink,75600,stop(stopLink1,120,1)),28800))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("append failure");
+        assertThat(adds.get()).isEqualTo(2);
+        assertThat(List.<Task>copyOf(originalSchedule.getTasks())).containsExactlyElementsOf(originalTasks);
+        assertThat(originalSchedule.getCurrentTask()).isSameAs(originalTasks.getFirst());
+        assertThat(originalSchedule.getCurrentTask().getEndTime()).isEqualTo(originalEnd);
+    }
     // --- fixture helpers ---
 
     private ModularFreightTour tour(Id<Link> depotLink, double latestEnd, ModularFreightTour.Stop... stops) {

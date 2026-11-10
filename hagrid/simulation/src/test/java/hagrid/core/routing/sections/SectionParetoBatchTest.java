@@ -1,0 +1,12 @@
+package hagrid.core.routing.sections;
+import java.util.*;import java.lang.reflect.*;import org.matsim.api.core.v01.Id;import org.matsim.api.core.v01.network.Link;
+class SectionParetoBatchTest {
+ @org.junit.jupiter.api.Test void preservesOriginalSurvivorsAndOrder() throws Exception {
+  Class<?> c=Class.forName("hagrid.core.routing.sections.SectionRouteEvaluator$Label"); var ctor=c.getDeclaredConstructors()[0];ctor.setAccessible(true);var rank=c.getDeclaredField("lexRank");rank.setAccessible(true);var batch=SectionRouteEvaluator.class.getDeclaredMethod("batchPrune",List.class);batch.setAccessible(true);var at=c.getDeclaredMethod("at");var time=c.getDeclaredMethod("time");var cost=c.getDeclaredMethod("cost");for(var m:List.of(at,time,cost))m.setAccessible(true);var pair=SectionRouteEvaluator.class.getDeclaredMethod("comparePair",c,c);pair.setAccessible(true);Random random=new Random(93812);
+  for(int round=0;round<5000;round++){var list=new ArrayList<Object>();int n=1+random.nextInt(150);for(int i=0;i<n;i++){Object prev=ctor.newInstance(Id.createLinkId("p"),0.,0.,null,null,0,0.);rank.setInt(prev,random.nextInt(8));double t=random.nextInt(10)==0?-0.:random.nextInt(9);double v=random.nextInt(10)==0?-0.:random.nextInt(9);list.add(ctor.newInstance(Id.createLinkId("link"+random.nextInt(5)),t,v,prev,"s",random.nextInt(5),0.));}
+   var expected=new ArrayList<Object>();for(Object x:list){boolean dominated=false;for(Object y:expected)if(dom(y,x,at,time,cost,pair)){dominated=true;break;}if(!dominated){expected.removeIf(y->{try{return dom(x,y,at,time,cost,pair);}catch(Exception e){throw new RuntimeException(e);}});expected.add(x);}}
+   @SuppressWarnings("unchecked") var actual=(List<Object>)batch.invoke(null,list);if(!expected.equals(actual))throw new AssertionError("survivors or order differ on round "+round+" expected "+expected.size()+" actual "+actual.size());
+  }
+ }
+ static boolean dom(Object a,Object b,Method at,Method time,Method cost,Method pair)throws Exception {if(!at.invoke(a).equals(at.invoke(b)))return false;double t=(double)time.invoke(a),u=(double)time.invoke(b),x=(double)cost.invoke(a),y=(double)cost.invoke(b);double adjusted=x+0.;return t<=u&&(adjusted<y||adjusted==y&&(int)pair.invoke(null,a,b)<=0);}
+}

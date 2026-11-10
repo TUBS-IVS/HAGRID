@@ -81,6 +81,9 @@ def stop_table_frame(grouped: pd.DataFrame, stops: dict, ledger: dict, limit: in
         "stop_id": parts.stop_id.to_numpy(), "str_idx": info.str_idx.reindex(parts.stop_id).to_numpy().astype(np.int64),
         "section_id": info.section_id.reindex(parts.stop_id).fillna("").astype(str).to_numpy(),
         "postal_cod": parts.plz.astype(str).to_numpy(), "date": ledger["date"]})
+    # Keep unknown legacy metadata null; part and position are relative to the ordered source street geometry.
+    for column in ("side", "part", "position_m"):
+        frame[column] = info[column].reindex(parts.stop_id).to_numpy() if column in info else None
     for column in _count_columns():
         frame[column] = parts[column].to_numpy(dtype=np.int64)
     # Home stops, parcel lockers, shared boxes and pickup shops; the Java pipeline maps the type to its delivery mode.
@@ -221,6 +224,37 @@ def compare_with_notebook(ledgers: list[dict], output_dir: Path, notebook_dir: P
     return rows
 
 
+def write_section_inputs(stops: dict, street_observations: Path, output_dir: Path) -> Path:
+    """Bundle the actual HAGRID stop register and existing street axes for Java.
+
+    Relative paths make the bundle survive the daily-stage publication/copy.
+    This writes derived copies of existing inputs, never fetches road data.
+    """
+    import shutil
+
+    frame = stops["stops"]
+    required = {"stop_id", "str_idx", "part", "side", "geometry"}
+    if missing := required.difference(frame.columns):
+        raise ValueError(f"section stop register missing columns: {sorted(missing)}")
+    if frame.stop_id.isna().any() or frame.stop_id.duplicated().any():
+        raise ValueError("section stop register requires unique non-null stop IDs")
+    source = Path(street_observations)
+    if not source.is_file():
+        raise FileNotFoundError(f"HAGRID street observations unavailable: {source}")
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(output / "section_stops.parquet", index=False)
+    target = output / "section_streets.parquet"
+    if source.resolve() != target.resolve():
+        shutil.copy2(source, target)
+    manifest = output / "hagrid-section-inputs.json"
+    payload = {"schemaVersion": 1, "referenceStops": "section_stops.parquet",
+               "streetObservations": "section_streets.parquet", "allowStreetCrossing": False,
+               "allowLegacyCoordinateRecovery": False}
+    manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf8")
+    return manifest
+
+
 def write_matsim_manifest(ledgers: list[dict], output_dir: Path, crs: str | None, stop_mode: bool = False,
                           comparison: list[dict] | None = None) -> Path:
     output_dir = Path(output_dir)
@@ -231,6 +265,8 @@ def write_matsim_manifest(ledgers: list[dict], output_dir: Path, crs: str | None
     if stop_mode:
         fields.update({"id": "stop_index * 100 + split row (Long)", "stop_id": "stable delivery stop",
                        "str_idx": "LSP street index (-1 off street)", "section_id": "50 m LSP street section",
+                       "side": "side relative to ordered source street part", "part": "source street component index",
+                       "position_m": "distance along ordered source street part in metres",
                        "stop_type": "home | locker | shared_locker | counter | shop (out-of-home points; Java maps them to PARCEL_LOCKER_EXISTING)"})
     else:
         fields.update({"id": "running row index (Long)", "site_id": "baseline demand site"})

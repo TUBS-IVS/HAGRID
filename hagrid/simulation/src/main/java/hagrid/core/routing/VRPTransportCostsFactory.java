@@ -23,21 +23,21 @@ package hagrid.core.routing;
  */
 
 
- import java.util.Map;
- 
- import org.matsim.api.core.v01.TransportMode; 
-
- import org.matsim.core.router.util.TravelTime;
+import java.util.Map;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
- 
- /**
-  * @author steffenaxer & LB
-  */
- public interface VRPTransportCostsFactory {
-     VRPTransportCosts createVRPTransportCosts();
-     Map<String, VRPTransportCosts> createVRPTransportCostsWithModeCongestedTravelTime();    
- }
- 
- 
- 
- 
+
+/** Creates one problem adapter over a shared frozen routing context. */
+public interface VRPTransportCostsFactory {
+    /** Primary HAGRID path: modes, vehicle profiles and preparation mode come from the request. */
+    default VRPTransportCosts createVRPTransportCosts(RoutingRequest request) {
+        return new ModalTransportCosts(request);
+    }
+
+    /** Historical live-provider API; use a request to select the appropriate mode and context. */
+    @Deprecated(forRemoval=false)
+    VRPTransportCosts createVRPTransportCosts();
+
+    /** Historical modal live-provider registry, retained for the raw legacy simulation constructors. */
+    @Deprecated(forRemoval=false)
+    Map<String,VRPTransportCosts> createVRPTransportCostsWithModeCongestedTravelTime();
+}

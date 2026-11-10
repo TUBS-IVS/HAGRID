@@ -1,5 +1,7 @@
 # HAGRID — Parcel demand and integrated freight/DRT simulation with MATSim
 
+> **HAGRID V2 integration branch:** [Configuration, build, included optimizations and current limits](docs/hagrid-v2-rollout.md). The new entry point plans one demand scenario with optimized jsprit; section-based MATSim replanning remains unsupported.
+
 HAGRID is a research framework of the Institute of Transportation and Urban Engineering at TU Braunschweig for parcel
 demand and last-mile logistics. It couples a parcel demand model with MATSim and jsprit simulations of delivery tours and
 demand-responsive transport (DRT). Three research strands share one core:

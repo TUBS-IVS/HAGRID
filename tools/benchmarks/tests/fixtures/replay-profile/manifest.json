@@ -1,0 +1,275 @@
+{
+  "status": "MEASURED",
+  "jarSha256": "461F5972F2970EE56C007778B7BD8B2ECAE7FD91E620BA9C6915E2B82348001C",
+  "runnerSha256": "2B4822FC437FEE2A0C892711FBA0896DC473614F13CBAA78062E112A4B77A443",
+  "probeSha256": "6CCCCB3807AE2FAF201EC862430B9388B7A980702CD2F89E5EDC1E0A09B5228A",
+  "agentSha256": "DC4CF8B1616EA31FD48F86B6CE3A9ECC9C89537F9FAB940B392C93E14DED7B8C",
+  "javaHome": "C:/Program Files/Eclipse Adoptium/jdk-21.0.7.6-hotspot",
+  "repeats": 2,
+  "heapMiB": 384,
+  "activeProcessors": 1,
+  "reserveGiB": 6,
+  "representativeCalibration": false,
+  "deferredSelection": null,
+  "cases": [
+    {
+      "directory": "C:\\Users\\bienzeisler\\.codex\\worktrees\\zone-router-fixes\\HAGRID\\tools\\benchmarks\\results\\k216-package-replay-20261009\\cases\\services",
+      "context": "C:\\Users\\bienzeisler\\.codex\\worktrees\\zone-router-fixes\\HAGRID\\tools\\benchmarks\\results\\k216-package-replay-20261009\\cases\\.contexts\\e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183.zip",
+      "carrierId": "services",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "inputFingerprint": "5e105c1b5fdd8bd4c3fa4fd46c4f999fba9092bf10087bf45575bd2fade3f7f5",
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "jobs": 1,
+      "hashes": {
+        "manifest.json": "4534F819C39A899688C5DBCBCD37CDE1E920A84C81B34F83503D9DB406041F46",
+        "carrier.xml": "94A89D54E6DF56633AD07EC9A6E4CCE07E9FE8EF1F988EDC320293BC1EFF001B",
+        "types.xml": "14F17D189BEB53E12A4F167406F541F77849DF44E57DB2FA9E6EF03FA891E01E",
+        "context": "43BCAA011248515FF700453782FF5BC8D678D5FA46719A111C170586E53704A8"
+      }
+    },
+    {
+      "directory": "C:\\Users\\bienzeisler\\.codex\\worktrees\\zone-router-fixes\\HAGRID\\tools\\benchmarks\\results\\k216-package-replay-20261009\\cases\\shipments",
+      "context": "C:\\Users\\bienzeisler\\.codex\\worktrees\\zone-router-fixes\\HAGRID\\tools\\benchmarks\\results\\k216-package-replay-20261009\\cases\\.contexts\\e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183.zip",
+      "carrierId": "shipments",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "inputFingerprint": "21606102e436129142065527c8c9800bfacd2a0a8714036fcb767dda003c8690",
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "jobs": 1,
+      "hashes": {
+        "manifest.json": "313D27D1821BB9B0A1896570D3D99A3DE9702BA34D18681FD38D5A65A7F2CE9E",
+        "carrier.xml": "5746DEC3EA4091DD26BD4E1A75AF684D19C577893E3231DCC8F480D2993101CA",
+        "types.xml": "14F17D189BEB53E12A4F167406F541F77849DF44E57DB2FA9E6EF03FA891E01E",
+        "context": "43BCAA011248515FF700453782FF5BC8D678D5FA46719A111C170586E53704A8"
+      }
+    }
+  ],
+  "measurements": [
+    {
+      "carrierId": "services",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "jobs": 1,
+      "iterations": 2,
+      "vehicles": 1,
+      "finalCost": 100.25,
+      "heapBeforeBytes": 22909176,
+      "wholeJvmSampledPeakBytes": 26796704,
+      "heapAfterBytes": 21374328,
+      "returnedResultGraphBytes": 4080,
+      "callerThreadAllocatedBytes": 50029760,
+      "elapsedNanos": 1235146000,
+      "garbageCollections": 6,
+      "garbageCollectionMillis": 29,
+      "maximumHeapBytes": 389283840,
+      "activeProcessors": 1,
+      "samplingMillis": 5,
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "caseIndex": 0,
+      "repeat": 1
+    },
+    {
+      "carrierId": "shipments",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "jobs": 1,
+      "iterations": 2,
+      "vehicles": 1,
+      "finalCost": 94.0,
+      "heapBeforeBytes": 22902344,
+      "wholeJvmSampledPeakBytes": 26850792,
+      "heapAfterBytes": 21867400,
+      "returnedResultGraphBytes": 4472,
+      "callerThreadAllocatedBytes": 50226280,
+      "elapsedNanos": 1309650500,
+      "garbageCollections": 6,
+      "garbageCollectionMillis": 33,
+      "maximumHeapBytes": 389283840,
+      "activeProcessors": 1,
+      "samplingMillis": 5,
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "caseIndex": 1,
+      "repeat": 1
+    },
+    {
+      "carrierId": "services",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "jobs": 1,
+      "iterations": 2,
+      "vehicles": 1,
+      "finalCost": 100.25,
+      "heapBeforeBytes": 22978416,
+      "wholeJvmSampledPeakBytes": 26543304,
+      "heapAfterBytes": 21631840,
+      "returnedResultGraphBytes": 4080,
+      "callerThreadAllocatedBytes": 50032232,
+      "elapsedNanos": 1243477000,
+      "garbageCollections": 6,
+      "garbageCollectionMillis": 28,
+      "maximumHeapBytes": 389283840,
+      "activeProcessors": 1,
+      "samplingMillis": 5,
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "caseIndex": 0,
+      "repeat": 2
+    },
+    {
+      "carrierId": "shipments",
+      "contextFingerprint": "e9ad9ee032269306408a58aa750b015148d816d4959d1f68855e56193ff98183",
+      "jobs": 1,
+      "iterations": 2,
+      "vehicles": 1,
+      "finalCost": 94.0,
+      "heapBeforeBytes": 22879968,
+      "wholeJvmSampledPeakBytes": 26116960,
+      "heapAfterBytes": 21670672,
+      "returnedResultGraphBytes": 4472,
+      "callerThreadAllocatedBytes": 50228200,
+      "elapsedNanos": 1263446800,
+      "garbageCollections": 6,
+      "garbageCollectionMillis": 29,
+      "maximumHeapBytes": 389283840,
+      "activeProcessors": 1,
+      "samplingMillis": 5,
+      "requestedIterations": 2,
+      "effectiveIterations": 2,
+      "caseIndex": 1,
+      "repeat": 2
+    }
+  ],
+  "observations": [
+    {
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13896130560,
+        "MaximumObservedCpuPercent": 26.719056974459722,
+        "ObservedWorkingSetBytes": 181833728
+      },
+      "name": "compile",
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 14069161984,
+        "MinimumIdleCpuPercent": 85.12396694214877,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      }
+    },
+    {
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13946933248,
+        "MaximumObservedCpuPercent": 22.92490118577075,
+        "ObservedWorkingSetBytes": 120758272
+      },
+      "name": "case0-repeat1",
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 14054764544,
+        "MinimumIdleCpuPercent": 85.0974930362117,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      }
+    },
+    {
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13879287808,
+        "MaximumObservedCpuPercent": 35.49019607843137,
+        "ObservedWorkingSetBytes": 115920896
+      },
+      "name": "case1-repeat1",
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 14040850432,
+        "MinimumIdleCpuPercent": 79.3201133144476,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      }
+    },
+    {
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13872685056,
+        "MaximumObservedCpuPercent": 26.48221343873518,
+        "ObservedWorkingSetBytes": 115609600
+      },
+      "name": "case0-repeat2",
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13928157184,
+        "MinimumIdleCpuPercent": 76.98863636363636,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      }
+    },
+    {
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13959651328,
+        "MaximumObservedCpuPercent": 20.064935064935064,
+        "ObservedWorkingSetBytes": 119726080
+      },
+      "name": "case1-repeat2",
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 14074855424,
+        "MinimumIdleCpuPercent": 78.37465564738292,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      }
+    }
+  ],
+  "interpretation": "Fresh-JVM cold replay envelope includes input/context restoration, service, routing and validation. Sampled whole JVM includes runtime, shared state, garbage and profiling overhead; not exclusive carrier RAM. Returned-result reachable graph is measured after replay closed its context, not the full MATSim base or staged group. Caller allocation excludes native solver-worker threads. No forced GC, automatic estimator, production activation or speedup claim."
+}

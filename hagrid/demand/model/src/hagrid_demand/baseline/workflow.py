@@ -863,12 +863,14 @@ def _write_daily(config: dict, run: Path, output: Path) -> None:
     matsim_ledgers: list[dict] = []
     stops = None
     if _matsim_export_enabled(config):
-        from hagrid_demand.compatibility.matsim_export import compare_with_notebook, with_matsim_export, write_matsim_manifest
+        from hagrid_demand.compatibility.matsim_export import compare_with_notebook, with_matsim_export, write_matsim_manifest, write_section_inputs
         if ooh_stops is not None:
             stops = ooh_stops
         elif (run / "reference_stops.parquet").is_file():
             home_stops, home_links = _stop_register(run, output)
             stops = {"site_stops": home_links, "stops": home_stops}
+        if stops is not None and (run / "sources" / "dhl_observations.parquet").is_file():
+            write_section_inputs(stops, run / "sources" / "dhl_observations.parquet", output / "matsim")
         chunks = with_matsim_export(chunks, reference["geometry"], output / "matsim", matsim_ledgers, stops,
                                     int(config.get("stops", {}).get("max_parcels_per_row", 400)))
     summary = write_daily_aggregates(chunks, output, detail_draws)

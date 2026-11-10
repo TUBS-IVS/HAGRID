@@ -1,0 +1,32 @@
+{
+  "scope": "Immutable synthetic native acceptance fixtures, not production calibration.",
+  "origin": [
+    "K222 certified replay memory profile",
+    "K216 certified one-job replay captures",
+    "K206 search policy comparison"
+  ],
+  "copiedBytes": 273265,
+  "sha256": {
+    "replay-profile/case0-repeat1.log": "AB059DF3C47E7EB08C896C6D2BDDC45317DEC29746D74C989BF540E8D6B43FD1",
+    "replay-profile/case0-repeat1.stderr.log": "576A9C35D48427957649F9BF09572D384852256D483BBDB0C07D5214C6CE0C86",
+    "replay-profile/case0-repeat2.log": "C419769EB82018FD76FD5ECD6F2791CA2ECC40890264C53849B7B6AAACEED8E7",
+    "replay-profile/case0-repeat2.stderr.log": "FCFD6936F6C48F935311FDCA0EF3F909492E1546B42730DDFE611E68C1B65105",
+    "replay-profile/case1-repeat1.log": "AF97577987097ED51A16129D80CA434AC488915E4F24BD526D0D2545F1A7068E",
+    "replay-profile/case1-repeat1.stderr.log": "EBE8942F64B05E03252A47A5824807893B20F724CAA90F395F2F645BE12FCEFF",
+    "replay-profile/case1-repeat2.log": "67D255A6084482DB9744B8B85E88EA8A4ADCF667872D91A708BA2E90ECAA181A",
+    "replay-profile/case1-repeat2.stderr.log": "06BB68B2BD0354DD4199E32047A03E7F7F0DA8FBCC964334058F663DE63BD543",
+    "replay-profile/compile.log": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+    "replay-profile/compile.stderr.log": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+    "replay-profile/context.zip": "43BCAA011248515FF700453782FF5BC8D678D5FA46719A111C170586E53704A8",
+    "replay-profile/manifest.json": "0310B7AEC8260377B163115CECDCED4F1FFC9EC819D1538F1FF1E8B8E1DCB7C0",
+    "search-policies/manifest.json": "D05DDB28B76BC844F97C6351C3DE774D2C1ABBBF524A38AD8C2A4C82E4029115",
+    "search-policies/measurements.csv": "C47CCECF2E2EE33BD709F9EAC010856E37988FBA3832EC773A69BB19AA223913",
+    "replay-profile/captures/services/carrier.xml": "94A89D54E6DF56633AD07EC9A6E4CCE07E9FE8EF1F988EDC320293BC1EFF001B",
+    "replay-profile/captures/services/manifest.json": "4534F819C39A899688C5DBCBCD37CDE1E920A84C81B34F83503D9DB406041F46",
+    "replay-profile/captures/services/types.xml": "14F17D189BEB53E12A4F167406F541F77849DF44E57DB2FA9E6EF03FA891E01E",
+    "replay-profile/captures/shipments/carrier.xml": "5746DEC3EA4091DD26BD4E1A75AF684D19C577893E3231DCC8F480D2993101CA",
+    "replay-profile/captures/shipments/manifest.json": "313D27D1821BB9B0A1896570D3D99A3DE9702BA34D18681FD38D5A65A7F2CE9E",
+    "replay-profile/captures/shipments/types.xml": "14F17D189BEB53E12A4F167406F541F77849DF44E57DB2FA9E6EF03FA891E01E"
+  },
+  "paths": "Original manifests copied byte-identically. Test setup resolves captured inputs to fixture-local copies."
+}

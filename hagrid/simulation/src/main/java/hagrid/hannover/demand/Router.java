@@ -7,26 +7,25 @@ import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierPlan;
 import org.matsim.freight.carriers.Carriers;
 import org.matsim.freight.carriers.CarriersUtils;
-import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
-import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
-import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
-import com.graphhopper.jsprit.core.algorithm.listener.IterationEndsListener;
-import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
-import com.graphhopper.jsprit.core.problem.job.Job;
-import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
-import com.graphhopper.jsprit.core.util.Solutions;
 
 import hagrid.core.routing.HAGRIDRouterUtils;
+import hagrid.core.routing.CarrierOptimizationService;
+import hagrid.core.routing.CarrierBatchExecutor;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Objects;
+import java.util.function.ToLongFunction;
+import hagrid.core.routing.PlanValidator;
 import hagrid.core.routing.CarrierRoutingMetrics;
-import hagrid.core.routing.GatedCarrierTask;
-import hagrid.core.routing.JspritCarrierTask;
-import hagrid.core.routing.JspritTreadPoolExecutor;
+
+
+
 import hagrid.core.routing.ThreadingType;
 import hagrid.core.routing.CarrierRoutingStatusLogger;
-import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
+
+
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -35,24 +34,20 @@ import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Optional;
 import org.matsim.freight.carriers.CarrierService;
 import java.util.Locale;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import hagrid.core.HagridConfig;
-import org.matsim.freight.carriers.CarrierPlanWriter;
-import org.matsim.freight.carriers.CarrierPlanXmlReader;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
 
-public class Router {
+/** Initial modal groups share one executor; the owning run closes it after Delivery and Supply. */
+public class Router implements AutoCloseable {
 
     private static final Logger LOGGER = LogManager.getLogger(Router.class);
 
-    // Classification threshold for "big" carriers by number of services
+    // Classification threshold counts services and both Shipment activities.
     private static final int BIG_THRESHOLD = 350;
 
     // jsprit iteration count is tracked per-carrier via CarriersUtils; no constant
@@ -60,28 +55,9 @@ public class Router {
 
     private final ThreadingType threadingType;
     private final CarrierRoutingStatusLogger statusLogger;
-    private final HagridConfig hagridConfigRef; // keep reference for lazy cache init
-    private final CarrierVehicleTypes sharedVehicleTypes; // may be null if not provided
-
-    // ===== Carrier routing cache (configurable) =====
-    private boolean carrierCacheEnabled; // no longer final -> can be lazily enabled
-    private Path carrierCacheDir;        // no longer final
-    private static final String CACHE_FILE_PREFIX = "carrier_";
-    private static final String CACHE_FILE_SUFFIX = ".xml"; // plain xml (no gzip)
-    // version removed from file name pattern per requirement; keep constant if needed for future invalidation
-    private static final String CACHE_VERSION = "v1"; 
-    // =================================================
-
-    private static final boolean CACHE_IO_AVAILABLE = initCacheIoFlag();
-    private static boolean initCacheIoFlag() {
-        try {
-            Class.forName("org.matsim.freight.carriers.CarrierPlanWriter");
-            Class.forName("org.matsim.freight.carriers.CarrierPlanXmlReader");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
-    }
+    private final HagridConfig hagridConfigRef;
+    private final int solverMaxRouteDurationSeconds;
+    private final hagrid.core.config.ResolvedHagridConfig.Resources resources;
 
     public Router(ThreadingType threadingType) {
         this(threadingType, null, null, null);
@@ -91,76 +67,47 @@ public class Router {
         this(threadingType, statusLogger, null, null);
     }
 
-    /**
-     * Extended constructor enabling optional per-carrier routing cache controlled by HagridConfig.
-     * Expected config methods (adjust if names differ):
-     *  - boolean isCarrierRoutingCacheEnabled()
-     *  - String getCarrierRoutingCacheDir()
-     * If methods differ, adapt in code (TODO markers left).
-     */
+    /** Compatibility constructor; uncertified legacy initial caches are preserved and ignored. */
     public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig) {
         this(threadingType, statusLogger, hagridConfig, null);
     }
 
-    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig, CarrierVehicleTypes vehicleTypes) {
-        this.threadingType = threadingType;
+    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger,
+                  HagridConfig hagridConfig, CarrierVehicleTypes vehicleTypes) {
+        this(threadingType,statusLogger,hagridConfig,vehicleTypes,hagrid.core.routing.CarrierAdmissionPolicy.open(
+                hagridConfig==null?Map.of():hagridConfig.getAdditionalConfigurationValues(),
+                hagridConfig==null?hagrid.core.config.ResolvedHagridConfig.Resources.defaults():hagridConfig.resources().snapshot()));
+    }
+
+    private Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig,
+                   CarrierVehicleTypes vehicleTypes,hagrid.core.routing.CarrierAdmissionPolicy.Admission admission) {
+        this(threadingType,statusLogger,hagridConfig,vehicleTypes,admission.executor(),admission.reservedBytes());
+    }
+
+    /** Owns the supplied executor; byte estimates/budget must be supplied by the run resource policy. */
+    public Router(ThreadingType threadingType, CarrierRoutingStatusLogger statusLogger, HagridConfig hagridConfig,
+                  CarrierVehicleTypes vehicleTypes, CarrierBatchExecutor batches, ToLongFunction<Carrier> reservedBytes) {
+        this.threadingType = Objects.requireNonNull(threadingType);
         this.statusLogger = statusLogger;
         this.hagridConfigRef = hagridConfig;
-        this.sharedVehicleTypes = vehicleTypes;
-        initializeCacheFromConfig();
+        this.solverMaxRouteDurationSeconds = hagridConfig == null
+                ? hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS
+                : hagridConfig.routing().getSolverMaxRouteDurationSeconds();
+        this.resources = hagridConfig == null ? hagrid.core.config.ResolvedHagridConfig.Resources.defaults()
+                : hagridConfig.resources().snapshot();
+        this.batches = Objects.requireNonNull(batches);
+        this.reservedBytes = Objects.requireNonNull(reservedBytes);
+        reportUncertifiedLegacyCache();
     }
-
-    private void initializeCacheFromConfig() {
-        // System property override (highest priority)
-        String sysDir = System.getProperty("hagrid.router.cache.dir");
-        String sysEnabled = System.getProperty("hagrid.router.cache.enabled");
-        if (sysDir != null && !sysDir.isBlank() && ("true".equalsIgnoreCase(sysEnabled) || sysEnabled == null)) {
-            try {
-                Path dir = Paths.get(sysDir);
-                Files.createDirectories(dir);
-                this.carrierCacheEnabled = true;
-                this.carrierCacheDir = dir;
-                LOGGER.info("Carrier routing cache ENABLED via system properties at {}", dir.toAbsolutePath());
-                return; // skip config based resolution
-            } catch (Exception e) {
-                LOGGER.warn("Failed to init cache via system property dir {}: {}", sysDir, e.toString());
-            }
-        }
-        boolean enabled = false;
-        String dirStr = null;
-        if (hagridConfigRef != null) {
-            try {
-                enabled = invokeBoolean(hagridConfigRef, "isCarrierRoutingCacheEnabled", false,
-                        invokeBoolean(hagridConfigRef, "isLoadCarrierCache", false,
-                                invokeBoolean(hagridConfigRef, "isLoadCache", false, false)));
-                dirStr = invokeString(hagridConfigRef, "getCarrierRoutingCacheDir", null,
-                        invokeString(hagridConfigRef, "getCarrierCacheDir", null,
-                                invokeString(hagridConfigRef, "getCacheDir", null, null)));
-            } catch (Exception ignored) { }
-        }
-        if (enabled && dirStr != null && !dirStr.isBlank()) {
-            Path dir = Paths.get(dirStr);
-            try { Files.createDirectories(dir); } catch (Exception e) { LOGGER.warn("Cannot create carrier cache directory {}: {}", dir, e.toString()); return; }
-            this.carrierCacheEnabled = true;
-            this.carrierCacheDir = dir;
-            LOGGER.info("Carrier routing cache ENABLED (lazy init) at {}", dir.toAbsolutePath());
-        } else {
-            this.carrierCacheEnabled = false;
-            this.carrierCacheDir = null;
-        }
+    private void reportUncertifiedLegacyCache() {
+        // v1 identifies only a carrier name. Neither input, network nor travel-time provenance is certified.
+        boolean requested = "true".equalsIgnoreCase(System.getProperty("hagrid.router.cache.enabled"))
+                || System.getProperty("hagrid.router.cache.dir") != null
+                || (hagridConfigRef != null && hagridConfigRef.isCarrierRoutingCacheEnabled());
+        if (requested) LOGGER.warn("Legacy carrier cache v1 is ignored: current jobs, fleet and routing context cannot be certified. Existing files are preserved.");
     }
-
-    private boolean cacheInitialized = false;
-
-    private void ensureCacheInitialized() {
-        if (!cacheInitialized) {
-            initializeCacheFromConfig();
-            cacheInitialized = true;
-        }
-    }
-
     /**
-     * Gets JSprit iterations from HagridConfig or returns default (1).
+     * Gets initial improvement steps from HagridConfig or the construction-only default.
      */
     private int getJspritIterations() {
         if (hagridConfigRef != null) {
@@ -170,7 +117,7 @@ public class Router {
                 LOGGER.debug("Could not get jspritIterations from config, using default: {}", e.getMessage());
             }
         }
-        return 1; // default: 1 iteration for initial model
+        return hagrid.core.config.RoutingDefaults.INITIAL_SOLVER_ITERATIONS;
     }
 
     /**
@@ -190,7 +137,12 @@ public class Router {
 
     // Thread-safe store for per-carrier metrics
     private final ConcurrentLinkedQueue<CarrierRoutingMetrics> metrics = new ConcurrentLinkedQueue<>();
-
+    private final CarrierBatchExecutor batches;
+    private final ToLongFunction<Carrier> reservedBytes;
+    private final Object publication = new Object();
+    private volatile boolean closed;
+    private record Completed(Carrier carrier, CarrierOptimizationService.Result result,
+                             CarrierRoutingMetrics metrics, int totalDeliveries) {}
     // Track currently active carrier routings for global status summary
     private static final class ActiveCarrier {
         final String carrierId;
@@ -223,7 +175,7 @@ public class Router {
         return metrics;
     }
 
-    // no extra config helpers needed when concurrency is hardcoded
+    // Status reporting observes admitted work; solver concurrency belongs to CarrierBatchExecutor.
 
     // Start a periodic global status log every 10 minutes summarizing running
     // carriers
@@ -292,546 +244,128 @@ public class Router {
      * @param netBasedCosts The network-based transport costs.
      * @param network       The network.
      */
-    public void routeCarriers(Carriers carriers, final VRPTransportCosts netBasedCosts, Network network,
-            String carrierType) {
-        ensureCacheInitialized();
-        LOGGER.info("Starting routing of carriers using {}...", threadingType);
+    public void routeCarriers(Carriers carriers, final VRPTransportCosts costs, Network network, String carrierType) {
+        if(closed)throw new IllegalStateException("Initial router is closed");
+        LOGGER.info("Initial routing label={}, execution=shared carrier executor",threadingType);
+        long existing=validateExistingPlans(carriers,costs);
+        var pending=carriers.getCarriers().values().stream().filter(c->c.getSelectedPlan()==null)
+                .sorted(Comparator.comparingLong(Router::activityCount).reversed()
+                        .thenComparing(c->c.getId().toString())).toList();
+        if(pending.isEmpty())return;
 
-        long cacheFileCount = 0L;
-        if (carrierCacheEnabled) {
-            try {
-                cacheFileCount = Files.list(carrierCacheDir)
-                        .filter(p -> p.getFileName().toString().startsWith(CACHE_FILE_PREFIX) && p.getFileName().toString().endsWith(CACHE_FILE_SUFFIX))
-                        .count();
-            } catch (Exception e) {
-                LOGGER.warn("Could not enumerate cache directory {}: {}", carrierCacheDir, e.toString());
-            }
+        var inputs=new LinkedHashMap<String,Carrier>();
+        var descriptors=new ArrayList<CarrierBatchExecutor.Descriptor>();
+        for(var carrier:pending){
+            var id=carrier.getId().toString();
+            inputs.put(id,carrier);
+            descriptors.add(new CarrierBatchExecutor.Descriptor(id,carrier.getServices().size(),
+                    carrier.getShipments().size(),carrier.getCarrierCapabilities().getVehicleTypes().size(),
+                    (hagridConfigRef == null ? HAGRIDRouterUtils.resolveSolverSeed() : HAGRIDRouterUtils.resolveSolverSeed(hagridConfigRef.randomSeeds().seed())),reservedBytes.applyAsLong(carrier)));
         }
-
-        int cachedBefore = 0;
-        if (carrierCacheEnabled) {
-            cachedBefore = preloadCarrierPlansFromCache(carriers);
-            LOGGER.info("[CACHE] preload restoredPlans={} existingCacheFiles={} totalCarriers={} (dir={})", cachedBefore, cacheFileCount, carriers.getCarriers().size(), carrierCacheDir);
-        }
-
-        // Carriers already having a plan after preload
-        long withPlan = carriers.getCarriers().values().stream().filter(c -> c.getSelectedPlan() != null).count();
-
-        List<Carrier> carriersNeedingRouting = carriers.getCarriers().values().stream()
-                .filter(c -> c.getSelectedPlan() == null)
-                .collect(Collectors.toList());
-
-        // Enhanced professional cache summary log
-        int totalCarriersCount = carriers.getCarriers().size();
-        double pctCached = totalCarriersCount == 0 ? 0d : (withPlan * 100.0 / totalCarriersCount);
-        double pctToRoute = totalCarriersCount == 0 ? 0d : (carriersNeedingRouting.size() * 100.0 / totalCarriersCount);
-        LOGGER.info(String.format(Locale.ROOT,
-                "\n==================== CARRIER CACHE SUMMARY ====================\n" +
-                " Total carriers         : %d\n" +
-                " Cached (have plan)     : %d (%.1f%%)\n" +
-                " To route now           : %d (%.1f%%)\n" +
-                " Cache enabled          : %s\n" +
-                " Cache version          : %s\n" +
-                " Cache directory        : %s\n" +
-                "==============================================================",
-                totalCarriersCount, withPlan, pctCached,
-                carriersNeedingRouting.size(), pctToRoute,
-                carrierCacheEnabled, CACHE_VERSION,
-                carrierCacheDir));
-
-        if (carriersNeedingRouting.isEmpty()) {
-            LOGGER.info("All {} carriers already have plans (from cache). Nothing to route.", carriers.getCarriers().size());
-            stopStatusScheduler();
-            return;
-        }
-
-        // Sort remaining carriers by the number of services+shipments ascending
-        List<Carrier> sortedCarriers = carriersNeedingRouting.stream()
-                .sorted(Comparator.comparingInt(c -> c.getServices().size() + c.getShipments().size()))
-                .collect(Collectors.toList());
-
-        final int threads = Runtime.getRuntime().availableProcessors();
-        final int smallBatchSize = Math.max(threads - 1, 1);
-
-        List<Carrier> largeCarriers = sortedCarriers.stream()
-                .filter(c -> c.getServices().size() >= BIG_THRESHOLD)
-                .sorted(Comparator.comparingInt((Carrier c) -> c.getServices().size()).reversed())
-                .collect(Collectors.toList());
-
-        List<Carrier> smallCarriers = sortedCarriers.stream()
-                .filter(c -> c.getServices().size() < BIG_THRESHOLD)
-                .collect(Collectors.toList());
-
-        List<Carrier> interleavedSchedule = new ArrayList<>(sortedCarriers.size());
-        int iBig = 0, iSmall = 0;
-        while (iBig < largeCarriers.size() || iSmall < smallCarriers.size()) {
-            // take one big if available
-            if (iBig < largeCarriers.size()) {
-                interleavedSchedule.add(largeCarriers.get(iBig++));
-            }
-            // then up to (threads-1) small ones
-            int taken = 0;
-            while (taken < smallBatchSize && iSmall < smallCarriers.size()) {
-                interleavedSchedule.add(smallCarriers.get(iSmall++));
-                taken++;
-            }
-        }
-
-        // Log schedule summary
-        LOGGER.info("Routing schedule prepared: toRoute={} (cachedAlready={}), large={}, small={}, threads={}, smallBatchSize={}",
-                sortedCarriers.size(), cachedBefore, largeCarriers.size(), smallCarriers.size(), threads, smallBatchSize);
-        if (!largeCarriers.isEmpty()) {
-            String bigPreview = largeCarriers.stream()
-                    .map(c -> c.getId() + "(" + c.getServices().size() + ")")
-                    .collect(Collectors.joining(", "));
-            LOGGER.info("Largest remaining carriers: {}", bigPreview);
-        }
-
-        // Start global status scheduler
+        var completed=new LinkedHashMap<Carrier,Completed>();
+        var progress=new AtomicInteger();
+        long start=System.nanoTime();
         startStatusSchedulerIfNeeded();
-
-        AtomicInteger progress = new AtomicInteger();
-        long startTime = System.currentTimeMillis();
-        List<Long> routedTimes = new ArrayList<>();
-
-        // Adaptive gating: allow only 1 LARGE concurrently while SMALLs exist; when
-        // SMALLs are done,
-        // open up to desiredLargeConcurrency to improve utilization
-        final int smallTotal = smallCarriers.size();
-        final AtomicInteger smallRemaining = new AtomicInteger(smallTotal);
-        final int largeTotal = largeCarriers.size();
-        final AtomicInteger largeRemaining = new AtomicInteger(largeTotal);
-        final AtomicInteger finishedCounter = new AtomicInteger(0);
-        final AtomicBoolean bumpedLargeConcurrency = new AtomicBoolean(false);
-    // Allow as many LARGE in parallel as threads (full utilization at the end)
-    final int desiredLargeConcurrency = threads;
-    final int initialLargeConcurrency = desiredLargeConcurrency;
-    LOGGER.info(
-        "Large-carrier concurrency (max threads): initialPermits={} desiredPermits={} (threads={}), smallRemaining={}",
-        initialLargeConcurrency, desiredLargeConcurrency, threads, smallTotal);
-
-        try {
-            switch (threadingType) {
-                case FORK_JOIN_POOL:
-                    // Use ForkJoinPool for parallel processing with try-with-resources to ensure
-                    // proper closure
-                    try (ForkJoinPool forkJoinPool = new ForkJoinPool(threads)) {
-                        final Semaphore bigGateFjp = new Semaphore(initialLargeConcurrency);
-                        forkJoinPool.submit(() -> interleavedSchedule.parallelStream()
-                                .forEach(carrier -> {
-                                    long started = System.currentTimeMillis();
-                                    int services = carrier.getServices().size();
-                                    boolean acquired = false;
-                                    try {
-                                        if (services >= BIG_THRESHOLD) {
-                                            bigGateFjp.acquire();
-                                            acquired = true;
-                                        }
-                                        routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size(), carrierType);
-                                    } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        LOGGER.error("Interrupted during gating", ie);
-                                    } finally {
-                                        if (acquired)
-                                            bigGateFjp.release();
-                                        if (services < BIG_THRESHOLD) {
-                                            int left = smallRemaining.decrementAndGet();
-                                            if (left == 0 && bumpedLargeConcurrency.compareAndSet(false, true)) {
-                                                int delta = Math.max(0,
-                                                        desiredLargeConcurrency - initialLargeConcurrency);
-                                                if (delta > 0) {
-                                                    bigGateFjp.release(delta);
-                                                    LOGGER.info(
-                                                            "All SMALL carriers done. Increased LARGE concurrency permits by {} -> now {}.",
-                                                            delta, desiredLargeConcurrency);
-                                                }
-                                            }
-                                        } else {
-                                            largeRemaining.decrementAndGet();
-                                        }
-                                        int done = finishedCounter.incrementAndGet();
-                                        double elapsed = (System.currentTimeMillis() - started) / 1000.0;
-                                        String clazzDone = services >= BIG_THRESHOLD ? "LARGE" : "SMALL";
-                                        LOGGER.info(
-                                                "[UPDATE] Finished carrier {} class={} ({} / {}) in {}s — remaining small={} large={}",
-                                                carrier.getId(), clazzDone, done, sortedCarriers.size(),
-                                                String.format(Locale.ROOT, "%.3f", elapsed),
-                                                smallRemaining.get(), largeRemaining.get());
-                                        routedTimes.add(System.currentTimeMillis());
-                                    }
-                                })).get();
-                    }
-                    break;
-                case MAT_SIM_THREAD_POOL:
-                    // Use MATSim's custom thread pool executor for parallel processing
-                    ThreadPoolExecutor executor = new JspritTreadPoolExecutor(new LinkedBlockingQueue<>(),
-                            threads);
-                    final Semaphore bigGate = new Semaphore(initialLargeConcurrency);
-                    List<Future<?>> futures = interleavedSchedule.stream()
-                            .map(carrier -> {
-                                JspritCarrierTask task = new JspritCarrierTask(carrier, netBasedCosts, progress,
-                                        sortedCarriers.size(), network, getUTurnPenaltyCost());
-                                Runnable gated = new GatedCarrierTask(task, bigGate, BIG_THRESHOLD);
-                                boolean isSmall = carrier.getServices().size() < BIG_THRESHOLD;
-                                return (Runnable) () -> {
-                                    long started = System.currentTimeMillis();
-                                    try {
-                                        gated.run();
-                                    } finally {
-                                        if (isSmall) {
-                                            int left = smallRemaining.decrementAndGet();
-                                            if (left == 0 && bumpedLargeConcurrency.compareAndSet(false, true)) {
-                                                int delta = Math.max(0,
-                                                        desiredLargeConcurrency - initialLargeConcurrency);
-                                                if (delta > 0) {
-                                                    bigGate.release(delta);
-                                                    LOGGER.info(
-                                                            "All SMALL carriers done. Increased LARGE concurrency permits by {} -> now {}.",
-                                                            delta, desiredLargeConcurrency);
-                                                }
-                                            }
-                                        } else {
-                                            largeRemaining.decrementAndGet();
-                                        }
-                                        int done = finishedCounter.incrementAndGet();
-                                        double elapsed = (System.currentTimeMillis() - started) / 1000.0;
-                                        String clazzDone = isSmall ? "SMALL" : "LARGE";
-                                        LOGGER.info(
-                                                "[UPDATE] Finished carrier {} class={} ({} / {}) in {}s — remaining small={} large={}",
-                                                carrier.getId(), clazzDone, done, sortedCarriers.size(),
-                                                String.format(Locale.ROOT, "%.3f", elapsed),
-                                                smallRemaining.get(), largeRemaining.get());
-                                    }
-                                };
-                            })
-                            .map(executor::submit)
-                            .collect(Collectors.toList());
-
-                    for (Future<?> future : futures) {
-                        future.get();
-                        routedTimes.add(System.currentTimeMillis());
-                    }
-                    executor.shutdown();
-                    break;
-                case COMPLETABLE_FUTURE:
-                    ExecutorService completableFutureExecutor = Executors.newFixedThreadPool(
-                            Runtime.getRuntime().availableProcessors());
-                    final Semaphore bigGateCf = new Semaphore(initialLargeConcurrency);
-
-                    List<CompletableFuture<Void>> completableFutures = interleavedSchedule.stream()
-                            .map(carrier -> CompletableFuture.runAsync(() -> {
-                                long start = System.currentTimeMillis();
-                                final int services = carrier.getServices().size();
-                                try {
-                                    boolean acquired = false;
-                                    try {
-                                        if (services >= BIG_THRESHOLD) {
-                                            bigGateCf.acquire();
-                                            acquired = true;
-                                        }
-                                        routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size(), carrierType);
-                                    } finally {
-                                        if (acquired)
-                                            bigGateCf.release();
-                                        if (services < BIG_THRESHOLD) {
-                                            int left = smallRemaining.decrementAndGet();
-                                            if (left == 0 && bumpedLargeConcurrency.compareAndSet(false, true)) {
-                                                int delta = Math.max(0,
-                                                        desiredLargeConcurrency - initialLargeConcurrency);
-                                                if (delta > 0) {
-                                                    bigGateCf.release(delta);
-                                                    LOGGER.info(
-                                                            "All SMALL carriers done. Increased LARGE concurrency permits by {} -> now {}.",
-                                                            delta, desiredLargeConcurrency);
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (Exception ex) {
-                                    LOGGER.error("Routing failed for carrier {}: {}", carrier.getId(),
-                                            ex.getMessage(), ex);
-                                } finally {
-                                    routedTimes.add(System.currentTimeMillis());
-                                    int done = finishedCounter.incrementAndGet();
-                                    if (services >= BIG_THRESHOLD) {
-                                        largeRemaining.decrementAndGet();
-                                    }
-                                    double elapsed = (System.currentTimeMillis() - start) / 1000.0;
-                                    String clazzDone = (services >= BIG_THRESHOLD) ? "LARGE" : "SMALL";
-                                    LOGGER.info(
-                                            "[UPDATE] Finished carrier {} class={} ({} / {}) in {}s -> remaining small={} large={}",
-                                            carrier.getId(), clazzDone, done, sortedCarriers.size(),
-                                            String.format(Locale.ROOT, "%.3f", elapsed),
-                                            smallRemaining.get(), largeRemaining.get());
-                                }
-                            }, completableFutureExecutor))
-                            .collect(Collectors.toList());
-
-                    try {
-                        // Ohne Timeout – einfach warten, bis alle fertig sind
-                        CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0]))
-                                .get();
-                    } catch (Exception e) {
-                        LOGGER.error("Error during routing completion", e);
-                    } finally {
-                        completableFutureExecutor.shutdown();
-                        try {
-                            if (!completableFutureExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-                                LOGGER.warn("Executor did not shut down gracefully – forcing...");
-                                List<Runnable> dropped = completableFutureExecutor.shutdownNow();
-                                LOGGER.warn("{} tasks were forcefully terminated.", dropped.size());
-                            }
-                        } catch (InterruptedException e) {
-                            LOGGER.error("Thread interrupted during executor shutdown", e);
-                            Thread.currentThread().interrupt();
-                        }
-                    }
-                    break;
-                case SINGLE_THREAD:
-                    // Use single thread for sequential processing
-                    interleavedSchedule.forEach(carrier -> {
-                        long started = System.currentTimeMillis();
-                        routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size(), carrierType);
-                        routedTimes.add(System.currentTimeMillis());
-                        boolean isSmall = carrier.getServices().size() < BIG_THRESHOLD;
-                        if (isSmall) {
-                            smallRemaining.decrementAndGet();
-                        } else {
-                            largeRemaining.decrementAndGet();
-                        }
-                        int done = finishedCounter.incrementAndGet();
-                        double elapsed = (System.currentTimeMillis() - started) / 1000.0;
-                        String clazzDone = isSmall ? "SMALL" : "LARGE";
-                        LOGGER.info(
-                                "[UPDATE] Finished carrier {} class={} ({} / {}) in {}s — remaining small={} large={}",
-                                carrier.getId(), clazzDone, done, sortedCarriers.size(),
-                                String.format(Locale.ROOT, "%.3f", elapsed),
-                                smallRemaining.get(), largeRemaining.get());
-                    });
-                    break;
-                case REACTOR:
-                    // Use Reactor for parallel processing
-                    final Semaphore bigGateRx = new Semaphore(initialLargeConcurrency);
-                    Flux.fromIterable(interleavedSchedule)
-                            .parallel()
-                            .runOn(Schedulers.parallel())
-                            .doOnNext(carrier -> {
-                                long started = System.currentTimeMillis();
-                                int services = carrier.getServices().size();
-                                boolean acquired = false;
-                                try {
-                                    if (services >= BIG_THRESHOLD) {
-                                        bigGateRx.acquire();
-                                        acquired = true;
-                                    }
-                                    routeCarrier(carrier, netBasedCosts, network, progress, sortedCarriers.size(), carrierType);
-                                } catch (InterruptedException ie) {
-                                    Thread.currentThread().interrupt();
-                                    LOGGER.error("Interrupted during gating", ie);
-                                } finally {
-                                    if (acquired)
-                                        bigGateRx.release();
-                                    if (services < BIG_THRESHOLD) {
-                                        int left = smallRemaining.decrementAndGet();
-                                        if (left == 0 && bumpedLargeConcurrency.compareAndSet(false, true)) {
-                                            int delta = Math.max(0, desiredLargeConcurrency - initialLargeConcurrency);
-                                            if (delta > 0) {
-                                                bigGateRx.release(delta);
-                                                LOGGER.info(
-                                                        "All SMALL carriers done. Increased LARGE concurrency permits by {} -> now {}.",
-                                                        delta, desiredLargeConcurrency);
-                                            }
-                                        }
-                                    } else {
-                                        largeRemaining.decrementAndGet();
-                                    }
-                                    int done = finishedCounter.incrementAndGet();
-                                    double elapsed = (System.currentTimeMillis() - started) / 1000.0;
-                                    String clazzDone = services >= BIG_THRESHOLD ? "LARGE" : "SMALL";
-                                    LOGGER.info(
-                                            "[UPDATE] Finished carrier {} class={} ({} / {}) in {}s — remaining small={} large={}",
-                                            carrier.getId(), clazzDone, done, sortedCarriers.size(),
-                                            String.format(Locale.ROOT, "%.3f", elapsed),
-                                            smallRemaining.get(), largeRemaining.get());
-                                    routedTimes.add(System.currentTimeMillis());
-                                }
-                            })
-                            .sequential()
-                            .blockLast();
-                    break;
-            }
-        } catch (InterruptedException | ExecutionException e) {
-            LOGGER.error("Error in parallel routing execution", e);
-        }
-
-        long endTime = System.currentTimeMillis();
-        // Stop global status scheduler
-        stopStatusScheduler();
-        LOGGER.info("Finished routing ({} newly routed + {} cached) using {} in {} seconds.",
-                carriersNeedingRouting.size(), cachedBefore, threadingType, (endTime - startTime) / 1000);
-
-        // Plotting the runtime
-        // HAGRIDRouterUtils.plotCumulativeRoutingRuntime(startTime, endTime,
-        // routedTimes, threadingType.toString(), carrierType);
-        // HAGRIDRouterUtils.plotIndividualRoutingRuntime(startTime, routedTimes,
-        // threadingType.toString(), carrierType);
-    }
-
-    /**
-     * Routes a single carrier.
-     *
-     * @param carrier       The carrier to be routed.
-     * @param netBasedCosts The network-based transport costs.
-     * @param network       The network.
-     * @param progress      The current progress counter.
-     * @param totalCarriers The total number of carriers.
-     */
-    private void routeCarrier(Carrier carrier, VRPTransportCosts netBasedCosts, Network network,
-            AtomicInteger progress, int totalCarriers, String overrideCarrierType) {
-        int services = carrier.getServices().size();
-        int deliveriesTotal = getOrComputeTotalDeliveries(carrier);
-        String clazz = services >= BIG_THRESHOLD ? "LARGE" : "SMALL";
-        int idx = progress.incrementAndGet();
-        LOGGER.info("[START] {} carrier {} ({}/{}) services={} deliveries={} class={}",
-                clazz, carrier.getId(), idx, totalCarriers, services, deliveriesTotal, clazz);
-        String provider = Optional.ofNullable(carrier.getAttributes().getAttribute("provider"))
-                .map(Object::toString).orElse("unknown");
-        String attrCarrierType = carrier.getAttributes().getAttribute("carrierType") == null ? "delivery"
-                : carrier.getAttributes().getAttribute("carrierType").toString();
-        String effectiveCarrierType = (overrideCarrierType != null && !overrideCarrierType.isBlank()) ? overrideCarrierType : attrCarrierType;
-        if (carrierCacheEnabled) {
-            try {
-                if (tryRestoreCarrierPlanFromCache(carrier, services, clazz)) {
-                    deliveriesTotal = getOrComputeTotalDeliveries(carrier); // ensure attribute
-                    int shipments = carrier.getShipments().size();
-                    int totalCapacityDemand = deliveriesTotal;
-                    int b2b = carrier.getServices().values().stream()
-                            .map(s -> s.getAttributes().getAttribute("b2b"))
-                            .mapToInt(o -> (o instanceof Integer) ? (Integer) o : 0)
-                            .sum();
-                    int b2c = carrier.getServices().values().stream()
-                            .map(s -> s.getAttributes().getAttribute("b2c"))
-                            .mapToInt(o -> (o instanceof Integer) ? (Integer) o : 0)
-                            .sum();
-                    metrics.add(new CarrierRoutingMetrics(
-                            carrier.getId().toString(), provider, services, shipments, totalCapacityDemand,
-                            b2b, b2c, clazz, threadingType.toString(), effectiveCarrierType,
-                            -1, -1, 0));
-                    LOGGER.info("[CACHE-HIT] Using cached plan for carrier {} (services={} deliveries={})", carrier.getId(), services, deliveriesTotal);
-                    return;
-                }
-            } catch (Exception e) {
-                LOGGER.warn("Cache restore failed for carrier {}: {} -> continue without cache", carrier.getId(), e.toString());
-            }
-        }
-        double start = System.currentTimeMillis();
-        String workerThread = Thread.currentThread().getName();
-        if (statusLogger != null) {
-            statusLogger.appendStart(effectiveCarrierType, carrier.getId().toString(), provider,
-                    services, clazz, threadingType.toString(), workerThread);
-        }
-        activeCarriers.put(carrier.getId().toString(), new ActiveCarrier(
-                carrier.getId().toString(), provider, effectiveCarrierType, services, deliveriesTotal, clazz, (long) start, workerThread));
-        Thread heartbeat = startHeartbeat(carrier.getId().toString(), provider, effectiveCarrierType,
-                services, deliveriesTotal, clazz, (long) start, workerThread);
-        int serviceCount = services;
-        int jspritIterations = getJspritIterations();
-        try {
-            VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
-                    vrp, serviceCount, jspritIterations, network, getUTurnPenaltyCost());
-            AtomicInteger iterationCounter = new AtomicInteger(0);
-            algorithm.addListener(
-                    (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
-            algorithm.addListener(new IterationEndsListener() {
-                @Override
-                public void informIterationEnds(int iteration,
-                        VehicleRoutingProblem problem,
-                        Collection<VehicleRoutingProblemSolution> solutions) {
-                    if (solutions.isEmpty()) {
-                        LOGGER.warn("Carrier {}: Iteration {} no solution yet.", carrier.getId(), iteration);
-                        return;
-                    }
-                    VehicleRoutingProblemSolution best = Solutions.bestOf(solutions);
-                    LOGGER.info("Carrier {}: Iteration {} BestCost={} Routes={} Unassigned={} VehiclesUsed={} TransportTime={}s",
-                            carrier.getId(),
-                            iteration,
-                            String.format("%.2f", best.getCost()),
-                            best.getRoutes().size(),
-                            best.getUnassignedJobs().size(),
-                            best.getRoutes().stream().map(route -> route.getVehicle().getId()).distinct().count(),
-                            getTotalTransportTime(best));
+        try{
+            batches.runStaged(resources.maxActiveSolvers().orElse(Integer.MAX_VALUE),descriptors,d->routeCarrier(inputs.get(d.carrierId()),costs,progress,pending.size(),carrierType),
+                    value->completed.put(value.carrier(),value),()->{
+                synchronized(publication){
+                    if(closed||Thread.currentThread().isInterrupted())
+                        throw new CancellationException("Initial routing interrupted before publication");
+                    if(completed.size()!=pending.size())throw new IllegalStateException("Incomplete initial group");
+                    for(var carrier:pending)publish(completed.get(carrier));
                 }
             });
-            long jspritStart = System.currentTimeMillis();
-            VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-            long jspritEnd = System.currentTimeMillis();
-            LOGGER.info("JSPRIT solution for carrier {} found. Search took {}s (class={} deliveries={})",
-                    carrier.getId(), (System.currentTimeMillis() - start) / 1000, clazz, deliveriesTotal);
-            // Persist jobs jsprit could not insert (INFINITE fleet -> demand exceeds every van's
-            // capacity, or infeasible under the 7h/end-window cap) so the dashboard shows the real
-            // count instead of a false zero on the Hannover legacy path.
-            HAGRIDRouterUtils.recordUnassignedJobs(carrier,
-                    solution.getUnassignedJobs().stream().map(Job::getId).toList());
-            // Step B warns if its own uTurnPenalty differs from the value routing used here.
-            HAGRIDRouterUtils.recordUTurnPenalty(carrier, getUTurnPenaltyCost());
-            CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
-            CarrierPlan newPlan = MatsimJspritFactory.createPlan(solution);
-            long routeStart = System.currentTimeMillis();
-            NetworkRouter.routePlan(newPlan, netBasedCosts);
-            long routeEnd = System.currentTimeMillis();
-            carrier.addPlan(newPlan);
-            carrier.setSelectedPlan(newPlan);
-            double timeForPlanningAndRouting = (System.currentTimeMillis() - start) / 1000;
-            CarriersUtils.setJspritComputationTime(carrier, timeForPlanningAndRouting);
-            LOGGER.info("[END] {} carrier {} took {}s; services={} deliveries={}",
-                    clazz, carrier.getId(), (System.currentTimeMillis() - start) / 1000, serviceCount, deliveriesTotal);
-            if (heartbeat != null) { heartbeat.interrupt(); }
-            int shipments = carrier.getShipments().size();
-            int totalCapacityDemand = carrier.getServices().values().stream()
-                    .mapToInt(CarrierService::getCapacityDemand).sum();
-            int b2b = carrier.getServices().values().stream()
-                    .map(s -> s.getAttributes().getAttribute("b2b"))
-                    .mapToInt(o -> (o instanceof Integer) ? (Integer) o : 0)
-                    .sum();
-            int b2c = carrier.getServices().values().stream()
-                    .map(s -> s.getAttributes().getAttribute("b2c"))
-                    .mapToInt(o -> (o instanceof Integer) ? (Integer) o : 0)
-                    .sum();
-            double jspritSeconds = (jspritEnd - jspritStart) / 1000.0;
-            double routeSeconds = (routeEnd - routeStart) / 1000.0;
-            double totalSeconds = (System.currentTimeMillis() - start) / 1000.0;
-            metrics.add(new CarrierRoutingMetrics(
-                    carrier.getId().toString(), provider, services, shipments, totalCapacityDemand,
-                    b2b, b2c, clazz, threadingType.toString(), effectiveCarrierType,
-                    jspritSeconds, routeSeconds, totalSeconds));
-            if (statusLogger != null) {
-                statusLogger.appendDone(effectiveCarrierType, carrier.getId().toString(), provider,
-                        services, clazz, threadingType.toString(), totalSeconds, workerThread);
-            }
-            activeCarriers.remove(carrier.getId().toString());
-            // ---- Persist to cache AFTER successful routing ----
-            if (carrierCacheEnabled) {
-                try { persistCarrierToCache(carrier); } catch (Exception e) { LOGGER.warn("Cache persist failed {}: {}", carrier.getId(), e.toString()); }
-            }
-        } catch (Exception ex) {
-            LOGGER.error("Routing failed for carrier {}: {} (services={} deliveries={})", carrier.getId(), ex.getMessage(), services, deliveriesTotal, ex);
-            if (heartbeat != null) heartbeat.interrupt();
-            if (statusLogger != null) {
-                double elapsed = (System.currentTimeMillis() - start) / 1000.0;
-                statusLogger.appendError(effectiveCarrierType, carrier.getId().toString(), provider,
-                        services, clazz, threadingType.toString(), elapsed, workerThread, ex.toString());
-            }
+            LOGGER.info("Initial routing complete: {} newly routed, {} existing checked, {} seconds",
+                    pending.size(),existing,(System.nanoTime()-start)/1e9);
+        }finally{
+            stopStatusScheduler();
+        }
+    }
+
+    private long validateExistingPlans(Carriers carriers,VRPTransportCosts costs){
+        long checked=0;
+        for(var carrier:carriers.getCarriers().values()){
+            if(carrier.getSelectedPlan()==null)continue;
+            var validation=PlanValidator.validate(carrier,carrier.getSelectedPlan(),costs,null,
+                    solverMaxRouteDurationSeconds,getUTurnPenaltyCost());
+            if(!validation.valid())throw new IllegalStateException("Invalid existing initial plan for "
+                    +carrier.getId()+": "+validation.violations());
+            checked++;
+        }
+        return checked;
+    }
+
+    private static long activityCount(Carrier carrier){
+        return (long)carrier.getServices().size()+2L*carrier.getShipments().size();
+    }
+
+    /** Runs only after admission and returns detached data; canonical plans/metadata remain caller-owned. */
+    private Completed routeCarrier(Carrier carrier,VRPTransportCosts costs,AtomicInteger progress,
+                                   int total,String overrideCarrierType){
+        int services=carrier.getServices().size();
+        int deliveries=totalDeliveries(carrier);
+        String sizeClass=activityCount(carrier)>=BIG_THRESHOLD?"LARGE":"SMALL";
+        String provider=Optional.ofNullable(carrier.getAttributes().getAttribute("provider"))
+                .map(Object::toString).orElse("unknown");
+        String role=overrideCarrierType!=null&&!overrideCarrierType.isBlank()?overrideCarrierType
+                :Optional.ofNullable(carrier.getAttributes().getAttribute("carrierType")).map(Object::toString).orElse("delivery");
+        long start=System.currentTimeMillis();
+        String worker=Thread.currentThread().getName();
+        LOGGER.info("[START] Carrier {} ({}/{}) services={} shipments={} class={}",carrier.getId(),
+                progress.incrementAndGet(),total,services,carrier.getShipments().size(),sizeClass);
+        if(statusLogger!=null)statusLogger.appendStart(role,carrier.getId().toString(),provider,services,
+                sizeClass,threadingType.toString(),worker);
+        activeCarriers.put(carrier.getId().toString(),new ActiveCarrier(carrier.getId().toString(),provider,
+                role,services,deliveries,sizeClass,start,worker));
+        Thread heartbeat=startHeartbeat(carrier.getId().toString(),provider,role,services,deliveries,sizeClass,start,worker);
+        try{
+            var result=new CarrierOptimizationService().optimizeInitial(carrier,costs,getJspritIterations(),
+                    solverMaxRouteDurationSeconds,getUTurnPenaltyCost(),resources,hagridConfigRef == null ? HAGRIDRouterUtils.resolveSolverSeed() : HAGRIDRouterUtils.resolveSolverSeed(hagridConfigRef.randomSeeds().seed()));
+            if(!result.diagnostics().isEmpty())throw new IllegalStateException("Invalid initial result: "+result.diagnostics());
+            double elapsed=(System.currentTimeMillis()-start)/1000.0;
+            int demand=carrier.getServices().values().stream().mapToInt(CarrierService::getCapacityDemand).sum()
+                    +carrier.getShipments().values().stream().mapToInt(org.matsim.freight.carriers.CarrierShipment::getSize).sum();
+            var summary=new CarrierRoutingMetrics(carrier.getId().toString(),provider,services,carrier.getShipments().size(),
+                    demand,parcelCount(carrier,"b2b"),parcelCount(carrier,"b2c"),sizeClass,threadingType.toString(),role,
+                    result.metrics().jspritSeconds,result.metrics().routeSeconds,elapsed,result.metrics().execution);
+            if(statusLogger!=null)statusLogger.appendDone(role,carrier.getId().toString(),provider,services,
+                    sizeClass,threadingType.toString(),elapsed,worker);
+            return new Completed(carrier,result,summary,deliveries);
+        }catch(RuntimeException e){
+            LOGGER.error("Initial search failed for {}",carrier.getId(),e);
+            if(statusLogger!=null)statusLogger.appendError(role,carrier.getId().toString(),provider,services,
+                    sizeClass,threadingType.toString(),(System.currentTimeMillis()-start)/1000.0,worker,e.toString());
+            if(e instanceof CancellationException)throw e;
+            throw new IllegalStateException("Initial search failed for "+carrier.getId(),e);
+        }finally{
+            heartbeat.interrupt();
             activeCarriers.remove(carrier.getId().toString());
         }
     }
 
-    private double getTotalTransportTime(VehicleRoutingProblemSolution solution) {
-        return solution.getRoutes().stream()
-                .mapToDouble(route -> route.getEnd().getArrTime() - route.getStart().getEndTime())
-                .sum();
+    private static int parcelCount(Carrier carrier,String key){
+        return carrier.getServices().values().stream().map(s->s.getAttributes().getAttribute(key))
+                .mapToInt(value->value instanceof Integer count?count:0).sum();
     }
 
+    private void publish(Completed value){
+        var carrier=value.carrier();var result=value.result();
+        carrier.addPlan(result.plan());carrier.setSelectedPlan(result.plan());
+        CarriersUtils.setJspritIterations(carrier,result.iterations());
+        CarriersUtils.setJspritComputationTime(carrier,result.metrics().totalSeconds);
+        HAGRIDRouterUtils.recordUnassignedJobs(carrier,result.unassignedJobIds());
+        HAGRIDRouterUtils.recordUTurnPenalty(carrier,getUTurnPenaltyCost());
+        if(!(carrier.getAttributes().getAttribute("totalDeliveries") instanceof Integer))
+            carrier.getAttributes().putAttribute("totalDeliveries",value.totalDeliveries());
+        metrics.add(value.metrics());
+    }
+
+    @Override public void close(){
+        synchronized(publication){closed=true;}
+        batches.close();
+        stopStatusScheduler();
+    }
     // Periodic status log while a thread is still routing a carrier (also logs to
     // status CSV)
     private Thread startHeartbeat(String carrierId, String provider, String carrierType,
@@ -870,138 +404,13 @@ public class Router {
         return t;
     }
 
-    // ===== Cache helper methods =====
-    private boolean tryRestoreCarrierPlanFromCache(Carrier targetCarrier, int services, String clazz) {
-        if (!carrierCacheEnabled || !CACHE_IO_AVAILABLE) return false;
-        Path file = buildCacheFilePath(targetCarrier.getId().toString());
-        if (file == null || !Files.exists(file)) return false;
-        long t0 = System.currentTimeMillis();
-        Carriers tmp = new Carriers();
-        CarrierVehicleTypes vehicleTypesForRead = this.sharedVehicleTypes != null ? this.sharedVehicleTypes : new CarrierVehicleTypes();
-        try {
-            // Read single-carrier plan file
-            new CarrierPlanXmlReader(tmp, vehicleTypesForRead).readFile(file.toString());
-            Carrier cached = tmp.getCarriers().get(targetCarrier.getId());
-            if (cached == null) return false;
-            Object v = cached.getAttributes().getAttribute("cacheVersion");
-            if (v == null || !CACHE_VERSION.equals(v.toString())) return false;
-
-            // If we restore a plan from cache, we must also ensure that the services and vehicles are exactly as in the cached carrier.
-            // Remove all existing services and vehicles, then add all from the cached carrier for full consistency.
-            if (targetCarrier.getPlans().isEmpty()) {
-                // Remove all existing services
-                targetCarrier.getServices().clear();
-                // Remove all existing vehicles
-                targetCarrier.getCarrierCapabilities().getCarrierVehicles().clear();
-                // Add all services from cache
-                cached.getServices().forEach((id, service) -> CarriersUtils.addService(targetCarrier, service));
-                // Add all vehicles from cache
-                cached.getCarrierCapabilities().getCarrierVehicles().forEach((id, vehicle) -> targetCarrier.getCarrierCapabilities().getCarrierVehicles().put(id, vehicle));
-                // Add plans
-                cached.getPlans().forEach(targetCarrier::addPlan);
-                if (cached.getSelectedPlan() != null) targetCarrier.setSelectedPlan(cached.getSelectedPlan());
-            }
-            // If plan was not loaded, do not touch services (keep as is)
-            copyAttrIfExists(cached, targetCarrier, "jspritIterations");
-            copyAttrIfExists(cached, targetCarrier, "jspritComputationTime");
-            // compute and store deliveries
-            int deliveriesTotal = getOrComputeTotalDeliveries(targetCarrier);
-            double dt = (System.currentTimeMillis() - t0) / 1000.0;
-            LOGGER.info("[CACHE-RESTORED] carrier={} services={} deliveries={} class={} time={}s", targetCarrier.getId(), services, deliveriesTotal, clazz, String.format(java.util.Locale.ROOT, "%.3f", dt));
-            return true;
-        } catch (Exception e) {
-            LOGGER.warn("Cache read failed (CarrierPlanXmlReader) for {}: {}", targetCarrier.getId(), e.toString());
-            return false;
-        }
-    }
-
-    private void persistCarrierToCache(Carrier carrier) {
-        if (!carrierCacheEnabled || !CACHE_IO_AVAILABLE) return;
-        if (carrier.getSelectedPlan() == null) return;
-        try {
-            carrier.getAttributes().putAttribute("cacheVersion", CACHE_VERSION);
-            getOrComputeTotalDeliveries(carrier);
-            Carriers wrapper = new Carriers();
-            wrapper.addCarrier(carrier);
-            Path file = buildCacheFilePath(carrier.getId().toString());
-            if (file == null) return;
-            Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
-            long t0 = System.currentTimeMillis();
-            new CarrierPlanWriter(wrapper).write(tmp.toString()); // plain xml
-            try {
-                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (Exception e) {
-                try { Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
-            }
-            double dt = (System.currentTimeMillis() - t0) / 1000.0;
-            LOGGER.info("[CACHE-WRITE] carrier={} file={} time={}s deliveries={} services={}", carrier.getId(), file.getFileName(), String.format(java.util.Locale.ROOT, "%.3f", dt), getOrComputeTotalDeliveries(carrier), carrier.getServices().size());
-        } catch (Exception ex) {
-            LOGGER.warn("Cache write failed (CarrierPlanWriter) for {}: {}", carrier.getId(), ex.toString());
-        }
-    }
-
-    private Path buildCacheFilePath(String carrierId) {
-        if (carrierCacheDir == null) return null;
-        String runId = getRunIdSafe();
-        return carrierCacheDir.resolve(CACHE_FILE_PREFIX + runId + "_" + carrierId + CACHE_FILE_SUFFIX);
-    }
-    private void copyAttrIfExists(Carrier src, Carrier dst, String key) { Object val = src.getAttributes().getAttribute(key); if (val != null) dst.getAttributes().putAttribute(key, val); }
-
-    // Reflection helpers to avoid compile issues if config API differs
-    private boolean invokeBoolean(Object target, String method, boolean def, boolean fallback) {
-        try {
-            return (boolean) target.getClass().getMethod(method).invoke(target);
-        } catch (Exception e) {
-            return fallback;
-        }
-    }
-
-    private String invokeString(Object target, String method, String def, String fallback) {
-        try {
-            return (String) target.getClass().getMethod(method).invoke(target);
-        } catch (Exception e) {
-            return fallback;
-        }
-    }
-
-    /**
-     * Preload cached plans for carriers that have individual cache files.
-     * Adds metrics for cache hits, so downstream reporting includes them.
-     * @return number of carriers restored from cache
-     */
-    private int preloadCarrierPlansFromCache(Carriers carriers) {
-        if (!carrierCacheEnabled || !CACHE_IO_AVAILABLE) return 0;
-        int hits = 0;
-        for (Carrier c : carriers.getCarriers().values()) {
-            if (c.getSelectedPlan() != null) continue; // already has plan
-            int services = c.getServices().size();
-            String clazz = services >= BIG_THRESHOLD ? "LARGE" : "SMALL";
-            if (tryRestoreCarrierPlanFromCache(c, services, clazz) && c.getSelectedPlan() != null) {
-                // Only count restored plan; do NOT generate metrics here (metrics reflect runtime routing only)
-                hits++;
-            }
-        }
-        return hits;
-    }
-
-    private int getOrComputeTotalDeliveries(Carrier carrier) {
+    private int totalDeliveries(Carrier carrier) {
         Object v = carrier.getAttributes().getAttribute("totalDeliveries");
         if (v instanceof Integer) return (Integer) v;
-        int sum = carrier.getServices().values().stream().mapToInt(CarrierService::getCapacityDemand).sum();
-        carrier.getAttributes().putAttribute("totalDeliveries", sum);
+        int sum = carrier.getServices().values().stream().mapToInt(CarrierService::getCapacityDemand).sum()
+                +carrier.getShipments().values().stream().mapToInt(org.matsim.freight.carriers.CarrierShipment::getSize).sum();
+
         return sum;
     }
 
-    // Helper to obtain runId from config (fallback to 'run')
-    private String getRunIdSafe() {
-        String sys = System.getProperty("hagrid.runId");
-        if (sys != null && !sys.isBlank()) return sys;
-        if (hagridConfigRef != null) {
-            try {
-                Object v = hagridConfigRef.getClass().getMethod("getRunId").invoke(hagridConfigRef);
-                if (v != null) return v.toString();
-            } catch (Exception ignored) {}
-        }
-        return "run";
-    }
 }

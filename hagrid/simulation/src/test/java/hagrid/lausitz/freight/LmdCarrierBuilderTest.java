@@ -30,6 +30,13 @@ class LmdCarrierBuilderTest {
      *  below since they pass it repeatedly. */
     private static final Id<Link> DEPOT_LINK = Id.createLinkId("ab");
 
+    @Test void configuredSolverCapControlsEveryWaveVehicleWindow() {
+        var carrier=LmdCarrierBuilder.build("dhl",List.of(),DEPOT_LINK,net(),
+                new VehicleType[]{van("ct_cep_size_m",165)},2,15,List.of(8),new Random(42),10800);
+        assertThat(carrier.getCarrierCapabilities().getCarrierVehicles().values()).isNotEmpty()
+            .allSatisfy(v->assertThat(v.getLatestEndTime()-v.getEarliestStartTime()).isCloseTo(14400,org.assertj.core.data.Offset.offset(1e-7)));
+    }
+
     private Network net() {
         Network n = NetworkUtils.createNetwork();
         Node a = NetworkUtils.createAndAddNode(n, Id.createNodeId("a"), new Coord(0, 0));

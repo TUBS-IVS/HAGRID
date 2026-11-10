@@ -1,5 +1,6 @@
 package hagrid.lausitz.freight;
 
+import hagrid.core.util.CodeFingerprint;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -31,33 +32,21 @@ import java.util.zip.ZipFile;
  * <p>Outside a JAR (tests, IDE) there is no fingerprint and the cache stays off. So it is when the
  * JAR was changed after this JVM started ({@link #keepIfUnchangedSinceJvmStart}).
  */
-final class JarFingerprint {
+public final class JarFingerprint {
 
     private static final Logger LOG = LogManager.getLogger(JarFingerprint.class);
 
-    /** {@code null} = not computed yet. Computed once per JVM (about 5 s for the shaded JAR). */
-    private static volatile Optional<String> cached;
     private static volatile String overrideForTests;
 
     private JarFingerprint() {
     }
 
-    static Optional<String> ofRunningCode() {
+    public static Optional<String> ofRunningCode() {
         String override = overrideForTests;
         if (override != null) {
             return Optional.of(override);
         }
-        Optional<String> c = cached;
-        if (c == null) {
-            synchronized (JarFingerprint.class) {
-                c = cached;
-                if (c == null) {
-                    c = compute();
-                    cached = c;
-                }
-            }
-        }
-        return c;
+        return CodeFingerprint.ofRunningCode();
     }
 
     /** Test hook (spec section 9.2): forces a fingerprint; {@code null} restores the real one. */
@@ -120,22 +109,6 @@ final class JarFingerprint {
 
     private static Path codeLocation() throws URISyntaxException {
         return Path.of(LausitzFreightPreprocessor.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-    }
-
-    private static Optional<String> compute() {
-        try {
-            Path location = codeLocation();
-            Optional<String> fingerprint = of(location);
-            if (fingerprint.isEmpty()) {
-                return fingerprint;
-            }
-            // read AFTER hashing: a JAR replaced before or while it was hashed shows up here
-            return keepIfUnchangedSinceJvmStart(location, fingerprint, lastChangedMillis(location),
-                    ManagementFactory.getRuntimeMXBean().getStartTime());
-        } catch (IOException | URISyntaxException | RuntimeException e) {
-            LOG.warn("jsprit cache: cannot fingerprint the running code ({}) - cache off for this run", e.toString());
-            return Optional.empty();
-        }
     }
 
     /**

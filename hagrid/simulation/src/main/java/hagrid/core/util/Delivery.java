@@ -25,6 +25,23 @@ public class Delivery {
     private String postalCode;
     private ArrayList<Double> individualWeights;
     private DeliveryMode deliveryMode;
+    private String stopId;
+    private String strIdx;
+    private String sectionId;
+    private String side;
+    private String part;
+    private String positionM;
+
+    /** Normalizes numeric street indices across GIS and XML scalar representations. */
+    public static String normalizeStreetIndex(Object value) {
+        if (value == null || value.toString().isBlank()) return null;
+        String text = value.toString().trim();
+        try {
+            return new java.math.BigDecimal(text).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException ignored) {
+            return text;
+        }
+    }
 
     /**
      * Enumeration representing the type of delivery.

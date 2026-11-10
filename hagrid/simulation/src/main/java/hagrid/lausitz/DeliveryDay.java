@@ -28,10 +28,10 @@ package hagrid.lausitz;
 public final class DeliveryDay {
 
     /** 07:30 — parcels arrive at the depot overnight, so the delivery day starts early. */
-    public static final double START_S = 7.5 * 3600.0;
+    public static final double START_S = hagrid.core.config.RoutingDefaults.LAUSITZ_DELIVERY_WINDOW_START_SECONDS;
 
     /** 21:00 — unified across all three arms (user decision 2026-07-30). */
-    public static final double END_S = 21 * 3600.0;
+    public static final double END_S = hagrid.core.config.RoutingDefaults.LAUSITZ_DELIVERY_WINDOW_END_SECONDS;
 
     private DeliveryDay() {
     }

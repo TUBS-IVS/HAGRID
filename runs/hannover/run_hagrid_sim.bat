@@ -46,7 +46,7 @@ echo Starting with args from vmargs.txt
 type vmargs.txt
 
 rem ─── Scenario 1/26 ───
-set "SCENARIO_1=concept=basecase,date=2025-05-13,tag=160v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_1=concept=basecase,date=2025-05-13,tag=160v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 1/26: %SCENARIO_1%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_1%
@@ -56,7 +56,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 2/26 ───
-set "SCENARIO_2=concept=basecase,date=2025-05-13,tag=170v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_2=concept=basecase,date=2025-05-13,tag=170v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 2/26: %SCENARIO_2%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_2%
@@ -66,7 +66,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 3/26 ───
-set "SCENARIO_3=concept=basecase,date=2025-05-13,tag=180v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_3=concept=basecase,date=2025-05-13,tag=180v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 3/26: %SCENARIO_3%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_3%
@@ -76,7 +76,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 4/26 ───
-set "SCENARIO_4=concept=basecase,date=2025-05-13,tag=190v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_4=concept=basecase,date=2025-05-13,tag=190v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 4/26: %SCENARIO_4%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_4%
@@ -86,7 +86,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 5/26 ───
-set "SCENARIO_5=concept=basecase,date=2025-05-13,tag=200v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_5=concept=basecase,date=2025-05-13,tag=200v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 5/26: %SCENARIO_5%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_5%
@@ -96,7 +96,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 6/26 ───
-set "SCENARIO_6=concept=basecase,date=2025-05-13,tag=210v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_6=concept=basecase,date=2025-05-13,tag=210v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 6/26: %SCENARIO_6%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_6%
@@ -106,7 +106,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 7/26 ───
-set "SCENARIO_7=concept=basecase,date=2025-05-13,tag=220v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_7=concept=basecase,date=2025-05-13,tag=220v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 7/26: %SCENARIO_7%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_7%
@@ -116,7 +116,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 8/26 ───
-set "SCENARIO_8=concept=basecase,date=2025-05-13,tag=230v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_8=concept=basecase,date=2025-05-13,tag=230v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 8/26: %SCENARIO_8%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_8%
@@ -126,7 +126,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 9/26 ───
-set "SCENARIO_9=concept=basecase,date=2025-05-13,tag=240v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_9=concept=basecase,date=2025-05-13,tag=240v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 9/26: %SCENARIO_9%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_9%
@@ -136,7 +136,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 10/26 ───
-set "SCENARIO_10=concept=basecase,date=2025-05-13,tag=250v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_10=concept=basecase,date=2025-05-13,tag=250v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 10/26: %SCENARIO_10%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_10%
@@ -146,7 +146,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 11/26 ───
-set "SCENARIO_11=concept=basecase,date=2025-05-13,tag=260v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_11=concept=basecase,date=2025-05-13,tag=260v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 11/26: %SCENARIO_11%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_11%
@@ -156,7 +156,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 12/26 ───
-set "SCENARIO_12=concept=basecase,date=2025-05-13,tag=270v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_12=concept=basecase,date=2025-05-13,tag=270v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 12/26: %SCENARIO_12%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_12%
@@ -166,7 +166,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 13/26 ───
-set "SCENARIO_13=concept=basecase,date=2025-05-13,tag=280v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_13=concept=basecase,date=2025-05-13,tag=280v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 13/26: %SCENARIO_13%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_13%
@@ -176,7 +176,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 14/26 ───
-set "SCENARIO_14=concept=basecase,date=2025-05-13,tag=290v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_14=concept=basecase,date=2025-05-13,tag=290v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 14/26: %SCENARIO_14%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_14%
@@ -186,7 +186,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 15/26 ───
-set "SCENARIO_15=concept=basecase,date=2025-05-13,tag=300v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_15=concept=basecase,date=2025-05-13,tag=300v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 15/26: %SCENARIO_15%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_15%
@@ -196,7 +196,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 16/26 ───
-set "SCENARIO_16=concept=basecase,date=2025-05-13,tag=310v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_16=concept=basecase,date=2025-05-13,tag=310v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 16/26: %SCENARIO_16%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_16%
@@ -206,7 +206,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 17/26 ───
-set "SCENARIO_17=concept=basecase,date=2025-05-13,tag=320v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_17=concept=basecase,date=2025-05-13,tag=320v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 17/26: %SCENARIO_17%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_17%
@@ -216,7 +216,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 18/26 ───
-set "SCENARIO_18=concept=basecase,date=2025-05-13,tag=330v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_18=concept=basecase,date=2025-05-13,tag=330v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 18/26: %SCENARIO_18%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_18%
@@ -226,7 +226,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 19/26 ───
-set "SCENARIO_19=concept=basecase,date=2025-05-13,tag=340v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_19=concept=basecase,date=2025-05-13,tag=340v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 19/26: %SCENARIO_19%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_19%
@@ -236,7 +236,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 20/26 ───
-set "SCENARIO_20=concept=basecase,date=2025-05-13,tag=350v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_20=concept=basecase,date=2025-05-13,tag=350v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 20/26: %SCENARIO_20%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_20%
@@ -246,7 +246,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 21/26 ───
-set "SCENARIO_21=concept=basecase,date=2025-05-13,tag=360v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_21=concept=basecase,date=2025-05-13,tag=360v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 21/26: %SCENARIO_21%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_21%
@@ -256,7 +256,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 22/26 ───
-set "SCENARIO_22=concept=basecase,date=2025-05-13,tag=370v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_22=concept=basecase,date=2025-05-13,tag=370v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 22/26: %SCENARIO_22%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_22%
@@ -266,7 +266,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 23/26 ───
-set "SCENARIO_23=concept=basecase,date=2025-05-13,tag=380v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_23=concept=basecase,date=2025-05-13,tag=380v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 23/26: %SCENARIO_23%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_23%
@@ -276,7 +276,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 24/26 ───
-set "SCENARIO_24=concept=basecase,date=2025-05-13,tag=390v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_24=concept=basecase,date=2025-05-13,tag=390v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 24/26: %SCENARIO_24%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_24%
@@ -286,7 +286,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 25/26 ───
-set "SCENARIO_25=concept=basecase,date=2025-05-13,tag=400v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_25=concept=basecase,date=2025-05-13,tag=400v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 25/26: %SCENARIO_25%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_25%
@@ -296,7 +296,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 rem ─── Scenario 26/26 ───
-set "SCENARIO_26=concept=basecase,date=2025-05-13,tag=70v2,maxIter=150,jspritIter=1000,zoneCaching=true,zoneThreshold=1500,writeDashboard=true"
+set "SCENARIO_26=concept=basecase,date=2025-05-13,tag=70v2,maxIter=150,jspritIter=1000,writeDashboard=true"
 echo.
 echo Running scenario 26/26: %SCENARIO_26%
 "%JAVA_EXE%" @vmargs.txt -Dhagrid.pipeline.root=. -jar "%JAR%" %SCENARIO_26%

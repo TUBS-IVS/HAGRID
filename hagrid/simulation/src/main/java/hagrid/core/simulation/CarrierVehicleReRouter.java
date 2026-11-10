@@ -1,580 +1,82 @@
 package hagrid.core.simulation;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-
-import com.graphhopper.jsprit.analysis.toolbox.StopWatch;
-import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
-import com.graphhopper.jsprit.core.algorithm.box.Jsprit;
-import com.graphhopper.jsprit.core.algorithm.listener.IterationEndsListener;
-import com.graphhopper.jsprit.core.algorithm.listener.VehicleRoutingAlgorithmListeners;
-import com.graphhopper.jsprit.core.algorithm.state.StateManager;
-import com.graphhopper.jsprit.core.algorithm.state.UpdateEndLocationIfRouteIsOpen;
-import com.graphhopper.jsprit.core.algorithm.termination.IterationWithoutImprovementTermination;
-import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
-import hagrid.core.routing.UTurnSoftConstraint;
-import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager;
-import com.graphhopper.jsprit.core.problem.constraint.ConstraintManager.Priority;
-import com.graphhopper.jsprit.core.problem.constraint.ServiceDeliveriesFirstConstraint;
-import com.graphhopper.jsprit.core.problem.constraint.SwitchNotFeasible;
-import com.graphhopper.jsprit.core.problem.constraint.VehicleDependentTimeWindowConstraints;
-import com.graphhopper.jsprit.core.problem.cost.VehicleRoutingActivityCosts;
-import com.graphhopper.jsprit.core.problem.driver.Driver;
-import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
-import com.graphhopper.jsprit.core.problem.solution.route.activity.TourActivity;
-import com.graphhopper.jsprit.core.problem.vehicle.Vehicle;
-import com.graphhopper.jsprit.core.util.Solutions;
-// import com.graphhopper.jsprit.io.algorithm.AlgorithmConfig;
-// import com.graphhopper.jsprit.io.algorithm.AlgorithmConfigXmlReader;
-// import com.graphhopper.jsprit.io.algorithm.VehicleRoutingAlgorithms;
-
-import hagrid.core.routing.DepartureTimeReScheduler;
-import hagrid.core.routing.HAGRIDRouterUtils;
-import hagrid.core.routing.MaxRouteDurationConstraint;
-import hagrid.core.routing.OpenRouteStateVerifier;
-import hagrid.core.routing.RouteRealStartTimeMemorizer;
-import hagrid.core.routing.TimeWindowConstraintWithDriverTime;
-import hagrid.core.routing.UpdateDepartureTimeAndPracticalTimeWindows;
-import hagrid.core.routing.ZoneBasedTransportCosts;
-
-import org.matsim.api.core.v01.Id;
+import hagrid.core.config.ResolvedHagridConfig;
 import org.matsim.api.core.v01.network.Network;
-import org.matsim.api.core.v01.network.Link;
-
 import org.matsim.core.replanning.GenericPlanStrategy;
 import org.matsim.core.replanning.GenericPlanStrategyImpl;
-import org.matsim.core.replanning.ReplanningContext;
-import org.matsim.core.replanning.modules.GenericPlanStrategyModule;
 import org.matsim.core.replanning.selectors.BestPlanSelector;
 import org.matsim.core.router.util.TravelTime;
 import org.matsim.freight.carriers.Carrier;
 import org.matsim.freight.carriers.CarrierPlan;
 import org.matsim.freight.carriers.CarrierVehicleTypes;
-import org.matsim.freight.carriers.CarriersUtils;
-import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
-import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
-import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
 
+import java.util.Map;
+import java.util.function.Supplier;
+
+/** Compatibility entry point assembling the carrier replanning strategy. */
 public final class CarrierVehicleReRouter {
-
-    private static final org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(CarrierVehicleReRouter.class);
-
-    private final Network carNetwork;
-
-    private final CarrierVehicleTypes vehicleTypes;
-
-    private final TravelTime travelTimes;
-
-    private static final double MAXROUTEDURATIONHOUR = 7.0;
-    private static final int MAXROUTEDURATION = (int) MAXROUTEDURATIONHOUR * 3600;
-
-    private static final int STARTOPTIMIZATION = 25;
-    private static final int STOPOPTIMIZATION = 100;
-
-    private static final int MAXREPLANNINGSIZE = 16;
-
-    private final VehicleRoutingActivityCosts activityCosts;
-
-    private final Boolean isUsingZones;
-
-    private final Map<String, VRPTransportCosts> byModeVRPTransportCosts;
-
-    private final Network bikeNetwork;
-
-    private int jspritIterations;
+    private final Supplier<CarrierReplanningModule> moduleFactory;
 
     private final double uTurnPenaltyCost;
 
     public CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
-            TravelTime travelTimes,
-            Boolean isUsingZones, Map<String, VRPTransportCosts> byModeVRPTransportCosts, int jspritIterations,
-            double uTurnPenaltyCost) {
-        super();
-        this.carNetwork = carNetwork;
-        this.bikeNetwork = bikeNetwork;
-        this.vehicleTypes = vehicleTypes;
-        this.travelTimes = travelTimes;
-        this.isUsingZones = isUsingZones;
-        this.byModeVRPTransportCosts = byModeVRPTransportCosts;
-        this.jspritIterations = jspritIterations;
-        this.uTurnPenaltyCost = uTurnPenaltyCost;
-
-        this.activityCosts = createVehicleRoutingActivityCosts();
-
+            TravelTime travelTimes, Boolean isUsingZones, Map<String, VRPTransportCosts> costsByMode,
+            int jspritIterations) {
+        this(carNetwork, bikeNetwork, vehicleTypes, travelTimes, isUsingZones, costsByMode,
+                jspritIterations, hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS,
+                hagrid.core.config.RoutingDefaults.REPLANNING_START_ITERATION,
+                hagrid.core.config.RoutingDefaults.CARRIERS_PER_REPLANNING_GROUP, null);
     }
 
-    /** The U-turn penalty this re-router hands to its jsprit constraints (wiring tests). */
-    double uTurnPenaltyCost() {
-        return uTurnPenaltyCost;
+    /** Compatibility constructor retaining the explicitly configured simulation tariff. */
+    public CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
+            TravelTime travelTimes, Boolean isUsingZones, Map<String, VRPTransportCosts> costsByMode,
+            int jspritIterations, double uTurnPenaltyCost) {
+        this(carNetwork,bikeNetwork,vehicleTypes,travelTimes,isUsingZones,costsByMode,
+                legacyConfiguration(jspritIterations,uTurnPenaltyCost));
+    }
+    private static ResolvedHagridConfig legacyConfiguration(int iterations,double penalty) {
+        return hagrid.core.config.HagridConfigResolver.resolve(new hagrid.core.HagridConfig(),
+                hagrid.core.config.HagridConfigResolver.hannoverLegacySolver(),
+                hagrid.core.config.HagridConfigResolver.Overrides.of(Map.of(
+                        "optimization.replanningIterations",Integer.toString(iterations),
+                        "tourRules.uTurnPenaltyCost",Double.toString(penalty))),Map.of());
+    }
+    double uTurnPenaltyCost() { return uTurnPenaltyCost; }
+    CarrierReplanningModule createModule() { return moduleFactory.get(); }
+
+    public CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
+            TravelTime travelTimes, Boolean isUsingZones, Map<String, VRPTransportCosts> costsByMode,
+            ResolvedHagridConfig config) {
+        this(carNetwork, bikeNetwork, vehicleTypes, travelTimes, isUsingZones, costsByMode,
+                config.optimization().replanningIterations().orElseThrow(
+                        () -> new IllegalArgumentException("Replanning requires a replanning search budget")),
+                config.tourRules().maxRouteDurationSeconds(),
+                config.optimization().replanningStartIteration().orElseThrow(
+                        () -> new IllegalArgumentException("Replanning requires a start iteration")),
+                config.optimization().carriersPerGroup().orElseThrow(
+                        () -> new IllegalArgumentException("Replanning requires a carrier group size")), config);
     }
 
-    /**
-     * Test hook (final review I1): sees every constraint manager the solve loop builds, so a test
-     * can prove the loop goes through {@link #constraintManagerFor} with this re-router's penalty.
-     * No-op in production; it observes, never changes, the manager.
-     */
-    volatile java.util.function.Consumer<ConstraintManager> constraintManagerObserver = cm -> { };
-
-    /** Constraints of the solve loop, built from THIS re-router's own penalty. */
-    ConstraintManager constraintManagerFor(VehicleRoutingProblem vrp, StateManager stateManager, Network network) {
-        ConstraintManager cm = buildConstraintManager(vrp, stateManager, network, uTurnPenaltyCost);
-        constraintManagerObserver.accept(cm);
-        return cm;
-    }
-
-    /**
-     * Constraints of the in-loop re-router. The U-turn soft constraint follows the same rule as
-     * {@code HAGRIDRouterUtils.configureAlgorithm}: only with a network and a positive penalty.
-     */
-    static ConstraintManager buildConstraintManager(VehicleRoutingProblem vrp, StateManager stateManager,
-            Network network, double uTurnPenaltyCost) {
-        ConstraintManager constraintManager = new ConstraintManager(vrp, stateManager);
-
-        constraintManager.addConstraint(
-                new MaxRouteDurationConstraint(MAXROUTEDURATION, stateManager, vrp.getTransportCosts()),
-                Priority.CRITICAL);
-        constraintManager.addConstraint(
-                new TimeWindowConstraintWithDriverTime(stateManager, vrp.getTransportCosts(), MAXROUTEDURATION),
-                Priority.CRITICAL);
-
-        constraintManager.addConstraint(new VehicleDependentTimeWindowConstraints(stateManager,
-                vrp.getTransportCosts(), vrp.getActivityCosts()), ConstraintManager.Priority.HIGH);
-        constraintManager.addConstraint(new ServiceDeliveriesFirstConstraint(),
-                ConstraintManager.Priority.CRITICAL);
-
-        constraintManager.addTimeWindowConstraint();
-        constraintManager.addLoadConstraint();
-        constraintManager.addSkillsConstraint();
-        constraintManager.addConstraint(new SwitchNotFeasible(stateManager));
-
-        if (network != null && uTurnPenaltyCost > 0.0) {
-            constraintManager.addConstraint(new UTurnSoftConstraint(network, uTurnPenaltyCost));
-        }
-        return constraintManager;
-    }
-
-    private VehicleRoutingActivityCosts createVehicleRoutingActivityCosts() {
-        // Activity costs
-        VehicleRoutingActivityCosts activityCosts = new VehicleRoutingActivityCosts() {
-
-            private final double penalty4missedTws = 5.0;
-
-            @Override
-            public double getActivityCost(TourActivity act, double arrivalTime, Driver arg2, Vehicle vehicle) {
-                double tooLate = Math.max(0, arrivalTime - act.getTheoreticalLatestOperationStartTime());
-                double waiting = Math.max(0, act.getTheoreticalEarliestOperationStartTime() - arrivalTime);
-                double service = act.getOperationTime() * vehicle.getType().getVehicleCostParams().perWaitingTimeUnit;
-                return penalty4missedTws * tooLate
-                        + vehicle.getType().getVehicleCostParams().perWaitingTimeUnit * waiting + service;
-
-            }
-
-            @Override
-            public double getActivityDuration(TourActivity act, double arrivalTime, Driver driver, Vehicle vehicle) {
-                return Math.max(0, act.getEndTime() - act.getArrTime());
-            }
+    private CarrierVehicleReRouter(Network carNetwork, Network bikeNetwork, CarrierVehicleTypes vehicleTypes,
+            TravelTime travelTimes, Boolean isUsingZones, Map<String, VRPTransportCosts> costsByMode,
+            int iterations, double maxRouteDuration, int startIteration, int carriersPerGroup,
+            ResolvedHagridConfig config) {
+        this.uTurnPenaltyCost = config == null ? 0 : config.tourRules().uTurnPenaltyCost();
+        var registered = Map.copyOf(costsByMode);
+        this.moduleFactory = () -> {
+            var costs = CarrierRoutingCosts.withLegacyFallback(registered, carNetwork, bikeNetwork,
+                    vehicleTypes, travelTimes);
+            var optimizer = new LegacyCarrierPlanOptimizer(costs,
+                    iterations, maxRouteDuration, config);
+            return new CarrierReplanningModule(costs, optimizer, startIteration, carriersPerGroup);
         };
-        return activityCosts;
     }
 
     public GenericPlanStrategy<CarrierPlan, Carrier> createStrategy() {
-
-        GenericPlanStrategyImpl<CarrierPlan, Carrier> replanningStrat = new GenericPlanStrategyImpl<CarrierPlan, Carrier>(
-                new BestPlanSelector<CarrierPlan, Carrier>());
-        replanningStrat.addStrategyModule(createModule());
-        return replanningStrat;
-    }
-
-    /** The re-routing strategy module (package-private so a test can drive the real solve loop). */
-    GenericPlanStrategyModule<CarrierPlan> createModule() {
-        GenericPlanStrategyModule<CarrierPlan> vraModule = new GenericPlanStrategyModule<CarrierPlan>() {
-
-            private boolean startCarrierReplanning = false;
-
-            // private ForkJoinPool forkJoinPool = null;
-
-            private List<CarrierPlan> plansForOptimization = null;
-            private List<CarrierPlan> plansForReOptimization = null;
-
-            private VRPTransportCosts netBasedTransportCosts = null;
-
-            private final AtomicInteger zoneBasedRoutingCount = new AtomicInteger();
-            private final AtomicInteger networkRoutingCount = new AtomicInteger();
-
-            record RoutingRunResult(boolean usedZoneRouting, int visitedZones) {}
-
-            @Override
-            public void handlePlan(CarrierPlan carrierPlan) {
-                Carrier carrier = carrierPlan.getCarrier();
-
-                if (startCarrierReplanning) {
-                    if (carrier.getAttributes().getAttribute("hadFirstReplanning") == null) {
-                        if (plansForOptimization.size() < MAXREPLANNINGSIZE) {
-                            log.info("First Replanning for Carrier " + carrier.getId());
-
-                            plansForOptimization.add(carrierPlan);
-                            carrier.getAttributes().putAttribute("hadFirstReplanning", true);
-                        }
-
-                    } else {
-                        // Random r = new Random();
-                        // int result = r.nextInt(100 - 1) + 1;
-
-                        // if (result <= 5) {
-                        //     log.info("Simulation Replanning for Carrier " + carrier.getId());
-                        //     plansForReOptimization.add(carrierPlan);
-
-                        // }
-
-                    }
-                }
-
-            }
-
-            private RoutingRunResult createAndSolveRoutingProblem(CarrierPlan carrierPlan, double iterations, double termination) {
-
-                Carrier carrier = carrierPlan.getCarrier();
-                int serviceCount = carrier.getServices().size();
-                // Iterationen counter
-
-                if (carrier.getAttributes().getAttribute("algoRunTime") != null) {
-                    // Placeholder for potential future adaptive iteration configuration using previous runtime
-                }
-
-                VehicleRoutingProblem.Builder vrpBuilder = null;
-                VRPTransportCosts transportCosts;
-                Network vrpNetwork;
-                boolean usingZoneBasedRouting = false;
-
-                if (isUsingZones) {
-                    // TODO Different modes?
-                    vrpNetwork = CarriersUtils.getCarrierMode(carrier).contains("cargobike") ? bikeNetwork : carNetwork;
-                    vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, vrpNetwork);
-                    transportCosts = byModeVRPTransportCosts.get(CarriersUtils.getCarrierMode(carrier));
-                    if (transportCosts == null) {
-                        log.warn("No zone-based transport costs registered for mode {}. Falling back to network-based costs for carrier {}.",
-                                CarriersUtils.getCarrierMode(carrier), carrier.getId());
-                        transportCosts = netBasedTransportCosts;
-                    }
-                    usingZoneBasedRouting = transportCosts instanceof ZoneBasedTransportCosts;
-                } else {
-                    vrpNetwork = carNetwork;
-                    vrpBuilder = MatsimJspritFactory.createRoutingProblemBuilder(carrier, vrpNetwork);
-                    transportCosts = netBasedTransportCosts;
-                }
-
-                vrpBuilder.setRoutingCost(transportCosts);
-                vrpBuilder.setActivityCosts(activityCosts);
-
-                // build the problem
-                VehicleRoutingProblem vrp = vrpBuilder.build();
-
-                StateManager stateManager = new StateManager(vrp);
-
-                stateManager.addStateUpdater(new RouteRealStartTimeMemorizer(stateManager, vrp.getTransportCosts()));
-                stateManager.updateLoadStates();
-                stateManager.updateTimeWindowStates();
-                stateManager.updateSkillStates();
-                stateManager.addStateUpdater(new UpdateEndLocationIfRouteIsOpen());
-                stateManager.addStateUpdater(new OpenRouteStateVerifier());
-                stateManager.addStateUpdater(new UpdateDepartureTimeAndPracticalTimeWindows(stateManager,
-                        vrp.getTransportCosts(), MAXROUTEDURATION));
-
-                ConstraintManager constraintManager = constraintManagerFor(vrp, stateManager, vrpNetwork);
-
-                if (serviceCount > 250) { // if problem is huge, take only half the share for replanning
-                    // Previously adjusted radial/random share when replanning subsets; logic retained for future tuning
-                }
-
-                // int radialServicesReplanned = Math.max(1, (int) (serviceCount * radialShare));
-                // int randomServicesReplanned = Math.max(1, (int) (serviceCount * randomShare));
-
-                VehicleRoutingAlgorithm algorithm = Jsprit.Builder.newInstance(vrp)
-                        .setStateAndConstraintManager(stateManager, constraintManager)
-                        // .setProperty(Jsprit.Parameter.THREADS, String.valueOf(jspritThreads))
-                        // .setProperty(Jsprit.Parameter.RADIAL_MIN_SHARE, String.valueOf(radialServicesReplanned))
-                        // .setProperty(Jsprit.Parameter.RADIAL_MAX_SHARE, String.valueOf(radialServicesReplanned))
-                        // .setProperty(Jsprit.Parameter.RANDOM_BEST_MIN_SHARE, String.valueOf(randomServicesReplanned))
-                        // .setProperty(Jsprit.Parameter.RANDOM_BEST_MAX_SHARE, String.valueOf(randomServicesReplanned))
-                        .buildAlgorithm();
-
-                AtomicInteger iterationCounter = new AtomicInteger(0);
-                algorithm.addListener(
-                        (IterationEndsListener) (iteration, problem, solutions) -> iterationCounter.incrementAndGet());
-
-                // VehicleRoutingAlgorithm algorithm =
-                // VehicleRoutingAlgorithms.readAndCreateAlgorithm(vrp,
-                // ALGORITHM_FILE, stateManager );
-                algorithm.setMaxIterations((int) iterations);
-                algorithm.addTerminationCriterion(new IterationWithoutImprovementTermination((int) termination));
-                algorithm.getAlgorithmListeners().addListener(new StopWatch(),
-                        VehicleRoutingAlgorithmListeners.Priority.HIGH);
-
-                algorithm.addListener(new DepartureTimeReScheduler());
-
-                // String basePath =
-                // "C:/Users/bienzeisler/HAGRID/HAGRID/phd/sim-output/basecase/jsprit";
-                // File outputDir = createUniqueRunDirectory(basePath);
-
-                // String chartFile = new File(outputDir, carrier.getId() +
-                // ".png").getAbsolutePath();
-                // System.out.println("Generated chart file: " + chartFile);
-
-                // algorithm.getAlgorithmListeners().addListener(
-                // new AlgorithmSearchProgressChartListener(chartFile),
-                // VehicleRoutingAlgorithmListeners.Priority.HIGH
-                // );
-
-                VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-                CarriersUtils.setJspritIterations(carrier, iterationCounter.get());
-                //
-                CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
-                NetworkRouter.routePlan(plan, transportCosts);
-
-                if (transportCosts instanceof ZoneBasedTransportCosts zoneCosts) {
-                    String mode = CarriersUtils.getCarrierMode(carrier);
-                    zoneCosts.logCacheSummary(String.format("Carrier %s (%s) reroute", carrier.getId(), mode));
-                }
-
-                int visitedZones = usingZoneBasedRouting ? countVisitedZones(carrier, plan) : -1;
-
-                carrierPlan.getScheduledTours().clear();
-                carrierPlan.getScheduledTours().addAll(plan.getScheduledTours());
-
-                vrp = null;
-                algorithm = null;
-                stateManager = null;
-                constraintManager = null;
-                plan = null;
-                return new RoutingRunResult(usingZoneBasedRouting, visitedZones);
-            }
-
-            @Override
-            public void prepareReplanning(ReplanningContext replanningContext) {
-
-                // forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
-                plansForOptimization = new ArrayList<>();
-                plansForReOptimization = new ArrayList<>();
-
-                if (isUsingZones) {
-                    // // Netbased transport costs
-                    // ZoneBasedTransportCosts.Builder tpCostsBuilder =
-                    // ZoneBasedTransportCosts.Builder
-                    // .newInstance(network, vehicleTypes.getVehicleTypes().values());
-                    // tpCostsBuilder.setTravelTime(travelTimes);
-                    // tpCostsBuilder.setTimeSliceWidth(1800);
-                    //// netBasedTransportCosts = tpCostsBuilder.build();
-                    // ByModeVRPTransportCosts =
-                    // vrpTransportCostsFactory.createVRPTransportCostsWithModeCongestedTravelTime();
-
-                } else {
-                    // Netbased transport costs
-                    NetworkBasedTransportCosts.Builder tpCostsBuilder = NetworkBasedTransportCosts.Builder
-                            .newInstance(carNetwork, vehicleTypes.getVehicleTypes().values());
-                    tpCostsBuilder.setTravelTime(travelTimes);
-                    tpCostsBuilder.setTimeSliceWidth(1800);
-                    netBasedTransportCosts = tpCostsBuilder.build();
-                }
-
-                if (replanningContext.getIteration() >= STARTOPTIMIZATION
-                        && replanningContext.getIteration() <= STOPOPTIMIZATION) {
-                    startCarrierReplanning = true;
-                }
-
-            }
-
-            @Override
-            public void finishReplanning() {
-                Collections.shuffle(plansForReOptimization);
-
-                for (CarrierPlan carrierPlan : plansForReOptimization) {
-                    if (plansForOptimization.size() < MAXREPLANNINGSIZE) {
-                        plansForOptimization.add(carrierPlan);
-                    }
-                }
-
-
-                List<CarrierPlan> tempList = plansForOptimization;
-                AtomicInteger globalProgress = new AtomicInteger(0);
-
-                ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-
-                List<CompletableFuture<Void>> futures = tempList.stream()
-                        .map(carrierPlan -> CompletableFuture.runAsync(() -> {
-                            int currentNumber = globalProgress.incrementAndGet();
-                            Carrier carrier = carrierPlan.getCarrier();
-                            int serviceCount = carrier.getServices().size();
-
-                            log.info("[Routing {} / {}] START: Carrier {} ({} services)", currentNumber, tempList.size(), carrier.getId(), serviceCount);
-
-                            long start = System.currentTimeMillis();
-
-                            int noImprovementThreshold = HAGRIDRouterUtils.calculateNoImprovementThreshold(jspritIterations);
-
-                            RoutingRunResult runResult = createAndSolveRoutingProblem(carrierPlan, jspritIterations, noImprovementThreshold);
-                            boolean usedZoneRouting = runResult.usedZoneRouting();
-                            int visitedZones = runResult.visitedZones();
-
-                            long algoRunTime = (System.currentTimeMillis() - start) / 1000;
-
-                            if (usedZoneRouting) {
-                                zoneBasedRoutingCount.incrementAndGet();
-                            } else {
-                                networkRoutingCount.incrementAndGet();
-                            }
-
-                String providerLabel = usedZoneRouting
-                    ? String.format("zone-based (zones=%d)", Math.max(0, visitedZones))
-                    : "network-based";
-
-                log.info("[Routing {} / {}] DONE: Carrier {} | {} services | {}min (Tour planning + routing) | provider={}",
-                    currentNumber, tempList.size(), carrier.getId(), serviceCount, algoRunTime/60,
-                    providerLabel);
-
-                            carrier.getAttributes().putAttribute("algoRunTime", (double) algoRunTime);
-                            CarriersUtils.setJspritComputationTime(carrier, algoRunTime);
-
-                        }, executor))
-                        .collect(Collectors.toList());
-
-                try {
-                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
-                } catch (InterruptedException | ExecutionException e) {
-                    log.error("Error during parallel carrier routing", e);
-                    throw new RuntimeException("Parallel routing failed", e);
-                } finally {
-                    int totalZoneBased = zoneBasedRoutingCount.get();
-                    int totalNetworkBased = networkRoutingCount.get();
-                    if (totalZoneBased + totalNetworkBased > 0) {
-                        log.info("Carrier routing provider usage summary: {} zone-based | {} network-based",
-                                totalZoneBased, totalNetworkBased);
-                    }
-                    zoneBasedRoutingCount.set(0);
-                    networkRoutingCount.set(0);
-
-                    // ✅ Executor ordentlich beenden
-                    executor.shutdown();
-                    try {
-                        if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                            log.warn("Executor did not terminate in 60 seconds. Forcing shutdown...");
-                            List<Runnable> droppedTasks = executor.shutdownNow();
-                            log.warn("{} tasks were forcefully terminated.", droppedTasks.size());
-                        }
-                    } catch (InterruptedException e) {
-                        log.error("Interrupted while waiting for executor termination", e);
-                        executor.shutdownNow();
-                        Thread.currentThread().interrupt();
-                    }
-
-                    // Optional: CompletableFutures-Referenz nullen
-                    futures.clear(); // clears references from list
-                    // futures = null; // falls final erlaubt
-
-                    // 🔍 Optional: Log Heap Info (nur für Debugging)
-                    Runtime runtime = Runtime.getRuntime();
-                    long usedMemoryMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
-                    long maxMemoryMB = runtime.maxMemory() / (1024 * 1024);
-                    log.info("Heap usage after routing: {} MB used of {} MB max", usedMemoryMB, maxMemoryMB);
-
-                    // 
-                    System.gc();
-                }
-            }
-
-            @SuppressWarnings("deprecation")
-            private int countVisitedZones(Carrier carrier, CarrierPlan plan) {
-                Network networkForCarrier = resolveNetworkForCarrier(carrier);
-                if (networkForCarrier == null) {
-                    return 0;
-                }
-
-                HashSet<Integer> uniqueZones = new HashSet<>();
-
-                carrier.getServices().values()
-                        .forEach(service -> addZoneFromLinkId(networkForCarrier, uniqueZones, service.getLocationLinkId()));
-
-                carrier.getShipments().values().forEach(shipment -> {
-                    addZoneFromLinkId(networkForCarrier, uniqueZones, shipment.getPickupLinkId());
-                    addZoneFromLinkId(networkForCarrier, uniqueZones, shipment.getDeliveryLinkId());
-                });
-
-                if (uniqueZones.isEmpty()) {
-                    plan.getScheduledTours().forEach(scheduledTour ->
-                            scheduledTour.getTour().getTourElements().forEach(element -> {
-                                if (element instanceof TourActivity activity && activity.getLocation() != null) {
-                                    String locationId = activity.getLocation().getId();
-                                    if (locationId != null) {
-                                        Link link = networkForCarrier.getLinks().get(Id.createLinkId(locationId));
-                                        addZoneFromLink(networkForCarrier, uniqueZones, link);
-                                    }
-                                }
-                            }));
-                }
-
-                return uniqueZones.size();
-            }
-
-            private void addZoneFromLinkId(Network network, HashSet<Integer> zones, Id<Link> linkId) {
-                if (linkId == null) {
-                    return;
-                }
-                Link link = network.getLinks().get(linkId);
-                addZoneFromLink(network, zones, link);
-            }
-
-            private void addZoneFromLink(Network network, HashSet<Integer> zones, Link link) {
-                if (link == null) {
-                    return;
-                }
-                Integer zone = extractZoneIdentifier(link);
-                if (zone != null) {
-                    zones.add(zone);
-                }
-            }
-
-            private Network resolveNetworkForCarrier(Carrier carrier) {
-                String mode = CarriersUtils.getCarrierMode(carrier);
-                if (mode != null && mode.contains("cargobike")) {
-                    return bikeNetwork;
-                }
-                return carNetwork;
-            }
-
-            private Integer extractZoneIdentifier(Link link) {
-                if (link == null) {
-                    return null;
-                }
-                Object zoneAttr = link.getAttributes().getAttribute("zone");
-                if (zoneAttr instanceof Number number) {
-                    return number.intValue();
-                }
-                if (zoneAttr instanceof String stringValue) {
-                    String trimmed = stringValue.trim();
-                    if (trimmed.isEmpty()) {
-                        return null;
-                    }
-                    try {
-                        return Integer.parseInt(trimmed);
-                    } catch (NumberFormatException ignored) {
-                        return null;
-                    }
-                }
-                return null;
-            }
-
-        };
-
-        return vraModule;
+        var strategy = new GenericPlanStrategyImpl<CarrierPlan, Carrier>(new BestPlanSelector<>());
+        strategy.addStrategyModule(createModule());
+        return strategy;
     }
 }

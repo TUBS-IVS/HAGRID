@@ -40,16 +40,28 @@ public class TimeWindowConstraintWithDriverTime implements HardActivityConstrain
 		private final VehicleRoutingTransportCosts routingCosts;
 		
 		private final double maxDriverTime;
+        private final StateIds stateIds;
 		
-		public TimeWindowConstraintWithDriverTime(RouteAndActivityStateGetter states, VehicleRoutingTransportCosts routingCosts, double maxDriverTime) {
-			super();
-			this.states = states;
-			this.routingCosts = routingCosts;
-			this.maxDriverTime=maxDriverTime;
-		}
+        public TimeWindowConstraintWithDriverTime(RouteAndActivityStateGetter states, VehicleRoutingTransportCosts routingCosts,
+                double maxDriverTime) {
+            this(states, routingCosts, maxDriverTime, StateIds.forStates(states));
+        }
+
+        public TimeWindowConstraintWithDriverTime(RouteAndActivityStateGetter states, VehicleRoutingTransportCosts routingCosts,
+                double maxDriverTime, StateIds stateIds) {
+            stateIds.requireOwner(states);
+            this.states = states;
+            this.routingCosts = routingCosts;
+            this.maxDriverTime = maxDriverTime;
+            this.stateIds = stateIds;
+        }
 
 		@Override
 		public ConstraintsStatus fulfilled(JobInsertionContext iFacts, TourActivity prevAct, TourActivity newAct, TourActivity nextAct, double prevActDepTime) {
+
+            var modal=ExactTemporalSolverCosts.rawAdapter(routingCosts);
+            if(modal!=null)
+                return ExactTemporalTourFeasibility.insertion(modal,iFacts,newAct,nextAct,maxDriverTime);
 			
 //			double actualDeparture = getActualDeparture(iFacts,newAct);
 			double latest_arr_at_depot = getLatestArrAtDepot(iFacts,newAct);
@@ -166,8 +178,8 @@ public class TimeWindowConstraintWithDriverTime implements HardActivityConstrain
 			if(nextAct instanceof End){
 				return latestVehicleArrival;
 			}
-			if(states.getActivityState(nextAct, StateIds.LATEST_ACTIVITY_START, Double.class) != null){
-				return states.getActivityState(nextAct, StateIds.LATEST_ACTIVITY_START, Double.class);
+			if(states.getActivityState(nextAct, stateIds.latestActivityStart, Double.class) != null){
+				return states.getActivityState(nextAct, stateIds.latestActivityStart, Double.class);
 			}
 			else{
 				return nextAct.getTheoreticalLatestOperationStartTime();
@@ -175,8 +187,8 @@ public class TimeWindowConstraintWithDriverTime implements HardActivityConstrain
 		}
 
 		private double getLatestArrAtDepot(JobInsertionContext iFacts, TourActivity newActivity) {
-			if(states.getRouteState(iFacts.getRoute(), StateIds.LATEST_ARR_AT_DEPOT, Double.class) != null){
-				return states.getRouteState(iFacts.getRoute(), StateIds.LATEST_ARR_AT_DEPOT, Double.class);
+			if(states.getRouteState(iFacts.getRoute(), stateIds.latestArrivalAtDepot, Double.class) != null){
+				return states.getRouteState(iFacts.getRoute(), stateIds.latestArrivalAtDepot, Double.class);
 			}
 			else return Math.min(iFacts.getNewVehicle().getLatestArrival(),getVehicleDeparture(iFacts,newActivity)+maxDriverTime);
 		}

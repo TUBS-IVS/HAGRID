@@ -7,6 +7,7 @@ import java.util.concurrent.Semaphore;
  * can run with limited concurrency, while preserving the scheduling priority
  * of the underlying task.
  */
+@Deprecated(forRemoval = false)
 public class GatedCarrierTask implements PrioritizedRunnable {
     private final JspritCarrierTask delegate;
     private final Semaphore gate;

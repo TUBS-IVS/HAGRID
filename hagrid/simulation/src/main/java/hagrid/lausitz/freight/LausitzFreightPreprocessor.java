@@ -1,9 +1,5 @@
 package hagrid.lausitz.freight;
 
-import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
-import com.graphhopper.jsprit.core.problem.VehicleRoutingProblem;
-import com.graphhopper.jsprit.core.problem.solution.VehicleRoutingProblemSolution;
-import com.graphhopper.jsprit.core.util.Solutions;
 
 import hagrid.lausitz.DeliveryDistrictBuilder;
 import hagrid.lausitz.DepotNetwork;
@@ -13,6 +9,17 @@ import hagrid.lausitz.modular.ModularVehicleTypes;
 import hagrid.core.util.GeoUtils;
 import hagrid.core.util.Delivery;
 import hagrid.core.routing.HAGRIDRouterUtils;
+import hagrid.core.routing.CarrierBatchExecutor;
+import hagrid.core.routing.CarrierModeResolver;
+import hagrid.core.routing.CarrierOptimizationService;
+import hagrid.core.routing.NativeModalTransportCosts;
+import hagrid.core.routing.PlanValidator;
+import hagrid.core.simulation.CarrierInputValidator;
+import org.matsim.freight.carriers.jsprit.VRPTransportCosts;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.locationtech.jts.geom.Coordinate;
@@ -33,9 +40,6 @@ import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.gis.GeoFileReader;
 import org.matsim.freight.carriers.*;
-import org.matsim.freight.carriers.jsprit.MatsimJspritFactory;
-import org.matsim.freight.carriers.jsprit.NetworkBasedTransportCosts;
-import org.matsim.freight.carriers.jsprit.NetworkRouter;
 import org.matsim.vehicles.VehicleType;
 
 import java.io.IOException;
@@ -62,26 +66,6 @@ public final class LausitzFreightPreprocessor {
 
     /** Reused for the service-area point-in-polygon clip (mirrors {@code DrtNetworkPreparer}). */
     private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory();
-
-    /** HAGRID defaults (minutes), reused for comparability with the Hannover LMD. */
-    private static final int DURATION_PER_PARCEL_MIN = 2;
-    private static final int MAX_DURATION_PER_STOP_MIN = 15;
-
-    /** Base seed for the per-provider missed-delivery RNG (deterministic, reproducible across runs). */
-    private static final long MISSED_DELIVERY_SEED = 4711L;
-
-    /**
-     * Base seed for the per-provider tour-retime RNG ({@link LmdTourRetimer}). Separate from
-     * {@link #MISSED_DELIVERY_SEED} so the retime draws never shift the missed-delivery overlay.
-     */
-    private static final long TOUR_RETIME_SEED = 20260730L;
-
-    /**
-     * Dispatch waves: mirrors HAGRID CEP {@code VehicleSchedule.SIMPLE_STAGGERED}.
-     * One vehicle per van type is created at each hour so jsprit can assign morning
-     * and afternoon demand to the appropriate wave instead of all starting at 08:00.
-     */
-    private static final List<Integer> DISPATCH_HOURS = List.of(8, 14);
 
     private LausitzFreightPreprocessor() {}
 
@@ -137,9 +121,38 @@ public final class LausitzFreightPreprocessor {
     public static JspritCacheResult run(String demandShp, String depotCsv, String networkFile,
                                         String vehicleTypesFile, String carriersOut, int jspritIterations,
                                         String serviceAreaShp, Path cacheDir) {
+        return run(demandShp,depotCsv,networkFile,vehicleTypesFile,carriersOut,jspritIterations,
+                serviceAreaShp,cacheDir,hagrid.core.config.ResolvedHagridConfig.Resources.defaults());
+    }
+
+    public static JspritCacheResult run(String demandShp, String depotCsv, String networkFile,
+                                        String vehicleTypesFile, String carriersOut, int jspritIterations,
+                                        String serviceAreaShp, Path cacheDir,
+                                        hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        return run(demandShp,depotCsv,networkFile,vehicleTypesFile,carriersOut,jspritIterations,
+                serviceAreaShp,cacheDir,resources,hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS);
+    }
+
+    public static JspritCacheResult run(String demandShp, String depotCsv, String networkFile,
+                                        String vehicleTypesFile, String carriersOut, int jspritIterations,
+                                        String serviceAreaShp, Path cacheDir,
+                                        hagrid.core.config.ResolvedHagridConfig.Resources resources,
+                                        int solverMaxRouteDurationSeconds) {
+        return runConfigured(demandShp,depotCsv,networkFile,vehicleTypesFile,carriersOut,jspritIterations,
+                serviceAreaShp,cacheDir,resources,LmdTourRules.defaults(LmdPreprocessInputs.Variant.BASELINE,solverMaxRouteDurationSeconds));
+    }
+    public static JspritCacheResult runConfigured(String demandShp,String depotCsv,String networkFile,String vehicleTypesFile,
+            String carriersOut,int jspritIterations,String serviceAreaShp,Path cacheDir,hagrid.core.config.ResolvedHagridConfig config) {
+        return runConfigured(demandShp,depotCsv,networkFile,vehicleTypesFile,carriersOut,jspritIterations,
+                serviceAreaShp,cacheDir,config.resources(),LmdTourRules.from(config));
+    }
+    private static JspritCacheResult runConfigured(String demandShp,String depotCsv,String networkFile,String vehicleTypesFile,
+            String carriersOut,int jspritIterations,String serviceAreaShp,Path cacheDir,
+            hagrid.core.config.ResolvedHagridConfig.Resources resources,LmdTourRules rules) {
         JspritPlanCache cache = JspritPlanCache.fromSystem(cacheDir);   // a typo in -Dhagrid.jsprit.cache fails here
         LmdPreprocessInputs in = LmdPreprocessInputs.baseline(demandShp, depotCsv, networkFile,
-                vehicleTypesFile, jspritIterations, serviceAreaShp);
+                vehicleTypesFile, jspritIterations, serviceAreaShp).withResources(resources)
+                .withTourRules(rules);
         // hashed BEFORE step 1 reads anything; produce() hashes again and refuses the cache on a change
         JspritCacheKey keyBeforeReading = cache.keyBeforeReading(in);
 
@@ -177,9 +190,11 @@ public final class LausitzFreightPreprocessor {
             }
             // Per-provider deterministic RNG so the missed-delivery overlay is reproducible
             // independent of the (unordered) byProvider iteration order.
-            Random missedRng = new Random(MISSED_DELIVERY_SEED + provider.hashCode());
+            Random missedRng = new Random(in.tourRules().planning().missedDeliverySeed() + provider.hashCode());
             Carrier carrier = LmdCarrierBuilder.build(provider, e.getValue(), depot, network, vans,
-                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, DISPATCH_HOURS, missedRng);
+                    in.tourRules().durationPerParcelMinutes(), in.tourRules().maxDurationPerStopMinutes(), in.tourRules().planning().dispatchHours(), missedRng, in.routeDurationSeconds(),
+                    in.tourRules().vehicleAvailabilityBufferSeconds(),in.tourRules().vehicleDayEndSeconds(),
+                    in.tourRules().deliveryWindowStartSeconds(),in.tourRules().deliveryWindowEndSeconds(), in.tourRules().planning());
             CarriersUtils.setJspritIterations(carrier, Math.max(1, in.jspritIterations()));
             carriers.addCarrier(carrier);
         }
@@ -190,11 +205,11 @@ public final class LausitzFreightPreprocessor {
         //    routed carriers - or, on a cache hit, read the cached file at this very point and copy it.
         try {
             return cache.produce(in, keyBeforeReading, Path.of(carriersOut),
-                    cached -> new CarrierPlanXmlReader(new Carriers(), vehicleTypes).readFile(cached.toString()),
+                    cached -> LmdCachedPlanValidator.replay(cached, carriers, vehicleTypes, network, in.routeDurationSeconds(), true,in.tourRules().vehicleAvailabilityBufferSeconds(),in.tourRules().vehicleDayEndSeconds()),
                     target -> {
-                        routeWithDurationCap(carriers, network, vehicleTypes, in.jspritIterations(),
-                                HAGRIDRouterUtils.MAXROUTEDURATION,
-                                c -> new Random(TOUR_RETIME_SEED + c.getId().toString().hashCode()));
+                        routeWithRules(carriers, network, vehicleTypes, in.jspritIterations(),
+                                in.tourRules(),
+                                c -> new Random(in.tourRules().planning().tourRetimeSeed() + c.getId().toString().hashCode()), in.resources());
                         writeRouted(carriers, target, "LMD carriers");
                     });
         } catch (IOException e) {
@@ -221,7 +236,7 @@ public final class LausitzFreightPreprocessor {
      * LSP, so parcels are picked up at the depot nearest their delivery segment rather than at
      * their own provider's depot (spec 2026-08-17, D2/D7). Every carrier still gets ONE vehicle
      * type - the 216-parcel U-Shift cargo capsule -, the jsprit route-duration cap is the Modular
-     * tour cap (design D5: 12600s default, 25200s control arm) instead of the 7h driver shift, and
+     * explicit tour cap (common default: seven hours), and
      * there are NO dispatch waves (plan C4 revised): one un-jittered vehicle template per carrier
      * with the full delivery-day window 07:30-21:00, service-start TWs aligned to the same
      * interval.
@@ -248,9 +263,33 @@ public final class LausitzFreightPreprocessor {
                                                String vanTypesFile, String carriersOut, int jspritIterations,
                                                String serviceAreaShp, int maxTourDurationSeconds,
                                                List<String> openDepots, int maxJobsPerDistrict, Path cacheDir) {
+        return runModular(demandShp,depotCsv,networkFile,vanTypesFile,carriersOut,jspritIterations,
+                serviceAreaShp,maxTourDurationSeconds,openDepots,maxJobsPerDistrict,cacheDir,
+                hagrid.core.config.ResolvedHagridConfig.Resources.defaults());
+    }
+
+    public static JspritCacheResult runModular(String demandShp, String depotCsv, String networkFile,
+                                               String vanTypesFile, String carriersOut, int jspritIterations,
+                                               String serviceAreaShp, int maxTourDurationSeconds,
+                                               List<String> openDepots, int maxJobsPerDistrict, Path cacheDir,
+                                               hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        return runModularConfigured(demandShp,depotCsv,networkFile,vanTypesFile,carriersOut,jspritIterations,serviceAreaShp,
+                maxTourDurationSeconds,openDepots,maxJobsPerDistrict,cacheDir,resources,
+                LmdTourRules.defaults(LmdPreprocessInputs.Variant.MODULAR,maxTourDurationSeconds));
+    }
+    public static JspritCacheResult runModularConfigured(String demandShp,String depotCsv,String networkFile,String vanTypesFile,
+            String carriersOut,int jspritIterations,String serviceAreaShp,List<String> openDepots,int maxJobsPerDistrict,
+            Path cacheDir,hagrid.core.config.ResolvedHagridConfig config) {
+        var rules=LmdTourRules.from(config);
+        return runModularConfigured(demandShp,depotCsv,networkFile,vanTypesFile,carriersOut,jspritIterations,serviceAreaShp,
+                rules.maxRouteDurationSeconds(),openDepots,maxJobsPerDistrict,cacheDir,config.resources(),rules);
+    }
+    private static JspritCacheResult runModularConfigured(String demandShp,String depotCsv,String networkFile,String vanTypesFile,
+            String carriersOut,int jspritIterations,String serviceAreaShp,int maxTourDurationSeconds,List<String> openDepots,
+            int maxJobsPerDistrict,Path cacheDir,hagrid.core.config.ResolvedHagridConfig.Resources resources,LmdTourRules rules) {
         JspritPlanCache cache = JspritPlanCache.fromSystem(cacheDir);
         LmdPreprocessInputs in = LmdPreprocessInputs.modular(demandShp, depotCsv, networkFile, vanTypesFile,
-                jspritIterations, serviceAreaShp, maxTourDurationSeconds, openDepots, maxJobsPerDistrict);
+                jspritIterations, serviceAreaShp, maxTourDurationSeconds, openDepots, maxJobsPerDistrict).withResources(resources).withTourRules(rules);
         JspritCacheKey keyBeforeReading = cache.keyBeforeReading(in);   // before step 1, see run()
 
         // 1. network — same car sub-network derivation as run() (see carNetwork()).
@@ -280,12 +319,12 @@ public final class LausitzFreightPreprocessor {
         Carriers carriers = new Carriers();
         for (DeliveryDistrictBuilder.District district : districts) {
             Link depotLink = NetworkUtils.getNearestLinkExactly(network, district.depot().coord());
-            Random missedRng = new Random(MISSED_DELIVERY_SEED + district.id().hashCode());
+            Random missedRng = new Random(in.tourRules().planning().missedDeliverySeed() + district.id().hashCode());
             Carrier carrier = LmdCarrierBuilder.buildDistrict(district.id(), district.stops(),
                     depotLink.getId(), network, capsuleArr,
-                    DURATION_PER_PARCEL_MIN, MAX_DURATION_PER_STOP_MIN, missedRng,
-                    Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S,
-                    Modular.DELIVERY_DAY_START_S, Modular.DELIVERY_DAY_END_S);
+                    in.tourRules().durationPerParcelMinutes(), in.tourRules().maxDurationPerStopMinutes(), missedRng,
+                    in.tourRules().deliveryWindowStartSeconds(), in.tourRules().vehicleDayEndSeconds(),
+                    in.tourRules().deliveryWindowStartSeconds(), in.tourRules().deliveryWindowEndSeconds(), in.tourRules().planning());
             CarriersUtils.setJspritIterations(carrier, Math.max(1, in.jspritIterations()));
             carriers.addCarrier(carrier);
         }
@@ -294,10 +333,10 @@ public final class LausitzFreightPreprocessor {
         //    and write - or, on a cache hit, read the cached file at this point and copy it.
         try {
             return cache.produce(in, keyBeforeReading, Path.of(carriersOut),
-                    cached -> new CarrierPlanXmlReader(new Carriers(), capsuleTypes).readFile(cached.toString()),
+                    cached -> LmdCachedPlanValidator.replay(cached, carriers, capsuleTypes, network, in.maxTourDurationSeconds(), false,in.tourRules().vehicleAvailabilityBufferSeconds(),in.tourRules().vehicleDayEndSeconds()),
                     target -> {
-                        routeWithDurationCap(carriers, network, capsuleTypes, in.jspritIterations(),
-                                in.maxTourDurationSeconds());
+                        routeWithRules(carriers, network, capsuleTypes, in.jspritIterations(),
+                                in.tourRules(), null, in.resources());
                         writeRouted(carriers, target, "modular carriers");
                     });
         } catch (IOException e) {
@@ -413,7 +452,7 @@ public final class LausitzFreightPreprocessor {
     static void routeWithDurationCap(Carriers carriers, Network network,
                                      CarrierVehicleTypes vehicleTypes, int jspritIterations) {
         routeWithDurationCap(carriers, network, vehicleTypes, jspritIterations,
-                HAGRIDRouterUtils.MAXROUTEDURATION);
+                hagrid.core.config.RoutingDefaults.SOLVER_MAX_ROUTE_DURATION_SECONDS);
     }
 
     /**
@@ -438,29 +477,120 @@ public final class LausitzFreightPreprocessor {
     static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
                                      int jspritIterations, int maxRouteDurationSeconds,
                                      java.util.function.Function<Carrier, Random> tourRetimeRng) {
-        NetworkBasedTransportCosts netBasedCosts = NetworkBasedTransportCosts.Builder
-                .newInstance(network, vehicleTypes.getVehicleTypes().values())
-                .setTimeSliceWidth(1800)
-                .build();
-        int iters = Math.max(1, jspritIterations);
-        for (Carrier carrier : selectCarriersToRoute(carriers)) {
-            int serviceCount = carrier.getServices().size();
-            VehicleRoutingProblem vrp = HAGRIDRouterUtils.createRoutingProblem(carrier, network, netBasedCosts);
-            VehicleRoutingAlgorithm algorithm = HAGRIDRouterUtils.configureAlgorithm(
-                    vrp, serviceCount, iters, null, 0.0, maxRouteDurationSeconds);
-            VehicleRoutingProblemSolution solution = Solutions.bestOf(algorithm.searchSolutions());
-            recordUnassignedJobs(carrier, solution);
-            CarrierPlan plan = MatsimJspritFactory.createPlan(solution);
-            NetworkRouter.routePlan(plan, netBasedCosts);
-            if (tourRetimeRng != null) {
-                LmdTourRetimer.retime(carrier, plan, tourRetimeRng.apply(carrier), maxRouteDurationSeconds);
-                NetworkRouter.routePlan(plan, netBasedCosts);
-            }
-            carrier.addPlan(plan);
-            carrier.setSelectedPlan(plan);
+        routeWithDurationCap(carriers,network,vehicleTypes,jspritIterations,maxRouteDurationSeconds,tourRetimeRng,
+                hagrid.core.config.ResolvedHagridConfig.Resources.defaults());
+    }
+
+    static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
+                                     int jspritIterations, int maxRouteDurationSeconds,
+                                     Function<Carrier, Random> tourRetimeRng,
+                                     hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        routeWithRules(carriers,network,vehicleTypes,jspritIterations,
+                LmdTourRules.defaults(LmdPreprocessInputs.Variant.BASELINE,maxRouteDurationSeconds),tourRetimeRng,resources);
+    }
+    static void routeWithRules(Carriers carriers,Network network,CarrierVehicleTypes vehicleTypes,int jspritIterations,
+            LmdTourRules rules,Function<Carrier,Random> tourRetimeRng,hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        int maxRouteDurationSeconds=rules.maxRouteDurationSeconds();
+        try (var batches = new CarrierBatchExecutor()) {
+            prepareInitialGroup(carriers, network, vehicleTypes, jspritIterations,
+                    maxRouteDurationSeconds, tourRetimeRng, batches, carrier -> 0L, resources,rules);
         }
     }
 
+    /** Explicit resource policy supplied by the run owner; this overload does not close its executor. */
+    static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
+                                     int jspritIterations, int maxRouteDurationSeconds,
+                                     Function<Carrier, Random> tourRetimeRng,
+                                     CarrierBatchExecutor batches, ToLongFunction<Carrier> reservedBytes) {
+        routeWithDurationCap(carriers,network,vehicleTypes,jspritIterations,maxRouteDurationSeconds,tourRetimeRng,
+                batches,reservedBytes,hagrid.core.config.ResolvedHagridConfig.Resources.defaults());
+    }
+
+    static void routeWithDurationCap(Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes,
+                                     int jspritIterations, int maxRouteDurationSeconds,
+                                     Function<Carrier, Random> tourRetimeRng, CarrierBatchExecutor batches,
+                                     ToLongFunction<Carrier> reservedBytes,
+                                     hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        prepareInitialGroup(carriers, network, vehicleTypes, jspritIterations,
+                maxRouteDurationSeconds, tourRetimeRng, batches, reservedBytes, resources);
+    }
+
+    private static void prepareInitialGroup(
+            Carriers carriers, Network network, CarrierVehicleTypes vehicleTypes, int jspritIterations,
+            int maxRouteDurationSeconds, Function<Carrier, Random> tourRetimeRng,
+            CarrierBatchExecutor batches, ToLongFunction<Carrier> reservedBytes,
+            hagrid.core.config.ResolvedHagridConfig.Resources resources) {
+        prepareInitialGroup(carriers,network,vehicleTypes,jspritIterations,maxRouteDurationSeconds,tourRetimeRng,
+                batches,reservedBytes,resources,LmdTourRules.defaults(LmdPreprocessInputs.Variant.BASELINE,maxRouteDurationSeconds));
+    }
+    private static void prepareInitialGroup(Carriers carriers,Network network,CarrierVehicleTypes vehicleTypes,int jspritIterations,
+            int maxRouteDurationSeconds,Function<Carrier,Random> tourRetimeRng,CarrierBatchExecutor batches,
+            ToLongFunction<Carrier> reservedBytes,hagrid.core.config.ResolvedHagridConfig.Resources resources,LmdTourRules rules) {
+        var selected = List.copyOf(selectCarriersToRoute(carriers));
+        CarrierInputValidator.validate(new Carriers(selected), vehicleTypes, network);
+        var metadata = new LinkedHashMap<String, Carrier>();
+        var descriptors = new ArrayList<CarrierBatchExecutor.Descriptor>();
+        long seed = HAGRIDRouterUtils.resolveSolverSeed(rules.planning().runSeed());
+        for (var carrier : selected) {
+            String id = carrier.getId().toString();
+            metadata.put(id, carrier);
+            descriptors.add(new CarrierBatchExecutor.Descriptor(id, carrier.getServices().size(),
+                    carrier.getShipments().size(), carrier.getCarrierCapabilities().getVehicleTypes().size(),
+                    seed, reservedBytes.applyAsLong(carrier)));
+        }
+        var providers = new ConcurrentHashMap<String, VRPTransportCosts>();
+        var prepared = new ArrayList<PreparedInitialPlan>();
+        int iterations = Math.max(1, jspritIterations);
+        batches.runStaged(resources.maxActiveSolvers().orElse(Integer.MAX_VALUE), descriptors, descriptor -> {
+            var carrier = metadata.get(descriptor.carrierId());
+            String mode = CarrierModeResolver.resolve(carrier).orElseThrow();
+            var costs = providers.computeIfAbsent(mode,
+                    key -> NativeModalTransportCosts.create(network, vehicleTypes, key));
+            return prepareInitialPlan(carrier, costs, iterations, maxRouteDurationSeconds, tourRetimeRng, resources,rules);
+        }, prepared::add, () -> publishInitialGroup(prepared));
+    }
+
+    private static PreparedInitialPlan prepareInitialPlan(Carrier carrier, VRPTransportCosts costs,
+            int iterations, int maxRouteDurationSeconds, Function<Carrier, Random> tourRetimeRng,
+            hagrid.core.config.ResolvedHagridConfig.Resources resources,LmdTourRules rules) {
+        var result = new CarrierOptimizationService().optimizeInitial(
+                carrier, costs, iterations, maxRouteDurationSeconds, rules.uTurnPenaltyCost(), resources, HAGRIDRouterUtils.resolveSolverSeed(rules.planning().runSeed()));
+        if (!result.diagnostics().isEmpty()) {
+            throw new IllegalStateException("Invalid initial solution for " + carrier.getId() + ": " + result.diagnostics());
+        }
+        CarrierPlan plan = result.plan();
+        Carrier worker = plan.getCarrier();
+        if (tourRetimeRng != null) {
+            LmdTourRetimer.retime(worker, plan, tourRetimeRng.apply(carrier), maxRouteDurationSeconds,
+                    rules.vehicleAvailabilityBufferSeconds(),rules.vehicleDayEndSeconds(), rules.planning());
+            hagrid.core.routing.CarrierRoadRouter.routePlan(plan, costs);
+        }
+        var validation = PlanValidator.validate(worker, plan, costs, null, maxRouteDurationSeconds);
+        if (!validation.valid()) {
+            throw new IllegalStateException("Invalid final departure for " + carrier.getId() + ": " + validation.violations());
+        }
+        return new PreparedInitialPlan(carrier, plan, result.iterations());
+    }
+
+    private static void publishInitialGroup(List<PreparedInitialPlan> prepared) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("Initial Lausitz group interrupted before publication");
+        }
+        // Only the caller publishes, after every candidate and departure adjustment passed.
+        for (var value : prepared) {
+            for (ScheduledTour tour : value.plan().getScheduledTours()) {
+                var vehicle = tour.getVehicle();
+                if (!value.carrier().getCarrierCapabilities().getCarrierVehicles().containsKey(vehicle.getId())) {
+                    CarriersUtils.addCarrierVehicle(value.carrier(), vehicle);
+                }
+            }
+            value.carrier().addPlan(value.plan());
+            value.carrier().setSelectedPlan(value.plan());
+            CarriersUtils.setJspritIterations(value.carrier(), value.iterations());
+            HAGRIDRouterUtils.recordUnassignedJobs(value.carrier(), List.of());
+        }
+    }
+    private record PreparedInitialPlan(Carrier carrier,CarrierPlan plan,int iterations) {}
     /** Step 6: write the routed carriers, creating the run's carriers/ directory first. */
     private static void writeRouted(Carriers carriers, Path target, String what) {
         try {
@@ -469,20 +599,6 @@ public final class LausitzFreightPreprocessor {
             throw new IllegalStateException("Cannot create output directory for " + what + ": " + target, e);
         }
         CarriersUtils.writeCarriers(carriers, target.toString());
-    }
-
-    /**
-     * Persists the jobs the best jsprit solution could NOT insert (e.g. infeasible under the 7h
-     * {@code MaxRouteDurationConstraint}, the 20:00 vehicle end, or a stop demand exceeding every van
-     * capacity) as carrier attributes, so they surface as a dashboard KPI instead of silently
-     * disappearing from the tours while {@code numberOfParcels} still counts them as attempted.
-     * Mirrors the legacy {@code Router} which logs {@code getUnassignedJobs()} per iteration.
-     */
-    private static void recordUnassignedJobs(Carrier carrier, VehicleRoutingProblemSolution solution) {
-        HAGRIDRouterUtils.recordUnassignedJobs(carrier,
-                solution.getUnassignedJobs().stream()
-                        .map(com.graphhopper.jsprit.core.problem.job.Job::getId)
-                        .toList());
     }
 
     public static void main(String[] args) {

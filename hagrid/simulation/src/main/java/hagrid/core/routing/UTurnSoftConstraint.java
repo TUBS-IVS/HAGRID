@@ -138,7 +138,6 @@ public class UTurnSoftConstraint implements SoftActivityConstraint {
         if (fromLink == null || toLink == null) return false;
 
         // Reverse-link check: L1 (A→B), L2 (B→A)
-        return fromLink.getToNode().getId().equals(toLink.getFromNode().getId())
-            && fromLink.getFromNode().getId().equals(toLink.getToNode().getId());
+        return OriginalRoadReverse.activityPair(fromLink, toLink);
     }
 }

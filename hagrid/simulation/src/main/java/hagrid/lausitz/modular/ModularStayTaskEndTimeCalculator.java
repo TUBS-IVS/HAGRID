@@ -24,8 +24,11 @@ public final class ModularStayTaskEndTimeCalculator
 
     @Override
     public double calcNewEndTime(DvrpVehicle vehicle, StayTask task, double newBeginTime) {
+        if(task instanceof ModularFreightWaitTask wait) {
+            return Math.max(newBeginTime,wait.getEarliestStart());
+        }
         if (task instanceof ModularFreightStopTask stop) {
-            return newBeginTime + stop.getIntendedDuration();
+            return Math.max(newBeginTime,stop.getEarliestStart()) + stop.getIntendedDuration();
         }
         if (task instanceof ModularCapacityChangeTask swap) {
             return newBeginTime + swap.getIntendedDuration();

@@ -1,0 +1,807 @@
+{
+  "status": "MEASURED",
+  "jarSha256": "3AA0B685EADEF4580315B6D11FCD432E5EB7A48BCBD047192664EE174A4F71FE",
+  "probeSha256": "F444D71CF1687D38289CE40DCCC1E003EE659A9A93351C74EBF466DE87747B01",
+  "runnerSha256": "484EEB5733C3E6D2EB81D3D46443E2BAA9C7D30EC1ACC7CA3E74D7B5AFF269ED",
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "jobs": 16,
+  "policies": [
+    "fixed",
+    "warm",
+    "adaptive"
+  ],
+  "groupCount": 5,
+  "warmupGroups": 2,
+  "carriersPerGroup": 4,
+  "activeProcessors": 1,
+  "heapMiB": 384,
+  "reserveGiB": 6,
+  "referenceIterations": 10,
+  "adaptiveMinimum": 5,
+  "adaptiveMaximum": 10,
+  "adaptivePlateau": 3,
+  "observations": [
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13972410368,
+        "MinimumIdleCpuPercent": 80.11363636363636,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "compile",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13815382016,
+        "MaximumObservedCpuPercent": 25.30712530712531
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13951242240,
+        "MinimumIdleCpuPercent": 75.99431818181817,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-42-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13830168576,
+        "MaximumObservedCpuPercent": 25.946969696969703
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13948764160,
+        "MinimumIdleCpuPercent": 77.79291553133515,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-42-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13815443456,
+        "MaximumObservedCpuPercent": 29.578392621870886
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13834711040,
+        "MinimumIdleCpuPercent": 73.4159779614325,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-42-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13676449792,
+        "MaximumObservedCpuPercent": 35.909090909090914
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13384675328,
+        "MinimumIdleCpuPercent": 21.212121212121218,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-42-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13225611264,
+        "MaximumObservedCpuPercent": 63.397129186602875
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13639655424,
+        "MinimumIdleCpuPercent": 76.44628099173553,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-42-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13442822144,
+        "MaximumObservedCpuPercent": 35.129870129870135
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13486649344,
+        "MinimumIdleCpuPercent": 77.41046831955923,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-42-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13338169344,
+        "MaximumObservedCpuPercent": 29.61038961038961
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13676355584,
+        "MinimumIdleCpuPercent": 79.28176795580112,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-43-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13541642240,
+        "MaximumObservedCpuPercent": 41.42857142857142
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13694464000,
+        "MinimumIdleCpuPercent": 79.0633608815427,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-43-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13590081536,
+        "MaximumObservedCpuPercent": 38.9652914210871
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13711970304,
+        "MinimumIdleCpuPercent": 81.62983425414365,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-43-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13551874048,
+        "MaximumObservedCpuPercent": 38.051948051948045
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13715861504,
+        "MinimumIdleCpuPercent": 83.19559228650138,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-43-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13568475136,
+        "MaximumObservedCpuPercent": 34.91547464239272
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13781479424,
+        "MinimumIdleCpuPercent": 63.77840909090909,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-43-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13018353664,
+        "MaximumObservedCpuPercent": 46.82440846824408
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13769121792,
+        "MinimumIdleCpuPercent": 80.44077134986226,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-43-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13628952576,
+        "MaximumObservedCpuPercent": 33.11688311688312
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13788884992,
+        "MinimumIdleCpuPercent": 81.70212765957447,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-44-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13688819712,
+        "MaximumObservedCpuPercent": 23.051948051948056
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13804900352,
+        "MinimumIdleCpuPercent": 75.34626038781164,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-44-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13688725504,
+        "MaximumObservedCpuPercent": 24.52830188679245
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13802270720,
+        "MinimumIdleCpuPercent": 83.19559228650138,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-44-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13692796928,
+        "MaximumObservedCpuPercent": 23.815620998719588
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13779120128,
+        "MinimumIdleCpuPercent": 72.31638418079096,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-44-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13639520256,
+        "MaximumObservedCpuPercent": 29.70168612191959
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13745041408,
+        "MinimumIdleCpuPercent": 84.71074380165288,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-44-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13610569728,
+        "MaximumObservedCpuPercent": 31.818181818181824
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13746782208,
+        "MinimumIdleCpuPercent": 78.26704545454547,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-44-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13550743552,
+        "MaximumObservedCpuPercent": 30.000000000000004
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13647597568,
+        "MinimumIdleCpuPercent": 81.54269972451792,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-45-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13457629184,
+        "MaximumObservedCpuPercent": 31.159420289855078
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13509971968,
+        "MinimumIdleCpuPercent": 81.68044077134986,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-45-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13321916416,
+        "MaximumObservedCpuPercent": 26.948051948051944
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13431857152,
+        "MinimumIdleCpuPercent": 81.68044077134986,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-45-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13419081728,
+        "MaximumObservedCpuPercent": 32.765151515151516
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13627957248,
+        "MinimumIdleCpuPercent": 64.46280991735537,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-45-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13582807040,
+        "MaximumObservedCpuPercent": 32.638888888888886
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13778227200,
+        "MinimumIdleCpuPercent": 81.68044077134986,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-45-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13647159296,
+        "MaximumObservedCpuPercent": 26.745718050065882
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13777006592,
+        "MinimumIdleCpuPercent": 85.53719008264463,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-45-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13608148992,
+        "MaximumObservedCpuPercent": 32.608695652173914
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13681512448,
+        "MinimumIdleCpuPercent": 74.24242424242425,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-46-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13615964160,
+        "MaximumObservedCpuPercent": 27.207792207792203
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13741899776,
+        "MinimumIdleCpuPercent": 80.71625344352617,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-46-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13628289024,
+        "MaximumObservedCpuPercent": 23.96103896103896
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13740621824,
+        "MinimumIdleCpuPercent": 81.40495867768595,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "services-46-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13620649984,
+        "MaximumObservedCpuPercent": 30.519480519480524
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13658505216,
+        "MinimumIdleCpuPercent": 72.72727272727273,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-46-fixed",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13592080384,
+        "MaximumObservedCpuPercent": 29.76952624839949
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13724516352,
+        "MinimumIdleCpuPercent": 72.1590909090909,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-46-warm",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13615783936,
+        "MaximumObservedCpuPercent": 34.32147562582345
+      }
+    },
+    {
+      "selection": {
+        "ResourceMode": "Conservative",
+        "ActiveProcessors": 1,
+        "MavenHeapMiB": 512,
+        "TestHeapMiB": 384,
+        "HeadroomMiB": 1536,
+        "ReserveGiB": 6,
+        "MinimumAvailableBytes": 13759410176,
+        "MinimumIdleCpuPercent": 81.67613636363636,
+        "LogicalProcessors": 22,
+        "MaximumTotalCpuPercent": 85,
+        "CpuPressureGraceSeconds": 5,
+        "Eligible": true,
+        "Reason": null
+      },
+      "name": "shipments-46-adaptive",
+      "run": {
+        "ExitCode": 0,
+        "ResourceDeferred": false,
+        "Reason": null,
+        "MinimumAvailableBytes": 13592743936,
+        "MaximumObservedCpuPercent": 29.54545454545454
+      }
+    }
+  ],
+  "interpretation": "Exact 8x8 bidirectional 100m grid. All variants construct identical certified old plans with ten iterations/seed offset100000 outside measurement. Old plans are generated through a separate fixed-reference context; every current policy owns its matching context and cache history. Timed pipeline includes service optimization plus independent selection/publication validation; excludes shared context, old-plan generation, CLI startup and output. This is a small diagnostic experiment, not production calibration or optimality proof. No production default changed."
+}

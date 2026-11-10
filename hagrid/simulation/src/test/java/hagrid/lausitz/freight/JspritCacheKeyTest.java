@@ -59,6 +59,23 @@ class JspritCacheKeyTest {
         return JspritCacheKey.of(in, "fp-1", p -> null, "java-1");
     }
 
+    @Test void resourceSettingsReachTheCacheCertificate() throws Exception {
+        var in=stage(tmp.resolve("resources")).baseline();
+        var changed=in.withResources(new hagrid.core.config.ResolvedHagridConfig.Resources(2,java.util.OptionalInt.of(1)));
+        assertThat(key(changed).fullHash()).isNotEqualTo(key(in).fullHash());
+        assertThat(key(changed).components()).containsEntry("internal_solver_threads","2").containsEntry("max_active_solvers","1");
+    }
+    @Test void baselineConfiguredDurationIsCertifiedAndDefaultCapNormalizes() throws IOException {
+        var original=stage(tmp.resolve("duration")).baseline();
+        var configured=original.withRouteDurationSeconds(14400);
+        assertThat(configured.routeDurationSeconds()).isEqualTo(14400);
+        assertThat(key(configured).fullHash()).isNotEqualTo(key(original).fullHash());
+        assertThat(key(configured).components()).containsEntry("max_tour_duration_seconds","14400");
+        assertThat(key(original.withRouteDurationSeconds(25200)).fullHash()).isEqualTo(key(original).fullHash());
+        var threaded=configured.withResources(new hagrid.core.config.ResolvedHagridConfig.Resources(2,java.util.OptionalInt.of(1)));
+        assertThat(threaded.routeDurationSeconds()).isEqualTo(14400);
+    }
+
     @FunctionalInterface
     interface KeyStep { JspritCacheKey apply(Fixture f) throws IOException; }
 

@@ -51,6 +51,23 @@ import static org.assertj.core.api.Assertions.within;
  */
 @DisplayName("ModularKpiHandler")
 class ModularKpiHandlerTest {
+    @Test void windowLatenessIsIndependentOfEndOfDayAndParcelConservation(@TempDir Path tmp) throws Exception {
+        var handler=new ModularKpiHandler(fixtureControlerIO(tmp,"TESTRUN"),zeroPlanStats());
+        handler.handleEvent(ModularTourEvent.planned(26000,"window",2));
+        handler.handleEvent(ModularTourEvent.dispatched(26000,"window",vehId,2,0,0,120,120));
+        handler.handleEvent(ModularTourEvent.timeWindowViolation(28860,"window",vehId,2));
+        handler.handleEvent(ModularTourEvent.chainViolation(28860,"window",vehId));
+        handler.handleEvent(ModularTourEvent.stopServed(28980,"window",vehId,2));
+        handler.handleEvent(ModularTourEvent.completed(29400,"window",vehId));
+        handler.notifyShutdown(fixtureShutdownEvent());
+        var csv=readMetricCsv(tmp,"TESTRUN.modular_tour_stats.csv");
+        assertThat(csv.get("service_start_window_violations")).isEqualTo(1);
+        assertThat(csv.get("parcels_service_start_window_violations")).isEqualTo(2);
+        assertThat(csv.get("tours_remaining_chain_violations")).isEqualTo(1);
+        assertThat(csv.get("parcels_served_late")).isEqualTo(0);
+        assertThat(csv.get("parcels_served")).isEqualTo(2);
+        assertThat(csv.get("delta_parcels")).isEqualTo(0);
+    }
 
     private static final Id<DvrpVehicle> vehId = Id.create("drt_0", DvrpVehicle.class);
     private static final Id<DvrpVehicle> vehId2 = Id.create("drt_1", DvrpVehicle.class);
@@ -142,8 +159,9 @@ class ModularKpiHandlerTest {
         // adds ONE more: this fixture's zeroPlanStats() carries an empty districtByTourId, so
         // dhl_t0's + hermes_t0's four swaps all land in the synthetic "unknown" site bucket,
         // producing exactly one peak_concurrent_swaps_unknown row -> 27, plus Task 6's
-        // always-written budget_active flag (budget OFF here, so no counter rows) -> 28.
-        assertThat(csv).hasSize(28);
+        // always-written budget_active flag (budget OFF here, so no counter rows) -> 28; three appended window/chain metrics -> 31.
+        assertThat(csv).hasSize(31);
+        assertThat(csv).containsKeys("service_start_window_violations","parcels_service_start_window_violations","tours_remaining_chain_violations");
         assertThat(List.copyOf(csv.keySet()).get(20))
                 .as("appended LAST (before Task 1) so no existing column position shifts")
                 .isEqualTo("tours_rejected_at_splice");
@@ -328,7 +346,7 @@ class ModularKpiHandlerTest {
         // 26 pre-Task-10 metrics + Task 6's budget_active + one Task 10 row: t_ok's two swaps
         // land in the synthetic "unknown" site bucket (zeroPlanStats()'s districtByTourId is
         // empty).
-        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(28);
+        assertThat(csv).as("CSV is still complete despite the anomaly").hasSize(31);
 
         double dispatched = csv.get("parcels_dispatched");
         double served = csv.get("parcels_served");
@@ -387,10 +405,10 @@ class ModularKpiHandlerTest {
         assertThat(Files.exists(path)).as("CSV must be written even for a legitimately freight-free run").isTrue();
         List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
         assertThat(lines.get(0)).isEqualTo("metric;value");
-        assertThat(lines).as("header + all 26 metrics + Task 6's budget_active").hasSize(28);
+        assertThat(lines).as("header + existing 26 metrics + budget_active + three window/chain metrics").hasSize(31);
 
         Map<String, Double> csv = readMetricCsv(tmp, "TESTRUN.modular_tour_stats.csv");
-        assertThat(csv).hasSize(27);
+        assertThat(csv).hasSize(30);
         csv.values().forEach(v -> assertThat(v).isEqualTo(0.0));
     }
 
@@ -506,7 +524,7 @@ class ModularKpiHandlerTest {
                 .as("exactly the five Task-1 metrics, then Task 6's budget block (OFF here, so the"
                         + " flag row alone), then Task 10's one per-site row (both tours' swaps"
                         + " fall into the synthetic 'unknown' site bucket, districtByTourId being"
-                        + " empty here), nothing else, in the mandated order")
+                        + " empty here), then three window/chain diagnostics, in the mandated order")
                 .containsExactly(
                         "parcels_demand;15",
                         "parcels_unassigned_jsprit;2",
@@ -520,7 +538,10 @@ class ModularKpiHandlerTest {
                         // Task 10: dhl_t0 (2 swaps, peak 2) + gls_t0 (1 swap, peak 1) combined
                         // into "unknown" -> end times {30000,30200,50000}; the first two overlap
                         // (peak 2), the third is isolated -> site peak = 2.
-                        "peak_concurrent_swaps_unknown;2");
+                        "peak_concurrent_swaps_unknown;2",
+                        "service_start_window_violations;0",
+                        "parcels_service_start_window_violations;0",
+                        "tours_remaining_chain_violations;0");
     }
 
     /**
@@ -681,7 +702,7 @@ class ModularKpiHandlerTest {
         // two site rows must appear alphabetically, right after the (untouched) 26-metric block.
         List<String> lines = Files.readAllLines(
                 tmp.resolve("TESTRUN.modular_tour_stats.csv"), StandardCharsets.UTF_8);
-        assertThat(lines.subList(lines.size() - 2, lines.size()))
+        assertThat(lines.stream().filter(row -> row.startsWith("peak_concurrent_swaps_")).toList())
                 .as("sites sorted alphabetically, appended after every pre-existing row")
                 .containsExactly("peak_concurrent_swaps_hoy_sued;3", "peak_concurrent_swaps_wittichenau;1");
     }

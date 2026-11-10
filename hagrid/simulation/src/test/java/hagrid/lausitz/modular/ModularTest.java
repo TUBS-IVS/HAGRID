@@ -150,7 +150,9 @@ class ModularTest {
         // so a silent change to either constant would flow straight into published runs with
         // every test still green. Pin the literals here, once, at the source.
         assertThat(Modular.DEFAULT_IDLE_THRESHOLD).isEqualTo(0.50);
-        assertThat(Modular.DEFAULT_MAX_TOUR_DURATION_S).isEqualTo(12600);
+        // User-approved common seven-hour default replaces the former implicit 3.5-hour arm.
+        // Keep a literal assertion so an unintended future default change is still caught.
+        assertThat(Modular.DEFAULT_MAX_TOUR_DURATION_S).isEqualTo(25200);
     }
 
     @Test

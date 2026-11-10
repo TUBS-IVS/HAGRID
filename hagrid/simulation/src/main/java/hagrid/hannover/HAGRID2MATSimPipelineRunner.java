@@ -62,8 +62,8 @@ public final class HAGRID2MATSimPipelineRunner {
 	/** Enable carrier routing cache (reuse previously computed routes). */
 	private static final boolean ENABLE_CACHING = false;
 
-	/** jsprit VRP iterations during initial pipeline routing (1 = construction only). */
-	private static final int JSPRIT_ITERATIONS = 1;
+	/** Initial improvement steps; 0 constructs tours before simulation replanning. */
+	private static final int JSPRIT_ITERATIONS = hagrid.core.config.RoutingDefaults.INITIAL_SOLVER_ITERATIONS;
 
 	// =========================================================================
 	// SIMULATION SETTINGS  (MATSim simulation via HAGRIDSimulationRunner)
@@ -75,11 +75,11 @@ public final class HAGRID2MATSimPipelineRunner {
 	/** jsprit VRP solver iterations during simulation carrier re-planning. */
 	private static final int SIM_JSPRIT_ITER = 1000;
 
-	/** Enable zone-based transport cost caching during simulation. */
-	private static final boolean ZONE_CACHING = true;
+	/** Neutral legacy constructor value; simulation routing uses exact link endpoints. */
+	private static final boolean ZONE_CACHING = false;
 
-	/** Euclidean threshold (meters) below which zone-based caching kicks in. */
-	private static final int ZONE_THRESHOLD = 1500;
+	/** Neutral legacy threshold; spatial zone attributes remain available for analysis. */
+	private static final int ZONE_THRESHOLD = 0;
 
 	/** Penalty cost added for each U-turn in a route. */
 	private static final double U_TURN_PENALTY = 1.0;
@@ -98,9 +98,9 @@ public final class HAGRID2MATSimPipelineRunner {
 			// access violation and was never redone), so this arm covers 160-400 in
 			// steps of 10, plus 70v2.
 			//
-			// Distinct tags -> distinct runId -> distinct runId.hashCode() seed
-			// -> reseeded demand-layer RNG (dispatch time-shifts + missed-delivery draw)
-			// AND reseeded CarrierVehicleFactory (CarrierGenerator.java:87-89).
+
+			// Tags identify outputs; generation uses explicit randomSeeds settings.
+			// Equal seeds keep demand, missed deliveries and departures comparable across capacities.
 			// All tags read the SAME demand shapefile (tag-independent baseRunId).
 			// vehicleSize "<n>_l": clones ct_cep_size_l, overrides freight capacity to <n>
 			// (costs/speed/dimensions stay on the l-template -> only capacity varies across the sweep).
@@ -179,7 +179,7 @@ public final class HAGRID2MATSimPipelineRunner {
 	}
 
 	private static ScenarioConfig buildScenario(String concept, String tag, LocalDate date, String... vehicleSizes) {
-		return ScenarioConfig.builder()
+		var builder = ScenarioConfig.builder()
 				.concepts(concept)
 				.dates(date)
 				.tag(tag)
@@ -192,7 +192,20 @@ public final class HAGRID2MATSimPipelineRunner {
 				.applyServiceSimplifier(true)
 				.runRouting(RUN_ROUTING)
 				.jspritIterations(JSPRIT_ITERATIONS)
-				.enableCaching(ENABLE_CACHING)
-				.build();
+				.enableCaching(ENABLE_CACHING);
+		return Profile.apply(builder, System.getProperty("hagrid.config")).build();
+	}
+
+	/** Optional profile resolution is separate from scenario execution. */
+	static final class Profile {
+		private Profile() {}
+		static ScenarioConfig.Builder apply(ScenarioConfig.Builder builder, String configured) {
+			if (configured == null) return builder;
+			if (configured.isBlank()) throw new IllegalArgumentException("hagrid.config must not be blank");
+			var path = java.nio.file.Path.of(configured).toAbsolutePath().normalize();
+			if (!java.nio.file.Files.isRegularFile(path) || !java.nio.file.Files.isReadable(path))
+				throw new IllegalArgumentException("HAGRID configuration file is missing or unreadable: " + path);
+			return builder.configurationFile(path);
+		}
 	}
 }
