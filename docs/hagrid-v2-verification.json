@@ -1,24 +1,27 @@
 {
-  "sourceCommit": "7a6d9c10c74cf206214f28d1e80599828937c70c",
+  "sourceCommit": "566aed5dbcaec3d8d5d771b0c8acb98534efb93a",
+  "cleanBaseCommit": "c9075bb9f53286d95120394d1df511ea5e44dc20",
   "freightCommit": "a289ac2fd735cab39d4eb4a2416a5f9b677b0160",
   "java": "21.0.7",
   "maven": "3.9.8",
-  "freshCheckout": true,
+  "cleanBaseWorktreeBuild": true,
   "dependencyCacheReused": true,
   "matsimExecuted": false,
   "javaTests": {
     "freight": 29,
-    "hagrid": 407,
-    "additionalPackagingAndGeneration": 23
+    "hagrid": 568,
+    "total": 597,
+    "failures": 0,
+    "skipped": 0
   },
   "python": {
     "portablePassed": 40,
     "regionalWithoutFixturePathsSkipped": 10,
-    "producerWithExplicitLocalFixturesPassed": 13
+    "producerWithExplicitLocalFixturesPassed": 13,
+    "unchangedDuringCleanHistoryIntegration": true
   },
-  "jarSha256": "aad8e7e67c3e81ac2200ac6d41bf17ee4dbd099bcb204ed072b71b46d3a843c5",
+  "jarSha256": "b5705ffeed24a2b684bd188f5d4fbe9d0540fa35b0a10db3db075a1fe3982737",
   "allFreightClassesByteMatched": 383,
   "patchedJspritNotVanilla": true,
-  "javaTestSelector": "InsertionNoiseCompatibilityTest,CarrierPlanXmlWriterV2_1Test,CarrierPlanXmlReaderTest,CarrierVehicleTypeReaderTest,NativeBoundedCacheTest,NativeConstantProfileCacheTest,StaticDistancePathCacheTest,TravelTimeSnapshotTest,RoutingContextLifetimeTest,JspritCompatibilityTest,JspritInitialTaskTest,SectionTurnPolicyTest,StaticSectionRoadCostsTest,SplitRoadNetworkBuilderTest,SectionUnionNetworkTest,SectionCatalogBuilderTest,ReverseOnlyBindingTest,RemappedAnchorBindingTest,FixedOutOfHomeBindingTest,SectionPlanExpansionTest,SectionNativeSearchTest,SectionBindingValidatorTest,SectionMetadataBindingTest,SectionMergeBypassTest,SectionHagridInputsTest,HagridConfigTest,HagridConfigResolverTest,SectionSettingsTest,CentralConfigurationFileTest,CentralConfigurationPathsTest,SimulationRoutingConfigAdapterTest,CentralPipelineConfigurationTest,ModularTourConverterTest,ModularTimeWindowIntegrationTest,ModularOptimizerTest,ModularTourDispatcherTest,ModularStayTaskEndTimeCalculatorTest,ModularKpiHandlerTest,JspritCacheKeyTest,JspritPlanCacheTest,JspritConstructionHeuristicTest,HagridV2RoutingRunnerTest,HagridCompactNeighborhoodTest,FastRegretCapacityRegressionTest",
-  "additionalJavaTestSelector": "CarrierGenerationAccessTest,ArchitectureRulesTest"
+  "javaTestSelector": "InsertionNoiseCompatibilityTest,CarrierPlanXmlWriterV2_1Test,CarrierPlanXmlReaderTest,CarrierVehicleTypeReaderTest,NativeBoundedCacheTest,NativeConstantProfileCacheTest,StaticDistancePathCacheTest,TravelTimeSnapshotTest,RoutingContextLifetimeTest,JspritCompatibilityTest,JspritInitialTaskTest,SectionTurnPolicyTest,StaticSectionRoadCostsTest,SplitRoadNetworkBuilderTest,SectionUnionNetworkTest,SectionCatalogBuilderTest,ReverseOnlyBindingTest,RemappedAnchorBindingTest,FixedOutOfHomeBindingTest,SectionPlanExpansionTest,SectionNativeSearchTest,SectionBindingValidatorTest,SectionMetadataBindingTest,SectionMergeBypassTest,SectionHagridInputsTest,HagridConfigTest,HagridConfigResolverTest,SectionSettingsTest,CentralConfigurationFileTest,CentralConfigurationPathsTest,SimulationRoutingConfigAdapterTest,CentralPipelineConfigurationTest,ModularTourConverterTest,ModularTimeWindowIntegrationTest,ModularOptimizerTest,ModularTourDispatcherTest,ModularStayTaskEndTimeCalculatorTest,ModularKpiHandlerTest,JspritCacheKeyTest,JspritPlanCacheTest,JspritConstructionHeuristicTest,HagridV2RoutingRunnerTest,HagridCompactNeighborhoodTest,FastRegretCapacityRegressionTest,CarrierGenerationAccessTest,ArchitectureRulesTest,HagridPathsTest,OutputPathGuardTest,HAGRIDRouterUtilsTest,UTurnSoftConstraintLoggingTest,CarrierVehicleReRouterUTurnTest,StepAPenaltyCheckTest,CacheEntryLockTest,LmdCarrierBuilderTest,LausitzFreightPreprocessorTest,RunMetadataWriterTest,SectionFastProductionBehaviorTest"
 }

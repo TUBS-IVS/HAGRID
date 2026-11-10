@@ -1,29 +1,44 @@
 # HAGRID V2 — Abschlussprüfung, 10.11.2026
 
-## Umfang
+**Maßgeblicher veröffentlichter Quellstand:** `566aed5dbcaec3d8d5d771b0c8acb98534efb93a` auf der bereinigten
+GitHub-Basis `c9075bb9f53286d95120394d1df511ea5e44dc20`, Freight `a289ac2fd735cab39d4eb4a2416a5f9b677b0160`.
+**597 gezielte Java-Tests bestanden**, keine Fehler/Skips, Paketbau erfolgreich.
+**40 portable Python-Tests bestanden**; zehn Prüfungen ohne regionale Fixture-Pfade
+übersprungen. Mit expliziten lokalen Hannover-Daten bestanden separat alle 13
+Producer-Tests. Der Python-Code blieb bei der Historienübertragung bytegleich im Git-Index.
 
-Alle entwickelten Quellcodeänderungen, gemeinsamen Refactorings, Caches,
-jsprit-Patches, Halte-/Abschnittsplanung, Konfigurationen, Tests und Werkzeuge
-werden zusammen gesichert. Dazu gehört der separat festgeschriebene Freight-
-Untermodulstand. Erzeugte Benchmark-Ergebnisse, lokale Eingabedaten und lokale
-Arbeitsverzeichnisse gehören nicht zum Code-Release.
+Die Java-Prüfung umfasst V2-Routing, Caches, Abschnitte, Konfiguration, XML,
+Python-Exportimport, Architektur und die zusätzlich integrierten GitHub-Regressionen.
+Keine MATSim-/QSim-Simulation, kein Vollregions-RAM-Nachweis und keine große Carrier-Matrix.
+Maven-/Python-Abhängigkeiten wurden aus der vorhandenen Installation verwendet.
 
-## Vorprüfung am Arbeitsstand
+Alle 383 Freight-Klassen im finalen JAR stimmen byteweise mit unserem Eigenbau
+überein und sind einmal enthalten. Die drei jsprit-Patchklassen unterscheiden sich
+vom Vanilla-2.0.0-Artefakt. Der neue Einstieg ist aus der JAR ladbar.
+Genaue Testauswahl und Paket-SHA: [Verifikationsmanifest](hagrid-v2-verification.json).
 
-- Java 21, Maven-Reaktor `external/freight` + `hagrid/simulation`, gezieltes `verify`:
-  29 Freight-Tests und 407 HAGRID-Tests bestanden, keine Fehler/Skips, circa 46 Sekunden.
-- Die paketierten Klassen `RegretInsertionFast`, `JobNeighborhoodsOptimized`,
-  `InsertionNoiseMaker`, `NetworkBasedTransportCosts`, `CarrierPlanWriter` und
-  `HagridV2RoutingRunner` sind jeweils genau einmal enthalten und bytegleich mit
-  den aktuell kompilierten Quellen. Der Einstieg lässt sich aus der JAR laden.
-- Python-Stop-/Export-/Metadaten-/Bundle-/OOH-Tests vor der Reviewkorrektur:
-  38 bestanden; zehn lokale Datenprüfungen ausdrücklich ohne Fixture-Pfade übersprungen.
+## Sichere Historie und Integration
 
-Die endgültige Prüfung aus dem frisch ausgecheckten Commit wird unten ergänzt.
-Kein MATSim-/QSim-Lauf, keine große Carrier-Testmatrix und kein Vollregions-RAM-Test.
-Maven-/Python-Abhängigkeiten werden aus der vorhandenen lokalen Installation genutzt;
-ein frischer Checkout ist kein Nachweis einer kompletten Installation auf einem
-anderen Betriebssystem oder ohne bereits verfügbare Paketquellen.
+Der erste Push wurde vom Repository-Schutz gegen private Alt-Historie blockiert.
+Der veröffentlichte Branch wurde deshalb direkt auf dem bereinigten GitHub-Master
+aufgebaut; ausschließlich die entwickelten Quelländerungen wurden übertragen.
+Die gesperrten Alt-Commits sind keine Vorfahren des Releases. Private Eingabedaten,
+alte Notebooks und generierte Benchmark-Läufe wurden nicht wieder aufgenommen.
+Der alte lokale Stand bleibt separat gesichert und wurde nicht gepusht.
+
+Neuere GitHub-Änderungen an Ausgabepfaden, Zustellraten, Cache-Schutz und U-Turn-
+Diagnosen bleiben erhalten. Der U-Turn-Test prüft die reale Auswahl zwischen
+unabhängig nachgerechneten Alternativen; die Cache-Tests isolieren getrennte
+Prozess-Szenarien, ohne den Produktionsschutz gegen unpassende Cache-Nutzung
+auszuschalten. Der jsprit-2.0-Routenvergleich prüft das zusätzliche Zustellbias-
+Attribut separat mit seinem exakten Seed, statt es mit dem alten Bytehash zu verwechseln.
+
+## Zusätzlich vor Veröffentlichung korrigiert
+
+- Die bisher ignorierte synthetische Vier-Stopp-Shapefile-Fixture wird einschließlich
+  aller fünf Bestandteile versioniert. Der echte Python-Exportimport-Test läuft im Checkout.
+- Die transitive unveränderte Freight-JAR wird vom Paket ausgeschlossen; sie enthält
+  keine Klasse, die nicht bereits in unserem geprüften Freight-Modul vorhanden ist.
 
 ## Review: gefunden und korrigiert
 
@@ -68,27 +83,3 @@ Caches sind bereits implementiert. Weniger Kandidaten zu betrachten ist keine
 qualitätsneutrale Ersatzoptimierung. Ein eigenständiger jsprit-Fork ist eine spätere
 Packaging-/Wartungsaufgabe; die jetzige JAR enthält bereits die optimierten Klassen.
 
-## Endgültiges Ergebnis aus dem unabhängigen Checkout
-
-Quellstand: `7a6d9c10c74cf206214f28d1e80599828937c70c`, Freight: `a289ac2fd735cab39d4eb4a2416a5f9b677b0160`. Die nachfolgende Dokumentation
-ändert den geprüften Java-/Python-Quellstand nicht.
-
-- Vollständiger Neuaufbau und Paketierung aus versionierten Dateien erfolgreich.
-- **436 gezielte Java-Tests** erfolgreich, ohne Fehler oder Skips.
-- Nach Aufnahme der zuvor ignorierten synthetischen Shapefile-Fixture und Ausschluss
-  der doppelten unveränderten Freight-JAR: **23 zusätzliche Erzeugungs-/Architekturtests**
-  erfolgreich und finales Paket erneut gebaut.
-- **40 portable Python-Tests bestanden**; zehn regionale Prüfungen ohne lokale Daten
-  ausdrücklich übersprungen. Separat bestanden **alle 13 Producer-Tests mit den
-  explizit bereitgestellten lokalen Hannover-Fixtures**, einschließlich der erwarteten
-  Ablehnung der vier beziehungsweise einen ungeklärten Zuordnung.
-- **Alle 383 Freight-Klassen** im finalen Paket sind einmalig enthalten und bytegleich
-  mit dem festgeschriebenen Eigenbau. Die drei jsprit-Patchklassen sind bytegleich
-  mit unseren Klassen und unterscheiden sich vom Vanilla-2.0.0-Artefakt.
-- Der Runner wird aus der fertigen JAR geladen und meldet bei fehlendem Profil den
-  erwarteten Aufrufhinweis. Kein vollständiger Hannover-Tag wurde gestartet.
-
-Die Fixture-Lücke und die doppelte Freight-Paketquelle wurden vor dem Push korrigiert.
-Details und genaue Testauswahl: [Verifikationsmanifest](hagrid-v2-verification.json).
-Für einen Wiederholungslauf kann dessen `javaTestSelector` als Maven-`-Dtest` verwendet
-werden; `-Dsurefire.failIfNoSpecifiedTests=false` ist im Zwei-Modul-Reaktor erforderlich.
